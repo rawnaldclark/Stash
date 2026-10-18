@@ -1,7 +1,5 @@
 package com.stash.app.navigation
 
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -22,11 +20,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
-import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.feature.community.CommunityHostViewModel
 import com.stash.feature.community.CommunityPostScreen
 import com.stash.feature.community.CommunityPosting
-import com.stash.feature.community.CommunityPostingHost
 import com.stash.feature.community.CommunityScreen
 import com.stash.feature.community.CommunitySection
 import com.stash.feature.community.rememberCommunityPosting
@@ -40,7 +36,8 @@ import com.stash.feature.library.LibraryScreen
 import com.stash.feature.library.LikedSongsDetailScreen
 import com.stash.feature.library.PlaylistDetailScreen
 import com.stash.feature.library.mixbuilder.MixBuilderScreen
-import com.stash.feature.nowplaying.NowPlayingScreen
+import com.stash.feature.nowplaying.sheet.LocalPlayerSheet
+import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
 import com.stash.feature.search.SearchScreen
@@ -54,14 +51,12 @@ import com.stash.feature.sync.FailedMatchesScreen
 import com.stash.feature.sync.ManagePlaylistsScreen
 import com.stash.feature.sync.SyncScreen
 
-/** Transition duration for the Now Playing slide animation in milliseconds. */
-private const val SLIDE_DURATION_MS = 350
-
 /**
- * Main navigation host for the Stash app.
+ * Main navigation host for the Stash app: the tab destinations and their detail screens.
  *
- * Contains all top-level tab destinations plus the full-screen Now Playing
- * route which enters with a slide-up and exits with a slide-down transition.
+ * Now Playing is not a destination any more: it is the player sheet over the NavHost
+ * (StashScaffold's PlayerSheetOverlay). [NowPlayingRoute] survives as a shim for back stacks
+ * saved by older builds.
  */
 @Composable
 fun StashNavHost(
@@ -77,9 +72,10 @@ fun StashNavHost(
     onNavigateToTab: (TopLevelDestination) -> Unit = {},
     // Open Stash on (#428). Fixed for the activity's life; MainActivity saves it across recreation.
     startDestination: Any = HomeRoute,
+    // Stash Community (spec 2026-09-26 §3): the scaffold hosts the posting sheets and
+    // LocalPostToCommunity over every screen and the player; the screens here open the picker.
+    posting: CommunityPosting = rememberCommunityPosting(),
 ) {
-    // Stash Community (spec 2026-09-26 §3): LocalPostToCommunity and the posting sheets sit over every screen.
-    val posting = rememberCommunityPosting()
     val host: CommunityHostViewModel = hiltViewModel()
     // Community turned off (spec §3: nothing Community anywhere): a tab can restore a Community screen it saved
     // while it was on, so leave any that's showing. null is "not read yet": a restored one stays until the switch is
@@ -92,17 +88,7 @@ fun StashNavHost(
                 navController.popBackStack()) Unit
         }
     }
-    CommunityPostingHost(
-        posting,
-        onSeeMyPosts = {
-            // From See all itself, replace it rather than stacking a second one; from anywhere else, just open it.
-            val onSeeAll = navController.currentBackStackEntry?.destination?.hasRoute<CommunityRoute>() == true
-            navController.navigate(CommunityRoute(mine = true)) { if (onSeeAll) popUpTo<CommunityRoute> { inclusive = true } }
-        },
-        viewModel = host,
-    ) {
-        StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
-    }
+    StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
 }
 
 /**
@@ -128,6 +114,7 @@ private fun StashNavGraph(
     posting: CommunityPosting,
     startDestination: Any,
 ) {
+    val playerSheet = LocalPlayerSheet.current
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -514,13 +501,11 @@ private fun StashNavGraph(
             AboveChrome {
                 com.stash.feature.nowplaying.listen.JoinSessionScreen(
                     onBack = { navController.popBackStack() },
-                    // After joining, Now Playing is the session; Back from it skips the Join screen. Reuse an
-                    // existing Now Playing entry rather than stack a second one (as the mini player does).
+                    // After joining, Now Playing is the session: the Join screen goes and the player opens
+                    // over the page that was under it.
                     onJoined = {
                         navController.popBackStack<ListenJoinRoute>(inclusive = true)
-                        if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
-                            navController.navigate(NowPlayingRoute) { launchSingleTop = true }
-                        }
+                        playerSheet?.expand()
                     },
                 )
             }
@@ -607,50 +592,13 @@ private fun StashNavGraph(
             )
         }
 
-        composable<NowPlayingRoute>(
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(SLIDE_DURATION_MS),
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(SLIDE_DURATION_MS),
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Up,
-                    animationSpec = tween(SLIDE_DURATION_MS),
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
-                    animationSpec = tween(SLIDE_DURATION_MS),
-                )
-            },
-        ) {
-            NowPlayingScreen(
-                onDismiss = { navController.popBackStack() },
-                onNavigateToArtist = { id, name, avatar, focusAlbum ->
-                    navController.navigate(SearchArtistRoute(id, name, avatar, focusAlbum))
-                },
-                onNavigateToAlbum = { albumId, name, artUrl, artistName ->
-                    navController.navigate(
-                        SearchAlbumRoute(
-                            browseId = albumId,
-                            title = name,
-                            artist = artistName,
-                            thumbnailUrl = artUrl,
-                            year = null,
-                            source = AlbumSource.YOUTUBE,
-                        ),
-                    )
-                },
-            )
+        // A back stack saved by an older build can still end on Now Playing: drop the entry and
+        // open the player sheet instead, unanimated. (Remove two releases after the sheet ships.)
+        composable<NowPlayingRoute> {
+            LaunchedEffect(Unit) {
+                navController.popBackStack(NowPlayingRoute, inclusive = true)
+                playerSheet?.snapTo(PlayerSheetAnchor.FULL)
+            }
         }
     }
 }

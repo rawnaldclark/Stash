@@ -68,6 +68,9 @@ class MainActivity : ComponentActivity() {
         /** [pendingDeepLink] prefix for a Listen Together invite; the room code follows. */
         const val DEEP_LINK_LISTEN_PREFIX = "listen:"
 
+        /** [pendingDeepLink] for the media notification's tap: open the full player. */
+        const val DEEP_LINK_PLAYER = "player"
+
         /** [pendingDeepLink] prefix for a Link Stash on the web pairing link (`https://stashfm.app/link#1.…`); the link follows. */
         const val DEEP_LINK_WEB_LINK_PREFIX = "weblink:"
 
@@ -308,6 +311,12 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
+
+        // The media notification (exact action, no data or extras read): open the full player.
+        if (intent.action == com.stash.core.media.service.StashPlaybackService.ACTION_OPEN_PLAYER) {
+            pendingDeepLink.value = DEEP_LINK_PLAYER
+            return
+        }
 
         // Shared mix / track links (https App Links on stashfm.app or the old workers.dev host, and legacy
         // stash://track). Spec §6.

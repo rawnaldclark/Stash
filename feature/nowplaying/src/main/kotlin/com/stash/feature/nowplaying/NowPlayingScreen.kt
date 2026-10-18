@@ -78,7 +78,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,7 +91,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -120,6 +118,12 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 import com.stash.feature.nowplaying.ui.SwipeableArt
 import com.stash.feature.nowplaying.ui.hasNextInQueue
 import com.stash.feature.nowplaying.ui.hasPreviousInQueue
+import com.stash.feature.nowplaying.sheet.HeroArt
+import com.stash.feature.nowplaying.sheet.PlayerSheetMath
+import com.stash.feature.nowplaying.sheet.PlayerSheetState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.toSize
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -131,8 +135,14 @@ import com.stash.feature.nowplaying.ui.hasPreviousInQueue
  * art-derived orbs in dark, the same orbs as a pastel wash over lavender
  * paper in light.
  *
+ * Hosted by the player sheet ([sheet]): laid out once at the full screen size, revealed by the
+ * sheet's card as it grows from the mini player. Everything here that the sheet's progress moves
+ * (the ambient's fade, the controls' fade and rise, the big cover handing over to the travelling
+ * one) reads it in a graphicsLayer, so a drag never recomposes this screen.
+ *
  * @param onDismiss Callback invoked when the user taps the dismiss (down arrow) button.
- * @param viewModel The [NowPlayingViewModel] provided by Hilt.
+ * @param viewModel The [NowPlayingViewModel] provided by Hilt (the activity's: the mini player's).
+ * @param sheet The player sheet hosting this screen; null draws it as a plain full screen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,6 +151,7 @@ fun NowPlayingScreen(
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
+    sheet: PlayerSheetState? = null,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
@@ -240,16 +251,9 @@ fun NowPlayingScreen(
     // user's scroll position aligns with controls and we want it preserved
     // across track changes.
 
-    // One-shot Toast confirmation for the "wrong match" flag action. Toast
-    // instead of Snackbar so we don't have to restructure the screen into
-    // a Scaffold — the full-screen ambient background would fight with
-    // Material's Snackbar surface anyway.
+    // The ViewModel's userMessages are toasted once, app-wide, by PlayerMessagesToaster (this
+    // screen and the mini player share the ViewModel: two collectors toasted each message twice).
     val toastContext = LocalContext.current
-    LaunchedEffect(Unit) {
-        viewModel.userMessages.collect { msg ->
-            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
-        }
-    }
 
     // Tap-to-artist: the VM resolves the artist name → browseId off the main
     // thread and emits a one-shot nav target; forward it to the host.
@@ -269,11 +273,19 @@ fun NowPlayingScreen(
     // FULL DB track: the player-state Track is a slim media-session
     // reconstruction whose spotifyUri/youtubeId are null, which is why the
     // link rows never appeared when this read uiState.currentTrack.
-    shareTrack?.let { full ->
-        com.stash.core.ui.components.ShareTrackSheet(
-            track = full,
-            onDismiss = viewModel::onShareDismissed,
-        )
+    // Shown only for a share asked for here: the ViewModel is shared with the mini player's queue
+    // sheet, which shows its own.
+    var shareRequested by remember { mutableStateOf(false) }
+    if (shareRequested) {
+        shareTrack?.let { full ->
+            com.stash.core.ui.components.ShareTrackSheet(
+                track = full,
+                onDismiss = {
+                    shareRequested = false
+                    viewModel.onShareDismissed()
+                },
+            )
+        }
     }
 
     // Queue bottom sheet
@@ -294,7 +306,10 @@ fun NowPlayingScreen(
             onPlayNext = viewModel::queuePlayNext,
             onStartRadio = viewModel::startRadioForTrack,
             onSaveToPlaylist = { queueSaveTrack = it },
-            onShare = viewModel::onShareTrack,
+            onShare = { t ->
+                shareRequested = true
+                viewModel.onShareTrack(t)
+            },
             onToggleDownload = viewModel::toggleDownload,
             onRestoreTrack = viewModel::onRestoreToQueue,
         )
@@ -336,7 +351,45 @@ fun NowPlayingScreen(
     val appleLyricsEnabled by viewModel.appleLyricsEnabled.collectAsStateWithLifecycle()
     val upgradingLyricsTrackId by viewModel.upgradingLyricsTrackId.collectAsStateWithLifecycle()
     val reading = lyricsMode && track != null
-    androidx.activity.compose.BackHandler(enabled = reading) { viewModel.onDismissLyrics() }
+    if (sheet != null) {
+        // Back while reading leaves lyrics first; the sheet's own handler then collapses the player.
+        val currentReading by androidx.compose.runtime.rememberUpdatedState(reading)
+        androidx.compose.runtime.DisposableEffect(sheet, viewModel) {
+            val unregister = sheet.registerBackConsumer {
+                if (currentReading) {
+                    viewModel.onDismissLyrics()
+                    true
+                } else {
+                    false
+                }
+            }
+            onDispose { unregister() }
+        }
+    } else {
+        androidx.activity.compose.BackHandler(enabled = reading) { viewModel.onDismissLyrics() }
+    }
+
+    // What the sheet's progress moves, all read in layers: the controls fade in over the last
+    // quarter while rising 24dp; the big cover shows only at FULL (the travelling cover carries it
+    // in between) and reports where it sits.
+    val controlsLayer = if (sheet == null) Modifier else Modifier.graphicsLayer {
+        val p = sheet.progress
+        alpha = PlayerSheetMath.controlsAlpha(p)
+        translationY = PlayerSheetMath.controlsRiseDp(p) * density
+    }
+    val screenDensity = LocalDensity.current.density
+    fun heroLayer(isCurrentMode: Boolean, cornerDp: Float): Modifier = if (sheet == null) Modifier else Modifier
+        .onGloballyPositioned { coords ->
+            // Only the view on screen reports (the other may be leaving through the crossfade).
+            if (isCurrentMode && coords.isAttached) {
+                sheet.heroArt = HeroArt(
+                    rect = Rect(coords.positionInRoot(), coords.size.toSize()),
+                    cornerPx = cornerDp * screenDensity,
+                )
+                sheet.heroMeasuredFor = sheet.screenSize
+            }
+        }
+        .graphicsLayer { alpha = PlayerSheetMath.heroArtAlpha(sheet.progress) }
 
     // The album colours come from LocalAlbumChrome (the app-wide palette the mini player wears
     // too), not from the art this screen loads; both covers share one decode (rememberNpArtRequest).
@@ -404,7 +457,10 @@ fun NowPlayingScreen(
                     ListenTogetherState.Idle -> showStartTogether = true
                 }
                 NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
-                NowPlayingAction.SHARE -> viewModel.onShareCurrent()
+                NowPlayingAction.SHARE -> {
+                    shareRequested = true
+                    viewModel.onShareCurrent()
+                }
                 NowPlayingAction.POST_TO_COMMUNITY ->
                     track?.let { t -> postToCommunity?.invoke(com.stash.core.model.community.PostTarget.Song(t)) }
                 // Resolves and opens the actual remote album page.
@@ -706,26 +762,29 @@ fun NowPlayingScreen(
 
     Box(
         modifier = Modifier
-            .holdHeightWhileLeaving()
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            // In the sheet the card draws the ground (it fades in as the card grows).
+            .then(if (sheet == null) Modifier.background(MaterialTheme.colorScheme.background) else Modifier),
     ) {
         // Ambient animated background behind everything — dark canvas, the
         // light pastel wash, or a dead-black AMOLED ground, following the
         // resolved app theme. It runs to the screen's bottom edge, under the
-        // system navigation bar (the scaffold hides the tab bar on this route).
-        if (ambientAnimationEnabled) when (ambientStyle) {
-            com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // Settings > Appearance > Ambient style: the original orbs, in the same album colours.
-            com.stash.core.data.prefs.AmbientStyle.CLASSIC -> com.stash.feature.nowplaying.ui.ClassicAmbientBackground(
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                modifier = Modifier.fillMaxSize(),
-            )
+        // system navigation bar (the tab bar slides away under the player).
+        if (ambientAnimationEnabled) SheetAmbient(sheet) { ambientModifier ->
+            when (ambientStyle) {
+                com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
+                    lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+                    amoledMode = LocalIsAmoledTheme.current,
+                    modifier = ambientModifier,
+                    entranceAnimated = sheet == null,
+                )
+                // Settings > Appearance > Ambient style: the original orbs, in the same album colours.
+                com.stash.core.data.prefs.AmbientStyle.CLASSIC -> com.stash.feature.nowplaying.ui.ClassicAmbientBackground(
+                    lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
+                    amoledMode = LocalIsAmoledTheme.current,
+                    modifier = ambientModifier,
+                )
+            }
         }
 
         // The raw navigation-bar inset (never consumed by the scaffold here), so the
@@ -787,6 +846,7 @@ fun NowPlayingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .then(controlsLayer)
                     .statusBarsPadding()
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -864,9 +924,15 @@ fun NowPlayingScreen(
                                     .fillMaxWidth()
                                     .weight(1f)
                                     .padding(horizontal = 24.dp),
+                                stackModifier = controlsLayer,
                                 art = {
                                 // -- Album art: NowPlayingBody sizes this slot (a square) --
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(heroLayer(isCurrentMode = !reading, cornerDp = PlayerSheetMath.HERO_ART_CORNER_DP)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
                                     // Swipe for the next / previous song, double-tap a side to seek
                                     // 10 s: through the same ViewModel calls as the transport and the
                                     // progress bar, and off for a listener, as those are.
@@ -969,6 +1035,7 @@ fun NowPlayingScreen(
                                     accentColor = barChrome.ink,
                                     liveEnabled = liveLyricsEnabled,
                                     onTap = viewModel::onShowLyrics,
+                                    modifier = controlsLayer,
                                     isPlaying = uiState.isPlaying && !uiState.isBuffering,
                                     playbackSpeed = playbackSpeed,
                                 )
@@ -1007,15 +1074,15 @@ fun NowPlayingScreen(
                                     CompactCover(
                                         artModel = artModel,
                                         onClick = { viewModel.onDismissLyrics() },
-                                        modifier = artShared,
+                                        modifier = artShared.then(heroLayer(isCurrentMode = reading, cornerDp = CompactCoverCornerDp)),
                                     )
                                 },
                                 title = track?.title.orEmpty(),
                                 artist = displayArtist,
                                 ink = headerInk,
                                 modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
-                                textModifier = headerTextEnter,
-                                actionsModifier = headerActionsEnter,
+                                textModifier = headerTextEnter.then(controlsLayer),
+                                actionsModifier = headerActionsEnter.then(controlsLayer),
                             ) {
                                 // The sleep timer, as on the art view (and in the web's header);
                                 // accented, with its live countdown under the moon, while armed.
@@ -1065,16 +1132,17 @@ fun NowPlayingScreen(
                                     .fillMaxWidth()
                                     .weight(1f)
                                     .padding(top = 4.dp)
-                                    .then(paneEnter),
+                                    .then(paneEnter)
+                                    .then(controlsLayer),
                             )
-                            foot(Modifier.padding(horizontal = 24.dp).then(footShared))
+                            foot(Modifier.then(controlsLayer).padding(horizontal = 24.dp).then(footShared))
                             Spacer(modifier = Modifier.height(LyricsFootBottom))
                         }
                     }
                 }
             }
         }
-        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
+        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
     }
 
     if (showOptionsSheet && track != null) WithAlbumChrome { sheetChrome ->
@@ -1140,13 +1208,14 @@ private const val ART_COMFORT = 0.75f
 @Composable
 private fun NowPlayingBody(
     modifier: Modifier = Modifier,
+    stackModifier: Modifier = Modifier,
     art: @Composable () -> Unit,
     stack: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     androidx.compose.ui.layout.Layout(
         contents = listOf(
             art,
-            { Column(horizontalAlignment = Alignment.CenterHorizontally, content = stack) },
+            { Column(modifier = stackModifier, horizontalAlignment = Alignment.CenterHorizontally, content = stack) },
         ),
         modifier = modifier,
     ) { (artM, stackM), constraints ->
@@ -1175,33 +1244,6 @@ private fun NowPlayingBody(
             artP.place((w - artSide) / 2, artY)
             stackP.place(0, artY + artSide + gArt)
         }
-    }
-}
-
-/**
- * Keeps Now Playing at its full height while it slides away. As it closes, the
- * scaffold brings the tab bar and mini player straight back, which would shrink
- * this screen mid-slide and reflow the art; instead, while its back-stack entry is
- * not resumed (entering or leaving), it keeps the tallest height it has had and
- * runs past the bottom, under the returning bars.
- */
-@Composable
-private fun Modifier.holdHeightWhileLeaving(): Modifier {
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    val state by lifecycle.currentStateFlow.collectAsState()
-    val resumed = state.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
-    val held = remember { intArrayOf(0, 0) } // width, height
-    return this.layout { measurable, constraints ->
-        val w = constraints.maxWidth
-        val maxH = constraints.maxHeight
-        if (held[0] != w) {
-            held[0] = w
-            held[1] = 0
-        }
-        val height = if (resumed) maxH else maxOf(held[1], maxH)
-        held[1] = height
-        val p = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
-        layout(w, maxH) { p.place(0, 0) }
     }
 }
 
@@ -1929,4 +1971,27 @@ private fun PreviewQualityLineLocal() {
             isStreaming = false,
         )
     }
+}
+
+/** Lyrics mode's header cover radius (CompactCover's clip), for the travelling cover to land on. */
+private const val CompactCoverCornerDp = 8f
+
+/**
+ * The ambient, under the player sheet: composed only while the sheet is above MINI (parked at
+ * MINI its orbit animations would tick for nothing), fading in over 10..70 % of the opening. Its
+ * own recompose scope, so composing it never recomposes the screen. Without a sheet: always there.
+ */
+@Composable
+private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifier) -> Unit) {
+    if (sheet == null) {
+        content(Modifier.fillMaxSize())
+        return
+    }
+    val shown by remember(sheet) { androidx.compose.runtime.derivedStateOf { sheet.progress > 0f } }
+    if (!shown) return
+    content(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = PlayerSheetMath.ambientAlpha(sheet.progress) },
+    )
 }

@@ -75,6 +75,15 @@ import com.stash.feature.nowplaying.listen.MiniSessionFaces
 import com.stash.feature.nowplaying.ui.hasNextInQueue
 import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
+import com.stash.feature.nowplaying.sheet.PlayerSheetMath
+import com.stash.feature.nowplaying.sheet.PlayerSheetState
+import com.stash.feature.nowplaying.sheet.playerSheetDrag
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.toSize
 
 /*
  * The glass mini player, a port of the web player's phone mini player (stash-web
@@ -109,9 +118,14 @@ private val MiniShadow = Shadow(
  * and artist) sideways skips to the next or previous song, as on Now Playing's art; TalkBack gets
  * Previous as an action on the card (Next is the button).
  *
+ * With a [sheet] the card is the player sheet's handle: a vertical drag on it opens Now Playing
+ * with the finger (see playerSheetDrag), it reports where it sits so the sheet grows from it, and
+ * as the sheet opens its content fades out and its cover hands over to the travelling one.
+ *
  * @param onExpand Opens Now Playing.
  * @param onOpenQueue Opens the queue sheet over the current screen.
  * @param modifier Standard Compose [Modifier] for the floating card's slot.
+ * @param sheet The player sheet this card opens; null for a plain card.
  * @param viewModel The activity-scoped [NowPlayingViewModel] provided by Hilt.
  */
 @Composable
@@ -119,6 +133,7 @@ fun MiniPlayer(
     onExpand: () -> Unit,
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
+    sheet: PlayerSheetState? = null,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
@@ -151,10 +166,29 @@ fun MiniPlayer(
             onNext = viewModel::onSkipNext,
             onPrevious = viewModel::onSwipePrevious,
         )
+        if (sheet != null) {
+            // Gone (no song, selection mode): the sheet falls back to where the card would be.
+            DisposableEffect(sheet) { onDispose { sheet.miniCardRect = null } }
+        }
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = MiniPlayerMargin)
+                .then(
+                    if (sheet == null) {
+                        Modifier
+                    } else {
+                        Modifier
+                            // The card at rest (before the press scale and the dip below): the
+                            // rect the sheet's card grows from.
+                            .onGloballyPositioned { sheet.miniCardRect = Rect(it.positionInRoot(), it.size.toSize()) }
+                            // Below MINI (the drag's rubber band, the landing's bounce) the card dips.
+                            .graphicsLayer {
+                                translationY = PlayerSheetMath.miniDipPx(sheet.progress, sheet.travelPx(), density)
+                            }
+                            .playerSheetDrag(sheet)
+                    },
+                )
                 .pressScale(press)
                 .dropShadow(MiniShape, MiniShadow)
                 .chromeGlass(MiniShape)
@@ -171,10 +205,14 @@ fun MiniPlayer(
         ) {
             // The 2dp progress line along the top edge (clipped to the card's corners by the glass),
             // drawn in the draw phase so the album colour's crossfade only redraws it.
+            val contentLayer = if (sheet == null) Modifier else Modifier.graphicsLayer {
+                alpha = PlayerSheetMath.miniContentAlpha(sheet.progress)
+            }
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(2.dp)
+                    .then(contentLayer)
                     .drawBehind {
                         val fraction = progressFraction(position.value, uiState.durationMs)
                         drawRect(color = chrome.accent, size = Size(size.width * fraction, size.height))
@@ -184,6 +222,7 @@ fun MiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(contentLayer)
                     // end 4 + the next slot's 6dp of spare width = the web's 10dp to the icon.
                     .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -209,6 +248,10 @@ fun MiniPlayer(
                     ) {
                         val artModel = track?.albumArtPath ?: track?.albumArtUrl
                         val coverShape = RoundedCornerShape(6.dp)
+                        // Hidden while the sheet is open: the travelling cover is it, in flight.
+                        val artLayer = if (sheet == null) Modifier else Modifier.graphicsLayer {
+                            alpha = PlayerSheetMath.miniArtAlpha(sheet.progress)
+                        }
                         if (artModel != null) {
                             // Remembered per cover: a fresh request each recomposition makes Coil treat
                             // it as a new load.
@@ -221,13 +264,15 @@ fun MiniPlayer(
                                 contentDescription = "Album art",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(MiniArtSize)
+                                    .then(artLayer)
                                     .clip(coverShape),
                             )
                         } else {
                             Box(
                                 Modifier
-                                    .size(44.dp)
+                                    .size(MiniArtSize)
+                                    .then(artLayer)
                                     .clip(coverShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center,
@@ -366,6 +411,9 @@ fun MiniPlayer(
         }
     }
 }
+
+/** The cover, 8dp in from the card's top-left (PlayerSheetState.miniArtRect assumes both). */
+private val MiniArtSize = 44.dp
 
 /** The minimum touch target for every mini player control (Material's 48dp). */
 private val MiniTouchTarget = 48.dp

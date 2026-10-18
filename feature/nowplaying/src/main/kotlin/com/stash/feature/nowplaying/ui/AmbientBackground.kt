@@ -83,6 +83,7 @@ private const val ORBIT_OFFSET_OS = 18f
  * @param amoledMode Pure black ground (the web's data-black); the orbs still turn over it.
  * @param colors     The album colours: the app-wide chrome. Its dom / vib / mut are read at draw
  *   time, so the song change's crossfade only redraws the orbs.
+ * @param entranceAnimated The 300 ms fade-in on first composition (off when the caller fades it).
  */
 @Composable
 fun AmbientBackground(
@@ -90,13 +91,15 @@ fun AmbientBackground(
     amoledMode: Boolean = false,
     modifier: Modifier = Modifier,
     colors: AlbumChrome = LocalAlbumChrome.current,
+    entranceAnimated: Boolean = true,
 ) {
     val reduceMotion = rememberReducedMotion()
 
-    // Entrance: the ambient fades in over 300 ms when Now Playing opens.
-    val entrance = remember { Animatable(if (reduceMotion) 1f else 0f) }
+    // Entrance: the ambient fades in over 300 ms when Now Playing opens. Off under the player
+    // sheet, whose progress fades the ambient in with the finger instead.
+    val entrance = remember { Animatable(if (reduceMotion || !entranceAnimated) 1f else 0f) }
     LaunchedEffect(Unit) {
-        entrance.animateTo(1f, tween(ENTRANCE_MS, easing = FastOutSlowInEasing))
+        if (entranceAnimated) entrance.animateTo(1f, tween(ENTRANCE_MS, easing = FastOutSlowInEasing))
     }
 
     val angles: List<State<Float>> = if (reduceMotion) {
