@@ -67,7 +67,9 @@ object PaletteCache {
             val result = SingletonImageLoader.get(context).execute(request)
             if (result !is SuccessResult) return null
             val bitmap = result.image.toBitmap()
-            val palette = withContext(extraction) { ambientPaletteFromBitmap(bitmap, key = keyFor(model)) }
+            // Null (pixels unreadable) is a failure: not kept, read again next time.
+            val palette = withContext(extraction) { readBitmapPalette(bitmap, key = keyFor(model)) }
+                ?: return null
             cache.put(model, palette)
             palette
         } catch (e: CancellationException) {

@@ -133,6 +133,24 @@ class AccentRolesTest {
         }
     }
 
+    @Test fun `a cover no move can make safe falls back to neutral roles (R7)`() {
+        // A navy too dark and too blue to reach 3:1 on the dark bases within 0.34 lightness: at
+        // its fixed hue and saturation even the lightest allowed step stays under the luminance R1 needs.
+        val base = ambientPaletteFromPixels(solid(Color(0xFF2840C8)))!!
+        val navy = base.copy(vib = Color(0xFF0A0A40), key = "navy")
+        assertEquals(null, navy.coverRolesOrNull(Ground.DARK))
+        val roles = navy.roles(Ground.DARK)
+        assertRules("navy fallback", roles, Ground.DARK)
+        val hsl = roles.accent.toHsl()
+        assertTrue("neutral accent (${hsl[1]})", hsl[1] <= 0.08)
+        assertEquals("the neutral's pale grey", 0.80, hsl[2], 0.03)
+        assertEquals(InkOnBright, roles.onAccent)
+        // Its ambient keeps the cover's colours.
+        assertEquals(navy.dom, roles.dom)
+        assertEquals(navy.vib, roles.vib)
+        assertEquals(navy.mut, roles.mut)
+    }
+
     @Test fun `the brand wears the design system's primary and onPrimary`() {
         val dark = AmbientPalette.Default.roles(Ground.DARK)
         assertEquals(StashPurple, dark.accent)
