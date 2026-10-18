@@ -50,8 +50,8 @@ data class AmbientPalette(
     val textLight: Color = DefaultTextLight,
     /** Ink on [vib] (palette.ts inkFor): white, or near-black when the accent is bright. */
     val ink: Color = Color.White,
-    /** Brand, a coloured cover, or a colourless one; see [PaletteKind]. */
-    val kind: PaletteKind = PaletteKind.COVER,
+    /** Brand, a coloured cover, or a colourless one; see [PaletteKind]. Required: the roles depend on it. */
+    val kind: PaletteKind,
 ) {
     companion object {
         /** The Stash-purple default (palette.ts DEFAULT_PALETTE). */
@@ -87,7 +87,7 @@ internal const val NEUTRAL_MAX_SATURATION = 0.06
 /** Pixels below this alpha are not part of the picture (palette.ts skips them too). */
 private const val OPAQUE_ALPHA = 128
 
-/** Below this mean chroma vector the pixels lean no way: a plain grey, hue 0. */
+/** Below this coherent chroma (see [neutralPaletteFrom]) the pixels lean no way: a plain grey, hue 0. */
 private const val NO_HUE_LEAN = 1e-4
 
 /**
@@ -137,6 +137,7 @@ fun ambientPaletteFromPixels(argb: IntArray, key: String = "img"): AmbientPalett
         textDark = hslToColor(hue, clamp(s + 0.1, 0.55, 0.95), 0.74),
         textLight = hslToColor(hue, 0.55, 0.3),
         ink = inkFor(vib),
+        kind = PaletteKind.COVER,
     )
 }
 
@@ -150,33 +151,41 @@ fun readCoverPalette(argb: IntArray, key: String = "img"): AmbientPalette? =
     ambientPaletteFromPixels(argb, key) ?: neutralPaletteFrom(argb, key)
 
 /**
- * The neutral palette of a colourless cover: the image's mean hue (each pixel's hue weighted by its
- * saturation, averaged on the colour circle, so a sepia stays warm and pure greys add no hue) at a
- * saturation of at most [NEUTRAL_MAX_SATURATION], on the cover palette's lightness ladder (dom 0.24,
- * vib from the image's mean lightness held to 0.45..0.62, mut 0.27; inks at 0.80 and 0.30). Null
- * when no pixel is opaque enough to read.
+ * The neutral palette of a colourless cover: the image's coherent lean, on the cover palette's
+ * lightness ladder (dom 0.24, vib from the image's mean lightness held to 0.45..0.62, mut 0.27;
+ * inks at 0.80 and 0.30). Null when no pixel is opaque enough to read.
+ *
+ * The lean is the mean of every pixel's chroma vector (its hue as a direction, its chroma, max - min
+ * of the channels, as the length). A sepia's pixels all point one way, so it keeps a warm hint; the
+ * random hues of JPEG noise on a black-and-white cover cancel out, so it stays grey. Chroma rather
+ * than HSL saturation weights the vote because a near-black or near-white pixel with a few levels of
+ * noise has a large HSL saturation but almost no colour. The saturation is the lean's length, held to
+ * [NEUTRAL_MAX_SATURATION].
  */
 fun neutralPaletteFrom(argb: IntArray, key: String = "img"): AmbientPalette? {
     var seen = 0
     var sx = 0.0
     var sy = 0.0
-    var satSum = 0.0
     var lumSum = 0.0
     for (p in argb) {
         if ((p ushr 24) and 0xFF < OPAQUE_ALPHA) continue
-        val hsl = rgbToHsl((p shr 16) and 0xFF, (p shr 8) and 0xFF, p and 0xFF)
+        val r = (p shr 16) and 0xFF
+        val g = (p shr 8) and 0xFF
+        val b = p and 0xFF
+        val hsl = rgbToHsl(r, g, b)
+        val chroma = (max(r, max(g, b)) - min(r, min(g, b))) / 255.0
         seen++
-        sx += cos(Math.toRadians(hsl[0])) * hsl[1]
-        sy += sin(Math.toRadians(hsl[0])) * hsl[1]
-        satSum += hsl[1]
+        sx += cos(Math.toRadians(hsl[0])) * chroma
+        sy += sin(Math.toRadians(hsl[0])) * chroma
         lumSum += hsl[2]
     }
     if (seen == 0) return null
     // A hue only means something when the pixels lean one way; pure greys (or hues that cancel
-    // each other out) give a plain grey.
-    val leaning = hypot(sx, sy) / seen >= NO_HUE_LEAN
+    // each other out, as noise does) give a plain grey.
+    val lean = hypot(sx, sy) / seen
+    val leaning = lean >= NO_HUE_LEAN
     val hue = if (leaning) (Math.toDegrees(atan2(sy, sx)) + 360) % 360 else 0.0
-    val s = if (leaning) min(satSum / seen, NEUTRAL_MAX_SATURATION) else 0.0
+    val s = if (leaning) min(lean, NEUTRAL_MAX_SATURATION) else 0.0
     val vib = hslToColor(hue, s, clamp(lumSum / seen, 0.45, 0.62))
     return AmbientPalette(
         dom = hslToColor(hue, s, 0.24),

@@ -90,6 +90,24 @@ class AmbientPaletteTest {
         listOf(l.dom, l.mut, l.textLight).forEach { assertGrey("bw light", it) }
     }
 
+    @Test fun `JPEG-style noise on a black and white cover stays grey`() {
+        // A black and white checker with every channel jittered by up to 3 levels, as a JPEG's
+        // chroma noise does: each pixel has a random hue (and near-black / near-white pixels a large
+        // HSL saturation), but they lean no way together.
+        val rnd = java.util.Random(42)
+        fun j(v: Int) = (v + rnd.nextInt(7) - 3).coerceIn(0, 255)
+        val noisy = IntArray(1024) { i ->
+            val v = if ((i / 32 + i) % 2 == 0) 12 else 243
+            px(j(v), j(v), j(v))
+        }
+        val p = readCoverPalette(noisy, key = "noisy")!!
+        assertEquals(PaletteKind.NEUTRAL, p.kind)
+        for (c in listOf(p.dom, p.vib, p.mut, p.textDark, p.textLight)) {
+            val s = rgbToHsl(Math.round(c.red * 255), Math.round(c.green * 255), Math.round(c.blue * 255))[1]
+            assertTrue("noise must not tint ${hex(c)} ($s)", s <= 0.01)
+        }
+    }
+
     @Test fun `a sepia cover reads as a warm neutral`() {
         // Sepia: colour well below the vote's 0.18 saturation floor, hue about 34 degrees.
         val sepia = IntArray(1024) { i -> if (i % 3 == 0) px(140, 128, 112) else px(90, 80, 68) }
