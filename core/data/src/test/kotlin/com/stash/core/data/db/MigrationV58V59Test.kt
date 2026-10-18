@@ -22,7 +22,8 @@ import org.robolectric.annotation.Config
 
 /**
  * v58 -> v59 adds `listening_events.local_day`, `local_minute` and `listened_ms` (all NULL on
- * existing rows) and the (local_day, track_id) index. Stash has no destructive fallback, so every way
+ * existing rows) and the covering day index (local_day, track_id, started_at, listened_ms,
+ * local_minute). Stash has no destructive fallback, so every way
  * a phone reaches 59 is walked: master's 56 (the shipped v0.9.116), 57 and 58, and the All Songs
  * PR's debug v57. Each run validates every table and index against the exported 59.json.
  */
@@ -45,7 +46,7 @@ class MigrationV58V59Test {
     private val from56 = arrayOf(StashDatabase.MIGRATION_56_57, *from57)
 
     private val newColumns = listOf("local_day", "local_minute", "listened_ms")
-    private val newIndex = "index_listening_events_local_day_track_id"
+    private val newIndex = "index_listening_events_local_day_track_id_started_at_listened_ms_local_minute"
 
     /** Two listens on the seeded track (one from the web) and an unsent ListenBrainz outcome on the first. */
     private fun seedHistory(db: SupportSQLiteDatabase) {
@@ -99,7 +100,7 @@ class MigrationV58V59Test {
         assertEquals(false, indexes(db, "listening_events")[newIndex])
         db.query("PRAGMA index_info(`$newIndex`)").use { c ->
             val cols = buildList { while (c.moveToNext()) add(c.getString(c.getColumnIndexOrThrow("name"))) }
-            assertEquals(listOf("local_day", "track_id"), cols)
+            assertEquals(listOf("local_day", "track_id", "started_at", "listened_ms", "local_minute"), cols)
         }
         assertHistoryKeptAndUnstamped(db)
         assertLibraryUnchanged(db)

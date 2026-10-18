@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 59,
-    "identityHash": "c85ebd7f42f373be7cc7ecc4bd862b4e",
+    "identityHash": "84954f3a998accdbc4a4345b8eb49448",
     "entities": [
       {
         "tableName": "tracks",
@@ -1258,14 +1258,17 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_events_yt_scrobbled` ON `${TABLE_NAME}` (`yt_scrobbled`)"
           },
           {
-            "name": "index_listening_events_local_day_track_id",
+            "name": "index_listening_events_local_day_track_id_started_at_listened_ms_local_minute",
             "unique": false,
             "columnNames": [
               "local_day",
-              "track_id"
+              "track_id",
+              "started_at",
+              "listened_ms",
+              "local_minute"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_events_local_day_track_id` ON `${TABLE_NAME}` (`local_day`, `track_id`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_events_local_day_track_id_started_at_listened_ms_local_minute` ON `${TABLE_NAME}` (`local_day`, `track_id`, `started_at`, `listened_ms`, `local_minute`)"
           }
         ],
         "foreignKeys": [
@@ -2583,7 +2586,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c85ebd7f42f373be7cc7ecc4bd862b4e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '84954f3a998accdbc4a4345b8eb49448')"
     ]
   }
 }

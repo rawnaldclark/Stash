@@ -38,8 +38,10 @@ import androidx.room.PrimaryKey
         Index(value = ["started_at"]),
         Index(value = ["scrobbled"]),
         Index(value = ["yt_scrobbled"]),
-        // v59: History, Top songs, Stats and Your Year read day ranges, grouped by song.
-        Index(value = ["local_day", "track_id"]),
+        // v59: Top songs, Stats and Your Year read day ranges grouped by song or day. The index
+        // covers every column those reads need, so they never touch a table row (see
+        // ListeningHistorySql: 5-10x faster at 60k listens than a (local_day, track_id) index).
+        Index(value = ["local_day", "track_id", "started_at", "listened_ms", "local_minute"]),
     ],
 )
 data class ListeningEventEntity(

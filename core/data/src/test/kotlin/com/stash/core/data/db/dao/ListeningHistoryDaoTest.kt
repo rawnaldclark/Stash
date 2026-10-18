@@ -295,6 +295,17 @@ class ListeningHistoryDaoTest {
         assertEquals(0, dao.countNewTracksIn(100, 200))
     }
 
+    @Test fun `an earlier listen not yet stamped still makes a song not new`() = runTest {
+        track(1, "Old", "X")
+        track(2, "New", "X")
+        listen(1, null, minute = null, startedAt = 5 * ListeningDay.MS_PER_DAY) // UTC day 5
+        listen(1, 20)
+        listen(2, null, minute = null, startedAt = 20 * ListeningDay.MS_PER_DAY + 1) // in range, unstamped
+        assertEquals(listOf(2L), dao.newTracksIn(10, 30).map { it.track.id })
+        assertEquals(1, dao.countNewTracksIn(10, 30))
+        assertEquals(2, dao.countNewTracksIn(0, 30))
+    }
+
     @Test fun `obsession is the most plays of one song in one day, the later day on a tie`() = runTest {
         track(1, "A", "X")
         track(2, "B", "X")

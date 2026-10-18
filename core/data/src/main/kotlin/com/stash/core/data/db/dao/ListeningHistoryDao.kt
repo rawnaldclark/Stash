@@ -15,22 +15,55 @@ import kotlinx.coroutines.flow.Flow
  * The read queries of [ListeningHistoryDao], as constants so `ListeningHistoryQueryPlanTest` can run
  * EXPLAIN QUERY PLAN on exactly the SQL Room runs.
  *
- * The fragments are shared by every query, so History, Top songs, Stats and Your Year agree on what
- * a day is:
- *  - DAY: a listen's local day (v59). A row written before v59 that ListeningDayBackfill hasn't
- *    reached yet falls back to its UTC day.
- *  - IN_DAYS: "the listen's day is in [:fromDay, :toDay]", written so SQLite can use an index: a
- *    range on `local_day` (index local_day, track_id) OR, for unstamped rows, the same days as a
- *    `started_at` range. `COALESCE(...) BETWEEN` would read every row.
- *  - LISTENED: the real listening time, else the song's length (owner decision 5), else 0.
+ * Every day-range read starts from [LE], the listens of the range read straight off the covering
+ * v59 index (local_day, track_id, started_at, listened_ms, local_minute): no table row is touched,
+ * and songs are joined only after grouping (one lookup per song, not per listen). Measured on the
+ * Pixel 5 rig with 60k listens, an all-time read is tens of milliseconds this way; reading table rows
+ * per listen (an `OR` day filter, a per-listen join) made the same reads 5-10x slower, and the
+ * earlier-listen check of [NEW_TRACKS] as a correlated NOT EXISTS was quadratic.
+ *
+ * What a day is, shared by every query so History, Top songs, Stats and Your Year agree: the
+ * listen's local day (v59); a row not yet stamped by ListeningDayBackfill counts on its UTC day.
  */
 internal object ListeningHistorySql {
+    /** A listen's day, for the few queries that read table rows (History, deletes). */
     const val DAY = "COALESCE(le.local_day, le.started_at / 86400000)"
+
+    /** "The listen's day is in [:fromDay, :toDay]" over table rows (privacy deletes only). */
     const val IN_DAYS =
         "(le.local_day BETWEEN :fromDay AND :toDay OR (le.local_day IS NULL " +
             "AND le.started_at >= :fromDay * 86400000 AND le.started_at < (:toDay + 1) * 86400000))"
 
-    const val LISTENED = "COALESCE(le.listened_ms, t.duration_ms, 0)"
+    /**
+     * The listens with a day in [:fromDay, :toDay] as (day, track_id, started_at, listened_ms,
+     * minute): stamped rows from the covering index, then the unstamped ones by their UTC day and
+     * minute (normally none; an indexed `local_day IS NULL` lookup). UNION ALL rather than OR: an OR
+     * makes SQLite fetch every table row by rowid.
+     */
+    const val LE =
+        "(SELECT local_day AS day, track_id, started_at, listened_ms, " +
+            "COALESCE(local_minute, (started_at % 86400000) / 60000) AS minute " +
+            "FROM listening_events WHERE local_day BETWEEN :fromDay AND :toDay " +
+            "UNION ALL SELECT started_at / 86400000, track_id, started_at, listened_ms, (started_at % 86400000) / 60000 " +
+            "FROM listening_events WHERE local_day IS NULL " +
+            "AND started_at >= :fromDay * 86400000 AND started_at < (:toDay + 1) * 86400000)"
+
+    /** Songs with any listen on a day before :fromDay (the same day rule as [LE]). */
+    const val HEARD_BEFORE =
+        "(SELECT track_id FROM listening_events WHERE local_day < :fromDay " +
+            "UNION ALL SELECT track_id FROM listening_events WHERE local_day IS NULL AND started_at < :fromDay * 86400000)"
+
+    /**
+     * Per song in the range: listens, the last start, the known listening time and how many listens
+     * have none (those count the song's length, owner decision 5).
+     */
+    const val PER_TRACK =
+        "(SELECT le.track_id AS tid, COUNT(*) AS plays, MAX(le.started_at) AS lastAt, " +
+            "SUM(COALESCE(le.listened_ms, 0)) AS known, SUM(le.listened_ms IS NULL) AS unknown " +
+            "FROM " + LE + " le GROUP BY le.track_id)"
+
+    /** A listen's time: the real time, else its song's length (looked up only then), else 0. */
+    const val LISTENED = "COALESCE(le.listened_ms, (SELECT d.duration_ms FROM tracks d WHERE d.id = le.track_id), 0)"
 
     const val HISTORY_PAGE =
         """
@@ -47,67 +80,61 @@ internal object ListeningHistorySql {
         """
 
     const val DAY_COUNTS =
-        "SELECT " + DAY + " AS day, COUNT(*) AS plays, SUM(" + LISTENED + ") AS listenedMs " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY day ORDER BY day"
+        "SELECT le.day AS day, COUNT(*) AS plays, SUM(" + LISTENED + ") AS listenedMs " +
+            "FROM " + LE + " le GROUP BY le.day ORDER BY le.day"
 
     const val TOP_TRACKS =
-        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY le.track_id " +
-            "ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit"
+        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt " +
+            "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid " +
+            "ORDER BY a.plays DESC, a.lastAt DESC, a.tid ASC LIMIT :limit"
 
     const val TOP_ARTISTS =
-        "SELECT t.artist AS artist, COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
-            "MAX(le.started_at) AS lastPlayedAt, t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY LOWER(t.artist) " +
-            "ORDER BY plays DESC, lastPlayedAt DESC, LOWER(t.artist) ASC LIMIT :limit"
+        "SELECT t.artist AS artist, SUM(a.plays) AS plays, COUNT(*) AS songs, MAX(a.lastAt) AS lastPlayedAt, " +
+            "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
+            "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid " +
+            "GROUP BY LOWER(t.artist) ORDER BY plays DESC, lastPlayedAt DESC, LOWER(t.artist) ASC LIMIT :limit"
 
     const val TOP_ALBUMS =
         "SELECT t.album AS album, COALESCE(NULLIF(t.album_artist, ''), t.artist) AS artist, " +
-            "COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, MAX(le.started_at) AS lastPlayedAt, " +
+            "SUM(a.plays) AS plays, COUNT(*) AS songs, MAX(a.lastAt) AS lastPlayedAt, " +
             "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " AND t.album != '' " +
+            "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid WHERE t.album != '' " +
             "GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist)) " +
             "ORDER BY plays DESC, lastPlayedAt DESC LIMIT :limit"
 
     const val TOTALS =
-        "SELECT COUNT(*) AS plays, COUNT(DISTINCT le.track_id) AS songs, " +
-            "COUNT(DISTINCT LOWER(t.artist)) AS artists, COUNT(DISTINCT " + DAY + ") AS days, " +
-            "COALESCE(SUM(" + LISTENED + "), 0) AS listenedMs, " +
-            "COALESCE(SUM(le.listened_ms IS NULL), 0) AS estimatedPlays " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id WHERE " + IN_DAYS
+        "SELECT COALESCE(SUM(a.plays), 0) AS plays, COUNT(*) AS songs, " +
+            "COUNT(DISTINCT LOWER(t.artist)) AS artists, " +
+            "(SELECT COUNT(DISTINCT d.day) FROM " + LE + " d) AS days, " +
+            "COALESCE(SUM(a.known + a.unknown * t.duration_ms), 0) AS listenedMs, " +
+            "COALESCE(SUM(a.unknown), 0) AS estimatedPlays " +
+            "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid"
 
     const val HOUR_HISTOGRAM =
-        "SELECT COALESCE(le.local_minute, (le.started_at % 86400000) / 60000) / 60 AS hour, COUNT(*) AS plays " +
-            "FROM listening_events le WHERE " + IN_DAYS + " GROUP BY hour ORDER BY hour"
+        "SELECT le.minute / 60 AS hour, COUNT(*) AS plays FROM " + LE + " le GROUP BY hour ORDER BY hour"
 
     const val NEW_TRACKS =
-        "SELECT t.*, COUNT(*) AS plays, MAX(le.started_at) AS lastPlayedAt " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
-            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
-            "GROUP BY le.track_id ORDER BY plays DESC, lastPlayedAt DESC, le.track_id ASC LIMIT :limit"
+        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt " +
+            "FROM (SELECT le.track_id AS tid, COUNT(*) AS plays, MAX(le.started_at) AS lastAt FROM " + LE + " le " +
+            "WHERE le.track_id NOT IN " + HEARD_BEFORE + " GROUP BY le.track_id) a " +
+            "INNER JOIN tracks t ON t.id = a.tid ORDER BY a.plays DESC, a.lastAt DESC, a.tid ASC LIMIT :limit"
 
     const val COUNT_NEW_TRACKS =
-        "SELECT COUNT(*) FROM (SELECT le.track_id FROM listening_events le " +
-            "WHERE " + IN_DAYS + " AND NOT EXISTS (SELECT 1 FROM listening_events e2 " +
-            "WHERE e2.track_id = le.track_id AND COALESCE(e2.local_day, e2.started_at / 86400000) < :fromDay) " +
-            "GROUP BY le.track_id)"
+        "SELECT COUNT(DISTINCT le.track_id) FROM " + LE + " le WHERE le.track_id NOT IN " + HEARD_BEFORE
 
     const val OBSESSION =
-        "SELECT t.*, " + DAY + " AS day, COUNT(*) AS plays " +
-            "FROM listening_events le INNER JOIN tracks t ON t.id = le.track_id " +
-            "WHERE " + IN_DAYS + " GROUP BY day, le.track_id ORDER BY plays DESC, day DESC, le.track_id ASC LIMIT 1"
+        "SELECT t.*, o.day AS day, o.plays AS plays " +
+            "FROM (SELECT le.day AS day, le.track_id AS tid, COUNT(*) AS plays FROM " + LE + " le " +
+            "GROUP BY le.day, le.track_id ORDER BY plays DESC, le.day DESC, le.track_id ASC LIMIT 1) o " +
+            "INNER JOIN tracks t ON t.id = o.tid"
 
     const val FIRST_LISTEN_DAY =
         "SELECT " + DAY + " FROM listening_events le ORDER BY le.started_at ASC LIMIT 1"
 
     const val YEARS =
-        "SELECT DISTINCT CAST(strftime('%Y', " + DAY + " * 86400, 'unixepoch') AS INTEGER) AS year " +
-            "FROM listening_events le ORDER BY year DESC"
+        "SELECT DISTINCT CAST(strftime('%Y', d * 86400, 'unixepoch') AS INTEGER) AS year " +
+            "FROM (SELECT DISTINCT COALESCE(local_day, started_at / 86400000) AS d FROM listening_events) " +
+            "ORDER BY year DESC"
 }
 
 /**

@@ -1554,7 +1554,8 @@ abstract class StashDatabase : RoomDatabase() {
          *  - `local_day`: days since 1970-01-01 in the phone's zone at listen time;
          *  - `local_minute`: 0..1439 in that zone;
          *  - `listened_ms`: real playing time, NULL = unknown;
-         *  - index (`local_day`, `track_id`) for day-range reads grouped by song.
+         *  - one index over (`local_day`, `track_id`, `started_at`, `listened_ms`, `local_minute`):
+         *    day-range reads grouped by song or day, answered from the index alone.
          *
          * Plain column adds, no table rebuild: every existing listen keeps its id, its scrobble
          * flags and its unsent ListenBrainz submissions (which hang off the id). Existing rows get
@@ -1568,8 +1569,8 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `listening_events` ADD COLUMN `local_minute` INTEGER")
                 db.execSQL("ALTER TABLE `listening_events` ADD COLUMN `listened_ms` INTEGER")
                 db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_listening_events_local_day_track_id` " +
-                        "ON `listening_events` (`local_day`, `track_id`)",
+                    "CREATE INDEX IF NOT EXISTS `index_listening_events_local_day_track_id_started_at_listened_ms_local_minute` " +
+                        "ON `listening_events` (`local_day`, `track_id`, `started_at`, `listened_ms`, `local_minute`)",
                 )
             }
         }

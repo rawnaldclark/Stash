@@ -95,6 +95,7 @@ class DebugListeningSeeder : BroadcastReceiver() {
         }
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
+        val nowMs = System.currentTimeMillis()
         val activeDays = (0 until DAYS).map { today.minusDays(it.toLong()) }.filter { rnd.nextDouble() < 0.8 }
         val events = ArrayList<ListeningEventEntity>(count)
         repeat(count) {
@@ -104,7 +105,9 @@ class DebugListeningSeeder : BroadcastReceiver() {
             val (trackId, durationMs) = tracks[idx.coerceIn(0, tracks.lastIndex)]
             val date = activeDays[rnd.nextInt(activeDays.size)]
             val time = LocalTime.of(pickHour(rnd), rnd.nextInt(60), rnd.nextInt(60))
-            val startedAt = date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+            val at = date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+            // Today's later hours haven't happened yet: such a listen goes on the day before.
+            val startedAt = if (at > nowMs) at - ListeningDay.MS_PER_DAY else at
             val stamp = ListeningDay.localStamp(startedAt, zone)
             val length = if (durationMs > 0) durationMs else 180_000L
             val listened = (length * (0.5 + rnd.nextDouble() * 0.5)).toLong()
