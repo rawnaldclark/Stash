@@ -29,7 +29,10 @@ import com.stash.feature.home.R
 fun StashVinylLogo(modifier: Modifier = Modifier, size: Dp = 64.dp) {
     var rotation by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(Unit) {
+    // Spins only while Home is in front: under the open player it holds its angle (no frame loop).
+    val active = com.stash.core.ui.components.rememberPageActive()
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
         var lastFrame = 0L
         while (true) {
             withFrameMillis { frameTime ->

@@ -1231,7 +1231,11 @@ private fun SupporterTicker(
     // lazy-item disposal.
     val epochMs = rememberSaveable { System.currentTimeMillis() }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
+    // Runs only while Home is in front: under the open player the tape holds still, and being
+    // wall-clock it picks up mid-flow when the player closes.
+    val tapeActive = com.stash.core.ui.components.rememberPageActive()
+    LaunchedEffect(tapeActive) {
+        if (!tapeActive) return@LaunchedEffect
         while (true) {
             withFrameMillis { nowMs = System.currentTimeMillis() }
         }
