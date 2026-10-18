@@ -70,6 +70,11 @@ data class HistoryUiState(
     val paused: Boolean = false,
     /** The last older page failed to load: the list ends in a Retry instead of a spinner. */
     val olderFailed: Boolean = false,
+    /**
+     * Bumped when the list is replaced (a search, a jump, back to today) rather than grown or read
+     * again in place: the screen keeps the user's row on screen only within one list.
+     */
+    val listId: Int = 0,
 ) {
     /** No listen at all yet (not just none matching the search). */
     val coldStart: Boolean get() = !loading && dayCounts.isEmpty() && days.isEmpty() && query.isBlank()
@@ -360,7 +365,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
         hasOlder = page?.next != null
         hasNewer = false
         _state.update { it.copy(loading = false) }
-        publish()
+        publish(newList = true)
         // A different search starts at its top, not where the last list was scrolled to.
         if (newSearch) _scrollToDay.tryEmit(Long.MAX_VALUE)
     }
@@ -394,7 +399,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
             }
         }
         _state.update { it.copy(loading = false) }
-        publish()
+        publish(newList = true)
         _scrollToDay.tryEmit(target)
     }
 
@@ -485,8 +490,14 @@ class HistoryViewModel @VisibleForTesting internal constructor(
         for (row in page) if (rowIds.add(row.event.id)) rows += row
     }
 
-    private fun publish() {
-        _state.update { it.copy(days = groupByDay(rows), hasOlder = hasOlder, hasNewer = hasNewer) }
+    /** [newList]: the rows replace the list (a search, a jump) rather than grow it. */
+    private fun publish(newList: Boolean = false) {
+        _state.update {
+            it.copy(
+                days = groupByDay(rows), hasOlder = hasOlder, hasNewer = hasNewer,
+                listId = if (newList) it.listId + 1 else it.listId,
+            )
+        }
     }
 
     /** A read that failed (a closed database, a migration in progress) reads as nothing loaded. */

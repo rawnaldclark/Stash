@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,9 +86,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
 
 /** How close to an end of the loaded list the next page starts loading. */
 private const val PREFETCH_ROWS = 30
@@ -161,21 +159,24 @@ fun HistoryScreen(
             val near = listState.firstVisibleItemIndex < PREFETCH_ROWS && state.hasNewer &&
                 listState.layoutInfo.totalItemsCount > 0
             near to listState.layoutInfo.totalItemsCount
-        }.collectLatest { (nearTop, _) ->
-            if (!nearTop) return@collectLatest
-            // Keep the row on screen where it is while newer listens go in above it. Compose
-            // anchors by key on its own, except at the very top, where a jump leaves the list.
-            // The anchor is the item at firstVisibleItemIndex (the offset belongs to it), not the
-            // first item laid out, which is often the pinned sticky header from further up.
-            val first = listState.firstVisibleItemIndex
-            val anchorKey = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == first }?.key
-            val anchorOffset = listState.firstVisibleItemScrollOffset
-            val before = viewModel.state.value.days
-            viewModel.loadNewer()
-            val after = withTimeoutOrNull(10_000) { viewModel.state.first { it.days !== before } } ?: return@collectLatest
-            val index = anchorKey?.let { indexOfKey(after, it) } ?: return@collectLatest
-            if (index != listState.firstVisibleItemIndex) listState.scrollToItem(index, anchorOffset)
-        }
+        }.collect { (nearTop, _) -> if (nearTop) viewModel.loadNewer() }
+    }
+    // Keep the row the user is on where it is when rows go in above it (a newer page, a day read
+    // again). Compose re-finds the first visible item by key only within ~100 items of where it
+    // was, and a page is 200 rows; at the very top it doesn't try at all. So: after the new rows
+    // are composed and before they're laid out, the item that was first (by index, the one the
+    // offset belongs to; not the pinned sticky header) is asked to stay first. Not at the head
+    // of the list, where a listen that just landed should show on top.
+    val anchorFrom = remember { arrayOfNulls<HistoryUiState>(1) }
+    SideEffect {
+        val previous = anchorFrom[0]
+        anchorFrom[0] = state
+        if (previous == null || previous.days === state.days || previous.listId != state.listId) return@SideEffect
+        val oldIndex = listState.firstVisibleItemIndex
+        if (oldIndex <= 1 && !previous.hasNewer) return@SideEffect
+        val key = keyAt(previous, oldIndex) ?: return@SideEffect
+        val newIndex = indexOfKey(state, key) ?: return@SideEffect
+        if (newIndex != oldIndex) listState.requestScrollToItem(newIndex, listState.firstVisibleItemScrollOffset)
     }
     // A listen that lands while the newest ones are on screen shows on top instead of above it.
     val newestId = state.days.firstOrNull()?.rows?.firstOrNull()?.event?.id
@@ -360,6 +361,20 @@ internal fun indexOfKey(state: HistoryUiState, key: Any): Int? {
             if ("e${row.event.id}" == key) return index
             index++
         }
+    }
+    return null
+}
+
+/** The key of the item at [index] in [state]'s list, or null past its end. */
+internal fun keyAt(state: HistoryUiState, index: Int): Any? {
+    val lead = leadingKeys(state)
+    if (index < lead.size) return lead[index]
+    var i = lead.size
+    for (group in state.days) {
+        if (i == index) return group.key
+        i++
+        if (index < i + group.rows.size) return "e${group.rows[index - i].event.id}"
+        i += group.rows.size
     }
     return null
 }

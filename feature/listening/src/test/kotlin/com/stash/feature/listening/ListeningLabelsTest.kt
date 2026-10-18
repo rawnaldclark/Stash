@@ -117,6 +117,20 @@ class ListeningLabelsTest {
         assertThat(com.stash.feature.listening.history.indexOfKey(state, "gone")).isNull()
     }
 
+    @Test fun `keyAt is indexOfKey's inverse over the whole list`() {
+        val rows = List(4) { stubRow() }
+        val state = com.stash.feature.listening.history.HistoryUiState(
+            days = listOf(HistoryDay(TODAY, "a", rows.take(3)), HistoryDay(TODAY - 1, "b", rows.drop(3))),
+            paused = true,
+            loading = false,
+        )
+        for (i in 0 until 7) {
+            val key = com.stash.feature.listening.history.keyAt(state, i)!!
+            assertThat(com.stash.feature.listening.history.indexOfKey(state, key)).isEqualTo(i)
+        }
+        assertThat(com.stash.feature.listening.history.keyAt(state, 7)).isNull()
+    }
+
     private val fake = FakeHistory()
     private fun stubRow() = fake.add(fake.track(1), TODAY, 0)
 }

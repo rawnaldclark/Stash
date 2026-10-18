@@ -171,4 +171,18 @@ class HistoryViewModelEdgeTest {
         assertThat(vm.state.value.showColdStart).isFalse()
         assertThat(leadingKeys(vm.state.value)).containsExactly("paused")
     }
+
+    @Test fun `a jump or a search replaces the list, paging up grows the same one`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 30, perDay = 20) }
+        val vm = viewModel(fake.repository())
+        advanceUntilIdle()
+        val first = vm.state.value.listId
+        vm.jumpTo(TODAY - 25); advanceUntilIdle()
+        val jumped = vm.state.value.listId
+        assertThat(jumped).isNotEqualTo(first)
+        vm.loadNewer(); advanceUntilIdle()
+        assertThat(vm.state.value.listId).isEqualTo(jumped)
+        vm.onQueryChange("song"); advanceUntilIdle()
+        assertThat(vm.state.value.listId).isNotEqualTo(jumped)
+    }
 }
