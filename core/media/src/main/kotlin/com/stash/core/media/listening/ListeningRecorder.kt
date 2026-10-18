@@ -9,6 +9,8 @@ import com.stash.core.data.listen.ListenSinkCoordinator
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
+import com.stash.core.data.listening.ListeningDay
+import com.stash.core.data.listening.ListeningDayBackfill
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.mediaToWallMs
@@ -24,6 +26,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,6 +56,11 @@ import javax.inject.Singleton
  *   - When repeat-one is active, a position reset back to near zero
  *     on the same track is treated as a new play session so each loop
  *     counts as a separate scrobble.
+ *   - v59: each listen is stamped with the local day and minute it started
+ *     ([ListeningDay]), and keeps counting its real playing time after it is
+ *     recorded. That time is written to `listened_ms` when the session ends
+ *     (next song, a repeat-one restart, stop) and on every pause. If the app
+ *     dies mid-song it stays NULL, and totals fall back to the song's length.
  */
 @Singleton
 class ListeningRecorder @VisibleForTesting internal constructor(
@@ -65,6 +73,10 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val scope: CoroutineScope,
     /** Monotonic clock for listening time. Tests pass the test scheduler's time. */
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** The zone a listen's local day is read in: the phone's zone at the time. */
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    /** Stamps the local day on listens from before v59 (ListeningDayBackfill.run). */
+    private val backfillListeningDays: suspend () -> Unit = {},
 ) {
 
     @Inject
@@ -75,6 +87,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         trackSkipEventDao: TrackSkipEventDao,
         scrobbler: LastFmScrobbler,
         listenSinks: ListenSinkCoordinator,
+        listeningDayBackfill: ListeningDayBackfill,
     ) : this(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
@@ -84,6 +97,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         listenSinks = listenSinks,
         // One thread at a time: the track and play-state collectors both read and write `pending`.
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
+        backfillListeningDays = { listeningDayBackfill.run() },
     )
 
     /**
@@ -104,6 +118,18 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         var playingSinceMs = 0L
         /** The playback speed of the current play stretch. */
         var speed = 1f
+
+        // v59 listening time. Separate from the countdown above, which stops once the listen is
+        // claimed: this keeps running until the session ends, and is wall time (10 s at 2x is
+        // 10 s of the user's day).
+        /** The listen's row once [recordListen] wrote it; null before that, and for a skip. */
+        var eventId: Long? = null
+        /** Wall time played in finished stretches of this session. */
+        var listenedMs = 0L
+        /** Monotonic start of the stretch playing now; null while paused. */
+        var listeningSinceMs: Long? = null
+        /** The session is over: a listen recorded after this writes its time straight away. */
+        var ended = false
     }
 
     private var pending: PendingFire? = null
@@ -121,6 +147,16 @@ class ListeningRecorder @VisibleForTesting internal constructor(
             startTrackChangeCollector()
             startRepeatCollector()
             startSpeedCollector()
+        }
+        // Its own coroutine: a long history takes a few batches, and listening must not wait.
+        scope.launch {
+            try {
+                backfillListeningDays()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to stamp the local day of earlier listens", e)
+            }
         }
     }
 
@@ -155,6 +191,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                                 recordSkip(previousPending.track, position)
                             }
                         }
+                        endSession(previousPending)
                     }
                     if (trackChanged) pending = null
 
@@ -164,9 +201,15 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     val track = state.currentTrack ?: return@collect
                     val current = pending
                     when {
-                        !state.isPlaying -> current?.let { pauseCountdown(it) }
+                        !state.isPlaying -> current?.let {
+                            pauseCountdown(it)
+                            pauseListenClock(it)
+                        }
                         current == null -> schedulePendingFire(track)
-                        else -> resumeCountdown(current)
+                        else -> {
+                            resumeCountdown(current)
+                            startListenClock(current)
+                        }
                     }
                 }
         }
@@ -204,6 +247,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     if (isRepeatOne && positionJumpedBack) {
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
                         pending?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
+                        pending?.let { endSession(it) }
                         pending = null
                         // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
                         if (state.isPlaying) schedulePendingFire(track)
@@ -250,6 +294,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         )
         pending = session
         resumeCountdown(session)
+        startListenClock(session)
         scope.launch {
             scrobbler.notifyNowPlaying(
                 artist = track.artist,
@@ -290,6 +335,51 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         job.cancel()
         session.job = null
         session.playedMs += wallToMediaMs(nowMs() - session.playingSinceMs, session.speed)
+    }
+
+    /** Play started or resumed: the session's listening time runs again. */
+    private fun startListenClock(session: PendingFire) {
+        if (session.ended || session.listeningSinceMs != null) return
+        session.listeningSinceMs = nowMs()
+    }
+
+    /** Banks the stretch playing now, if any, into [PendingFire.listenedMs]. */
+    private fun bankListenClock(session: PendingFire) {
+        val since = session.listeningSinceMs ?: return
+        session.listenedMs += (nowMs() - since).coerceAtLeast(0L)
+        session.listeningSinceMs = null
+    }
+
+    /**
+     * Paused or buffering: bank the stretch and, when the listen is already recorded, write the
+     * time so far, so an app killed while paused still keeps it.
+     */
+    private suspend fun pauseListenClock(session: PendingFire) {
+        bankListenClock(session)
+        writeListenedMs(session)
+    }
+
+    /**
+     * The session is over (another song, a repeat-one restart, stop): bank and write its final
+     * listening time. A listen whose row is still being written gets it from [recordListen].
+     */
+    private suspend fun endSession(session: PendingFire) {
+        if (session.ended) return
+        bankListenClock(session)
+        session.ended = true
+        writeListenedMs(session)
+    }
+
+    private suspend fun writeListenedMs(session: PendingFire) {
+        val eventId = session.eventId ?: return
+        try {
+            listeningEventDao.setListenedMs(eventId, session.listenedMs)
+            Log.i(TAG, "LDTMP listened_ms=${session.listenedMs} event=$eventId ended=${session.ended}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write listening time", e)
+        }
     }
 
     /**
@@ -353,7 +443,9 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         try {
             val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             val completedAt = System.currentTimeMillis()
-            listeningEventDao.recordCompletedListen(
+            // The day it started on, where the listener is: a song that crosses midnight is the earlier day's.
+            val stamp = ListeningDay.localStamp(session.sessionStart, zone())
+            session.eventId = listeningEventDao.recordCompletedListen(
                 ListeningEventEntity(
                     trackId = persistedTrackId,
                     startedAt = session.sessionStart,
@@ -361,8 +453,14 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     // v0.9.13: insert IS the completion event — recorder only fires
                     // after threshold delay. AutoSaveScrobbler reads completed_at.
                     completedAt = completedAt,
+                    localDay = stamp.day,
+                    localMinute = stamp.minute,
+                    // listened_ms stays NULL until the session ends: the song is still playing.
                 ),
             )
+            Log.i(TAG, "LDTMP recorded event=${session.eventId} day=${stamp.day} minute=${stamp.minute}")
+            // The song changed while the row was being written: its time is final already.
+            if (session.ended) writeListenedMs(session)
             // Push the new listen to the generic sinks (ListenBrainz).
             // Last.fm has its own Flow-driven scrobbler and needs no nudge.
             listenSinks.onListenRecorded()

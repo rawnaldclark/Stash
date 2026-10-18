@@ -265,6 +265,10 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.animation)
     debugImplementation(libs.compose.ui.tooling)
+    // Debug only: DebugListeningSeeder (app/src/debug) writes synthetic listens through Room.
+    // Release builds don't touch the database from :app.
+    debugImplementation(libs.room.runtime)
+    debugImplementation(libs.room.ktx)
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)
