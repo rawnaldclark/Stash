@@ -91,9 +91,12 @@ fun ClassicAmbientBackground(
         drawRect(color = if (amoledMode) Color.Black else if (lightMode) ClassicBaseLight else ClassicBaseDark)
 
         // Pastel treatment for the light wash: blend toward white, lower alpha.
-        fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float): Color =
+        fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float, liftToWhite: Boolean): Color =
             if (lightMode) {
-                lerp(color, Color.White, 0.25f).copy(alpha = lightAlpha)
+                // dom and mut arrive already lifted for the light ground (the palette's forScheme);
+                // only vib, which the lift leaves alone, still takes the old step toward white, so
+                // the orbs keep the weight they had over the raw colours.
+                (if (liftToWhite) lerp(color, Color.White, 0.25f) else color).copy(alpha = lightAlpha)
             } else {
                 color.copy(alpha = darkAlpha)
             }
@@ -110,7 +113,7 @@ fun ClassicAmbientBackground(
         // Gradient 1 — dominant, highest presence.
         val center1 = orbitalCenter(angle1)
         drawCircle(
-            color = orbColor(colors.dom, darkAlpha = 0.35f, lightAlpha = 0.22f),
+            color = orbColor(colors.dom, darkAlpha = 0.35f, lightAlpha = 0.22f, liftToWhite = false),
             radius = gradientRadius,
             center = center1,
         )
@@ -118,7 +121,7 @@ fun ClassicAmbientBackground(
         // Gradient 2 — vibrant, medium presence.
         val center2 = orbitalCenter(angle2)
         drawCircle(
-            color = orbColor(colors.vib, darkAlpha = 0.25f, lightAlpha = 0.15f),
+            color = orbColor(colors.vib, darkAlpha = 0.25f, lightAlpha = 0.15f, liftToWhite = true),
             radius = gradientRadius * 0.85f,
             center = center2,
         )
@@ -126,7 +129,7 @@ fun ClassicAmbientBackground(
         // Gradient 3 — muted, subtle presence.
         val center3 = orbitalCenter(angle3)
         drawCircle(
-            color = orbColor(colors.mut, darkAlpha = 0.20f, lightAlpha = 0.11f),
+            color = orbColor(colors.mut, darkAlpha = 0.20f, lightAlpha = 0.11f, liftToWhite = false),
             radius = gradientRadius * 0.70f,
             center = center3,
         )

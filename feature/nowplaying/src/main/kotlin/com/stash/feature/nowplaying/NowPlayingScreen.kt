@@ -902,18 +902,15 @@ fun NowPlayingScreen(
                                 // The like heart floats at the right edge (relocated out of the
                                 // crowded top icon row); symmetric horizontal padding keeps the
                                 // title/artist block optically centred under the album art.
-                                WithAlbumChrome { infoChrome ->
-                                    TrackInfoBlock(
-                                        track = track,
-                                        resolvingArtist = resolvingArtist,
-                                        onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                        sleepTimerState = sleepTimerState,
-                                        onSleepTimerClick = { showSleepTimerSheet = true },
-                                        accent = infoChrome.accent,
-                                        isLiked = uiState.currentTrack?.stashLikedAt != null,
-                                        onLikeTap = viewModel::onLikeTap,
-                                    )
-                                }
+                                TrackInfoBlock(
+                                    track = track,
+                                    resolvingArtist = resolvingArtist,
+                                    onTrackInfoTapped = viewModel::onTrackInfoTapped,
+                                    sleepTimerState = sleepTimerState,
+                                    onSleepTimerClick = { showSleepTimerSheet = true },
+                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                    onLikeTap = viewModel::onLikeTap,
+                                )
 
                                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
                                 // Sized smaller than the artist/album line; degrades gracefully when
@@ -1256,7 +1253,6 @@ private fun TrackInfoBlock(
     onTrackInfoTapped: () -> Unit,
     sleepTimerState: SleepTimerController.State,
     onSleepTimerClick: () -> Unit,
-    accent: Color,
     isLiked: Boolean,
     onLikeTap: () -> Unit,
 ) {
@@ -1346,11 +1342,12 @@ private fun TrackInfoBlock(
         // while a timer is armed, with the time left under the moon
         // ("23m", "0:45", "End"), so the state is visible at a
         // glance without opening the sheet.
-        if (track != null) {
+        // The album accent is read in its own scope: the crossfade recomposes the button, not the title.
+        if (track != null) WithAlbumChrome { chrome ->
             SleepTimerButton(
                 state = sleepTimerState,
                 onClick = onSleepTimerClick,
-                activeTint = accent,
+                activeTint = chrome.accent,
                 idleTint = npInk().copy(alpha = 0.7f),
                 buttonSize = 26.dp,
                 iconSize = 20.dp,
@@ -1479,7 +1476,7 @@ private fun PlaybackControls(
             )
         }
 
-        // Play / Pause — large gradient circle. While the track is still
+        // Play / Pause — large accent circle. While the track is still
         // resolving/buffering, show a spinner in place of the icon so it
         // doesn't look frozen — but the button STAYS enabled: a slow or hung
         // stream resolve must never lock the user out of pausing (Media3's
@@ -1493,7 +1490,7 @@ private fun PlaybackControls(
                 // over the ambient, which read as a darker shade when the player opened).
                 .drawBehind { drawRect(chrome.accent) },
         ) {
-            // On the accent-gradient circle, not the ambient ground: the accent's own ink (white,
+            // On the accent circle, not the ambient ground: the accent's own ink (white,
             // or near-black on a pale accent), the mini player's play button's ink too.
             if (isBuffering) {
                 CircularProgressIndicator(
