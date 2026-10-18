@@ -75,6 +75,9 @@ object ChromeGlassDefaults {
 
     /** Below API 31 (no blur): the surface, nearly opaque. */
     const val FALLBACK_ALPHA = 0.95f
+
+    /** The floating tab bar's and the mini player's margin from the screen's sides, so they stack as a pair. */
+    val FloatingSideMargin: Dp = 12.dp
 }
 
 /**

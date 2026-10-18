@@ -68,6 +68,7 @@ import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
+import com.stash.core.ui.components.ChromeGlassDefaults
 import com.stash.core.ui.components.chromeGlass
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
@@ -89,7 +90,7 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 private val MiniHeight = 60.dp
 private val MiniShape = RoundedCornerShape(16.dp)
 val MiniPlayerMargin = 8.dp
-private val MiniPlayerSideMargin = 12.dp
+private val MiniPlayerSideMargin = ChromeGlassDefaults.FloatingSideMargin
 
 /** box-shadow: 0 16px 32px -12px rgb(0 0 0 / .5). */
 private val MiniShadow = Shadow(
