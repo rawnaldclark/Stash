@@ -110,6 +110,12 @@ class PlayerSheetState(
     /** Snaps without animating (the system's animations are off). */
     var reducedMotion: Boolean = false
 
+    /** Right-to-left layout: the mini player's cover sits at the card's right end. */
+    var isRtl: Boolean = false
+
+    /** The travelling cover has something to draw; until then the mini player keeps its own. */
+    var travellerReady by mutableStateOf(false)
+
     /** A light haptic tick, fired when a drag that passed the actuation distance lands. */
     var onSnapHaptic: (() -> Unit)? = null
 
@@ -141,12 +147,17 @@ class PlayerSheetState(
         return Rect(margin, bottom - 60f * density, w - margin, bottom)
     }
 
-    /** The mini player's cover: 44 dp, 8 dp in from the card's top-left (MiniPlayer's layout). */
+    /**
+     * The mini player's cover: 44 dp, 8 dp in from the card's top start corner (MiniPlayer's layout;
+     * the right end in RTL). Derived from the card's resting rect rather than measured, so a press,
+     * a swipe in progress or the dip can never leave the cover's start point off by their offset.
+     */
     fun miniArtRect(): Rect {
         val card = effectiveMiniCardRect()
         val inset = 8f * density
         val side = 44f * density
-        return Rect(Offset(card.left + inset, card.top + inset), Size(side, side))
+        val left = if (isRtl) card.right - inset - side else card.left + inset
+        return Rect(Offset(left, card.top + inset), Size(side, side))
     }
 
     /** The big cover, or an estimate (centred square under the top row) before it was first laid out. */
@@ -247,15 +258,16 @@ class PlayerSheetState(
      * The finger lifted at [velocityUpDpS] (positive = up): snap to wherever [PlayerSheetMath.settleTarget]
      * says, with a haptic tick when the drag passed the actuation distance.
      */
-    fun endDrag(velocityUpDpS: Float) {
+    fun endDrag(velocityUpDpS: Float, recentUpDp: Float = velocityUpDpS) {
         if (!isDragging) return
+        val velocity = PlayerSheetMath.releaseVelocity(velocityUpDpS, recentUpDp)
         isDragging = false
         val distanceDp = (raw - startRaw) * travelPx() / density
         val start = PlayerSheetMath.startAnchorOf(startProgress)
         val target = PlayerSheetMath.settleTarget(
             start = start,
             distanceDp = distanceDp,
-            velocityDpS = velocityUpDpS,
+            velocityDpS = velocity,
             actuationDp = actuationDp,
             queueEnabled = queueEnabled,
         )
@@ -263,7 +275,7 @@ class PlayerSheetState(
     }
 
     /** The drag was cancelled (the gesture node left): settle where the sheet already leans. */
-    fun cancelDrag() = endDrag(0f)
+    fun cancelDrag() = endDrag(0f, 0f)
 
     // ---------------------------------------------------------------------------------------------
     // Back
@@ -286,7 +298,12 @@ class PlayerSheetState(
         return when (targetAnchor) {
             PlayerSheetAnchor.QUEUE -> { launchSnap(PlayerSheetAnchor.FULL); true }
             PlayerSheetAnchor.FULL -> { collapse(); true }
-            PlayerSheetAnchor.MINI -> if (value.floatValue > 0f) { collapse(); true } else false
+            // Already closing: Back is ours (the page under the moving player stays), nothing to do.
+            PlayerSheetAnchor.MINI -> when {
+                value.floatValue <= 0f && animJob?.isActive != true -> false
+                animJob?.isActive == true -> true
+                else -> { collapse(); true }
+            }
         }
     }
 

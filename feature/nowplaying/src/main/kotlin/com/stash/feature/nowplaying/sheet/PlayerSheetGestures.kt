@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,22 +106,31 @@ private suspend fun PointerInputScope.detectSheetDrag(
     // 2) Ours: track the finger until it lifts.
     state.beginDrag()
     state.dragBy(-overSlop)
+    // The finger's last root positions (uptime ms, y), for which way it was going as it lifted.
+    val recent = ArrayDeque<Pair<Long, Float>>()
     var settled = false
     try {
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
-            var change = event.changes.firstOrNull { it.id == pointer }
+            val change = event.changes.firstOrNull { it.id == pointer }
             if (change == null || !change.pressed) {
                 // Our finger lifted; carry on with another one still down, as verticalDrag does.
+                // Its velocity starts afresh: the two fingers' positions aren't one path.
                 change?.consume()
                 val other = event.changes.firstOrNull { it.pressed } ?: break
                 pointer = other.id
                 last = holder.toRoot(other.position)
+                tracker.resetTracking()
+                tracker.addPosition(other.uptimeMillis, last)
+                recent.clear()
+                recent.addLast(other.uptimeMillis to last.y)
                 other.consume()
                 continue
             }
             val pos = holder.toRoot(change.position)
             tracker.addPosition(change.uptimeMillis, pos)
+            recent.addLast(change.uptimeMillis to pos.y)
+            while (recent.size > RECENT_SAMPLES) recent.removeFirst()
             val dy = pos.y - last.y
             last = pos
             if (dy != 0f) state.dragBy(-dy)
@@ -128,10 +138,35 @@ private suspend fun PointerInputScope.detectSheetDrag(
         }
         val velocity = tracker.calculateVelocity()
         settled = true
-        state.endDrag(velocityUpDpS = -velocity.y / density)
+        state.endDrag(
+            velocityUpDpS = -velocity.y / density,
+            recentUpDp = -recentMovementPx(recent) / density,
+        )
     } finally {
         if (!settled) state.cancelDrag()
     }
+}
+
+/** How many recent finger samples are kept for the lift's direction. */
+private const val RECENT_SAMPLES = 8
+
+/** How far back the lift's direction looks. */
+private const val RECENT_WINDOW_MS = 20L
+
+/**
+ * The finger's movement (px, + = down) over its last [RECENT_WINDOW_MS]: from the newest sample
+ * back to the oldest one inside the window (or the one just before it, if only one is inside).
+ */
+internal fun recentMovementPx(samples: Collection<Pair<Long, Float>>): Float {
+    if (samples.size < 2) return 0f
+    val list = samples.toList()
+    val (endT, endY) = list.last()
+    var start = list[list.size - 2]
+    for (i in list.size - 2 downTo 0) {
+        start = list[i]
+        if (endT - list[i].first >= RECENT_WINDOW_MS) break
+    }
+    return endY - start.second
 }
 
 /**
@@ -143,7 +178,11 @@ private suspend fun PointerInputScope.detectSheetDrag(
  */
 @Composable
 fun PlayerSheetBackHandler(state: PlayerSheetState) {
-    val open = state.targetAnchor != PlayerSheetAnchor.MINI
+    // Open, opening, closing or held by a finger: anything but resting at MINI. Back mid-close
+    // must not pop the page under the moving player. Recomposes only when that flips.
+    val open by remember(state) {
+        derivedStateOf { state.targetAnchor != PlayerSheetAnchor.MINI || state.progress != 0f || state.isDragging }
+    }
     if (!open) return
     var ready by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {

@@ -342,8 +342,11 @@ private fun SimpleSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle, 
             GlyphMotion(LyricsMotion.WordScale, LyricsMotion.WordY, p, LyricsMotion.gradientFor(ph, p))
         }
     }
-    // Runs frames only while ACTIVE, or until the springs settle after a phase flip.
-    LaunchedEffect(syl, phase) {
+    // Runs frames only while ACTIVE, or until the springs settle after a phase flip; never while
+    // Now Playing is parked under the mini player.
+    val shown = LocalNowPlayingShown.current
+    LaunchedEffect(syl, phase, shown) {
+        if (!shown) return@LaunchedEffect
         val ph = phase
         frameLoop { dt ->
             val p = when (ph) { PHASE_ACTIVE -> progressOf(clock.value, syl.startMs, syl.endMs); PHASE_SUNG -> 1f; else -> 0f }
@@ -369,7 +372,9 @@ private fun EmphasisSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle
             EmphasisMotion(letters.size, if (ph == PHASE_SUNG) 1f else 0f)
         }
     }
-    LaunchedEffect(syl, phase) {
+    val shown = LocalNowPlayingShown.current
+    LaunchedEffect(syl, phase, shown) {
+        if (!shown) return@LaunchedEffect
         frameLoop { dt -> motion.update(clock.value, syl.startMs, syl.endMs, dt) }
     }
     val fontPx = with(LocalDensity.current) { style.fontSize.toPx() }
@@ -501,7 +506,9 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
             DotMotion(p)
         }
     }
-    LaunchedEffect(startMs, endMs, phase) {
+    val shown = LocalNowPlayingShown.current
+    LaunchedEffect(startMs, endMs, phase, shown) {
+        if (!shown) return@LaunchedEffect
         val ph = phase
         frameLoop { dt ->
             val p = when (ph) { PHASE_ACTIVE -> progressOf(clock.value, startMs, endMs); PHASE_SUNG -> 1f; else -> 0f }

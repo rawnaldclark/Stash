@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -31,6 +33,10 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -52,6 +58,7 @@ import coil3.compose.AsyncImage
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.feature.nowplaying.NowPlayingScreen
 import com.stash.feature.nowplaying.NowPlayingViewModel
+import com.stash.feature.nowplaying.ui.LocalNowPlayingShown
 import com.stash.feature.nowplaying.ui.rememberNpArtRequest
 import kotlin.math.roundToInt
 
@@ -81,8 +88,10 @@ fun PlayerSheetOverlay(
     val reducedMotion = rememberReducedMotion()
     val haptics = LocalHapticFeedback.current
     val navBarBottom = WindowInsets.navigationBars.getBottom(density)
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     SideEffect {
         state.density = density.density
+        state.isRtl = rtl
         state.reducedMotion = reducedMotion
         state.navBarBottomPx = navBarBottom.toFloat()
         state.onSnapHaptic = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
@@ -105,8 +114,10 @@ fun PlayerSheetOverlay(
             .onSizeChanged { state.screenSize = it }
             // The page and its chrome dim as the player opens.
             .drawBehind {
-                val a = PlayerSheetMath.scrimAlpha(state.progress)
-                if (a > 0f) drawRect(Color.Black, alpha = a)
+                // Under the full card the scrim is never seen: not drawn.
+                val p = state.progress
+                val a = PlayerSheetMath.scrimAlpha(p)
+                if (a > 0f && p < 1f) drawRect(Color.Black, alpha = a)
             },
     ) {
         if (state.isWarm) {
@@ -138,8 +149,8 @@ private fun SheetCard(state: PlayerSheetState, content: @Composable () -> Unit) 
         Modifier.clearAndSetSemantics { }
     } else {
         Modifier.semantics {
-            paneTitle = "Now Playing"
-            customActions = listOf(CustomAccessibilityAction("Collapse player") { state.collapse(); true })
+            paneTitle = PANE_TITLE
+            customActions = listOf(CustomAccessibilityAction(COLLAPSE_ACTION) { state.collapse(); true })
         }
     }
     Box(
@@ -180,12 +191,30 @@ private fun SheetCard(state: PlayerSheetState, content: @Composable () -> Unit) 
             Modifier
                 .fillMaxSize()
                 .offset { IntOffset(0, -PlayerSheetMath.overFullRisePx(state.progress, state.travelPx()).roundToInt()) }
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                // Until the player rests open, a touch is the sheet's, never a control's: below
+                // 75 % the controls are invisible, and a tap mid-move must not press one. Only the
+                // down is taken (before the controls see it), so the sheet's own drag, which
+                // listens after them, still gets the whole gesture.
+                .pointerInput(state) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (!state.isAtRest(PlayerSheetAnchor.FULL)) {
+                                event.changes.forEach { if (it.changedToDownIgnoreConsumed()) it.consume() }
+                            }
+                        }
+                    }
+                },
         ) {
-            content()
+            CompositionLocalProvider(LocalNowPlayingShown provides !parked, content = content)
         }
     }
 }
+
+/** TalkBack's name for the open player, and its action to close it (the app's strings are in code). */
+private const val PANE_TITLE = "Now Playing"
+private const val COLLAPSE_ACTION = "Close the player"
 
 /**
  * The card's clip: [rect] (layer coordinates, which are the root's: the card fills the screen at
@@ -205,6 +234,11 @@ private data class SheetCardShape(val rect: Rect, val radius: Float) : Shape {
  */
 @Composable
 private fun CoverTraveller(state: PlayerSheetState, viewModel: NowPlayingViewModel) {
+    // Composed only while it flies: at rest it would decode with every song change for nothing.
+    // By then Now Playing's big cover has the same request in the memory cache.
+    val flying by remember(state) { derivedStateOf { PlayerSheetMath.travellerVisible(state.progress) } }
+    if (!flying) return
+    DisposableEffect(state) { onDispose { state.travellerReady = false } }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
     val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
@@ -217,6 +251,11 @@ private fun CoverTraveller(state: PlayerSheetState, viewModel: NowPlayingViewMod
         contentScale = ContentScale.Crop,
         error = missingArt,
         fallback = missingArt,
+        // Something to draw (the cover, the mini player's bitmap as its placeholder, or the
+        // missing-art tile): until then the mini player keeps its own cover showing.
+        onLoading = { loading -> state.travellerReady = loading.painter != null },
+        onSuccess = { state.travellerReady = true },
+        onError = { state.travellerReady = true },
         modifier = Modifier
             .layout { measurable, _ ->
                 val hero = state.effectiveHeroArt().rect
@@ -227,7 +266,7 @@ private fun CoverTraveller(state: PlayerSheetState, viewModel: NowPlayingViewMod
             }
             .graphicsLayer {
                 val p = state.progress
-                if (!PlayerSheetMath.travellerVisible(p) || size.width <= 0f) {
+                if (!PlayerSheetMath.travellerVisible(p) || !state.travellerReady || size.width <= 0f) {
                     alpha = 0f
                     return@graphicsLayer
                 }

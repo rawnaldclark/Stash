@@ -250,14 +250,20 @@ fun MiniPlayer(
                         val coverShape = RoundedCornerShape(6.dp)
                         // Hidden while the sheet is open: the travelling cover is it, in flight.
                         val artLayer = if (sheet == null) Modifier else Modifier.graphicsLayer {
-                            alpha = PlayerSheetMath.miniArtAlpha(sheet.progress)
+                            // Kept until the traveller has something to draw (a cold cache).
+                            alpha = if (sheet.travellerReady) PlayerSheetMath.miniArtAlpha(sheet.progress) else 1f
                         }
                         if (artModel != null) {
                             // Remembered per cover: a fresh request each recomposition makes Coil treat
                             // it as a new load.
                             val context = LocalContext.current
+                            // Cached under the plain path/URL: the travelling cover (and Now Playing's
+                            // big one) show this bitmap as their placeholder while theirs decodes.
                             val artRequest = remember(artModel) {
-                                ImageRequest.Builder(context).data(artModel).build()
+                                ImageRequest.Builder(context)
+                                    .data(artModel)
+                                    .memoryCacheKey(artModel as? String)
+                                    .build()
                             }
                             AsyncImage(
                                 model = artRequest,

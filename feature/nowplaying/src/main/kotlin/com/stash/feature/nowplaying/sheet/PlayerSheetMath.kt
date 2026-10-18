@@ -108,6 +108,16 @@ object PlayerSheetMath {
     }
 
     /**
+     * The velocity a release counts with: the tracker's [velocityDpS], unless the finger's last
+     * moments ([recentUpDp], its movement over the final ~20 ms) don't go the same way. A finger
+     * that stopped before lifting, or turned back by a hair, isn't flicking: then the distance
+     * decides. Keeps the "a flick against the drag wins" rule from firing on a tiny reverse
+     * twitch at lift.
+     */
+    fun releaseVelocity(velocityDpS: Float, recentUpDp: Float): Float =
+        if (velocityDpS == 0f || recentUpDp == 0f || (velocityDpS > 0f) != (recentUpDp > 0f)) 0f else velocityDpS
+
+    /**
      * Maps a finger's unbounded progress [raw] onto the sheet: 1:1 between [lower] .. [upper]'s
      * anchors (0 and the top anchor), then a rubber band that approaches the limits but never
      * reaches them, so a drag past either end resists more the further it goes.
@@ -181,6 +191,9 @@ object PlayerSheetMath {
 
     /** The tab bar slides away by this fraction of its height, gone by 60 %. */
     fun tabBarHide(p: Float): Float = ramp(p, 0f, 0.6f)
+
+    /** And fades out faster, gone by 35 %, so it never shows through the system's buttons below it. */
+    fun tabBarAlpha(p: Float): Float = 1f - ramp(p, 0f, 0.35f)
 
     /** The glass blur is off while the sheet is anywhere but MINI (a moving backdrop costs a blur a frame). */
     fun blurEnabled(p: Float): Boolean = abs(p) < BLUR_OFF_ABOVE
