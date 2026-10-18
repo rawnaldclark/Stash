@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -89,7 +90,7 @@ class HistoryViewModelTest {
         advanceUntilIdle()
         val calls = fake.pageCalls.size
         val scrolls = mutableListOf<Long>()
-        backgroundScope.launch { vm.scrollToDay.collect { scrolls += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.scrollToDay.collect { scrolls += it } }
         runCurrent()
 
         vm.jumpTo(TODAY - 3); advanceUntilIdle()
@@ -102,7 +103,7 @@ class HistoryViewModelTest {
         val vm = viewModel(fake.repository())
         advanceUntilIdle()
         val scrolls = mutableListOf<Long>()
-        backgroundScope.launch { vm.scrollToDay.collect { scrolls += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.scrollToDay.collect { scrolls += it } }
         runCurrent()
 
         val target = TODAY - 25
@@ -284,7 +285,7 @@ class HistoryViewModelTest {
         val vm = viewModel(fake.repository())
         advanceUntilIdle()
         val messages = mutableListOf<String>()
-        backgroundScope.launch { vm.messages.collect { messages += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
         runCurrent()
         vm.play(row); advanceUntilIdle()
         coVerify(exactly = 0) { player.setQueue(any(), any(), any()) }

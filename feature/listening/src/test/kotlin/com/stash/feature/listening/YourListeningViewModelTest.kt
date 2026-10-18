@@ -17,6 +17,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -115,7 +116,7 @@ class YourListeningViewModelTest {
         val vm = viewModel(fake)
         advanceUntilIdle()
         val messages = mutableListOf<String>()
-        backgroundScope.launch { vm.messages.collect { messages += it } }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
         runCurrent()
         vm.playRecent(vm.state.value!!.recent[0]); advanceUntilIdle()
         assertThat(messages).containsExactly(SONG_NEEDS_CONNECTION)
