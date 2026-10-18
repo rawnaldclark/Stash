@@ -66,6 +66,22 @@ class StashTabGlyphsTest {
         }
     }
 
+    @Test
+    fun `the clamped clock never steps further than its limit and holds within a frame`() {
+        val clock = ClampedFrameClock(base = NoClock, maxStepNanos = 33_000_000L)
+        assertThat(clock.advance(1_000_000_000L)).isEqualTo(1_000_000_000L)
+        assertThat(clock.advance(1_011_000_000L)).isEqualTo(1_011_000_000L)
+        // Every caller in the same frame sees the same time.
+        assertThat(clock.advance(1_011_000_000L)).isEqualTo(1_011_000_000L)
+        // A 150 ms hitch counts as 33 ms; normal frames carry on from there.
+        assertThat(clock.advance(1_161_000_000L)).isEqualTo(1_044_000_000L)
+        assertThat(clock.advance(1_172_000_000L)).isEqualTo(1_055_000_000L)
+    }
+
+    private object NoClock : androidx.compose.runtime.MonotonicFrameClock {
+        override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R = error("not used")
+    }
+
     private data class Bounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
     /** The bounds of a path's end points (enough to catch a typo that sends a path off the grid). */
