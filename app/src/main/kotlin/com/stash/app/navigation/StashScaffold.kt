@@ -64,8 +64,8 @@ import dev.chrisbanes.haze.rememberHazeState
 /**
  * Root scaffold for the Stash app.
  *
- * Hosts the [StashNavHost], the bottom navigation bar, and the glass [MiniPlayer]
- * floating just above it. Every screen draws edge to edge under that bottom chrome so
+ * Hosts the [StashNavHost], the floating glass tab bar ([StashTabBar]), and the glass
+ * [MiniPlayer] floating just above it. Every screen draws edge to edge under that bottom chrome so
  * the glass can blur it (Haze: the nav host is the `hazeSource`, the mini player and tab
  * bar the effects); screens pad their scrolling content by [LocalBottomChromeInset].
  * Also publishes the app-wide album colour ([LocalAlbumChrome]), hosts the queue
@@ -120,20 +120,14 @@ fun StashScaffold(
     val context = LocalContext.current
 
     // Canonical bottom-nav tab switch (save/restore semantics + reselect-pop).
-    // Local fun rather than inline in StashBottomBar's onNavigate so screens
+    // Local fun rather than inline in StashTabBar's onNavigate so screens
     // that trigger a tab switch themselves (Home's Liked card → Library) route
     // through the exact same logic via StashNavHost's onNavigateToTab.
     fun navigateToTab(dest: TopLevelDestination) {
         val destRoute = dest.route::class.qualifiedName
-        // The "current tab" is the top-most top-level route in
-        // the live back stack (the start tab, Home unless Open Stash
-        // on says otherwise, is always at the bottom; the active tab
-        // sits above it, with detail screens above that).
-        val topLevelRoutes =
-            TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
-        val currentTabRoute = navController.currentBackStack.value
-            .lastOrNull { it.destination.route in topLevelRoutes }
-            ?.destination?.route
+        // The "current tab": the top-most tab route in the live back stack
+        // (tabRouteOf, the same rule the tab bar picks its tab by).
+        val currentTabRoute = tabRouteOf(navController.currentBackStack.value.map { it.destination.route })
 
         if (currentTabRoute == destRoute && currentRoute != destRoute) {
             // Reselecting the tab we're already deep inside. The
@@ -178,14 +172,10 @@ fun StashScaffold(
                 // IllegalArgumentException ("No destination with route
                 // SettingsRoute in BackStack") if Settings isn't already on the
                 // stack. Cold-start from a notification has no stack history,
-                // so we synthesize the parent here. When the user closes the
-                // captcha screen they land on Settings — natural UX.
-                navController.navigate(SettingsRoute) {
-                    launchSingleTop = true
-                }
-                navController.navigate(SquidWtfCaptchaRoute) {
-                    launchSingleTop = true
-                }
+                // so we synthesize the parent here, in the Settings tab's own
+                // stack (openSettingsTab). When the user closes the captcha
+                // screen they land on Settings — natural UX.
+                navController.openSettingsTab(::navigateToTab, SquidWtfCaptchaRoute)
                 onDeepLinkConsumed()
             }
             null -> Unit
@@ -246,10 +236,10 @@ fun StashScaffold(
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
-                // No bottom navigation-bar padding here: the tab bar's glass runs down under
-                // the system bar and pads its own items (StashBottomBar), so content scrolling
-                // under it is frosted all the way to the screen's edge. The cards above it keep
-                // clear of a side system bar (3-button navigation in landscape).
+                // No bottom navigation-bar padding here: the floating tab bar (StashTabBar) pads
+                // itself to sit above the system bar, so the bottom chrome's height includes it.
+                // The cards above it keep clear of a side system bar (3-button navigation in
+                // landscape).
                 val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
                 Column {
                     AnimatedVisibility(

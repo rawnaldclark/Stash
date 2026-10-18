@@ -135,12 +135,8 @@ private fun StashNavGraph(
     ) {
         composable<HomeRoute> {
             HomeScreen(
-                onNavigateToSettings = {
-                    navController.navigate(SettingsRoute) {
-                        // Clear top so repeated taps don't stack Settings entries.
-                        launchSingleTop = true
-                    }
-                },
+                // The Settings tab itself (openSettingsTab), not a Settings page inside Home's stack.
+                onNavigateToSettings = { navController.openSettingsTab(onNavigateToTab) },
                 // Home's lossless-offline banner routes through onNavigateToSettings
                 // (Settings › Audio), where every lossless path — your Qobuz account,
                 // a relay endpoint — is set up.
@@ -251,14 +247,7 @@ private fun StashNavGraph(
                 // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
-                onNavigateToAccounts = {
-                    navController.navigate(SettingsRoute) {
-                        launchSingleTop = true
-                    }
-                    navController.navigate(SettingsAccountsRoute) {
-                        launchSingleTop = true
-                    }
-                },
+                onNavigateToAccounts = { navController.openSettingsTab(onNavigateToTab, SettingsAccountsRoute) },
             )
         }
         composable<SearchRoute> {
@@ -296,18 +285,10 @@ private fun StashNavGraph(
                 },
                 // "Re-authenticate" opens Accounts itself, where the expired card
                 // leads with Reconnect, instead of the Settings hub one tap short.
-                // Settings goes under it first: Accounts shares the ViewModel
-                // scoped to the SettingsRoute entry (getBackStackEntry throws
-                // without it), as the captcha deep link does. Back from Accounts
-                // lands on Settings, then Sync.
-                onNavigateToAccounts = {
-                    navController.navigate(SettingsRoute) {
-                        launchSingleTop = true
-                    }
-                    navController.navigate(SettingsAccountsRoute) {
-                        launchSingleTop = true
-                    }
-                },
+                // In the Settings tab, over its hub (openSettingsTab): Accounts shares
+                // the ViewModel scoped to the SettingsRoute entry. Back from Accounts
+                // lands on Settings.
+                onNavigateToAccounts = { navController.openSettingsTab(onNavigateToTab, SettingsAccountsRoute) },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
             )
         }
