@@ -10,5 +10,23 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <application
         android:networkSecurityConfig="@xml/network_security_config_debug"
-        tools:replace="android:networkSecurityConfig" />
+        tools:replace="android:networkSecurityConfig">
+        <!--
+            Debug only: synthetic listening history for trying the "Your listening" screens at scale
+            (com.stash.app.debug.DebugListeningSeeder). Exported so adb can reach it, behind DUMP: the adb
+            shell holds that permission and ordinary apps can't get it, so nothing else on a phone running
+            a debug build with a real library can seed or clear its history.
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugListeningSeeder"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.debug.SEED_PLAYS" />
+                <action android:name="com.stash.debug.CLEAR_SEEDED_PLAYS" />
+                <action android:name="com.stash.debug.TIME_LISTENING_QUERIES" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

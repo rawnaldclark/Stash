@@ -18,8 +18,9 @@ import androidx.room.PrimaryKey
  *     play counts + recency from this table to build algorithmic
  *     playlists independent of Spotify's Daily Mix algorithm.
  *
- * The table is kept lightweight (no duration, no metadata) — everything
- * else can be re-derived from the joined [TrackEntity] row. Rows are
+ * The table is kept lightweight (no song metadata) — that comes from the
+ * joined [TrackEntity] row. v59 adds what can't be re-derived later: the
+ * listener's local day and minute, and the real listening time. Rows are
  * retained forever; a future pruning job can cap history if needed.
  */
 @Entity(
@@ -37,6 +38,10 @@ import androidx.room.PrimaryKey
         Index(value = ["started_at"]),
         Index(value = ["scrobbled"]),
         Index(value = ["yt_scrobbled"]),
+        // v59: Top songs, Stats and Your Year read day ranges grouped by song or day. The index
+        // covers every column those reads need, so they never touch a table row (see
+        // ListeningHistorySql: 5-10x faster at 60k listens than a (local_day, track_id) index).
+        Index(value = ["local_day", "track_id", "started_at", "listened_ms", "local_minute"]),
     ],
 )
 data class ListeningEventEntity(
@@ -88,4 +93,34 @@ data class ListeningEventEntity(
      */
     @ColumnInfo(name = "origin_device")
     val originDevice: String? = null,
+
+    /**
+     * v59: the calendar day the listen started on, where the listener was at the time: days since
+     * 1970-01-01 in the phone's time zone when it was written (see
+     * [com.stash.core.data.listening.ListeningDay]). Stored rather than derived in SQL because
+     * SQLite's `'localtime'` follows the phone's *current* zone, which moves every past listen a
+     * day after travel. NULL only on a row written before v59 and not yet reached by
+     * [com.stash.core.data.listening.ListeningDayBackfill]; queries read
+     * `COALESCE(local_day, started_at / 86400000)` until then.
+     */
+    @ColumnInfo(name = "local_day")
+    val localDay: Long? = null,
+
+    /** v59: the minute of that day the listen started, 0..1439, in the same zone as [localDay]. */
+    @ColumnInfo(name = "local_minute")
+    val localMinute: Int? = null,
+
+    /**
+     * v59: how long the song actually played in this listen, in real (wall-clock) milliseconds,
+     * pauses and buffering excluded. Written by [com.stash.core.media.listening.ListeningRecorder]
+     * when the listen ends (next song, a repeat-one restart, stop), and also on a pause so the time
+     * survives the app being killed while paused. NULL = unknown: a row from before v59, a play from
+     * another device, or the app died before any write. Totals then fall back to the song's length.
+     *
+     * If the app dies after a pause and the song played on, the value is the time up to that pause:
+     * a lower bound, never invented. It is never below the time the listen took to count (half the
+     * song, 30 s..4 min, at 1x), because nothing is written before then.
+     */
+    @ColumnInfo(name = "listened_ms")
+    val listenedMs: Long? = null,
 )

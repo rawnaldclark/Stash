@@ -9,6 +9,9 @@ import com.stash.core.data.listen.ListenSinkCoordinator
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
+import com.stash.core.data.listening.ListeningDay
+import com.stash.core.data.listening.ListeningDayBackfill
+import com.stash.core.data.listening.ListeningHistoryPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.mediaToWallMs
@@ -22,8 +25,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,6 +60,17 @@ import javax.inject.Singleton
  *   - When repeat-one is active, a position reset back to near zero
  *     on the same track is treated as a new play session so each loop
  *     counts as a separate scrobble.
+ *   - v59: each listen is stamped with the local day and minute it started
+ *     ([ListeningDay]), and keeps counting its real playing time after it is
+ *     recorded. That time is written to `listened_ms` when the session ends
+ *     (next song, a repeat-one restart, stop) and on pauses (once at least 5 s
+ *     more has played). If the app dies mid-song it keeps the last value
+ *     written, or NULL if none, and totals fall back to the song's length.
+ *   - While history is paused (Settings › Library & Storage › Listening history,
+ *     [ListeningHistoryPreference]) nothing is recorded: no listen, no skip, and no
+ *     now-playing to Last.fm or ListenBrainz. A song already counting when the
+ *     pause is turned on doesn't count either; a song started while paused doesn't
+ *     start counting when history is turned back on mid-song.
  */
 @Singleton
 class ListeningRecorder @VisibleForTesting internal constructor(
@@ -65,6 +83,12 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val scope: CoroutineScope,
     /** Monotonic clock for listening time. Tests pass the test scheduler's time. */
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** The zone a listen's local day is read in: the phone's zone at the time. */
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    /** Stamps the local day on listens from before v59 (ListeningDayBackfill.run). */
+    private val backfillListeningDays: suspend () -> Unit = {},
+    /** History paused ([ListeningHistoryPreference.paused]): record nothing while true. */
+    private val historyPaused: Flow<Boolean> = flowOf(false),
 ) {
 
     @Inject
@@ -75,6 +99,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         trackSkipEventDao: TrackSkipEventDao,
         scrobbler: LastFmScrobbler,
         listenSinks: ListenSinkCoordinator,
+        listeningDayBackfill: ListeningDayBackfill,
+        listeningHistoryPreference: ListeningHistoryPreference,
     ) : this(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
@@ -84,6 +110,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         listenSinks = listenSinks,
         // One thread at a time: the track and play-state collectors both read and write `pending`.
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
+        backfillListeningDays = { listeningDayBackfill.run() },
+        historyPaused = listeningHistoryPreference.paused,
     )
 
     /**
@@ -104,13 +132,51 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         var playingSinceMs = 0L
         /** The playback speed of the current play stretch. */
         var speed = 1f
+
+        // v59 listening time. Separate from the countdown above, which stops once the listen is
+        // claimed: this keeps running until the session ends, and is wall time (10 s at 2x is
+        // 10 s of the user's day).
+        /** The listen's row once [recordListen] wrote it; null before that, and for a skip. */
+        var eventId: Long? = null
+        /** Wall time played in finished stretches of this session. */
+        var listenedMs = 0L
+        /** Monotonic start of the stretch playing now; null while paused. */
+        var listeningSinceMs: Long? = null
+        /** The session is over: a listen recorded after this writes its time straight away. */
+        var ended = false
+        /** The value last written to the row; null before the first write. */
+        var writtenMs: Long? = null
     }
 
     private var pending: PendingFire? = null
 
+    /**
+     * The last value of [historyPaused]. Read before the collectors start (see [start]), then kept
+     * current by its own collector; every read and write runs on the recorder's single thread.
+     */
+    @Volatile
+    private var paused = false
+
+    /**
+     * The track that started playing while history was paused, until the track changes (or loops
+     * on repeat-one): it isn't counted even if history is turned back on during it. Recorder
+     * thread only.
+     */
+    private var heardWhilePaused: Long? = null
+
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
         scope.launch {
+            // Before any song is looked at: a launch straight into playback while paused must not count.
+            paused = try {
+                historyPaused.first()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read whether history is paused", e)
+                false
+            }
+            scope.launch { historyPaused.collect { paused = it } }
             try {
                 listeningEventDao.backfillMissingTrackStats()
             } catch (e: CancellationException) {
@@ -121,6 +187,16 @@ class ListeningRecorder @VisibleForTesting internal constructor(
             startTrackChangeCollector()
             startRepeatCollector()
             startSpeedCollector()
+        }
+        // Its own coroutine: a long history takes a few batches, and listening must not wait.
+        scope.launch {
+            try {
+                backfillListeningDays()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to stamp the local day of earlier listens", e)
+            }
         }
     }
 
@@ -141,6 +217,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     //    If completion already claimed it, leave its job
                     //    alive so persistence + listen recording can finish.
                     val previousPending = pending
+                    // Its listening time is written last (below), after the next session is set up.
+                    val ended = previousPending?.takeIf { trackChanged }
                     if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
                             val position = positionReached(previousPending)
@@ -155,19 +233,33 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                                 recordSkip(previousPending.track, position)
                             }
                         }
+                        closeSession(previousPending)
                     }
-                    if (trackChanged) pending = null
+                    if (trackChanged) {
+                        pending = null
+                        heardWhilePaused = null
+                    }
 
                     // 2. The session starts on the track's first real play. Nothing is
                     //    announced or counted for a song only shown paused; a pause stops
                     //    the countdown and play resumes it within the same session.
-                    val track = state.currentTrack ?: return@collect
+                    val track = state.currentTrack
                     val current = pending
                     when {
-                        !state.isPlaying -> current?.let { pauseCountdown(it) }
+                        track == null -> Unit
+                        !state.isPlaying -> current?.let {
+                            pauseCountdown(it)
+                            pauseListenClock(it)
+                        }
                         current == null -> schedulePendingFire(track)
-                        else -> resumeCountdown(current)
+                        else -> {
+                            resumeCountdown(current)
+                            startListenClock(current)
+                        }
                     }
+                    // 3. Last, the ended listen's final time: a write suspends, and the new
+                    //    session must already be in place for a pause arriving meanwhile.
+                    ended?.let { writeListenedMs(it, final = true) }
                 }
         }
     }
@@ -203,10 +295,17 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
                     if (isRepeatOne && positionJumpedBack) {
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
-                        pending?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
+                        val old = pending
+                        old?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
+                        old?.let { closeSession(it) }
                         pending = null
+                        // A new loop is a new play: one that started while history was paused may count.
+                        heardWhilePaused = null
                         // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
-                        if (state.isPlaying) schedulePendingFire(track)
+                        // The live state, read with nothing suspended since: a pause during a write must
+                        // find the new session (and pause it), never arm a countdown nobody hears.
+                        if (playerRepository.playerState.value.isPlaying) schedulePendingFire(track)
+                        old?.let { writeListenedMs(it, final = true) }
                     }
 
                     lastPositionMs = positionMs
@@ -241,6 +340,14 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         // All Songs scans live outside `tracks`: no listen, skip, or scrobble for them. `pending` stays
         // null, so the skip branch in the track-change collector never fires for them either.
         if (track.isScannedSong) return
+        // History paused: no session, so no now-playing, no listen and no skip for this song. The
+        // song is remembered: turning history back on mid-song mustn't start counting it at the
+        // next play edge (a pause and resume, a rebuffer). It counts again from the next track.
+        if (paused) {
+            heardWhilePaused = track.id
+            return
+        }
+        if (heardWhilePaused == track.id) return
         val sessionStart = System.currentTimeMillis()
         val session = PendingFire(
             track = track,
@@ -250,6 +357,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         )
         pending = session
         resumeCountdown(session)
+        startListenClock(session)
         scope.launch {
             scrobbler.notifyNowPlaying(
                 artist = track.artist,
@@ -292,6 +400,62 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         session.playedMs += wallToMediaMs(nowMs() - session.playingSinceMs, session.speed)
     }
 
+    /** Play started or resumed: the session's listening time runs again. */
+    private fun startListenClock(session: PendingFire) {
+        if (session.ended || session.listeningSinceMs != null) return
+        session.listeningSinceMs = nowMs()
+    }
+
+    /** Banks the stretch playing now, if any, into [PendingFire.listenedMs]. */
+    private fun bankListenClock(session: PendingFire) {
+        val since = session.listeningSinceMs ?: return
+        session.listenedMs += (nowMs() - since).coerceAtLeast(0L)
+        session.listeningSinceMs = null
+    }
+
+    /**
+     * Paused or buffering: bank the stretch and, when the listen is already recorded, write the
+     * time so far, so an app killed while paused still keeps it (see [writeListenedMs]).
+     */
+    private suspend fun pauseListenClock(session: PendingFire) {
+        bankListenClock(session)
+        writeListenedMs(session, final = false)
+    }
+
+    /**
+     * The session is over (another song, a repeat-one restart, stop): bank its listening time at
+     * this instant. Synchronous on purpose: callers set up the next session before anything
+     * suspends, then write the final time with [writeListenedMs]. A listen whose row is still
+     * being written gets it from [recordListen].
+     */
+    private fun closeSession(session: PendingFire) {
+        if (session.ended) return
+        bankListenClock(session)
+        session.ended = true
+    }
+
+    /**
+     * Writes the session's listening time to its row, once the row exists. A mid-listen write (a
+     * pause, a rebuffer) is skipped when less than [MIN_PROGRESS_WRITE_MS] was added since the
+     * last write, so a stalling stream doesn't wake every observer of `listening_events` each
+     * second; the final write always lands when the value changed.
+     */
+    private suspend fun writeListenedMs(session: PendingFire, final: Boolean) {
+        val eventId = session.eventId ?: return
+        val ms = session.listenedMs
+        val written = session.writtenMs
+        if (written == ms) return
+        if (!final && written != null && ms - written < MIN_PROGRESS_WRITE_MS) return
+        try {
+            listeningEventDao.setListenedMs(eventId, ms)
+            session.writtenMs = ms
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write listening time", e)
+        }
+    }
+
     /**
      * How far into the song [session] got when it ended: where its countdown
      * started plus the song time played since, the stretch still running included.
@@ -329,6 +493,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
      * although its plays were.
      */
     private suspend fun recordSkip(track: Track, positionMs: Long) {
+        if (paused) return // paused while this song played: it leaves no trace
         try {
             val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             trackSkipEventDao.insert(
@@ -350,10 +515,13 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         val track = session.track
         val nowPlaying = playerRepository.playerState.value.currentTrack?.id
         if (nowPlaying != track.id || !session.claimed.compareAndSet(false, true)) return
+        if (paused) return // paused while this song was counting: it doesn't count
         try {
             val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             val completedAt = System.currentTimeMillis()
-            listeningEventDao.recordCompletedListen(
+            // The day it started on, where the listener is: a song that crosses midnight is the earlier day's.
+            val stamp = ListeningDay.localStamp(session.sessionStart, zone())
+            session.eventId = listeningEventDao.recordCompletedListen(
                 ListeningEventEntity(
                     trackId = persistedTrackId,
                     startedAt = session.sessionStart,
@@ -361,8 +529,13 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     // v0.9.13: insert IS the completion event — recorder only fires
                     // after threshold delay. AutoSaveScrobbler reads completed_at.
                     completedAt = completedAt,
+                    localDay = stamp.day,
+                    localMinute = stamp.minute,
+                    // listened_ms stays NULL until the session ends: the song is still playing.
                 ),
             )
+            // The song changed while the row was being written: its time is final already.
+            if (session.ended) writeListenedMs(session, final = true)
             // Push the new listen to the generic sinks (ListenBrainz).
             // Last.fm has its own Flow-driven scrobbler and needs no nudge.
             listenSinks.onListenRecorded()
@@ -390,5 +563,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
         /** The longest crossfade (12 s) plus a little for the play-time estimate. */
         private const val TRACK_END_SLACK_MS = 15_000L
+
+        /** A mid-listen listened_ms write needs at least this much new listening time (rebuffers). */
+        private const val MIN_PROGRESS_WRITE_MS = 5_000L
     }
 }

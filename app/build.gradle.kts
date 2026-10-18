@@ -250,6 +250,7 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:search"))
     implementation(project(":feature:community"))
+    implementation(project(":feature:listening"))
     implementation(project(":data:download"))
     // data:ytmusic provides AlbumSummary, used by SearchScreen/ArtistProfileScreen
     // callback signatures that StashNavHost wires up for Album Discovery.
@@ -265,6 +266,10 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.animation)
     debugImplementation(libs.compose.ui.tooling)
+    // Debug only: DebugListeningSeeder (app/src/debug) writes synthetic listens through Room.
+    // Release builds don't touch the database from :app.
+    debugImplementation(libs.room.runtime)
+    debugImplementation(libs.room.ktx)
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)

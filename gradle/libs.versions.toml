@@ -16,7 +16,6 @@ room = "2.7.1"
 datastore = "1.1.4"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.7.3"
-palette = "1.0.0"
 appauth = "0.11.1"
 tink = "1.12.0"
 youtubedlAndroid = "0.17.2"
@@ -101,7 +100,6 @@ play-services-cast-framework = { group = "com.google.android.gms", name = "play-
 androidx-mediarouter = { group = "androidx.mediarouter", name = "mediarouter", version.ref = "mediarouter" }
 
 # Palette
-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 
 # WorkManager
 work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }

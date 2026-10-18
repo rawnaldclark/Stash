@@ -24,7 +24,7 @@ class HomeSectionOrderTest {
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
                 // appended: added after this arrangement was saved.
-                HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY,
+                HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -39,7 +39,7 @@ class HomeSectionOrderTest {
                 // appended in default order:
                 HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
-                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
+                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -75,7 +75,7 @@ class HomeSectionOrderTest {
         assertFalse(HomeSection.COMMUNITY in visibleHomeSections(resolveHomeSectionOrder(emptyList()), emptySet(), communityOn = false))
         val savedBeforeTheUpdate = listOf("your_playlists", "new_releases", "qobuz_playlists", "top_albums", "made_for_you", "radios", "mood_decades")
         assertEquals(
-            savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey),
+            savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey) + HomeSection.YOUR_LISTENING,
             visibleHomeSections(resolveHomeSectionOrder(savedBeforeTheUpdate), emptySet(), communityOn = false),
         )
         // Home before the preference loads, and the preference's fallback when it can't be read.
@@ -95,5 +95,28 @@ class HomeSectionOrderTest {
         val moved = withCommunityFirst(order)
         assertEquals(HomeSection.COMMUNITY, moved.first())
         assertEquals(order - HomeSection.COMMUNITY, moved.drop(1))
+    }
+
+    @Test
+    fun `your listening is appended under an existing arrangement, after community`() {
+        // A layout saved before the update that adds "Your listening" (Community already in it).
+        val saved = listOf(
+            "community", "made_for_you", "your_playlists", "radios", "new_releases",
+            "qobuz_playlists", "top_albums", "mood_decades",
+        )
+        val resolved = resolveHomeSectionOrder(saved)
+        assertEquals(saved.mapNotNull(HomeSection::fromKey), resolved.dropLast(1))
+        assertEquals(HomeSection.YOUR_LISTENING, resolved.last())
+        // New in the update, it shows (Home itself waits for the first listen).
+        assertTrue(HomeSection.YOUR_LISTENING in visibleHomeSections(resolved, emptySet(), communityOn = true))
+        assertTrue(HomeSection.YOUR_LISTENING in DEFAULT_HOME_SECTIONS)
+    }
+
+    @Test
+    fun `your listening can be moved and hidden like any section`() {
+        val saved = listOf("your_listening", "radios")
+        val resolved = resolveHomeSectionOrder(saved)
+        assertEquals(HomeSection.YOUR_LISTENING, resolved.first())
+        assertFalse(HomeSection.YOUR_LISTENING in visibleHomeSections(resolved, setOf(HomeSection.YOUR_LISTENING), communityOn = false))
     }
 }

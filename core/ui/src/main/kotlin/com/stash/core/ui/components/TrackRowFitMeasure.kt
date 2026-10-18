@@ -92,6 +92,8 @@ internal fun rememberTrackListItemFit(
     isResolving: Boolean,
     selectionActive: Boolean,
     hasMoreButton: Boolean,
+    /** Shown instead of the duration when set (see [TrackListItem]'s `trailingText`). */
+    trailingText: String? = null,
 ): TrackRowFit {
     val density = LocalDensity.current
     val typography = MaterialTheme.typography
@@ -103,7 +105,7 @@ internal fun rememberTrackListItemFit(
         measurer, density, rowWidth, track.title, track.durationMs, track.source,
         track.fileFormat, track.bitsPerSample, track.sampleRateHz,
         isPlaying, isResolving, selectionActive, hasMoreButton,
-        titleStyle, smallStyle, labelStyle,
+        titleStyle, smallStyle, labelStyle, trailingText,
     ) {
         // Unbounded width (e.g. a horizontally scrolling parent): everything fits.
         if (rowWidth == Dp.Infinity) return@remember TrackRowFitDefault
@@ -115,7 +117,7 @@ internal fun rememberTrackListItemFit(
             val statusWidth = when {
                 isResolving -> ResolvingSize.roundToPx()
                 isPlaying -> PlayingIconSize.roundToPx()
-                else -> textWidth(formatDuration(track.durationMs), smallStyle)
+                else -> textWidth(trailingText ?: formatDuration(track.durationMs), smallStyle)
             }
 
             // Source indicator: dots always, labels optionally.

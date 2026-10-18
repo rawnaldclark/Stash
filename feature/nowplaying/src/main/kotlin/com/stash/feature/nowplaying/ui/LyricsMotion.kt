@@ -302,9 +302,11 @@ internal class EmphasisMotion(letterCount: Int, initialProgress: Float) {
 @Composable
 internal fun rememberSmoothPositionMs(positionMs: Long, isPlaying: Boolean = true, speed: Float = 1f): State<Long> {
     val smooth = remember { mutableLongStateOf(positionMs) }
-    LaunchedEffect(positionMs, isPlaying, speed) {
+    // Parked under the mini player (LocalNowPlayingShown false) it holds at the tick: no frame loop.
+    val running = isPlaying && LocalNowPlayingShown.current
+    LaunchedEffect(positionMs, running, speed) {
         smooth.longValue = positionMs
-        if (!isPlaying) return@LaunchedEffect
+        if (!running) return@LaunchedEffect
         val base = System.nanoTime()
         while (true) {
             withFrameNanos { }                                   // pacing only; time comes from nanoTime

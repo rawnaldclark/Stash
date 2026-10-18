@@ -126,6 +126,12 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
     companion object {
+        /**
+         * The action of the intent a tap on the media notification sends: the app opens the full
+         * player over whatever screen it shows (MainActivity turns it into its player deep link).
+         */
+        const val ACTION_OPEN_PLAYER = "com.stash.action.OPEN_PLAYER"
+
         /** Custom command action for toggling shuffle mode. */
         const val COMMAND_TOGGLE_SHUFFLE = "com.stash.TOGGLE_SHUFFLE"
 
@@ -601,12 +607,18 @@ class StashPlaybackService : MediaLibraryService() {
         val player = engine.masterPlayer
         player.audioSessionId = audioSessionId
 
-        // Set session activity so tapping the media notification opens the app.
-        // The intent targets the app's launcher activity via the package's launch intent.
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val sessionActivity = if (launchIntent != null) {
+        // Set session activity so tapping the media notification opens the app, on the full player.
+        // An explicit intent to the launcher activity with its own action: a copy of the launcher
+        // intent would only bring the task forward (it matches the task's root intent, extras and
+        // all), and the activity would never hear it was asked for the player. SINGLE_TOP so a
+        // running activity gets it in onNewIntent.
+        val launchComponent = packageManager.getLaunchIntentForPackage(packageName)?.component
+        val sessionActivity = if (launchComponent != null) {
+            val openPlayer = android.content.Intent(ACTION_OPEN_PLAYER)
+                .setComponent(launchComponent)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
             android.app.PendingIntent.getActivity(
-                this, 0, launchIntent,
+                this, 0, openPlayer,
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
             )
         } else null

@@ -7,7 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.listen.ListenTogetherState
@@ -29,7 +28,7 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
  * the sheet closes itself if a room starts while it's open; it also closes (and never shows)
  * when there's no song, e.g. restored after the process died or the queue was cleared elsewhere.
  * The actions' confirmations ("Playing next", "Downloading…", a radio that couldn't start) come
- * from the ViewModel's userMessages and show as toasts, exactly as on Now Playing.
+ * from the ViewModel's userMessages, toasted app-wide by [PlayerMessagesToaster].
  *
  * @param onDismiss Closes the sheet (the host stops composing it).
  */
@@ -46,15 +45,6 @@ fun PlayerQueueSheet(
     val showQueue = !inRoom && hasTrack
     LaunchedEffect(showQueue) { if (!showQueue) onDismiss() }
 
-    // Nothing else collects the activity-scoped ViewModel's messages (Now Playing collects its own
-    // instance's), so the sheet shows them while it's open, as NowPlayingScreen does.
-    val toastContext = LocalContext.current
-    LaunchedEffect(viewModel) {
-        viewModel.userMessages.collect { msg ->
-            android.widget.Toast.makeText(toastContext, msg, android.widget.Toast.LENGTH_LONG).show()
-        }
-    }
-
     // The queue row (if any) whose Save-to-Playlist picker is open.
     var saveTrack by remember { mutableStateOf<Track?>(null) }
     val shareTrack by viewModel.shareTrack.collectAsStateWithLifecycle()
@@ -69,7 +59,7 @@ fun PlayerQueueSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
             // The song's text ink: Now Playing's accent, contrast-safe on the sheet in both themes.
-            accentColor = LocalAlbumChrome.current.accentText,
+            accentColor = LocalAlbumChrome.current.ink,
             source = uiState.source,
             isShuffleEnabled = uiState.shuffleEnabled,
             onDismiss = onDismiss,
@@ -82,10 +72,8 @@ fun PlayerQueueSheet(
             onPlayNext = viewModel::queuePlayNext,
             onStartRadio = viewModel::startRadioForTrack,
             onSaveToPlaylist = { saveTrack = it },
-            onShare = { track ->
-                shareRequested = true
-                viewModel.onShareTrack(track)
-            },
+            // Only when a sheet is coming: a request that never answers must not stay armed.
+            onShare = { track -> shareRequested = viewModel.onShareTrack(track) },
             onToggleDownload = viewModel::toggleDownload,
             onRestoreTrack = viewModel::onRestoreToQueue,
         )

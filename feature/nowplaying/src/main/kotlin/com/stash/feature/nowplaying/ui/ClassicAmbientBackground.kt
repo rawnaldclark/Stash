@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying.ui
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -14,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import com.stash.core.ui.ambient.AlbumChrome
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -24,13 +25,12 @@ private val ClassicBaseDark = Color(0xFF06060C)
 /** Light-theme base: lavender paper matching the app's light ground. */
 private val ClassicBaseLight = Color(0xFFF4F1FA)
 
-/** Duration of the crossfade when album-art colors change. */
-private const val CLASSIC_CROSSFADE_MS = 800
-
 /**
  * The "Classic" ambient style (Settings > Appearance > Ambient style): the app's
- * original Now Playing ambient, kept unchanged beside the default "Soft glow"
- * ([AmbientBackground], the web player's port).
+ * original Now Playing orbs, kept beside the default "Soft glow" ([AmbientBackground],
+ * the web player's port), and since 2026-10 painted in the same album colours: the
+ * app-wide chrome's dom / vib / mut, crossfading with everything else (no palette of
+ * its own any more).
  *
  * A full-bleed ambient background that renders three slowly-drifting radial
  * gradients on the theme's canvas. The gradients orbit in circles at
@@ -39,44 +39,25 @@ private const val CLASSIC_CROSSFADE_MS = 800
  * pastel wash over lavender paper — each palette color is blended a step
  * toward white and drawn at lower alpha so the ground stays airy.
  *
- * @param dominantColor Primary palette color (highest alpha gradient).
- * @param vibrantColor  Secondary palette color.
- * @param mutedColor    Tertiary palette color (lowest alpha gradient).
  * @param lightMode     Pastel wash on lavender paper instead of the dark canvas.
  * @param amoledMode    Pure #000000 canvas, no orbs — and no animation
  *   infrastructure at all: the point of AMOLED is pixels (and the GPU)
  *   doing nothing. Wins over [lightMode].
  * @param modifier      Standard Compose [Modifier].
+ * @param colors        The album colours (dom: highest-alpha orb, vib, mut: lowest), read at
+ *   draw time so a crossfade only redraws the canvas.
  */
 @Composable
 fun ClassicAmbientBackground(
-    dominantColor: Color,
-    vibrantColor: Color,
-    mutedColor: Color,
     lightMode: Boolean = false,
     amoledMode: Boolean = false,
     modifier: Modifier = Modifier,
+    colors: AlbumChrome = LocalAlbumChrome.current,
 ) {
     // NOTE: no early-return here anymore — amoledMode only swaps the base
     // fill color below. Whether this composable renders at all (i.e.
     // whether the orbs animate) is entirely gated by the caller's
     // ambientAnimationEnabled check in NowPlayingScreen.
-
-    val animDominant by animateColorAsState(
-        targetValue = dominantColor,
-        animationSpec = tween(durationMillis = CLASSIC_CROSSFADE_MS),
-        label = "dominantColor",
-    )
-    val animVibrant by animateColorAsState(
-        targetValue = vibrantColor,
-        animationSpec = tween(durationMillis = CLASSIC_CROSSFADE_MS),
-        label = "vibrantColor",
-    )
-    val animMuted by animateColorAsState(
-        targetValue = mutedColor,
-        animationSpec = tween(durationMillis = CLASSIC_CROSSFADE_MS),
-        label = "mutedColor",
-    )
 
     // Infinite angular animations for the three orbital paths.
     val infiniteTransition = rememberInfiniteTransition(label = "ambientOrbit")
@@ -110,9 +91,12 @@ fun ClassicAmbientBackground(
         drawRect(color = if (amoledMode) Color.Black else if (lightMode) ClassicBaseLight else ClassicBaseDark)
 
         // Pastel treatment for the light wash: blend toward white, lower alpha.
-        fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float): Color =
+        fun orbColor(color: Color, darkAlpha: Float, lightAlpha: Float, liftToWhite: Boolean): Color =
             if (lightMode) {
-                lerp(color, Color.White, 0.25f).copy(alpha = lightAlpha)
+                // dom and mut arrive already lifted for the light ground (the palette's forScheme);
+                // only vib, which the lift leaves alone, still takes the old step toward white, so
+                // the orbs keep the weight they had over the raw colours.
+                (if (liftToWhite) lerp(color, Color.White, 0.25f) else color).copy(alpha = lightAlpha)
             } else {
                 color.copy(alpha = darkAlpha)
             }
@@ -129,7 +113,7 @@ fun ClassicAmbientBackground(
         // Gradient 1 — dominant, highest presence.
         val center1 = orbitalCenter(angle1)
         drawCircle(
-            color = orbColor(animDominant, darkAlpha = 0.35f, lightAlpha = 0.22f),
+            color = orbColor(colors.dom, darkAlpha = 0.35f, lightAlpha = 0.22f, liftToWhite = false),
             radius = gradientRadius,
             center = center1,
         )
@@ -137,7 +121,7 @@ fun ClassicAmbientBackground(
         // Gradient 2 — vibrant, medium presence.
         val center2 = orbitalCenter(angle2)
         drawCircle(
-            color = orbColor(animVibrant, darkAlpha = 0.25f, lightAlpha = 0.15f),
+            color = orbColor(colors.vib, darkAlpha = 0.25f, lightAlpha = 0.15f, liftToWhite = true),
             radius = gradientRadius * 0.85f,
             center = center2,
         )
@@ -145,7 +129,7 @@ fun ClassicAmbientBackground(
         // Gradient 3 — muted, subtle presence.
         val center3 = orbitalCenter(angle3)
         drawCircle(
-            color = orbColor(animMuted, darkAlpha = 0.20f, lightAlpha = 0.11f),
+            color = orbColor(colors.mut, darkAlpha = 0.20f, lightAlpha = 0.11f, liftToWhite = false),
             radius = gradientRadius * 0.70f,
             center = center3,
         )

@@ -309,6 +309,12 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLinkIntent(intent: Intent?) {
         if (intent == null) return
 
+        // The media notification (exact action, no data or extras read): open the full player.
+        com.stash.feature.nowplaying.sheet.PlayerSheetDeepLink.targetFor(intent.action)?.let {
+            pendingDeepLink.value = it
+            return
+        }
+
         // Shared mix / track links (https App Links on stashfm.app or the old workers.dev host, and legacy
         // stash://track). Spec §6.
         if (intent.action == Intent.ACTION_VIEW) {

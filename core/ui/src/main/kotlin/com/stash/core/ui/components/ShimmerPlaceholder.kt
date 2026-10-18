@@ -19,16 +19,21 @@ fun ShimmerPlaceholder(
     baseAlpha: Float = 0.06f,
     highlightAlpha: Float = 0.12f,
 ) {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val alpha by transition.animateFloat(
-        initialValue = baseAlpha,
-        targetValue = highlightAlpha,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1_200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "alpha",
-    )
+    // Shimmers only while its page is in front (not under the open player, see rememberPageActive).
+    val alpha = if (rememberPageActive()) {
+        val transition = rememberInfiniteTransition(label = "shimmer")
+        transition.animateFloat(
+            initialValue = baseAlpha,
+            targetValue = highlightAlpha,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1_200, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "alpha",
+        ).value
+    } else {
+        baseAlpha
+    }
     Box(
         modifier
             .clip(shape)

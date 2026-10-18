@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.theme.StashSurface
+import dev.chrisbanes.haze.HazeDefaults
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -37,6 +38,14 @@ import dev.chrisbanes.haze.hazeEffect
 
 /** The backdrop the bottom chrome blurs; null outside the scaffold (previews), where the glass falls back to a tint. */
 val LocalChromeHazeState = staticCompositionLocalOf<HazeState?> { null }
+
+/**
+ * Whether the chrome glass blurs right now, read at draw time (a state read inside the lambda
+ * redraws the glass, it never recomposes it). The app turns it off while the player sheet moves:
+ * a page scaling under the glass would cost a fresh blur every frame. Off, the glass keeps its tint
+ * over the unblurred page (not Haze's near-opaque fallback, which would flash).
+ */
+val LocalChromeBlurEnabled = staticCompositionLocalOf<() -> Boolean> { { true } }
 
 /**
  * How much of the screen's bottom edge the floating chrome covers (mini player, tab bar, banners
@@ -100,6 +109,7 @@ fun Modifier.chromeGlass(
     // Under the blur: the screen's own ground, so a screen that draws no background still frosts as glass, not as a hole.
     val ground = MaterialTheme.colorScheme.background
     val haze = LocalChromeHazeState.current
+    val blurEnabled = LocalChromeBlurEnabled.current
     val glass = if (haze != null) {
         Modifier.hazeEffect(
             state = haze,
@@ -110,7 +120,12 @@ fun Modifier.chromeGlass(
                 noiseFactor = 0f,
                 fallbackTint = HazeTint(fallback),
             ),
-        )
+        ) {
+            val on = blurEnabled()
+            this.blurEnabled = on && HazeDefaults.blurEnabled()
+            // Paused (not unsupported): the translucent tint, so the glass doesn't flash opaque.
+            fallbackTint = if (!on && HazeDefaults.blurEnabled()) HazeTint(tint) else HazeTint(fallback)
+        }
     } else {
         Modifier.background(fallback)
     }

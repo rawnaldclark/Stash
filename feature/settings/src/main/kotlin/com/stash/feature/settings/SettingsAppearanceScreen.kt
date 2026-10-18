@@ -211,7 +211,12 @@ fun SettingsAppearanceScreen(
             val community = section == com.stash.core.data.prefs.HomeSection.COMMUNITY
             HomeSectionRow(
                 label = section.displayLabel(),
-                subtitle = if (community) "Playlists and songs other Stash listeners are into. Your posts show your name." else null,
+                subtitle = when {
+                    community -> "Playlists and songs other Stash listeners are into. Your posts show your name."
+                    section == com.stash.core.data.prefs.HomeSection.YOUR_LISTENING ->
+                        "Recently played and your History. Appears after your first listen."
+                    else -> null
+                },
                 shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
                 canMoveUp = index > 0,
                 canMoveDown = index < uiState.homeSectionOrder.lastIndex,
@@ -244,6 +249,7 @@ private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when 
     com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
     com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
     com.stash.core.data.prefs.HomeSection.COMMUNITY -> "Community"
+    com.stash.core.data.prefs.HomeSection.YOUR_LISTENING -> "Your listening"
 }
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */

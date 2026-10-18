@@ -8,6 +8,7 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.listening.ListeningDay
 import com.stash.core.data.social.stash.StashLikedPlaylistRepository
 import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.data.weblink.handoff.HandoffSongMatcher
@@ -135,7 +136,14 @@ class RoomMirrorLibrary internal constructor(
             fresh.forEachIndexed { i, p ->
                 val t = rows[i] ?: return@forEachIndexed
                 // Already "scrobbled" everywhere and marked with its device: never submitted from here, never fed to mixes.
-                events.insert(ListeningEventEntity(trackId = t.id, startedAt = p.playedAt, scrobbled = true, ytScrobbled = true, originDevice = p.origin))
+                // Its day is read in this phone's zone: the mirror doesn't carry the other device's zone.
+                val stamp = ListeningDay.localStamp(p.playedAt)
+                events.insert(
+                    ListeningEventEntity(
+                        trackId = t.id, startedAt = p.playedAt, scrobbled = true, ytScrobbled = true, originDevice = p.origin,
+                        localDay = stamp.day, localMinute = stamp.minute,
+                    ),
+                )
             }
         }
     }

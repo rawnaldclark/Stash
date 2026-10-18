@@ -105,7 +105,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ScanFolderEntity::class,
         ScannedSongEntity::class,
     ],
-    version = 58,
+    version = 59,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -161,6 +161,7 @@ abstract class StashDatabase : RoomDatabase() {
 
     abstract fun scannedSongDao(): ScannedSongDao
 
+    abstract fun listeningHistoryDao(): com.stash.core.data.db.dao.ListeningHistoryDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1547,6 +1548,34 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v58 -> v59: listening history learns when, in the listener's own day, each listen
+         * happened, and how long it really played (History, Top songs, Stats, Your Year).
+         *
+         *  - `local_day`: days since 1970-01-01 in the phone's zone at listen time;
+         *  - `local_minute`: 0..1439 in that zone;
+         *  - `listened_ms`: real playing time, NULL = unknown;
+         *  - one index over (`local_day`, `track_id`, `started_at`, `listened_ms`, `local_minute`):
+         *    day-range reads grouped by song or day, answered from the index alone.
+         *
+         * Plain column adds, no table rebuild: every existing listen keeps its id, its scrobble
+         * flags and its unsent ListenBrainz submissions (which hang off the id). Existing rows get
+         * NULL; ListeningDayBackfill stamps their day and minute in Kotlin at the next start (it
+         * needs the phone's time zone, which SQL can't do correctly after travel). Their
+         * listening time stays unknown for good.
+         */
+        val MIGRATION_58_59 = object : Migration(58, 59) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `listening_events` ADD COLUMN `local_day` INTEGER")
+                db.execSQL("ALTER TABLE `listening_events` ADD COLUMN `local_minute` INTEGER")
+                db.execSQL("ALTER TABLE `listening_events` ADD COLUMN `listened_ms` INTEGER")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_listening_events_local_day_track_id_started_at_listened_ms_local_minute` " +
+                        "ON `listening_events` (`local_day`, `track_id`, `started_at`, `listened_ms`, `local_minute`)",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1641,6 +1670,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_55_56,
                 MIGRATION_56_57,
                 MIGRATION_57_58,
+                MIGRATION_58_59,
             )
         }
     }

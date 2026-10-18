@@ -66,6 +66,8 @@ import com.stash.core.ui.theme.StashTheme
  * @param onRemoveDownload    Remove the on-disk file but keep the row (track
  *                            stays streamable). Null hides.
  * @param onDelete            Deletes the track from the device. Null hides.
+ * @param extraOptions        Rows only this surface has (History's "Remove from history"),
+ *                            drawn with [SheetOptionRow] above Delete. Null adds nothing.
  */
 @Composable
 fun TrackOptionsSheet(
@@ -80,6 +82,7 @@ fun TrackOptionsSheet(
     onDownload: ((Track) -> Unit)? = null,
     onRemoveDownload: ((Track) -> Unit)? = null,
     onDelete: ((Track) -> Unit)? = null,
+    extraOptions: (@Composable () -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val role = LocalListenTogetherRole.current
@@ -234,6 +237,9 @@ fun TrackOptionsSheet(
                 onClick = { onViewAlbum(track) },
             )
         }
+
+        // -- The calling surface's own rows --
+        extraOptions?.invoke()
 
         // -- Delete option --
         if (!scanned && onDelete != null) {

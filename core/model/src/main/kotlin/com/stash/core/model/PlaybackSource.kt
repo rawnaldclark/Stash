@@ -20,6 +20,12 @@ sealed class PlaybackSource {
      * device's "Playing from" label, as text only. Display only; the queue is this device's own from then on.
      */
     data class Handoff(val label: String) : PlaybackSource()
+
+    /**
+     * A queue started from "Your listening" (History, later Top songs): [label] says which part, e.g.
+     * "History · Sat, Oct 11". Display only, like [Handoff]; the label may contain "|".
+     */
+    data class Listening(val label: String) : PlaybackSource()
     data object Unknown : PlaybackSource()
 
     /** Pipe-delimited encoding for DataStore. Names containing "|" will
@@ -34,6 +40,7 @@ sealed class PlaybackSource {
         is Search -> "SEARCH"
         is AllSongs -> "ALL_SONGS"
         is Handoff -> "HANDOFF|$label"
+        is Listening -> "LISTENING|$label"
         is Unknown -> "UNKNOWN"
     }
 
@@ -52,6 +59,7 @@ sealed class PlaybackSource {
             is Search -> "Search"
             is AllSongs -> "On this device"
             is Handoff -> label
+            is Listening -> label
             is Unknown -> ""
         }
 
@@ -72,6 +80,7 @@ sealed class PlaybackSource {
                 "SEARCH" -> Search
                 "ALL_SONGS" -> AllSongs
                 "HANDOFF" -> Handoff(parts.drop(1).joinToString("|"))
+                "LISTENING" -> Listening(parts.drop(1).joinToString("|"))
                 else -> Unknown
             }
         }
