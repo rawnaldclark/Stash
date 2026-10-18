@@ -8,7 +8,7 @@ import org.junit.Test
 class ListeningPlaybackTest {
 
     private fun song(id: Long, downloaded: Boolean) =
-        Track(id = id, title = "S$id", artist = "A", filePath = if (downloaded) "/music/$id.flac" else null)
+        Track(id = id, title = "S$id", artist = "A", filePath = if (downloaded) "/music/$id.flac" else null, dateAdded = 0L)
 
     @Test fun `online, the queue plays as it is from the tapped song`() {
         val q = listOf(song(1, false), song(2, true), song(3, false))
