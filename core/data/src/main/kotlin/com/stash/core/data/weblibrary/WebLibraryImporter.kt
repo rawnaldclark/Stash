@@ -9,6 +9,7 @@ import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.listening.ListeningDay
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.share.ShareResult
 import com.stash.core.data.share.SharedMixRepository
@@ -286,8 +287,13 @@ class WebLibraryImporter internal constructor(
             plan.plays.forEachIndexed { i, play ->
                 val t = rows[i] ?: return@forEachIndexed
                 // Already counted ("scrobbled") everywhere: a play from another device is never submitted from here.
+                // Its day is read in this phone's zone: the file doesn't say where it was heard.
+                val stamp = ListeningDay.localStamp(play.playedAt)
                 events.insert(
-                    ListeningEventEntity(trackId = t.id, startedAt = play.playedAt, scrobbled = true, ytScrobbled = true, originDevice = origin),
+                    ListeningEventEntity(
+                        trackId = t.id, startedAt = play.playedAt, scrobbled = true, ytScrobbled = true, originDevice = origin,
+                        localDay = stamp.day, localMinute = stamp.minute,
+                    ),
                 )
                 added++
             }

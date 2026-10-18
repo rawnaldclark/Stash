@@ -129,4 +129,8 @@ object DatabaseModule {
     @Provides
     fun provideScannedSongDao(db: StashDatabase): com.stash.core.data.db.dao.ScannedSongDao =
         db.scannedSongDao()
+
+    @Provides
+    fun provideListeningHistoryDao(db: StashDatabase): com.stash.core.data.db.dao.ListeningHistoryDao =
+        db.listeningHistoryDao()
 }

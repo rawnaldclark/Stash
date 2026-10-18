@@ -47,6 +47,14 @@ interface ListeningEventDao {
         return eventId
     }
 
+    /**
+     * v59: the real listening time of a listen, written by the recorder when the listen ends (and
+     * refreshed on each pause, so an app killed while paused still keeps it). Lives here, not in
+     * [ListeningHistoryDao], because the recorder already holds this DAO.
+     */
+    @Query("UPDATE listening_events SET listened_ms = :listenedMs WHERE id = :eventId")
+    suspend fun setListenedMs(eventId: Long, listenedMs: Long)
+
     /** Restore missing denormalized stats for users with existing completed history. */
     @Query(
         """
