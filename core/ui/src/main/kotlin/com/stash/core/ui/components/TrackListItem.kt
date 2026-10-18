@@ -68,6 +68,8 @@ import com.stash.core.ui.theme.StashTheme
  * @param selectionActive When true, a leading checkbox is shown; the row's [onClick]
  *                    toggles selection (handled by the caller).
  * @param selected    Whether this row is currently selected (drives the checkbox).
+ * @param trailingText Replaces the duration on the right when set (History shows the time a
+ *                    song was heard, "9:41 PM"). Null, the default, shows the duration.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -82,6 +84,7 @@ fun TrackListItem(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     showAvailabilityTag: Boolean = false,
+    trailingText: String? = null,
 ) {
     val hasMoreButton = !selectionActive && onMoreClick != null
     // Inside a TrackRowFitScope the list shares one width reading and one text measurer; on its own
@@ -91,19 +94,23 @@ fun TrackListItem(
     if (environment != null) {
         val fit = rememberTrackListItemFit(
             track, environment.rowWidth, environment.measurer, isPlaying, isResolving, selectionActive, hasMoreButton,
+            trailingText,
         )
         TrackListItemRow(
             track, onClick, modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
             showAvailabilityTag = showAvailabilityTag,
+            trailingText = trailingText,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
             val fit = rememberTrackListItemFit(
                 track, maxWidth, rememberTextMeasurer(), isPlaying, isResolving, selectionActive, hasMoreButton,
+                trailingText,
             )
             TrackListItemRow(
                 track, onClick, Modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
                 showAvailabilityTag = showAvailabilityTag,
+                trailingText = trailingText,
             )
         }
     }
@@ -124,6 +131,7 @@ private fun TrackListItemRow(
     selected: Boolean,
     fit: TrackRowFit,
     showAvailabilityTag: Boolean = false,
+    trailingText: String? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -258,7 +266,7 @@ private fun TrackListItemRow(
                 modifier = Modifier.size(PlayingIconSize),
             )
             else -> Text(
-                text = formatDuration(track.durationMs),
+                text = trailingText ?: formatDuration(track.durationMs),
                 style = MaterialTheme.typography.bodySmall,
                 color = extendedColors.textTertiary,
             )

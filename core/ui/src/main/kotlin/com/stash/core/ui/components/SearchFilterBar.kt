@@ -36,6 +36,7 @@ import com.stash.core.ui.theme.StashTheme
  * @param query          Current search text (bound to ViewModel state).
  * @param onQueryChanged Called on every keystroke with the new text.
  * @param onClear        Called when the clear (X) button is tapped.
+ * @param placeholder    Shown while the field is empty.
  */
 @Composable
 fun SearchFilterBar(
@@ -43,6 +44,7 @@ fun SearchFilterBar(
     onQueryChanged: (String) -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
+    placeholder: String = "Filter tracks...",
 ) {
     val extendedColors = StashTheme.extendedColors
     val focusRequester = remember { FocusRequester() }
@@ -57,7 +59,7 @@ fun SearchFilterBar(
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Filter tracks...",
+                text = placeholder,
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
