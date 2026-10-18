@@ -10,6 +10,8 @@ android {
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
+            // Robolectric (the player sheet's back-order test) boots on the merged resources.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -49,4 +51,8 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
+    // The player sheet's back-order test composes on Robolectric.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
 }

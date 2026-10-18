@@ -285,6 +285,44 @@ class PlayerSheetStateTest {
     }
 
     @Test
+    fun `Back while the player is closing is consumed without restarting the snap`() = runTest {
+        val s = sheet()
+        s.snapTo(PlayerSheetAnchor.FULL)
+        s.collapse()
+        advanceTimeBy(120)
+        runCurrent()
+        val mid = s.progress
+        assertTrue(mid > 0f && mid < 1f)
+        assertTrue(s.handleBack())
+        advanceTimeBy(16)
+        runCurrent()
+        assertTrue("still closing, not restarted", s.progress <= mid)
+        settle()
+        assertEquals(PlayerSheetAnchor.MINI, s.settledAnchor)
+        assertFalse(s.handleBack())
+    }
+
+    @Test
+    fun `a long drag up released with a tiny reverse twitch still opens`() = runTest {
+        val s = sheet()
+        s.beginDrag()
+        s.dragBy(300f * density)
+        s.endDrag(velocityUpDpS = -650f, recentUpDp = 0.4f)
+        settle()
+        assertEquals(PlayerSheetAnchor.FULL, s.settledAnchor)
+    }
+
+    @Test
+    fun `in RTL the mini cover sits at the card's right end`() = runTest {
+        val s = sheet()
+        s.isRtl = true
+        val card = s.effectiveMiniCardRect()
+        val art = s.miniArtRect()
+        assertEquals(card.right - 8f * density, art.right, 1e-3f)
+        assertEquals(44f * density, art.width, 1e-3f)
+    }
+
+    @Test
     fun `without a mini player the sheet grows from where it would be`() = runTest {
         val s = sheet()
         s.miniCardRect = null

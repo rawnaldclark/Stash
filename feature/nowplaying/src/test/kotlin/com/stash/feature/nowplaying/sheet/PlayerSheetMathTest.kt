@@ -177,6 +177,25 @@ class PlayerSheetMathTest {
     }
 
     @Test
+    fun `the tab bar is gone (fully faded) well before it has slid out`() {
+        assertEquals(1f, PlayerSheetMath.tabBarAlpha(0f), 0f)
+        assertEquals(0f, PlayerSheetMath.tabBarAlpha(0.35f), 0f)
+        assertTrue(PlayerSheetMath.tabBarHide(0.35f) < 1f)
+    }
+
+    @Test
+    fun `a release flicks only when the finger's last moments go the same way`() {
+        assertEquals(800f, PlayerSheetMath.releaseVelocity(800f, 12f), 0f)
+        assertEquals(-800f, PlayerSheetMath.releaseVelocity(-800f, -3f), 0f)
+        // Stopped before lifting, or a tiny turn back at lift: no flick, the distance decides.
+        assertEquals(0f, PlayerSheetMath.releaseVelocity(800f, 0f), 0f)
+        assertEquals(0f, PlayerSheetMath.releaseVelocity(-700f, 1f), 0f)
+        // So a long upward drag with a reverse twitch at lift still opens.
+        val v = PlayerSheetMath.releaseVelocity(-600f, 0.5f)
+        assertEquals(PlayerSheetAnchor.FULL, settleTarget(MINI, 300f, v))
+    }
+
+    @Test
     fun `the blur pauses as soon as the sheet leaves MINI`() {
         assertTrue(PlayerSheetMath.blurEnabled(0f))
         assertFalse(PlayerSheetMath.blurEnabled(0.02f))
