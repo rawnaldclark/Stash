@@ -157,6 +157,13 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     @Volatile
     private var paused = false
 
+    /**
+     * The track that started playing while history was paused, until the track changes (or loops
+     * on repeat-one): it isn't counted even if history is turned back on during it. Recorder
+     * thread only.
+     */
+    private var heardWhilePaused: Long? = null
+
     /** Must be called exactly once from Application.onCreate. */
     fun start() {
         scope.launch {
@@ -228,7 +235,10 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                         }
                         closeSession(previousPending)
                     }
-                    if (trackChanged) pending = null
+                    if (trackChanged) {
+                        pending = null
+                        heardWhilePaused = null
+                    }
 
                     // 2. The session starts on the track's first real play. Nothing is
                     //    announced or counted for a song only shown paused; a pause stops
@@ -289,6 +299,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                         old?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
                         old?.let { closeSession(it) }
                         pending = null
+                        // A new loop is a new play: one that started while history was paused may count.
+                        heardWhilePaused = null
                         // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
                         // The live state, read with nothing suspended since: a pause during a write must
                         // find the new session (and pause it), never arm a countdown nobody hears.
@@ -328,8 +340,14 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         // All Songs scans live outside `tracks`: no listen, skip, or scrobble for them. `pending` stays
         // null, so the skip branch in the track-change collector never fires for them either.
         if (track.isScannedSong) return
-        // History paused: no session, so no now-playing, no listen and no skip for this song.
-        if (paused) return
+        // History paused: no session, so no now-playing, no listen and no skip for this song. The
+        // song is remembered: turning history back on mid-song mustn't start counting it at the
+        // next play edge (a pause and resume, a rebuffer). It counts again from the next track.
+        if (paused) {
+            heardWhilePaused = track.id
+            return
+        }
+        if (heardWhilePaused == track.id) return
         val sessionStart = System.currentTimeMillis()
         val session = PendingFire(
             track = track,

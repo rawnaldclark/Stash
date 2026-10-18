@@ -146,6 +146,29 @@ class ListeningRecorderPauseTest {
         coVerify(exactly = 0) { h.skips.insert(any()) }
     }
 
+    @Test fun `a song started while paused doesn't start counting at a play edge after history is turned on`() = runTest {
+        val player = FakePlayerRepository(playing(trackA))
+        val paused = MutableStateFlow(true)
+        val h = start(player, paused)
+
+        advanceTimeBy(20_000); runCurrent()
+        paused.value = false; runCurrent()
+        // A pause and resume (or a rebuffer) mid-song: the play edge must not start a session.
+        player.setState(player.playerState.value.copy(isPlaying = false)); runCurrent()
+        player.setState(player.playerState.value.copy(isPlaying = true)); runCurrent()
+        advanceTimeBy(150_000); runCurrent() // far past A's 90 s threshold
+
+        coVerify(exactly = 0) { h.listens.recordCompletedListen(any()) }
+        coVerify(exactly = 0) { h.scrobbler.notifyNowPlaying(any(), any(), any()) }
+        verify(exactly = 0) { h.sinks.notifyNowPlaying(any()) }
+
+        // Moving on: no skip for A, and B counts.
+        player.setState(playing(trackB)); runCurrent()
+        coVerify(exactly = 0) { h.skips.insert(any()) }
+        advanceTimeBy(95_000); runCurrent()
+        coVerify(exactly = 1) { h.listens.recordCompletedListen(match { it.trackId == trackB.id }) }
+    }
+
     @Test fun `turned back on, the next song counts as usual`() = runTest {
         val player = FakePlayerRepository(playing(trackA))
         val paused = MutableStateFlow(true)
