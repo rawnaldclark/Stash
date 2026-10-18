@@ -121,6 +121,8 @@ import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.sheet.HeroArt
 import com.stash.feature.nowplaying.sheet.PlayerSheetMath
 import com.stash.feature.nowplaying.sheet.PlayerSheetState
+import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.toSize
@@ -225,15 +227,18 @@ fun NowPlayingScreen(
     var confirmLeaveTogether by remember { mutableStateOf(false) }
     // Haptics at the moments that matter: you're in (start or join), and you became host.
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // On screen right now (read when an event lands, not in composition): parked under the mini
+    // player, Now Playing gives no haptics and starts no navigation.
+    val onScreen: () -> Boolean = { sheet == null || sheet.targetAnchor != PlayerSheetAnchor.MINI || sheet.progress > 0f }
     var wasInRoom by remember { mutableStateOf(room != null) }
     LaunchedEffect(room != null) {
-        if (room != null && !wasInRoom) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
+        if (room != null && !wasInRoom && onScreen()) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
         wasInRoom = room != null
     }
     LaunchedEffect(Unit) {
         together.events.collect { e ->
             val me = (together.state.value as? ListenTogetherState.InRoom)?.myId
-            if (e.kind == com.stash.core.media.listen.SessionEvent.Kind.HOSTING && e.memberId == me) {
+            if (e.kind == com.stash.core.media.listen.SessionEvent.Kind.HOSTING && e.memberId == me && onScreen()) {
                 haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Confirm)
             }
         }
@@ -257,15 +262,37 @@ fun NowPlayingScreen(
 
     // Tap-to-artist: the VM resolves the artist name → browseId off the main
     // thread and emits a one-shot nav target; forward it to the host.
+    // A lookup that lands after the player closed (or started closing) is dropped: the page
+    // under the mini player must not change by itself.
     LaunchedEffect(Unit) {
         viewModel.artistNavEvents.collect { t ->
-            onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
+            if (sheet == null || sheet.targetAnchor != PlayerSheetAnchor.MINI) {
+                onNavigateToArtist(t.artistId, t.name, t.avatarUrl, t.focusAlbum)
+            }
         }
     }
 
     LaunchedEffect(Unit) {
         viewModel.albumNavEvents.collect { a ->
-            onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
+            if (sheet == null || sheet.targetAnchor != PlayerSheetAnchor.MINI) {
+                onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
+            }
+        }
+    }
+
+    // TalkBack: when the player settles open, focus moves to its Dismiss button, so the reader
+    // starts at the top of the player rather than wherever it was on the page behind.
+    val dismissFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    if (sheet != null) {
+        val a11yContext = LocalContext.current
+        LaunchedEffect(sheet) {
+            androidx.compose.runtime.snapshotFlow { sheet.settledAnchor }.collect { anchor ->
+                val am = a11yContext.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE)
+                    as? android.view.accessibility.AccessibilityManager
+                if (anchor == PlayerSheetAnchor.FULL && am?.isTouchExplorationEnabled == true) {
+                    runCatching { dismissFocus.requestFocus() }
+                }
+            }
         }
     }
 
@@ -306,10 +333,8 @@ fun NowPlayingScreen(
             onPlayNext = viewModel::queuePlayNext,
             onStartRadio = viewModel::startRadioForTrack,
             onSaveToPlaylist = { queueSaveTrack = it },
-            onShare = { t ->
-                shareRequested = true
-                viewModel.onShareTrack(t)
-            },
+            // Only when a sheet is coming: a request that never answers must not stay armed.
+            onShare = { t -> shareRequested = viewModel.onShareTrack(t) },
             onToggleDownload = viewModel::toggleDownload,
             onRestoreTrack = viewModel::onRestoreToQueue,
         )
@@ -457,10 +482,7 @@ fun NowPlayingScreen(
                     ListenTogetherState.Idle -> showStartTogether = true
                 }
                 NowPlayingAction.SAVE_TO_PLAYLIST -> showSaveSheet = true
-                NowPlayingAction.SHARE -> {
-                    shareRequested = true
-                    viewModel.onShareCurrent()
-                }
+                NowPlayingAction.SHARE -> shareRequested = viewModel.onShareCurrent()
                 NowPlayingAction.POST_TO_COMMUNITY ->
                     track?.let { t -> postToCommunity?.invoke(com.stash.core.model.community.PostTarget.Song(t)) }
                 // Resolves and opens the actual remote album page.
@@ -865,6 +887,7 @@ fun NowPlayingScreen(
                         onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
                         onMoreClick = { showOptionsSheet = true },
                         onAction = onPinnedAction,
+                        dismissModifier = Modifier.focusRequester(dismissFocus),
                         castButton = {
                             com.stash.feature.nowplaying.cast.CastButton(
                                 connection = castConnection,
@@ -976,7 +999,6 @@ fun NowPlayingScreen(
                                     onSleepTimerClick = { showSleepTimerSheet = true },
                                     isLiked = uiState.currentTrack?.stashLikedAt != null,
                                     onLikeTap = viewModel::onLikeTap,
-                                    sheet = sheet,
                                 )
 
                                 // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
@@ -1298,7 +1320,6 @@ private fun TrackInfoBlock(
     onSleepTimerClick: () -> Unit,
     isLiked: Boolean,
     onLikeTap: () -> Unit,
-    sheet: PlayerSheetState? = null,
 ) {
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1335,7 +1356,7 @@ private fun TrackInfoBlock(
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .marqueeWhileShown(sheet),
+                        .marqueeWhileShown(),
                 )
                 if (track != null) {
                     Spacer(modifier = Modifier.width(6.dp))
@@ -2001,7 +2022,5 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
  * screen. It starts again from the title's beginning on each opening.
  */
 @Composable
-private fun Modifier.marqueeWhileShown(sheet: PlayerSheetState?): Modifier {
-    val shown by remember(sheet) { androidx.compose.runtime.derivedStateOf { sheet == null || sheet.progress > 0f } }
-    return if (shown) basicMarquee(iterations = Int.MAX_VALUE) else this
-}
+private fun Modifier.marqueeWhileShown(): Modifier =
+    if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current) basicMarquee(iterations = Int.MAX_VALUE) else this

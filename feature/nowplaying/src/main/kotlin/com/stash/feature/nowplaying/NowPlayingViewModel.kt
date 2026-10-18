@@ -125,12 +125,14 @@ class NowPlayingViewModel @Inject constructor(
     private val _shareTrack = kotlinx.coroutines.flow.MutableStateFlow<com.stash.core.model.Track?>(null)
     val shareTrack: kotlinx.coroutines.flow.StateFlow<com.stash.core.model.Track?> = _shareTrack
 
-    fun onShareCurrent() {
-        val slim = uiState.value.currentTrack ?: return
+    /** Looks up the current track for the share sheet. False when there's nothing to share. */
+    fun onShareCurrent(): Boolean {
+        val slim = uiState.value.currentTrack ?: return false
         viewModelScope.launch {
             _shareTrack.value = musicRepository.observeTrackById(slim.id)
                 .firstOrNull() ?: slim
         }
+        return true
     }
 
     fun onShareDismissed() {
@@ -1119,11 +1121,13 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     /** Open the share sheet for [track], fetching its full row for the link options. */
-    fun onShareTrack(track: Track) {
-        if (track.isScannedSong) return // only on this phone: nothing a link could open
+    /** Looks up [track] for the share sheet. False when it can't be shared (no sheet will come). */
+    fun onShareTrack(track: Track): Boolean {
+        if (track.isScannedSong) return false // only on this phone: nothing a link could open
         viewModelScope.launch {
             _shareTrack.value = musicRepository.observeTrackById(track.id).firstOrNull() ?: track
         }
+        return true
     }
 
     /** Download or remove-download for any [track] (current track or a queue row). */

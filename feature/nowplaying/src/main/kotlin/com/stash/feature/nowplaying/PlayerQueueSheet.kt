@@ -72,10 +72,8 @@ fun PlayerQueueSheet(
             onPlayNext = viewModel::queuePlayNext,
             onStartRadio = viewModel::startRadioForTrack,
             onSaveToPlaylist = { saveTrack = it },
-            onShare = { track ->
-                shareRequested = true
-                viewModel.onShareTrack(track)
-            },
+            // Only when a sheet is coming: a request that never answers must not stay armed.
+            onShare = { track -> shareRequested = viewModel.onShareTrack(track) },
             onToggleDownload = viewModel::toggleDownload,
             onRestoreTrack = viewModel::onRestoreToQueue,
         )

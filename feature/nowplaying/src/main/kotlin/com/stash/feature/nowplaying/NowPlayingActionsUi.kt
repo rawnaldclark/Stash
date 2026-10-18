@@ -203,6 +203,7 @@ internal fun NowPlayingTopBar(
     onMoreClick: () -> Unit,
     onAction: (NowPlayingAction) -> Unit,
     castButton: @Composable () -> Unit,
+    dismissModifier: Modifier = Modifier,
 ) {
     val slot = fit.slotDp.dp
     val row = fit.row
@@ -210,7 +211,7 @@ internal fun NowPlayingTopBar(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss)
+        TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss, modifier = dismissModifier)
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -292,10 +293,11 @@ private fun TopBarIcon(
     tint: Color,
     slot: Dp,
     iconSize: Dp = 24.dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(slot)
             .clickable(
                 interactionSource = null,
