@@ -2,6 +2,7 @@ package com.stash.feature.nowplaying
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -201,6 +203,7 @@ internal fun NowPlayingTopBar(
     onMoreClick: () -> Unit,
     onAction: (NowPlayingAction) -> Unit,
     castButton: @Composable () -> Unit,
+    dismissModifier: Modifier = Modifier,
 ) {
     val slot = fit.slotDp.dp
     val row = fit.row
@@ -208,7 +211,7 @@ internal fun NowPlayingTopBar(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss)
+        TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss, modifier = dismissModifier)
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -260,7 +263,10 @@ private fun ActionSlot(
     radioLock: Boolean,
     onAction: (NowPlayingAction) -> Unit,
 ) {
-    val tint by animateColorAsState(if (v.active) accent else ink, tween(250), label = "pin-tint")
+    // The toggle fades over 250 ms; the accent itself is taken as it is, so the album colour's own
+    // crossfade isn't chased by a second tween every frame.
+    val active by animateFloatAsState(if (v.active) 1f else 0f, tween(250), label = "pin-tint")
+    val tint = lerp(ink, accent, active)
     when (action) {
         // The radar sweep spins around the icon while the station is being built.
         NowPlayingAction.RADIO -> Box(Modifier.size(slot), contentAlignment = Alignment.Center) {
@@ -287,10 +293,11 @@ private fun TopBarIcon(
     tint: Color,
     slot: Dp,
     iconSize: Dp = 24.dp,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(slot)
             .clickable(
                 interactionSource = null,

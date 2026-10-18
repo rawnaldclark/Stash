@@ -78,7 +78,8 @@ private const val GLOW_RADIUS = 14f
  *
  * @param progress    Current playback progress as a fraction in `[0f, 1f]` (a lambda, read
  *                    inside this composable so the position tick recomposes only the bar).
- * @param accentColor Primary accent color used for the gradient and glow.
+ * @param accentColor Primary accent color used for the gradient and glow: a lambda, read at draw
+ *                    time, so the album colour's crossfade redraws the bar without recomposing it.
  * @param elapsedMs   Current playback position in milliseconds.
  * @param totalMs     Total track duration in milliseconds.
  * @param onSeek      Callback invoked with the target position in ms when the
@@ -88,7 +89,7 @@ private const val GLOW_RADIUS = 14f
 @Composable
 fun GlowingProgressBar(
     progress: () -> Float,
-    accentColor: Color,
+    accentColor: () -> Color,
     elapsedMs: () -> Long,
     totalMs: Long,
     onSeek: (Long) -> Unit,
@@ -202,6 +203,7 @@ fun GlowingProgressBar(
                     )
                 })
         ) {
+            val accent = accentColor()
             val barY = size.height / 2f
             val barHeight = TrackHeight.toPx()
             val barWidth = size.width
@@ -220,8 +222,8 @@ fun GlowingProgressBar(
                 drawRoundRect(
                     brush = Brush.horizontalGradient(
                         colors = listOf(
-                            accentColor.copy(alpha = 0.6f),
-                            accentColor,
+                            accent.copy(alpha = 0.6f),
+                            accent,
                         ),
                         startX = 0f,
                         endX = filledWidth,
@@ -235,7 +237,7 @@ fun GlowingProgressBar(
             // --- Glow at playhead ---
             val playheadX = filledWidth.coerceIn(0f, barWidth)
             drawCircle(
-                color = accentColor.copy(alpha = 0.30f),
+                color = accent.copy(alpha = 0.30f),
                 radius = GLOW_RADIUS,
                 center = Offset(playheadX, barY),
             )
@@ -250,7 +252,7 @@ fun GlowingProgressBar(
                 )
                 // Inner accent fill.
                 drawCircle(
-                    color = accentColor,
+                    color = accent,
                     radius = THUMB_INNER_RADIUS,
                     center = Offset(playheadX, barY),
                 )

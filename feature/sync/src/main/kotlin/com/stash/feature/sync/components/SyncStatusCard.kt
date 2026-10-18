@@ -207,16 +207,21 @@ private fun StatItem(label: String, value: String, subValue: String? = null) {
 
 @Composable
 private fun PulseDot(color: Color, modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulseAlpha",
-    )
+    // Pulses only while the Sync page is in front (not under the open player).
+    val alpha = if (com.stash.core.ui.components.rememberPageActive()) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulseAlpha",
+        ).value
+    } else {
+        1f
+    }
     Box(
         modifier = modifier
             .size(8.dp)

@@ -2,7 +2,6 @@ package com.stash.feature.nowplaying.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -20,7 +19,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,8 +83,7 @@ internal val BarNoteSpacing = 10.dp
  * [AmbientBackground] animates beneath, so the Now Playing atmosphere flows
  * through the bar; the vertical gradient only guarantees text contrast.
  *
- * @param accentColor `uiState.vibrantColor` — the same accent
- *        [GlowingProgressBar] uses, NOT `dominantColor`.
+ * @param accentColor The album's text colour (LocalAlbumChrome's ink), already crossfading.
  */
 @Composable
 fun LiveLyricsBar(
@@ -110,13 +107,6 @@ fun LiveLyricsBar(
         exit = fadeOut(tween(250)) + shrinkVertically(tween(250)),
         modifier = modifier,
     ) {
-        // 800ms accent crossfade on track change — matches AmbientBackground's
-        // CROSSFADE_MS so the whole surface recolors as one.
-        val animAccent by animateColorAsState(
-            targetValue = accentColor,
-            animationSpec = tween(800),
-            label = "liveBarAccent",
-        )
         // Scrim + static ink follow the resolved theme so the bar reads on
         // both the dark ambient and the light pastel wash.
         val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -141,7 +131,7 @@ fun LiveLyricsBar(
                         lyrics = mode.syllables,
                         currentPositionMs = positionMs,
                         isPlaying = isPlaying,
-                        accent = animAccent,
+                        accent = accentColor,
                         playbackSpeed = playbackSpeed,
                     )
                 } else {
@@ -157,7 +147,7 @@ fun LiveLyricsBar(
                     val style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         shadow = Shadow(
-                            color = animAccent.copy(alpha = 0.55f),
+                            color = accentColor.copy(alpha = 0.55f),
                             blurRadius = 18f,
                         ),
                     )
@@ -176,7 +166,7 @@ fun LiveLyricsBar(
                             // the bar) — the ♪ row, breathing until the singing is back.
                             InstrumentalBreakNotes(
                                 style = style,
-                                color = animAccent,
+                                color = accentColor,
                                 live = true,
                                 progress = { gap?.progress(clock.value) },
                                 spacing = BarNoteSpacing,
@@ -187,7 +177,7 @@ fun LiveLyricsBar(
                             Text(
                                 text = text,
                                 style = style,
-                                color = animAccent,
+                                color = accentColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center,

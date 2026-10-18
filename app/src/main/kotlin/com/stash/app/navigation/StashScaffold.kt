@@ -1,10 +1,5 @@
 package com.stash.app.navigation
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -34,6 +29,31 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
+import com.stash.core.ui.components.LocalChromeBlurEnabled
+import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.feature.community.CommunityPostingHost
+import com.stash.feature.community.rememberCommunityPosting
+import com.stash.feature.nowplaying.PlayerMessagesToaster
+import com.stash.feature.nowplaying.sheet.CollapseOnNavigation
+import com.stash.feature.nowplaying.sheet.LocalPlayerSheet
+import com.stash.feature.nowplaying.sheet.PlayerSheetDeepLink
+import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
+import com.stash.feature.nowplaying.sheet.PlayerSheetBackHandler
+import com.stash.feature.nowplaying.sheet.PlayerSheetMath
+import com.stash.feature.nowplaying.sheet.PlayerSheetOverlay
+import com.stash.feature.nowplaying.sheet.rememberPlayerSheetState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +105,11 @@ import dev.chrisbanes.haze.rememberHazeState
  * Also publishes the app-wide album colour ([LocalAlbumChrome]), hosts the queue
  * sheet the mini player opens, and shows the daily lossless allowance's heads-ups
  * ([losslessNotices]) as a snackbar above the bottom chrome on any screen.
+ *
+ * The player is one sheet over all of it ([PlayerSheetOverlay], outside the NavHost): the mini
+ * player is its handle, and dragging it (or tapping it) grows it into Now Playing with the finger,
+ * while the page behind scales back under a scrim and the tab bar slides away. The bottom chrome is
+ * always laid out (only moved by layers), so opening the player never re-lays out the page.
  */
 @Composable
 fun StashScaffold(
@@ -96,7 +121,37 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
+
+    // The player: mini player <-> Now Playing as one finger-driven sheet.
+    val playerSheet = rememberPlayerSheetState()
+    // At rest at MINI: the scaffold's own dialogs and cards may show. Recomposes only on the change.
+    val playerClosed by remember(playerSheet) {
+        derivedStateOf { playerSheet.settledAnchor == PlayerSheetAnchor.MINI && playerSheet.targetAnchor == PlayerSheetAnchor.MINI }
+    }
+    // Open and resting at FULL: the app below is covered, for TalkBack too.
+    val playerCovering by remember(playerSheet) {
+        derivedStateOf { playerSheet.settledAnchor != PlayerSheetAnchor.MINI && playerSheet.targetAnchor != PlayerSheetAnchor.MINI }
+    }
+    // The page under an open player is held at STARTED (it pauses, as it did under the old Now
+    // Playing destination) and resumes as the player closes.
+    val pageLifecycleOwner = rememberCoveredPageLifecycleOwner(covered = playerCovering)
+
+    // The glass blurs only while the player is still (a page moving under it costs a blur a frame).
+    val chromeBlurEnabled: () -> Boolean = remember(playerSheet) { { PlayerSheetMath.blurEnabled(playerSheet.progress) } }
+
+    // Anywhere the app navigates while the player is open (an artist from Now Playing, a link,
+    // a tab switch from the snackbar), the player steps aside (owner decision 1); see
+    // CollapseOnNavigation for the restored-graph rule.
+    DisposableEffect(navController, playerSheet) {
+        val collapser = CollapseOnNavigation(playerSheet)
+        val listener = NavController.OnDestinationChangedListener { _, _, _ -> collapser.onDestinationChanged() }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose { navController.removeOnDestinationChangedListener(listener) }
+    }
+
+    // Stash Community's posting sheets and LocalPostToCommunity, over the NavHost AND the player
+    // (Now Playing's "Post to Community" lives outside the NavHost now).
+    val communityPosting = rememberCommunityPosting()
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -159,11 +214,7 @@ fun StashScaffold(
             // any Now Playing pushed above it.
             navController.popBackStack(dest.route, inclusive = false)
         } else {
-            // Genuine tab switch. Now Playing is transient
-            // full-screen chrome — remove it (wherever it sits)
-            // before the switch so restoreState can never
-            // resurrect it into a tab's saved stack.
-            navController.popBackStack(NowPlayingRoute, inclusive = true)
+            // Genuine tab switch (the player, if open, collapses: see the destination listener).
             navController.navigate(dest.route) {
                 // Save each tab's back stack + state when leaving
                 // it, and restore it when returning — so tabbing to
@@ -184,6 +235,11 @@ fun StashScaffold(
     // when more deep-link surfaces show up.
     LaunchedEffect(pendingDeepLink) {
         when (pendingDeepLink) {
+            // The media notification (A2): open the player over whatever screen is showing.
+            PlayerSheetDeepLink.TARGET -> {
+                PlayerSheetDeepLink.handle(pendingDeepLink, playerSheet)
+                onDeepLinkConsumed()
+            }
             CaptchaExpiredNotifier.DEEP_LINK_TARGET -> {
                 // Push Settings onto the back stack BEFORE the captcha screen.
                 // SquidWtfCaptchaRoute reaches into the SettingsViewModel via
@@ -240,11 +296,27 @@ fun StashScaffold(
         }
     }
 
+    CommunityPostingHost(
+        communityPosting,
+        onSeeMyPosts = {
+            // From See all itself, replace it rather than stacking a second one; from anywhere else, just open it.
+            val onSeeAll = navController.currentBackStackEntry?.destination?.hasRoute<CommunityRoute>() == true
+            navController.navigate(CommunityRoute(mine = true)) { if (onSeeAll) popUpTo<CommunityRoute> { inclusive = true } }
+        },
+    ) {
     ProvideAlbumChrome(albumColors) {
-    CompositionLocalProvider(LocalChromeHazeState provides hazeState) {
+    CompositionLocalProvider(
+        LocalChromeHazeState provides hazeState,
+        LocalPlayerSheet provides playerSheet,
+        LocalChromeBlurEnabled provides chromeBlurEnabled,
+    ) {
+    // The bottom chrome's height (Scaffold's bottom padding), for the snackbar's place.
+    var bottomChromeHeight by remember { mutableStateOf(0.dp) }
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
+        // Under an open player the app is covered: hidden from TalkBack too.
+        modifier = if (playerCovering) Modifier.clearAndSetSemantics { } else Modifier,
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
         // The previous `WindowInsets(0.dp)` override was leaking content under
@@ -264,65 +336,58 @@ fun StashScaffold(
                 // the system bar and pads its own items (StashBottomBar), so content scrolling
                 // under it is frosted all the way to the screen's edge. The cards above it keep
                 // clear of a side system bar (3-button navigation in landscape).
+                // Always laid out, open player or not: the player covers this chrome rather than
+                // removing it, so the page's inset never changes as the player opens and closes.
                 val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                Column {
-                    AnimatedVisibility(
-                        visible = !onNowPlaying,
-                        modifier = cardInsets,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
+                // Under the player's full card none of it is drawn.
+                Column(Modifier.graphicsLayer { alpha = if (playerSheet.progress >= 1f) 0f else 1f }) {
+                    Box(cardInsets) {
                         com.stash.core.ui.components.QobuzDiscoveryBanner(status = qobuzStatus)
                     }
-                    // On Now Playing the LiveLyricsBar (rendered inside the
-                    // screen itself) takes the MiniPlayer's spot — the full
-                    // player already shows all transport controls, so the
-                    // duplicate mini transport hides on this route only.
-                    AnimatedVisibility(
-                        visible = currentRoute != NowPlayingRoute::class.qualifiedName,
-                        modifier = cardInsets,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                      Column {
-                        // "Continue from Chrome on Windows" (link-sync spec §2.5): above the mini player, never on Now Playing.
-                        com.stash.feature.nowplaying.handoff.HandoffCard()
-                        // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a dialog, shown once per send.
-                        com.stash.feature.settings.weblink.InboxPrompt()
+                    Column(cardInsets) {
+                        // "Continue from Chrome on Windows" (link-sync spec §2.5): above the mini player.
+                        // Always laid out (so the mini player never jumps when the player closes); it
+                        // fades with the mini player's content and takes no touches unless the player
+                        // is closed.
+                        Box(
+                            Modifier
+                                .graphicsLayer { alpha = PlayerSheetMath.miniContentAlpha(playerSheet.progress) }
+                                .pointerInput(playerSheet) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            if (!playerSheet.isAtRest(PlayerSheetAnchor.MINI)) {
+                                                event.changes.forEach { it.consume() }
+                                            }
+                                        }
+                                    }
+                                },
+                        ) {
+                            com.stash.feature.nowplaying.handoff.HandoffCard()
+                        }
+                        // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a
+                        // dialog, shown once per send, never over the open player.
+                        if (playerClosed) com.stash.feature.settings.weblink.InboxPrompt()
                         MiniPlayer(
                             onOpenQueue = { showQueue = true },
-                            onExpand = {
-                                // Return to an existing Now Playing entry instead
-                                // of pushing a duplicate. launchSingleTop only
-                                // guards a CONSECUTIVE dup — via NP → artist
-                                // profile → mini player, each expand used to
-                                // stack another NP entry, and every buried
-                                // entry's ViewModel keeps its 4Hz player combine
-                                // running forever (observed: 6 live VMs in a
-                                // heap dump). popBackStack returns false when NP
-                                // isn't in the stack — normal push in that case.
-                                if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
-                                    navController.navigate(NowPlayingRoute) {
-                                        launchSingleTop = true
-                                    }
-                                }
-                            },
+                            onExpand = playerSheet::expand,
+                            sheet = playerSheet,
                         )
-                      }
                     }
 
-                    // Now Playing is a full-screen player: the tab bar slides away while it
-                    // is open and comes back as it closes (down chevron, Back, a tab switch).
-                    AnimatedVisibility(
-                        visible = !onNowPlaying,
-                        enter = slideInVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeIn(tween(NAV_BAR_SLIDE_MS)),
-                        exit = slideOutVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeOut(tween(NAV_BAR_SLIDE_MS)),
-                    ) {
-                        StashBottomBar(
-                            currentRoute = currentRoute,
-                            onNavigate = ::navigateToTab,
-                        )
-                    }
+                    // The tab bar slides away as the player opens (gone by 60 %) and comes back as
+                    // it closes: a layer move with the finger, never a re-layout. It fades out faster
+                    // than it slides (gone by 12 %), so it never shows through the system's 3-button
+                    // bar on its way down.
+                    StashBottomBar(
+                        currentRoute = currentRoute,
+                        onNavigate = ::navigateToTab,
+                        modifier = Modifier.graphicsLayer {
+                            val p = playerSheet.progress
+                            translationY = size.height * PlayerSheetMath.tabBarHide(p)
+                            alpha = PlayerSheetMath.tabBarAlpha(p)
+                        },
+                    )
                 }
             }
         },
@@ -331,27 +396,41 @@ fun StashScaffold(
         // player and tab bar float over it and blur it. Screens pad their scrolling content
         // by LocalBottomChromeInset (the bottom chrome's height, system bar included) so the
         // last row scrolls clear; a screen that doesn't scroll is padded by its destination
-        // in StashNavHost. Now Playing's ambient runs under the (gesture or 3-button) system
-        // bar and the screen pads its own controls above it. The status bar inset stays.
+        // in StashNavHost. The status bar inset stays.
         // While a screen is selecting there's no glass to draw under: it keeps the system
         // bar inset as padding, so its own selection bar sits above the system bar as before.
         val layoutDirection = LocalLayoutDirection.current
         val bottomChrome = innerPadding.calculateBottomPadding()
+        SideEffect { bottomChromeHeight = bottomChrome }
         val contentPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
             top = innerPadding.calculateTopPadding(),
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
-        CompositionLocalProvider(LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome) {
+        CompositionLocalProvider(
+            LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome,
+            // The NavHost takes its host lifecycle from here and caps every page at it.
+            LocalLifecycleOwner provides pageLifecycleOwner,
+        ) {
         StashNavHost(
             navController = navController,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
-                // Off Now Playing the bottom chrome owns the system bar inset, so screens'
-                // own Scaffolds don't pad it again; Now Playing still reads it.
-                .consumeWindowInsets(if (onNowPlaying) contentPadding else innerPadding)
+                // The bottom chrome owns the system bar inset, so screens' own Scaffolds don't
+                // pad it again.
+                .consumeWindowInsets(innerPadding)
+                // The page steps back (5 %) as the player opens; the glass blurs what's
+                // inside this layer, the unscaled page, and is off while the player moves.
+                .graphicsLayer {
+                    val p = playerSheet.progress
+                    val scale = PlayerSheetMath.pageScale(p)
+                    scaleX = scale
+                    scaleY = scale
+                    // Under the player's full card the page isn't drawn at all.
+                    alpha = if (p >= 1f) 0f else 1f
+                }
                 .hazeSource(hazeState),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
@@ -360,9 +439,57 @@ fun StashScaffold(
                 StartTab.LIBRARY -> LibraryRoute
                 StartTab.SEARCH -> SearchRoute
             },
+            posting = communityPosting,
         )
         }
     }
+
+    // The player sheet over everything: scrim, the card growing into Now Playing, the travelling cover.
+    PlayerSheetOverlay(
+        state = playerSheet,
+        // From the player to an artist or album: the player collapses and the page opens behind
+        // it; Back from there returns to where you were before the player.
+        onNavigateToArtist = { id, name, avatar, focusAlbum ->
+            playerSheet.collapse()
+            navController.navigate(SearchArtistRoute(id, name, avatar, focusAlbum))
+        },
+        onNavigateToAlbum = { albumId, name, artUrl, artistName ->
+            playerSheet.collapse()
+            navController.navigate(
+                SearchAlbumRoute(
+                    browseId = albumId,
+                    title = name,
+                    artist = artistName,
+                    thumbnailUrl = artUrl,
+                    year = null,
+                    source = AlbumSource.YOUTUBE,
+                ),
+            )
+        },
+    )
+
+    // Above the player too: a heads-up shows over Now Playing, above the system bar there, and
+    // above the bottom chrome otherwise.
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .then(
+                if (playerClosed) {
+                    Modifier.padding(bottom = bottomChromeHeight)
+                } else {
+                    Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                },
+            ),
+    )
+
+    // Back over an open player: lyrics first, then collapse (registered after the NavHost's).
+    PlayerSheetBackHandler(playerSheet)
+    }
+
+    // The player's confirmations ("Playing next", "Saved to …"), once, wherever they come from.
+    PlayerMessagesToaster()
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
@@ -370,15 +497,14 @@ fun StashScaffold(
     }
     }
     }
+    }
 }
-
-/** The tab bar's slide on and off Now Playing. */
-private const val NAV_BAR_SLIDE_MS = 350 // = StashNavHost SLIDE_DURATION_MS, so bar and player move as one
 
 @Composable
 private fun StashBottomBar(
     currentRoute: String?,
     onNavigate: (TopLevelDestination) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
     // The web's 1px top line on the tab bar (rgba(255,255,255,.06) / the light glass border).
@@ -389,7 +515,7 @@ private fun StashBottomBar(
     NavigationBar(
         // The same frosted glass as the mini player (a denser tint: the tab labels sit on it),
         // running down under the system bar; the top hairline marks its edge.
-        modifier = Modifier
+        modifier = modifier
             .chromeGlass(ring = false, tintAlphaScale = NAV_GLASS_TINT_SCALE)
             .drawBehind {
                 drawLine(

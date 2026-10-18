@@ -14,6 +14,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.haze)
+    // rememberPageActive reads the page's lifecycle (LocalLifecycleOwner).
+    implementation(libs.lifecycle.runtime.compose)
 
     // SelectionState unit tests run on the JVM. The Compose BOM is only on the
     // main classpath (added by stash.compose.library), so re-apply it here to

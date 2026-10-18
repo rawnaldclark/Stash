@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying
 
-import androidx.compose.ui.graphics.Color
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.RepeatMode
 import com.stash.core.model.Track
@@ -9,8 +8,8 @@ import com.stash.core.ui.components.PlaylistInfo
 /**
  * Immutable snapshot of everything the Now Playing screen needs to render.
  *
- * Mapped from [com.stash.core.model.PlayerState] plus position ticks and
- * palette-extracted colors from the album art.
+ * Mapped from [com.stash.core.model.PlayerState]. The album colours are not here: the screen
+ * reads them from LocalAlbumChrome, the one app-wide palette the mini player wears too.
  */
 data class NowPlayingUiState(
     val currentTrack: Track? = null,
@@ -38,18 +37,6 @@ data class NowPlayingUiState(
     val currentIndex: Int = 0,
     /** Full list of tracks in the playback queue (including the currently playing track). */
     val queue: List<Track> = emptyList(),
-    /** Dominant color extracted from the album art via Palette API. */
-    val dominantColor: Color = Color(0xFF6750A4),
-    /** Vibrant color extracted from the album art via Palette API. */
-    val vibrantColor: Color = Color(0xFF8E24AA),
-    /** Muted color extracted from the album art via Palette API. */
-    val mutedColor: Color = Color(0xFF37474F),
-    /**
-     * The ambient's colours, derived from the cover the way the web player does (see
-     * AmbientPalette); null until this screen's first cover has been read, so the
-     * ambient keeps the colours it last showed instead of flashing the default.
-     */
-    val ambientPalette: com.stash.core.ui.ambient.AmbientPalette? = null,
     /** User-created playlists available for the "Save to Playlist" sheet. */
     val userPlaylists: List<PlaylistInfo> = emptyList(),
     /**
