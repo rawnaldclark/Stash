@@ -305,7 +305,7 @@ fun StashScaffold(
                         exit = slideOutVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeOut(tween(NAV_BAR_SLIDE_MS)),
                     ) {
                         StashTabBar(
-                            currentRoute = currentRoute,
+                            currentRoute = navController.currentTabRoute(),
                             onNavigate = ::navigateToTab,
                         )
                     }

@@ -26,12 +26,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +68,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import com.stash.core.ui.ambient.AlbumChrome
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.rememberReducedMotion
@@ -190,8 +190,8 @@ private const val PILL_THRESHOLD_PX = 0.5f
  * Takes the navigation bar's inset under it (the capsule floats above the gesture handle or the
  * three buttons), so the bar's whole height is what screens pad by (LocalBottomChromeInset).
  *
- * @param currentRoute The current destination's route. On a screen inside a tab (a detail screen)
- *   the tab you came from stays picked.
+ * @param currentRoute The route of the tab whose stack is on screen ([currentTabRoute]), so a
+ *   tab's own detail screens keep it picked. A route that isn't a tab picks none.
  * @param onNavigate Called with a tab on every tap, including a tap on the picked tab (which pops
  *   back to the tab's root; the glyph replays its move).
  */
@@ -202,11 +202,7 @@ fun StashTabBar(
     modifier: Modifier = Modifier,
 ) {
     val tabs = TopLevelDestination.entries
-    // The picked tab: the current route's, or, inside a tab, the last tab route seen.
-    val routeIndex = tabs.indexOfFirst { it.route::class.qualifiedName == currentRoute }
-    var lastTabIndex by rememberSaveable { mutableIntStateOf(-1) }
-    val selectedIndex = if (routeIndex >= 0) routeIndex else lastTabIndex
-    SideEffect { if (routeIndex >= 0) lastTabIndex = routeIndex }
+    val selectedIndex = tabs.indexOfFirst { it.route::class.qualifiedName == currentRoute }
 
     val dark = LocalIsDarkTheme.current
     val restColor = if (dark) TabRestDark else StashTheme.extendedColors.textTertiary
@@ -505,3 +501,18 @@ private class PillPainter {
         }
     }
 }
+
+/**
+ * The route of the tab whose stack is on screen: the top-most tab route in the back stack (the
+ * start tab sits at the bottom, the active tab above it, its detail screens above that), the same
+ * rule as the scaffold's tab switch. Unlike the current route, it stays on the tab through its
+ * detail screens, and it is right when a tab switch restores a stack that sits on a detail screen.
+ */
+@Composable
+fun NavController.currentTabRoute(): String? {
+    val backStack by currentBackStack.collectAsState()
+    return backStack.lastOrNull { entry -> entry.destination.route in TabRoutes }?.destination?.route
+}
+
+/** Every tab's route name, as the back stack names them. */
+private val TabRoutes: Set<String?> = TopLevelDestination.entries.map { it.route::class.qualifiedName }.toSet()
