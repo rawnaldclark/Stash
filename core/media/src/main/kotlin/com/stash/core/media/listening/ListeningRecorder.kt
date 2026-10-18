@@ -63,8 +63,9 @@ import javax.inject.Singleton
  *   - v59: each listen is stamped with the local day and minute it started
  *     ([ListeningDay]), and keeps counting its real playing time after it is
  *     recorded. That time is written to `listened_ms` when the session ends
- *     (next song, a repeat-one restart, stop) and on every pause. If the app
- *     dies mid-song it stays NULL, and totals fall back to the song's length.
+ *     (next song, a repeat-one restart, stop) and on pauses (once at least 5 s
+ *     more has played). If the app dies mid-song it keeps the last value
+ *     written, or NULL if none, and totals fall back to the song's length.
  *   - While history is paused (Settings › Library & Storage › Listening history,
  *     [ListeningHistoryPreference]) nothing is recorded: no listen, no skip, and no
  *     now-playing to Last.fm or ListenBrainz. A song already counting when the
@@ -143,6 +144,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         var listeningSinceMs: Long? = null
         /** The session is over: a listen recorded after this writes its time straight away. */
         var ended = false
+        /** The value last written to the row; null before the first write. */
+        var writtenMs: Long? = null
     }
 
     private var pending: PendingFire? = null
@@ -207,6 +210,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     //    If completion already claimed it, leave its job
                     //    alive so persistence + listen recording can finish.
                     val previousPending = pending
+                    // Its listening time is written last (below), after the next session is set up.
+                    val ended = previousPending?.takeIf { trackChanged }
                     if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
                             val position = positionReached(previousPending)
@@ -221,16 +226,17 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                                 recordSkip(previousPending.track, position)
                             }
                         }
-                        endSession(previousPending)
+                        closeSession(previousPending)
                     }
                     if (trackChanged) pending = null
 
                     // 2. The session starts on the track's first real play. Nothing is
                     //    announced or counted for a song only shown paused; a pause stops
                     //    the countdown and play resumes it within the same session.
-                    val track = state.currentTrack ?: return@collect
+                    val track = state.currentTrack
                     val current = pending
                     when {
+                        track == null -> Unit
                         !state.isPlaying -> current?.let {
                             pauseCountdown(it)
                             pauseListenClock(it)
@@ -241,6 +247,9 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                             startListenClock(current)
                         }
                     }
+                    // 3. Last, the ended listen's final time: a write suspends, and the new
+                    //    session must already be in place for a pause arriving meanwhile.
+                    ended?.let { writeListenedMs(it, final = true) }
                 }
         }
     }
@@ -276,11 +285,15 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
                     if (isRepeatOne && positionJumpedBack) {
                         Log.d(TAG, "repeat detected for track ${track.id} — scheduling new fire")
-                        pending?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
-                        pending?.let { endSession(it) }
+                        val old = pending
+                        old?.takeIf { it.claimed.compareAndSet(false, true) }?.job?.cancel()
+                        old?.let { closeSession(it) }
                         pending = null
                         // Paused (a scrub to 0 or "previous" while paused): the next play edge starts the session.
-                        if (state.isPlaying) schedulePendingFire(track)
+                        // The live state, read with nothing suspended since: a pause during a write must
+                        // find the new session (and pause it), never arm a countdown nobody hears.
+                        if (playerRepository.playerState.value.isPlaying) schedulePendingFire(track)
+                        old?.let { writeListenedMs(it, final = true) }
                     }
 
                     lastPositionMs = positionMs
@@ -384,28 +397,40 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     /**
      * Paused or buffering: bank the stretch and, when the listen is already recorded, write the
-     * time so far, so an app killed while paused still keeps it.
+     * time so far, so an app killed while paused still keeps it (see [writeListenedMs]).
      */
     private suspend fun pauseListenClock(session: PendingFire) {
         bankListenClock(session)
-        writeListenedMs(session)
+        writeListenedMs(session, final = false)
     }
 
     /**
-     * The session is over (another song, a repeat-one restart, stop): bank and write its final
-     * listening time. A listen whose row is still being written gets it from [recordListen].
+     * The session is over (another song, a repeat-one restart, stop): bank its listening time at
+     * this instant. Synchronous on purpose: callers set up the next session before anything
+     * suspends, then write the final time with [writeListenedMs]. A listen whose row is still
+     * being written gets it from [recordListen].
      */
-    private suspend fun endSession(session: PendingFire) {
+    private fun closeSession(session: PendingFire) {
         if (session.ended) return
         bankListenClock(session)
         session.ended = true
-        writeListenedMs(session)
     }
 
-    private suspend fun writeListenedMs(session: PendingFire) {
+    /**
+     * Writes the session's listening time to its row, once the row exists. A mid-listen write (a
+     * pause, a rebuffer) is skipped when less than [MIN_PROGRESS_WRITE_MS] was added since the
+     * last write, so a stalling stream doesn't wake every observer of `listening_events` each
+     * second; the final write always lands when the value changed.
+     */
+    private suspend fun writeListenedMs(session: PendingFire, final: Boolean) {
         val eventId = session.eventId ?: return
+        val ms = session.listenedMs
+        val written = session.writtenMs
+        if (written == ms) return
+        if (!final && written != null && ms - written < MIN_PROGRESS_WRITE_MS) return
         try {
-            listeningEventDao.setListenedMs(eventId, session.listenedMs)
+            listeningEventDao.setListenedMs(eventId, ms)
+            session.writtenMs = ms
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -492,7 +517,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                 ),
             )
             // The song changed while the row was being written: its time is final already.
-            if (session.ended) writeListenedMs(session)
+            if (session.ended) writeListenedMs(session, final = true)
             // Push the new listen to the generic sinks (ListenBrainz).
             // Last.fm has its own Flow-driven scrobbler and needs no nudge.
             listenSinks.onListenRecorded()
@@ -520,5 +545,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
         /** The longest crossfade (12 s) plus a little for the play-time estimate. */
         private const val TRACK_END_SLACK_MS = 15_000L
+
+        /** A mid-listen listened_ms write needs at least this much new listening time (rebuffers). */
+        private const val MIN_PROGRESS_WRITE_MS = 5_000L
     }
 }

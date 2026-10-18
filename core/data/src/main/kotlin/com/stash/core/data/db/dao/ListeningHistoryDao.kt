@@ -128,8 +128,22 @@ internal object ListeningHistorySql {
             "GROUP BY le.day, le.track_id ORDER BY plays DESC, le.day DESC, le.track_id ASC LIMIT 1) o " +
             "INNER JOIN tracks t ON t.id = o.tid"
 
+    /**
+     * The smallest listen day: the lowest stamped day (one index read) or the lowest UTC day of the
+     * unstamped rows. Not "the day of the earliest start": after travel west, or with stamped and
+     * unstamped rows mixed, a later start can sit on an earlier day.
+     */
     const val FIRST_LISTEN_DAY =
-        "SELECT " + DAY + " FROM listening_events le ORDER BY le.started_at ASC LIMIT 1"
+        "SELECT MIN(d) FROM (SELECT MIN(local_day) AS d FROM listening_events " +
+            "UNION ALL SELECT MIN(started_at) / 86400000 FROM listening_events WHERE local_day IS NULL)"
+
+    /**
+     * The backfill's batch: unstamped rows after :afterId, walking the table by rowid (`+` keeps
+     * SQLite off the day index, which would sort the remaining unstamped rows on every batch).
+     */
+    const val UNSTAMPED_AFTER =
+        "SELECT id, started_at AS startedAt FROM listening_events " +
+            "WHERE +local_day IS NULL AND id > :afterId ORDER BY id LIMIT :limit"
 
     /**
      * History the other way: listens strictly newer than the cursor, oldest first. Used after a
@@ -287,7 +301,7 @@ interface ListeningHistoryDao {
     @Query(ListeningHistorySql.RECENT_TRACKS)
     fun observeRecentTracks(limit: Int, window: Int): Flow<List<TopTrackRow>>
 
-    /** The day of the earliest listen (by start time, read off the started_at index), or null. */
+    /** The earliest day with a listen (see [ListeningHistorySql.FIRST_LISTEN_DAY]), or null. */
     @Query(ListeningHistorySql.FIRST_LISTEN_DAY)
     suspend fun firstListenDay(): Long?
 
@@ -385,10 +399,7 @@ interface ListeningHistoryDao {
     // ── Day stamps for rows from before v59 (ListeningDayBackfill) ────
 
     /** Up to [limit] rows still without a local day, after [afterId] in id order. */
-    @Query(
-        "SELECT id, started_at AS startedAt FROM listening_events " +
-            "WHERE local_day IS NULL AND id > :afterId ORDER BY id LIMIT :limit",
-    )
+    @Query(ListeningHistorySql.UNSTAMPED_AFTER)
     suspend fun unstampedAfter(afterId: Long, limit: Int): List<UnstampedListen>
 
     @Query(

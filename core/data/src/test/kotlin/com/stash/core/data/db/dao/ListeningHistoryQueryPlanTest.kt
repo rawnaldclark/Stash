@@ -39,7 +39,7 @@ class ListeningHistoryQueryPlanTest {
 
     private val values = mapOf(
         "fromDay" to 20_000L, "toDay" to 20_030L, "limit" to 100L,
-        "beforeStartedAt" to Long.MAX_VALUE, "beforeId" to Long.MAX_VALUE, "pattern" to "%x%",
+        "beforeStartedAt" to Long.MAX_VALUE, "beforeId" to Long.MAX_VALUE, "pattern" to "%x%", "afterId" to 0L,
     )
 
     /** The plan's detail lines, binding each distinct `:name` in order of first appearance (SQLite's numbering). */
@@ -97,9 +97,17 @@ class ListeningHistoryQueryPlanTest {
         assertFalse("history sorts the whole result: $p", p.any { "TEMP B-TREE FOR ORDER BY" in it })
     }
 
-    @Test fun `first listen day reads one index entry`() {
+    @Test fun `first listen day reads the day index, never the whole history`() {
         val p = plan(ListeningHistorySql.FIRST_LISTEN_DAY)
-        assertTrue(p.toString(), p.any { "index_listening_events_started_at" in it })
+        val reads = historyReads(p)
+        assertTrue(p.toString(), reads.isNotEmpty())
+        reads.forEach { assertTrue("$it in $p", it.contains("SEARCH") && it.contains("INDEX")) }
+        assertFalse(p.toString(), p.any { "TEMP B-TREE" in it })
+    }
+
+    @Test fun `the backfill walks the table by rowid, without sorting`() {
+        val p = plan(ListeningHistorySql.UNSTAMPED_AFTER)
+        assertTrue(p.toString(), p.any { Regex("""\bSEARCH (TABLE )?listening_events USING INTEGER PRIMARY KEY \(rowid>\?\)""").containsMatchIn(it) })
         assertFalse(p.toString(), p.any { "TEMP B-TREE" in it })
     }
 }

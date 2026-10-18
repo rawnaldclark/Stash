@@ -332,6 +332,24 @@ class ListeningHistoryDaoTest {
         assertEquals(listOf(2026, 2024), dao.yearsWithListens())
     }
 
+    @Test fun `first listen day is the smallest day, not the day of the earliest start`() = runTest {
+        track(1, "A", "X")
+        // Heard in Tokyo (day 101 there), then an hour later in Los Angeles, still day 100 there.
+        listen(1, 101, startedAt = 1_000_000)
+        listen(1, 100, startedAt = 1_000_000 + 3_600_000)
+        assertEquals(100L, dao.firstListenDay())
+        // An unstamped row counts on its UTC day: a later start on an earlier day still wins.
+        listen(1, null, minute = null, startedAt = 99 * ListeningDay.MS_PER_DAY + 5_000_000)
+        assertEquals(99L, dao.firstListenDay())
+    }
+
+    @Test fun `first listen day with only unstamped rows`() = runTest {
+        track(1, "A", "X")
+        listen(1, null, minute = null, startedAt = 42 * ListeningDay.MS_PER_DAY + 1)
+        listen(1, null, minute = null, startedAt = 40 * ListeningDay.MS_PER_DAY + 1)
+        assertEquals(40L, dao.firstListenDay())
+    }
+
     // ── Privacy deletes ─────────────────────────────────────────────
 
     @Test fun `deleting a listen recomputes the song's play count from this phone's listens only`() = runTest {

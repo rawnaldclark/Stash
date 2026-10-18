@@ -31,6 +31,8 @@ class ListeningDayBackfill @VisibleForTesting internal constructor(
 
     /** Stamps every unstamped listen. Returns how many were stamped. */
     suspend fun run(): Int {
+        // Nothing to do on almost every start: one index lookup, not a walk of the table.
+        if (dao.countUnstamped() == 0) return 0
         val z = zone()
         var afterId = 0L
         var stamped = 0

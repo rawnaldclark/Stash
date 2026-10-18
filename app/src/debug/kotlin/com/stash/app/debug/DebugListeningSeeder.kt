@@ -97,35 +97,38 @@ class DebugListeningSeeder : BroadcastReceiver() {
         val today = LocalDate.now(zone)
         val nowMs = System.currentTimeMillis()
         val activeDays = (0 until DAYS).map { today.minusDays(it.toLong()) }.filter { rnd.nextDouble() < 0.8 }
-        val events = ArrayList<ListeningEventEntity>(count)
-        repeat(count) {
-            val r = rnd.nextDouble() * sum
-            var idx = cumulative.binarySearch(r)
-            if (idx < 0) idx = -idx - 1
-            val (trackId, durationMs) = tracks[idx.coerceIn(0, tracks.lastIndex)]
-            val date = activeDays[rnd.nextInt(activeDays.size)]
-            val time = LocalTime.of(pickHour(rnd), rnd.nextInt(60), rnd.nextInt(60))
-            val at = date.atTime(time).atZone(zone).toInstant().toEpochMilli()
-            // Today's later hours haven't happened yet: such a listen goes on the day before.
-            val startedAt = if (at > nowMs) at - ListeningDay.MS_PER_DAY else at
-            val stamp = ListeningDay.localStamp(startedAt, zone)
-            val length = if (durationMs > 0) durationMs else 180_000L
-            val listened = (length * (0.5 + rnd.nextDouble() * 0.5)).toLong()
-            events += ListeningEventEntity(
-                trackId = trackId,
-                startedAt = startedAt,
-                scrobbled = true,
-                ytScrobbled = true,
-                completedAt = startedAt + listened,
-                originDevice = ORIGIN,
-                localDay = stamp.day,
-                localMinute = stamp.minute,
-                listenedMs = if (rnd.nextInt(5) == 0) null else listened,
-            )
-        }
+        // Generated and written one chunk at a time: up to MAX_COUNT listens never sit in memory at once.
         val dao = db.listeningEventDao()
-        for (chunk in events.chunked(BATCH)) {
+        var left = count
+        while (left > 0) {
+            val chunk = ArrayList<ListeningEventEntity>(minOf(BATCH, left))
+            repeat(minOf(BATCH, left)) {
+                val r = rnd.nextDouble() * sum
+                var idx = cumulative.binarySearch(r)
+                if (idx < 0) idx = -idx - 1
+                val (trackId, durationMs) = tracks[idx.coerceIn(0, tracks.lastIndex)]
+                val date = activeDays[rnd.nextInt(activeDays.size)]
+                val time = LocalTime.of(pickHour(rnd), rnd.nextInt(60), rnd.nextInt(60))
+                val at = date.atTime(time).atZone(zone).toInstant().toEpochMilli()
+                // Today's later hours haven't happened yet: such a listen goes on the day before.
+                val startedAt = if (at > nowMs) at - ListeningDay.MS_PER_DAY else at
+                val stamp = ListeningDay.localStamp(startedAt, zone)
+                val length = if (durationMs > 0) durationMs else 180_000L
+                val listened = (length * (0.5 + rnd.nextDouble() * 0.5)).toLong()
+                chunk += ListeningEventEntity(
+                    trackId = trackId,
+                    startedAt = startedAt,
+                    scrobbled = true,
+                    ytScrobbled = true,
+                    completedAt = startedAt + listened,
+                    originDevice = ORIGIN,
+                    localDay = stamp.day,
+                    localMinute = stamp.minute,
+                    listenedMs = if (rnd.nextInt(5) == 0) null else listened,
+                )
+            }
             db.withTransaction { for (e in chunk) dao.insert(e) }
+            left -= chunk.size
         }
         Log.i(TAG, "seeded $count listens over ${activeDays.size} days on ${tracks.size} songs in ${ms(t0)} ms")
     }

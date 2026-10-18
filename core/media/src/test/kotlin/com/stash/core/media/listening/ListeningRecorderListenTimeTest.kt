@@ -183,6 +183,68 @@ class ListeningRecorderListenTimeTest {
         coVerify(exactly = 1) { dao.setListenedMs(56L, 100_000L) }
     }
 
+    @Test fun `a pause during a slow repeat-one write arms no countdown and records nothing unheard`() = runTest {
+        val player = FakePlayerRepository(playing(trackA, RepeatMode.ONE))
+        val dao = mockk<ListeningEventDao>(relaxed = true)
+        coEvery { dao.recordCompletedListen(any()) } returns 55L
+        val slowWrite = CompletableDeferred<Unit>()
+        coEvery { dao.setListenedMs(any(), any()) } coAnswers { slowWrite.await() }
+        recorder(player, dao).start()
+        runCurrent()
+
+        advanceTimeBy(120_000); runCurrent() // listen 55 recorded at 90 s
+        player.setPosition(119_000L); runCurrent()
+        player.setPosition(500L); runCurrent() // looped: the final write of 55 is in flight
+        player.setState(paused(trackA).copy(repeatMode = RepeatMode.ONE)); runCurrent() // paused meanwhile
+        slowWrite.complete(Unit); runCurrent()
+
+        advanceTimeBy(1_000_000); runCurrent() // far past a second threshold, still paused
+        coVerify(exactly = 1) { dao.recordCompletedListen(any()) }
+        coVerify(exactly = 1) { dao.setListenedMs(55L, 120_000L) }
+    }
+
+    @Test fun `rebuffers shorter than 5 s of new listening are not written until the listen ends`() = runTest {
+        val player = FakePlayerRepository(playing(trackA))
+        val dao = mockk<ListeningEventDao>(relaxed = true)
+        coEvery { dao.recordCompletedListen(any()) } returns 55L
+        recorder(player, dao).start()
+        runCurrent()
+
+        advanceTimeBy(100_000); runCurrent() // recorded at 90 s
+        player.setState(paused(trackA)); runCurrent() // first write: 100 s
+        repeat(4) { // four stalls, 2 s of playing between them
+            player.setState(playing(trackA)); runCurrent()
+            advanceTimeBy(2_000); runCurrent()
+            player.setState(paused(trackA)); runCurrent()
+        }
+        // Stalls at 102, 104, 106, 108 s: only 106 is 5 s or more past the last write (100).
+        player.setState(playing(trackA)); runCurrent()
+        advanceTimeBy(1_000); runCurrent()
+        player.setState(playing(trackB)); runCurrent() // final: always written
+
+        coVerifyOrder {
+            dao.setListenedMs(55L, 100_000L)
+            dao.setListenedMs(55L, 106_000L)
+            dao.setListenedMs(55L, 109_000L)
+        }
+        coVerify(exactly = 3) { dao.setListenedMs(any(), any()) }
+    }
+
+    @Test fun `after a pause the row holds the time so far until the listen ends`() = runTest {
+        val player = FakePlayerRepository(playing(trackA))
+        val dao = mockk<ListeningEventDao>(relaxed = true)
+        coEvery { dao.recordCompletedListen(any()) } returns 55L
+        recorder(player, dao).start()
+        runCurrent()
+        advanceTimeBy(100_000); runCurrent()
+        player.setState(paused(trackA)); runCurrent()
+        player.setState(playing(trackA)); runCurrent()
+        advanceTimeBy(50_000); runCurrent()
+        // The app dying here leaves 100 s: a lower bound, and above the 90 s it took to count.
+        coVerify(exactly = 1) { dao.setListenedMs(55L, 100_000L) }
+        coVerify(exactly = 1) { dao.setListenedMs(any(), any()) }
+    }
+
     @Test fun `a skip writes no listening time`() = runTest {
         val player = FakePlayerRepository(playing(trackA))
         val dao = mockk<ListeningEventDao>(relaxed = true)
