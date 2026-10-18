@@ -172,6 +172,7 @@ fun SettingsLibraryStorageScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
     webImport: WebLibraryImportViewModel = hiltViewModel(),
+    listeningHistory: ListeningHistorySettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val webExportState by webExport.state.collectAsStateWithLifecycle()
@@ -333,6 +334,7 @@ fun SettingsLibraryStorageScreen(
 
         // -- Library Health ---------------------------------------------------
         SettingsSectionLabel("Library")
+        var showListeningHistory by rememberSaveable { mutableStateOf(false) }
         val libraryRows = mutableListOf<@Composable () -> Unit>(
             {
                 SettingsNavRow(
@@ -341,6 +343,15 @@ fun SettingsLibraryStorageScreen(
                 )
             },
         )
+        // Pick 3: pause or clear what this phone remembers about what you play.
+        libraryRows += {
+            val historyPaused by listeningHistory.paused.collectAsStateWithLifecycle()
+            SettingsNavRow(
+                title = "Listening history",
+                subtitle = if (historyPaused) "Paused: new listens aren't saved" else "Pause or clear what this phone remembers",
+                onClick = { showListeningHistory = true },
+            )
+        }
         if (onNavigateToWebLink != null) {
             libraryRows += {
                 SettingsNavRow(
@@ -351,6 +362,12 @@ fun SettingsLibraryStorageScreen(
             }
         }
         SettingsGroupCard(rows = libraryRows)
+        if (showListeningHistory) {
+            com.stash.feature.settings.components.ListeningHistorySheet(
+                viewModel = listeningHistory,
+                onDismiss = { showListeningHistory = false },
+            )
+        }
 
         // -- Storage ----------------------------------------------------------
         SettingsSectionLabel("Storage")
