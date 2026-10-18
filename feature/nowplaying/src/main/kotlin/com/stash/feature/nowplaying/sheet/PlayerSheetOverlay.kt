@@ -4,7 +4,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -169,11 +173,14 @@ private fun SheetCard(state: PlayerSheetState, content: @Composable () -> Unit) 
             },
     ) {
         // Past FULL (the rubber band) the content rises a little with the finger, over the ground.
-        // A placement offset, so the big cover reports where it really is.
+        // A placement offset, so the big cover reports where it really is. Clear of a side system
+        // bar or cutout (landscape 3-button navigation), as the NavHost's screens are; the top and
+        // bottom insets Now Playing pads itself, so its ambient runs under the bars.
         Box(
             Modifier
                 .fillMaxSize()
-                .offset { IntOffset(0, -PlayerSheetMath.overFullRisePx(state.progress, state.travelPx()).roundToInt()) },
+                .offset { IntOffset(0, -PlayerSheetMath.overFullRisePx(state.progress, state.travelPx()).roundToInt()) }
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
         ) {
             content()
         }
