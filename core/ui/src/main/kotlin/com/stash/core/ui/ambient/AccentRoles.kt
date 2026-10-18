@@ -25,6 +25,8 @@ import com.stash.core.ui.theme.StashTextSecondaryLight
  *  R1 accent holds 3:1 (WCAG non-text) against every base of the ground.
  *  R2 onAccent is the better of white and #1a0b2e and holds 4.5:1 on the accent; when neither does,
  *     the accent keeps moving (R1 still holding). The smallest move that satisfies R1 and R2 wins.
+ *     Brand carve-out: the brand keeps the theme's primary/onPrimary pairing, which on dark is
+ *     white on #8b5cf6 at 4.23:1 (see below); every cover and neutral palette holds 4.5:1.
  *  R3 ink (text in the song's colour) holds 4.5:1 on every base and on the wash over every base.
  *  R4 wash (the accent as a translucent fill) keeps the ground's text at 7:1 and its secondary text
  *     at 4.5:1 on top of it; its alpha steps down until it does.
