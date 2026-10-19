@@ -51,6 +51,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -265,7 +268,10 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
     // Audio: start once the story shows; each card's song; hold pauses it.
     LaunchedEffect(Unit) { viewModel.startAudio() }
     LaunchedEffect(index) { viewModel.onCard(index) }
-    val paused = held || shareJob != null
+    // Off screen (the share sheet, another app) the story waits where it was.
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val onScreen = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val paused = held || shareJob != null || !onScreen
     LaunchedEffect(paused) { viewModel.setHeld(paused) }
 
     fun go(to: Int) {
