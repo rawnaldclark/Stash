@@ -5,35 +5,41 @@ import com.stash.core.model.isScannedSong
 import com.stash.core.model.isUnavailableForDisplay
 
 /**
- * Where a Recap story card's song is read from. Plain data (no Media3 / android.net types) so the
- * choice is unit-testable on the JVM; [ExoRecapPreviewEngine] turns it into a MediaItem.
+ * What a Recap story card plays. Plain data (no Media3 / android.net types) so the choice is
+ * unit-testable on the JVM; [ExoRecapPreviewEngine] turns it into a media source.
  */
 sealed interface RecapSource {
     /** A file on this phone: a plain path, a `file://` URI or a SAF `content://` URI. */
     data class Local(val path: String) : RecapSource
 
     /**
-     * A song streamed through the same resolver chain the main player uses (a
-     * `stash-resolve://track/<id>` placeholder, resolved at open time by LazyResolvingDataSource).
-     * The ids ride along so a track with no Room row can still be resolved.
+     * An already-resolved stream URL ([RecapStreamLookup]): the main player's cached URL for the
+     * song, or a YouTube InnerTube URL. Played over plain HTTP; no resolving happens in the player.
+     *
+     * @param isDash a Tidal DASH manifest (only ever a cached URL), played with a DASH source.
+     * @param noRedirects read with a client that refuses redirects: a cached JioSaavn URL, whose
+     *   host is validated once and must not be able to bounce a range request elsewhere (the same
+     *   rule the main player's JioSaavn client follows).
      */
-    data class Stream(
-        val trackId: Long,
-        val youtubeId: String?,
-        val title: String,
-        val artist: String,
-        val album: String,
-        val durationMs: Long,
-        val isrc: String?,
+    data class Url(
+        val url: String,
+        val isDash: Boolean = false,
+        val noRedirects: Boolean = false,
     ) : RecapSource
 }
 
 /** Why a card stays quiet instead of playing its song. Logged, never shown. */
-enum class RecapSkipReason { OFFLINE, CELLULAR_REFUSED, UNAVAILABLE, LOCAL_FILE_MISSING }
+enum class RecapSkipReason { OFFLINE, CELLULAR_REFUSED, UNAVAILABLE, LOCAL_FILE_MISSING, NO_PREVIEW_STREAM }
 
-/** The outcome of [recapSourceFor]: a source to play, or the reason the card stays quiet. */
+/** The outcome of [recapSourceFor]. */
 sealed interface RecapSourceChoice {
+    /** Play this right away. */
     data class Play(val source: RecapSource) : RecapSourceChoice
+
+    /** The song has to stream: look it up ([RecapStreamLookup]); none found → quiet card. */
+    data object Stream : RecapSourceChoice
+
+    /** The card stays quiet. */
     data class Skip(val reason: RecapSkipReason) : RecapSourceChoice
 }
 
@@ -48,7 +54,7 @@ sealed interface RecapSourceChoice {
  *    no error toast on a story card).
  *
  * @param localPlayable whether [Track.filePath] exists and is big enough to be real audio
- *   (only consulted when the track records a download).
+ *   (only consulted when the track records a file).
  * @param online [com.stash.core.media.streaming.ConnectivityMonitor.isConnected].
  * @param streamAllowedOnThisNetwork false on mobile data with "stream on cellular" off.
  */
@@ -65,17 +71,7 @@ internal fun recapSourceFor(
     if (track.isUnavailableForDisplay) return RecapSourceChoice.Skip(RecapSkipReason.UNAVAILABLE)
     if (!online) return RecapSourceChoice.Skip(RecapSkipReason.OFFLINE)
     if (!streamAllowedOnThisNetwork) return RecapSourceChoice.Skip(RecapSkipReason.CELLULAR_REFUSED)
-    return RecapSourceChoice.Play(
-        RecapSource.Stream(
-            trackId = track.id,
-            youtubeId = track.youtubeId,
-            title = track.title,
-            artist = track.artist,
-            album = track.album,
-            durationMs = track.durationMs,
-            isrc = track.isrc,
-        ),
-    )
+    return RecapSourceChoice.Stream
 }
 
 /** A preview never starts so late that less than this is left to hear. */

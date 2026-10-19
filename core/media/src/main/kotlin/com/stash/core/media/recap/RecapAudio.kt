@@ -23,6 +23,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -61,19 +64,34 @@ interface RecapMainPlayback {
  * song is an ordinary pause: ListeningRecorder stops that song's countdown and resumes it on play,
  * in the same listen (it never becomes two plays).
  *
- * ### Contract (all calls safe from any thread; work runs on the main thread)
- *  - [begin]: remembers whether the main player was meant to play and pauses it. Idempotent — a
- *    second [begin] keeps the first snapshot (it would otherwise read "paused" and lose the music).
- *  - [play]: fades the current card's song out (~400 ms), then the new one in, starting
+ * Streams come from [RecapStreamLookup] (the main player's cached URL, else YouTube's InnerTube
+ * fast lane), never from the main player's source chain: a preview spends no lossless allowance.
+ *
+ * ### Contract for the story screen (all calls safe from any thread; work runs on the main thread)
+ *  - [begin] when the story opens: remembers whether the main player was meant to play and pauses
+ *    it. Idempotent — a second [begin] keeps the first snapshot (a fresh one would read "paused"
+ *    and the music would never come back).
+ *  - [play] for each card: fades the current song out (~400 ms), then the new one in, starting
  *    [RECAP_DEFAULT_START_FRACTION] of the way through (≥ 25 s left). Offline / cellular-refused /
- *    unavailable → the card is silently quiet. Same song again → no restart.
+ *    unavailable / no preview stream → the card is silently quiet. Same song again → no restart.
  *  - [pause] / [resume]: the story's hold-to-pause.
- *  - [end]: fades out, frees the preview player, and plays the main player again only if it was
- *    meant to be playing at [begin] — nothing playing before → nothing playing after. Idempotent.
- *  - [onBackground]: the app left the screen → [end] (the story can't be heard from the home screen).
- *  - Headphones out or another app taking focus for good → the story goes quiet for the rest of
- *    the session, and [end] leaves the main player paused (that's what it would have done itself:
- *    it never resumes onto the speaker after the headphones come out).
+ *  - **[end] MUST be called when the story closes — from the close action AND from the screen's
+ *    onDispose** (it is idempotent, so both is fine). `end()` plays the main player again only if
+ *    it was meant to be playing at [begin]: nothing playing before → nothing playing after.
+ *    `end(restoreMain = false)` closes without giving the old music back — for "Play your top
+ *    songs", which then sets its own queue.
+ *  - [active] says whether a story is open (it turns false on its own when the sleep timer ends it).
+ *
+ * ### What happens by itself
+ *  - App to the background (share sheet → Instagram, lock screen, home): [onAppBackground] only
+ *    pauses the story's song. The story stays open and the main player stays paused — the user
+ *    is coming back to the story. [onAppForeground] carries the current card's song on.
+ *    (StashApplication calls both from ProcessLifecycleOwner.)
+ *  - Sleep timer fires during a story: SleepTimerController calls `end(restoreMain = false)`, so
+ *    the story's song stops and the music it would have paused stays paused.
+ *  - Headphones out or another app taking focus for good (while on screen) → the story goes quiet
+ *    for the rest of the session, and [end] leaves the main player paused (that's what it would
+ *    have done itself: it never resumes onto the speaker after the headphones come out).
  *  - Listen Together active → the story is quiet and the room is left alone.
  *  - Nothing is persisted: if the process dies mid-story, the preview player dies with it and the
  *    main player's saved queue is the one it had before (it was never changed).
@@ -82,11 +100,13 @@ interface RecapMainPlayback {
 class RecapAudio internal constructor(
     private val engine: RecapPreviewEngine,
     private val main: RecapMainPlayback,
-    /** Where [track] plays from right now (file probe + connectivity + cellular pref). */
+    /** Where [track] plays from right now (file probe + connectivity + cellular pref). No network. */
     private val chooseSource: suspend (Track) -> RecapSourceChoice,
+    /** A stream for a song that has to stream ([RecapStreamLookup.lookup]); null = quiet card. */
+    private val lookupStream: suspend (Track) -> RecapSource.Url?,
     /** Main-thread dispatcher in the app; the test dispatcher in tests. */
     private val mainDispatcher: CoroutineDispatcher,
-    /** Total fade length; 0 disables fading (tests of non-fade behaviour). */
+    /** Total fade length; 0 disables fading. */
     private val fadeMs: Long = DEFAULT_FADE_MS,
     private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) {
@@ -99,6 +119,7 @@ class RecapAudio internal constructor(
         listenTogetherController: ListenTogetherController,
         connectivity: ConnectivityMonitor,
         streamingPreference: StreamingPreference,
+        streamLookup: RecapStreamLookup,
     ) : this(
         engine = engine,
         main = PlayerRepositoryMainPlayback(playerRepository, listenTogetherController),
@@ -115,6 +136,7 @@ class RecapAudio internal constructor(
                     streamingPreference.streamOnCellular.first(),
             )
         },
+        lookupStream = streamLookup::lookup,
         mainDispatcher = Dispatchers.Main.immediate,
     )
 
@@ -127,12 +149,17 @@ class RecapAudio internal constructor(
     ) {
         /** The card's song: loading or loaded on the preview player (null = this card is quiet). */
         var currentTrackId: Long? = null
-        /** A card change is fading the old song out / choosing the new one (not loaded yet). */
+        /** A card change is fading the old song out / finding the new one (not loaded yet). */
         var loadingNext = false
         /** The user is holding the story ([pause]). */
         var held = false
+        /** The app is in the background ([onAppBackground]). */
+        var backgrounded = false
         /** The preview's gain right now, so a fade starts from where the last one stopped. */
         var volume = 0f
+
+        /** The song must not sound right now (it may still load). */
+        val silenced: Boolean get() = held || backgrounded
     }
 
     private val scope = CoroutineScope(SupervisorJob() + mainDispatcher)
@@ -141,13 +168,25 @@ class RecapAudio internal constructor(
     private val lifecycleLock = Mutex()
 
     private var session: Session? = null
+        set(value) {
+            field = value
+            _active.value = value != null
+        }
 
-    /** The in-flight card change (fade out → choose → load → fade in); replaced by the next [play]. */
+    private val _active = MutableStateFlow(false)
+
+    /** True between [begin] and [end]. The story screen can close itself when it turns false. */
+    val active: StateFlow<Boolean> = _active.asStateFlow()
+
+    /** The in-flight card change (fade out → find → load → fade in); replaced by the next [play]. */
     private var switchJob: Job? = null
 
     private val engineListener = object : RecapPreviewEngine.Listener {
         override fun onInterrupted() {
             val s = session ?: return
+            // Off screen the song is already paused; another app taking focus there must not
+            // silence the story the user comes back to.
+            if (s.backgrounded) return log("focus change while in the background; ignored")
             log("interrupted (headphones out or focus lost): story audio off; the main player stays paused")
             s.quiet = true
             switchJob?.cancel()
@@ -165,9 +204,6 @@ class RecapAudio internal constructor(
             engine.stop()
         }
     }
-
-    /** True between [begin] and [end]. For the UI and tests. */
-    val isActive: Boolean get() = session != null
 
     /**
      * Starts a story: snapshots whether the main player is meant to play and pauses it.
@@ -212,25 +248,28 @@ class RecapAudio internal constructor(
         s.loadingNext = true
         try {
             fadeTo(s, 0f)
-            val choice = chooseQuietly(track)
+            // Cancelled with this job when the user swipes on: a lookup never outlives its card.
+            val source = when (val choice = safely(track) { chooseSource(track) }) {
+                is RecapSourceChoice.Play -> choice.source
+                is RecapSourceChoice.Skip -> null.also { log("play ${track.id}: quiet card (${choice.reason})") }
+                RecapSourceChoice.Stream -> safely(track) { lookupStream(track) }
+                    ?: null.also { log("play ${track.id}: quiet card (${RecapSkipReason.NO_PREVIEW_STREAM})") }
+                null -> null
+            }
             if (session !== s || s.quiet) return
             s.loadingNext = false
-            when (choice) {
-                is RecapSourceChoice.Skip -> {
-                    log("play ${track.id}: quiet card (${choice.reason})")
-                    s.currentTrackId = null
-                    engine.stop()
-                }
-                is RecapSourceChoice.Play -> {
-                    val startMs = recapStartPositionMs(track.durationMs, startFraction)
-                    log("play ${track.id} '${track.title}' from ${startMs / 1000}s via ${choice.source::class.simpleName}")
-                    setVolume(s, 0f)
-                    engine.load(choice.source, startMs)
-                    if (!s.held) {
-                        engine.play()
-                        fadeTo(s, 1f)
-                    }
-                }
+            if (source == null) {
+                s.currentTrackId = null
+                engine.stop()
+                return
+            }
+            val startMs = recapStartPositionMs(track.durationMs, startFraction)
+            log("play ${track.id} '${track.title}' from ${startMs / 1000}s via ${source.describe()}")
+            engine.load(source, startMs)
+            s.volume = 0f // load() leaves the player silent
+            if (!s.silenced) {
+                engine.play()
+                fadeTo(s, 1f)
             }
         } finally {
             // Cancelled mid-change by a hold-fade or an error path: never leave the flag stuck.
@@ -239,13 +278,15 @@ class RecapAudio internal constructor(
         }
     }
 
-    private suspend fun chooseQuietly(track: Track): RecapSourceChoice =
+    /** [block], with a failure logged and read as "nothing to play" (cancellation still propagates). */
+    private suspend fun <T> safely(track: Track, block: suspend () -> T): T? =
         try {
-            chooseSource(track)
+            block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            RecapSourceChoice.Skip(RecapSkipReason.UNAVAILABLE).also { log("choose ${track.id} failed: ${e.message}") }
+            log("finding ${track.id} failed: ${e.message}")
+            null
         }
 
     /** Hold-to-pause: the card's song stops where it is. */
@@ -263,47 +304,71 @@ class RecapAudio internal constructor(
             val s = session ?: return@launch
             if (!s.held) return@launch
             s.held = false
-            if (s.quiet || s.currentTrackId == null) return@launch
-            engine.play()
-            // A song that loaded during the hold is still at 0: fade it in. (A card change still
-            // in flight does its own fade; a song paused mid-play is already at full gain.)
-            if (switchJob?.isActive != true) switchJob = scope.launch { fadeTo(s, 1f) }
+            carryOn(s)
         }
     }
 
     /**
-     * Closes the story: fades the song out, frees the preview player, and plays the main player
-     * again if (and only if) it was meant to be playing at [begin] and the story wasn't interrupted.
-     * A second call does nothing. Not cancellable once started: a half-finished end would leave
-     * the user's music paused.
+     * The app went to the background (ProcessLifecycleOwner ON_STOP): the story's song pauses.
+     * The story stays open and the main player stays paused — the user is coming back to it
+     * (owner decision: a share to Instagram or a glance at the lock screen is not a close).
+     */
+    fun onAppBackground() {
+        scope.launch {
+            val s = session ?: return@launch
+            s.backgrounded = true
+            engine.pause()
+            log("app in the background: story song paused, story kept open")
+        }
+    }
+
+    /** The app is back in the foreground (ON_START): the current card's song carries on. */
+    fun onAppForeground() {
+        scope.launch {
+            val s = session ?: return@launch
+            if (!s.backgrounded) return@launch
+            s.backgrounded = false
+            carryOn(s)
+        }
+    }
+
+    /** Sounds the current card's song again after a hold or the background, if nothing else forbids it. */
+    private fun carryOn(s: Session) {
+        if (s.silenced || s.quiet || s.currentTrackId == null) return
+        engine.play()
+        // A song that loaded while silenced is still at 0: fade it in. (A card change still in
+        // flight does its own fade; a song paused mid-play is already at full gain.)
+        if (switchJob?.isActive != true) switchJob = scope.launch { fadeTo(s, 1f) }
+    }
+
+    /**
+     * Closes the story: fades the song out and frees the preview player. With [restoreMain] (the
+     * default) the main player plays again if (and only if) it was meant to be playing at [begin]
+     * and the story wasn't interrupted; `restoreMain = false` leaves it paused (the sleep timer,
+     * or "Play your top songs" about to set its own queue). A second call does nothing. Not
+     * cancellable once started: a half-finished end would leave the user's music paused.
      *
      * The main player's current state is deliberately NOT consulted: right after [begin] the
      * paused state may not have reached PlayerRepository yet, and reading "still playing" there
      * would skip the play and leave the music paused. play() on a playing player is a no-op.
      */
-    suspend fun end(): Unit = withContext(mainDispatcher + NonCancellable) {
+    suspend fun end(restoreMain: Boolean = true): Unit = withContext(mainDispatcher + NonCancellable) {
         lifecycleLock.withLock {
             val s = session ?: return@withLock
             // Closed first: a play() or engine callback arriving during the fade-out is ignored.
             session = null
             switchJob?.cancel()
             switchJob = null
-            if (!s.quiet && !s.held && s.currentTrackId != null) fadeTo(s, 0f)
+            if (!s.quiet && !s.silenced && s.currentTrackId != null) fadeTo(s, 0f)
             engine.setListener(null)
             engine.release()
-            if (s.resumeMainOnEnd && !s.quiet) {
+            if (restoreMain && s.resumeMainOnEnd && !s.quiet) {
                 main.play()
                 log("end: main player playing again where it was")
             } else {
-                log("end: main player left as it was (resume=${s.resumeMainOnEnd}, quiet=${s.quiet})")
+                log("end: main player left as it was (restore=$restoreMain, wasPlaying=${s.resumeMainOnEnd}, quiet=${s.quiet})")
             }
         }
-    }
-
-    /** The app went to the background (ProcessLifecycleOwner ON_STOP): the story is over. */
-    fun onBackground() {
-        if (session == null) return
-        scope.launch { end() }
     }
 
     private suspend fun fadeTo(s: Session, target: Float) {
@@ -324,6 +389,15 @@ class RecapAudio internal constructor(
     private fun setVolume(s: Session, v: Float) {
         s.volume = v
         engine.setVolume(v)
+    }
+
+    private fun RecapSource.describe(): String = when (this) {
+        is RecapSource.Local -> "file"
+        is RecapSource.Url -> when {
+            isDash -> "cached DASH stream"
+            noRedirects -> "cached JioSaavn stream"
+            else -> "stream"
+        }
     }
 
     companion object {

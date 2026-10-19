@@ -7,23 +7,24 @@ import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
-import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.output.HiResOutputController
-import com.stash.core.media.streaming.StashMediaSourceFactory
-import com.stash.core.media.streaming.StreamSourceRegistry
-import com.stash.core.media.streaming.StreamUrlCache
-import com.stash.core.media.streaming.StreamingMediaSourceFactory
-import com.stash.core.media.streaming.TidalStreamResolver
-import com.stash.core.media.streaming.stashResolveUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
@@ -43,13 +44,13 @@ interface RecapPreviewEngine {
          */
         fun onInterrupted()
 
-        /** The current song couldn't be played (resolve failed, file unreadable). Its card stays quiet. */
+        /** The current song couldn't be played (stream failed, file unreadable). Its card stays quiet. */
         fun onError(message: String)
     }
 
     fun setListener(listener: Listener?)
 
-    /** Loads [source] at [startPositionMs], paused. Replaces whatever was loaded. */
+    /** Loads [source] at [startPositionMs], paused and at volume 0. Replaces whatever was loaded. */
     fun load(source: RecapSource, startPositionMs: Long)
 
     fun play()
@@ -73,10 +74,10 @@ interface RecapPreviewEngine {
  * Recently played, the notification, Discord and Link-on-the-web handoff all observe the session
  * player through PlayerRepository / MediaController, and never see this one.
  *
- * Streams go through the main player's own routing: a [StashMediaSourceFactory] built from the
- * same singletons the playback service uses, fed `stash-resolve://track/<id>` placeholders, so a
- * story song resolves exactly like a tapped song (URL cache first, then the source chain, Tidal
- * DASH when a server is set) — and a URL it resolves warms the cache for a later real play.
+ * It resolves nothing: [RecapAudio] hands it a local file or an already-resolved URL
+ * ([RecapStreamLookup]), read over plain HTTP (a DASH source for a cached Tidal manifest, a
+ * no-redirect OkHttp client for a cached JioSaavn URL). So a preview can never start the main
+ * player's source chain, its relays or its retries.
  *
  * Built like the search [com.stash.core.media.preview.PreviewPlayer]: the user's EQ, never the
  * hi-res output (`mainPlayback = false`, so a preview can't retune the DAC under the paused song),
@@ -89,12 +90,7 @@ class ExoRecapPreviewEngine @Inject constructor(
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
     private val hiResOutputController: HiResOutputController,
-    private val streamingMediaSourceFactory: StreamingMediaSourceFactory,
     private val okHttpClient: okhttp3.OkHttpClient,
-    private val streamResolver: StreamSourceRegistry,
-    private val streamUrlCache: StreamUrlCache,
-    private val trackDao: TrackDao,
-    private val tidalStreamResolver: TidalStreamResolver,
 ) : RecapPreviewEngine {
 
     private var player: ExoPlayer? = null
@@ -115,6 +111,11 @@ class ExoRecapPreviewEngine @Inject constructor(
         }
     }
 
+    /** JioSaavn's rule (see StashMediaSourceFactory): never follow a redirect off the validated host. */
+    private val noRedirectClient by lazy {
+        okHttpClient.newBuilder().followRedirects(false).followSslRedirects(false).build()
+    }
+
     override fun setListener(listener: RecapPreviewEngine.Listener?) {
         this.listener = listener
     }
@@ -122,7 +123,10 @@ class ExoRecapPreviewEngine @Inject constructor(
     override fun load(source: RecapSource, startPositionMs: Long) {
         val p = requirePlayer()
         p.stop()
-        p.setMediaItem(source.toMediaItem(), startPositionMs)
+        // Silent until RecapAudio fades it in. Set here, on the player that exists now, so even
+        // the first card (whose player was only just built) can't blip at full gain.
+        p.volume = 0f
+        p.setMediaSource(mediaSourceFor(source), startPositionMs)
         p.playWhenReady = false
         p.prepare()
     }
@@ -154,26 +158,44 @@ class ExoRecapPreviewEngine @Inject constructor(
         player?.volume = volume.coerceIn(0f, 1f)
     }
 
+    private fun mediaSourceFor(source: RecapSource): MediaSource {
+        // Fail fast, like the search preview: one retry, not ExoPlayer's 3+ with backoff.
+        val errorPolicy = DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 1)
+        return when (source) {
+            is RecapSource.Local -> ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context))
+                .setLoadErrorHandlingPolicy(errorPolicy)
+                // Same rule as PlayerRepositoryImpl.toMediaItem: a bare path needs file://.
+                .createMediaSource(
+                    MediaItem.fromUri(
+                        if (source.path.startsWith("/")) "file://${source.path}".toUri() else source.path.toUri(),
+                    ),
+                )
+            is RecapSource.Url -> {
+                val http: DataSource.Factory = if (source.noRedirects) {
+                    OkHttpDataSource.Factory(noRedirectClient)
+                } else {
+                    DefaultHttpDataSource.Factory()
+                        .setUserAgent(USER_AGENT)
+                        .setConnectTimeoutMs(10_000)
+                        .setReadTimeoutMs(15_000)
+                }
+                if (source.isDash) {
+                    DashMediaSource.Factory(http)
+                        .setLoadErrorHandlingPolicy(errorPolicy)
+                        .createMediaSource(
+                            MediaItem.Builder().setUri(source.url).setMimeType(MimeTypes.APPLICATION_MPD).build(),
+                        )
+                } else {
+                    ProgressiveMediaSource.Factory(http)
+                        .setLoadErrorHandlingPolicy(errorPolicy)
+                        .createMediaSource(MediaItem.fromUri(source.url))
+                }
+            }
+        }
+    }
+
     private fun requirePlayer(): ExoPlayer = player ?: run {
         check(Looper.myLooper() == Looper.getMainLooper()) { "RecapPreviewEngine is main-thread only" }
-        val sourceFactory = StashMediaSourceFactory(
-            context = context,
-            streamingFactory = streamingMediaSourceFactory,
-            // Only stash-resolve placeholders and local files reach this player: the
-            // resolved-URL predicates the service needs for its prefetched items never apply.
-            streamingTrackId = { null },
-            isJioSaavnOrigin = { false },
-            httpClient = okHttpClient,
-            resolver = streamResolver,
-            urlCache = streamUrlCache,
-            trackDao = trackDao,
-            resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
-        ).apply {
-            // Fail fast, like the search preview: the default policy retries a failed open 3+
-            // times, and each retry of a placeholder is another full resolve (up to 45 s), so a
-            // song with no source kept the network busy for minutes under a card long gone.
-            setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 1))
-        }
         ExoPlayer.Builder(context)
             .setLooper(Looper.getMainLooper())
             .setRenderersFactory(
@@ -181,7 +203,6 @@ class ExoRecapPreviewEngine @Inject constructor(
                     context, eqController, loudnessController, hiResOutputController, mainPlayback = false,
                 ),
             )
-            .setMediaSourceFactory(sourceFactory)
             .setLoadControl(storyLoadControl())
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -199,6 +220,9 @@ class ExoRecapPreviewEngine @Inject constructor(
     }
 
     private companion object {
+        /** Same hard-coded agent as StreamingMediaSourceFactory (core/media has no BuildConfig). */
+        const val USER_AGENT = "Stash/0.9.26"
+
         /**
          * Audible fast (READY at 250 ms of audio), and a story card is ~6 s long, so buffer
          * at most 15 s ahead instead of the default 50 s: no downloading a third of a FLAC
@@ -212,27 +236,5 @@ class ExoRecapPreviewEngine @Inject constructor(
                 /* bufferForPlaybackAfterRebufferMs = */ 500,
             )
             .build()
-
-        fun RecapSource.toMediaItem(): MediaItem = when (this) {
-            is RecapSource.Local -> MediaItem.Builder()
-                .setMediaId("recap:local")
-                // Same rule as PlayerRepositoryImpl.toMediaItem: a bare path needs file://.
-                .setUri(if (path.startsWith("/")) "file://$path".toUri() else path.toUri())
-                .build()
-            is RecapSource.Stream -> MediaItem.Builder()
-                .setMediaId("recap:$trackId")
-                .setUri(
-                    stashResolveUri(
-                        trackId = trackId,
-                        youtubeId = youtubeId,
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        durationMs = durationMs,
-                        isrc = isrc,
-                    ),
-                )
-                .build()
-        }
     }
 }

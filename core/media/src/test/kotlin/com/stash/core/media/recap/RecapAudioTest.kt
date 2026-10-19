@@ -2,7 +2,9 @@ package com.stash.core.media.recap
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.Track
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -12,12 +14,13 @@ import org.junit.Test
 /**
  * The Recap story audio state machine ([RecapAudio]) against a fake preview engine and a fake main
  * player: begin / play / switch / hold / end / restore, double begin and end, offline skip,
- * nothing-was-playing, Listen Together, interruptions and errors.
+ * nothing-was-playing, Listen Together, interruptions, errors, the app going to the background,
+ * and closing without restoring.
  *
  * What these prove about "story audio never counts": the main player is only ever paused and
- * played — never given a song, a queue or a seek (the fake fails the test if anything else is
- * asked of it) — so ListeningRecorder, the scrobblers, autoplay radio and Recently played, which
- * all observe the main player, have nothing to see. Every song goes to the separate engine.
+ * played — never given a song, a queue or a seek ([RecapMainPlayback] has nothing else) — so
+ * ListeningRecorder, the scrobblers, autoplay radio and Recently played, which all observe the
+ * main player, have nothing to see. Every song goes to the separate engine.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class RecapAudioTest {
@@ -29,7 +32,6 @@ class RecapAudioTest {
         val calls = mutableListOf<String>()
         val volumes = mutableListOf<Float>()
         var engineListener: RecapPreviewEngine.Listener? = null
-        var loaded: RecapSource? = null
         var loadedStartMs: Long = -1
         var playing = false
         var gain = 1f
@@ -40,9 +42,9 @@ class RecapAudioTest {
 
         override fun load(source: RecapSource, startPositionMs: Long) {
             calls += "load:${source.describe()}@$startPositionMs"
-            loaded = source
             loadedStartMs = startPositionMs
             playing = false
+            gain = 0f // the contract: load leaves the player silent
         }
 
         override fun play() {
@@ -57,13 +59,11 @@ class RecapAudioTest {
 
         override fun stop() {
             calls += "stop"
-            loaded = null
             playing = false
         }
 
         override fun release() {
             calls += "release"
-            loaded = null
             playing = false
         }
 
@@ -76,14 +76,11 @@ class RecapAudioTest {
 
         private fun RecapSource.describe() = when (this) {
             is RecapSource.Local -> "local:$path"
-            is RecapSource.Stream -> "stream:$trackId"
+            is RecapSource.Url -> "url:$url"
         }
     }
 
-    /**
-     * The main player. Only pause() and play() exist on [RecapMainPlayback] at all; counting them
-     * is the whole surface the story can touch.
-     */
+    /** The main player. pause() and play() are the whole surface the story can touch. */
     private class FakeMain(
         var meantToPlay: Boolean,
         var listenTogether: Boolean = false,
@@ -104,10 +101,15 @@ class RecapAudioTest {
         }
     }
 
-    private class World(scope: TestScope, main: FakeMain, fadeMs: Long = RecapAudio.DEFAULT_FADE_MS) {
+    private class World(scope: TestScope, val main: FakeMain) {
         val engine = FakeEngine()
-        val main = main
         var online = true
+        /** Track ids [lookupStream] has a stream for (a missing id = no preview stream). */
+        val streamable = mutableSetOf<Long>()
+        val lookups = mutableListOf<Long>()
+        /** When set, a lookup suspends until cancelled (a slow network); records the cancellation. */
+        var lookupHangs = false
+        var lookupCancelled = false
         val log = mutableListOf<String>()
         val audio = RecapAudio(
             engine = engine,
@@ -120,20 +122,34 @@ class RecapAudioTest {
                     streamAllowedOnThisNetwork = true,
                 )
             },
+            lookupStream = { track ->
+                lookups += track.id
+                if (lookupHangs) {
+                    try {
+                        awaitCancellation()
+                    } catch (e: CancellationException) {
+                        lookupCancelled = true
+                        throw e
+                    }
+                }
+                if (track.id in streamable) RecapSource.Url("https://yt/${track.id}") else null
+            },
             mainDispatcher = StandardTestDispatcher(scope.testScheduler),
-            fadeMs = fadeMs,
             log = { log += it },
         )
+
+        fun streamed(id: Long, durationMs: Long = 200_000L): Track {
+            streamable += id
+            return Track(
+                id = id, title = "Song $id", artist = "Artist", durationMs = durationMs,
+                youtubeId = "yt$id", isStreamable = true,
+            )
+        }
     }
 
     private fun downloaded(id: Long, durationMs: Long = 200_000L) = Track(
         id = id, title = "Song $id", artist = "Artist", durationMs = durationMs,
         filePath = "/music/$id.flac", isDownloaded = true,
-    )
-
-    private fun streamed(id: Long, durationMs: Long = 200_000L) = Track(
-        id = id, title = "Song $id", artist = "Artist", durationMs = durationMs,
-        youtubeId = "yt$id", isStreamable = true,
     )
 
     // ── begin / play / end / restore ─────────────────────────────────────────────────────────
@@ -144,7 +160,7 @@ class RecapAudioTest {
 
         w.audio.begin()
         assertThat(w.main.pauses).isEqualTo(1)
-        assertThat(w.audio.isActive).isTrue()
+        assertThat(w.audio.active.value).isTrue()
 
         w.audio.play(downloaded(1))
         advanceUntilIdle()
@@ -156,7 +172,7 @@ class RecapAudioTest {
         assertThat(w.engine.calls.last()).isEqualTo("release")
         assertThat(w.main.plays).isEqualTo(1)
         assertThat(w.main.meantToPlay).isTrue()
-        assertThat(w.audio.isActive).isFalse()
+        assertThat(w.audio.active.value).isFalse()
     }
 
     @Test
@@ -174,6 +190,18 @@ class RecapAudioTest {
     }
 
     @Test
+    fun `the first card's song is never played before it is loaded silent`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+
+        // load (which leaves the player at 0) comes before play; no full-gain volume before play.
+        val loadAt = w.engine.calls.indexOfFirst { it.startsWith("load:") }
+        assertThat(w.engine.calls.indexOf("play")).isGreaterThan(loadAt)
+    }
+
+    @Test
     fun `switching cards fades the old song out before the new one loads`() = runTest {
         val w = World(this, FakeMain(meantToPlay = true))
         w.audio.begin()
@@ -181,12 +209,12 @@ class RecapAudioTest {
         advanceUntilIdle()
         val volumesBeforeSwitch = w.engine.volumes.size
 
-        w.audio.play(streamed(2))
+        w.audio.play(w.streamed(2))
         advanceUntilIdle()
 
         assertThat(w.engine.loads()).containsExactly(
             "load:local:/music/1.flac@60000",
-            "load:stream:2@60000",
+            "load:url:https://yt/2@60000",
         ).inOrder()
         // After the switch began: down to 0 (fade out), then up to 1 (fade in).
         val switchVolumes = w.engine.volumes.drop(volumesBeforeSwitch)
@@ -234,6 +262,63 @@ class RecapAudioTest {
         w.audio.play(downloaded(1, durationMs = 30_000L))
         advanceUntilIdle()
         assertThat(w.engine.loadedStartMs).isEqualTo(5_000L)
+    }
+
+    // ── streams ──────────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `a downloaded song never looks for a stream`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        assertThat(w.lookups).isEmpty()
+    }
+
+    @Test
+    fun `a song with no preview stream leaves its card quiet`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        val noStream = Track(id = 9, title = "T", artist = "A", youtubeId = "yt9", isStreamable = true)
+        w.audio.play(noStream)
+        advanceUntilIdle()
+
+        assertThat(w.lookups).containsExactly(9L)
+        assertThat(w.engine.loads()).isEmpty()
+        assertThat(w.log.any { "NO_PREVIEW_STREAM" in it }).isTrue()
+    }
+
+    @Test
+    fun `swiping on cancels the previous card's stream lookup`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.lookupHangs = true
+        w.audio.play(w.streamed(1))
+        advanceUntilIdle()
+        assertThat(w.lookups).containsExactly(1L)
+
+        w.lookupHangs = false
+        w.audio.play(downloaded(2))
+        advanceUntilIdle()
+
+        assertThat(w.lookupCancelled).isTrue()
+        assertThat(w.engine.loads()).containsExactly("load:local:/music/2.flac@60000")
+    }
+
+    @Test
+    fun `end cancels a stream lookup in flight`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.begin()
+        w.lookupHangs = true
+        w.audio.play(w.streamed(1))
+        advanceUntilIdle()
+
+        w.audio.end()
+        advanceUntilIdle()
+
+        assertThat(w.lookupCancelled).isTrue()
+        assertThat(w.engine.loads()).isEmpty()
+        assertThat(w.main.plays).isEqualTo(1)
     }
 
     // ── idempotency ──────────────────────────────────────────────────────────────────────────
@@ -312,13 +397,43 @@ class RecapAudioTest {
         assertThat(w.engine.loads()).isEmpty()
     }
 
+    // ── closing without restoring ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `end without restore stops the story and leaves the main player paused`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+
+        w.audio.end(restoreMain = false)
+
+        assertThat(w.engine.calls.last()).isEqualTo("release")
+        assertThat(w.main.plays).isEqualTo(0)
+        assertThat(w.main.meantToPlay).isFalse()
+        assertThat(w.audio.active.value).isFalse()
+        // A later end (the screen's onDispose) can't bring the music back either.
+        w.audio.end()
+        assertThat(w.main.plays).isEqualTo(0)
+    }
+
+    @Test
+    fun `active follows the story`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        assertThat(w.audio.active.value).isFalse()
+        w.audio.begin()
+        assertThat(w.audio.active.value).isTrue()
+        w.audio.end(restoreMain = false)
+        assertThat(w.audio.active.value).isFalse()
+    }
+
     // ── nothing was playing ──────────────────────────────────────────────────────────────────
 
     @Test
     fun `nothing playing before means nothing playing after`() = runTest {
         val w = World(this, FakeMain(meantToPlay = false))
         w.audio.begin()
-        w.audio.play(streamed(1))
+        w.audio.play(w.streamed(1))
         advanceUntilIdle()
         w.audio.end()
 
@@ -330,14 +445,15 @@ class RecapAudioTest {
     // ── offline ──────────────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `offline, a streamed song is silently skipped and a downloaded one still plays`() = runTest {
+    fun `offline, a streamed song is silently skipped without a lookup and a downloaded one still plays`() = runTest {
         val w = World(this, FakeMain(meantToPlay = true))
         w.online = false
         w.audio.begin()
 
-        w.audio.play(streamed(1))
+        w.audio.play(w.streamed(1))
         advanceUntilIdle()
         assertThat(w.engine.loads()).isEmpty()
+        assertThat(w.lookups).isEmpty()
         assertThat(w.log.any { "OFFLINE" in it }).isTrue()
 
         w.audio.play(downloaded(2))
@@ -356,7 +472,7 @@ class RecapAudioTest {
         advanceUntilIdle()
 
         w.online = false
-        w.audio.play(streamed(2))
+        w.audio.play(w.streamed(2))
         advanceUntilIdle()
 
         assertThat(w.engine.calls.last()).isEqualTo("stop")
@@ -402,7 +518,108 @@ class RecapAudioTest {
         assertThat(w.engine.gain).isEqualTo(1f)
     }
 
-    // ── interruptions, errors, Listen Together, background ───────────────────────────────────
+    // ── the app in the background ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `background pauses the story's song but keeps the story open and the music paused`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+
+        w.audio.onAppBackground()
+        advanceUntilIdle()
+
+        assertThat(w.engine.playing).isFalse()
+        assertThat(w.audio.active.value).isTrue()
+        assertThat(w.main.plays).isEqualTo(0)
+        assertThat(w.engine.calls).doesNotContain("release")
+    }
+
+    @Test
+    fun `back in the foreground the current card's song carries on`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        w.audio.onAppBackground()
+        advanceUntilIdle()
+
+        w.audio.onAppForeground()
+        advanceUntilIdle()
+
+        assertThat(w.engine.playing).isTrue()
+        assertThat(w.engine.gain).isEqualTo(1f)
+        assertThat(w.engine.loads()).hasSize(1) // same song, not reloaded
+        // The music comes back only when the story is closed.
+        assertThat(w.main.plays).isEqualTo(0)
+        w.audio.end()
+        assertThat(w.main.plays).isEqualTo(1)
+    }
+
+    @Test
+    fun `a song that loads while in the background waits for the foreground`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.audio.onAppBackground()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        assertThat(w.engine.loads()).hasSize(1)
+        assertThat(w.engine.playing).isFalse()
+
+        w.audio.onAppForeground()
+        advanceUntilIdle()
+        assertThat(w.engine.playing).isTrue()
+        assertThat(w.engine.gain).isEqualTo(1f)
+    }
+
+    @Test
+    fun `a story held before going to the background stays held when it comes back`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        w.audio.pause()
+        w.audio.onAppBackground()
+        w.audio.onAppForeground()
+        advanceUntilIdle()
+        assertThat(w.engine.playing).isFalse()
+
+        w.audio.resume()
+        advanceUntilIdle()
+        assertThat(w.engine.playing).isTrue()
+    }
+
+    @Test
+    fun `another app taking focus while we're in the background doesn't silence the story`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        w.audio.onAppBackground()
+        advanceUntilIdle()
+
+        w.engine.engineListener!!.onInterrupted()
+        w.audio.onAppForeground()
+        advanceUntilIdle()
+
+        assertThat(w.engine.playing).isTrue()
+        w.audio.end()
+        assertThat(w.main.plays).isEqualTo(1)
+    }
+
+    @Test
+    fun `background and foreground outside a story do nothing`() = runTest {
+        val w = World(this, FakeMain(meantToPlay = true))
+        w.audio.onAppBackground()
+        w.audio.onAppForeground()
+        advanceUntilIdle()
+        assertThat(w.engine.calls).isEmpty()
+        assertThat(w.main.plays).isEqualTo(0)
+        assertThat(w.main.pauses).isEqualTo(0)
+    }
+
+    // ── interruptions, errors, Listen Together ───────────────────────────────────────────────
 
     @Test
     fun `headphones out or focus lost silences the story and leaves the main player paused`() = runTest {
@@ -424,10 +641,10 @@ class RecapAudioTest {
     fun `a song that fails leaves its card quiet and the next card plays`() = runTest {
         val w = World(this, FakeMain(meantToPlay = false))
         w.audio.begin()
-        w.audio.play(streamed(1))
+        w.audio.play(w.streamed(1))
         advanceUntilIdle()
 
-        w.engine.engineListener!!.onError("resolve failed")
+        w.engine.engineListener!!.onError("connection dropped")
         assertThat(w.engine.calls.last()).isEqualTo("stop")
 
         w.audio.play(downloaded(2))
@@ -440,7 +657,7 @@ class RecapAudioTest {
     fun `the outgoing song failing during a card change doesn't silence the new card`() = runTest {
         val w = World(this, FakeMain(meantToPlay = false))
         w.audio.begin()
-        w.audio.play(streamed(1))
+        w.audio.play(w.streamed(1))
         advanceUntilIdle()
 
         w.audio.play(downloaded(2))
@@ -463,21 +680,6 @@ class RecapAudioTest {
         assertThat(w.main.pauses).isEqualTo(0)
         assertThat(w.main.plays).isEqualTo(0)
         assertThat(w.engine.loads()).isEmpty()
-    }
-
-    @Test
-    fun `going to the background ends the story and restores the music`() = runTest {
-        val w = World(this, FakeMain(meantToPlay = true))
-        w.audio.begin()
-        w.audio.play(downloaded(1))
-        advanceUntilIdle()
-
-        w.audio.onBackground()
-        advanceUntilIdle()
-
-        assertThat(w.audio.isActive).isFalse()
-        assertThat(w.engine.calls.last()).isEqualTo("release")
-        assertThat(w.main.plays).isEqualTo(1)
     }
 
     @Test

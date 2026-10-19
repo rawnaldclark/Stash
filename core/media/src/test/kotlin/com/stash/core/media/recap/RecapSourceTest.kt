@@ -32,20 +32,12 @@ class RecapSourceTest {
 
     @Test
     fun `a downloaded song whose file is gone streams instead`() {
-        val choice = choose(downloaded, localPlayable = false)
-        assertThat((choice as RecapSourceChoice.Play).source).isInstanceOf(RecapSource.Stream::class.java)
+        assertThat(choose(downloaded, localPlayable = false)).isEqualTo(RecapSourceChoice.Stream)
     }
 
     @Test
-    fun `a stream carries the resolver inputs`() {
-        assertThat(choose(streamOnly)).isEqualTo(
-            RecapSourceChoice.Play(
-                RecapSource.Stream(
-                    trackId = 8, youtubeId = "yt8", title = "T", artist = "A", album = "Al",
-                    durationMs = 200_000, isrc = "ISRC8",
-                ),
-            ),
-        )
+    fun `a song with no file has to stream`() {
+        assertThat(choose(streamOnly)).isEqualTo(RecapSourceChoice.Stream)
     }
 
     @Test
