@@ -187,6 +187,9 @@ fun NowPlayingScreen(
     var showQueue by remember { mutableStateOf(false) }
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
+    // The options act on the playing song, so a song change while the sheet is open closes it:
+    // otherwise Download / Remove download would land on the next song, not the one it was opened for.
+    LaunchedEffect(track?.id) { showOptionsSheet = false }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
     // Signal path (hi-res output): opened by tapping the quality line.
     var showSignalPath by remember { mutableStateOf(false) }
