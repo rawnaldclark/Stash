@@ -409,6 +409,103 @@ suspend fun updateNowPlaying(
         parseTopTracks(response["lovedtracks"]?.jsonObject)
     }
 
+    /**
+     * One page of a user's scrobbles between [fromSec] and [toSec] (UNIX seconds), newest first:
+     * `user.getRecentTracks`, read unsigned (public profiles answer with just an API key; a
+     * private one answers error 17). Never cached and never proxied: the proxy refuses per-user
+     * params, and the Last.fm recap keeps its own file cache. Pass an explicit [toSec] so pages
+     * don't shift while new scrobbles arrive. [limit] is capped at 200 by Last.fm.
+     *
+     * Read-only by construction: no session key, no signature, nothing written anywhere.
+     */
+    suspend fun getUserRecentTracks(
+        username: String,
+        fromSec: Long,
+        toSec: Long,
+        page: Int = 1,
+        limit: Int = 200,
+    ): Result<LastFmRecentTracksPage> = runCatching {
+        val params = sortedMapOf(
+            "method" to "user.getRecentTracks",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+            "from" to fromSec.toString(),
+            "to" to toSec.toString(),
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+        )
+        LastFmRecentTracksParser.parse(unsignedGet(params))
+    }
+
+    /**
+     * [getUserRecentTracks] signed with the connected account's own [sessionKey], for a profile
+     * that hides its recent listening (unsigned reads answer error 17): Last.fm shows a user their
+     * own history when the request carries their session. Still a read: nothing is written.
+     * Only ever called for the session's own username (LastFmRecapAccount).
+     */
+    suspend fun getUserRecentTracksSigned(
+        sessionKey: String,
+        username: String,
+        fromSec: Long,
+        toSec: Long,
+        page: Int = 1,
+        limit: Int = 200,
+    ): Result<LastFmRecentTracksPage> = runCatching {
+        val params = sortedMapOf(
+            "method" to "user.getRecentTracks",
+            "api_key" to credentials.apiKey,
+            "sk" to sessionKey,
+            "user" to username,
+            "from" to fromSec.toString(),
+            "to" to toSec.toString(),
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+        )
+        LastFmRecentTracksParser.parse(signedReadGet(params))
+    }
+
+    /**
+     * A signed GET for a read, with Last.fm's `{ error, message }` kept as a [LastFmApiException]
+     * (rate limits recorded on the primary key's breaker) instead of a bare HTTP failure.
+     */
+    private suspend fun signedReadGet(params: Map<String, String>): JsonObject =
+        withContext(Dispatchers.IO) {
+            val signed = params.toMutableMap().apply {
+                put("api_sig", sign(this))
+                put("format", "json")
+            }
+            val url = API_URL.toHttpUrl().newBuilder().apply {
+                signed.forEach { (k, v) -> addQueryParameter(k, v) }
+            }.build()
+            val (code, body) = okHttpClient.newCall(Request.Builder().url(url).get().build()).execute().use {
+                it.code to it.body?.string()
+            }
+            if (code == 429) {
+                rateLimitGate.recordRateLimited(credentials.apiKey, System.currentTimeMillis())
+                throw LastFmRateLimitedException("Last.fm GET failed: HTTP 429 (rate limited)")
+            }
+            val root = body?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+            root?.get("error")?.jsonPrimitive?.content?.let { err ->
+                if (err == LastFmApiException.RATE_LIMIT_EXCEEDED) {
+                    rateLimitGate.recordRateLimited(credentials.apiKey, System.currentTimeMillis())
+                }
+                val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                throw LastFmApiException(err, "Last.fm API error $err: $msg (HTTP $code)")
+            }
+            check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
+            root ?: error("Empty or unreadable Last.fm response")
+        }
+
+    /** When [username] joined Last.fm (UNIX seconds), from `user.getInfo`; null when it doesn't say. */
+    suspend fun getUserRegisteredAt(username: String): Result<Long?> = runCatching {
+        val params = sortedMapOf(
+            "method" to "user.getInfo",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+        )
+        LastFmRecentTracksParser.registeredAt(unsignedGet(params))
+    }
+
     // ── Internal: signed request helpers ──────────────────────────────
 
     private fun sign(params: Map<String, String>): String {
