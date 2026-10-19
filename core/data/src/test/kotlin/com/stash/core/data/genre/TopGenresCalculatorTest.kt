@@ -166,4 +166,15 @@ class TopGenresCalculatorTest {
         assertEquals(0.5, top.items[0].share, 1e-6)
         assertEquals(1.0, top.coverage, 1e-6)
     }
+
+    @Test fun `the shared index gives the same result as a raw map`() {
+        val genres = mapOf("Drake" to g("hip-hop" to 1f), "SZA" to g("r&b" to 1f))
+        val artists = listOf(a("Drake feat. SZA", 30), a("sza", 10), a("Nobody", 10))
+
+        assertEquals(
+            TopGenresCalculator.compute(artists, genres),
+            TopGenresCalculator.compute(artists, ArtistGenreIndex.of(genres)),
+        )
+        assertEquals(ArtistGenreIndex.EMPTY, ArtistGenreIndex.of(emptyMap()))
+    }
 }

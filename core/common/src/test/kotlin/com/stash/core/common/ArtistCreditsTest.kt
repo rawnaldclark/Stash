@@ -146,4 +146,14 @@ class ArtistCreditsTest {
         assertEquals("", "".primaryArtist())
         assertEquals("   ", "   ".primaryArtist())
     }
+
+    @Test fun `Tyler, The Creator is one act, alone or in a collaboration`() {
+        assertEquals("Tyler, The Creator", "Tyler, The Creator".primaryArtist())
+        assertEquals(listOf("Tyler, The Creator"), "Tyler, The Creator".splitArtistCredits())
+        assertEquals(
+            listOf("Tyler, The Creator", "Kali Uchis"),
+            "Tyler, The Creator, Kali Uchis".splitArtistCredits(),
+        )
+        assertEquals(listOf("Kali Uchis", "Tyler, The Creator"), "Kali Uchis, tyler, the creator".splitArtistCredits())
+    }
 }

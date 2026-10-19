@@ -36,6 +36,12 @@ object GenreNormalizer {
     /** Catalog entries that are instruments or descriptors, not genres to rank. */
     private val NOT_GENRES_IN_CATALOG = setOf("piano")
 
+    /**
+     * Catalog entries folded into another genre (see [SYNONYMS]) because, as separate bars, they
+     * read as the same thing twice: "Hip-Hop 41% · Rap 27%".
+     */
+    private val FOLDED_GENRES = setOf("rap")
+
     /** Common Last.fm genre tags the Mix Builder's catalog doesn't carry. Canonical spellings. */
     private val EXTRA_GENRES = setOf(
         // Electronic
@@ -74,13 +80,14 @@ object GenreNormalizer {
 
     /** Every genre a tag can become (canonical, lower case). */
     val genres: Set<String> =
-        (GenreCatalog.allGenres() - NOT_GENRES_IN_CATALOG) + EXTRA_GENRES
+        (GenreCatalog.allGenres() - NOT_GENRES_IN_CATALOG - FOLDED_GENRES) + EXTRA_GENRES
 
     /**
      * Spellings that the generic rules in [canonical] can't reach (different words, not just
      * different spacing or hyphens). Keys are already cleaned (see [clean]).
      */
     internal val SYNONYMS: Map<String, String> = mapOf(
+        "rap" to "hip-hop",
         "rap/hip-hop" to "hip-hop",
         "hip-hop/rap" to "hip-hop",
         "hip-hop and rap" to "hip-hop",
@@ -133,6 +140,15 @@ object GenreNormalizer {
     /** "hip hop" / "hip-hop" / "hiphop" anywhere in a tag ("underground hip hop"). */
     private val HIP_HOP = Regex("\\bhip[\\s-]?hop\\b")
 
+    /**
+     * Extra words that make a genre a variety of an umbrella, beyond the umbrella's own words
+     * (see [isCoveredBy]): with "rap" folded into hip-hop, "Cloud Rap" and "Emo Rap" are kinds of
+     * Hip-Hop.
+     */
+    private val UMBRELLA_ALIASES: Map<String, List<List<String>>> = mapOf(
+        "hip-hop" to listOf(listOf("rap")),
+    )
+
     /** Words kept upper case in display names. */
     private val ACRONYMS = mapOf("edm" to "EDM", "idm" to "IDM", "uk" to "UK", "mpb" to "MPB", "r&b" to "R&B")
 
@@ -161,8 +177,14 @@ object GenreNormalizer {
     /**
      * An artist's genres from its Last.fm top tags: non-genres dropped, spellings merged (the
      * strongest spelling wins, since "hip-hop" and "hip hop" are the same listeners twice), weak
-     * strays dropped ([MIN_TAG_WEIGHT], [MIN_RELATIVE_WEIGHT]), strongest first, at most
-     * [MAX_GENRES_PER_ARTIST], re-weighted so the strongest genre is 1.
+     * strays dropped ([MIN_TAG_WEIGHT], [MIN_RELATIVE_WEIGHT]), umbrellas dropped where a more
+     * specific genre of theirs is also kept ("rock" next to "indie rock", "indie" next to "indie
+     * pop", "hip-hop" next to "cloud rap"), strongest first, at most [MAX_GENRES_PER_ARTIST],
+     * re-weighted so the strongest genre is 1.
+     *
+     * Dropping the umbrella keeps each artist's bars distinct: "Indie 30% · Indie Rock 28% ·
+     * Rock 15%" says the same thing three times. The specific genre is the more informative one,
+     * and the artist's whole weight still lands in the family through it.
      *
      * Ties are broken by name so the same tags always give the same genres. Empty when Last.fm
      * has no genre for the artist.
@@ -177,12 +199,35 @@ object GenreNormalizer {
         }
         val strongest = strongestBySpelling.values.maxOrNull() ?: return emptyList()
         if (strongest < MIN_TAG_WEIGHT) return emptyList()
-        return strongestBySpelling.entries
+        val kept = strongestBySpelling.entries
             .filter { it.value >= MIN_TAG_WEIGHT && it.value >= strongest * MIN_RELATIVE_WEIGHT }
+        val specific = kept.filter { candidate ->
+            kept.none { other -> other.key != candidate.key && isCoveredBy(candidate.key, other.key) }
+        }
+        val top = specific
             .sortedWith(compareByDescending<Map.Entry<String, Float>> { it.value }.thenBy { it.key })
             .take(MAX_GENRES_PER_ARTIST)
-            .map { WeightedGenre(genre = it.key, weight = (it.value / strongest).coerceIn(0f, 1f)) }
+        val best = top.firstOrNull()?.value ?: return emptyList()
+        return top.map { WeightedGenre(genre = it.key, weight = (it.value / best).coerceIn(0f, 1f)) }
     }
+
+    /**
+     * True when [umbrella] is a broader form of [specific]: the umbrella's words appear, in order
+     * and whole, inside the specific genre's words ("rock" in "indie rock", "soul" in "neo-soul",
+     * "r&b" in "alternative r&b"), or one of its [UMBRELLA_ALIASES] does ("rap" in "cloud rap").
+     * Words split on spaces and hyphens. Pure word matching: "pop" is not inside "k-popular".
+     */
+    internal fun isCoveredBy(umbrella: String, specific: String): Boolean {
+        if (umbrella == specific) return false
+        val specificWords = words(specific)
+        val forms = listOf(words(umbrella)) + UMBRELLA_ALIASES[umbrella].orEmpty()
+        return forms.any { form -> form.size < specificWords.size && specificWords.containsRun(form) }
+    }
+
+    private fun words(genre: String): List<String> = genre.split(' ', '-').filter { it.isNotEmpty() }
+
+    private fun List<String>.containsRun(run: List<String>): Boolean =
+        (0..size - run.size).any { start -> run.indices.all { this[start + it] == run[it] } }
 
     /**
      * How a canonical genre is shown: "hip-hop" -> "Hip-Hop", "r&b" -> "R&B", "indie pop" ->

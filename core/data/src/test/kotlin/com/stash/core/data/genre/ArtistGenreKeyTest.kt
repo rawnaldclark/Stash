@@ -27,6 +27,14 @@ class ArtistGenreKeyTest {
         assertEquals("Featurette", ArtistGenreKey.of("Featurette"))
     }
 
+    @Test fun `allowlisted comma names stay whole inside collaborations`() {
+        assertEquals("Earth, Wind & Fire", ArtistGenreKey.of("Earth, Wind & Fire, Chicago"))
+        assertEquals("Tyler, The Creator", ArtistGenreKey.of("Tyler, The Creator"))
+        assertEquals("Tyler, The Creator", ArtistGenreKey.of("Tyler, The Creator, Kali Uchis"))
+        assertEquals("Tyler, The Creator", ArtistGenreKey.of("Tyler, The Creator feat. Frank Ocean"))
+        assertEquals("Kali Uchis", ArtistGenreKey.of("Kali Uchis, Tyler, The Creator"))
+    }
+
     @Test fun `whitespace is trimmed and blank stays blank`() {
         assertEquals("Drake", ArtistGenreKey.of("  Drake  "))
         assertEquals("", ArtistGenreKey.of("   "))

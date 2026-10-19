@@ -45,22 +45,30 @@ interface ArtistGenreDao {
     suspend fun listenedArtistCredits(): List<ArtistCreditPlays>
 
     /**
-     * Artist keys that need no fetch now: genres found (kept for good), or a miss / failure not
-     * yet old enough to retry. COLLATE NOCASE keys; compare case-insensitively.
+     * Artist keys that need no fetch now: genres, a miss or a failure not yet old enough to ask
+     * again. COLLATE NOCASE keys; compare case-insensitively.
      */
     @Query(
         """
         SELECT artist_name FROM artist_genres
-        WHERE status = 'TAGGED'
+        WHERE (status = 'TAGGED' AND fetched_at > :taggedSettledAfter)
            OR (status = 'UNTAGGABLE' AND fetched_at > :untaggableSettledAfter)
            OR (status = 'FAILED' AND fetched_at > :failedSettledAfter)
         """,
     )
-    suspend fun settledArtistKeys(untaggableSettledAfter: Long, failedSettledAfter: Long): List<String>
+    suspend fun settledArtistKeys(
+        taggedSettledAfter: Long,
+        untaggableSettledAfter: Long,
+        failedSettledAfter: Long,
+    ): List<String>
+
+    /** Empties the cache (Settings › Clear history: the names in it say what was listened to). */
+    @Query("DELETE FROM artist_genres")
+    suspend fun deleteAll()
 
     /**
      * Up to [limit] listened artists (as [ArtistGenreKey]s) whose genres should be fetched: no row
-     * yet, or a miss / failure past its retry age. Most-listened first, so the artists that weigh
+     * yet, or a row past its refresh / retry age. Most-listened first, so the artists that weigh
      * most in Top genres are covered first; ties by name for a stable order. Credits that collapse
      * to one key ("Drake", "Drake, Future", "drake") add their listens together.
      *
@@ -70,6 +78,7 @@ interface ArtistGenreDao {
     suspend fun missingArtists(limit: Int, now: Long): List<String> {
         if (limit <= 0) return emptyList()
         val settled = settledArtistKeys(
+            taggedSettledAfter = now - ArtistGenreEntity.TAGGED_REFRESH_MS,
             untaggableSettledAfter = now - ArtistGenreEntity.UNTAGGABLE_RETRY_MS,
             failedSettledAfter = now - ArtistGenreEntity.FAILED_RETRY_MS,
         ).mapTo(HashSet()) { it.lowercase() }

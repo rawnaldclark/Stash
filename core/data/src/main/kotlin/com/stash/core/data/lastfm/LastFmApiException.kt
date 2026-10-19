@@ -30,7 +30,34 @@ class LastFmApiException(
     companion object {
         /** Last.fm's "Track not found" / "The artist you supplied could not be found". */
         const val NOT_FOUND = "6"
+
+        /** Last.fm's "Invalid resource specified": as final as [NOT_FOUND] for a lookup. */
+        const val INVALID_RESOURCE = "7"
+
+        /** Last.fm's "Rate limit exceeded". */
+        const val RATE_LIMIT_EXCEEDED = "29"
     }
+}
+
+/**
+ * A Last.fm read refused for rate limiting rather than for anything about the request: HTTP 429,
+ * or every read key's breaker open so the client didn't send it at all. (Last.fm's own error 29
+ * arrives as a [LastFmApiException] with [LastFmApiException.RATE_LIMIT_EXCEEDED].)
+ *
+ * Extends [IllegalStateException], as the plain `error(...)` it replaces did.
+ */
+class LastFmRateLimitedException(message: String) : IllegalStateException(message)
+
+/**
+ * True when this read failed because Last.fm (or the client's breakers) is rate limiting: the
+ * request says nothing about the artist or track, so a caller must neither record "no data" nor
+ * "this one fails", and should simply try again later. Rethrows a captured cancellation.
+ */
+fun Result<*>.isLastFmRateLimited(): Boolean {
+    val error = exceptionOrNull() ?: return false
+    if (error is CancellationException) throw error
+    return error is LastFmRateLimitedException ||
+        (error is LastFmApiException && error.code == LastFmApiException.RATE_LIMIT_EXCEEDED)
 }
 
 /**

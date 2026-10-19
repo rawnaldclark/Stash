@@ -70,10 +70,19 @@ class GenreNormalizerTest {
         ).forEach { assertNull(it, GenreNormalizer.canonical(it)) }
     }
 
-    @Test fun `every Mix Builder genre is a genre, except instruments`() {
-        (GenreCatalog.allGenres() - "piano").forEach {
+    @Test fun `every Mix Builder genre is a genre, except instruments and folded ones`() {
+        (GenreCatalog.allGenres() - "piano" - "rap").forEach {
             assertEquals(it, it, GenreNormalizer.canonical(it))
         }
+        assertNull(GenreNormalizer.canonical("piano"))
+    }
+
+    @Test fun `rap folds into hip-hop, rap styles stay their own genre`() {
+        assertEquals("hip-hop", GenreNormalizer.canonical("rap"))
+        assertEquals("hip-hop", GenreNormalizer.canonical("Rap"))
+        assertTrue("rap" !in GenreNormalizer.genres)
+        assertEquals("cloud rap", GenreNormalizer.canonical("cloud rap"))
+        assertEquals("emo rap", GenreNormalizer.canonical("Emo Rap"))
     }
 
     @Test fun `no two genres squash to the same key`() {
@@ -98,16 +107,67 @@ class GenreNormalizerTest {
             listOf(
                 tag("seen live", 1f),
                 tag("hip-hop", 0.8f),
-                tag("rap", 0.6f),
+                tag("soul", 0.6f),
                 tag("british", 0.5f),
                 tag("trap", 0.4f),
                 tag("r&b", 0.3f),
             ),
         )
-        assertEquals(listOf("hip-hop", "rap", "trap"), genres.map { it.genre })
+        assertEquals(listOf("hip-hop", "soul", "trap"), genres.map { it.genre })
         assertEquals(1f, genres[0].weight, 1e-6f)
         assertEquals(0.75f, genres[1].weight, 1e-6f)
         assertEquals(0.5f, genres[2].weight, 1e-6f)
+    }
+
+    @Test fun `hip-hop and rap tags make one genre, not two bars`() {
+        val genres = GenreNormalizer.topGenres(listOf(tag("hip-hop", 1f), tag("rap", 0.94f), tag("trap", 0.58f)))
+        assertEquals(listOf("hip-hop", "trap"), genres.map { it.genre })
+    }
+
+    // ── umbrellas ───────────────────────────────────────────────────
+
+    @Test fun `an umbrella next to one of its own varieties is dropped`() {
+        // The Killers: indie 1.0, indie rock 0.94, rock 0.55 -> just Indie Rock.
+        val killers = GenreNormalizer.topGenres(listOf(tag("indie", 1f), tag("indie rock", 0.94f), tag("rock", 0.55f)))
+        assertEquals(listOf(WeightedGenre("indie rock", 1f)), killers)
+
+        // Fleetwood Mac: classic rock, rock, blues -> rock goes, blues stays.
+        val mac = GenreNormalizer.topGenres(listOf(tag("classic rock", 1f), tag("rock", 0.71f), tag("blues", 0.32f)))
+        assertEquals(listOf("classic rock", "blues"), mac.map { it.genre })
+    }
+
+    @Test fun `the umbrella's place goes to the next distinct genre`() {
+        // Radiohead with a fourth tag: rock and alternative are covered by alternative rock.
+        val genres = GenreNormalizer.topGenres(
+            listOf(tag("rock", 1f), tag("alternative", 0.54f), tag("alternative rock", 0.34f), tag("electronic", 0.3f)),
+        )
+        assertEquals(listOf("alternative rock", "electronic"), genres.map { it.genre })
+        assertEquals(1f, genres[0].weight, 1e-6f)
+    }
+
+    @Test fun `hip-hop is the umbrella of rap styles`() {
+        // lil peep: cloud rap, emo rap, rap (-> hip-hop) -> the two styles.
+        val genres = GenreNormalizer.topGenres(listOf(tag("cloud rap", 1f), tag("emo rap", 0.85f), tag("rap", 0.45f)))
+        assertEquals(listOf("cloud rap", "emo rap"), genres.map { it.genre })
+    }
+
+    @Test fun `distinct genres of one family all stay`() {
+        val genres = GenreNormalizer.topGenres(listOf(tag("electronic", 1f), tag("house", 0.63f), tag("dance", 0.36f)))
+        assertEquals(listOf("electronic", "house", "dance"), genres.map { it.genre })
+    }
+
+    @Test fun `isCoveredBy matches whole words only`() {
+        assertTrue(GenreNormalizer.isCoveredBy("rock", "indie rock"))
+        assertTrue(GenreNormalizer.isCoveredBy("soul", "neo-soul"))
+        assertTrue(GenreNormalizer.isCoveredBy("pop", "k-pop"))
+        assertTrue(GenreNormalizer.isCoveredBy("r&b", "alternative r&b"))
+        assertTrue(GenreNormalizer.isCoveredBy("hip-hop", "underground hip-hop"))
+        assertTrue(GenreNormalizer.isCoveredBy("hip-hop", "cloud rap"))
+        assertTrue(!GenreNormalizer.isCoveredBy("rock", "rockabilly"))
+        assertTrue(!GenreNormalizer.isCoveredBy("pop", "pop"))
+        assertTrue(!GenreNormalizer.isCoveredBy("indie rock", "rock"))
+        assertTrue(!GenreNormalizer.isCoveredBy("electronic", "electro house"))
+        assertTrue(!GenreNormalizer.isCoveredBy("trap", "hip-hop"))
     }
 
     @Test fun `spellings of one genre merge, the strongest spelling counts once`() {
