@@ -62,10 +62,11 @@ class TrackDownloaderImpl @Inject constructor(
             // A track handed back for a better copy with its file kept
             // (TrackDao.markForReplacement) gets that file back as its download
             // meanwhile, or it would vanish from the Library while it waits.
-            TrackDownloadResult.Deferred -> {
+            is TrackDownloadResult.Deferred -> {
+                // The row keeps why it waits, for the Downloads screen, Now Playing and the sweep.
                 val queueEntry = downloadQueueDao.getByTrackId(track.id)
                 queueEntry?.let {
-                    downloadQueueDao.deferIfInProgress(it.id)
+                    downloadQueueDao.deferIfInProgress(it.id, result.reason.code)
                 }
                 fileReplacement.restoreKeptFile(track.id, track.filePath)
                 TrackDownloadOutcome.Deferred

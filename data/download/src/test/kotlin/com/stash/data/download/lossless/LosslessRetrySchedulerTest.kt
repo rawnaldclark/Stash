@@ -78,6 +78,10 @@ class LosslessRetrySchedulerTest {
 
     private var now = 1_000_000_000_000L
     private val quota = LosslessQuota.inMemory { now }
+    private val tidalRetries = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 4)
+    private val tidalAacResolver: com.stash.data.download.lossless.tidal.TidalAacResolver = mockk {
+        every { retryEvents } returns tidalRetries
+    }
 
     private fun newSubject(scope: kotlinx.coroutines.CoroutineScope): LosslessRetryScheduler {
         val subject = LosslessRetryScheduler(
@@ -87,6 +91,7 @@ class LosslessRetrySchedulerTest {
             rateLimiter = rateLimiter,
             relayClient = relayClient,
             quota = quota,
+            tidalAacResolver = tidalAacResolver,
         )
         subject.scope = scope
         subject.workManagerProvider = { workManager }
@@ -150,6 +155,22 @@ class LosslessRetrySchedulerTest {
         verify(exactly = 1) {
             workManager.enqueueUniqueWork(
                 LosslessRetryScheduler.MODE_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                any<OneTimeWorkRequest>(),
+            )
+        }
+    }
+
+    @Test
+    fun `Tidal busy for a waiting download books one sweep for when it should be free`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+
+        tidalRetries.emit(System.currentTimeMillis() + 60_000)
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            workManager.enqueueUniqueWork(
+                LosslessRetryScheduler.TIDAL_WORK_NAME,
                 ExistingWorkPolicy.KEEP,
                 any<OneTimeWorkRequest>(),
             )

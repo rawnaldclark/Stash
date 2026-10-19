@@ -256,6 +256,8 @@ class BitchordClient @Inject constructor(
         if (now < busyUntilMs) return TidalLookup.Busy(busyUntilMs)
         val key = cacheKey(query)
         if (cachedMiss(readCache(key), aac, now)) return TidalLookup.NoMatch
+        // AAC mode's own "no AAC" stamp: its retry sweep skips the song for free.
+        if (aacOnly && aacOnlyMissed(key, now)) return TidalLookup.NoMatch
         if (!aac && quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
@@ -346,7 +348,7 @@ class BitchordClient @Inject constructor(
                     is Reply.Ok -> {
                         val stream = toStream(json.decodeFromString<BitchordStreamResponse>(r.body), match, allowAac)
                         if (stream == null) {
-                            if (!aacOnly) stampMiss(match, allowAac)
+                            if (aacOnly) stampAacOnlyMiss(key, definitive = true) else stampMiss(match, allowAac)
                             TidalLookup.NoMatch
                         } else {
                             // The relay prefers lossless, so an AAC answer means there is none —
@@ -363,7 +365,11 @@ class BitchordClient @Inject constructor(
                     is Reply.NotFound -> {
                         // Not for ?aac=only: the shared AAC stamp would also stop streaming's
                         // ?aac=1, which can still get FLAC for this song.
-                        if (!aacOnly) stampMiss(match, allowAac, definitive = r.definitive)
+                        if (aacOnly) {
+                            stampAacOnlyMiss(key, definitive = r.definitive)
+                        } else {
+                            stampMiss(match, allowAac, definitive = r.definitive)
+                        }
                         TidalLookup.NoMatch
                     }
                     is Reply.Busy -> busy(r.untilMs)
@@ -409,6 +415,21 @@ class BitchordClient @Inject constructor(
             else match.copy(losslessMissAt = lossless),
         )
     }
+
+    /**
+     * AAC mode's (`?aac=only`) miss, on a stamp of its own: a row under [AAC_ONLY_KEY_PREFIX] +
+     * the song's key, never read by streaming's `?aac=1` or a lossless lookup (an `aac=only` miss
+     * says nothing about either). A definitive miss is kept [AAC_ONLY_MISS_TTL_MS], any other
+     * [SHORT_MISS_TTL_MS]; the 30-day prune clears it like any row.
+     */
+    private suspend fun stampAacOnlyMiss(key: String, definitive: Boolean) {
+        val now = nowMs()
+        val at = if (definitive) now else now - (AAC_ONLY_MISS_TTL_MS - SHORT_MISS_TTL_MS)
+        writeCache(TidalMatchEntity(key = AAC_ONLY_KEY_PREFIX + key, tidalId = null, searchedAt = at))
+    }
+
+    private suspend fun aacOnlyMissed(key: String, now: Long): Boolean =
+        readCache(AAC_ONLY_KEY_PREFIX + key)?.let { now - it.searchedAt < AAC_ONLY_MISS_TTL_MS } == true
 
     private fun cachedMiss(c: TidalMatchEntity?, allowAac: Boolean, now: Long): Boolean {
         c ?: return false
@@ -594,6 +615,12 @@ class BitchordClient @Inject constructor(
         const val MISS_TTL_MS = 14L * 24 * 60 * 60_000
         /** A `/stream` 404 that is not `lossless_unavailable` (the relay trusts `not_available` 6 h). */
         const val SHORT_MISS_TTL_MS = 6L * 60 * 60_000
+
+        /** How long AAC mode trusts "Tidal has no AAC of it" before asking again. */
+        const val AAC_ONLY_MISS_TTL_MS = 3L * 24 * 60 * 60_000
+
+        /** The cache key prefix of AAC mode's own miss stamp ([stampAacOnlyMiss]). */
+        internal const val AAC_ONLY_KEY_PREFIX = "aaconly|"
         /** Pool busy (503 / 429) with no usable Retry-After: leave the relay alone this long. */
         const val BUSY_BACKOFF_MS = 5 * 60_000L
         /** Bounds on a 503's Retry-After: the relay's shortest pacing wait up to a long pause. */

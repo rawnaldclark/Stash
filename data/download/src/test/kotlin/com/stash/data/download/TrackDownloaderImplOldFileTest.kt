@@ -86,7 +86,7 @@ class TrackDownloaderImplOldFileTest {
     @Test
     fun `a deferred re-download restores the kept file as the track's download`() = runTest {
         val kept = tmp.newFile("lacrymosa-old.opus").apply { writeBytes(ByteArray(REAL_SIZE)) }
-        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred
+        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
 
         val outcome = newSubject().downloadTrack(track(kept.absolutePath))
 
@@ -98,7 +98,7 @@ class TrackDownloaderImplOldFileTest {
     @Test
     fun `a deferred download restores nothing when the kept file is gone`() = runTest {
         val gone = tmp.newFile("lacrymosa-old.opus").apply { delete() }
-        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred
+        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
 
         newSubject().downloadTrack(track(gone.absolutePath))
         newSubject().downloadTrack(track(oldPath = null))

@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.data.db.dao.DownloadQueueDao
-import com.stash.core.data.lossless.DownloadModeReader
 import com.stash.core.model.DownloadMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -48,7 +47,7 @@ private val Context.losslessDataStore: DataStore<Preferences> by preferencesData
 class LosslessSourcePreferences @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadQueueDao: DownloadQueueDao,
-) : DownloadModeReader {
+) {
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
@@ -213,8 +212,6 @@ class LosslessSourcePreferences @Inject constructor(
     /** The mode the old Lossless switch meant for downloads: on (the default) = Lossless, off = Opus. */
     private fun legacyDownloadMode(prefs: Preferences): DownloadMode =
         if (prefs[enabledKey] ?: true) DownloadMode.LOSSLESS else DownloadMode.OPUS
-
-    override suspend fun currentDownloadMode(): DownloadMode = downloadModeNow()
 
     /** Tests: write keys as an older build stored them, bypassing today's setters. */
     internal suspend fun writeRawForTest(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {

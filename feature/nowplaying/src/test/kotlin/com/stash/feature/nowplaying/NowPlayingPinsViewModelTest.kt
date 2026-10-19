@@ -54,7 +54,6 @@ class NowPlayingPinsViewModelTest {
             every { mirrorFailures } returns MutableSharedFlow()
         },
         losslessUpgrader = mockk(relaxed = true),
-        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = mockk(relaxed = true),
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = preference,

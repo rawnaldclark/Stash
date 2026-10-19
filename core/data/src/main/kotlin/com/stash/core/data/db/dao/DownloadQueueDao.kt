@@ -460,14 +460,18 @@ interface DownloadQueueDao {
         rejectedVideoId: String? = null,
     ): Int
 
-    /** Defers only the worker claim that is still in progress. */
+    /**
+     * Defers only the worker claim that is still in progress. [reason] is why it waits
+     * ([com.stash.core.model.DownloadWaitReason.code]): a waiting row keeps it in
+     * `error_message`, which it has no other use for.
+     */
     @Query("""
         UPDATE download_queue
-           SET status = 'WAITING_FOR_LOSSLESS', error_message = NULL,
+           SET status = 'WAITING_FOR_LOSSLESS', error_message = :reason,
                failure_type = 'NONE', completed_at = NULL
          WHERE id = :id AND status = 'IN_PROGRESS'
     """)
-    suspend fun deferIfInProgress(id: Long): Int
+    suspend fun deferIfInProgress(id: Long, reason: String?): Int
 
     /** Lightweight status lookup used to resolve cancellation races. */
     @Query("SELECT status FROM download_queue WHERE id = :id LIMIT 1")
@@ -627,15 +631,16 @@ interface DownloadQueueDao {
      * the row becomes the user's ask, as [requeueForTap] marks it: the leftover
      * cleanup keeps it, and [LosslessRetryWorker] takes it in either mode (#532). A
      * sync's row too, the one this usually finds: in Stream-only mode only an ask
-     * brings a sync's waiting song back ([waitingForLosslessTracks]).
+     * brings a sync's waiting song back ([waitingForLosslessTracks]). [reason]: see
+     * [deferIfInProgress].
      */
     @Query("""
         UPDATE download_queue
-           SET status = 'WAITING_FOR_LOSSLESS', error_message = NULL, completed_at = NULL,
+           SET status = 'WAITING_FOR_LOSSLESS', error_message = :reason, completed_at = NULL,
                failure_type = 'NONE', rejected_video_id = NULL, user_requested = 1
          WHERE id = :id
     """)
-    suspend fun deferForTap(id: Long)
+    suspend fun deferForTap(id: Long, reason: String?)
 
     /**
      * Chunked wrapper for [resetToPendingRaw]: a retry-all over a large failed

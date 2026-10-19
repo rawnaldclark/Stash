@@ -74,7 +74,7 @@ class SearchDownloadCoordinatorReuseTest {
         context = context,
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = mockk<JioSaavnResolver> { coEvery { resolve(any(), any()) } returns null },
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac },
         losslessUrlDownloader = mockk<LosslessUrlDownloader>(),
         audioDurationExtractor = mockk(),
         downloadQueueDao = mockk<DownloadQueueDao>(relaxed = true),
