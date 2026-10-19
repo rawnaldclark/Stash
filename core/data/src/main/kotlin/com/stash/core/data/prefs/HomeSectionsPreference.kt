@@ -21,10 +21,11 @@ import javax.inject.Singleton
 
 /**
  * The reorderable/hideable content sections of the Home tab, in default
- * order. The Discover hero pager is NOT one of these — it's Home's front
- * door and stays pinned on top.
+ * order.
  */
 enum class HomeSection(val key: String) {
+    /** Daily Discover and your mixes (the hero pager). Pinned on top until 2026-10-19; now movable and hideable like the rest. First, so it stays on top by default. */
+    DISCOVER("discover"),
     YOUR_PLAYLISTS("your_playlists"),
     NEW_RELEASES("new_releases"),
     QOBUZ_PLAYLISTS("qobuz_playlists"),
@@ -54,19 +55,31 @@ enum class HomeSection(val key: String) {
  * saved keys are dropped (removed in an update), known sections missing
  * from the saved order are appended in default order (added in an
  * update) — so a stale preference can never hide a new section.
+ *
+ * The exception is DISCOVER when it's missing: every order saved before it
+ * existed had Discover pinned on top, so a missing DISCOVER goes to the FRONT.
  */
 fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     val known = savedKeys.mapNotNull(HomeSection::fromKey).distinct()
-    return known + HomeSection.entries.filter { it !in known }
+    val missing = HomeSection.entries.filter { it !in known }
+    val front = if (HomeSection.DISCOVER in missing) listOf(HomeSection.DISCOVER) else emptyList()
+    return front + known + (missing - HomeSection.DISCOVER)
 }
 
 /**
  * The order Home uses. Until the user reorders Home after this update ([promoted] false), Your listening
  * leads (owner 2026-10-19: show the new feature first, once); any reorder saves the order and ends that.
+ * It goes directly under Discover when Discover is first, otherwise first.
  */
 fun effectiveHomeSectionOrder(savedKeys: List<String>, promoted: Boolean): List<HomeSection> {
     val resolved = resolveHomeSectionOrder(savedKeys)
-    return if (promoted) resolved else listOf(HomeSection.YOUR_LISTENING) + (resolved - HomeSection.YOUR_LISTENING)
+    if (promoted) return resolved
+    val rest = resolved - HomeSection.YOUR_LISTENING
+    return if (rest.firstOrNull() == HomeSection.DISCOVER) {
+        listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING) + rest.drop(1)
+    } else {
+        listOf(HomeSection.YOUR_LISTENING) + rest
+    }
 }
 
 /** Home before the preference loads, and when it can't be read: every section but Community, which is opt-in. */
@@ -79,9 +92,18 @@ val DEFAULT_HOME_SECTIONS: List<HomeSection> = effectiveHomeSectionOrder(emptyLi
 fun visibleHomeSections(order: List<HomeSection>, hidden: Set<HomeSection>, communityOn: Boolean): List<HomeSection> =
     order.filter { it !in hidden && (communityOn || it != HomeSection.COMMUNITY) }
 
-/** [order] with COMMUNITY first: where it lands the first time it's turned on, under the Discover hero. */
-fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> =
-    listOf(HomeSection.COMMUNITY) + (order - HomeSection.COMMUNITY)
+/**
+ * [order] with COMMUNITY moved up: where it lands the first time it's turned on, directly under the Discover
+ * pager when Discover is first, otherwise first.
+ */
+fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> {
+    val rest = order - HomeSection.COMMUNITY
+    return if (rest.firstOrNull() == HomeSection.DISCOVER) {
+        listOf(HomeSection.DISCOVER, HomeSection.COMMUNITY) + rest.drop(1)
+    } else {
+        listOf(HomeSection.COMMUNITY) + rest
+    }
+}
 
 /** The tab a plain cold launch opens on (#428). Missing or unknown stored values read as [HOME]. */
 enum class StartTab { HOME, LIBRARY, SEARCH }

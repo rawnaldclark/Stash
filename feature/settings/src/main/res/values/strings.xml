@@ -212,6 +212,7 @@
     <string name="settings_home_section_listening_desc">Recently played and your History. Appears after your first listen.</string>
     <string name="settings_home_show_liked_title">Show Liked Songs on Home</string>
     <string name="settings_home_show_liked_subtitle">Your Stash, Spotify and YouTube likes as one card in Your playlists</string>
+    <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
     <string name="settings_home_section_your_playlists">Your playlists</string>
     <string name="settings_home_section_new_releases">New Releases</string>
     <string name="settings_home_section_qobuz_playlists">Qobuz Playlists</string>
