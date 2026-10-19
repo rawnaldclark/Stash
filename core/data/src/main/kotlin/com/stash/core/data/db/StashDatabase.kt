@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.stash.core.data.db.converter.Converters
+import com.stash.core.data.db.dao.ArtistGenreDao
 import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
@@ -29,6 +30,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
+import com.stash.core.data.db.entity.ArtistGenreEntity
 import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.db.entity.ArtistProfileCacheEntity
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
@@ -104,8 +106,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.TidalMatchEntity::class,
         ScanFolderEntity::class,
         ScannedSongEntity::class,
+        ArtistGenreEntity::class,
     ],
-    version = 59,
+    version = 60,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -126,6 +129,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun artistProfileCacheDao(): ArtistProfileCacheDao
 
     abstract fun artistImageDao(): ArtistImageDao
+
+    abstract fun artistGenreDao(): ArtistGenreDao
 
     abstract fun listeningEventDao(): ListeningEventDao
 
@@ -1576,6 +1581,30 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v59 -> v60: `artist_genres`, the Last.fm genres of every artist in listening history,
+         * behind Top genres in "Your listening". ArtistGenreWorker fills it; see
+         * [ArtistGenreEntity] for the columns and the retry rules.
+         *
+         * A new, empty cache table: nothing existing is touched. The primary key is COLLATE NOCASE
+         * like `artist_images`, so case variants of a credit share one row.
+         */
+        val MIGRATION_59_60 = object : Migration(59, 60) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `artist_genres` (
+                        `artist_name` TEXT NOT NULL COLLATE NOCASE,
+                        `genres` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `fetched_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`artist_name`)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1671,6 +1700,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_56_57,
                 MIGRATION_57_58,
                 MIGRATION_58_59,
+                MIGRATION_59_60,
             )
         }
     }
