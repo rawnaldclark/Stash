@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
@@ -167,7 +168,12 @@ class ExoRecapPreviewEngine @Inject constructor(
             urlCache = streamUrlCache,
             trackDao = trackDao,
             resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
-        )
+        ).apply {
+            // Fail fast, like the search preview: the default policy retries a failed open 3+
+            // times, and each retry of a placeholder is another full resolve (up to 45 s), so a
+            // song with no source kept the network busy for minutes under a card long gone.
+            setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 1))
+        }
         ExoPlayer.Builder(context)
             .setLooper(Looper.getMainLooper())
             .setRenderersFactory(
