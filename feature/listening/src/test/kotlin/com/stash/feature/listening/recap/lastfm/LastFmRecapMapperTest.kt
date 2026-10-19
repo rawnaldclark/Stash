@@ -75,6 +75,15 @@ class LastFmRecapMapperTest {
         assertThat(t.track.id).isEqualTo(7L)
     }
 
+    @Test fun `an artist without a photo shows their most scrobbled song that has art`() {
+        // Slow Joy's most scrobbled song has no art; a less played one has Last.fm's.
+        val extra = listOf(LastFmScrobble(at(9, 17, 10), "Slow Joy", "Lucky", image = "https://lfm/lucky.jpg"))
+        val built = LastFmRecapMapper.build(input(scrobbles = LastFmFixtures.scrobbles() + extra))
+        val slowJoy = built.topArtists.first { it.name == "Slow Joy" }
+        assertThat(slowJoy.photoUrl).isNull()
+        assertThat(slowJoy.artUrl).isEqualTo("https://lfm/lucky.jpg")
+    }
+
     @Test fun `artists, busiest day, on repeat and the top artist's days`() {
         assertThat(data.topArtists.map { it.name }.take(3)).containsExactly("alt-J", "Warpaint", "Slow Joy").inOrder()
         assertThat(data.topArtists.first().plays).isEqualTo(10)

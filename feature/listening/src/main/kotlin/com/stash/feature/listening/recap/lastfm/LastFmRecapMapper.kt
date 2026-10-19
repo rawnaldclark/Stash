@@ -127,11 +127,11 @@ internal object LastFmRecapMapper {
         // Artists: raw credits first (genres weigh those), then main acts (the cards show those).
         val lastUtsByKey = groups.associate { it.key to it.lastUts }
         val credits = stamped.groupBy { it.scrobble.artist }.map { (artist, list) ->
-            // The credit's most scrobbled song (then the latest) stands for it: its cover.
-            val leadKey = list.groupingBy { it.key }.eachCount().entries
-                .maxWith(compareBy<Map.Entry<String, Int>> { it.value }.thenBy { lastUtsByKey[it.key] ?: 0L })
-                .key
-            val leadTrack = tracks.getValue(leadKey)
+            // The credit's cover: its most scrobbled song (then the latest) that has art, else that song.
+            val ranked = list.groupingBy { it.key }.eachCount().entries
+                .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenByDescending { lastUtsByKey[it.key] ?: 0L })
+                .map { tracks.getValue(it.key) }
+            val leadTrack = ranked.firstOrNull { !it.albumArtPath.isNullOrBlank() || !it.albumArtUrl.isNullOrBlank() } ?: ranked.first()
             TopArtistRow(
                 artist = artist,
                 plays = list.size,
