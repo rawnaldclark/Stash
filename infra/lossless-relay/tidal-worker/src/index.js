@@ -247,8 +247,11 @@ async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(r
   const url = new URL(request.url);
   const web = url.searchParams.get("web") === "1" ? "web" : "app";
   const keyFor = (mode) => `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${mode}:web=${web}`;
-  const key = keyFor(aac);
-  const cached = await cachedJson(env, key);
+  const noHires = skipsHires(url, aac);
+  const key = keyFor(noHires ? "only-nohires" : aac);
+  // ?aac=only&hires=0 (the app's AAC downloads) is served by the full ?aac=only entry when that is
+  // warm: the same AAC, with a hires field the app ignores.
+  const cached = await cachedJson(env, key) || (noHires ? await cachedJson(env, keyFor("only")) : null);
   if (cached) return { response: cached, upstream: false };
   if (quota.globalFull) return { response: globalCapped(), upstream: false };
   if (await softOpenBlocks(env)) return { response: busy(), upstream: false };
@@ -266,6 +269,14 @@ async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(r
     if (ttl > 0) await cacheJson(env, key, response, ttl);
   }
   return { response, upstream: true };
+}
+
+/**
+ * ?aac=only&hires=0: Tidal's AAC without the Hi-Res metadata lookup (one Tidal call fewer). The app's AAC
+ * downloads ask this way; the web player keeps ?aac=only, which reports `hires`. Counted the same.
+ */
+function skipsHires(url, aac) {
+  return aac === "only" && url.searchParams.get("hires") === "0";
 }
 
 /** ?aac as one of "", "1", "only": anything else is "", so callers cannot mint unbounded cache namespaces. */
@@ -313,7 +324,7 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
       continue;
     }
     const info = await data.json();
-    if (aacOnly) return aacInfo(info, aac === "only" ? await trackHires(trackId, env, request) : undefined);
+    if (aacOnly) return aacInfo(info, skipsHires(new URL(request.url), aac) ? undefined : await trackHires(trackId, env, request));
     if (!["LOSSLESS", "HI_RES_LOSSLESS"].includes(info.audioQuality)) {
       // The normal answer for a CD-only track with this client, not a seat problem.
       return allowAac ? aacInfo(info) : json({ error: "lossless_unavailable" }, 404);

@@ -176,6 +176,41 @@ test("a warm AAC answer in the relay cache is no way past the cap either", async
   assert.equal(r.used(), 2);
 });
 
+test("an unsigned ?aac=only (the web player) is still served, uncounted", async () => {
+  const r = relay(() => aacInfo());
+  const res = await r.call("/stream/td:1?aac=only");
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).codec, "aac");
+  assert.equal(res.headers.get("X-Stash-Lossless"), null);
+  assert.equal(r.used(), 0);
+});
+
+test("an ?aac=only 404 (no AAC of the track) is never charged", async () => {
+  const r = relay(() => new Response(JSON.stringify({ subStatus: 4005 }), { status: 401 }), { seats: 8 });
+  const res = await r.call("/stream/td:9?aac=only&hires=0", signed("td:9"));
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get("X-Stash-Lossless"), null);
+  assert.equal(r.used(), 0);
+});
+
+test("a warm ?aac=only entry serves ?aac=only&hires=0 with no Tidal call, and it still counts", async () => {
+  const r = relay(() => aacInfo());
+  assert.equal((await (await r.call("/stream/td:5?aac=only", signed("td:5", { install: "install-0002" }))).json()).codec, "aac");
+  const calls = r.calls.length;
+  const res = await r.call("/stream/td:5?aac=only&hires=0", signed("td:5"));
+  assert.equal((await res.json()).codec, "aac");
+  assert.equal(r.calls.length, calls, "served from the warm ?aac=only entry");
+  assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+});
+
+test("?aac=only&hires=0 counts one unit like any AAC answer", async () => {
+  const r = relay(() => aacInfo());
+  const res = await r.call("/stream/td:2?aac=only&hires=0", signed("td:2"));
+  assert.equal((await res.json()).codec, "aac");
+  assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+  assert.equal(r.used(), 1);
+});
+
 test("legacy: a request with no install headers streams uncounted, as before", async () => {
   const r = relay(tidal());
   const res = await r.call("/stream/td:1");

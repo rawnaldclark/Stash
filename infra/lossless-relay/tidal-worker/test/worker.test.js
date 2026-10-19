@@ -911,3 +911,18 @@ test("only ?aac=only looks up hires; lossless streams make no metadata call", as
     assert.equal(metaCalls(f).length, 0);
   });
 });
+
+test("?aac=only&hires=0 (the app's AAC downloads) makes no metadata call; ?aac=only keeps it", async () => {
+  const f = fixture({ accounts: [liveAccount(), liveAccount(), liveAccount()], tidalResponse: aacWithMeta(() => new Response(JSON.stringify({ audioQuality: "LOSSLESS", mediaMetadata: { tags: ["LOSSLESS", "HIRES_LOSSLESS"] } }), { status: 200 })) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const lean = await (await worker.fetch(authorizedRequest("/stream/43?aac=only&hires=0"), f.env)).json();
+    assert.equal(lean.codec, "aac");
+    assert.equal("hires" in lean, false);
+    assert.equal(metaCalls(f).length, 0);
+
+    // The web player's ?aac=only keeps its hires lookup.
+    const full = await (await worker.fetch(authorizedRequest("/stream/44?aac=only"), f.env)).json();
+    assert.equal(full.hires, true);
+    assert.equal(metaCalls(f).length, 1);
+  });
+});
