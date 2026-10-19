@@ -343,8 +343,10 @@ class SearchDownloadCoordinator @Inject constructor(
                 Log.w(TAG, "Tidal AAC resolve threw for ${track.videoId}: ${error.message}")
             }.getOrNull()
         if (tidalMatch != null) {
+            // The row's length, or the search result's when the row has none (a stub synced
+            // without one). The query keeps the row's own, so it shares streaming's cache key.
             val length = AacLength(
-                expectedMs = query.durationMs ?: 0L,
+                expectedMs = query.durationMs ?: (track.durationSeconds * 1_000).toLong(),
                 reliable = query.durationReliable,
             )
             when (val attempt = finalizeFromSource(track, tidalMatch, length)) {

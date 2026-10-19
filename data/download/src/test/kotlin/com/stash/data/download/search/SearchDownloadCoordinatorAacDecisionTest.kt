@@ -256,6 +256,21 @@ class SearchDownloadCoordinatorAacDecisionTest {
         assertEquals(SearchDownloadStatus.WaitingForLossless, download(Tapped.SONG_WITH_ALBUM).last())
     }
 
+    @Test
+    fun `a row with no length is checked against the search result's length`() = runTest {
+        // A stub synced without a length: 0 ms on the row, 2:50 on the search result.
+        val stub = Tapped.PLAYED_MUSIC_VIDEO.row!!.copy(durationMs = 0L)
+        coEvery { losslessPrefs.downloadModeNow() } returns DownloadMode.LOSSLESS
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { tidalAacResolver.resolve(any(), any()) } returns tidalAac
+        coEvery { trackDao.findByYoutubeId(VIDEO_ID) } returns stub
+        val item = Tapped.PLAYED_MUSIC_VIDEO.item.copy(durationSeconds = 170.0)
+
+        // A 30 s preview against 170 s fails; the full 169 s file passes.
+        every { audioDurationExtractor.extract(any()) } returns AudioMetadata(durationMs = 30_000L, bitrateKbps = 320, format = "aac")
+        assertEquals(SearchDownloadStatus.WaitingForLossless, newSubject().download(item).toList().last())
+        every { audioDurationExtractor.extract(any()) } returns AudioMetadata(durationMs = 168_994L, bitrateKbps = 320, format = "aac")
+        assertTrue(newSubject().download(item).toList().savedTidalAac())
     // -- Download quality: AAC 320 and Opus ------------------------------------------------
 
     @Test

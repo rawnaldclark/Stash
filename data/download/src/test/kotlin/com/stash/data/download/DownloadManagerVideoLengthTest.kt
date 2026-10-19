@@ -196,6 +196,14 @@ class DownloadManagerVideoLengthTest {
     }
 
     @Test
+    fun `a preview-length file needs the tight window even for a video row`() {
+        // 30 s against a 45 s video is 33% off, inside the 40%, yet it is a preview.
+        assertFalse(lossyAacLengthMatches(probedMs = 30_000L, expectedMs = 45_000L, lengthReliable = false))
+        // A genuinely short song still passes when its length agrees.
+        assertTrue(lossyAacLengthMatches(probedMs = 31_000L, expectedMs = 33_000L, lengthReliable = false))
+    }
+
+    @Test
     fun `JioSaavn still runs for a YouTube video row`() = runTest {
         val asked = slot<TrackQuery>()
         coEvery { jioSaavnResolver.resolve(capture(asked), any()) } returns null
