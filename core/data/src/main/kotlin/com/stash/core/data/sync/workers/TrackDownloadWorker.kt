@@ -615,7 +615,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                         syncNotificationManager.updateProgress(
                             title = "Syncing playlists",
                             text = if (deferred > 0) {
-                                "Downloaded $completed of $total · $deferred waiting for lossless"
+                                "Downloaded $completed of $total · $deferred waiting"
                             } else {
                                 "Downloaded $completed of $total"
                             },
@@ -679,10 +679,10 @@ class TrackDownloadWorker @AssistedInject constructor(
             val finalDeferred = deferredCount.get()
             if (finalDeferred > 0) {
                 syncLog.info(
-                    "$finalDeferred song${if (finalDeferred == 1) "" else "s"} waiting for a " +
-                        "lossless source — they'll download automatically when one is available " +
-                        "(connect your own Qobuz in Audio & Quality, or allow the " +
-                        "YouTube fallback to get them now)",
+                    "$finalDeferred song${if (finalDeferred == 1) "" else "s"} waiting — not " +
+                        "available in your Download quality yet. They'll download automatically " +
+                        "when they are (or turn on the lossy fallback in Audio & Quality to get " +
+                        "them now)",
                 )
             }
 

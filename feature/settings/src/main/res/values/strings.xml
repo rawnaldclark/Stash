@@ -228,14 +228,22 @@
     <!-- Settings > Audio & Quality -->
     <string name="settings_audio_quality_section">Audio Quality</string>
     <string name="settings_download_quality_title">Download quality</string>
+    <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
+    <string name="settings_download_mode_lossless_desc">Best quality, largest files.</string>
+    <string name="settings_download_mode_aac">AAC 320</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC.</string>
+    <string name="settings_download_mode_opus">Opus (smallest)</string>
+    <string name="settings_download_mode_opus_desc">From YouTube. Smallest files.</string>
+    <string name="settings_flac_quality_title">FLAC quality</string>
+    <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
     <string name="settings_save_data_title">Save Data</string>
     <string name="settings_save_data_subtitle">Streams YouTube at its lowest audio quality — about 2 MB per track instead of 5 — and JioSaavn at 96 kbps instead of 320. Downloads are unaffected.</string>
     <string name="settings_lossless_section">Lossless</string>
     <string name="settings_lossless_title">Lossless</string>
-    <string name="settings_lossless_subtitle_off">Stream and download studio-quality FLAC. Off, everything plays via YouTube. Files ~10× larger than MP3.</string>
+    <string name="settings_lossless_subtitle_off">Stream studio-quality FLAC. Off, songs play via JioSaavn or YouTube. Downloads follow Download quality.</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source configured — see below. Files ~10× larger than MP3.</string>
-    <string name="settings_lossless_subtitle_active">FLAC for streaming and downloads. Files ~10× larger than MP3.</string>
+    <string name="settings_lossless_subtitle_active">FLAC for streaming. Downloads follow Download quality.</string>
     <string name="settings_qobuz_no_source_warning">No lossless source configured — connect your Qobuz account below</string>
     <string name="settings_qobuz_account_title">Your Qobuz account</string>
     <string name="settings_connected_as">Connected as %1$s</string>
@@ -260,6 +268,7 @@
     <string name="settings_state_on">on</string>
     <string name="settings_state_off">off</string>
     <string name="settings_lossy_fallback_switch_label">Use JioSaavn, then YouTube when a download has no lossless match</string>
+    <string name="settings_lossy_fallback_switch_label_aac">Use JioSaavn, then YouTube when Tidal has no AAC of a song</string>
     <string name="settings_advanced">Advanced</string>
     <string name="settings_custom_relay_desc">Point Stash at your own lossless relay. It takes priority over Stash\'s.</string>
     <string name="settings_custom_endpoint_label">Custom lossless endpoint</string>

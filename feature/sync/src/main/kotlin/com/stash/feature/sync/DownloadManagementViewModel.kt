@@ -1,5 +1,7 @@
 package com.stash.feature.sync
 
+import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.core.model.DownloadMode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.DownloadManagementRow
@@ -48,6 +50,11 @@ data class DownloadManagementUiState(
     val active: List<DownloadManagementItem> = emptyList(),
     val history: List<DownloadManagementItem> = emptyList(),
     val message: String? = null,
+    /**
+     * Download quality is AAC 320: a waiting row is one Tidal has no AAC of yet, not one
+     * waiting for lossless.
+     */
+    val aacMode: Boolean = false,
 ) {
     val downloading: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.IN_PROGRESS }
@@ -63,6 +70,7 @@ class DownloadManagementViewModel @Inject constructor(
     private val downloadManager: DownloadManager,
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val cancellationController: DownloadCancellationController,
+    losslessPrefs: LosslessSourcePreferences,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
     private val progressByTrackId = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
@@ -75,19 +83,25 @@ class DownloadManagementViewModel @Inject constructor(
     private val historyItems = downloadQueueDao.observeDownloadHistory(100)
         .map { rows -> rows.map { it.toItem(null) } }
 
-    val uiState: StateFlow<DownloadManagementUiState> = combine(
+    private val activeRows = combine(
         downloadQueueDao.observeActiveDownloadRows(),
+        losslessPrefs.downloadMode,
+    ) { rows, mode -> rows to (mode == DownloadMode.AAC) }
+
+    val uiState: StateFlow<DownloadManagementUiState> = combine(
+        activeRows,
         historyItems,
         selectedTab,
         progressByTrackId,
         message,
-    ) { active, history, tab, progress, currentMessage ->
+    ) { (active, aacMode), history, tab, progress, currentMessage ->
         DownloadManagementUiState(
             isLoading = false,
             selectedTab = tab,
-            active = active.map { it.toItem(progress[it.trackId]) },
+            active = active.map { it.toItem(progress[it.trackId], aacMode) },
             history = history,
             message = currentMessage,
+            aacMode = aacMode,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -131,7 +145,7 @@ class DownloadManagementViewModel @Inject constructor(
     }
 }
 
-private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadManagementItem {
+private fun DownloadManagementRow.toItem(progress: DownloadProgress?, aacMode: Boolean = false): DownloadManagementItem {
     val pipeline = progress?.status
     return DownloadManagementItem(
         queueId = queueId,
@@ -150,6 +164,7 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadM
             pipeline == PipelineStatus.TAGGING -> "Adding metadata"
             status == QueueStatus.IN_PROGRESS -> "In progress"
             status == QueueStatus.PENDING -> "Queued"
+            status == QueueStatus.WAITING_FOR_LOSSLESS && aacMode -> "Not available as AAC yet"
             status == QueueStatus.WAITING_FOR_LOSSLESS -> "Waiting for a lossless source"
             status == QueueStatus.COMPLETED -> "Downloaded"
             status == QueueStatus.FAILED && failureType == DownloadFailureType.NO_MATCH -> "Needs review"

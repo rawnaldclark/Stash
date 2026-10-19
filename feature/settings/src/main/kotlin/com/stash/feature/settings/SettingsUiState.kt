@@ -76,6 +76,8 @@ data class SettingsUiState(
      * because captcha-unverified silently falls back to yt-dlp/MP3).
      */
     val losslessEnabled: Boolean = true,
+    /** Download quality: what every download saves (Lossless, AAC 320, Opus). */
+    val downloadMode: com.stash.core.model.DownloadMode = com.stash.core.model.DownloadMode.LOSSLESS,
     /**
      * Selected lossless quality tier (CD / Hi-Res / Max). Defaults to HI_RES
      * which matches [LosslessSourcePreferences]'s stored default. The actual

@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.DownloadMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.LosslessQualityTier
@@ -105,35 +106,30 @@ fun SettingsAudioQualityScreen(
     val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = stringResource(R.string.settings_audio_quality_title), onBack = onBack, modifier = modifier) {
-        // (a) Download tier — only when lossless OFF. The standalone yt-dlp
-        // tier picker governs downloads when lossless routing is disabled.
+        // Downloads: what every download saves (Lossless, AAC 320, Opus) and the switches
+        // that mode uses. Streaming is the Lossless card's.
+        DownloadQualityCard(
+            mode = uiState.downloadMode,
+            onModeChanged = viewModel::onDownloadModeChanged,
+            flacTier = uiState.losslessQualityTier,
+            onFlacTierChanged = viewModel::onLosslessQualityTierChanged,
+            autoFlacUpgrade = autoFlacUpgrade,
+            onAutoFlacUpgradeChanged = flacViewModel::setAutoEnabled,
+            tidalAacFallback = tidalAacFallback,
+            onTidalAacFallbackChanged = viewModel::onTidalAacFallbackChanged,
+            lossyFallback = uiState.youtubeFallbackEnabled,
+            onLossyFallbackChanged = viewModel::onYoutubeFallbackChanged,
+            youTubeQuality = uiState.audioQuality,
+            onYouTubeQualityChanged = viewModel::onQualityChanged,
+        )
+
+        // (a) Streaming with lossless off: Save Data means "the lowest JioSaavn and YouTube
+        // audio quality", and the toggle must not vanish with the lossless card — that is
+        // exactly the user it is for.
         if (!uiState.losslessEnabled) {
             SettingsSectionLabel(stringResource(R.string.settings_audio_quality_section))
             GlassCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .selectableGroup(),
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_download_quality_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_download_quality_rates_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    AudioQualityPicker(
-                        selected = uiState.audioQuality,
-                        onSelected = viewModel::onQualityChanged,
-                    )
-                    // Save Data lives here too: with lossless off it means "the lowest
-                    // JioSaavn and YouTube audio quality", and the toggle must not vanish
-                    // with the lossless card — that is exactly the user it is for.
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
                     SettingsToggleRow(
                         title = stringResource(R.string.settings_save_data_title),
                         subtitle = stringResource(R.string.settings_save_data_subtitle),
@@ -166,7 +162,7 @@ fun SettingsAudioQualityScreen(
                 )
 
                 AnimatedVisibility(
-                    visible = uiState.losslessEnabled,
+                    visible = uiState.losslessEnabled || uiState.downloadMode == DownloadMode.LOSSLESS,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut(),
                 ) {
@@ -287,201 +283,99 @@ fun SettingsAudioQualityScreen(
                             }
                         }
 
-                        // -- Download quality picker --------------------------
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.settings_download_quality_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Column(modifier = Modifier.selectableGroup()) {
-                            // Order top-down: MAX → HI_RES → CD (best-quality first).
-                            listOf(
-                                LosslessQualityTier.MAX,
-                                LosslessQualityTier.HI_RES,
-                                LosslessQualityTier.CD,
-                            ).forEach { tier ->
-                                SettingsPickerRow(
-                                    selected = uiState.losslessQualityTier == tier,
-                                    title = tier.displayLabel(),
-                                    subtitle = tier.sizeHint(),
-                                    onClick = { viewModel.onLosslessQualityTierChanged(tier) },
-                                )
-                            }
-                        }
-
-                        // -- Auto-upgrade to FLAC after sync ------------------
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SettingsToggleRow(
-                            title = stringResource(R.string.settings_auto_flac_upgrade_title),
-                            subtitle = stringResource(R.string.settings_auto_flac_upgrade_subtitle),
-                            checked = autoFlacUpgrade,
-                            onCheckedChange = flacViewModel::setAutoEnabled,
-                        )
-
                         // -- Tidal AAC when a song has no FLAC ----------------
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SettingsToggleRow(
-                            title = stringResource(R.string.settings_tidal_aac_fallback_title),
-                            subtitle = stringResource(R.string.settings_tidal_aac_fallback_subtitle),
-                            checked = tidalAacFallback,
-                            onCheckedChange = viewModel::onTidalAacFallbackChanged,
-                        )
+                        // Streaming uses it too. With Lossless downloads it is in the Downloads
+                        // card above; otherwise it is shown here, for lossless streaming.
+                        if (uiState.downloadMode != DownloadMode.LOSSLESS) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SettingsToggleRow(
+                                title = stringResource(R.string.settings_tidal_aac_fallback_title),
+                                subtitle = stringResource(R.string.settings_tidal_aac_fallback_subtitle),
+                                checked = tidalAacFallback,
+                                onCheckedChange = viewModel::onTidalAacFallbackChanged,
+                            )
+                        }
 
                         // -- Streaming quality block --------------------------
                         // Per-network tier for *streaming* playback (distinct
                         // from the download tier above). Save Data is the master
                         // override: when on, both pickers are dimmed + inert and
                         // policy forces CD — the lowest lossless tier — on every network.
-                        Spacer(modifier = Modifier.height(14.dp))
-                        SettingsSectionLabel(stringResource(R.string.settings_streaming_section))
-                        GlassCard {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                val saveData = uiState.streamingSaveData
-                                val pickerAlpha = if (saveData) 0.4f else 1f
+                        if (uiState.losslessEnabled) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            SettingsSectionLabel(stringResource(R.string.settings_streaming_section))
+                            GlassCard {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    val saveData = uiState.streamingSaveData
+                                    val pickerAlpha = if (saveData) 0.4f else 1f
 
-                                Text(
-                                    text = stringResource(R.string.settings_on_wifi),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Column(
-                                    modifier = Modifier
-                                        .alpha(pickerAlpha)
-                                        .selectableGroup(),
-                                ) {
-                                    listOf(
-                                        LosslessQualityTier.MAX,
-                                        LosslessQualityTier.HI_RES,
-                                        LosslessQualityTier.CD,
-                                    ).forEach { tier ->
-                                        SettingsPickerRow(
-                                            selected = uiState.streamingWifiTier == tier,
-                                            title = tier.displayLabel(),
-                                            subtitle = tier.sizeHint(),
-                                            onClick = {
-                                                if (!saveData) viewModel.onStreamingWifiTierChanged(tier)
-                                            },
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = stringResource(R.string.settings_on_cellular),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Column(
-                                    modifier = Modifier
-                                        .alpha(pickerAlpha)
-                                        .selectableGroup(),
-                                ) {
-                                    listOf(
-                                        LosslessQualityTier.MAX,
-                                        LosslessQualityTier.HI_RES,
-                                        LosslessQualityTier.CD,
-                                    ).forEach { tier ->
-                                        SettingsPickerRow(
-                                            selected = uiState.streamingCellularTier == tier,
-                                            title = tier.displayLabel(),
-                                            subtitle = tier.sizeHint(),
-                                            onClick = {
-                                                if (!saveData) viewModel.onStreamingCellularTierChanged(tier)
-                                            },
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                SettingsToggleRow(
-                                    title = stringResource(R.string.settings_save_data_title),
-                                    // Lossless stays lossless: Save Data is the LOWEST lossless
-                                    // tier, not a drop to lossy. Less than FLAC is the lossless
-                                    // toggle's job, and then this same switch trims JioSaavn and YouTube.
-                                    subtitle = stringResource(R.string.settings_save_data_lossless_subtitle),
-                                    checked = uiState.streamingSaveData,
-                                    onCheckedChange = viewModel::onStreamingSaveDataChanged,
-                                    titleTrailing = { BetaPill() },
-                                )
-                            }
-                        }
-
-                        // -- YouTube fallback expander row (v0.9.17) -----------
-                        // Hosts the relocated yt-dlp tier picker plus the
-                        // master fallback toggle. Re-keyed on the losslessEnabled
-                        // flip so it collapses cleanly when toggled.
-                        var fallbackExpanded by remember(uiState.losslessEnabled) { mutableStateOf(false) }
-                        val fallbackChevronRotation by animateFloatAsState(
-                            targetValue = if (fallbackExpanded) 90f else 0f,
-                            label = "fallback-chevron",
-                        )
-                        val fallbackExpandedDesc = stringResource(if (fallbackExpanded) R.string.settings_state_expanded else R.string.settings_state_collapsed)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { fallbackExpanded = !fallbackExpanded }
-                                .semantics {
-                                    role = Role.Button
-                                    stateDescription = fallbackExpandedDesc
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                modifier = Modifier.graphicsLayer(rotationZ = fallbackChevronRotation),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = stringResource(R.string.settings_lossy_fallback_title),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = stringResource(if (uiState.youtubeFallbackEnabled) R.string.settings_state_on else R.string.settings_state_off),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        AnimatedVisibility(
-                            visible = fallbackExpanded,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    com.stash.core.ui.components.StashSwitch(
-                                        checked = uiState.youtubeFallbackEnabled,
-                                        onCheckedChange = viewModel::onYoutubeFallbackChanged,
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = stringResource(R.string.settings_lossy_fallback_switch_label),
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        text = stringResource(R.string.settings_on_wifi),
+                                        style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
-                                }
-                                if (uiState.youtubeFallbackEnabled) {
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Column(
+                                        modifier = Modifier
+                                            .alpha(pickerAlpha)
+                                            .selectableGroup(),
+                                    ) {
+                                        listOf(
+                                            LosslessQualityTier.MAX,
+                                            LosslessQualityTier.HI_RES,
+                                            LosslessQualityTier.CD,
+                                        ).forEach { tier ->
+                                            SettingsPickerRow(
+                                                selected = uiState.streamingWifiTier == tier,
+                                                title = tier.displayLabel(),
+                                                subtitle = tier.sizeHint(),
+                                                onClick = {
+                                                    if (!saveData) viewModel.onStreamingWifiTierChanged(tier)
+                                                },
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        text = stringResource(R.string.settings_download_quality_rates_desc),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        text = stringResource(R.string.settings_on_cellular),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    AudioQualityPicker(
-                                        selected = uiState.audioQuality,
-                                        onSelected = viewModel::onQualityChanged,
+                                    Column(
+                                        modifier = Modifier
+                                            .alpha(pickerAlpha)
+                                            .selectableGroup(),
+                                    ) {
+                                        listOf(
+                                            LosslessQualityTier.MAX,
+                                            LosslessQualityTier.HI_RES,
+                                            LosslessQualityTier.CD,
+                                        ).forEach { tier ->
+                                            SettingsPickerRow(
+                                                selected = uiState.streamingCellularTier == tier,
+                                                title = tier.displayLabel(),
+                                                subtitle = tier.sizeHint(),
+                                                onClick = {
+                                                    if (!saveData) viewModel.onStreamingCellularTierChanged(tier)
+                                                },
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    SettingsToggleRow(
+                                        title = stringResource(R.string.settings_save_data_title),
+                                        // Lossless stays lossless: Save Data is the LOWEST lossless
+                                        // tier, not a drop to lossy. Less than FLAC is the lossless
+                                        // toggle's job, and then this same switch trims JioSaavn and YouTube.
+                                        subtitle = stringResource(R.string.settings_save_data_lossless_subtitle),
+                                        checked = uiState.streamingSaveData,
+                                        onCheckedChange = viewModel::onStreamingSaveDataChanged,
+                                        titleTrailing = { BetaPill() },
                                     )
                                 }
                             }
+
                         }
 
                         // -- Advanced expander row (chevron + label) -----------
@@ -768,14 +662,14 @@ fun SettingsAudioQualityScreen(
 }
 
 @Composable
-private fun LosslessQualityTier.displayLabel(): String = when (this) {
+internal fun LosslessQualityTier.displayLabel(): String = when (this) {
     LosslessQualityTier.MAX -> stringResource(R.string.settings_lossless_tier_max)
     LosslessQualityTier.HI_RES -> stringResource(R.string.settings_lossless_tier_hires)
     LosslessQualityTier.CD -> stringResource(R.string.settings_lossless_tier_cd)
 }
 
 @Composable
-private fun LosslessQualityTier.sizeHint(): String = when (this) {
+internal fun LosslessQualityTier.sizeHint(): String = when (this) {
     LosslessQualityTier.MAX -> stringResource(R.string.settings_lossless_tier_max_hint)
     LosslessQualityTier.HI_RES -> stringResource(R.string.settings_lossless_tier_hires_hint)
     LosslessQualityTier.CD -> stringResource(R.string.settings_lossless_tier_cd_hint)

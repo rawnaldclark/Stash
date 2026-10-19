@@ -34,11 +34,14 @@ fun settingsHubSummaries(
     val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
     val playback = "$mode · $cellular"
 
-    val audioQuality = if (state.losslessEnabled) {
-        val shortLossless = state.losslessQualityTier.displayLabel.substringBefore(" (")
-        "Lossless · $shortLossless"
-    } else {
-        state.audioQuality.label
+    // What downloads save (Download quality); streaming's Lossless switch is inside the screen.
+    val audioQuality = when (state.downloadMode) {
+        com.stash.core.model.DownloadMode.LOSSLESS -> {
+            val shortLossless = state.losslessQualityTier.displayLabel.substringBefore(" (")
+            "Lossless · $shortLossless"
+        }
+        com.stash.core.model.DownloadMode.AAC -> "AAC 320"
+        com.stash.core.model.DownloadMode.OPUS -> "Opus · ${state.audioQuality.label}"
     }
 
     val connectedServices = buildList {

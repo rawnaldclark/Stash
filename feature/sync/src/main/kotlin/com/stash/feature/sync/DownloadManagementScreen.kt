@@ -169,7 +169,7 @@ private fun QueueContent(
             }
         }
         if (state.waiting.isNotEmpty()) {
-            item(key = "waiting_label") { SectionLabel("Waiting for lossless") }
+            item(key = "waiting_label") { SectionLabel(if (state.aacMode) "Not available as AAC yet" else "Waiting for lossless") }
             items(state.waiting, key = { "waiting_${it.queueId}" }) { item ->
                 DownloadRowCard(item, onCancel = onCancel, onRetry = onRetry)
             }

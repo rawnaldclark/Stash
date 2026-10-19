@@ -57,6 +57,13 @@ class DownloadWatchTest {
         assertNull(downloadWatchMessage(DownloadWatch.GONE, "Song"))
         assertNull(downloadWatchMessage(DownloadWatch.RUNNING, "Song"))
     }
+
+    @Test fun `in AAC 320 mode a waiting download says it isn't available as AAC yet`() {
+        assertEquals(
+            "'Song' isn't available as AAC yet.",
+            downloadWatchMessage(DownloadWatch.WAITING_FOR_LOSSLESS, "Song", aacMode = true),
+        )
+    }
 }
 
 /**
@@ -95,6 +102,7 @@ class NowPlayingDownloadRingTest {
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = mockk<LosslessUpgrader>(relaxed = true),
+        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = mockk<LyricsRepository>(relaxed = true),
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),

@@ -36,9 +36,11 @@ internal fun downloadWatchOf(status: DownloadStatus?): DownloadWatch = when (sta
  * finished one speaks for itself (the ring goes, the Download action flips), and
  * one whose row is gone was removed on purpose.
  */
-internal fun downloadWatchMessage(watch: DownloadWatch, title: String): String? = when (watch) {
+internal fun downloadWatchMessage(watch: DownloadWatch, title: String, aacMode: Boolean = false): String? = when (watch) {
     DownloadWatch.FAILED -> "Couldn't download '$title'."
-    DownloadWatch.WAITING_FOR_LOSSLESS -> "Waiting for a lossless copy of '$title'."
+    // Download quality AAC 320: the row waits because Tidal has no AAC of it yet.
+    DownloadWatch.WAITING_FOR_LOSSLESS ->
+        if (aacMode) "'$title' isn't available as AAC yet." else "Waiting for a lossless copy of '$title'."
     DownloadWatch.CANCELLED -> "Download of '$title' cancelled."
     DownloadWatch.RUNNING, DownloadWatch.DONE, DownloadWatch.GONE -> null
 }

@@ -14,7 +14,7 @@ class SyncActionProgressLabelTest {
     @Test
     fun `downloading label names the deferred count when tracks are waiting`() {
         assertEquals(
-            "Downloading 2/5 · 3 waiting for lossless...",
+            "Downloading 2/5 · 3 waiting...",
             phaseLabel(SyncPhase.Downloading(downloaded = 2, total = 5, deferred = 3)),
         )
     }

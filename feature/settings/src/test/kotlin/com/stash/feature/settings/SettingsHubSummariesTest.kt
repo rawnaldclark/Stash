@@ -68,17 +68,31 @@ class SettingsHubSummariesTest {
         assertEquals("Lossless · Hi-Res", s.audioQuality)
     }
 
-    @Test fun `audio lossless off → audioQuality label`() {
+    @Test fun `Opus downloads → Opus and the YouTube quality`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(
                 losslessEnabled = false,
+                downloadMode = com.stash.core.model.DownloadMode.OPUS,
                 audioQuality = QualityTier.MAX,
             ),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Max", s.audioQuality)
+        assertEquals("Opus · Max", s.audioQuality)
+    }
+
+    @Test fun `AAC downloads → AAC 320, whatever the streaming switch says`() {
+        val s = settingsHubSummaries(
+            state = SettingsUiState(
+                losslessEnabled = true,
+                downloadMode = com.stash.core.model.DownloadMode.AAC,
+            ),
+            versionName = "0.9.51",
+            streamingEnabled = true,
+            streamOnCellular = false,
+        )
+        assertEquals("AAC 320", s.audioQuality)
     }
 
     // --- accounts ---------------------------------------------------------

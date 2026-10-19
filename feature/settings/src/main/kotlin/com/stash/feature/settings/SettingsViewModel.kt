@@ -638,6 +638,7 @@ class SettingsViewModel @Inject constructor(
         youTubeHistoryScrobbler.health,
         youTubeHistoryScrobbler.pendingCount(),
         losslessPrefs.enabled,
+        losslessPrefs.downloadMode,
         losslessPrefs.captchaCookieValue,
         losslessPrefs.qualityTier,
         qobuzSource.lastKnownBadCookie,
@@ -687,6 +688,7 @@ class SettingsViewModel @Inject constructor(
         val ytHistoryHealth = v.next<YouTubeScrobblerHealth>()
         val ytPendingCount = v.next<Int>()
         val losslessEnabled = v.next<Boolean>()
+        val downloadMode = v.next<com.stash.core.model.DownloadMode>()
         val squidWtfCaptchaCookie = (v.next<String?>()).orEmpty()
         val losslessQualityTier = v.next<LosslessQualityTier>()
         val lastKnownBadCookie = v.next<String?>()
@@ -769,6 +771,7 @@ class SettingsViewModel @Inject constructor(
             ytHistoryHealth = ytHistoryHealth,
             ytPendingCount = ytPendingCount,
             losslessEnabled = losslessEnabled,
+            downloadMode = downloadMode,
             squidWtfCaptchaCookie = squidWtfCaptchaCookie,
             squidCaptchaStatus = squidCaptchaStatus(squidWtfCaptchaCookie, lastKnownBadCookie),
             losslessQualityTier = losslessQualityTier,
@@ -1759,6 +1762,15 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             losslessPrefs.setQualityTier(tier)
         }
+    }
+
+    /**
+     * Download quality: Lossless, AAC 320 or Opus, for every download path. Files already
+     * downloaded stay as they are; songs waiting are looked at again under the new mode
+     * (LosslessRetryScheduler sweeps on the change).
+     */
+    fun onDownloadModeChanged(mode: com.stash.core.model.DownloadMode) {
+        viewModelScope.launch { losslessPrefs.setDownloadMode(mode) }
     }
 
     /**

@@ -261,6 +261,7 @@ class NowPlayingWordSyncedLyricsTest {
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = mockk<LosslessUpgrader>(relaxed = true),
+        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = lyricsRepository,
         lyricsPreference = lyricsPreference,
         nowPlayingPreference = mockk(relaxed = true),

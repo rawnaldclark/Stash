@@ -115,7 +115,7 @@ internal fun flacUpgradeUiState(infos: List<WorkInfo>, tap: FlacSweepResult?): F
 
 private fun tapMessage(tap: FlacSweepResult?): String? = when (tap) {
     FlacSweepResult.StreamingMode -> "Stream only is on, so there are no downloads to upgrade."
-    FlacSweepResult.LosslessDisabled -> "Turn on Lossless in Audio & Quality first."
+    FlacSweepResult.LosslessDisabled -> "Set Download quality to Lossless in Audio & Quality first."
     FlacSweepResult.NothingToUpgrade ->
         "Nothing to upgrade. Every downloaded track is FLAC already or was checked in the last two weeks."
     // Queued / already running: the batch itself has the news. AutoUpgradeOff is post-sync only.

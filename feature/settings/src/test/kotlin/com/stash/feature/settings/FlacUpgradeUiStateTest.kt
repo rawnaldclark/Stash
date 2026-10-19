@@ -68,7 +68,7 @@ class FlacUpgradeUiStateTest {
 
     @Test fun `a tap that queued nothing says why`() {
         assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.LosslessDisabled).message)
-            .isEqualTo("Turn on Lossless in Audio & Quality first.")
+            .isEqualTo("Set Download quality to Lossless in Audio & Quality first.")
         assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.StreamingMode).message)
             .isEqualTo("Stream only is on, so there are no downloads to upgrade.")
         // ... and is newer news than the last batch's result.

@@ -257,7 +257,7 @@ fun SongRow(
                     // it reads as informational rather than alerting.
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
-                        contentDescription = "Waiting for lossless source",
+                        contentDescription = "Waiting to download",
                         modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

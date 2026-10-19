@@ -143,7 +143,7 @@ internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
     is SyncPhase.VerifyingLibrary -> "Checking your library (${phase.step}/${phase.total})..."
     is SyncPhase.Downloading ->
         if (phase.deferred > 0) {
-            "Downloading ${phase.downloaded}/${phase.total} · ${phase.deferred} waiting for lossless..."
+            "Downloading ${phase.downloaded}/${phase.total} · ${phase.deferred} waiting..."
         } else {
             "Downloading ${phase.downloaded}/${phase.total}..."
         }
