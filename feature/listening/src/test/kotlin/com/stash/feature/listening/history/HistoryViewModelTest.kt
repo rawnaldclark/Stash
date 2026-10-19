@@ -323,9 +323,48 @@ class HistoryViewModelTest {
         coEvery { player.setQueue(capture(queue), capture(start), any()) } returns Unit
 
         vm.play(loaded.last()); advanceUntilIdle()
-        assertThat(queue.captured.size - start.captured - 1).isAtLeast(50)
+        // The tapped row was the last loaded one: all 100 read ahead follow it.
+        assertThat(queue.captured.size - start.captured - 1).isEqualTo(HistoryViewModel.QUEUE_READ_AHEAD)
         // Only the queue grew: the list on screen is as it was.
         assertThat(vm.state.value.days.sumOf { it.rows.size }).isEqualTo(200)
+    }
+
+    @Test fun `a failed read-ahead still plays the loaded rows`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 30, perDay = 20) }
+        val repo = fake.repository()
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        val loaded = vm.state.value.days.flatMap { it.rows }
+        coEvery { repo.historyPage(any(), any(), any()) } throws IllegalStateException("disk")
+        val queue = slot<List<Track>>()
+        val start = slot<Int>()
+        coEvery { player.setQueue(capture(queue), capture(start), any()) } returns Unit
+
+        vm.play(loaded.last()); advanceUntilIdle()
+        assertThat(queue.captured[start.captured].id).isEqualTo(loaded.last().track.id)
+        assertThat(start.captured).isEqualTo(queue.captured.lastIndex)
+    }
+
+    @Test fun `a later tap wins over an earlier one still reading ahead`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 30, perDay = 20) }
+        val repo = fake.repository()
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        val loaded = vm.state.value.days.flatMap { it.rows }
+        val pages = fake.pageCalls.size
+        coEvery { repo.historyPage(any(), any(), any()) } coAnswers {
+            kotlinx.coroutines.delay(1_000)
+            fake.page(firstArg(), secondArg(), thirdArg())
+        }
+        val queues = mutableListOf<Int>()
+        coEvery { player.setQueue(any(), capture(queues), any()) } returns Unit
+
+        vm.play(loaded.last())   // reads ahead (slow)
+        vm.play(loaded.first())  // no read-ahead
+        advanceUntilIdle()
+        // Only the second tap's queue reached the player.
+        assertThat(queues).hasSize(1)
+        assertThat(fake.pageCalls.size).isAtLeast(pages)
     }
 
     @Test fun `offline, a tapped song that isn't downloaded says so instead of playing`() = runTest {

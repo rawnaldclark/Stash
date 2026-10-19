@@ -164,6 +164,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     private var olderJob: Job? = null
     private var newerJob: Job? = null
     private var syncJob: Job? = null
+    private var playJob: Job? = null
 
     init {
         val startDay = savedStateHandle.get<Long>(ARG_DAY)?.takeIf { it != NO_DAY }
@@ -296,12 +297,18 @@ class HistoryViewModel @VisibleForTesting internal constructor(
             playDayFrom(row.event.day, row.event.id, row.event.startedAt)
             return
         }
-        val listed = rows.toList()
-        val cursor = olderCursor.takeIf { hasOlder }
+        // Only the rows the queue can hold, not a list scrolled thousands deep.
+        val from = (index - QUEUE_ABOVE).coerceAtLeast(0)
+        val listed = rows.subList(from, minOf(rows.size, index + QUEUE_BELOW + 1)).toList()
+        val tapped = index - from
+        // While a new search loads, the rows and cursor are still the old list's: no read-ahead
+        // (it would mix the new search's songs into the old list's queue).
+        val cursor = olderCursor.takeIf { hasOlder && !_state.value.loading && from + listed.size == rows.size }
         val query = appliedQuery
-        viewModelScope.launch {
+        playJob?.cancel()
+        playJob = viewModelScope.launch {
             var queueRows = listed
-            if (cursor != null && listed.size - index <= QUEUE_READ_AHEAD) {
+            if (cursor != null && listed.size - tapped <= QUEUE_READ_AHEAD) {
                 // Best effort: if this read fails the loaded rows still play.
                 val more = try {
                     history.historyPage(cursor, query, QUEUE_READ_AHEAD).rows
@@ -314,7 +321,7 @@ class HistoryViewModel @VisibleForTesting internal constructor(
                 val seen = listed.mapTo(HashSet()) { it.event.id }
                 queueRows = listed + more.filter { seen.add(it.event.id) }
             }
-            val queue = listQueue(queueRows, index)
+            val queue = listQueue(queueRows, tapped, before = QUEUE_ABOVE, after = QUEUE_BELOW)
             when (val plan = planPlay(queue.tracks, queue.startIndex, connectivityMonitor.isConnected(), tapped = true)) {
                 is PlayPlan.Play -> playerRepository.setQueue(plan.tracks, plan.startIndex, PlaybackSource.Listening("History"))
                 is PlayPlan.Blocked -> _messages.tryEmit(plan.message)
@@ -326,7 +333,9 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     fun playDay(day: Long) = playDayFrom(day, null, null)
 
     private fun playDayFrom(day: Long, startEventId: Long?, startedAt: Long?) {
-        viewModelScope.launch {
+        // A later tap wins: an earlier one still reading the database must not replace its queue.
+        playJob?.cancel()
+        playJob = viewModelScope.launch {
             val listens = runCatchingLoad { history.listensOn(day) } ?: return@launch
             val queue = dayQueue(listens, startEventId, startedAt)
             val plan = planPlay(
@@ -556,6 +565,10 @@ class HistoryViewModel @VisibleForTesting internal constructor(
 
         /** A tap this close to the end of the loaded rows reads this many older ones for its queue. */
         const val QUEUE_READ_AHEAD = 100
+
+        /** A tapped History row queues at most this many rows above it (for Previous) and below it. */
+        const val QUEUE_ABOVE = 50
+        const val QUEUE_BELOW = 500
 
         /** Search waits this long after the last keystroke (a no-match search reads everything). */
         const val SEARCH_DEBOUNCE_MS = 250L
