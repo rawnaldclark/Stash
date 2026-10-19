@@ -33,6 +33,8 @@ data class LastFmRecentTracksPage(
     val totalPages: Int,
     /** Scrobbles in the whole requested range (all pages), as Last.fm counts them. */
     val total: Int,
+    /** False when the answer had no `recenttracks` at all: not a trustworthy (empty) page. */
+    val wellFormed: Boolean = true,
 )
 
 /**
@@ -49,7 +51,7 @@ object LastFmRecentTracksParser {
     internal const val PLACEHOLDER_HASH = "2a96cbd8b46e442fc41c2b86b821562f"
 
     fun parse(root: JsonObject): LastFmRecentTracksPage {
-        val recent = root["recenttracks"]?.jsonObject ?: return LastFmRecentTracksPage(emptyList(), 1, 0, 0)
+        val recent = root["recenttracks"] as? JsonObject ?: return LastFmRecentTracksPage(emptyList(), 1, 0, 0, wellFormed = false)
         val attr = recent["@attr"] as? JsonObject
         val page = attr.int("page") ?: 1
         val totalPages = attr.int("totalPages") ?: 0

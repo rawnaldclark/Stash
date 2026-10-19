@@ -66,6 +66,8 @@ class LastFmSessionPreference @Inject constructor(
     }
 
     suspend fun clear() {
+        // The Last.fm recap's copy of this account's scrobbles goes with the session.
+        runCatching { com.stash.core.data.lastfm.recap.LastFmRecapStore.clearUsers(context.filesDir) }
         context.lastFmDataStore.edit {
             it.remove(usernameKey)
             it.remove(sessionKeyKey)

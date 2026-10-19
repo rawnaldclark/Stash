@@ -5,6 +5,9 @@ import com.stash.core.data.db.entity.ArtistGenreEntity
 import com.stash.core.data.genre.WeightedGenre
 import com.stash.core.data.genre.WeightedGenreCodec
 import com.stash.core.data.lastfm.LastFmApiException
+import com.stash.core.data.lastfm.LastFmHttpException
+import com.stash.core.data.lastfm.LastFmRateLimitGate
+import com.stash.core.data.lastfm.LastFmRateLimitedException
 import com.stash.core.data.lastfm.LastFmRecentTracksPage
 import com.stash.core.data.lastfm.LastFmScrobble
 import com.stash.core.data.lastfm.LastFmTag
@@ -43,6 +46,10 @@ class LastFmRecapRepositoryTest {
 
     private fun sec(iso: String) = Instant.parse(iso).epochSecond
 
+    private companion object {
+        const val KEY = "read-key"
+    }
+
     data class Call(val kind: String, val from: Long, val to: Long, val page: Int, val limit: Int, val sessionKey: String?, val at: Long)
 
     /** A Last.fm with [scrobbles] in it, paging and counting like the real one. */
@@ -54,19 +61,42 @@ class LastFmRecapRepositoryTest {
         val tags = HashMap<String, List<LastFmTag>>()
         val calls = ArrayList<Call>()
 
+        /** Users whose profile hides its listening: unsigned reads answer 17. */
+        val privateUsers = HashSet<String>()
+
+        /** Rewrites a page before it's returned (short reads, odd paging). */
+        var tamper: (LastFmRecentTracksPage) -> LastFmRecentTracksPage = { it }
+
+        /** A real breaker, fed like the client feeds it: a 29 opens [KEY] for a minute or more. */
+        val gate = LastFmRateLimitGate()
+        var localRefusals = 0
+        var registrationFailure: Throwable? = null
+
         override suspend fun recentTracks(user: String, fromSec: Long, toSec: Long, page: Int, limit: Int, sessionKey: String?): Result<LastFmRecentTracksPage> {
+            // The client refuses locally while every key's breaker is open: no network call.
+            if (gate.isOpen(KEY, clock())) {
+                localRefusals++
+                return Result.failure(LastFmRateLimitedException("all keys throttled"))
+            }
             calls += Call("recent", fromSec, toSec, page, limit, sessionKey, clock())
-            failures.removeFirstOrNull()?.let { return Result.failure(it) }
+            failures.removeFirstOrNull()?.let { e ->
+                if (e is LastFmApiException && e.code == "29") gate.recordRateLimited(KEY, clock())
+                return Result.failure(e)
+            }
+            if (user in privateUsers && sessionKey == null) return Result.failure(LastFmApiException("17", "login required"))
             val inRange = scrobbles.filter { it.uts in fromSec..toSec }.sortedByDescending { it.uts }
             val pages = (inRange.size + limit - 1) / limit
             val slice = inRange.drop((page - 1) * limit).take(limit)
-            return Result.success(LastFmRecentTracksPage(slice, page, pages, inRange.size))
+            return Result.success(tamper(LastFmRecentTracksPage(slice, page, pages, inRange.size)))
         }
 
         override suspend fun registeredAt(user: String): Result<Long?> {
             calls += Call("info", 0, 0, 0, 0, null, clock())
+            registrationFailure?.let { return Result.failure(it) }
             return Result.success(registered)
         }
+
+        override fun busyWaitMs(signed: Boolean): Long = (gate.openUntil(KEY) - clock()).coerceAtLeast(0)
 
         override suspend fun trackDurationMs(artist: String, title: String): Result<Long?> {
             calls += Call("duration:$title", 0, 0, 0, 0, null, clock())
@@ -91,6 +121,7 @@ class LastFmRecapRepositoryTest {
             store = LastFmRecapStore(tmp.root),
             genreRows = { genreReads++; genreRows },
             nowMs = clock,
+            elapsedMs = { testScheduler.currentTime },
             io = StandardTestDispatcher(testScheduler),
         )
         return remote to repo
@@ -225,24 +256,13 @@ class LastFmRecapRepositoryTest {
         times.zipWithNext().forEach { (a, b) -> assertThat(b - a).isAtLeast(LastFmRecapRepository.REQUEST_INTERVAL_MS) }
     }
 
-    @Test fun `a rate limit backs off and tries again`() = runTest {
-        val (remote, repo) = setup()
-        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 30)
-        remote.failures += LastFmApiException("29", "rate limit")
-        remote.failures += LastFmApiException("29", "rate limit")
-        val read = repo.scrobbles("u", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc)
-        assertThat(read).hasSize(30)
-        val t = recentCalls(remote).map { it.at }
-        assertThat(t[1] - t[0]).isAtLeast(5_000L)
-        assertThat(t[2] - t[1]).isAtLeast(10_000L)
-    }
-
     @Test fun `still rate limited after backing off - busy`() = runTest {
         val (remote, repo) = setup()
         repeat(4) { remote.failures += LastFmApiException("29", "rate limit") }
         val e = runCatching { repo.scrobbles("u", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc) }.exceptionOrNull()
         assertThat((e as LastFmRecapException).reason).isEqualTo(LastFmRecapException.Reason.BUSY)
-        assertThat(recentCalls(remote)).hasSize(4)
+        // Waited out the first minute; the second strike doubles the breaker past what a story waits.
+        assertThat(recentCalls(remote)).hasSize(2)
     }
 
     @Test fun `private, unknown and offline become calm reasons`() = runTest {
@@ -261,16 +281,148 @@ class LastFmRecapRepositoryTest {
         }
     }
 
-    @Test fun `the connected account's session key reaches every history read`() = runTest {
+    @Test fun `a public profile is read unsigned even with a session`() = runTest {
         val (remote, repo) = setup()
         remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 250)
-        repo.availability("me", utc, sessionKey = "sk")
         repo.scrobbles("me", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc, sessionKey = "sk")
-        assertThat(recentCalls(remote).map { it.sessionKey }.distinct()).containsExactly("sk")
-        // And none when there is no session (the debug test user).
-        remote.calls.clear()
-        repo.scrobbles("other", LastFmRecapSpan.Month(YearMonth.of(2026, 8)), utc)
         assertThat(recentCalls(remote).map { it.sessionKey }.distinct()).containsExactly(null)
+    }
+
+    @Test fun `a private profile reads itself signed - a second paced call, later pages signed at once`() = runTest {
+        val (remote, repo) = setup()
+        remote.privateUsers += "me"
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 250)
+        val read = repo.scrobbles("me", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc, sessionKey = "sk")
+        assertThat(read).hasSize(250)
+        val calls = recentCalls(remote)
+        assertThat(calls.map { it.page to it.sessionKey }).containsExactly(1 to null, 1 to "sk", 2 to "sk").inOrder()
+        // The fallback is its own request: paced like any other.
+        assertThat(calls[1].at - calls[0].at).isAtLeast(LastFmRecapRepository.REQUEST_INTERVAL_MS)
+    }
+
+    @Test fun `a private profile without a session is a calm private failure, never signed`() = runTest {
+        val (remote, repo) = setup()
+        remote.privateUsers += "hidden"
+        val e = runCatching { repo.scrobbles("hidden", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc) }.exceptionOrNull()
+        assertThat((e as LastFmRecapException).reason).isEqualTo(LastFmRecapException.Reason.PRIVATE)
+        assertThat(recentCalls(remote).map { it.sessionKey }).containsExactly(null)
+    }
+
+    // ── A month is kept for good only when it was read whole ─────────
+
+    private suspend fun TestScope.readSeptemberTwice(remote: FakeRemote, repo: LastFmRecapRepository): Int {
+        val sept = LastFmRecapSpan.Month(YearMonth.of(2026, 9))
+        repo.scrobbles("u", sept, utc)
+        val before = recentCalls(remote).size
+        advanceTimeBy(LastFmRecapRepository.SCROBBLES_TTL_MS + 1_000)
+        repo.scrobbles("u", sept, utc)
+        return recentCalls(remote).size - before
+    }
+
+    @Test fun `a whole settled month is not read again`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 450)
+        assertThat(readSeptemberTwice(remote, repo)).isEqualTo(0)
+    }
+
+    @Test fun `fewer rows than Last_fm's total - kept briefly, read again`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 450)
+        // Last.fm claims 500 but only 450 come back.
+        remote.tamper = { it.copy(total = 500) }
+        assertThat(readSeptemberTwice(remote, repo)).isGreaterThan(0)
+    }
+
+    @Test fun `an empty page in the middle - kept briefly, read again`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 450)
+        remote.tamper = { if (it.page == 2) it.copy(scrobbles = emptyList()) else it }
+        assertThat(readSeptemberTwice(remote, repo)).isGreaterThan(0)
+    }
+
+    @Test fun `zero pages for a non-empty total, or no recenttracks at all - kept briefly`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 30)
+        remote.tamper = { it.copy(totalPages = 0) }
+        assertThat(readSeptemberTwice(remote, repo)).isGreaterThan(0)
+
+        val (remote2, repo2) = setup()
+        remote2.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 30)
+        remote2.tamper = { LastFmRecentTracksPage(emptyList(), 1, 0, 0, wellFormed = false) }
+        assertThat(readSeptemberTwice(remote2, repo2)).isGreaterThan(0)
+    }
+
+    @Test fun `the page cap - kept briefly`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 3)
+        // Claims more pages than the cap allows reading.
+        remote.tamper = { it.copy(totalPages = LastFmRecapRepository.MAX_PAGES_PER_MONTH + 1, total = it.total) }
+        assertThat(readSeptemberTwice(remote, repo)).isGreaterThan(0)
+    }
+
+    @Test fun `whole means at least 98 percent of the total`() {
+        assertThat(LastFmRecapRepository.isWhole(98, 100)).isTrue()
+        assertThat(LastFmRecapRepository.isWhole(97, 100)).isFalse()
+        assertThat(LastFmRecapRepository.isWhole(0, 0)).isTrue()
+        assertThat(LastFmRecapRepository.isWhole(10, -1)).isFalse()
+    }
+
+    // ── Transient failures, the real breaker, registration ───────────
+
+    @Test fun `transient failures are retried along the ladder`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 30)
+        remote.failures += LastFmApiException("16", "temporarily unavailable")
+        remote.failures += LastFmHttpException(502, "Last.fm GET failed: HTTP 502")
+        remote.failures += java.net.SocketTimeoutException("timeout")
+        val read = repo.scrobbles("u", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc)
+        assertThat(read).hasSize(30)
+        val t = recentCalls(remote).map { it.at }
+        assertThat(t).hasSize(4)
+        assertThat(t[1] - t[0]).isAtLeast(5_000L)
+        assertThat(t[2] - t[1]).isAtLeast(10_000L)
+        assertThat(t[3] - t[2]).isAtLeast(20_000L)
+        assertThat(LastFmRecapRepository.isTransient(LastFmHttpException(404, "x"))).isFalse()
+        assertThat(LastFmRecapRepository.isTransient(LastFmApiException("8", "x"))).isTrue()
+        assertThat(LastFmRecapRepository.isTransient(LastFmApiException("11", "x"))).isTrue()
+    }
+
+    @Test fun `a rate limit waits for the breaker to reopen instead of retrying into it`() = runTest {
+        val (remote, repo) = setup()
+        remote.scrobbles = scrobblesIn(YearMonth.of(2026, 9), 30)
+        remote.failures += LastFmApiException("29", "rate limit")
+        val read = repo.scrobbles("u", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc)
+        assertThat(read).hasSize(30)
+        val t = recentCalls(remote).map { it.at }
+        assertThat(t).hasSize(2)
+        assertThat(t[1] - t[0]).isAtLeast(LastFmRateLimitGate.BASE_COOLDOWN_MS)
+        // Never a request refused locally while the breaker was still open.
+        assertThat(remote.localRefusals).isEqualTo(0)
+    }
+
+    @Test fun `a breaker open longer than the story can wait - busy at once`() = runTest {
+        val (remote, repo) = setup()
+        val clock = { start + testScheduler.currentTime }
+        // Third strike in a row: open for four minutes.
+        repeat(3) { remote.gate.recordRateLimited(KEY, clock()) }
+        val e = runCatching { repo.scrobbles("u", LastFmRecapSpan.Month(YearMonth.of(2026, 9)), utc) }.exceptionOrNull()
+        assertThat((e as LastFmRecapException).reason).isEqualTo(LastFmRecapException.Reason.BUSY)
+        assertThat(remote.localRefusals).isEqualTo(1)
+        assertThat(recentCalls(remote)).isEmpty()
+    }
+
+    @Test fun `registration that fails reads as unknown for now, a dateless answer is remembered`() = runTest {
+        val (remote, repo) = setup()
+        remote.registrationFailure = java.io.IOException("down")
+        val totals = repo.availability("u", utc)
+        // Unknown: this year and last are probed, the row still comes.
+        assertThat(totals.map { it.span.key }).contains("2025")
+        remote.registrationFailure = null
+        remote.registered = null
+        repo.availability("u", utc)
+        repo.availability("u", utc)
+        // Failed once (asked again), then answered "no date" once (remembered).
+        assertThat(remote.calls.count { it.kind == "info" }).isEqualTo(2)
     }
 
     // ── Look-ups ─────────────────────────────────────────────────────

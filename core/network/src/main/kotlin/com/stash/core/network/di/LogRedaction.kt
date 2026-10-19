@@ -20,6 +20,10 @@ internal object LogRedaction {
         "username",
         "user_auth_token",
         "app_secret",
+        // Last.fm: a session key is a lasting credential; the signature and auth token travel with it.
+        "sk",
+        "api_sig",
+        "token",
     )
 
     private val SECRET_QUERY_PARAM = Regex(

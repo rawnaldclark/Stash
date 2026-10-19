@@ -416,6 +416,9 @@ suspend fun updateNowPlaying(
      * params, and the Last.fm recap keeps its own file cache. Pass an explicit [toSec] so pages
      * don't shift while new scrobbles arrive. [limit] is capped at 200 by Last.fm.
      *
+     * Bulk paging: it runs on the extra read keys when there are any ([recapReadKeys]), so a long
+     * recap read never throttles the primary key scrobbling and auth depend on.
+     *
      * Read-only by construction: no session key, no signature, nothing written anywhere.
      */
     suspend fun getUserRecentTracks(
@@ -434,7 +437,7 @@ suspend fun updateNowPlaying(
             "page" to page.toString(),
             "limit" to limit.toString(),
         )
-        LastFmRecentTracksParser.parse(unsignedGet(params))
+        LastFmRecentTracksParser.parse(unsignedGet(params, keys = recapReadKeys))
     }
 
     /**
@@ -442,6 +445,9 @@ suspend fun updateNowPlaying(
      * that hides its recent listening (unsigned reads answer error 17): Last.fm shows a user their
      * own history when the request carries their session. Still a read: nothing is written.
      * Only ever called for the session's own username (LastFmRecapAccount).
+     *
+     * Sent as a POST (form body), never a GET: the session key and signature must not appear in a
+     * URL, which the debug HTTP logger prints to logcat.
      */
     suspend fun getUserRecentTracksSigned(
         sessionKey: String,
@@ -461,23 +467,22 @@ suspend fun updateNowPlaying(
             "page" to page.toString(),
             "limit" to limit.toString(),
         )
-        LastFmRecentTracksParser.parse(signedReadGet(params))
+        LastFmRecentTracksParser.parse(signedReadPost(params))
     }
 
     /**
-     * A signed GET for a read, with Last.fm's `{ error, message }` kept as a [LastFmApiException]
-     * (rate limits recorded on the primary key's breaker) instead of a bare HTTP failure.
+     * A signed read sent as a POST form (secrets stay out of the URL), with Last.fm's
+     * `{ error, message }` kept as a [LastFmApiException] and rate limits recorded on the primary
+     * key's breaker (the only key a session is valid with).
      */
-    private suspend fun signedReadGet(params: Map<String, String>): JsonObject =
+    private suspend fun signedReadPost(params: Map<String, String>): JsonObject =
         withContext(Dispatchers.IO) {
             val signed = params.toMutableMap().apply {
                 put("api_sig", sign(this))
                 put("format", "json")
             }
-            val url = API_URL.toHttpUrl().newBuilder().apply {
-                signed.forEach { (k, v) -> addQueryParameter(k, v) }
-            }.build()
-            val (code, body) = okHttpClient.newCall(Request.Builder().url(url).get().build()).execute().use {
+            val form = FormBody.Builder().apply { signed.forEach { (k, v) -> add(k, v) } }.build()
+            val (code, body) = okHttpClient.newCall(Request.Builder().url(API_URL).post(form).build()).execute().use {
                 it.code to it.body?.string()
             }
             if (code == 429) {
@@ -492,9 +497,29 @@ suspend fun updateNowPlaying(
                 val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
                 throw LastFmApiException(err, "Last.fm API error $err: $msg (HTTP $code)")
             }
-            check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
+            if (code !in 200..299) throw LastFmHttpException(code, "Last.fm POST failed: HTTP $code")
             root ?: error("Empty or unreadable Last.fm response")
         }
+
+    /**
+     * Keys the Last.fm recap's bulk history reads use: the extra read keys when any are
+     * configured, so paging a year never throttles the primary (scrobbling) key; else the pool.
+     */
+    private val recapReadKeys: List<String>
+        get() = credentials.extraReadApiKeys.filter { it.isNotBlank() }.distinct().ifEmpty { credentials.readApiKeys }
+
+    /**
+     * How long until the Last.fm recap may read again after a rate limit: 0 when one of its keys
+     * is open (for a [signed] read, the primary key: a session only works with it), else the time
+     * until the first breaker reopens ([LastFmRateLimitGate]). Waiting this long, rather than a
+     * fixed back-off, keeps retries from failing locally while the breaker is still open.
+     */
+    fun recapBusyWaitMs(signed: Boolean): Long {
+        val now = System.currentTimeMillis()
+        val keys = if (signed) listOf(credentials.apiKey) else recapReadKeys
+        if (keys.isEmpty()) return 0L
+        return keys.minOf { (rateLimitGate.openUntil(it) - now).coerceAtLeast(0L) }
+    }
 
     /** When [username] joined Last.fm (UNIX seconds), from `user.getInfo`; null when it doesn't say. */
     suspend fun getUserRegisteredAt(username: String): Result<Long?> = runCatching {
@@ -584,6 +609,8 @@ suspend fun updateNowPlaying(
         params: Map<String, String>,
         cacheable: Boolean = false,
         onCacheHit: () -> Unit = {},
+        /** The read keys a direct request may use (round-robin, breakers respected). */
+        keys: List<String> = credentials.readApiKeys,
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheKey = if (cacheable) lastFmCacheKey(params) else null
@@ -638,7 +665,7 @@ suspend fun updateNowPlaying(
                     if (apiError != null) {
                         throw LastFmApiException(apiError, "Last.fm GET failed: HTTP $code (API error $apiError)")
                     }
-                    error("Last.fm GET failed: HTTP $code")
+                    throw LastFmHttpException(code, "Last.fm GET failed: HTTP $code")
                 }
                 val bodyStr = body ?: error("Empty Last.fm response")
 
@@ -694,7 +721,7 @@ suspend fun updateNowPlaying(
             // Direct path: round-robin a read key from the pool, skipping any
             // whose breaker is open. null = all throttled → fail fast.
             val readKey = selectReadKey(
-                keys = credentials.readApiKeys,
+                keys = keys,
                 startIndex = readKeyCounter.getAndIncrement(),
                 isOpen = { rateLimitGate.isOpen(it, now) },
             ) ?: throw LastFmRateLimitedException("Last.fm rate-limited; skipping request (all keys throttled)")

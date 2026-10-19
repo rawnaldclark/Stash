@@ -92,9 +92,22 @@ class LastFmRecapStore internal constructor(private val root: File) {
         }
     }
 
+    /** Forgets every user's scrobbles and totals (the shared song-length/genre catalog stays). */
+    fun clearUsers() {
+        if (!root.resolve("u").deleteRecursively()) Log.w(TAG, "couldn't clear every user's scrobbles")
+    }
+
     companion object {
         private const val TAG = "LastFmRecapStore"
         const val DIR = "lastfm_recap"
+
+        /**
+         * [clearUsers] for code without a store instance (LastFmSessionPreference.clear): on
+         * disconnect, the account's scrobbles leave the phone with it.
+         */
+        fun clearUsers(filesDir: File) {
+            File(filesDir, DIR).resolve("u").deleteRecursively()
+        }
         private const val COUNTS = "counts.json"
         private const val DURATIONS = "durations.json"
         private const val GENRES = "genres.json"
@@ -113,6 +126,8 @@ data class CountsFile(
     val zone: String,
     /** When the user joined Last.fm, UNIX seconds; null = not asked yet / Last.fm didn't say. */
     val registeredAt: Long? = null,
+    /** Last.fm answered the registration question (even without a date): don't ask again. */
+    val registeredChecked: Boolean = false,
     /** By [LastFmRecapSpan.key]. */
     val spans: Map<String, SpanCount> = emptyMap(),
 )
@@ -120,12 +135,17 @@ data class CountsFile(
 @Serializable
 data class SpanCount(val total: Int, val fetchedAt: Long)
 
-/** One month's scrobbles, as fetched at [fetchedAt] in [zone]. */
+/**
+ * One month's scrobbles, as fetched at [fetchedAt] in [zone]. [complete]: every page read and
+ * the rows add up to Last.fm's own total; only a complete month may be kept for good once settled
+ * (a short read stays on the short TTL). Files without the flag read as incomplete.
+ */
 @Serializable
 data class MonthFile(
     val zone: String,
     val fetchedAt: Long,
     val scrobbles: List<LastFmScrobble>,
+    val complete: Boolean = false,
 )
 
 /** Song lengths from track.getInfo, by the caller's song key; 0 = Last.fm had none. */
