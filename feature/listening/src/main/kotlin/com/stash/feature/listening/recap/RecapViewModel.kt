@@ -52,7 +52,13 @@ sealed interface RecapUiState {
      * the default line (a Last.fm recap's reasons: not connected, private profile, offline…);
      * [canRetry] offers Try again (offline, busy).
      */
-    data class Empty(val title: String, val message: String? = null, val canRetry: Boolean = false) : RecapUiState
+    data class Empty(
+        val title: String,
+        val message: String? = null,
+        val canRetry: Boolean = false,
+        /** Offer "Open Settings" (Last.fm isn't connected). */
+        val openSettings: Boolean = false,
+    ) : RecapUiState
 
     data class Ready(
         val period: RecapPeriod,
@@ -200,7 +206,10 @@ class RecapViewModel @VisibleForTesting internal constructor(
     private suspend fun loadLastFm(p: RecapPeriod, today: Long, title: String) {
         _state.value = RecapUiState.Fetching(title, LastFmRecapVoice.READING)
         _state.value = try {
-            val load = lastFm.load(p, today) { progress -> _state.value = RecapUiState.Fetching(title, LastFmRecapVoice.progressLine(progress)) }
+            // Off the main thread: matching the library, the look-ups and the mapping are real work.
+            val load = withContext(computeDispatcher) {
+                lastFm.load(p, today) { progress -> _state.value = RecapUiState.Fetching(title, LastFmRecapVoice.progressLine(progress)) }
+            }
             when (load) {
                 is LastFmRecapLoad.Ready -> {
                     val cards = withContext(computeDispatcher) { RecapDeck.build(load.data, title) }
@@ -210,7 +219,7 @@ class RecapViewModel @VisibleForTesting internal constructor(
                         RecapUiState.Ready(p, title, p.longName(), cards, RecapDeck.cues(cards, load.data), load.data.topSongs, voice)
                     }
                 }
-                LastFmRecapLoad.NotConnected -> RecapUiState.Empty(title, LastFmRecapVoice.NOT_CONNECTED)
+                LastFmRecapLoad.NotConnected -> RecapUiState.Empty(title, LastFmRecapVoice.NOT_CONNECTED, openSettings = true)
                 is LastFmRecapLoad.NotEnough -> RecapUiState.Empty(title, LastFmRecapVoice.NOT_ENOUGH)
                 is LastFmRecapLoad.Failed -> RecapUiState.Empty(title, LastFmRecapVoice.failure(load.reason), LastFmRecapVoice.canRetry(load.reason))
             }

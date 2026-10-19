@@ -155,7 +155,9 @@ class LastFmRecapViewModelTest {
         val source = FakeSource(LastFmRecapLoad.NotConnected)
         val vm = viewModel(source)
         advanceUntilIdle()
-        assertThat((vm.state.value as RecapUiState.Empty).message).isEqualTo(LastFmRecapVoice.NOT_CONNECTED)
+        val notConnected = vm.state.value as RecapUiState.Empty
+        assertThat(notConnected.message).isEqualTo(LastFmRecapVoice.NOT_CONNECTED)
+        assertThat(notConnected.openSettings).isTrue()
 
         source.result = LastFmRecapLoad.Failed(LastFmRecapException.Reason.PRIVATE)
         val private = viewModel(source)

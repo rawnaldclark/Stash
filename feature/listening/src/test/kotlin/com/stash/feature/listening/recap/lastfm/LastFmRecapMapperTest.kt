@@ -51,8 +51,13 @@ class LastFmRecapMapperTest {
         assertThat(taro.track.id).isEqualTo(7L) // the library's row: story music plays its file
         assertThat(taro.track.filePath).isEqualTo("/music/taro.opus")
         val others = data.topSongs.drop(1)
-        assertThat(others.all { it.track.id < 0 }).isTrue()
+        // From the very bottom of the range: never a real row, never search's small negative ids.
+        assertThat(others.all { it.track.id < Long.MIN_VALUE + 10_000 }).isTrue()
         assertThat(others.map { it.track.id }.distinct()).hasSize(others.size)
+        // In-memory songs carry their (estimated) length, so story music starts a third of the way in.
+        val songs = data.topSongs.associateBy { it.track.title }
+        assertThat(songs.getValue("Common Blue").track.durationMs).isEqualTo(240_000L)
+        assertThat(songs.getValue("Drowning").track.durationMs).isEqualTo(270_000L)
     }
 
     @Test fun `art - Last_fm's image, else the library's, else the artist photo`() {

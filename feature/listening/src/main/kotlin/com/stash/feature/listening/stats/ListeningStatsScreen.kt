@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -588,7 +589,9 @@ private fun LastFmRecapsGroup(recaps: List<PastRecap>, today: Long, onOpen: (Rec
             text = "On Last.fm",
             style = MaterialTheme.typography.labelLarge,
             color = StashTheme.extendedColors.textTertiary,
-            modifier = Modifier.padding(start = Gutter, end = Gutter, bottom = 8.dp),
+            modifier = Modifier
+                .padding(start = Gutter, end = Gutter, bottom = 8.dp)
+                .semantics { heading() },
         )
         PastRecapsRow(
             recaps = recaps,

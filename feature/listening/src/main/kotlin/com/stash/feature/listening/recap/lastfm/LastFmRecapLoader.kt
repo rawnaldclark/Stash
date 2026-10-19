@@ -58,9 +58,11 @@ interface LastFmRecapSource {
  * READ-ONLY against the library for song lengths, files and art, then mapped by
  * [LastFmRecapMapper].
  *
- * What it touches in the main database, all reads: `tracks` (one `SELECT *` to match songs:
+ * What it touches in the main database: READS of `tracks` (one `SELECT *` to match songs:
  * [TrackDao.getAllForIntegrityScan]), `artist_images` (photos) and, inside the repository,
- * `artist_genres`. It has no handle on listening_events at all and calls no TrackDao write.
+ * `artist_genres`; and, through the repository's catalog look-ups, Last.fm's catalog answers
+ * cached in `lastfm_cache` (song lengths, artist tags: catalog data, never listening data). It
+ * has no handle on listening_events at all and calls no TrackDao write.
  */
 internal class LastFmRecapLoader(
     private val account: LastFmRecapAccount,

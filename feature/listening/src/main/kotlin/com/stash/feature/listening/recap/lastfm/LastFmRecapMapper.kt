@@ -54,6 +54,12 @@ internal object LastFmRecapMapper {
     /** A song's length when nothing better is known: 3:30. */
     const val DEFAULT_SONG_MS = 210_000L
 
+    /**
+     * In-memory songs' ids: [Long.MIN_VALUE] + rank. Far from real rows (positive) and from the
+     * small negative ids search results use, so no cache or list keyed by id can mix them up.
+     */
+    const val SYNTHETIC_ID_BASE = Long.MIN_VALUE
+
     /** Songs whose length is asked of Last.fm per story (most scrobbled first, no library length). */
     const val DURATION_ASKS = 20
 
@@ -115,10 +121,11 @@ internal object LastFmRecapMapper {
         val average = if (knownValues.isEmpty()) DEFAULT_SONG_MS else knownValues.average().toLong()
         fun lengthOf(key: String): Long = known[key] ?: average
 
-        // One row per song, most scrobbled first; the ids of songs not in the library are negative.
+        // One row per song, most scrobbled first; songs not in the library get ids from the very
+        // bottom of the range (never a real row, never search's own synthetic negative ids).
         val tracks = HashMap<String, TrackEntity>()
         val rows = groups.mapIndexed { i, g ->
-            val track = trackFor(g, input.localTracks[g.key], known[g.key], photoByArtist, syntheticId = -(i + 1L))
+            val track = trackFor(g, input.localTracks[g.key], lengthOf(g.key), photoByArtist, syntheticId = SYNTHETIC_ID_BASE + i)
             tracks[g.key] = track
             TopTrackRow(track, g.plays, g.lastUts * 1000, g.plays * lengthOf(g.key))
         }
@@ -205,7 +212,8 @@ internal object LastFmRecapMapper {
     private fun trackFor(
         g: SongGroup,
         local: TrackEntity?,
-        knownLength: Long?,
+        /** The song's length, known or estimated: story music starts a third of the way in. */
+        length: Long,
         photoByArtist: Map<String, String>,
         syntheticId: Long,
     ): TrackEntity {
@@ -225,7 +233,7 @@ internal object LastFmRecapMapper {
                 title = g.title,
                 artist = g.artist,
                 album = g.album,
-                durationMs = knownLength ?: 0L,
+                durationMs = length,
                 albumArtUrl = g.image ?: photo,
             )
         }

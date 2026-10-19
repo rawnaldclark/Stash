@@ -539,7 +539,16 @@ private fun StashNavGraph(
         composable<RecapRoute> { entry ->
             // Pops only while the story is the top entry: a close racing a swipe-down or "Play your
             // top songs" (two closes) must not pop Home as well.
-            RecapScreen(onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() })
+            RecapScreen(
+                onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                // A Last.fm recap with no account: the story gives way to Settings › Accounts.
+                onOpenLastFmSettings = {
+                    if (navController.currentBackStackEntry === entry) {
+                        navController.popBackStack()
+                        navController.navigate(SettingsAccountsRoute)
+                    }
+                },
+            )
         }
 
         composable<TopRoute> {

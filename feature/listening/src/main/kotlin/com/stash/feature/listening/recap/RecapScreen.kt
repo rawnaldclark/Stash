@@ -89,7 +89,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
@@ -150,6 +152,8 @@ private const val QUIZ_AFTER_ANSWER_MS = 2_600L
 @Composable
 fun RecapScreen(
     onClose: () -> Unit,
+    /** Settings › Accounts, where Last.fm is connected (a Last.fm recap with no account). */
+    onOpenLastFmSettings: () -> Unit = {},
     viewModel: RecapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -182,7 +186,7 @@ fun RecapScreen(
                         modifier = Modifier.size(28.dp).align(Alignment.Center),
                     )
                     is RecapUiState.Fetching -> FetchingRecap(s, onClose = close)
-                    is RecapUiState.Empty -> EmptyRecap(s, onClose = close, onRetry = viewModel::retry)
+                    is RecapUiState.Empty -> EmptyRecap(s, onClose = close, onRetry = viewModel::retry, onOpenSettings = onOpenLastFmSettings)
                     // The cards (and the share images drawn from them) speak in the story's voice.
                     is RecapUiState.Ready -> CompositionLocalProvider(LocalRecapVoice provides s.voice) {
                         Story(s, viewModel, onClose = close)
@@ -213,7 +217,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-private fun EmptyRecap(s: RecapUiState.Empty, onClose: () -> Unit, onRetry: () -> Unit) {
+private fun EmptyRecap(s: RecapUiState.Empty, onClose: () -> Unit, onRetry: () -> Unit, onOpenSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(28.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = RecapInk.primary) }
@@ -229,6 +233,10 @@ private fun EmptyRecap(s: RecapUiState.Empty, onClose: () -> Unit, onRetry: () -
         if (s.canRetry) {
             Spacer(Modifier.height(20.dp))
             GlassPill("Try again", null, onClick = onRetry)
+        }
+        if (s.openSettings) {
+            Spacer(Modifier.height(20.dp))
+            GlassPill("Open Settings", null, onClick = onOpenSettings)
         }
         Spacer(Modifier.weight(1.4f))
     }
@@ -247,7 +255,13 @@ private fun FetchingRecap(s: RecapUiState.Fetching, onClose: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(color = RecapInk.tertiary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
-            Text(s.line, style = RecapType.body, color = RecapInk.secondary)
+            // Announced as it changes (politely): TalkBack users hear the read progress.
+            Text(
+                s.line,
+                style = RecapType.body,
+                color = RecapInk.secondary,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
         Spacer(Modifier.weight(1.4f))
     }
