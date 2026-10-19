@@ -62,6 +62,12 @@ internal object ListeningHistorySql {
             "SUM(COALESCE(le.listened_ms, 0)) AS known, SUM(le.listened_ms IS NULL) AS unknown " +
             "FROM " + LE + " le GROUP BY le.track_id)"
 
+    /**
+     * A song's listening time in the range from its [PER_TRACK] row `a` and its song `t`: the real
+     * time where known, else the song's length per listen (the same rule as [TOTALS]).
+     */
+    const val TRACK_LISTENED = "(a.known + a.unknown * t.duration_ms)"
+
     /** A listen's time: the real time, else its song's length (looked up only then), else 0. */
     const val LISTENED = "COALESCE(le.listened_ms, (SELECT d.duration_ms FROM tracks d WHERE d.id = le.track_id), 0)"
 
@@ -84,12 +90,13 @@ internal object ListeningHistorySql {
             "FROM " + LE + " le GROUP BY le.day ORDER BY le.day"
 
     const val TOP_TRACKS =
-        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt " +
+        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt, " + TRACK_LISTENED + " AS listenedMs " +
             "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid " +
             "ORDER BY a.plays DESC, a.lastAt DESC, a.tid ASC LIMIT :limit"
 
     const val TOP_ARTISTS =
         "SELECT t.artist AS artist, SUM(a.plays) AS plays, COUNT(*) AS songs, MAX(a.lastAt) AS lastPlayedAt, " +
+            "SUM" + TRACK_LISTENED + " AS listenedMs, " +
             "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
             "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid " +
             "GROUP BY LOWER(t.artist) ORDER BY plays DESC, lastPlayedAt DESC, LOWER(t.artist) ASC LIMIT :limit"
@@ -97,6 +104,7 @@ internal object ListeningHistorySql {
     const val TOP_ALBUMS =
         "SELECT t.album AS album, COALESCE(NULLIF(t.album_artist, ''), t.artist) AS artist, " +
             "SUM(a.plays) AS plays, COUNT(*) AS songs, MAX(a.lastAt) AS lastPlayedAt, " +
+            "SUM" + TRACK_LISTENED + " AS listenedMs, " +
             "t.album_art_url AS albumArtUrl, t.album_art_path AS albumArtPath " +
             "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid WHERE t.album != '' " +
             "GROUP BY LOWER(t.album), LOWER(COALESCE(NULLIF(t.album_artist, ''), t.artist)) " +
@@ -106,7 +114,7 @@ internal object ListeningHistorySql {
         "SELECT COALESCE(SUM(a.plays), 0) AS plays, COUNT(*) AS songs, " +
             "COUNT(DISTINCT LOWER(t.artist)) AS artists, " +
             "(SELECT COUNT(DISTINCT d.day) FROM " + LE + " d) AS days, " +
-            "COALESCE(SUM(a.known + a.unknown * t.duration_ms), 0) AS listenedMs, " +
+            "COALESCE(SUM" + TRACK_LISTENED + ", 0) AS listenedMs, " +
             "COALESCE(SUM(a.unknown), 0) AS estimatedPlays " +
             "FROM " + PER_TRACK + " a INNER JOIN tracks t ON t.id = a.tid"
 
@@ -114,8 +122,9 @@ internal object ListeningHistorySql {
         "SELECT le.minute / 60 AS hour, COUNT(*) AS plays FROM " + LE + " le GROUP BY hour ORDER BY hour"
 
     const val NEW_TRACKS =
-        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt " +
-            "FROM (SELECT le.track_id AS tid, COUNT(*) AS plays, MAX(le.started_at) AS lastAt FROM " + LE + " le " +
+        "SELECT t.*, a.plays AS plays, a.lastAt AS lastPlayedAt, " + TRACK_LISTENED + " AS listenedMs " +
+            "FROM (SELECT le.track_id AS tid, COUNT(*) AS plays, MAX(le.started_at) AS lastAt, " +
+            "SUM(COALESCE(le.listened_ms, 0)) AS known, SUM(le.listened_ms IS NULL) AS unknown FROM " + LE + " le " +
             "WHERE le.track_id NOT IN " + HEARD_BEFORE + " GROUP BY le.track_id) a " +
             "INNER JOIN tracks t ON t.id = a.tid ORDER BY a.plays DESC, a.lastAt DESC, a.tid ASC LIMIT :limit"
 
@@ -175,9 +184,10 @@ internal object ListeningHistorySql {
      * leaves the rail shorter. `plays` is the song's listens within the window.
      */
     const val RECENT_TRACKS =
-        "SELECT t.*, r.plays AS plays, r.lastAt AS lastPlayedAt " +
-            "FROM (SELECT w.track_id AS tid, COUNT(*) AS plays, MAX(w.started_at) AS lastAt " +
-            "FROM (SELECT track_id, started_at FROM listening_events ORDER BY started_at DESC LIMIT :window) w " +
+        "SELECT t.*, r.plays AS plays, r.lastAt AS lastPlayedAt, (r.known + r.unknown * t.duration_ms) AS listenedMs " +
+            "FROM (SELECT w.track_id AS tid, COUNT(*) AS plays, MAX(w.started_at) AS lastAt, " +
+            "SUM(COALESCE(w.listened_ms, 0)) AS known, SUM(w.listened_ms IS NULL) AS unknown " +
+            "FROM (SELECT track_id, started_at, listened_ms FROM listening_events ORDER BY started_at DESC LIMIT :window) w " +
             "GROUP BY w.track_id) r " +
             "INNER JOIN tracks t ON t.id = r.tid ORDER BY r.lastAt DESC, r.tid ASC LIMIT :limit"
 
@@ -457,6 +467,8 @@ data class TopTrackRow(
     @Embedded val track: TrackEntity,
     val plays: Int,
     val lastPlayedAt: Long,
+    /** Listening time of these [plays]: the real time where known, else the song's length per listen. */
+    val listenedMs: Long = 0,
 )
 
 data class TopArtistRow(
@@ -467,6 +479,8 @@ data class TopArtistRow(
     val lastPlayedAt: Long,
     val albumArtUrl: String?,
     val albumArtPath: String?,
+    /** Listening time of these [plays] (the same rule as [ListeningTotals.listenedMs]). */
+    val listenedMs: Long = 0,
 )
 
 data class TopAlbumRow(
@@ -478,6 +492,8 @@ data class TopAlbumRow(
     val lastPlayedAt: Long,
     val albumArtUrl: String?,
     val albumArtPath: String?,
+    /** Listening time of these [plays] (the same rule as [ListeningTotals.listenedMs]). */
+    val listenedMs: Long = 0,
 )
 
 data class ListeningTotals(

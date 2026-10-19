@@ -247,6 +247,36 @@ class ListeningHistoryDaoTest {
         assertEquals("Someone", top[1].artist)
     }
 
+    @Test fun `top rows carry listening time, real where known, else the song length, matching totals`() = runTest {
+        track(1, "A", "Artist", album = "LP", durationMs = 100_000)
+        track(2, "B", "artist", album = "LP", durationMs = 300_000)
+        track(3, "C", "Else", durationMs = 0)
+        listen(1, 10, listenedMs = 40_000)
+        listen(1, 11) // estimated: 100 s
+        listen(2, 11, origin = "d_web00000000000") // estimated: 300 s
+        listen(3, 12) // no length known: 0
+
+        val tracks = dao.observeTopTracks(10, 12, 10).first().associate { it.track.id to it.listenedMs }
+        assertEquals(mapOf(1L to 140_000L, 2L to 300_000L, 3L to 0L), tracks)
+        val artists = dao.observeTopArtists(10, 12, 10).first().associate { it.artist.lowercase() to it.listenedMs }
+        assertEquals(mapOf("artist" to 440_000L, "else" to 0L), artists)
+        val albums = dao.observeTopAlbums(10, 12, 10).first()
+        assertEquals(listOf(440_000L), albums.map { it.listenedMs })
+        // Per-row minutes add up to the range's total.
+        assertEquals(dao.observeTotals(10, 12).first().listenedMs, tracks.values.sum())
+    }
+
+    @Test fun `new and recent songs carry listening time too`() = runTest {
+        track(1, "A", "X", durationMs = 100_000)
+        track(2, "B", "X", durationMs = 200_000)
+        listen(1, 5)
+        listen(2, 10, listenedMs = 30_000)
+        listen(2, 11)
+        assertEquals(listOf(230_000L), dao.newTracksIn(10, 12, 10).map { it.listenedMs })
+        val recent = dao.observeRecentTracks(10, 300).first().associate { it.track.id to it.listenedMs }
+        assertEquals(mapOf(1L to 100_000L, 2L to 230_000L), recent)
+    }
+
     // ── Totals and the clock ────────────────────────────────────────
 
     @Test fun `totals count songs, artists and days, and say how much time is estimated`() = runTest {

@@ -85,7 +85,10 @@ class ListeningHistoryQueryPlanTest {
     }
 
     @Test fun `songs are joined by primary key after grouping`() {
-        for (sql in listOf(ListeningHistorySql.TOP_TRACKS, ListeningHistorySql.TOP_ARTISTS, ListeningHistorySql.TOTALS)) {
+        for (sql in listOf(
+            ListeningHistorySql.TOP_TRACKS, ListeningHistorySql.TOP_ARTISTS, ListeningHistorySql.TOP_ALBUMS,
+            ListeningHistorySql.TOTALS, ListeningHistorySql.NEW_TRACKS,
+        )) {
             val p = plan(sql)
             assertTrue(p.toString(), p.any { Regex("""\bSEARCH (TABLE )?(tracks AS )?t\b.*PRIMARY KEY""").containsMatchIn(it) })
         }
