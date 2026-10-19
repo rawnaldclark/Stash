@@ -199,6 +199,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
+    /** Recap story audio: ends (and gives the user's music back) when the app leaves the screen. */
+    @Inject
+    lateinit var recapAudio: com.stash.core.media.recap.RecapAudio
+
     @Inject
     lateinit var webLinkInbox: com.stash.core.data.weblink.inbox.WebLinkInbox
 
@@ -350,6 +354,8 @@ class StashApplication : Application(), Configuration.Provider {
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
                     // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
                     handoffPublisher.onBackground()
+                    // A Recap story can't be heard from the home screen: stop it, give the music back.
+                    recapAudio.onBackground()
                 }
             },
         )

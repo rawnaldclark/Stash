@@ -28,5 +28,18 @@
                 <action android:name="com.stash.debug.TIME_LISTENING_QUERIES" />
             </intent-filter>
         </receiver>
+        <!--
+            Debug only: drives the Recap story audio (com.stash.app.debug.DebugRecapAudio) from adb so it can be
+            proven on a phone before the story screen exists. Same DUMP guard as the seeder above.
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugRecapAudio"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.debug.RECAP_AUDIO" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
