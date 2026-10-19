@@ -30,7 +30,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -55,6 +60,8 @@ internal fun ListeningHeatmap(
     summary: String,
     onDayClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    /** The TalkBack action name for a day ("Open Sat, Oct 11 in History"). */
+    dayActionLabel: ((Long) -> String)? = null,
     locale: Locale = Locale.getDefault(),
 ) {
     val accent = MaterialTheme.colorScheme.primary
@@ -69,6 +76,14 @@ internal fun ListeningHeatmap(
 
     val labels = remember(weeks) { heatmapMonthLabels(weeks) }
 
+    // TalkBack can't tap a square: the most recent days with listens are custom actions.
+    val actionDays = remember(weeks) {
+        weeks.asReversed().flatMap { w -> w.asReversed().filterNotNull().filter { it.plays > 0 } }.take(MAX_DAY_ACTIONS).map { it.day }
+    }
+
+    // Weeks run oldest to newest left to right in every language (and the scroll opens on the
+    // newest week): kept left-to-right in a right-to-left layout too.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Column(modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             // A short range fills the card with bigger squares; a long one keeps readable squares
@@ -84,7 +99,14 @@ internal fun ListeningHeatmap(
                     modifier = Modifier
                         .width(step * weeks.size)
                         .height(LabelBand + step * 7)
-                        .semantics { contentDescription = summary }
+                        .semantics {
+                            contentDescription = summary
+                            if (dayActionLabel != null) {
+                                customActions = actionDays.map { day ->
+                                    CustomAccessibilityAction(dayActionLabel(day)) { click(day); true }
+                                }
+                            }
+                        }
                         .pointerInput(step) {
                             detectTapGestures { p ->
                                 val px = step.toPx()
@@ -134,6 +156,7 @@ internal fun ListeningHeatmap(
             Text("More", style = MaterialTheme.typography.labelSmall, color = labelColor)
         }
     }
+    }
 }
 
 /**
@@ -161,5 +184,8 @@ private fun heatShades(accent: Color, empty: Color): List<Color> =
 
 private val Cell = 12.dp
 private val MaxStep = 24.dp
+
+/** Days offered to TalkBack as actions: the most recent month of listening days. */
+private const val MAX_DAY_ACTIONS = 31
 private val Gap = 3.dp
 private val LabelBand = 18.dp

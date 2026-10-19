@@ -37,12 +37,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
+import com.stash.feature.listening.stats.ListeningInsights
 import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
@@ -51,6 +51,7 @@ import com.stash.feature.listening.ui.Gutter
 import com.stash.feature.listening.ui.ListeningTopBar
 import com.stash.feature.listening.ui.RangeChips
 import com.stash.feature.listening.ui.RankedRow
+import com.stash.feature.listening.ui.RefreshTodayEffect
 import com.stash.feature.listening.ui.SquareArt
 
 /**
@@ -74,10 +75,7 @@ fun TopScreen(
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refreshToday()
-        onPauseOrDispose {}
-    }
+    RefreshTodayEffect(viewModel, viewModel::refreshToday)
     // A new list starts at its top.
     LaunchedEffect(kind, range) { listState.scrollToItem(0) }
     val s = state
@@ -125,20 +123,20 @@ fun TopScreen(
                             title = row.track.title,
                             subtitle = row.track.artist,
                             plays = ListeningLabels.plays(row.plays),
-                            time = row.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::shortTime),
-                            onClick = { viewModel.playFrom(i) },
+                            time = row.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::listenTime),
+                            onClick = { viewModel.playFrom(row.track.id) },
                             highlighted = row.track.id == nowPlayingId,
                             art = { ArtImage(row.track.albumArtPath, row.track.albumArtUrl, 48.dp, SquareArt) },
                         )
                     }
                 }
-                TopKind.ARTISTS -> itemsIndexed(s.artists, key = { _, a -> "a${a.name.lowercase()}" }) { i, artist ->
+                TopKind.ARTISTS -> itemsIndexed(s.artists, key = { _, a -> "a${a.key}" }) { i, artist ->
                     RankedRow(
                         rank = i + 1,
                         title = artist.name,
                         subtitle = if (artist.songs == 1) "1 song" else "${artist.songs} songs",
                         plays = ListeningLabels.plays(artist.plays),
-                        time = artist.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::shortTime),
+                        time = artist.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::listenTime),
                         onClick = { onOpenArtist(artist.name) },
                         art = {
                             ArtImage(
@@ -151,13 +149,13 @@ fun TopScreen(
                         },
                     )
                 }
-                TopKind.ALBUMS -> itemsIndexed(s.albums, key = { _, a -> "l${a.album.lowercase()}|${a.artist.lowercase()}" }) { i, album ->
+                TopKind.ALBUMS -> itemsIndexed(s.albums, key = { _, a -> "l" + ListeningInsights.albumKey(a.album, a.artist) }) { i, album ->
                     RankedRow(
                         rank = i + 1,
                         title = album.album,
                         subtitle = album.artist,
                         plays = ListeningLabels.plays(album.plays),
-                        time = album.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::shortTime),
+                        time = album.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::listenTime),
                         onClick = { onOpenAlbum(album.album, album.artist) },
                         art = { ArtImage(album.albumArtPath, album.albumArtUrl, 48.dp, SquareArt) },
                     )

@@ -82,10 +82,9 @@ import com.stash.core.ui.components.TrackRowFitScope
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
+import com.stash.feature.listening.ui.RefreshTodayEffect
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import kotlinx.coroutines.delay
 
 /** How close to an end of the loaded list the next page starts loading. */
 private const val PREFETCH_ROWS = 30
@@ -134,18 +133,7 @@ fun HistoryScreen(
         }
     }
     // "Today" moves on at midnight and when the screen comes back after a while.
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refreshToday()
-        onPauseOrDispose {}
-    }
-    LaunchedEffect(viewModel) {
-        while (true) {
-            val now = java.time.ZonedDateTime.now()
-            val midnight = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
-            delay(java.time.Duration.between(now, midnight).toMillis() + 1_000)
-            viewModel.refreshToday()
-        }
-    }
+    RefreshTodayEffect(viewModel, viewModel::refreshToday)
     // Paging: the next older page near the end, the next newer one near the top after a jump.
     // Keyed on the item count too, so a page that still leaves the list near its end asks again.
     LaunchedEffect(listState) {

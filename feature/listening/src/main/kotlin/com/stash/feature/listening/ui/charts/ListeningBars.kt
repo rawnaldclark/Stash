@@ -14,7 +14,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,8 @@ internal fun ListeningBars(
     /** The shortest a bar with any listening draws, so it never reads as an empty day. */
     minBarHeight: Dp = 7.dp,
     onBarClick: ((Int) -> Unit)? = null,
+    /** The TalkBack action name for a bar ("Open Oct 11 in History"); each bar with a value gets one. */
+    barActionLabel: ((Int) -> String)? = null,
 ) {
     val currentValues by rememberUpdatedState(values)
     val click by rememberUpdatedState(onBarClick)
@@ -63,7 +67,22 @@ internal fun ListeningBars(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .then(if (summary.isNotEmpty()) Modifier.semantics { contentDescription = summary } else Modifier)
+            .then(
+                if (summary.isNotEmpty()) {
+                    Modifier.semantics {
+                        contentDescription = summary
+                        // Taps land on pointer input, which TalkBack can't reach: offer each bar
+                        // with a value as a custom action instead.
+                        if (onBarClick != null && barActionLabel != null) {
+                            customActions = values.indices.filter { values[it] > 0 }.map { i ->
+                                CustomAccessibilityAction(barActionLabel(i)) { onBarClick(i); true }
+                            }
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .then(tap),
     ) {
         val n = values.size

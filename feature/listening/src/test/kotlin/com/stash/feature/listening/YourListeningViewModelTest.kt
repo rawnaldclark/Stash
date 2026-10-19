@@ -41,8 +41,9 @@ class YourListeningViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     private fun TestScope.viewModel(fake: FakeHistory): YourListeningViewModel {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        return YourListeningViewModel(fake.repository(), preference, player, connectivity, now).also { vm ->
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        return YourListeningViewModel(fake.repository(), preference, player, connectivity, now, dispatcher).also { vm ->
             backgroundScope.launch { vm.state.collect {} }
         }
     }
@@ -110,16 +111,26 @@ class YourListeningViewModelTest {
         assertThat(weekLine(week)).isEqualTo("3 plays · 3-day streak")
     }
 
-    @Test fun `a streak longer than the week still counts every day`() = runTest {
-        val fake = FakeHistory().apply { fill(days = 12, perDay = 1) }
+    @Test fun `the streak counts back to the first listen, however long, like Your listening`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 450, perDay = 1) }
         val vm = viewModel(fake)
         advanceUntilIdle()
-        assertThat(vm.state.value!!.week.streak).isEqualTo(12)
+        assertThat(vm.state.value!!.week.streak).isEqualTo(450)
+    }
+
+    @Test fun `the Top songs door counts library duplicates as one song`() = runTest {
+        val fake = FakeHistory()
+        repeat(2) { fake.add(fake.track(1, title = "Garden", artist = "Death Plus"), TODAY, 60 + it) }
+        repeat(2) { fake.add(fake.track(2, title = "Garden", artist = "Death Plus"), TODAY, 70 + it) }
+        repeat(3) { fake.add(fake.track(3, title = "Other"), TODAY, 80 + it) }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.topSongTitle).isEqualTo("Garden")
     }
 
     @Test fun `week line without a streak or listens`() {
         assertThat(weekLine(WeekSummary(60_000, 1, false, List(7) { 0L }, 1))).isEqualTo("1 play")
-        assertThat(weekLine(WeekSummary.EMPTY)).isEqualTo("Nothing yet this week")
+        assertThat(weekLine(WeekSummary.EMPTY)).isEqualTo("Nothing in the last 7 days")
     }
 
     @Test fun `the Top songs door names the 30-day number one`() = runTest {

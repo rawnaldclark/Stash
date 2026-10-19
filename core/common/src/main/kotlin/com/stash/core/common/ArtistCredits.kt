@@ -125,3 +125,15 @@ private fun String.isAllowlistedCredit(): Boolean =
 
 /** The `", "` join delimiter, tolerating missing/extra spaces. */
 private val CREDIT_SEPARATOR = Regex("\\s*,\\s*")
+/**
+ * A key under which two strings are equal exactly when `a.equals(b, ignoreCase = true)` is true:
+ * that compares char by char, equal when `lowercase(uppercase(c))` agrees, so folding every char
+ * the same way gives one key per equivalence class (unlike `lowercase()`, which differs from it on
+ * letters such as the Turkish dotted I, and unlike SQLite's LOWER(), which folds ASCII only).
+ * Use it for grouping and list keys that must agree with `equals(ignoreCase = true)`.
+ */
+fun foldCase(s: String): String {
+    val out = CharArray(s.length)
+    for (i in s.indices) out[i] = Character.toLowerCase(Character.toUpperCase(s[i]))
+    return String(out)
+}

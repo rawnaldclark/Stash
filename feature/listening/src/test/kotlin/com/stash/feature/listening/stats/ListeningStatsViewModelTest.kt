@@ -47,9 +47,10 @@ class ListeningStatsViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     private fun TestScope.viewModel(fake: FakeHistory, range: String? = null): ListeningStatsViewModel {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
         val handle = SavedStateHandle(if (range != null) mapOf(ListeningStatsViewModel.ARG_RANGE to range) else emptyMap())
-        return ListeningStatsViewModel(handle, fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY).also { vm ->
+        return ListeningStatsViewModel(handle, fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY, dispatcher).also { vm ->
             backgroundScope.launch { vm.state.collect {} }
         }
     }
@@ -82,8 +83,9 @@ class ListeningStatsViewModelTest {
             listens(TODAY - 40, 5, firstId = 20)
         }
         val handle = SavedStateHandle()
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val vm = ListeningStatsViewModel(handle, fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY)
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val vm = ListeningStatsViewModel(handle, fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY, dispatcher)
         backgroundScope.launch { vm.state.collect {} }
         advanceUntilIdle()
         assertThat(vm.state.value.totals.plays).isEqualTo(10)
@@ -109,21 +111,23 @@ class ListeningStatsViewModelTest {
         assertThat(viewModel(fake, range = "nope").range.value).isEqualTo(ListeningRange.Days30)
     }
 
-    @Test fun `the delta shows only when the previous period is fully covered by history`() = runTest {
-        // 7 days: today-6..today; previous: today-13..today-7.
+    @Test fun `the delta compares complete days, and only when history covers the earlier window`() = runTest {
+        // 7 days: the 7 complete days ending yesterday (today-7..today-1) vs today-14..today-8.
         val covered = FakeHistory().apply {
-            listens(TODAY, 15)
+            listens(TODAY, 40, firstId = 200) // today is still going: not compared
+            listens(TODAY - 3, 15)
             listens(TODAY - 9, 10, firstId = 30)
-            add(track(99), TODAY - 13, 60) // the first listen is the previous period's first day
+            add(track(99), TODAY - 14, 60) // the first listen opens the earlier window
         }
         val vm = viewModel(covered, range = "7d")
         advanceUntilIdle()
-        // This week 15 songs, the week before 11: +36%.
+        // 15 songs against 11 (same length each): +36%, however much today holds.
         assertThat(vm.state.value.deltaPercent).isEqualTo(36)
 
         val partial = FakeHistory().apply {
             listens(TODAY, 15)
-            listens(TODAY - 9, 10, firstId = 30) // history starts inside the previous week
+            listens(TODAY - 9, 10, firstId = 30)
+            add(track(99), TODAY - 13, 60) // history starts one day into the earlier window
         }
         val vm2 = viewModel(partial, range = "7d")
         advanceUntilIdle()
@@ -206,6 +210,48 @@ class ListeningStatsViewModelTest {
         assertThat(artists[1].photoUrl).isNull()
     }
 
+    @Test fun `the artists count is main acts, the same as the list`() = runTest {
+        val fake = FakeHistory().apply {
+            repeat(3) { add(track(1, artist = "Drake"), TODAY, 600 + it) }
+            repeat(2) { add(track(2, artist = "Drake, Future"), TODAY, 700 + it) }
+            repeat(4) { add(track(3, artist = "Taro"), TODAY, 800 + it) }
+            add(track(4, artist = "Else"), TODAY, 900)
+        }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.totals.artists).isEqualTo(4) // credits, as stored
+        assertThat(s.artistCount).isEqualTo(3) // Drake, Taro, Else
+        assertThat(s.topArtists).hasSize(3)
+    }
+
+    @Test fun `two library rows of one song are one top song`() = runTest {
+        val fake = FakeHistory().apply {
+            repeat(4) { add(track(5, title = "Garden", artist = "Death Plus"), TODAY, 600 + it) }
+            repeat(3) { add(track(6, title = "garden", artist = "Death Plus"), TODAY, 700 + it) }
+            repeat(5) { add(track(7, title = "Other"), TODAY, 800 + it) }
+        }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        val songs = vm.state.value.topSongs
+        assertThat(songs.map { it.track.id }).containsExactly(5L, 7L).inOrder()
+        assertThat(songs[0].plays).isEqualTo(7)
+        assertThat(songs[0].listenedMs).isEqualTo(7 * 200_000L)
+    }
+
+    @Test fun `top albums group by main act and name the main act`() = runTest {
+        val fake = FakeHistory().apply {
+            repeat(3) { add(track(1, artist = "Taro", album = "Blue"), TODAY, 600 + it) }
+            repeat(2) { add(track(2, artist = "Taro, Mira", album = "Blue"), TODAY, 700 + it) }
+            repeat(6) { add(track(3, artist = "Solo", album = "Red"), TODAY, 800 + it) }
+        }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        val albums = vm.state.value.topAlbums
+        assertThat(albums.map { it.album to it.artist }).containsExactly("Red" to "Solo", "Blue" to "Taro").inOrder()
+        assertThat(albums[1].plays).isEqualTo(5)
+    }
+
     @Test fun `Play plays the top songs from number one, labelled with the range`() = runTest {
         val fake = FakeHistory().apply {
             repeat(3) { add(track(1), TODAY, 600 + it) }
@@ -223,7 +269,7 @@ class ListeningStatsViewModelTest {
         assertThat(start.captured).isEqualTo(0)
         coVerify { player.setQueue(any(), any(), PlaybackSource.Listening("Top songs · 30 days")) }
 
-        vm.playTopSong(1); advanceUntilIdle()
+        vm.playTopSong(2L); advanceUntilIdle()
         assertThat(start.captured).isEqualTo(1)
         assertThat(queue.captured).hasSize(8)
     }
@@ -246,7 +292,7 @@ class ListeningStatsViewModelTest {
         vm.playTopSongs(); advanceUntilIdle()
         assertThat(queue.captured.map { it.id }).containsExactly(2L)
 
-        vm.playTopSong(0); advanceUntilIdle()
+        vm.playTopSong(1L); advanceUntilIdle()
         assertThat(messages).containsExactly(SONG_NEEDS_CONNECTION)
     }
 

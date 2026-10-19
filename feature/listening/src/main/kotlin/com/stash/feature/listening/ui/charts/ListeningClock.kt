@@ -54,7 +54,12 @@ internal fun ListeningClock(
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val outer = size.minDimension / 2f
-            val labelBand = 22.dp.toPx()
+            // Room for the quarter labels, measured (they grow with the font size): the side labels
+            // need their width, the top and bottom ones their height.
+            val layouts = hourLabels.take(4).map { measurer.measure(it, labelStyle) }
+            val sideWidth = layouts.filterIndexed { i, _ -> i % 2 == 1 }.maxOfOrNull { it.size.width } ?: 0
+            val capHeight = layouts.filterIndexed { i, _ -> i % 2 == 0 }.maxOfOrNull { it.size.height } ?: 0
+            val labelBand = maxOf(sideWidth, capHeight).toFloat() + 8.dp.toPx()
             val maxBar = outer - labelBand
             val inner = maxBar * 0.46f
             val max = (hourly.maxOrNull() ?: 0).coerceAtLeast(1)
@@ -78,9 +83,8 @@ internal fun ListeningClock(
             }
 
             // Quarter labels just outside the longest possible bar.
-            hourLabels.take(4).forEachIndexed { i, text ->
+            layouts.forEachIndexed { i, layout ->
                 val angle = (i / 4.0) * 2 * PI - PI / 2
-                val layout = measurer.measure(text, labelStyle)
                 val r = maxBar + labelBand / 2f + 2.dp.toPx()
                 val p = center + Offset(cos(angle).toFloat(), sin(angle).toFloat()) * r
                 drawText(

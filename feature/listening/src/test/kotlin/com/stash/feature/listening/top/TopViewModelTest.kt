@@ -47,8 +47,9 @@ class TopViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     private fun TestScope.viewModel(fake: FakeHistory, args: Map<String, Any?> = emptyMap(), handle: SavedStateHandle = SavedStateHandle(args)): TopViewModel {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        return TopViewModel(handle, fake.repository(), artistImages, player, connectivity, Random(7)).also { vm ->
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        return TopViewModel(handle, fake.repository(), artistImages, player, connectivity, Random(7), dispatcher).also { vm ->
             backgroundScope.launch { vm.state.collect {} }
         }
     }
@@ -114,13 +115,41 @@ class TopViewModelTest {
         assertThat(start.captured).isEqualTo(0)
         coVerify { player.setQueue(any(), any(), PlaybackSource.Listening("Top songs · 30 days")) }
 
-        vm.playFrom(2); advanceUntilIdle()
+        vm.playFrom(3L); advanceUntilIdle()
         assertThat(start.captured).isEqualTo(2)
 
         vm.shuffle(); advanceUntilIdle()
         assertThat(queue.captured.map { it.id }).containsExactly(1L, 2L, 3L)
         assertThat(queue.captured.map { it.id }).isEqualTo(listOf(1L, 2L, 3L).shuffled(Random(7)))
         assertThat(start.captured).isEqualTo(0)
+    }
+
+    @Test fun `a tap on a song that has left the list plays nothing`() = runTest {
+        val vm = viewModel(library())
+        advanceUntilIdle()
+        vm.playFrom(999L); advanceUntilIdle()
+        coVerify(exactly = 0) { player.setQueue(any(), any(), any()) }
+    }
+
+    @Test fun `songs merge library duplicates, albums group by main act`() = runTest {
+        val fake = FakeHistory().apply {
+            repeat(2) { add(track(1, title = "Garden", artist = "Death Plus", isrc = "USX1"), TODAY, 600 + it) }
+            repeat(3) { add(track(2, title = "Garden (Remastered)", artist = "Death Plus", isrc = "usx1"), TODAY, 700 + it) }
+            add(track(3, title = "Solo"), TODAY, 800)
+        }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        assertThat(vm.state.value.songs.map { it.track.id }).containsExactly(2L, 3L).inOrder()
+        assertThat(vm.state.value.songs[0].plays).isEqualTo(5)
+
+        val albums = FakeHistory().apply {
+            repeat(2) { add(track(1, artist = "Taro", album = "Blue"), TODAY, 600 + it) }
+            add(track(2, artist = "Taro, Mira", album = "Blue"), TODAY, 700)
+        }
+        val vm2 = viewModel(albums, mapOf(TopViewModel.ARG_KIND to "albums"))
+        advanceUntilIdle()
+        assertThat(vm2.state.value.albums.map { it.album to it.artist }).containsExactly("Blue" to "Taro")
+        assertThat(vm2.state.value.albums[0].plays).isEqualTo(3)
     }
 
     @Test fun `Play does nothing on artists`() = runTest {
@@ -137,7 +166,7 @@ class TopViewModelTest {
         val messages = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.messages.collect { messages += it } }
         runCurrent()
-        vm.playFrom(0); advanceUntilIdle()
+        vm.playFrom(1L); advanceUntilIdle()
         assertThat(messages).containsExactly(SONG_NEEDS_CONNECTION)
         coVerify(exactly = 0) { player.setQueue(any(), any(), any()) }
     }

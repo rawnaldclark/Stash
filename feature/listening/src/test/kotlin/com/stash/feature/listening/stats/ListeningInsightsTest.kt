@@ -1,7 +1,11 @@
 package com.stash.feature.listening.stats
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.dao.DayCount
 import com.stash.core.data.db.dao.HourCount
+import com.stash.core.data.db.dao.TopAlbumRow
+import com.stash.core.data.db.dao.TopTrackRow
+import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.db.dao.TopArtistRow
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
@@ -19,15 +23,27 @@ class ListeningInsightsTest {
         assertThat(ListeningInsights.rangeOf("garbage")).isEqualTo(ListeningRange.Days30)
     }
 
-    @Test fun `a delta needs the previous period fully inside the history`() {
-        // 30 days = today-29..today; the previous one = today-59..today-30.
-        val previous = DayRange(today - 59, today - 30)
-        assertThat(ListeningInsights.comparablePrevious(ListeningRange.Days30, today, today - 59)).isEqualTo(previous)
-        assertThat(ListeningInsights.comparablePrevious(ListeningRange.Days30, today, today - 100)).isEqualTo(previous)
-        // History starts one day into the previous period: not comparable.
-        assertThat(ListeningInsights.comparablePrevious(ListeningRange.Days30, today, today - 58)).isNull()
-        assertThat(ListeningInsights.comparablePrevious(ListeningRange.Days30, today, null)).isNull()
-        assertThat(ListeningInsights.comparablePrevious(ListeningRange.AllTime, today, today - 1000)).isNull()
+    @Test fun `the delta compares complete days ending yesterday, only inside the history`() {
+        // 30 days: today-30..today-1 vs today-60..today-31.
+        val w = ListeningInsights.deltaWindows(ListeningRange.Days30, today, today - 60)!!
+        assertThat(w.current).isEqualTo(DayRange(today - 30, today - 1))
+        assertThat(w.previous).isEqualTo(DayRange(today - 60, today - 31))
+        assertThat(ListeningInsights.deltaWindows(ListeningRange.Days30, today, today - 100)).isEqualTo(w)
+        // History starts one day into the earlier window: not comparable.
+        assertThat(ListeningInsights.deltaWindows(ListeningRange.Days30, today, today - 59)).isNull()
+        assertThat(ListeningInsights.deltaWindows(ListeningRange.Days30, today, null)).isNull()
+        assertThat(ListeningInsights.deltaWindows(ListeningRange.AllTime, today, today - 1000)).isNull()
+    }
+
+    @Test fun `today's listening never moves the delta`() {
+        val w = ListeningInsights.deltaWindows(ListeningRange.Days7, today, today - 14)!!
+        val days = listOf(
+            DayCount(today, 50, 9_000_000), // today, still going
+            DayCount(today - 1, 2, 300),
+            DayCount(today - 8, 2, 200),
+        )
+        assertThat(ListeningInsights.deltaFromDays(days, w)).isEqualTo(50)
+        assertThat(ListeningInsights.deltaFromDays(days.filter { it.day != today - 8 }, w)).isNull()
     }
 
     @Test fun `delta percent rounds and needs something before`() {
@@ -85,6 +101,61 @@ class ListeningInsightsTest {
         assertThat(drake.listenedMs).isEqualTo(6_000)
         assertThat(drake.lastPlayedAt).isEqualTo(40)
         assertThat(drake.albumArtUrl).isEqualTo("art-Drake") // the busiest credit's cover
+    }
+
+    @Test fun `a main act its own credit doesn't name is left out, as in the Library`() {
+        val merged = ListeningInsights.byMainArtist(
+            listOf(artist("Earth, Wind & Fire, Chicago", 5, 10), artist("Earth, Wind & Fire", 2, 5), artist("", 3, 1)),
+        )
+        // "Earth" (from the first credit) has no page; "Earth, Wind & Fire" (allow-listed) does.
+        assertThat(merged.map { it.artist }).containsExactly("Earth, Wind & Fire")
+    }
+
+    private fun album(name: String, artist: String, plays: Int, last: Long = plays.toLong()) =
+        TopAlbumRow(name, artist, plays, 1, last, "art-$artist", null, plays * 1000L)
+
+    @Test fun `albums group by title and main act, folding case past ASCII`() {
+        val merged = ListeningInsights.byMainAlbum(
+            listOf(
+                album("RENAISSANCE", "BEYONCÉ", 3),
+                album("Renaissance", "Beyoncé, JAY-Z", 2),
+                album("Renaissance", "Someone Else", 4),
+            ),
+        )
+        assertThat(merged.map { it.album to it.artist }).containsExactly(
+            "RENAISSANCE" to "BEYONCÉ", "Renaissance" to "Someone Else",
+        ).inOrder()
+        assertThat(merged[0].plays).isEqualTo(5)
+        assertThat(merged[0].listenedMs).isEqualTo(5_000)
+        // One key per grouped album, so list keys never collide.
+        assertThat(merged.map { ListeningInsights.albumKey(it.album, it.artist) }.distinct()).hasSize(2)
+        // SQLite's LOWER() leaves É alone; the key folds it.
+        assertThat(ListeningInsights.albumKey("A", "BEYONCÉ")).isEqualTo(ListeningInsights.albumKey("a", "beyoncé"))
+    }
+
+    private fun song(id: Long, title: String, artist: String, plays: Int, isrc: String? = null) = TopTrackRow(
+        TrackEntity(
+            id = id, title = title, artist = artist, album = "", durationMs = 1, isrc = isrc,
+            canonicalTitle = title.lowercase(), canonicalArtist = artist.lowercase(),
+        ),
+        plays, lastPlayedAt = id, listenedMs = plays * 1000L,
+    )
+
+    @Test fun `one row per song, by the same title and main act or the same ISRC`() {
+        val merged = ListeningInsights.mergeSameSongs(
+            listOf(
+                song(1, "Garden", "Death Plus", 4),
+                song(2, "GARDEN", "Death Plus, Guest", 3),
+                song(3, "Garden - 2024 Remaster", "Death Plus", 2, isrc = "US1"),
+                song(4, "Garden", "Death Plus", 1, isrc = "us1"), // links 3 to 1's song through the ISRC
+                song(5, "Garden", "Other Band", 6), // same title, another act
+            ),
+        )
+        assertThat(merged.map { it.track.id }).containsExactly(1L, 5L).inOrder()
+        assertThat(merged[0].plays).isEqualTo(10)
+        assertThat(merged[0].listenedMs).isEqualTo(10_000)
+        assertThat(merged[0].lastPlayedAt).isEqualTo(4)
+        assertThat(ListeningInsights.mergeSameSongs(emptyList())).isEmpty()
     }
 
     @Test fun `the top songs label names the range`() {

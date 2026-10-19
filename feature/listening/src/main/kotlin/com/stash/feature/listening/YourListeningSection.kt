@@ -147,22 +147,22 @@ private fun SectionTitle(title: String, onClick: () -> Unit) {
     }
 }
 
-/** The week card's line under the time: "142 plays · 5-day streak". */
+/** The 7-day card's line under the time: "142 plays · 5-day streak". */
 internal fun weekLine(week: WeekSummary): String = when {
-    week.plays == 0 -> "Nothing yet this week"
+    week.plays == 0 -> "Nothing in the last 7 days"
     week.streak >= 2 -> "${ListeningLabels.plays(week.plays)} · ${ListeningLabels.streak(week.streak)}"
     else -> ListeningLabels.plays(week.plays)
 }
 
 /**
- * The week at a glance: "This week", the time (Space Grotesk), plays and streak, and a bar per
+ * The last 7 days at a glance: "Last 7 days", the time (Space Grotesk), plays and streak, and a bar per
  * day with today in the full accent. Opens Your listening on 7 days.
  */
 @Composable
 private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = StashTheme.extendedColors
-    val time = ListeningLabels.shortTime(week.listenedMs)
-    val spoken = "This week, ${if (week.estimated) "about " else ""}$time listened, ${weekLine(week)}. Opens your listening."
+    val time = ListeningLabels.listenTime(week.listenedMs)
+    val spoken = "Last 7 days, ${if (week.estimated) "about " else ""}$time listened, ${weekLine(week)}. Opens your listening."
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = spoken },
@@ -176,7 +176,7 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "This week",
+                    text = "Last 7 days",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

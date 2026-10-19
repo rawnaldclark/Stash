@@ -104,11 +104,7 @@ private fun creditKeys(pair: ArtistSummary): Set<String> {
  * the same way gives one key per equivalence class (unlike `lowercase()`, which differs from it on
  * letters such as the Turkish dotted I).
  */
-internal fun foldCase(s: String): String {
-    val out = CharArray(s.length)
-    for (i in s.indices) out[i] = Character.toLowerCase(Character.toUpperCase(s[i]))
-    return String(out)
-}
+internal fun foldCase(s: String): String = com.stash.core.common.foldCase(s)
 
 /** Song count and duration of an artist page, accumulated pair by pair. */
 private class PageTotals {

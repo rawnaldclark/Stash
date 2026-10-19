@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -214,7 +215,9 @@ internal fun RankedRow(
             color = if (rank == 1) MaterialTheme.colorScheme.primary else colors.textTertiary,
             textAlign = TextAlign.Center,
             maxLines = 1,
-            modifier = Modifier.width(34.dp),
+            softWrap = false,
+            // Grows with the font size, so "100" never clips at large text.
+            modifier = Modifier.width(34.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
         )
         Spacer(Modifier.width(10.dp))
         art()
@@ -251,7 +254,7 @@ internal fun RankedRow(
 @Composable
 internal fun EstimatedFootnote(modifier: Modifier = Modifier) {
     Text(
-        text = "Time for older listens is estimated from song length.",
+        text = "Some listening time is estimated from song length.",
         style = MaterialTheme.typography.bodySmall,
         color = StashTheme.extendedColors.textTertiary,
         modifier = modifier.fillMaxWidth().padding(horizontal = Gutter, vertical = 16.dp),

@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -43,6 +44,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -51,7 +56,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopTrackRow
@@ -68,6 +72,7 @@ import com.stash.feature.listening.ui.Gutter
 import com.stash.feature.listening.ui.ListeningTopBar
 import com.stash.feature.listening.ui.RangeChips
 import com.stash.feature.listening.ui.RankedRow
+import com.stash.feature.listening.ui.RefreshTodayEffect
 import com.stash.feature.listening.ui.SquareArt
 import com.stash.feature.listening.ui.StatsCard
 import com.stash.feature.listening.ui.StatsSectionTitle
@@ -102,10 +107,7 @@ fun ListeningStatsScreen(
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refreshToday()
-        onPauseOrDispose {}
-    }
+    RefreshTodayEffect(viewModel, viewModel::refreshToday)
     val s = state
     val rangeKey = s.range.key
 
@@ -151,7 +153,7 @@ fun ListeningStatsScreen(
                     TopSongsTitle(onPlay = viewModel::playTopSongs, onSeeAll = { onOpenTop("songs", rangeKey) })
                 }
                 itemsIndexed(s.topSongs.take(SONGS_SHOWN), key = { _, r -> "song${r.track.id}" }) { i, row ->
-                    TopSongRow(rank = i + 1, row = row, onClick = { viewModel.playTopSong(i) })
+                    TopSongRow(rank = i + 1, row = row, onClick = { viewModel.playTopSong(row.track.id) })
                 }
             }
             if (s.topAlbums.isNotEmpty()) {
@@ -194,7 +196,7 @@ private fun HeroCard(s: ListeningStatsState, onOpenDay: (Long) -> Unit) {
                 )
             }
             Text(
-                text = if (s.loading) " " else ListeningLabels.shortTime(s.totals.listenedMs),
+                text = if (s.loading) " " else ListeningLabels.listenTime(s.totals.listenedMs),
                 style = MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -274,15 +276,20 @@ private fun HeroBars(s: ListeningStatsState, onOpenDay: (Long) -> Unit) {
         append("Listening time per $unit")
         s.days?.let { append(", ${ListeningLabels.rangeCaption(it.fromDay, it.toDay, s.today)}") }
         if (peak != null) {
-            append(". Most: ${bucketLabel(buckets[peak], s.granularity, s.today)}, ${ListeningLabels.shortTime(values[peak])}.")
+            append(". Most: ${bucketLabel(buckets[peak], s.granularity, s.today)}, ${ListeningLabels.listenTime(values[peak])}.")
         }
-        append(" Tap a bar to open that day in History.")
     }
+    // A time axis reads oldest to newest left to right in every language: the bars and their
+    // labels stay left-to-right in a right-to-left layout too.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    Column {
     ListeningBars(
         values = values,
         summary = summary,
         highlight = peak,
         onBarClick = { i -> onOpenDay(minOf(buckets[i].toDay, s.today)) },
+        // TalkBack can't tap a bar: each bar with listening is an action in its actions menu.
+        barActionLabel = { i -> "Open ${bucketLabel(buckets[i], s.granularity, s.today)} in History" },
     )
     Spacer(Modifier.height(6.dp))
     Row(Modifier.fillMaxWidth()) {
@@ -298,6 +305,8 @@ private fun HeroBars(s: ListeningStatsState, onOpenDay: (Long) -> Unit) {
             color = StashTheme.extendedColors.textTertiary,
         )
     }
+    }
+    }
 }
 
 /** A bar's name: "Oct 11" for a day or the week's first day, "Oct" (+ year) for a month. */
@@ -311,22 +320,47 @@ private fun bucketLabel(b: Bucket, g: Granularity, today: Long): String = when (
 
 // ── Tiles ───────────────────────────────────────────────────────────────────
 
+/**
+ * Plays · Songs · Artists · streak as one glass strip of four columns with hairlines between
+ * them: each column gets the full quarter (a row of four separate cards left too little room
+ * for "days streak"). Artists counts main acts, the same as the Top artists list.
+ */
 @Composable
 private fun Tiles(s: ListeningStatsState) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = Gutter, end = Gutter, top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Tile("%,d".format(s.totals.plays), if (s.totals.plays == 1) "Play" else "Plays", Modifier.weight(1f))
-        Tile("%,d".format(s.totals.songs), if (s.totals.songs == 1) "Song" else "Songs", Modifier.weight(1f))
-        Tile("%,d".format(s.totals.artists), if (s.totals.artists == 1) "Artist" else "Artists", Modifier.weight(1f))
-        Tile("${s.currentStreak}", "Streak", Modifier.weight(1f), spoken = ListeningLabels.streak(s.currentStreak))
+    StatsCard(Modifier.padding(start = Gutter, end = Gutter, top = 12.dp), contentPadding = 0.dp) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            Tile("%,d".format(s.totals.plays), if (s.totals.plays == 1) "play" else "plays", Modifier.weight(1f))
+            TileDivider()
+            Tile("%,d".format(s.totals.songs), if (s.totals.songs == 1) "song" else "songs", Modifier.weight(1f))
+            TileDivider()
+            Tile("%,d".format(s.artistCount), if (s.artistCount == 1) "artist" else "artists", Modifier.weight(1f))
+            TileDivider()
+            Tile(
+                "${s.currentStreak}", ListeningLabels.streakUnit(s.currentStreak), Modifier.weight(1f),
+                spoken = ListeningLabels.streak(s.currentStreak),
+            )
+        }
     }
 }
 
 @Composable
+private fun TileDivider() {
+    Box(
+        Modifier
+            .padding(vertical = 14.dp)
+            .width(1.dp)
+            .fillMaxHeight()
+            .background(StashTheme.extendedColors.glassBorder),
+    )
+}
+
+@Composable
 private fun Tile(value: String, label: String, modifier: Modifier = Modifier, spoken: String = "$value $label") {
-    StatsCard(modifier.clearAndSetSemantics { contentDescription = spoken }, contentPadding = 12.dp) {
+    Column(
+        modifier = modifier
+            .clearAndSetSemantics { contentDescription = spoken }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+    ) {
         Text(value, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
         Text(
             label,
@@ -348,7 +382,7 @@ private fun TopArtistsRow(artists: List<TopArtistUi>, onOpenArtist: (String) -> 
         // Bottom: the names line up even though #1's circle is bigger.
         verticalAlignment = Alignment.Bottom,
     ) {
-        itemsIndexed(artists, key = { _, a -> a.name.lowercase() }) { i, artist ->
+        itemsIndexed(artists, key = { _, a -> a.key }) { i, artist ->
             val size: Dp = if (i == 0) 112.dp else 84.dp
             Column(
                 modifier = Modifier
@@ -435,7 +469,7 @@ private fun TopSongRow(rank: Int, row: TopTrackRow, onClick: () -> Unit) {
         title = row.track.title,
         subtitle = row.track.artist,
         plays = ListeningLabels.plays(row.plays),
-        time = row.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::shortTime),
+        time = row.listenedMs.takeIf { it > 0 }?.let(ListeningLabels::listenTime),
         onClick = onClick,
         art = { ArtImage(row.track.albumArtPath, row.track.albumArtUrl, 48.dp, SquareArt) },
     )
@@ -447,7 +481,7 @@ private fun TopAlbumsRow(albums: List<TopAlbumRow>, onOpenAlbum: (String, String
         contentPadding = PaddingValues(horizontal = Gutter),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        itemsIndexed(albums, key = { _, a -> "${a.album.lowercase()}|${a.artist.lowercase()}" }) { i, album ->
+        itemsIndexed(albums, key = { _, a -> ListeningInsights.albumKey(a.album, a.artist) }) { i, album ->
             Column(
                 modifier = Modifier
                     .width(AlbumSize)
@@ -570,7 +604,8 @@ private fun DaysCard(s: ListeningStatsState, onOpenDay: (Long) -> Unit) {
             Spacer(Modifier.height(16.dp))
             ListeningHeatmap(
                 weeks = s.heatmap,
-                summary = "Calendar of listening days, ${s.totals.days} days with listens. Tap a day to open it in History.",
+                summary = "Calendar of listening days, ${s.totals.days} days with listens.",
+                dayActionLabel = { day -> "Open ${ListeningLabels.absoluteDay(day, s.today)} in History" },
                 onDayClick = onOpenDay,
             )
         }

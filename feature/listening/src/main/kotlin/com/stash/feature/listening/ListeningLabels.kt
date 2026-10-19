@@ -35,25 +35,11 @@ internal object ListeningLabels {
     fun plays(count: Int): String = if (count == 1) "1 play" else "$count plays"
 
     /**
-     * Listening time, rounded to the minute: "47 min", "2 h", "2 h 5 min". Under a minute reads
-     * "1 min" (a day with a listen is never "0 min").
+     * Listening time, rounded to the minute, the one format every listening screen uses: "47 min",
+     * "2 h", "2 h 5 min", "1,234 h 5 min". Under a minute reads "1 min" (a day with a listen is
+     * never "0 min"); nothing at all reads "0 min".
      */
     fun listenTime(ms: Long): String {
-        val minutes = ((ms + 30_000) / 60_000).coerceAtLeast(1)
-        val h = minutes / 60
-        val m = minutes % 60
-        return when {
-            h == 0L -> "$m min"
-            m == 0L -> "$h h"
-            else -> "$h h $m min"
-        }
-    }
-
-    /**
-     * A compact listening time for stats: "47 min" under an hour, then "2 h" or "1 h 12 m". Zero
-     * reads "0 min" (a range with nothing heard), under a minute "1 min".
-     */
-    fun shortTime(ms: Long): String {
         if (ms <= 0) return "0 min"
         val minutes = ((ms + 30_000) / 60_000).coerceAtLeast(1)
         val h = minutes / 60
@@ -61,13 +47,13 @@ internal object ListeningLabels {
         return when {
             h == 0L -> "$m min"
             m == 0L -> "%,d h".format(Locale.US, h)
-            else -> "%,d h %d m".format(Locale.US, h, m)
+            else -> "%,d h %d min".format(Locale.US, h, m)
         }
     }
 
-    /** A top row's numbers: "23 plays · 1 h 12 m" ("1 play" when the time is unknown). */
+    /** A top row's numbers: "23 plays · 1 h 12 min" ("1 play" when the time is unknown). */
     fun playsAndTime(plays: Int, listenedMs: Long): String =
-        if (listenedMs <= 0) plays(plays) else "${plays(plays)} · ${shortTime(listenedMs)}"
+        if (listenedMs <= 0) plays(plays) else "${plays(plays)} · ${listenTime(listenedMs)}"
 
     /**
      * The dates a range covers: "Sep 19 – Oct 18", one date for a single day, and the years
@@ -88,6 +74,9 @@ internal object ListeningLabels {
 
     /** "5-day streak", "1-day streak". */
     fun streak(days: Int): String = "$days-day streak"
+
+    /** The Streak tile's word under its number: "1" + "day streak", "5" + "days streak" (owner wording). */
+    fun streakUnit(days: Int): String = if (days == 1) "day streak" else "days streak"
 
     /** "1 day", "12 days". */
     fun days(count: Int): String = if (count == 1) "1 day" else "$count days"

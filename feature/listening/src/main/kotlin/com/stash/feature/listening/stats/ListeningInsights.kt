@@ -1,16 +1,22 @@
 package com.stash.feature.listening.stats
 
+import com.stash.core.common.foldCase
+import com.stash.core.common.matchesArtistCredits
 import com.stash.core.common.primaryArtist
+import com.stash.core.data.db.dao.DayCount
 import com.stash.core.data.db.dao.HourCount
+import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopArtistRow
+import com.stash.core.data.db.dao.TopTrackRow
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
 import kotlin.math.roundToInt
 
 /**
- * The pure pieces of "Your listening" and Top: which ranges the chips offer, when a "vs before"
- * delta is honest, the listening clock's peak and day split, and artists grouped by their main
- * act. No Android, no clock: every input is passed in, so each rule is unit-tested.
+ * The pure pieces of "Your listening" and Top: which ranges the chips offer, the honest "vs
+ * before" comparison, the listening clock's peak and day split, and the top lists grouped the way
+ * the Library groups (artists and albums by main act, one row per song). No Android, no clock:
+ * every input is passed in, so each rule is unit-tested.
  */
 internal object ListeningInsights {
 
@@ -32,15 +38,45 @@ internal object ListeningInsights {
     /** Ranges this long or longer show the day heatmap (13 weeks fit; shorter would be mostly blank). */
     const val HEATMAP_MIN_DAYS = 84L
 
+    /** Rows read before grouping, so grouping (which merges rows) still leaves a full top 100. */
+    const val SCAN_LIMIT = 300
+
+    /** Artist credits read before grouping: enough to count every main act in the range exactly. */
+    const val ARTIST_SCAN_LIMIT = 10_000
+
+    /** Top lists stop here, after grouping. */
+    const val TOP_LIMIT = 100
+
+    // ── The "vs before" comparison ──────────────────────────────────────
+
+    /** The two windows a delta compares: [current] and the same number of days just before it. */
+    data class DeltaWindows(val current: DayRange, val previous: DayRange)
+
     /**
-     * The period to compare with, or null when the comparison would mislead: All time has nothing
-     * before it, and a previous period that starts before the first listen isn't fully covered
-     * by history (it would read as a huge rise that's only the history starting).
+     * The windows for the "vs before" pill, or null when a comparison would mislead.
+     *
+     * Complete days only: the range's length ending **yesterday** against the same length before
+     * it. Today is still going, so counting it would read as a drop every morning. Null for All
+     * time (nothing before it) and when the earlier window starts before the first listen: a
+     * window history doesn't fully cover would read as a big rise that is only history starting.
      */
-    fun comparablePrevious(range: ListeningRange, today: Long, firstListenDay: Long?): DayRange? {
-        if (firstListenDay == null) return null
-        val previous = range.previous(today, firstListenDay) ?: return null
-        return previous.takeIf { firstListenDay <= it.fromDay }
+    fun deltaWindows(range: ListeningRange, today: Long, firstListenDay: Long?): DeltaWindows? {
+        if (firstListenDay == null || range == ListeningRange.AllTime) return null
+        val length = range.toDayRange(today, firstListenDay).length
+        val current = DayRange(today - length, today - 1)
+        val previous = DayRange(current.fromDay - length, current.fromDay - 1)
+        return DeltaWindows(current, previous).takeIf { firstListenDay <= previous.fromDay }
+    }
+
+    /** Listening time in [windows]' current window vs its previous one, from per-day counts. */
+    fun deltaFromDays(days: Collection<DayCount>, windows: DeltaWindows): Int? {
+        var now = 0L
+        var before = 0L
+        for (d in days) {
+            if (d.day in windows.current) now += d.listenedMs
+            if (d.day in windows.previous) before += d.listenedMs
+        }
+        return deltaPercent(now, before)
     }
 
     /**
@@ -61,6 +97,8 @@ internal object ListeningInsights {
 
     /** The "Playing from" line of a queue started from a top songs list: "Top songs · 30 days". */
     fun topSongsLabel(range: ListeningRange): String = "Top songs · ${range.label}"
+
+    // ── The clock ───────────────────────────────────────────────────────
 
     /** Listens per hour 0..23 (hours without a listen 0). */
     fun hourly(hours: List<HourCount>): IntArray {
@@ -111,15 +149,47 @@ internal object ListeningInsights {
         return floors
     }
 
+    // ── Grouping the top lists ──────────────────────────────────────────
+
+    /** The list key of an artist: one per main act, folded like `equals(ignoreCase = true)`. */
+    fun artistKey(name: String): String = foldCase(name.primaryArtist().trim())
+
+    /** The list key of an album: its title and main act, folded (SQLite's LOWER folds ASCII only). */
+    fun albumKey(album: String, artist: String): String = foldCase(album.trim()) + "|" + artistKey(artist)
+
     /**
      * Top artists by main act: "Drake, Future" counts for Drake, as the Library's Artists tab and
-     * artist pages group (primaryArtist). Plays, songs and time add up; the cover and spelling are
-     * the busiest credit's. Most played first, then the one heard last.
+     * artist pages group. Plays, songs and time add up; the cover and spelling are the busiest
+     * credit's. A main act its own credit doesn't name ("Earth" from "Earth, Wind & Fire,
+     * Chicago") or a blank one is left out, as the Library does: its artist page would be empty.
+     * Most played first, then the one heard last.
      */
     fun byMainArtist(rows: List<TopArtistRow>): List<TopArtistRow> =
-        rows.groupBy { it.artist.primaryArtist().lowercase() }
-            .map { (_, group) ->
+        rows.groupBy { artistKey(it.artist) }
+            .mapNotNull { (_, group) ->
                 val lead = group.maxWith(compareBy<TopArtistRow> { it.plays }.thenBy { it.lastPlayedAt })
+                val name = lead.artist.primaryArtist().trim()
+                if (name.isEmpty() || group.none { matchesArtistCredits(it.artist, "", name) }) return@mapNotNull null
+                lead.copy(
+                    artist = name,
+                    plays = group.sumOf { it.plays },
+                    songs = group.sumOf { it.songs },
+                    lastPlayedAt = group.maxOf { it.lastPlayedAt },
+                    listenedMs = group.sumOf { it.listenedMs },
+                )
+            }
+            .sortedWith(compareByDescending<TopArtistRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+
+    /**
+     * Top albums by title and main act, as the Library's Albums tab merges them (a collab credit
+     * and its lead act's are one release): the artist shown, and passed to the album page, is the
+     * main act, so the page finds the album's songs. Plays, songs and time add up; the cover is
+     * the busiest row's.
+     */
+    fun byMainAlbum(rows: List<TopAlbumRow>): List<TopAlbumRow> =
+        rows.groupBy { albumKey(it.album, it.artist) }
+            .map { (_, group) ->
+                val lead = group.maxWith(compareBy<TopAlbumRow> { it.plays }.thenBy { it.lastPlayedAt })
                 lead.copy(
                     artist = lead.artist.primaryArtist(),
                     plays = group.sumOf { it.plays },
@@ -128,7 +198,50 @@ internal object ListeningInsights {
                     listenedMs = group.sumOf { it.listenedMs },
                 )
             }
-            .sortedWith(compareByDescending<TopArtistRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+            .sortedWith(compareByDescending<TopAlbumRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+
+    /**
+     * One row per song: library rows that are the same song (the same title and main act, ignoring
+     * case, or the same ISRC) count together. Plays and time add up; the most played row (then the
+     * one heard last) stands for the song: its cover, what Play plays, the now-playing mark. Only
+     * what the screens show: the library itself is untouched.
+     */
+    fun mergeSameSongs(rows: List<TopTrackRow>): List<TopTrackRow> {
+        if (rows.size < 2) return rows
+        // Union-find over rows: two rows sharing either key are one song.
+        val parent = IntArray(rows.size) { it }
+        fun find(i: Int): Int {
+            var r = i
+            while (parent[r] != r) r = parent[r]
+            var c = i
+            while (parent[c] != r) c = parent[c].also { parent[c] = r }
+            return r
+        }
+        val firstWithKey = HashMap<String, Int>()
+        rows.forEachIndexed { i, row ->
+            val keys = buildList {
+                add("t:" + foldCase(row.track.title.trim()) + "|" + artistKey(row.track.artist))
+                row.track.isrc?.trim()?.takeIf { it.isNotEmpty() }?.let { add("i:" + foldCase(it)) }
+            }
+            for (k in keys) {
+                val j = firstWithKey.putIfAbsent(k, i) ?: continue
+                parent[find(i)] = find(j)
+            }
+        }
+        return rows.indices.groupBy(::find).values
+            .map { idx ->
+                val group = idx.map { rows[it] }
+                val lead = group.maxWith(compareBy<TopTrackRow> { it.plays }.thenBy { it.lastPlayedAt }.thenBy { -it.track.id })
+                lead.copy(
+                    plays = group.sumOf { it.plays },
+                    lastPlayedAt = group.maxOf { it.lastPlayedAt },
+                    listenedMs = group.sumOf { it.listenedMs },
+                )
+            }
+            .sortedWith(
+                compareByDescending<TopTrackRow> { it.plays }.thenByDescending { it.lastPlayedAt }.thenBy { it.track.id },
+            )
+    }
 }
 
 /** Percent of listens in each part of the day; adds up to 100. */

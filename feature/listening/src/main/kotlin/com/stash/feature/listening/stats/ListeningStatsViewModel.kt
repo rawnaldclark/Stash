@@ -29,6 +29,8 @@ import com.stash.feature.listening.PlayPlan
 import com.stash.feature.listening.planTopSongs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,14 +42,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import javax.inject.Inject
@@ -62,7 +62,10 @@ data class TopArtistUi(
     val photoUrl: String?,
     val artPath: String?,
     val artUrl: String?,
-)
+) {
+    /** The list key: one per main act, folded like the grouping. */
+    val key: String get() = ListeningInsights.artistKey(name)
+}
 
 /** Everything "Your listening" shows for one range. */
 data class ListeningStatsState(
@@ -72,7 +75,9 @@ data class ListeningStatsState(
     val today: Long = 0,
     val loading: Boolean = true,
     val totals: ListeningTotals = ListeningTotals.EMPTY,
-    /** Listening time vs the period before, in percent; null = not shown (see [ListeningInsights.comparablePrevious]). */
+    /** Main acts heard in the range: the number the Top artists list has. */
+    val artistCount: Int = 0,
+    /** Listening time vs the period before, in percent; null = not shown (see [ListeningInsights.deltaWindows]). */
     val deltaPercent: Int? = null,
     /** The hero chart: listening time per day / week / month across the range. */
     val buckets: List<Bucket> = emptyList(),
@@ -84,7 +89,7 @@ data class ListeningStatsState(
     /** The range's day with the most listens. */
     val busiestDay: DayCount? = null,
     val topArtists: List<TopArtistUi> = emptyList(),
-    /** The range's top songs (up to 100): the screen lists five, Play plays them all. */
+    /** The range's top songs, one row per song (up to 100): the screen lists five, Play plays them all. */
     val topSongs: List<TopTrackRow> = emptyList(),
     val topAlbums: List<TopAlbumRow> = emptyList(),
     /** Listens per hour 0..23. */
@@ -116,9 +121,12 @@ data class ListeningStatsState(
  * Feeds "Your listening" (YourListeningRoute): totals, the chart, top artists, songs and albums,
  * the clock, days and highlights for the chosen range, live (every new or removed listen
  * re-reads; each read is tens of milliseconds on the covering day index, see ListeningHistorySql).
+ * Five queries per range: totals, day counts (chart, streaks, the delta), the three top lists
+ * (one Room flow each) and the hour histogram; the highlights are one-off reads, repeated only when
+ * the range's play count changes. Grouping and the derived numbers run off Main.
  *
  * The range comes from the route ([ARG_RANGE]) and is kept across process death. "Today" is read
- * when the screen opens and again on [refreshToday] (the screen calls it on resume).
+ * when the screen opens and again on [refreshToday] (on resume and at midnight).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -129,6 +137,7 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val connectivityMonitor: ConnectivityMonitor,
     private val firstDayOfWeek: DayOfWeek,
+    computeDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     @Inject
@@ -140,7 +149,7 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
         connectivityMonitor: ConnectivityMonitor,
     ) : this(
         savedStateHandle, history, artistImages, playerRepository, connectivityMonitor,
-        ListeningStatsCalculator.firstDayOfWeek(),
+        ListeningStatsCalculator.firstDayOfWeek(), Dispatchers.Default,
     )
 
     private val _range = MutableStateFlow(ListeningInsights.rangeOf(savedStateHandle.get<String>(ARG_RANGE)))
@@ -152,16 +161,20 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
 
-    /** One-off messages for a toast ("None of your top songs are downloaded…"). */
+    /** One-off messages for a toast ("None of these songs are downloaded…"). */
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     val state: StateFlow<ListeningStatsState> = combine(_range, today) { r, t -> r to t }
-        .flatMapLatest { (r, t) -> flow { emitAll(load(r, t)) } }
-        .catch { e ->
-            if (e is CancellationException) throw e
-            Log.w(TAG, "listening stats failed", e)
-            emit(ListeningStatsState(range = _range.value, today = today.value, loading = false))
+        .flatMapLatest { (r, t) ->
+            // The catch is per range: a failed read shows an empty screen for this range, and
+            // the next range (or "today" moving on) reads again.
+            flow { emitAll(load(r, t)) }.catch { e ->
+                if (e is CancellationException) throw e
+                Log.w(TAG, "listening stats failed", e)
+                emit(ListeningStatsState(range = r, today = t, loading = false))
+            }
         }
+        .flowOn(computeDispatcher)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -180,17 +193,21 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
     }
 
     /** Play on the Top songs card: the range's top songs from #1. */
-    fun playTopSongs() = playTop(0, tapped = false)
+    fun playTopSongs() = playTop(null)
 
-    /** A tapped top song: the list from that song on. */
-    fun playTopSong(index: Int) = playTop(index, tapped = true)
+    /**
+     * A tapped top song: the list from that song on. By song id, not position: the list may have
+     * moved (a listen landed) between drawing the row and the tap.
+     */
+    fun playTopSong(trackId: Long) = playTop(trackId)
 
-    private fun playTop(index: Int, tapped: Boolean) {
+    private fun playTop(trackId: Long?) {
         val s = state.value
         val tracks = s.topSongs.map { it.track.toDomain() }
         if (tracks.isEmpty()) return
+        val index = if (trackId == null) 0 else tracks.indexOfFirst { it.id == trackId }.takeIf { it >= 0 } ?: return
         viewModelScope.launch {
-            when (val plan = planTopSongs(tracks, index, connectivityMonitor.isConnected(), tapped)) {
+            when (val plan = planTopSongs(tracks, index, connectivityMonitor.isConnected(), tapped = trackId != null)) {
                 is PlayPlan.Play -> playerRepository.setQueue(
                     plan.tracks, plan.startIndex, PlaybackSource.Listening(ListeningInsights.topSongsLabel(s.range)),
                 )
@@ -204,30 +221,29 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
     private suspend fun load(range: ListeningRange, today: Long): Flow<ListeningStatsState> {
         val first = history.firstListenDay()
         val days = range.toDayRange(today, first)
-        val previous = ListeningInsights.comparablePrevious(range, today, first)
-        // One day-count read covers the range and the current streak (which may reach back past it).
-        val countsSpan = DayRange(minOf(first ?: days.fromDay, days.fromDay), maxOf(today, days.toDay))
+        val windows = ListeningInsights.deltaWindows(range, today, first)
+        // One day-count read covers the range, the current streak (back to the first listen, the
+        // same as Home) and the delta's earlier window.
+        val countsFrom = minOf(first ?: days.fromDay, days.fromDay, windows?.previous?.fromDay ?: days.fromDay)
+        val countsSpan = DayRange(countsFrom, maxOf(today, days.toDay))
 
-        val counts = combine(
-            history.observeTotals(days),
-            previous?.let { history.observeTotals(it) } ?: flowOf(null),
-            history.observeDayCounts(countsSpan),
-        ) { totals, before, dayCounts -> Counts(totals, before, dayCounts) }
-
+        val counts = combine(history.observeTotals(days), history.observeDayCounts(countsSpan), ::Counts)
         val tops = combine(
-            history.observeTopTracks(days),
-            history.observeTopArtists(days),
-            history.observeTopAlbums(days, ALBUMS_SHOWN),
+            history.observeTopTracks(days, ListeningInsights.SCAN_LIMIT),
+            history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT),
+            history.observeTopAlbums(days, ListeningInsights.SCAN_LIMIT),
             artistImages.observeAll(),
-        ) { songs, artists, albums, photos -> Tops(songs, artistsWithPhotos(ListeningInsights.byMainArtist(artists), photos), albums) }
+        ) { songs, artists, albums, photos ->
+            val acts = ListeningInsights.byMainArtist(artists)
+            Tops(
+                songs = ListeningInsights.mergeSameSongs(songs).take(ListeningInsights.TOP_LIMIT),
+                artists = artistsWithPhotos(acts.take(ARTISTS_SHOWN), photos),
+                artistCount = acts.size,
+                albums = ListeningInsights.byMainAlbum(albums).take(ALBUMS_SHOWN),
+            )
+        }
 
-        // The highlights are one-off reads; read again whenever the range's listens change.
-        val highlights = history.observeTotals(days)
-            .map { it.plays }
-            .distinctUntilChanged()
-            .mapLatest { readHighlights(days, first) }
-
-        return combine(counts, tops, history.observeHourHistogram(days), highlights) { c, t, hours, h ->
+        val base = combine(counts, tops, history.observeHourHistogram(days)) { c, t, hours ->
             val inRange = c.dayCounts.filter { it.day in days }
             val hourly = ListeningInsights.hourly(hours)
             ListeningStatsState(
@@ -236,13 +252,14 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
                 today = today,
                 loading = false,
                 totals = c.totals,
-                deltaPercent = c.before?.let { ListeningInsights.deltaPercent(c.totals.listenedMs, it.listenedMs) },
+                artistCount = t.artistCount,
+                deltaPercent = windows?.let { ListeningInsights.deltaFromDays(c.dayCounts, it) },
                 buckets = ListeningStatsCalculator.bucketSeries(inRange, days, firstDayOfWeek),
                 granularity = ListeningStatsCalculator.granularityFor(days),
                 currentStreak = ListeningStatsCalculator.currentStreak(c.dayCounts, today)?.days ?: 0,
                 longestStreak = ListeningStatsCalculator.longestStreak(inRange),
                 busiestDay = ListeningStatsCalculator.busiestDay(inRange),
-                topArtists = t.artists.take(ARTISTS_SHOWN),
+                topArtists = t.artists,
                 topSongs = t.songs,
                 topAlbums = t.albums,
                 hourly = hourly.toList(),
@@ -253,11 +270,21 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
                 } else {
                     emptyList()
                 },
-                obsession = h.obsession,
-                newSongs = h.newSongs,
-                bestNewFind = h.bestNewFind,
                 firstListenDay = first,
             )
+        }
+
+        // The highlights are one-off reads: kept while the range's play count stays the same,
+        // read again when it changes (the screen shows the last ones meanwhile).
+        var highlightsFor = -1
+        var highlights = Highlights.NONE
+        return base.transformLatest { s ->
+            emit(s.with(highlights))
+            if (s.totals.plays != highlightsFor) {
+                highlights = readHighlights(days, first)
+                highlightsFor = s.totals.plays
+                emit(s.with(highlights))
+            }
         }
     }
 
@@ -273,15 +300,27 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "listening highlights failed", e)
-            Highlights(null, 0, null)
+            Highlights.NONE
         }
     }
 
-    private data class Counts(val totals: ListeningTotals, val before: ListeningTotals?, val dayCounts: List<DayCount>)
+    private fun ListeningStatsState.with(h: Highlights) =
+        copy(obsession = h.obsession, newSongs = h.newSongs, bestNewFind = h.bestNewFind)
 
-    private data class Tops(val songs: List<TopTrackRow>, val artists: List<TopArtistUi>, val albums: List<TopAlbumRow>)
+    private data class Counts(val totals: ListeningTotals, val dayCounts: List<DayCount>)
 
-    private data class Highlights(val obsession: ObsessionRow?, val newSongs: Int, val bestNewFind: TopTrackRow?)
+    private data class Tops(
+        val songs: List<TopTrackRow>,
+        val artists: List<TopArtistUi>,
+        val artistCount: Int,
+        val albums: List<TopAlbumRow>,
+    )
+
+    private data class Highlights(val obsession: ObsessionRow?, val newSongs: Int, val bestNewFind: TopTrackRow?) {
+        companion object {
+            val NONE = Highlights(null, 0, null)
+        }
+    }
 
     companion object {
         private const val TAG = "ListeningStats"
@@ -301,18 +340,19 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
 }
 
 /** [rows] with the Library's artist photos, matched by main act, ignoring case. */
-internal fun artistsWithPhotos(
-    rows: List<TopArtistRow>,
-    photos: List<ArtistImageEntity>,
-): List<TopArtistUi> {
-    val byName = photos.asSequence().filter { it.imageUrl != null }.associate { it.artistName.lowercase() to it.imageUrl }
+internal fun artistsWithPhotos(rows: List<TopArtistRow>, photos: List<ArtistImageEntity>): List<TopArtistUi> {
+    val byName = HashMap<String, String>()
+    for (p in photos) {
+        val url = p.imageUrl ?: continue
+        byName[ListeningInsights.artistKey(p.artistName)] = url
+    }
     return rows.map { r ->
         TopArtistUi(
             name = r.artist,
             plays = r.plays,
             songs = r.songs,
             listenedMs = r.listenedMs,
-            photoUrl = byName[r.artist.lowercase()],
+            photoUrl = byName[ListeningInsights.artistKey(r.artist)],
             artPath = r.albumArtPath,
             artUrl = r.albumArtUrl,
         )

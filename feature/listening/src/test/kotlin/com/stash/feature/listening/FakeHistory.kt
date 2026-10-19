@@ -51,8 +51,9 @@ internal class FakeHistory(val today: Long = TODAY) {
         filePath: String? = null,
         album: String = "",
         durationMs: Long = 200_000,
+        isrc: String? = null,
     ) = TrackEntity(
-        id = id, title = title, artist = artist, album = album, durationMs = durationMs,
+        id = id, title = title, artist = artist, album = album, durationMs = durationMs, isrc = isrc,
         canonicalTitle = title.lowercase(), canonicalArtist = artist.lowercase(), filePath = filePath,
     )
 

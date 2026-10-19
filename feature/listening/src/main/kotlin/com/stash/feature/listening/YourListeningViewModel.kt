@@ -13,7 +13,10 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import com.stash.feature.listening.stats.ListeningInsights
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +28,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,7 +57,7 @@ data class YourListeningState(
     val topSongTitle: String? = null,
 )
 
-/** Home's summary card: the last 7 days (today and the 6 before). */
+/** Home's summary card: the last 7 days (today and the 6 before), "Last 7 days" on screen. */
 data class WeekSummary(
     val listenedMs: Long,
     val plays: Int,
@@ -80,6 +85,7 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val connectivityMonitor: ConnectivityMonitor,
     private val clock: Flow<Long>,
+    computeDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     @Inject
@@ -88,7 +94,7 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
         historyPreference: ListeningHistoryPreference,
         playerRepository: PlayerRepository,
         connectivityMonitor: ConnectivityMonitor,
-    ) : this(history, historyPreference, playerRepository, connectivityMonitor, minuteClock())
+    ) : this(history, historyPreference, playerRepository, connectivityMonitor, minuteClock(), Dispatchers.Default)
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
 
@@ -98,15 +104,19 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     private val today: Flow<Long> = clock.map { history.today() }.distinctUntilChanged()
 
     /**
-     * Today's count, the week's numbers and the streak, from one day-count read over the last
-     * [STREAK_WINDOW_DAYS] days (a streak longer than that reads as that long) and the week's totals.
+     * Today's count, the last 7 days' numbers and the streak, from the week's totals and one
+     * day-count read back to the first listen (as Your listening reads it, so both show the same
+     * streak however long it is).
      */
     private val days: Flow<Pair<Int, WeekSummary>> = today.flatMapLatest { t ->
         val week = DayRange(t - 6, t)
-        combine(
-            history.observeTotals(week),
-            history.observeDayCounts(DayRange(t - STREAK_WINDOW_DAYS + 1, t)),
-        ) { totals, counts ->
+        flow {
+            // No listen yet: nothing before today to count (the section shows with the first one).
+            val first = history.firstListenDay() ?: week.fromDay
+            emitAll(combine(
+                history.observeTotals(week),
+                history.observeDayCounts(DayRange(minOf(first, week.fromDay), t)),
+            ) { totals, counts ->
             val byDay = counts.associateBy { it.day }
             val summary = WeekSummary(
                 listenedMs = totals.listenedMs,
@@ -116,13 +126,14 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 streak = ListeningStatsCalculator.currentStreak(counts, t)?.days ?: 0,
             )
             (byDay[t]?.plays ?: 0) to summary
+            })
         }
     }.distinctUntilChanged()
 
-    /** The last 30 days' #1 song. */
+    /** The last 30 days' #1 song, counted the way Top songs counts (one row per song). */
     private val topSong: Flow<String?> = today.flatMapLatest { t ->
-        history.observeTopTracks(ListeningRange.Days30.toDayRange(t), 1)
-    }.map { it.firstOrNull()?.track?.title }.distinctUntilChanged()
+        history.observeTopTracks(ListeningRange.Days30.toDayRange(t), ListeningInsights.SCAN_LIMIT)
+    }.map { ListeningInsights.mergeSameSongs(it).firstOrNull()?.track?.title }.distinctUntilChanged()
 
     val state: StateFlow<YourListeningState?> = combine(
         history.observeRecentTracks(),
@@ -144,7 +155,7 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 topSongTitle = top,
             )
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    }.flowOn(computeDispatcher).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Plays [track] from the "Recently played" rail, with the rail's other songs around it. */
     fun playRecent(track: Track) {
@@ -161,9 +172,6 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     companion object {
         /** The "Playing from" line of a queue started from the rail. */
         const val RECENT_LABEL = "Recently played"
-
-        /** How far back the Home streak looks. */
-        const val STREAK_WINDOW_DAYS = 400L
 
         /** The current time now and then once a minute, while collected. */
         private fun minuteClock(): Flow<Long> = flow {

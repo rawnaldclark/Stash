@@ -131,16 +131,16 @@ class ListeningLabelsTest {
         assertThat(com.stash.feature.listening.history.keyAt(state, 7)).isNull()
     }
 
-    @Test fun `stats times are compact, rounded to the minute`() {
-        assertThat(ListeningLabels.shortTime(0)).isEqualTo("0 min")
-        assertThat(ListeningLabels.shortTime(10_000)).isEqualTo("1 min")
-        assertThat(ListeningLabels.shortTime(47 * 60_000L)).isEqualTo("47 min")
-        assertThat(ListeningLabels.shortTime(59 * 60_000L + 40_000)).isEqualTo("1 h")
-        assertThat(ListeningLabels.shortTime(72 * 60_000L)).isEqualTo("1 h 12 m")
-        assertThat(ListeningLabels.shortTime((23 * 60 + 41) * 60_000L)).isEqualTo("23 h 41 m")
-        assertThat(ListeningLabels.shortTime(1_234L * 3_600_000L)).isEqualTo("1,234 h")
-        assertThat(ListeningLabels.playsAndTime(23, 72 * 60_000L)).isEqualTo("23 plays · 1 h 12 m")
+    @Test fun `one listening time format everywhere, rounded to the minute`() {
+        assertThat(ListeningLabels.listenTime(0)).isEqualTo("0 min")
+        assertThat(ListeningLabels.listenTime(59 * 60_000L + 40_000)).isEqualTo("1 h")
+        assertThat(ListeningLabels.listenTime(72 * 60_000L)).isEqualTo("1 h 12 min")
+        assertThat(ListeningLabels.listenTime((23 * 60 + 41) * 60_000L)).isEqualTo("23 h 41 min")
+        assertThat(ListeningLabels.listenTime(1_234L * 3_600_000L)).isEqualTo("1,234 h")
+        assertThat(ListeningLabels.playsAndTime(23, 72 * 60_000L)).isEqualTo("23 plays · 1 h 12 min")
         assertThat(ListeningLabels.playsAndTime(1, 0)).isEqualTo("1 play")
+        assertThat(ListeningLabels.streakUnit(1)).isEqualTo("day streak")
+        assertThat(ListeningLabels.streakUnit(5)).isEqualTo("days streak")
     }
 
     @Test fun `range captions name the dates, with years only outside this one`() {

@@ -22,6 +22,8 @@ import com.stash.feature.listening.stats.TopArtistUi
 import com.stash.feature.listening.stats.artistsWithPhotos
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -90,6 +93,7 @@ class TopViewModel @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val connectivityMonitor: ConnectivityMonitor,
     private val random: Random,
+    computeDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     @Inject
@@ -99,7 +103,7 @@ class TopViewModel @VisibleForTesting internal constructor(
         artistImages: ArtistImageDao,
         playerRepository: PlayerRepository,
         connectivityMonitor: ConnectivityMonitor,
-    ) : this(savedStateHandle, history, artistImages, playerRepository, connectivityMonitor, Random.Default)
+    ) : this(savedStateHandle, history, artistImages, playerRepository, connectivityMonitor, Random.Default, Dispatchers.Default)
 
     private val _kind = MutableStateFlow(TopKind.fromKey(savedStateHandle.get<String>(ARG_KIND)))
     private val _range = MutableStateFlow(ListeningInsights.rangeOf(savedStateHandle.get<String>(ARG_RANGE)))
@@ -121,12 +125,15 @@ class TopViewModel @VisibleForTesting internal constructor(
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     val state: StateFlow<TopUiState> = combine(_kind, _range, today) { k, r, t -> Triple(k, r, t) }
-        .flatMapLatest { (k, r, t) -> flow { emitAll(load(k, r, t)) } }
-        .catch { e ->
-            if (e is CancellationException) throw e
-            Log.w(TAG, "top list failed", e)
-            emit(TopUiState(kind = _kind.value, range = _range.value, today = today.value, loading = false))
+        .flatMapLatest { (k, r, t) ->
+            // Per list: a failed read empties this list, and the next kind or range reads again.
+            flow { emitAll(load(k, r, t)) }.catch { e ->
+                if (e is CancellationException) throw e
+                Log.w(TAG, "top list failed", e)
+                emit(TopUiState(kind = k, range = r, today = t, loading = false))
+            }
         }
+        .flowOn(computeDispatcher)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -149,18 +156,23 @@ class TopViewModel @VisibleForTesting internal constructor(
     }
 
     /** Play: the songs from #1. */
-    fun play() = playSongs(0, tapped = false, shuffle = false)
+    fun play() = playSongs(null, shuffle = false)
 
     /** Shuffle: the same songs in a random order. */
-    fun shuffle() = playSongs(0, tapped = false, shuffle = true)
+    fun shuffle() = playSongs(null, shuffle = true)
 
-    /** A tapped song: the list from that song on. */
-    fun playFrom(index: Int) = playSongs(index, tapped = true, shuffle = false)
+    /**
+     * A tapped song: the list from that song on. By song id, not position: the list may have
+     * moved (a listen landed) between drawing the row and the tap.
+     */
+    fun playFrom(trackId: Long) = playSongs(trackId, shuffle = false)
 
-    private fun playSongs(index: Int, tapped: Boolean, shuffle: Boolean) {
+    private fun playSongs(trackId: Long?, shuffle: Boolean) {
         val s = state.value
         if (s.kind != TopKind.SONGS || s.songs.isEmpty()) return
         val tracks = s.songs.map { it.track.toDomain() }
+        val index = if (trackId == null) 0 else tracks.indexOfFirst { it.id == trackId }.takeIf { it >= 0 } ?: return
+        val tapped = trackId != null
         viewModelScope.launch {
             when (val plan = planTopSongs(tracks, index, connectivityMonitor.isConnected(), tapped)) {
                 is PlayPlan.Play -> {
@@ -181,17 +193,23 @@ class TopViewModel @VisibleForTesting internal constructor(
         val base = TopUiState(kind = kind, range = range, days = days, today = today, loading = false)
         val estimated = history.observeTotals(days).map { it.estimatedPlays > 0 }
         return when (kind) {
-            TopKind.SONGS -> combine(history.observeTopTracks(days), estimated) { rows, est ->
-                base.copy(songs = rows, estimated = est)
+            // Each list reads more rows than it shows, groups them like the Library (one row per
+            // song, artists and albums by main act), then keeps the top 100.
+            TopKind.SONGS -> combine(history.observeTopTracks(days, ListeningInsights.SCAN_LIMIT), estimated) { rows, est ->
+                base.copy(songs = ListeningInsights.mergeSameSongs(rows).take(ListeningInsights.TOP_LIMIT), estimated = est)
             }
-            TopKind.ARTISTS -> combine(history.observeTopArtists(days), artistImages.observeAll(), estimated) { rows, photos, est ->
+            TopKind.ARTISTS -> combine(
+                history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT),
+                artistImages.observeAll(),
+                estimated,
+            ) { rows, photos, est ->
                 base.copy(
-                    artists = artistsWithPhotos(ListeningInsights.byMainArtist(rows), photos),
+                    artists = artistsWithPhotos(ListeningInsights.byMainArtist(rows).take(ListeningInsights.TOP_LIMIT), photos),
                     estimated = est,
                 )
             }
-            TopKind.ALBUMS -> combine(history.observeTopAlbums(days), estimated) { rows, est ->
-                base.copy(albums = rows, estimated = est)
+            TopKind.ALBUMS -> combine(history.observeTopAlbums(days, ListeningInsights.SCAN_LIMIT), estimated) { rows, est ->
+                base.copy(albums = ListeningInsights.byMainAlbum(rows).take(ListeningInsights.TOP_LIMIT), estimated = est)
             }
         }
     }
