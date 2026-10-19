@@ -72,8 +72,9 @@
     <string name="settings_support_title">Support Stash</string>
     <string name="settings_support_subtitle">Stash is free and made by volunteers. If it\'s useful to you, consider supporting the project.</string>
     <string name="settings_support_donate">Donate</string>
-    <string name="settings_support_role_owner">Owner, main dev</string>
-    <string name="settings_support_role_codev">Co-dev — makes the beta builds</string>
+    <string name="settings_support_role_owner">Owner, main dev · Ko-fi</string>
+    <string name="settings_support_role_owner_paypal">Owner, main dev · PayPal</string>
+    <string name="settings_support_role_codev">Co-dev — makes the beta builds · PayPal</string>
     <string name="settings_support_star">Star</string>
 
     <!-- Settings > Accounts & Sync -->

@@ -47,6 +47,7 @@ import com.stash.core.ui.theme.StashPurpleLight
 @Composable
 fun SupportBanner(
     onDonate: () -> Unit,
+    onDonatePayPal: () -> Unit,
     onDonateCoDev: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
@@ -116,6 +117,21 @@ fun SupportBanner(
                         onClick = {
                             showDonateMenu = false
                             onDonate()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(text = "rawnaldclark (rawn)", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = stringResource(R.string.settings_support_role_owner_paypal),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        },
+                        onClick = {
+                            showDonateMenu = false
+                            onDonatePayPal()
                         },
                     )
                     DropdownMenuItem(
