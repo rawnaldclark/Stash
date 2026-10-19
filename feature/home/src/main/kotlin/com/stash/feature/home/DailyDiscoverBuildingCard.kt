@@ -11,8 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.brandRoles
-import com.stash.core.ui.ambient.currentGround
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.components.DiscoverHeroCoverShape
 import com.stash.core.ui.components.DiscoverHeroCoverSize
@@ -36,7 +36,8 @@ import com.stash.core.ui.theme.StashTheme
 internal fun DailyDiscoverBuildingCard(modifier: Modifier = Modifier) {
     val reducedMotion = rememberReducedMotion()
     DiscoverHeroFrame(
-        roles = brandRoles(currentGround()),
+        roles = brandRoles(Ground.DARK),
+        backdrop = null,
         modifier = modifier.semantics(mergeDescendants = true) {},
     ) { roles ->
         // The cover's slot on the elevated surface (so it shows on the light theme too, where the

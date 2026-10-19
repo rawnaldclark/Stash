@@ -34,7 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,7 +44,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.ui.ambient.AccentRoles
+import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.rememberCoverRoles
+import com.stash.core.ui.theme.StashElevation
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -91,7 +94,8 @@ fun DiscoverHeroCard(
     }
     val art = ArtUrlUpgrader.upgrade(artUrl)
     DiscoverHeroFrame(
-        roles = rememberCoverRoles(art),
+        roles = rememberCoverRoles(art, Ground.DARK),
+        backdrop = art,
         modifier = modifier,
         onClick = onOpen,
         onLongClick = onLongPress,
@@ -161,13 +165,13 @@ fun DiscoverHeroCard(
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)), CircleShape),
+                            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.85f)), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = "Create a mix",
-                            tint = roles.ink,
+                            tint = Color.White.copy(alpha = 0.85f),
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -179,9 +183,10 @@ fun DiscoverHeroCard(
 
 /**
  * The hero's frame, shared with the Daily Discover "Building…" card so the swap between them is
- * quiet: fixed height, the large shape, glass under a left-to-right wash of [roles]' colour and a
- * hairline ring in its accent. The colours crossfade when the cover's palette arrives.
+ * quiet: fixed height, the large shape, its cover blurred under a dark scrim, no ring. [backdrop] is
+ * the cover model (null for the brand's purple gradient). The content is drawn over the backdrop.
  *
+ * @param backdrop The cover model for [BlurredCoverBackdrop]; null for the brand gradient.
  * @param onClick Whole-card tap; null leaves the frame inert (the "Building…" card).
  * @param onLongClick Whole-card long-press, only with [onClick].
  */
@@ -189,31 +194,30 @@ fun DiscoverHeroCard(
 @Composable
 fun DiscoverHeroFrame(
     roles: AccentRoles,
+    backdrop: Any?,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     content: @Composable RowScope.(AccentRoles) -> Unit,
 ) {
     val shape = MaterialTheme.shapes.large
-    val wash by animateColorAsState(roles.wash, tween(ROLE_CROSSFADE_MS), label = "heroWash")
     val accent by animateColorAsState(roles.accent, tween(ROLE_CROSSFADE_MS), label = "heroAccent")
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(DiscoverHeroHeight)
+            .shadow(StashElevation.Hero, shape, clip = false)
             .clip(shape)
-            .background(StashTheme.extendedColors.glassBackground)
-            .background(Brush.horizontalGradient(listOf(wash, wash.copy(alpha = wash.alpha * 0.35f))))
-            .border(1.dp, accent.copy(alpha = 0.35f), shape)
             .then(
                 if (onClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick) else Modifier,
             ),
     ) {
+        BlurredCoverBackdrop(model = backdrop, modifier = Modifier.matchParentSize())
         Row(
             modifier = Modifier.fillMaxSize().padding(DiscoverHeroPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            content(roles.copy(accent = accent, wash = wash))
+            content(roles.copy(accent = accent))
         }
     }
 }
@@ -241,7 +245,7 @@ fun DiscoverHeroText(
         Text(
             text = title,
             style = discoverHeroTitleStyle(),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = Color.White,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -249,7 +253,7 @@ fun DiscoverHeroText(
             Text(
                 text = body,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.72f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

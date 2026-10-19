@@ -16,9 +16,8 @@ import androidx.compose.ui.platform.LocalContext
  * never flashes purple.
  */
 @Composable
-fun rememberCoverRoles(model: String?): AccentRoles {
+fun rememberCoverRoles(model: String?, ground: Ground = currentGround()): AccentRoles {
     val context = LocalContext.current
-    val ground = currentGround()
     var roles by remember(model, ground) {
         mutableStateOf(model?.let(PaletteCache::peek)?.roles(ground) ?: brandRoles(ground))
     }

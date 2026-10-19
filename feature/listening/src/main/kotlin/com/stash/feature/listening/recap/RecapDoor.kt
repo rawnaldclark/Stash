@@ -2,7 +2,6 @@ package com.stash.feature.listening.recap
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -44,6 +43,7 @@ import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.PaletteCache
 import com.stash.core.ui.ambient.brandRoles
 import com.stash.core.ui.ambient.roles
+import com.stash.core.ui.components.BlurredCoverBackdrop
 import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.theme.StashTheme
@@ -58,9 +58,8 @@ private fun currentGround(): Ground = when {
 
 /** [art]'s colour roles on this screen's ground; the brand's until (or unless) the cover is read. */
 @Composable
-internal fun rememberCoverRoles(art: ArtModel?): AccentRoles {
+internal fun rememberCoverRoles(art: ArtModel?, ground: Ground = currentGround()): AccentRoles {
     val context = LocalContext.current
-    val ground = currentGround()
     var roles by remember(ground) { mutableStateOf(brandRoles(ground)) }
     LaunchedEffect(art?.key, ground) {
         val palette = art?.let { PaletteCache.load(context, artData(it)) }
@@ -70,9 +69,9 @@ internal fun rememberCoverRoles(art: ArtModel?): AccentRoles {
 }
 
 /**
- * The Recap door: a full-width card tinted with the #1 song's cover colour (its wash, under a
- * soft gradient), the cover, "Recap" over the title ("Your October so far"), the line ("11 h · #1
- * Garden") and a play disc in the cover's accent. Home's section and Your listening's banner.
+ * The Recap door: a full-width card whose background is the #1 song's cover blurred under a dark
+ * scrim, the cover, "Recap" over the title ("Your October so far"), the line ("11 h · #1 Garden")
+ * and a play disc in the cover's accent. Home's section and Your listening's banner.
  *
  * @param eyebrow the small line above the title ("Recap"), or null for none.
  */
@@ -85,8 +84,7 @@ fun RecapDoorCard(
     eyebrow: String? = "Recap",
 ) {
     val colors = StashTheme.extendedColors
-    val roles = rememberCoverRoles(offer.art)
-    val wash by animateColorAsState(roles.wash, tween(600), label = "wash")
+    val roles = rememberCoverRoles(offer.art, Ground.DARK)
     val accent by animateColorAsState(roles.accent, tween(600), label = "accent")
     Surface(
         onClick = onClick,
@@ -94,10 +92,10 @@ fun RecapDoorCard(
             .fillMaxWidth()
             .semantics(mergeDescendants = true) { contentDescription = "$title, ${offer.subtitle}. Opens your recap." },
         shape = MaterialTheme.shapes.large,
-        color = colors.glassBackground,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+        color = Color.Transparent,
     ) {
-        Box(Modifier.background(Brush.horizontalGradient(listOf(wash, wash.copy(alpha = wash.alpha * 0.35f))))) {
+        Box {
+            BlurredCoverBackdrop(model = offer.art?.let { artData(it) }, modifier = Modifier.matchParentSize())
             Row(
                 modifier = Modifier.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -110,7 +108,7 @@ fun RecapDoorCard(
                     if (art != null) {
                         AsyncImage(model = artData(art), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     } else {
-                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(24.dp))
+                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(24.dp))
                     }
                 }
                 Spacer(Modifier.width(14.dp))
@@ -121,14 +119,14 @@ fun RecapDoorCard(
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         offer.subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.72f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
