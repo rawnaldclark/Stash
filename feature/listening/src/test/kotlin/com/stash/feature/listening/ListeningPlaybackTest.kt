@@ -62,4 +62,18 @@ class ListeningPlaybackTest {
         val q2 = dayQueue(listOf(first, last), gone.event.id, gone.event.startedAt + 15 * 60_000L)
         assertThat(q2.startIndex).isEqualTo(1)
     }
+
+    @Test fun `the list queue plays from the tap down, keeps rows above for Previous, repeats once`() {
+        val fake = FakeHistory()
+        val a = fake.track(1); val b = fake.track(2); val c = fake.track(3)
+        // Newest first, as History shows it.
+        val listed = listOf(fake.add(a, TODAY, 90), fake.add(b, TODAY, 80), fake.add(b, TODAY, 70), fake.add(c, TODAY, 60))
+        val q = listQueue(listed, tappedIndex = 2)
+        assertThat(q.tracks.map { it.id }).containsExactly(1L, 2L, 3L).inOrder()
+        assertThat(q.startIndex).isEqualTo(1)
+        val windowed = listQueue(listed, tappedIndex = 3, before = 1, after = 10)
+        assertThat(windowed.tracks.map { it.id }).containsExactly(2L, 3L).inOrder()
+        assertThat(windowed.startIndex).isEqualTo(1)
+        assertThat(listQueue(emptyList(), 0).tracks).isEmpty()
+    }
 }
