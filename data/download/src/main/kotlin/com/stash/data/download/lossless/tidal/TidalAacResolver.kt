@@ -49,9 +49,14 @@ class TidalAacResolver @Inject constructor(
             Log.i(TAG, "skip '$label': circuit breaker open")
             return null
         }
-        // A cached AAC miss (or no match at all) and an open pool-busy circuit cost nothing.
+        // A cached AAC miss (or no match at all), an open pool-busy circuit and a spent day cost
+        // nothing: AAC counts toward the daily allowance, so past the limit Tidal is not asked.
         when (client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = aacOnly)) {
             TidalLookup.NoMatch, TidalLookup.Off, is TidalLookup.Busy -> return null
+            is TidalLookup.Spent -> {
+                Log.i(TAG, "skip '$label': daily allowance spent")
+                return null
+            }
             else -> Unit
         }
         if (!rateLimiter.acquire(SOURCE_ID)) {

@@ -105,9 +105,9 @@ sealed interface TidalLookup {
     /** A transient error (5xx, I/O, junk body). Not a miss and never cached. */
     data object Failed : TidalLookup
     /**
-     * A lossless lookup while the day's lossless allowance is used up ([LosslessQuota]), or the
-     * relay's `429 daily_lossless_cap`: no FLAC from the owner's relay before [untilMs]. Not a
-     * miss, not busy (AAC lookups still go out), never cached.
+     * Any lookup (FLAC or AAC) while the day's allowance is used up ([LosslessQuota]), or the
+     * relay's `429 daily_lossless_cap`: nothing from the owner's relay before [untilMs]. Not a
+     * miss, not busy, never cached.
      */
     data class Spent(val untilMs: Long) : TidalLookup
     /** Only from a `cacheOnly` lookup: the answer is not cached, the relay would have to be asked. */
@@ -229,8 +229,9 @@ class BitchordClient @Inject constructor(
      * Find [query] on Tidal through the relay, spending as little relay quota as possible:
      *  1. pool-busy circuit open → [TidalLookup.Busy], no request;
      *  2. a fresh cached miss for this mode → [TidalLookup.NoMatch], no request;
-     *  3. a lossless lookup on the owner's relay with the day's allowance spent →
-     *     [TidalLookup.Spent], no request (AAC lookups still go out: AAC never counts);
+     *  3. any lookup on the owner's relay with the day's allowance spent → [TidalLookup.Spent],
+     *     no request: AAC counts toward the allowance like FLAC, and past the limit the relay
+     *     answers neither (a user's own server is not the owner's allowance);
      *  4. [cacheOnly] (speculative callers) → [TidalLookup.NeedsRelay], no request;
      *  5. a fresh cached `td:` match → `/stream` only, no `/search`;
      *  6. else `/search` + `/stream`, and the outcome is cached.
@@ -256,7 +257,7 @@ class BitchordClient @Inject constructor(
         if (now < busyUntilMs) return TidalLookup.Busy(busyUntilMs)
         val key = cacheKey(query)
         if (cachedMiss(readCache(key), aac, now)) return TidalLookup.NoMatch
-        if (!aac && quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
+        if (quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
 

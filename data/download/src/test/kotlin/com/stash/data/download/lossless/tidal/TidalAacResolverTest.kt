@@ -103,6 +103,18 @@ class TidalAacResolverTest {
         coVerify(exactly = 0) { client.lookup(any(), any(), false, false) }
     }
 
+    @Test fun `a spent day asks nothing, in either mode, and is no failure`() = runTest {
+        ready()
+        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.Spent(0L)
+
+        assertThat(resolver.resolve(query)).isNull()
+        assertThat(resolver.resolve(query, aacOnly = true)).isNull()
+
+        coVerify(exactly = 0) { client.lookup(any(), any(), false, any()) }
+        coVerify(exactly = 0) { rateLimiter.acquire(any()) }
+        coVerify(exactly = 0) { rateLimiter.reportFailure(any()) }
+    }
+
     @Test fun `a thrown resolve counts as a failure and returns null`() = runTest {
         ready()
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } throws IllegalStateException("boom")

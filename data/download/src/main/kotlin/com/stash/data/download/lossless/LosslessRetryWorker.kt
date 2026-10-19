@@ -46,8 +46,9 @@ import dagger.assisted.AssistedInject
  * [LosslessQuota.isSpent]), it touches nothing and retries later.
  *
  * By Download quality: in Lossless mode, as above. In AAC 320 mode a waiting row is one Tidal had
- * no AAC of ("Not available as AAC yet"): the sweep asks Tidal for its AAC (no lossless lookup,
- * so the daily allowance and its reset don't apply) and re-queues the rows it now has. In Opus
+ * no AAC of ("Not available as AAC yet") or that waits for the allowance's reset (AAC counts
+ * toward it too): the sweep asks Tidal for its AAC, never a lossless lookup, and re-queues the rows
+ * it now has; the reset sweep re-queues them without a lookup, as in Lossless mode. In Opus
  * mode nothing waits: a row left waiting from another mode is re-queued as it is and downloads
  * from YouTube. The scheduler also runs a sweep when the mode changes.
  *
@@ -82,8 +83,8 @@ class LosslessRetryWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val mode = losslessPrefs.downloadModeNow()
-        // The allowance's reset matters only to lossless lookups.
-        val atReset = mode == DownloadMode.LOSSLESS && inputData.getBoolean(KEY_AT_RESET, false)
+        // The allowance's reset matters to every relay lookup, AAC included; Opus asks none.
+        val atReset = mode != DownloadMode.OPUS && inputData.getBoolean(KEY_AT_RESET, false)
         if (atReset) {
             quota.awaitLoaded()
             // Early on the relays' clock: every download would be skipped (or capped) again.
@@ -120,8 +121,14 @@ class LosslessRetryWorker @AssistedInject constructor(
                     resolvedCount++
                     continue
                 }
-                // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup.
+                // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup. At the reset,
+                // re-queued as it is: the download's own lookup is the one that counts.
                 DownloadMode.AAC -> {
+                    if (atReset) {
+                        requeue(entry.id)
+                        resolvedCount++
+                        continue
+                    }
                     val aac = runCatching {
                         tidalAacResolver.resolve(queryFor(track), aacOnly = true)
                     }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()

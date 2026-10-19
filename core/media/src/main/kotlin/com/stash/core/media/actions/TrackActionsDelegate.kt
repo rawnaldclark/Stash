@@ -523,6 +523,12 @@ class TrackActionsDelegate @Inject constructor(
                             _waitingForLosslessIds.update { it + key }
                             _userMessages.tryEmit("Not available as AAC yet")
                         }
+                        is SearchDownloadStatus.WaitingForAllowance -> {
+                            // Today's Tidal & Qobuz allowance is used up; it goes out after the reset.
+                            _downloadingIds.update { it - key }
+                            _waitingForLosslessIds.update { it + key }
+                            _userMessages.tryEmit("Daily Tidal & Qobuz limit reached. It downloads after the reset.")
+                        }
                     }
                 }
             } catch (e: CancellationException) {

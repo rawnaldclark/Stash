@@ -142,18 +142,33 @@ class LosslessRetryWorkerTest {
     }
 
     @Test
-    fun `AAC mode ignores the allowance's reset sweep rules`() = runTest {
+    fun `AAC mode's reset sweep, run while the day is still spent, touches nothing and retries`() = runTest {
+        // AAC counts toward the allowance, so its reset matters as it does for FLAC.
         mode(com.stash.core.model.DownloadMode.AAC)
         atReset()
-        quota.onHeaders("500/500", "${now / 1000 + 120}") // spent: a lossless sweep would retry
+        quota.onHeaders("500/500", "${now / 1000 + 120}")
         coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(entry(id = 100L, trackId = 1L))
-        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
-        coEvery { tidalAacResolver.resolve(any(), aacOnly = true) } returns stubSourceResult()
 
         val result = newWorker().doWork()
 
-        assertEquals(true, result is androidx.work.ListenableWorker.Result.Success)
+        assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
+    }
+
+    @Test
+    fun `AAC mode's reset sweep re-queues every waiting song without a lookup`() = runTest {
+        mode(com.stash.core.model.DownloadMode.AAC)
+        atReset()
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
+        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
         coVerify(exactly = 1) { enqueuer.enqueue(100L) }
+        coVerify(exactly = 1) { enqueuer.enqueue(101L) }
     }
 
     @Test

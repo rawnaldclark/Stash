@@ -139,7 +139,10 @@ class SearchDownloadCoordinatorAacDecisionTest {
     ) {
         coEvery { losslessPrefs.downloadModeNow() } returns mode
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns fallbackOn
-        coEvery { tidalAacResolver.resolve(any(), any()) } returns if (tidalHasAac) tidalAac else null
+        // As the real stack: a spent day gets nothing from Tidal (the relay client asks nothing).
+        coEvery { tidalAacResolver.resolve(any(), any()) } answers {
+            if (tidalHasAac && !losslessQuota.isSpent()) tidalAac else null
+        }
         coEvery { trackDao.findByYoutubeId(result.item.videoId) } returns result.row
         losslessQuota.onHeaders(if (allowanceSpent) "500/500" else "10/500", "${now / 1000 + 3600}")
     }
@@ -157,7 +160,7 @@ class SearchDownloadCoordinatorAacDecisionTest {
 
             val statuses = download(result)
 
-            assertEquals("$result", SearchDownloadStatus.WaitingForLossless, statuses.last())
+            assertEquals("$result", SearchDownloadStatus.WaitingForAllowance, statuses.last())
         }
         coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
@@ -200,18 +203,26 @@ class SearchDownloadCoordinatorAacDecisionTest {
     }
 
     @Test
-    fun `fallback on + Tidal has AAC takes it before JioSaavn and YouTube, allowance spent or not`() = runTest {
+    fun `fallback on + Tidal has AAC takes it before JioSaavn and YouTube`() = runTest {
         for (result in Tapped.values()) {
-            for (spent in listOf(false, true)) {
-                arrange(result, fallbackOn = true, tidalHasAac = true, allowanceSpent = spent)
+            arrange(result, fallbackOn = true, tidalHasAac = true, allowanceSpent = false)
 
-                val statuses = download(result)
+            val statuses = download(result)
 
-                assertTrue("$result, spent=$spent: expected Tidal AAC, got $statuses", statuses.savedTidalAac())
-            }
+            assertTrue("$result: expected Tidal AAC, got $statuses", statuses.savedTidalAac())
         }
         coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `fallback on + allowance spent gets no Tidal AAC and goes to YouTube`() = runTest {
+        arrange(Tapped.PLAYED_MUSIC_VIDEO, fallbackOn = true, tidalHasAac = true, allowanceSpent = true)
+
+        val statuses = download(Tapped.PLAYED_MUSIC_VIDEO)
+
+        assertTrue(statuses.contains(SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.YOUTUBE)))
+        assertFalse(statuses.savedTidalAac())
     }
 
     @Test
@@ -262,7 +273,7 @@ class SearchDownloadCoordinatorAacDecisionTest {
     fun `AAC mode saves Tidal AAC for every kind of result and never asks for FLAC`() = runTest {
         for (result in Tapped.values()) {
             for (fallbackOn in listOf(false, true)) {
-                arrange(result, fallbackOn = fallbackOn, tidalHasAac = true, allowanceSpent = true, mode = DownloadMode.AAC)
+                arrange(result, fallbackOn = fallbackOn, tidalHasAac = true, allowanceSpent = false, mode = DownloadMode.AAC)
 
                 val statuses = download(result)
 
@@ -273,6 +284,17 @@ class SearchDownloadCoordinatorAacDecisionTest {
         coVerify(exactly = 0) { tidalAacResolver.resolve(any(), aacOnly = false) }
         coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `AAC mode with the allowance spent, fallback off waits for the reset and on goes to YouTube`() = runTest {
+        arrange(Tapped.SONG_WITH_ALBUM, fallbackOn = false, tidalHasAac = true, allowanceSpent = true, mode = DownloadMode.AAC)
+        assertEquals(SearchDownloadStatus.WaitingForAllowance, download(Tapped.SONG_WITH_ALBUM).last())
+
+        arrange(Tapped.SONG_WITH_ALBUM, fallbackOn = true, tidalHasAac = true, allowanceSpent = true, mode = DownloadMode.AAC)
+        val statuses = download(Tapped.SONG_WITH_ALBUM)
+        assertTrue(statuses.contains(SearchDownloadStatus.Downloading(SearchDownloadStatus.Source.YOUTUBE)))
+        coVerify(exactly = 0) { registry.resolve(any()) }
     }
 
     @Test

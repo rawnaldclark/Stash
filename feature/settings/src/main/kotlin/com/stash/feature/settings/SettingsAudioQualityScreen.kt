@@ -162,7 +162,8 @@ fun SettingsAudioQualityScreen(
                 )
 
                 AnimatedVisibility(
-                    visible = uiState.losslessEnabled || uiState.downloadMode == DownloadMode.LOSSLESS,
+                    // AAC downloads use the daily allowance too, so its line shows for them as well.
+                    visible = uiState.losslessEnabled || uiState.downloadMode != DownloadMode.OPUS,
                     enter = expandVertically() + fadeIn(),
                     exit = shrinkVertically() + fadeOut(),
                 ) {

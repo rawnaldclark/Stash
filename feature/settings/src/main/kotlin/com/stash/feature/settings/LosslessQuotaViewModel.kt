@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Settings → Audio & Quality's "Lossless today" line: the daily lossless allowance the relays
+ * Settings → Audio & Quality's "Tidal & Qobuz today" line: the daily allowance (FLAC and AAC) the relays
  * last reported ([LosslessQuota]). Re-read every minute so the line turns over at the reset
  * while the screen is open.
  */
@@ -52,7 +52,7 @@ class LosslessQuotaViewModel @Inject constructor(
 }
 
 /**
- * "Lossless today: 412 of 500 · resets 8:00 PM" for [allowance] as of [nowMs] (a day that has
+ * "Tidal & Qobuz today: 412 / 500 · resets 8:00 PM" for [allowance] as of [nowMs] (a day that has
  * reset reads 0 used), or "… Unlimited (supporter)". Null — the line is hidden — when no relay
  * is configured or nothing is known yet. [time] formats the reset in local time.
  */

@@ -187,24 +187,24 @@ class LosslessQuotaTest {
         assertThat(next()).isNull()
 
         quota.onHeaders("450/500", "$RESET")
-        assertThat(next()).isEqualTo(LosslessQuotaNotice.RunningLow(50, RESET * 1000))
+        assertThat(next()).isEqualTo(LosslessQuotaNotice.RunningLow(50, 500, RESET * 1000))
         quota.onHeaders("470/500", "$RESET")
         assertThat(next()).isNull() // once a day
 
         quota.onHeaders("500/500", "$RESET")
-        assertThat(next()).isEqualTo(LosslessQuotaNotice.Spent(RESET * 1000))
+        assertThat(next()).isEqualTo(LosslessQuotaNotice.Spent(500, RESET * 1000))
         quota.onCapBody("""{"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":$RESET}""")
         assertThat(next()).isNull()
 
         // A new day announces again.
         now = RESET * 1000 + 1
         quota.onHeaders("455/500", "${RESET + DAY}")
-        assertThat(next()).isEqualTo(LosslessQuotaNotice.RunningLow(45, (RESET + DAY) * 1000))
+        assertThat(next()).isEqualTo(LosslessQuotaNotice.RunningLow(45, 500, (RESET + DAY) * 1000))
     }
 
     @Test fun `a first value already past the limit announces the limit, not running low`() = runTest {
         quota.onHeaders("500/500", "$RESET")
-        assertThat(withTimeoutOrNull(100) { quota.noticeEvents.first() }).isEqualTo(LosslessQuotaNotice.Spent(RESET * 1000))
+        assertThat(withTimeoutOrNull(100) { quota.noticeEvents.first() }).isEqualTo(LosslessQuotaNotice.Spent(500, RESET * 1000))
     }
 
     @Test fun `unlimited never announces`() = runTest {

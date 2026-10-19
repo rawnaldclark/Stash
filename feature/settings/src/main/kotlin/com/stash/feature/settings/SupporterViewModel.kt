@@ -152,7 +152,7 @@ private fun SupporterClaimUi.failed(text: String) = copy(message = text, message
  */
 internal fun SupporterClaimUi.unlocked(confirmed: Boolean): SupporterClaimUi =
     if (confirmed) copy(done = true, message = null)
-    else copy(message = "Code accepted. Unlimited lossless shows here once Stash confirms it.", messageIsError = false)
+    else copy(message = "Code accepted. Unlimited Tidal & Qobuz shows here once Stash confirms it.", messageIsError = false)
 
 /** `429` is the tip jar's rate limiter (code requests and code tries alike). */
 private fun rateLimitedMessage(retryAfterSec: Long?): String {

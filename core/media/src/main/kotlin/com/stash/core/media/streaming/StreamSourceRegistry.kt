@@ -35,9 +35,10 @@ import javax.inject.Singleton
  *   1b. [TidalStreamResolver]  — Tidal lossless through the user's self-hosted
  *      BitChord server (progressive FLAC or a DASH MPD). Same gates as qbdlx;
  *      inert until a server is set in Settings.
- *   While the day's lossless allowance is spent ([LosslessQuota]) both relay rungs ask
- *   for no FLAC: qbdlx skips the relays (a user's own account still serves), and Tidal
- *   asks for its 320 kbps AAC when "Tidal AAC when no FLAC" is on, else nothing.
+ *   While the day's Tidal & Qobuz allowance is spent ([LosslessQuota]) neither relay rung
+ *   asks the owner's relays for anything: qbdlx skips them (a user's own account still
+ *   serves), and Tidal asks for neither FLAC nor AAC, since AAC counts toward the same
+ *   allowance (a user's own server still serves). Playback falls to JioSaavn and YouTube.
  *   PARKED (2026-07-01, hosts down for us — commented out of the chain in
  *   [resolve], kept for re-enablement): [KennyyStreamResolver] (`kennyy.com.br`),
  *   [QobuzStreamResolver] (`qobuz.squid.wtf`).

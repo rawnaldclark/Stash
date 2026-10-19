@@ -225,7 +225,13 @@ class SearchDownloadCoordinator @Inject constructor(
                 )
             }
             is DownloadJobResult.Deferred -> {
-                emit(if (job.forAac) SearchDownloadStatus.WaitingForAac else SearchDownloadStatus.WaitingForLossless)
+                emit(
+                    when (job.reason) {
+                        WaitReason.LOSSLESS -> SearchDownloadStatus.WaitingForLossless
+                        WaitReason.AAC -> SearchDownloadStatus.WaitingForAac
+                        WaitReason.ALLOWANCE -> SearchDownloadStatus.WaitingForAllowance
+                    },
+                )
             }
         }
     }
@@ -255,10 +261,16 @@ class SearchDownloadCoordinator @Inject constructor(
      * then YouTube when the lossy fallback is on, otherwise [SearchDownloadStatus.WaitingForAac].
      */
     private suspend fun performAacDownload(track: TrackItem): DownloadJobResult {
+        // AAC uses the daily allowance too: once it is spent the relay client asks nothing.
         tryTidalAac(track, aacOnly = true)?.let { return it }
         if (!losslessPrefs.youtubeFallbackEnabledNow()) {
-            Log.i(TAG, "deferring search download '${track.artist} - ${track.title}': not available as AAC yet, fallback off")
-            return deferUntilAvailable(track, forAac = true)
+            val spent = losslessQuota.isSpent()
+            Log.i(
+                TAG,
+                "deferring search download '${track.artist} - ${track.title}': " +
+                    "${if (spent) "daily allowance spent" else "not available as AAC yet"}, fallback off",
+            )
+            return deferUntilAvailable(track, if (spent) WaitReason.ALLOWANCE else WaitReason.AAC)
         }
         return finalizeFromLossyFallback(track)
     }
@@ -289,14 +301,14 @@ class SearchDownloadCoordinator @Inject constructor(
             // DownloadManager, rather than being saved as Tidal AAC for good.
             if (losslessQuota.isSpent()) {
                 Log.i(TAG, "deferring search download '${track.artist} - ${track.title}': daily lossless allowance spent, fallback off")
-                return deferUntilAvailable(track, forAac = false)
+                return deferUntilAvailable(track, WaitReason.ALLOWANCE)
             }
             tryTidalAac(track)?.let { return it }
             Log.i(
                 TAG,
                 "deferring search download '${track.artist} - ${track.title}': no FLAC or Tidal AAC, fallback off",
             )
-            return deferUntilAvailable(track, forAac = false)
+            return deferUntilAvailable(track, WaitReason.LOSSLESS)
         }
 
         return finalizeFromLossyFallback(track, losslessAttempted = true)
@@ -311,7 +323,7 @@ class SearchDownloadCoordinator @Inject constructor(
      * deferred. It also marks the row as the user's ask, a sync's too: otherwise the leftover
      * cleanup would drop it, and the lossless retry skip it (#532).
      */
-    private suspend fun deferUntilAvailable(track: TrackItem, forAac: Boolean): DownloadJobResult.Deferred {
+    private suspend fun deferUntilAvailable(track: TrackItem, reason: WaitReason): DownloadJobResult.Deferred {
         runCatching {
             val trackId = trackDao.findByYoutubeId(track.videoId)?.id
             if (trackId != null) {
@@ -323,7 +335,7 @@ class SearchDownloadCoordinator @Inject constructor(
             if (e is CancellationException) throw e
             Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
         }
-        return DownloadJobResult.Deferred(forAac)
+        return DownloadJobResult.Deferred(reason)
     }
 
     /**
@@ -1026,11 +1038,20 @@ class SearchDownloadCoordinator @Inject constructor(
             val outcome: TrackFinalizer.FinalizeResult,
         ) : DownloadJobResult
 
-        /**
-         * Waits in the queue: no lossless (or, [forAac], no Tidal AAC in AAC mode) and the
-         * fallback off. The flow emits WaitingForLossless or WaitingForAac.
-         */
-        data class Deferred(val forAac: Boolean) : DownloadJobResult
+        /** Waits in the queue with the fallback off, for [reason]. */
+        data class Deferred(val reason: WaitReason) : DownloadJobResult
+    }
+
+    /** What a waiting download waits for; the flow's Waiting status says it. */
+    private enum class WaitReason {
+        /** No lossless copy yet (Lossless mode). */
+        LOSSLESS,
+
+        /** Tidal has no AAC of it yet (AAC 320 mode). */
+        AAC,
+
+        /** The day's Tidal & Qobuz allowance is spent: it downloads after the reset. */
+        ALLOWANCE,
     }
 
     /** Distinguishes fallback-safe temp failures from terminal post-commit outcomes. */

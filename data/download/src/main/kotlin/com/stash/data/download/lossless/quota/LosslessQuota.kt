@@ -60,11 +60,11 @@ data class LosslessAllowance(val used: Int, val limit: Int?, val resetsAtSec: Lo
 sealed interface LosslessQuotaNotice {
     val resetsAtMs: Long
 
-    /** [left] lossless answers remain today ([LosslessQuota.WARN_LEFT] or fewer). */
-    data class RunningLow(val left: Int, override val resetsAtMs: Long) : LosslessQuotaNotice
+    /** [left] of [limit] Tidal & Qobuz answers (FLAC or AAC) remain today ([LosslessQuota.WARN_LEFT] or fewer). */
+    data class RunningLow(val left: Int, val limit: Int, override val resetsAtMs: Long) : LosslessQuotaNotice
 
-    /** The allowance is spent; lossless resumes at [resetsAtMs]. */
-    data class Spent(override val resetsAtMs: Long) : LosslessQuotaNotice
+    /** All [limit] are spent; Tidal and Qobuz resume at [resetsAtMs]. */
+    data class Spent(val limit: Int, override val resetsAtMs: Long) : LosslessQuotaNotice
 }
 
 private val Context.losslessQuotaDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -276,7 +276,9 @@ class LosslessQuota internal constructor(
         if (level <= already) return@withLock
         noticedDay = a.resetsAtSec
         noticedLevel = level
-        notices.trySend(if (level == 2) LosslessQuotaNotice.Spent(a.resetsAtMs) else LosslessQuotaNotice.RunningLow(left, a.resetsAtMs))
+        notices.trySend(
+            if (level == 2) LosslessQuotaNotice.Spent(limit, a.resetsAtMs) else LosslessQuotaNotice.RunningLow(left, limit, a.resetsAtMs),
+        )
         store?.let { s -> ioCatching("notice write") { s.edit { it[KEY_NOTICED_DAY] = a.resetsAtSec; it[KEY_NOTICED_LEVEL] = level } } }
     }
 

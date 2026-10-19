@@ -33,6 +33,11 @@ class DownloadManagementViewModelTest {
     private val cancellation: DownloadCancellationController = mockk(relaxed = true)
     private val progress = MutableSharedFlow<com.stash.data.download.model.DownloadProgress>()
     private val downloadMode = kotlinx.coroutines.flow.MutableStateFlow(com.stash.core.model.DownloadMode.LOSSLESS)
+    private var spent = false
+    private val quota: com.stash.data.download.lossless.quota.LosslessQuota = mockk {
+        every { state } returns kotlinx.coroutines.flow.MutableStateFlow(null)
+        every { isSpent() } answers { spent }
+    }
     private val losslessPrefs: com.stash.data.download.lossless.LosslessSourcePreferences = mockk {
         every { downloadMode } returns this@DownloadManagementViewModelTest.downloadMode
     }
@@ -54,7 +59,7 @@ class DownloadManagementViewModelTest {
                 row(3, DownloadStatus.WAITING_FOR_LOSSLESS),
             ),
         )
-        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs)
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
         val state = vm.uiState.first { !it.isLoading }
         assertEquals(listOf(1L), state.downloading.map { it.queueId })
         assertEquals(listOf(2L), state.queued.map { it.queueId })
@@ -64,13 +69,25 @@ class DownloadManagementViewModelTest {
 
     @Test fun `in AAC 320 mode a waiting song reads as not available as AAC yet`() = runTest {
         every { dao.observeActiveDownloadRows() } returns flowOf(listOf(row(3, DownloadStatus.WAITING_FOR_LOSSLESS)))
-        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs)
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
 
         assertEquals("Waiting for a lossless source", vm.uiState.first { !it.isLoading }.waiting.single().phaseLabel)
 
         downloadMode.value = com.stash.core.model.DownloadMode.AAC
         val aac = vm.uiState.first { it.aacMode }
         assertEquals("Not available as AAC yet", aac.waiting.single().phaseLabel)
+    }
+
+    @Test fun `with the day's allowance spent a waiting song waits for the reset, in AAC mode too`() = runTest {
+        every { dao.observeActiveDownloadRows() } returns flowOf(listOf(row(3, DownloadStatus.WAITING_FOR_LOSSLESS)))
+        downloadMode.value = com.stash.core.model.DownloadMode.AAC
+        spent = true
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
+
+        val state = vm.uiState.first { it.allowanceSpent }
+
+        assertEquals("Waiting for the daily reset", state.waiting.single().phaseLabel)
+        assertEquals("Waiting for the daily reset", state.waitingLabel)
     }
 
     @Test fun `every actionable status offers a way out`() = runTest {
@@ -92,7 +109,7 @@ class DownloadManagementViewModelTest {
                 row(7, DownloadStatus.COMPLETED),
             ),
         )
-        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs)
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
         val state = vm.uiState.first { !it.isLoading }
 
         assertEquals(
@@ -118,14 +135,14 @@ class DownloadManagementViewModelTest {
 
     @Test fun `retry enqueues only after atomic claim`() = runTest {
         coEvery { dao.atomicallyClaimForRetry(9) } returns 1
-        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs)
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
         vm.retry(9)
         coVerify(exactly = 1) { enqueuer.enqueue(9) }
     }
 
     @Test fun `cancel delegates to cancellation controller`() = runTest {
         coEvery { cancellation.cancel(7) } returns true
-        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs)
+        val vm = DownloadManagementViewModel(dao, manager, enqueuer, cancellation, losslessPrefs, quota)
         vm.cancel(7)
         coVerify(exactly = 1) { cancellation.cancel(7) }
     }

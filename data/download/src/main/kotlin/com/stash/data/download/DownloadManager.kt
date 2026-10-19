@@ -383,16 +383,19 @@ class DownloadManager @Inject constructor(
         }
         // The fallback is on: Tidal's 320 kbps AAC first (JioSaavn misses many of these
         // tracks), then JioSaavn, then YouTube. AAC stays outside the lossless registry: it
-        // must never satisfy a strict-lossless request.
+        // must never satisfy a strict-lossless request. With the day's allowance spent, Tidal's
+        // AAC is not asked either (it counts too): straight to JioSaavn and YouTube.
         tryTidalAacDownload(track)?.let { return it }
         return downloadLossyFallback(track, preResolvedUrl)
     }
 
     /**
      * Download quality "AAC 320": Tidal's 320 kbps AAC for every song, even one it has in FLAC
-     * (`?aac=only`). No lossless lookup at all, so no lossless relay is asked. With no AAC on
-     * Tidal: JioSaavn and then YouTube when the lossy fallback is on, otherwise the download
-     * waits ("Not available as AAC yet") and the retry sweep asks Tidal again later.
+     * (`?aac=only`). No lossless lookup at all. Each AAC answer uses the daily allowance like a
+     * FLAC one, so once the day is spent Tidal is not asked (the relay client answers Spent with
+     * no request). With no AAC: JioSaavn and then YouTube when the lossy fallback is on, otherwise
+     * the download waits ("Not available as AAC yet", or for the allowance's reset) and the retry
+     * sweep picks it up.
      */
     private suspend fun downloadAac(
         track: Track,
@@ -401,7 +404,8 @@ class DownloadManager @Inject constructor(
     ): TrackDownloadResult {
         tryTidalAacDownload(track, aacOnly = true)?.let { return it }
         if (!fallbackOn) {
-            Log.i(TAG, "deferring '${track.artist} - ${track.title}': not available as AAC yet, fallback off")
+            val why = if (losslessQuota.isSpent()) "daily allowance spent" else "not available as AAC yet"
+            Log.i(TAG, "deferring '${track.artist} - ${track.title}': $why, fallback off")
             return TrackDownloadResult.Deferred
         }
         return downloadLossyFallback(track, preResolvedUrl)

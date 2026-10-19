@@ -231,7 +231,7 @@
     <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
     <string name="settings_download_mode_lossless_desc">Best quality, largest files.</string>
     <string name="settings_download_mode_aac">AAC 320</string>
-    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC.</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC. Uses your daily allowance.</string>
     <string name="settings_download_mode_opus">Opus (smallest)</string>
     <string name="settings_download_mode_opus_desc">From YouTube. Smallest files.</string>
     <string name="settings_flac_quality_title">FLAC quality</string>
@@ -315,11 +315,11 @@
     <string name="settings_hires_bit_perfect_confirm">Use bit-perfect</string>
 
     <!-- Settings > Audio & Quality > SupporterSection -->
-    <string name="settings_supporter_active">Supporter · unlimited lossless</string>
+    <string name="settings_supporter_active">Supporter · unlimited Tidal &amp; Qobuz</string>
     <string name="settings_supporter_remove_from_device">Remove from this device</string>
-    <string name="settings_supporter_offer">Unlimited lossless for supporters</string>
-    <string name="settings_supporter_sheet_title">Unlimited lossless</string>
-    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited lossless. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
+    <string name="settings_supporter_offer">Unlimited Tidal &amp; Qobuz for supporters</string>
+    <string name="settings_supporter_sheet_title">Unlimited Tidal &amp; Qobuz</string>
+    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
     <string name="settings_supporter_kofi_email_label">Ko-fi email</string>
     <string name="settings_supporter_email_code_button">Email me a code</string>
     <string name="settings_supporter_code_sent_desc">If %1$s is on our Ko-fi list, a code is on its way. It can take a minute.</string>

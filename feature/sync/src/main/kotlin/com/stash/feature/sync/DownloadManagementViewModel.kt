@@ -1,6 +1,7 @@
 package com.stash.feature.sync
 
 import com.stash.data.download.lossless.LosslessSourcePreferences
+import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.core.model.DownloadMode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -55,7 +56,19 @@ data class DownloadManagementUiState(
      * waiting for lossless.
      */
     val aacMode: Boolean = false,
+    /**
+     * The day's Tidal & Qobuz allowance is spent (Lossless or AAC mode): waiting rows go out
+     * after the reset, whatever else they wait for.
+     */
+    val allowanceSpent: Boolean = false,
 ) {
+    /** The waiting section's heading. */
+    val waitingLabel: String
+        get() = when {
+            allowanceSpent -> WAITING_FOR_RESET
+            aacMode -> NOT_AVAILABLE_AS_AAC
+            else -> "Waiting for lossless"
+        }
     val downloading: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.IN_PROGRESS }
     val queued: List<DownloadManagementItem>
@@ -71,6 +84,7 @@ class DownloadManagementViewModel @Inject constructor(
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val cancellationController: DownloadCancellationController,
     losslessPrefs: LosslessSourcePreferences,
+    losslessQuota: LosslessQuota,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
     private val progressByTrackId = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
@@ -86,7 +100,12 @@ class DownloadManagementViewModel @Inject constructor(
     private val activeRows = combine(
         downloadQueueDao.observeActiveDownloadRows(),
         losslessPrefs.downloadMode,
-    ) { rows, mode -> rows to (mode == DownloadMode.AAC) }
+        losslessQuota.state,
+    ) { rows, mode, _ ->
+        // AAC counts toward the allowance too; Opus never waits for it.
+        val spent = mode != DownloadMode.OPUS && losslessQuota.isSpent()
+        ActiveRows(rows, aacMode = mode == DownloadMode.AAC, allowanceSpent = spent)
+    }
 
     val uiState: StateFlow<DownloadManagementUiState> = combine(
         activeRows,
@@ -94,14 +113,15 @@ class DownloadManagementViewModel @Inject constructor(
         selectedTab,
         progressByTrackId,
         message,
-    ) { (active, aacMode), history, tab, progress, currentMessage ->
+    ) { rows, history, tab, progress, currentMessage ->
         DownloadManagementUiState(
             isLoading = false,
             selectedTab = tab,
-            active = active.map { it.toItem(progress[it.trackId], aacMode) },
+            active = rows.rows.map { it.toItem(progress[it.trackId], rows.aacMode, rows.allowanceSpent) },
             history = history,
             message = currentMessage,
-            aacMode = aacMode,
+            aacMode = rows.aacMode,
+            allowanceSpent = rows.allowanceSpent,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -145,7 +165,17 @@ class DownloadManagementViewModel @Inject constructor(
     }
 }
 
-private fun DownloadManagementRow.toItem(progress: DownloadProgress?, aacMode: Boolean = false): DownloadManagementItem {
+/** The active rows, and what a waiting one waits for. */
+private data class ActiveRows(val rows: List<DownloadManagementRow>, val aacMode: Boolean, val allowanceSpent: Boolean)
+
+private const val WAITING_FOR_RESET = "Waiting for the daily reset"
+private const val NOT_AVAILABLE_AS_AAC = "Not available as AAC yet"
+
+private fun DownloadManagementRow.toItem(
+    progress: DownloadProgress?,
+    aacMode: Boolean = false,
+    allowanceSpent: Boolean = false,
+): DownloadManagementItem {
     val pipeline = progress?.status
     return DownloadManagementItem(
         queueId = queueId,
@@ -164,7 +194,8 @@ private fun DownloadManagementRow.toItem(progress: DownloadProgress?, aacMode: B
             pipeline == PipelineStatus.TAGGING -> "Adding metadata"
             status == QueueStatus.IN_PROGRESS -> "In progress"
             status == QueueStatus.PENDING -> "Queued"
-            status == QueueStatus.WAITING_FOR_LOSSLESS && aacMode -> "Not available as AAC yet"
+            status == QueueStatus.WAITING_FOR_LOSSLESS && allowanceSpent -> WAITING_FOR_RESET
+            status == QueueStatus.WAITING_FOR_LOSSLESS && aacMode -> NOT_AVAILABLE_AS_AAC
             status == QueueStatus.WAITING_FOR_LOSSLESS -> "Waiting for a lossless source"
             status == QueueStatus.COMPLETED -> "Downloaded"
             status == QueueStatus.FAILED && failureType == DownloadFailureType.NO_MATCH -> "Needs review"

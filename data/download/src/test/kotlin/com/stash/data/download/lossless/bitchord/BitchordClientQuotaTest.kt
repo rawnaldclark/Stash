@@ -96,17 +96,35 @@ class BitchordClientQuotaTest {
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
     }
 
-    @Test fun `spent - an AAC answer plays and is not filed as a lossless miss`() = runBlocking {
+    @Test fun `spent - AAC uses the allowance too, so no AAC lookup goes out either`() = runBlocking {
         quota.onHeaders("500/500", "$resetsAt")
         streamReply = { ok(AAC) }
-        val aac = client.lookup(query, allowAac = true) as TidalLookup.Found
-        assertThat(aac.stream.codec).isEqualTo("aac")
-        assertThat(dao.rows.values.single().losslessMissAt).isNull()
 
-        // After the reset the lossless lookup goes out again.
+        assertThat(client.lookup(query, allowAac = true)).isEqualTo(TidalLookup.Spent(resetsAt * 1000))
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isEqualTo(TidalLookup.Spent(resetsAt * 1000))
+        assertThat(server.requestCount).isEqualTo(0)
+
+        // After the reset both go out again.
         now += 3_600_000
-        streamReply = { ok(FLAC) }
-        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Found::class.java)
+    }
+
+    @Test fun `spent - a user's own server is still asked for AAC`() = runBlocking {
+        userEndpoint = server.url("/").toString().trimEnd('/')
+        quota.onHeaders("500/500", "$resetsAt")
+        streamReply = { ok(AAC) }
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isInstanceOf(TidalLookup.Found::class.java)
+    }
+
+    @Test fun `an AAC answer's counter headers reach the quota, counted by the relay, never by the app`() = runBlocking {
+        streamReply = { ok(AAC).setHeader("X-Stash-Lossless", "120/500").setHeader("X-Stash-Lossless-Reset", "$resetsAt") }
+        client.lookup(query, allowAac = true, aacOnly = true)
+        assertThat(quota.current()?.used).isEqualTo(120)
+
+        // A relay that doesn't count AAC yet sends no headers: nothing moves.
+        streamReply = { ok(AAC) }
+        client.lookup(query.copy(title = "One More Time", isrc = "GBDUW0000059"), allowAac = true, aacOnly = true)
+        assertThat(quota.current()?.used).isEqualTo(120)
     }
 
     @Test fun `the relay's cap answer is Spent - not busy, not a miss`() = runBlocking {
@@ -119,9 +137,20 @@ class BitchordClientQuotaTest {
         assertThat(quota.isSpent()).isTrue()
         assertThat(dao.rows.values.single().losslessMissAt).isNull()
 
-        // AAC is not blocked by the lossless cap.
-        streamReply = { ok(AAC) }
-        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Found::class.java)
+        // Past the cap AAC is not asked either: it counts toward the same allowance.
+        val before = server.requestCount
+        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Spent::class.java)
+        assertThat(server.requestCount).isEqualTo(before)
+    }
+
+    @Test fun `the relay's cap answer to an AAC request is Spent too`() = runBlocking {
+        streamReply = {
+            MockResponse().setResponseCode(429).setHeader("Retry-After", "3600")
+                .setBody("""{"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":$resetsAt}""")
+        }
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isEqualTo(TidalLookup.Spent(resetsAt * 1000))
+        assertThat(quota.isSpent()).isTrue()
+        assertThat(client.isBusy()).isFalse()
     }
 
     @Test fun `a user's own server never moves the shared count or the spent day`() = runBlocking {
