@@ -80,7 +80,7 @@ object GenreNormalizer {
      * Spellings that the generic rules in [canonical] can't reach (different words, not just
      * different spacing or hyphens). Keys are already cleaned (see [clean]).
      */
-    private val SYNONYMS: Map<String, String> = mapOf(
+    internal val SYNONYMS: Map<String, String> = mapOf(
         "rap/hip-hop" to "hip-hop",
         "hip-hop/rap" to "hip-hop",
         "hip-hop and rap" to "hip-hop",
@@ -150,8 +150,7 @@ object GenreNormalizer {
     fun canonical(rawTag: String): String? {
         val cleaned = clean(rawTag)
         if (cleaned.isEmpty()) return null
-        SYNONYMS[cleaned]?.let { return it }
-        lookup(cleaned)?.let { return it }
+        (SYNONYMS[cleaned] ?: lookup(cleaned))?.let { return it }
         val withoutMusic = cleaned.removeSuffix(" music")
         if (withoutMusic != cleaned && withoutMusic.isNotEmpty()) {
             return SYNONYMS[withoutMusic] ?: lookup(withoutMusic)

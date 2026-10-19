@@ -74,21 +74,27 @@ interface ArtistGenreDao {
             failedSettledAfter = now - ArtistGenreEntity.FAILED_RETRY_MS,
         ).mapTo(HashSet()) { it.lowercase() }
 
-        // lower-case key -> (first spelling seen, summed listens)
-        val byKey = LinkedHashMap<String, Pair<String, Long>>()
+        val byKey = HashMap<String, MissingArtist>()
         for (row in listenedArtistCredits()) {
             val key = ArtistGenreKey.of(row.credit)
             if (key.isEmpty()) continue
             val lower = key.lowercase()
             if (lower in settled) continue
-            val previous = byKey[lower]
-            byKey[lower] = (previous?.first ?: key) to ((previous?.second ?: 0L) + row.plays)
+            val entry = byKey.getOrPut(lower) { MissingArtist(spelling = key, spellingPlays = row.plays) }
+            entry.plays += row.plays
+            // The spelling asked of Last.fm: the most-listened credit's, ties to the smaller string,
+            // so the result never depends on SQLite's group order.
+            if (row.plays > entry.spellingPlays || (row.plays == entry.spellingPlays && key < entry.spelling)) {
+                entry.spelling = key
+                entry.spellingPlays = row.plays
+            }
         }
         return byKey.values
-            .sortedWith(compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first.lowercase() })
+            .sortedWith(compareByDescending<MissingArtist> { it.plays }.thenBy { it.spelling.lowercase() })
             .take(limit)
-            .map { it.first }
+            .map { it.spelling }
     }
+
 
     /** Insert or replace [rows] in one transaction ([ArtistGenreEntity.artistName] is the key). */
     @Transaction
@@ -102,3 +108,6 @@ interface ArtistGenreDao {
 
 /** One artist credit and how many listens it has (see [ArtistGenreDao.listenedArtistCredits]). */
 data class ArtistCreditPlays(val credit: String, val plays: Long)
+
+/** Accumulator for [ArtistGenreDao.missingArtists]: one artist key, its spelling and listens. */
+private class MissingArtist(var spelling: String, var spellingPlays: Long, var plays: Long = 0L)
