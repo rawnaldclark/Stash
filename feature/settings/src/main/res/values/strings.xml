@@ -468,7 +468,7 @@
         <item quantity="one">Moved %d track</item>
         <item quantity="other">Moved %d tracks</item>
     </plurals>
-    <string name="settings_storage_move_library_done_failed"> • %d failed</string>
+    <string name="settings_storage_move_library_done_failed">" • %d failed"</string>
     <string name="settings_storage_move_library_failed_note">Failed tracks stay in internal storage. Try again later.</string>
     <string name="settings_storage_move_library_error_title">Couldn\'t move library</string>
     <string name="settings_storage_dismiss_button">Dismiss</string>
@@ -488,18 +488,18 @@
         <item quantity="one">Moved %d track</item>
         <item quantity="other">Moved %d tracks</item>
     </plurals>
-    <string name="settings_storage_reorganize_done_skipped"> • %d already organized</string>
-    <string name="settings_storage_reorganize_done_failed"> • %d failed</string>
+    <string name="settings_storage_reorganize_done_skipped">" • %d already organized"</string>
+    <string name="settings_storage_reorganize_done_failed">" • %d failed"</string>
     <string name="settings_storage_reorganize_failed_note">Failed tracks keep their old location. Try again later.</string>
     <string name="settings_storage_reorganize_error_title">Couldn\'t reorganize library</string>
 
     <!-- Settings > Library & Storage > Listening History Sheet -->
     <string name="settings_listening_history_sheet_subtitle_empty">What this phone remembers about the songs you play.</string>
     <string name="settings_listening_history_sheet_subtitle_nonempty">This phone remembers %1$s%2$s.</string>
-    <string name="settings_listening_history_since_date"> since %s</string>
+    <string name="settings_listening_history_since_date">" since %s"</string>
     <plurals name="settings_listening_history_plays_count">
-        <item quantity="one">%d play</item>
-        <item quantity="other">%d plays</item>
+        <item quantity="one">%,d play</item>
+        <item quantity="other">%,d plays</item>
     </plurals>
     <string name="settings_listening_history_pause_title">Pause history</string>
     <string name="settings_listening_history_pause_subtitle">While paused, nothing you play is saved, and nothing is sent to Last.fm or ListenBrainz.</string>

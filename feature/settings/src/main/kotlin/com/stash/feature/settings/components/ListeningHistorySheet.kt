@@ -49,10 +49,6 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/** Plan §4, word for word: the line every clear says. */
-internal const val CLEAR_KEEPS_SCROBBLES =
-    "This doesn't remove anything already sent to Last.fm, ListenBrainz or YouTube Music."
-
 /** What a clear asks to confirm: everything, or the days [fromDay]..[toDay]. */
 private sealed interface ClearRequest {
     data object Everything : ClearRequest
@@ -284,7 +280,6 @@ private fun ActionRow(
 
 private const val MS_PER_DAY = 86_400_000L
 
-private fun plays(n: Int): String = if (n == 1) "1 play" else "%,d plays".format(n)
 
 private fun longDate(day: Long): String =
     LocalDate.ofEpochDay(day).format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
