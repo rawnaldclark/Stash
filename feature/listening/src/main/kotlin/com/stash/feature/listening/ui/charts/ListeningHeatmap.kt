@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.listening.ListeningStatsCalculator.HEAT_LEVELS
 import com.stash.core.data.listening.ListeningStatsCalculator.HeatCell
@@ -65,57 +67,52 @@ internal fun ListeningHeatmap(
     val click by rememberUpdatedState(onDayClick)
     val monthFormat = remember(locale) { DateTimeFormatter.ofPattern("MMM", locale) }
 
+    val labels = remember(weeks) { heatmapMonthLabels(weeks) }
+
     Column(modifier.fillMaxWidth()) {
-        // reverseScrolling: scroll position 0 is the right end, so the newest week shows first.
-        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true)) {
-            val width = (Cell + Gap) * weeks.size
-            Canvas(
-                modifier = Modifier
-                    .width(width)
-                    .height(LabelBand + (Cell + Gap) * 7)
-                    .semantics { contentDescription = summary }
-                    .pointerInput(Unit) {
-                        detectTapGestures { p ->
-                            val step = (Cell + Gap).toPx()
-                            val col = (p.x / step).toInt()
-                            val row = ((p.y - LabelBand.toPx()) / step).toInt()
-                            val cell = currentWeeks.getOrNull(col)?.getOrNull(row)
-                            if (cell != null && cell.plays > 0) click(cell.day)
-                        }
-                    },
-            ) {
-                val step = (Cell + Gap).toPx()
-                val cell = Cell.toPx()
-                val top = LabelBand.toPx()
-                val r = CornerRadius(2.5.dp.toPx())
-                var lastMonth = -1
-                var lastLabelEnd = -1f
-                weeks.forEachIndexed { col, week ->
-                    val x = col * step
-                    // A month name over the first week that holds its 1st (or the first column).
-                    val firstDay = week.firstOrNull { it != null }?.day
-                    if (firstDay != null) {
-                        val month = LocalDate.ofEpochDay(firstDay).monthValue
-                        val startsMonth = week.any { it != null && LocalDate.ofEpochDay(it.day).dayOfMonth == 1 }
-                        if (month != lastMonth && (startsMonth || lastMonth == -1)) {
-                            val labelDay = week.firstOrNull { it != null && LocalDate.ofEpochDay(it.day).dayOfMonth == 1 }?.day ?: firstDay
-                            val text = LocalDate.ofEpochDay(labelDay).format(monthFormat)
-                            val layout = measurer.measure(text, labelStyle)
-                            if (x >= lastLabelEnd) {
-                                drawText(layout, topLeft = Offset(x, 0f))
-                                lastLabelEnd = x + layout.size.width + 4.dp.toPx()
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // A short range fills the card with bigger squares; a long one keeps readable squares
+            // and scrolls, opening on the newest week (reverseScrolling: position 0 = the right end).
+            val natural = Cell + Gap
+            val step: Dp = if (weeks.isNotEmpty() && natural * weeks.size < maxWidth) {
+                minOf(maxWidth / weeks.size, MaxStep)
+            } else {
+                natural
+            }
+            Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = true)) {
+                Canvas(
+                    modifier = Modifier
+                        .width(step * weeks.size)
+                        .height(LabelBand + step * 7)
+                        .semantics { contentDescription = summary }
+                        .pointerInput(step) {
+                            detectTapGestures { p ->
+                                val px = step.toPx()
+                                val col = (p.x / px).toInt()
+                                val row = ((p.y - LabelBand.toPx()) / px).toInt()
+                                val cell = currentWeeks.getOrNull(col)?.getOrNull(row)
+                                if (cell != null && cell.plays > 0) click(cell.day)
                             }
-                            lastMonth = LocalDate.ofEpochDay(labelDay).monthValue
-                        }
+                        },
+                ) {
+                    val px = step.toPx()
+                    val cell = px - Gap.toPx()
+                    val top = LabelBand.toPx()
+                    val r = CornerRadius((cell * 0.2f).coerceAtMost(4.dp.toPx()))
+                    labels.forEach { (col, day) ->
+                        val text = LocalDate.ofEpochDay(day).format(monthFormat)
+                        drawText(measurer.measure(text, labelStyle), topLeft = Offset(col * px, 0f))
                     }
-                    week.forEachIndexed { row, c ->
-                        if (c == null) return@forEachIndexed
-                        drawRoundRect(
-                            color = shades[c.level.coerceIn(0, HEAT_LEVELS)],
-                            topLeft = Offset(x, top + row * step),
-                            size = Size(cell, cell),
-                            cornerRadius = r,
-                        )
+                    weeks.forEachIndexed { col, week ->
+                        week.forEachIndexed { row, c ->
+                            if (c == null) return@forEachIndexed
+                            drawRoundRect(
+                                color = shades[c.level.coerceIn(0, HEAT_LEVELS)],
+                                topLeft = Offset(col * px, top + row * px),
+                                size = Size(cell, cell),
+                                cornerRadius = r,
+                            )
+                        }
                     }
                 }
             }
@@ -139,10 +136,30 @@ internal fun ListeningHeatmap(
     }
 }
 
+/**
+ * Where the month names go, as (column, a day of that month): over every week that holds a
+ * month's 1st, and over the first week when no month starts within its first three columns (so
+ * the grid always says where it begins without two names colliding).
+ */
+internal fun heatmapMonthLabels(weeks: List<List<HeatCell?>>): List<Pair<Int, Long>> {
+    val starts = weeks.mapIndexedNotNull { col, week ->
+        week.firstOrNull { it != null && LocalDate.ofEpochDay(it.day).dayOfMonth == 1 }?.let { col to it.day }
+    }
+    val firstCol = weeks.indexOfFirst { w -> w.any { it != null } }
+    if (firstCol < 0) return starts
+    val lead = if (starts.none { it.first <= firstCol + 2 }) {
+        listOf(firstCol to weeks[firstCol].first { it != null }!!.day)
+    } else {
+        emptyList()
+    }
+    return lead + starts
+}
+
 /** Level 0 (no listens) through [HEAT_LEVELS] (the busiest days). */
 private fun heatShades(accent: Color, empty: Color): List<Color> =
     listOf(empty) + (1..HEAT_LEVELS).map { accent.copy(alpha = 0.25f + 0.75f * (it - 1) / (HEAT_LEVELS - 1)) }
 
 private val Cell = 12.dp
+private val MaxStep = 24.dp
 private val Gap = 3.dp
 private val LabelBand = 18.dp

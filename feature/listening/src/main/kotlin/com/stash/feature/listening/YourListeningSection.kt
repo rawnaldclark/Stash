@@ -211,6 +211,7 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
                 highlight = week.bars.lastIndex,
                 height = 48.dp,
                 gapFraction = 0.36f,
+                minBarHeight = 14.dp,
                 modifier = Modifier.width(WeekBarsWidth),
             )
         }

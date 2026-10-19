@@ -37,11 +37,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -141,7 +143,8 @@ fun ListeningStatsScreen(
                 item(key = "artists_title") {
                     StatsSectionTitle("Top artists", action = "See all", onAction = { onOpenTop("artists", rangeKey) })
                 }
-                item(key = "artists") { TopArtistsRow(s.topArtists, onOpenArtist) }
+                // Keyed on the range: a new range's row starts at its #1, not where the last one was scrolled.
+                item(key = "artists") { key(s.range) { TopArtistsRow(s.topArtists, onOpenArtist) } }
             }
             if (s.topSongs.isNotEmpty()) {
                 item(key = "songs_title") {
@@ -155,7 +158,7 @@ fun ListeningStatsScreen(
                 item(key = "albums_title") {
                     StatsSectionTitle("Top albums", action = "See all", onAction = { onOpenTop("albums", rangeKey) })
                 }
-                item(key = "albums") { TopAlbumsRow(s.topAlbums, onOpenAlbum) }
+                item(key = "albums") { key(s.range) { TopAlbumsRow(s.topAlbums, onOpenAlbum) } }
             }
             item(key = "clock_title") { StatsSectionTitle("When you listen") }
             item(key = "clock") { ClockCard(s, use24Hour) }
@@ -317,13 +320,13 @@ private fun Tiles(s: ListeningStatsState) {
         Tile("%,d".format(s.totals.plays), if (s.totals.plays == 1) "Play" else "Plays", Modifier.weight(1f))
         Tile("%,d".format(s.totals.songs), if (s.totals.songs == 1) "Song" else "Songs", Modifier.weight(1f))
         Tile("%,d".format(s.totals.artists), if (s.totals.artists == 1) "Artist" else "Artists", Modifier.weight(1f))
-        Tile("${s.currentStreak}", "Day streak", Modifier.weight(1f))
+        Tile("${s.currentStreak}", "Streak", Modifier.weight(1f), spoken = ListeningLabels.streak(s.currentStreak))
     }
 }
 
 @Composable
-private fun Tile(value: String, label: String, modifier: Modifier = Modifier) {
-    StatsCard(modifier.semantics(mergeDescendants = true) {}, contentPadding = 12.dp) {
+private fun Tile(value: String, label: String, modifier: Modifier = Modifier, spoken: String = "$value $label") {
+    StatsCard(modifier.clearAndSetSemantics { contentDescription = spoken }, contentPadding = 12.dp) {
         Text(value, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
         Text(
             label,
@@ -342,7 +345,8 @@ private fun TopArtistsRow(artists: List<TopArtistUi>, onOpenArtist: (String) -> 
     LazyRow(
         contentPadding = PaddingValues(horizontal = Gutter),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.Top,
+        // Bottom: the names line up even though #1's circle is bigger.
+        verticalAlignment = Alignment.Bottom,
     ) {
         itemsIndexed(artists, key = { _, a -> a.name.lowercase() }) { i, artist ->
             val size: Dp = if (i == 0) 112.dp else 84.dp

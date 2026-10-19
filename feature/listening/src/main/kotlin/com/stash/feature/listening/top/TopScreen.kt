@@ -89,7 +89,6 @@ fun TopScreen(
             selected = kind.label,
             onSelect = { label -> TopKind.entries.firstOrNull { it.label == label }?.let(viewModel::selectKind) },
         )
-        Spacer(Modifier.height(8.dp))
         RangeChips(selected = range, onSelect = viewModel::selectRange)
         Text(
             text = s.days?.let { ListeningLabels.rangeCaption(it.fromDay, it.toDay, s.today) }.orEmpty(),

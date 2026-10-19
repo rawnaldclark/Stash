@@ -39,6 +39,10 @@ internal fun ListeningBars(
     emptyColor: Color = StashTheme.extendedColors.glassBorderBright,
     /** Space between bars as a share of each bar's slot. */
     gapFraction: Float = 0.28f,
+    /** Bars never get wider than this (a 7-bar week would otherwise draw fat blocks). */
+    maxBarWidth: Dp = 22.dp,
+    /** The shortest a bar with any listening draws, so it never reads as an empty day. */
+    minBarHeight: Dp = 7.dp,
     onBarClick: ((Int) -> Unit)? = null,
 ) {
     val currentValues by rememberUpdatedState(values)
@@ -66,9 +70,10 @@ internal fun ListeningBars(
         if (n == 0) return@Canvas
         val max = values.max().coerceAtLeast(1L)
         val slot = size.width / n
-        val barWidth = (slot * (1f - gapFraction)).coerceAtLeast(1f)
-        val radius = (barWidth / 2f).coerceAtMost(6.dp.toPx())
+        val barWidth = (slot * (1f - gapFraction)).coerceIn(1f, maxBarWidth.toPx())
         val stub = 3.dp.toPx()
+        // A bar with any listening is always clearly taller than the empty-day stub.
+        val minBar = minBarHeight.toPx().coerceAtMost(size.height)
         values.forEachIndexed { i, v ->
             val x = i * slot + (slot - barWidth) / 2f
             if (v <= 0) {
@@ -79,7 +84,8 @@ internal fun ListeningBars(
                     cornerRadius = CornerRadius(stub / 2f),
                 )
             } else {
-                val h = (size.height * v / max).coerceAtLeast(stub)
+                val h = (size.height * v / max).coerceAtLeast(minBar)
+                val radius = minOf(barWidth / 2f, h / 2f, 6.dp.toPx())
                 val color = if (highlight == null || highlight == i) barColor else barColor.copy(alpha = 0.55f)
                 drawRoundRect(
                     color = color,
