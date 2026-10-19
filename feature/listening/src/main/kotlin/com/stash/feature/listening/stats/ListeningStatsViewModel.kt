@@ -15,6 +15,7 @@ import com.stash.core.data.db.dao.TopTrackRow
 import com.stash.core.data.db.entity.ArtistImageEntity
 import com.stash.core.data.genre.ArtistGenreIndex
 import com.stash.core.data.genre.ArtistGenreRepository
+import com.stash.core.data.genre.ArtistWeight
 import com.stash.core.data.genre.TopGenres
 import com.stash.core.data.genre.TopGenresCalculator
 import com.stash.core.data.listening.DayRange
@@ -102,6 +103,8 @@ data class ListeningStatsState(
      * Shown only when [TopGenres.isShowable] (enough of the listening has a genre).
      */
     val topGenres: TopGenres = TopGenres.EMPTY,
+    /** What [topGenres] is computed from (raw credits' listening time); not shown. */
+    internal val genreWeights: List<ArtistWeight> = emptyList(),
     /** Listens per hour 0..23. */
     val hourly: List<Int> = List(24) { 0 },
     val peakHour: Int? = null,
@@ -255,16 +258,15 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
             history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT),
             history.observeTopAlbums(days, ListeningInsights.SCAN_LIMIT),
             artistImages.observeAll(),
-            genreIndex,
-        ) { songs, artists, albums, photos, index ->
+        ) { songs, artists, albums, photos ->
             val acts = ListeningInsights.byMainArtist(artists)
             Tops(
                 songs = ListeningInsights.mergeSameSongs(songs).take(ListeningInsights.TOP_LIMIT),
                 artists = artistsWithPhotos(acts.take(ARTISTS_SHOWN), photos),
                 artistCount = acts.size,
                 albums = ListeningInsights.byMainAlbum(albums).take(ALBUMS_SHOWN),
-                // Every main act of the range (not just the shown ten) weighs in, by listening time.
-                genres = TopGenresCalculator.compute(ListeningInsights.artistWeights(acts), index, GENRES_SHOWN),
+                // Every credit of the range (not just the shown ten) weighs in, by listening time.
+                genreWeights = ListeningInsights.artistWeights(artists),
             )
         }
 
@@ -287,7 +289,7 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
                 topArtists = t.artists,
                 topSongs = t.songs,
                 topAlbums = t.albums,
-                topGenres = t.genres,
+                genreWeights = t.genreWeights,
                 hourly = hourly.toList(),
                 peakHour = ListeningInsights.peakHour(hourly),
                 daySplit = ListeningInsights.daySplit(hourly),
@@ -300,11 +302,23 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
             )
         }
 
+        // Genres join last, in their own small step: a genre-cache change (the worker filling
+        // in artists) recomputes only this, not the songs/artists grouping above, and a failing
+        // genre read leaves the rest of the screen standing (no genres instead).
+        val safeIndex = genreIndex.catch { e ->
+            if (e is CancellationException) throw e
+            Log.w(TAG, "genre index failed", e)
+            emit(ArtistGenreIndex.EMPTY)
+        }
+        val withGenres = combine(base, safeIndex) { s, index ->
+            s.copy(topGenres = TopGenresCalculator.compute(s.genreWeights, index, GENRES_SHOWN))
+        }
+
         // The highlights are one-off reads: kept while the range's play count stays the same,
         // read again when it changes (the screen shows the last ones meanwhile).
         var highlightsFor = -1
         var highlights = Highlights.NONE
-        return base.transformLatest { s ->
+        return withGenres.transformLatest { s ->
             emit(s.with(highlights))
             if (s.totals.plays != highlightsFor) {
                 highlights = readHighlights(days, first)
@@ -340,7 +354,7 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
         val artists: List<TopArtistUi>,
         val artistCount: Int,
         val albums: List<TopAlbumRow>,
-        val genres: TopGenres,
+        val genreWeights: List<ArtistWeight>,
     )
 
     private data class Highlights(val obsession: ObsessionRow?, val newSongs: Int, val bestNewFind: TopTrackRow?) {

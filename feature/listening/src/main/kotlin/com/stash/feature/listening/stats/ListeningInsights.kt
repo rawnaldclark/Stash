@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopArtistRow
 import com.stash.core.data.db.dao.TopTrackRow
 import com.stash.core.data.genre.ArtistGenreIndex
+import com.stash.core.data.genre.ArtistGenreKey
 import com.stash.core.data.genre.ArtistWeight
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
@@ -183,33 +184,44 @@ internal object ListeningInsights {
             .sortedWith(compareByDescending<TopArtistRow> { it.plays }.thenByDescending { it.lastPlayedAt })
 
     /**
-     * The weights top genres are computed from: each main act's listening time ([byMainArtist]
-     * rows), so a genre's share is a share of time listened, not of plays.
+     * The weights top genres are computed from: each RAW artist credit's listening time (the
+     * observeTopArtists rows, not [byMainArtist]'s acts), so a genre's share is a share of time
+     * listened, and every credit meets its cached genres through [ArtistGenreKey] exactly as the
+     * cache keyed it ("Drake feat. Rihanna" counts for Drake; "Earth, Wind & Fire, Chicago" for
+     * Earth, Wind & Fire, which the Library's main-act grouping would drop).
      */
-    fun artistWeights(acts: List<TopArtistRow>): List<ArtistWeight> = acts.map { ArtistWeight(it.artist, it.listenedMs) }
+    fun artistWeights(credits: List<TopArtistRow>): List<ArtistWeight> = credits.map { ArtistWeight(it.artist, it.listenedMs) }
 
     /**
-     * Each of [genreKeys]' top artists: the main acts ([byMainArtist] rows) that give the genre the
-     * most listening time, at most [perGenre] names each. An act's time is split across its genres
+     * Each of [genreKeys]' top artists: the acts (raw credits grouped by [ArtistGenreKey]) that give
+     * the genre the most listening time, at most [perGenre] names each. An act's time is split across its genres
      * the way top genres split it (by genre weight), so an act that is mostly rock but a little pop
      * leads Rock before Pop. Genres nobody here carries map to an empty list.
      */
     fun genreTopArtists(
-        acts: List<TopArtistRow>,
+        credits: List<TopArtistRow>,
         index: ArtistGenreIndex,
         genreKeys: List<String>,
         perGenre: Int = 3,
     ): Map<String, List<String>> {
         val wanted = genreKeys.toSet()
+        // One entry per genre act, keyed like the cache (ArtistGenreKey, case-folded), named
+        // after the act ("Drake" for "Drake feat. Rihanna"), with every credit's time added up.
+        val acts = credits
+            .filter { it.listenedMs > 0 && ArtistGenreKey.of(it.artist).isNotEmpty() }
+            .groupBy { foldCase(ArtistGenreKey.of(it.artist)) }
+            .map { (_, group) ->
+                val lead = group.maxWith(compareBy<TopArtistRow> { it.listenedMs }.thenBy { it.lastPlayedAt })
+                ArtistGenreKey.of(lead.artist) to group.sumOf { it.listenedMs }
+            }
         val byGenre = HashMap<String, MutableList<Pair<String, Double>>>()
-        for (act in acts) {
-            if (act.listenedMs <= 0) continue
-            val genres = index.genresFor(act.artist)?.filter { it.weight.isFinite() && it.weight > 0f }.orEmpty()
+        for ((name, listenedMs) in acts) {
+            val genres = index.genresFor(name)?.filter { it.weight.isFinite() && it.weight > 0f }.orEmpty()
             val sum = genres.sumOf { it.weight.toDouble() }
             if (sum <= 0.0) continue
             for (g in genres) {
                 if (g.genre !in wanted) continue
-                byGenre.getOrPut(g.genre) { ArrayList() } += act.artist to act.listenedMs * g.weight / sum
+                byGenre.getOrPut(g.genre) { ArrayList() } += name to listenedMs * g.weight / sum
             }
         }
         return genreKeys.associateWith { key ->

@@ -334,9 +334,30 @@ class ListeningStatsViewModelTest {
         val genres = vm.state.value.topGenres
         assertThat(refreshes).isEqualTo(1)
         assertThat(genres.items.map { it.name }).containsExactly("Jazz", "Soul").inOrder()
-        assertThat(genres.items[0].share).isWithin(1e-9).of(0.75) // 6 of the 8 tagged listens' time
+        // Shown as "% of your listening time": of ALL ten listens' time, not just the eight with
+        // a genre. Jazz is 6 of 10 (60%), not 6 of 8 (75%); the shares add up to the coverage.
+        assertThat(genres.items[0].share).isWithin(1e-9).of(0.6)
+        assertThat(genres.items[1].share).isWithin(1e-9).of(0.2)
         assertThat(genres.coverage).isWithin(1e-9).of(0.8) // 8 of 10
+        assertThat(genres.items.sumOf { it.share }).isWithin(1e-9).of(genres.coverage)
         assertThat(genres.isShowable).isTrue()
+    }
+
+    @Test fun `a failing genre read leaves the rest of the screen standing`() = runTest {
+        val fake = FakeHistory().apply { repeat(12) { add(track(1, artist = "Taro"), TODAY, 600 + it) } }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val vm = ListeningStatsViewModel(
+            SavedStateHandle(), fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY, dispatcher,
+            genreIndex = kotlinx.coroutines.flow.flow { throw IllegalStateException("cache broke") },
+        )
+        backgroundScope.launch { vm.state.collect {} }
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.loading).isFalse()
+        assertThat(s.totals.plays).isEqualTo(12)
+        assertThat(s.topArtists.map { it.name }).containsExactly("Taro")
+        assertThat(s.topGenres.isShowable).isFalse()
     }
 
     @Test fun `genres for under half the listening are not showable`() = runTest {

@@ -65,8 +65,12 @@ class ArtistGenreRepository internal constructor(
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
-    /** Asks for genres of newly listened artists now (when "Your listening" opens). Cheap to repeat. */
-    fun requestRefresh() = ArtistGenreWorker.requestNow(context)
+    /**
+     * Asks for genres of newly listened artists now. Cheap to repeat. [unmeteredOnly]: wait for
+     * Wi-Fi (Home's once-a-day background ask); without it any connection does (Your listening
+     * opening, where the user is looking at the genres).
+     */
+    fun requestRefresh(unmeteredOnly: Boolean = false) = ArtistGenreWorker.requestNow(context, unmeteredOnly)
 
     internal companion object {
         /** Tagged rows only, decoded; unreadable or empty rows are left out. */
@@ -75,7 +79,9 @@ class ArtistGenreRepository internal constructor(
                 buildMap {
                     for (row in rows) {
                         if (row.status != ArtistGenreEntity.STATUS_TAGGED) continue
-                        val genres = WeightedGenreCodec.decode(row.genres)
+                        // Re-read through today's rules: rows from an older build may hold keys
+                        // since folded ("rap" next to "emo rap" became a stray "Rap" bar).
+                        val genres = GenreNormalizer.renormalize(WeightedGenreCodec.decode(row.genres))
                         if (genres.isNotEmpty()) put(row.artistName, genres)
                     }
                 },

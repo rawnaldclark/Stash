@@ -212,6 +212,15 @@ object GenreNormalizer {
     }
 
     /**
+     * Cached genres read again through today's rules ([topGenres] on the stored weights): a row
+     * written by an older build, before a genre was folded ("rap" into Hip-Hop) or an umbrella
+     * rule was added, reads the way a fresh fetch would ("emo rap" alone, not "emo rap" + "rap").
+     * Stored genres today's rules no longer know are dropped.
+     */
+    fun renormalize(stored: List<WeightedGenre>): List<WeightedGenre> =
+        topGenres(stored.map { LastFmTag(it.genre, it.weight) })
+
+    /**
      * True when [umbrella] is a broader form of [specific]: the umbrella's words appear, in order
      * and whole, inside the specific genre's words ("rock" in "indie rock", "soul" in "neo-soul",
      * "r&b" in "alternative r&b"), or one of its [UMBRELLA_ALIASES] does ("rap" in "cloud rap").

@@ -56,13 +56,14 @@ class TopGenresCalculatorTest {
         assertEquals(30.0 / 210, top.items[2].share, eps)
     }
 
-    @Test fun `artists without genres lower coverage but not the shares`() {
+    @Test fun `shares are of all the listening, so artists without genres lower them too`() {
         val top = TopGenresCalculator.compute(
             listOf(a("Drake", 30), a("Unknown Local Rip", 70)),
             mapOf("Drake" to g("hip-hop" to 1f)),
         )
 
-        assertEquals(1.0, top.items.single().share, eps)
+        // 30 of 100 minutes are Hip-Hop: "30% of your listening time", not 100%.
+        assertEquals(0.3, top.items.single().share, eps)
         assertEquals(0.3, top.coverage, eps)
         assertFalse("under half the listening has a genre", top.isShowable)
     }
@@ -104,7 +105,7 @@ class TopGenresCalculatorTest {
         assertEquals(one, two)
     }
 
-    @Test fun `limit caps the list but shares stay relative to all covered listening`() {
+    @Test fun `limit caps the list but shares stay relative to all the listening`() {
         val genres = (1..8).associate { "Artist $it" to g("genre$it" to 1f) }
         val artists = (1..8).map { a("Artist $it", (10 - it).toLong()) }
 

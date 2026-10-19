@@ -289,6 +289,7 @@ class ArtistGenreWorker @AssistedInject constructor(
         private const val TAG = "ArtistGenres"
         private const val PERIODIC_WORK_NAME = "stash_artist_genres"
         private const val ONE_TIME_WORK_NAME = "stash_artist_genres_now"
+        private const val UNMETERED_WORK_NAME = "stash_artist_genres_wifi"
 
         /** One run at a time per process, whichever unique work started it. */
         internal val runLock = Mutex()
@@ -338,17 +339,19 @@ class ArtistGenreWorker @AssistedInject constructor(
          * going changes nothing. The requests are small (a few KB per artist) and most are
          * answered from the 7-day response cache after the first run.
          */
-        fun requestNow(context: Context) {
+        fun requestNow(context: Context, unmeteredOnly: Boolean = false) {
             val work = OneTimeWorkRequestBuilder<ArtistGenreWorker>()
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiredNetworkType(if (unmeteredOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                         .build(),
                 )
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
+            // Separate unique work per constraint: a Wi-Fi-only ask waiting on cellular must not
+            // swallow (KEEP) the screen's any-network ask. [runLock] still runs one at a time.
             WorkManager.getInstance(context).enqueueUniqueWork(
-                ONE_TIME_WORK_NAME,
+                if (unmeteredOnly) UNMETERED_WORK_NAME else ONE_TIME_WORK_NAME,
                 ExistingWorkPolicy.KEEP,
                 work,
             )
