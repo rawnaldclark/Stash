@@ -25,7 +25,8 @@ import kotlinx.coroutines.launch
  *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action begin  -p com.stash.app.debug
  *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action play --el trackId 123 -p com.stash.app.debug
  *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action pause|resume -p com.stash.app.debug
- *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action end    -p com.stash.app.debug
+ *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action end [--ez restore false] -p com.stash.app.debug
+ *   adb shell am broadcast -a com.stash.debug.RECAP_AUDIO --es action background|foreground -p com.stash.app.debug
  *
  * `play` also takes `--ef fraction 0.3` (where in the song to start). Logcat tags: [TAG] for this
  * hook, `RecapAudio` for the engine's decisions. Declared only in the debug manifest, behind the
@@ -66,10 +67,12 @@ class DebugRecapAudio : BroadcastReceiver() {
                     }
                     "pause" -> audio.pause()
                     "resume" -> audio.resume()
-                    "end" -> audio.end()
-                    else -> Log.w(TAG, "unknown action '$action' (begin|play|pause|resume|end)")
+                    "end" -> audio.end(restoreMain = intent.getBooleanExtra(EXTRA_RESTORE, true))
+                    "background" -> audio.onAppBackground()
+                    "foreground" -> audio.onAppForeground()
+                    else -> Log.w(TAG, "unknown action '$action' (begin|play|pause|resume|end|background|foreground)")
                 }
-                Log.i(TAG, "$action done (story active=${audio.isActive})")
+                Log.i(TAG, "$action done (story active=${audio.active.value})")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -85,6 +88,7 @@ class DebugRecapAudio : BroadcastReceiver() {
         const val EXTRA_ACTION = "action"
         const val EXTRA_TRACK_ID = "trackId"
         const val EXTRA_FRACTION = "fraction"
+        const val EXTRA_RESTORE = "restore"
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     }
 }

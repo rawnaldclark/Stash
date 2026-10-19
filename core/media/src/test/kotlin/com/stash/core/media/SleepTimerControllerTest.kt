@@ -171,5 +171,62 @@ class SleepTimerControllerTest {
         coVerify(exactly = 1) { playerRepository.pause() }
     }
 
+    @Test
+    fun `the timer puts an open Recap story to sleep too, after the pause`() = runTest {
+        // In the app onSleep is RecapAudio.end(restoreMain = false): during a story the main
+        // player is already paused, so without it closing the story later restarted the music.
+        val order = mutableListOf<String>()
+        coEvery { playerRepository.pause() } answers { order += "pause" }
+        val timer = SleepTimerController(
+            playerRepository = playerRepository,
+            scope = backgroundScope,
+            onSleep = { order += "sleep" },
+            nowMs = { testScheduler.currentTime },
+        )
+
+        timer.startMinutes(1, fadeOutMs = 0)
+        advanceTimeBy(60_001L)
+        runCurrent()
+
+        assertThat(order).containsExactly("pause", "sleep").inOrder()
+    }
+
+    @Test
+    fun `a faded sleep also ends the story`() = runTest {
+        var slept = 0
+        val timer = SleepTimerController(
+            playerRepository = playerRepository,
+            scope = backgroundScope,
+            onSleep = { slept++ },
+            nowMs = { testScheduler.currentTime },
+        )
+
+        timer.startMinutes(1)
+        advanceTimeBy(60_001L)
+        runCurrent()
+
+        assertThat(slept).isEqualTo(1)
+        coVerify(exactly = 1) { playerRepository.pause() }
+    }
+
+    @Test
+    fun `cancelling the timer never touches the story`() = runTest {
+        var slept = 0
+        val timer = SleepTimerController(
+            playerRepository = playerRepository,
+            scope = backgroundScope,
+            onSleep = { slept++ },
+            nowMs = { testScheduler.currentTime },
+        )
+
+        timer.startMinutes(1)
+        advanceTimeBy(30_000L)
+        timer.cancel()
+        advanceTimeBy(60_000L)
+        runCurrent()
+
+        assertThat(slept).isEqualTo(0)
+    }
+
     private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A")
 }
