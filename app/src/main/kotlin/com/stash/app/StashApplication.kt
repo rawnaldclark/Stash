@@ -200,6 +200,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
+    /** Recap story audio: its song pauses while the app is in the background and carries on when it's back. */
+    @Inject
+    lateinit var recapAudio: com.stash.core.media.recap.RecapAudio
+
     @Inject
     lateinit var webLinkInbox: com.stash.core.data.weblink.inbox.WebLinkInbox
 
@@ -341,6 +345,8 @@ class StashApplication : Application(), Configuration.Provider {
                     webLinkInbox.onForeground()
                     // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
                     mirrorSignal.onForeground()
+                    // ...and an open Recap story carries its song on.
+                    recapAudio.onAppForeground()
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -351,6 +357,9 @@ class StashApplication : Application(), Configuration.Provider {
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
                     // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
                     handoffPublisher.onBackground()
+                    // An open Recap story's song pauses; the story itself stays open (a share to
+                    // Instagram or the lock screen is not a close, so the music isn't given back).
+                    recapAudio.onAppBackground()
                 }
             },
         )

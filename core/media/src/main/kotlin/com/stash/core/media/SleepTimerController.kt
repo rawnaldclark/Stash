@@ -32,13 +32,25 @@ import javax.inject.Singleton
 class SleepTimerController @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val scope: CoroutineScope,
+    /**
+     * Runs when the timer puts the music to sleep, after the pause. Ends an open Recap story
+     * without giving its paused music back ([com.stash.core.media.recap.RecapAudio.end] with
+     * `restoreMain = false`): during a story the main player is already paused, so the pause
+     * alone did nothing, and closing the story later would have started the music again for
+     * the rest of the night. It also stops the story's own song.
+     */
+    private val onSleep: suspend () -> Unit = {},
     /** Wall clock, the one [State.Countdown.endsAtMs] (and the UI's "about N min") is read on. */
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
 
     @Inject
-    constructor(playerRepository: PlayerRepository) : this(
+    constructor(
+        playerRepository: PlayerRepository,
+        recapAudio: dagger.Lazy<com.stash.core.media.recap.RecapAudio>,
+    ) : this(
         playerRepository = playerRepository,
+        onSleep = { recapAudio.get().end(restoreMain = false) },
         // Main, not Default: the fade ends in playerRepository.pause(), and a
         // MediaController may only be touched on its application (main)
         // thread — from a Default worker Media3 throws and the process dies
@@ -117,6 +129,7 @@ class SleepTimerController @VisibleForTesting internal constructor(
     private suspend fun fadeOutAndPause(fadeMs: Long) {
         if (fadeMs <= 0) {
             playerRepository.pause()
+            onSleep()
             return
         }
         val steps = 20
@@ -129,6 +142,7 @@ class SleepTimerController @VisibleForTesting internal constructor(
                 delay(stepDelay)
             }
             playerRepository.pause()
+            onSleep()
         } finally {
             // Restore for next playback, and also when the fade is cut short:
             // re-arming mid-fade ("+15 min" or "end of track" once the music
