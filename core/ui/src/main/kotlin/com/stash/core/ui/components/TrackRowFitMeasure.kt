@@ -120,7 +120,8 @@ internal fun rememberTrackListItemFit(
                 else -> textWidth(trailingText ?: formatDuration(track.durationMs), smallStyle)
             }
 
-            // Source indicator: dots always, labels optionally.
+            // Source indicator: the coloured dots only. Source names are never drawn in a row, so their
+            // text width is not measured and does not take room from the title.
             val labels = sourceIndicatorLabels(track.source)
             val spacing = SourceIndicatorSpacing.roundToPx()
             val dotsWidth = if (labels.isEmpty()) {
@@ -128,7 +129,6 @@ internal fun rememberTrackListItemFit(
             } else {
                 labels.size * SourceDotSize.roundToPx() + (labels.size - 1) * spacing
             }
-            val labelsExtra = labels.sumOf { spacing + textWidth(it, labelStyle) }
 
             // Lossless pill, full and compact (0 when the track has none).
             val lossless = isLossless(track.fileFormat)
@@ -142,18 +142,18 @@ internal fun rememberTrackListItemFit(
                 labelStyle,
             )
 
-            // Everything that isn't the title column, with labels shown.
+            // Everything that isn't the title column (dots only, no source names).
             val fixed = 2 * RowHorizontalPadding.roundToPx() +
                 (if (selectionActive) CheckboxWidth.roundToPx() + SmallGap.roundToPx() else 0) +
                 ArtSize.roundToPx() + ArtGap.roundToPx() +
                 SmallGap.roundToPx() + statusWidth +
-                SmallGap.roundToPx() + dotsWidth + labelsExtra +
+                SmallGap.roundToPx() + dotsWidth +
                 (if (hasMoreButton) MoreButtonSize.roundToPx() else 0)
 
             val titleMin = TitleMinShare.roundToPx()
             fun decide(titleWidth: Int) = decideTrackRowFit(
                 titleColumnWidth = rowWidth.roundToPx() - fixed,
-                sourceLabelsExtra = labelsExtra,
+                sourceLabelsExtra = 0,
                 badgeFullWidth = badgeFull,
                 badgeCompactWidth = badgeCompact,
                 badgeGap = BadgeGap.roundToPx(),
