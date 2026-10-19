@@ -49,6 +49,13 @@ class LastFmApiException(
 class LastFmRateLimitedException(message: String) : IllegalStateException(message)
 
 /**
+ * Last.fm (or the proxy) answered HTTP [status] with no `{ error }` body. Typed so a caller can
+ * tell a server error (5xx: worth retrying) from anything else. Extends [IllegalStateException],
+ * as the plain `error(...)` it replaces did, with the same message.
+ */
+class LastFmHttpException(val status: Int, message: String) : IllegalStateException(message)
+
+/**
  * True when this read failed because Last.fm (or the client's breakers) is rate limiting: the
  * request says nothing about the artist or track, so a caller must neither record "no data" nor
  * "this one fails", and should simply try again later. Rethrows a captured cancellation.

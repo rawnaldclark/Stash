@@ -2,6 +2,7 @@ package com.stash.feature.listening
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -56,6 +57,8 @@ import com.stash.feature.listening.ui.charts.ListeningBars
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.stash.core.ui.components.HomeRailCardSize
+import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.core.ui.theme.StashTheme
 
@@ -314,22 +317,24 @@ private fun DoorCard(door: ListeningDoor, modifier: Modifier = Modifier) {
     }
 }
 
-/** A song on the "Recently played" rail: the Home rail card (140 dp cover, title, artist). */
+/** A song on the "Recently played" rail: the Home rail card (its cover, title, artist). */
 @Composable
 private fun RecentSongCard(track: Track, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = StashTheme.extendedColors
     Column(
         modifier = Modifier
-            .width(RailCardSize)
+            .width(HomeRailCardSize)
             .pressScale(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
     ) {
         Box(
             modifier = Modifier
-                .size(RailCardSize)
-                .clip(RoundedCornerShape(8.dp))
-                .background(colors.elevatedSurface),
+                .size(HomeRailCardSize)
+                .clip(HomeRailCoverShape)
+                .background(colors.elevatedSurface)
+                // The Home rail cards' hairline ring: a pale cover keeps its edge on the light theme.
+                .border(1.dp, colors.glassBorder, HomeRailCoverShape),
             contentAlignment = Alignment.Center,
         ) {
             val art = track.albumArtPath ?: ArtUrlUpgrader.upgrade(track.albumArtUrl)
@@ -367,7 +372,6 @@ private fun RecentSongCard(track: Track, onClick: () -> Unit) {
     }
 }
 
-private val RailCardSize = 140.dp
 private val WeekBarsWidth = 92.dp
 private val SidePadding = 20.dp
 private val DoorGap = 12.dp

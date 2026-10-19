@@ -89,7 +89,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
@@ -150,6 +152,8 @@ private const val QUIZ_AFTER_ANSWER_MS = 2_600L
 @Composable
 fun RecapScreen(
     onClose: () -> Unit,
+    /** Settings › Accounts, where Last.fm is connected (a Last.fm recap with no account). */
+    onOpenLastFmSettings: () -> Unit = {},
     viewModel: RecapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -181,8 +185,12 @@ fun RecapScreen(
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(28.dp).align(Alignment.Center),
                     )
-                    is RecapUiState.Empty -> EmptyRecap(s.title, onClose = close)
-                    is RecapUiState.Ready -> Story(s, viewModel, onClose = close)
+                    is RecapUiState.Fetching -> FetchingRecap(s, onClose = close)
+                    is RecapUiState.Empty -> EmptyRecap(s, onClose = close, onRetry = viewModel::retry, onOpenSettings = onOpenLastFmSettings)
+                    // The cards (and the share images drawn from them) speak in the story's voice.
+                    is RecapUiState.Ready -> CompositionLocalProvider(LocalRecapVoice provides s.voice) {
+                        Story(s, viewModel, onClose = close)
+                    }
                 }
             }
         }
@@ -209,19 +217,52 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-private fun EmptyRecap(title: String, onClose: () -> Unit) {
+private fun EmptyRecap(s: RecapUiState.Empty, onClose: () -> Unit, onRetry: () -> Unit, onOpenSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(28.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = RecapInk.primary) }
         }
         Spacer(Modifier.weight(1f))
-        Text(title, style = RecapType.statement, color = RecapInk.primary)
+        Text(s.title, style = RecapType.statement, color = RecapInk.primary)
         Spacer(Modifier.height(10.dp))
         Text(
-            "Not enough listening here for a recap yet. Recaps show up once a month has ${RecapAvailability.MIN_PLAYS} listens.",
+            s.message ?: "Not enough listening here for a recap yet. Recaps show up once a month has ${RecapAvailability.MIN_PLAYS} listens.",
             style = RecapType.body,
             color = RecapInk.secondary,
         )
+        if (s.canRetry) {
+            Spacer(Modifier.height(20.dp))
+            GlassPill("Try again", null, onClick = onRetry)
+        }
+        if (s.openSettings) {
+            Spacer(Modifier.height(20.dp))
+            GlassPill("Open Settings", null, onClick = onOpenSettings)
+        }
+        Spacer(Modifier.weight(1.4f))
+    }
+}
+
+/** A Last.fm recap reading its scrobbles: the title, a quiet spinner and how far it has got. */
+@Composable
+private fun FetchingRecap(s: RecapUiState.Fetching, onClose: () -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().padding(28.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = RecapInk.primary) }
+        }
+        Spacer(Modifier.weight(1f))
+        Text(s.title, style = RecapType.statement, color = RecapInk.primary)
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(color = RecapInk.tertiary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            // Announced as it changes (politely): TalkBack users hear the read progress.
+            Text(
+                s.line,
+                style = RecapType.body,
+                color = RecapInk.secondary,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
         Spacer(Modifier.weight(1.4f))
     }
 }
@@ -400,6 +441,7 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
             }
             BottomActions(
                 card = current,
+                endActions = s.voice.endActions,
                 quizAnswer = quizAnswer,
                 saved = saved,
                 sharing = shareJob != null,
@@ -412,11 +454,11 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
     }
 
     shareJob?.let { job ->
-        ShareCapture(job = job, card = cards[job.index], period = s.period, longName = s.longName) { bitmap ->
+        ShareCapture(job = job, card = cards[job.index], period = s.period, footer = s.footer) { bitmap ->
             scope.launch {
                 try {
                     if (bitmap != null) {
-                        ShareImage.share(context, bitmap, "stash ${s.title} ${shareStem(cards[job.index])}", "Share your recap")
+                        ShareImage.share(context, bitmap, "${s.voice.filePrefix} ${s.title} ${shareStem(cards[job.index])}", "Share your recap")
                     } else {
                         Toast.makeText(context, "Couldn't make the image. Try again.", Toast.LENGTH_SHORT).show()
                     }
@@ -590,6 +632,7 @@ private fun ProgressSegments(count: Int, index: Int, progress: () -> Float) {
 @Composable
 private fun BottomActions(
     card: RecapCard,
+    endActions: Boolean,
     quizAnswer: Int?,
     saved: Boolean,
     sharing: Boolean,
@@ -598,11 +641,13 @@ private fun BottomActions(
     onPlayTop: () -> Unit,
     onSave: () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth().height(if (card is RecapCard.Summary) 132.dp else 76.dp).padding(horizontal = 24.dp, vertical = 12.dp)) {
+    val summaryActions = card is RecapCard.Summary && endActions
+    Box(Modifier.fillMaxWidth().height(if (summaryActions) 132.dp else 76.dp).padding(horizontal = 24.dp, vertical = 12.dp)) {
         when {
             card is RecapCard.Quiz && quizAnswer == null ->
                 GlassPill("Skip", null, onClick = onSkipQuiz, modifier = Modifier.align(Alignment.Center))
-            card is RecapCard.Summary -> Column(Modifier.align(Alignment.Center), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // A Last.fm recap's summary has Share only (its songs may not be in the library).
+            summaryActions -> Column(Modifier.align(Alignment.Center), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
                     onClick = onPlayTop,
                     shape = RoundedCornerShape(24.dp),
@@ -672,12 +717,12 @@ internal object ShareSpec {
 }
 
 /**
- * Draws [card] off screen at exactly 1080 x 1920 (no chrome; safe zones kept; footer
- * "Stash · October 2026"), records it into a graphics layer and hands back a software bitmap
+ * Draws [card] off screen at exactly 1080 x 1920 (no chrome; safe zones kept; [footer]
+ * "Stash · October 2026" or "Stash · Last.fm · October 2026"), records it into a graphics layer and hands back a software bitmap
  * (null on failure). Images come preloaded in [job] (Coil hardware bitmaps can't be read back).
  */
 @Composable
-private fun ShareCapture(job: ShareJob, card: RecapCard, period: RecapPeriod, longName: String, onDone: (Bitmap?) -> Unit) {
+private fun ShareCapture(job: ShareJob, card: RecapCard, period: RecapPeriod, footer: String, onDone: (Bitmap?) -> Unit) {
     val layer = rememberGraphicsLayer()
     val done by rememberUpdatedState(onDone)
     Box(
@@ -695,7 +740,7 @@ private fun ShareCapture(job: ShareJob, card: RecapCard, period: RecapPeriod, lo
             LocalDensity provides Density(ShareSpec.DENSITY, 1f),
             LocalShareImages provides job.images,
         ) {
-            ShareCard(card, period, longName, job.colors, job.quizAnswer)
+            ShareCard(card, period, footer, job.colors, job.quizAnswer)
         }
     }
     LaunchedEffect(job) {
@@ -721,7 +766,7 @@ private fun ShareCapture(job: ShareJob, card: RecapCard, period: RecapPeriod, lo
 
 /** The share image's layout: the card in its final state inside the safe zones, the footer at the bottom of them. */
 @Composable
-private fun ShareCard(card: RecapCard, period: RecapPeriod, longName: String, colors: CardColors, quizAnswer: Int?) {
+private fun ShareCard(card: RecapCard, period: RecapPeriod, footer: String, colors: CardColors, quizAnswer: Int?) {
     val d = LocalDensity.current
     Box(Modifier.fillMaxSize().drawBehind { drawStoryBackground(colors) }) {
         Column(
@@ -744,7 +789,7 @@ private fun ShareCard(card: RecapCard, period: RecapPeriod, longName: String, co
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.height(14.dp))
-            Text("Stash · $longName", style = RecapType.small.copy(fontSize = 14.sp), color = RecapInk.secondary)
+            Text(footer, style = RecapType.small.copy(fontSize = 14.sp), color = RecapInk.secondary)
         }
     }
 }

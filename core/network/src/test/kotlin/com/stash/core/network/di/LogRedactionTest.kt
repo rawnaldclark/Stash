@@ -34,6 +34,20 @@ class LogRedactionTest {
     }
 
     @Test
+    fun `a Last_fm session key, signature and auth token are never logged`() {
+        val line = "--> GET https://ws.audioscrobbler.com/2.0/?api_key=k&api_sig=0123abcd&method=user.getRecentTracks" +
+            "&sk=SESSIONKEY123&token=TOKEN456&user=rawnclark"
+
+        val redacted = LogRedaction.redactSecrets(line)
+
+        assertEquals(
+            "--> GET https://ws.audioscrobbler.com/2.0/?api_key=k&api_sig=██&method=user.getRecentTracks&sk=██&token=██&user=rawnclark",
+            redacted,
+        )
+        assertFalse(redacted.contains("SESSIONKEY123"))
+    }
+
+    @Test
     fun `lines without secrets are untouched`() {
         val line = "--> GET https://www.qobuz.com/api.json/0.2/catalog/search?query=radiohead&limit=10"
         assertEquals(line, LogRedaction.redactSecrets(line))

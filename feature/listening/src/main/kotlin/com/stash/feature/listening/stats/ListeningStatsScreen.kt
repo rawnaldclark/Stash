@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +67,7 @@ import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
 import com.stash.feature.listening.recap.PastRecap
+import com.stash.feature.listening.recap.lastfm.LastFmPastRecapsViewModel
 import com.stash.feature.listening.recap.RecapDoorCard
 import com.stash.feature.listening.recap.RecapPeriod
 import com.stash.feature.listening.ui.ArtImage
@@ -106,11 +108,15 @@ fun ListeningStatsScreen(
     onOpenArtist: (name: String) -> Unit,
     onOpenAlbum: (album: String, artist: String) -> Unit,
     onOpenRecap: (kind: String, year: Int, month: Int) -> Unit = { _, _, _ -> },
+    onOpenLastFmRecap: (kind: String, year: Int, month: Int) -> Unit = { _, _, _ -> },
     viewModel: ListeningStatsViewModel = hiltViewModel(),
+    lastFmViewModel: LastFmPastRecapsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val recap by viewModel.recapOffer.collectAsStateWithLifecycle()
     val pastRecaps by viewModel.pastRecaps.collectAsStateWithLifecycle()
+    // The connected Last.fm account's recaps: their own group, apart from Stash's own listening.
+    val lastFmRecaps by lastFmViewModel.recaps.collectAsStateWithLifecycle()
     val selected by viewModel.range.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val use24Hour = remember(context) { DateFormat.is24HourFormat(context) }
@@ -157,7 +163,17 @@ fun ListeningStatsScreen(
             item(key = "hero") {
                 HeroCard(s, onOpenDay = { onOpenHistory(it) })
             }
-            if (s.loading || s.coldStart) return@LazyColumn
+            if (s.loading) return@LazyColumn
+            if (s.coldStart) {
+                // Little Stash history yet, but the Last.fm account may have years of it.
+                if (lastFmRecaps.isNotEmpty()) {
+                    item(key = "past_recaps_title") { StatsSectionTitle("Past recaps") }
+                    item(key = "lastfm_recaps") {
+                        LastFmRecapsGroup(lastFmRecaps, s.today, onOpen = { p -> onOpenLastFmRecap(p.kind, p.year, p.monthArg) })
+                    }
+                }
+                return@LazyColumn
+            }
 
             item(key = "tiles") { Tiles(s) }
 
@@ -198,10 +214,17 @@ fun ListeningStatsScreen(
                 item(key = "highlights_title") { StatsSectionTitle("Highlights") }
                 item(key = "highlights") { HighlightsCard(s, onOpenDay = { onOpenHistory(it) }) }
             }
-            if (pastRecaps.isNotEmpty()) {
+            if (pastRecaps.isNotEmpty() || lastFmRecaps.isNotEmpty()) {
                 item(key = "past_recaps_title") { StatsSectionTitle("Past recaps") }
+            }
+            if (pastRecaps.isNotEmpty()) {
                 item(key = "past_recaps") {
                     PastRecapsRow(pastRecaps, s.today, onOpen = { p -> onOpenRecap(p.kind, p.year, p.monthArg) })
+                }
+            }
+            if (lastFmRecaps.isNotEmpty()) {
+                item(key = "lastfm_recaps") {
+                    LastFmRecapsGroup(lastFmRecaps, s.today, onOpen = { p -> onOpenLastFmRecap(p.kind, p.year, p.monthArg) })
                 }
             }
             if (s.estimated) item(key = "footnote") { EstimatedFootnote() }
@@ -555,9 +578,40 @@ private val AlbumSize = 132.dp
 
 // ── Past recaps ─────────────────────────────────────────────────────────────
 
+/**
+ * The Last.fm account's recaps (LASTFM-RECAP.md §5): a small "On Last.fm" label over the same
+ * tiles, counted in scrobbles, each opening the Last.fm story. Kept visibly apart from Stash's own.
+ */
+@Composable
+private fun LastFmRecapsGroup(recaps: List<PastRecap>, today: Long, onOpen: (RecapPeriod) -> Unit) {
+    Column(Modifier.padding(top = 12.dp)) {
+        Text(
+            text = "On Last.fm",
+            style = MaterialTheme.typography.labelLarge,
+            color = StashTheme.extendedColors.textTertiary,
+            modifier = Modifier
+                .padding(start = Gutter, end = Gutter, bottom = 8.dp)
+                .semantics { heading() },
+        )
+        PastRecapsRow(
+            recaps = recaps,
+            today = today,
+            onOpen = onOpen,
+            count = { n -> if (n == 1) "1 scrobble" else "%,d scrobbles".format(java.util.Locale.US, n) },
+            describe = { name, line -> "Your $name on Last.fm, $line" },
+        )
+    }
+}
+
 /** Every recap the history holds, as small glass tiles: "October" / "so far · 82 plays". */
 @Composable
-private fun PastRecapsRow(recaps: List<PastRecap>, today: Long, onOpen: (RecapPeriod) -> Unit) {
+private fun PastRecapsRow(
+    recaps: List<PastRecap>,
+    today: Long,
+    onOpen: (RecapPeriod) -> Unit,
+    count: (Int) -> String = ListeningLabels::plays,
+    describe: (name: String, line: String) -> String = { name, line -> "Your $name recap, $line" },
+) {
     val colors = StashTheme.extendedColors
     val thisYear = java.time.LocalDate.ofEpochDay(today).year
     LazyRow(
@@ -571,14 +625,14 @@ private fun PastRecapsRow(recaps: List<PastRecap>, today: Long, onOpen: (RecapPe
             }
             val line = buildString {
                 if (r.period.inProgress(today)) append("so far · ")
-                append(ListeningLabels.plays(r.plays))
+                append(count(r.plays))
             }
             Surface(
                 onClick = { onOpen(r.period) },
                 shape = MaterialTheme.shapes.medium,
                 color = colors.glassBackground,
                 border = androidx.compose.foundation.BorderStroke(1.dp, colors.glassBorder),
-                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "Your $name recap, $line" },
+                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = describe(name, line) },
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Text(name, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)

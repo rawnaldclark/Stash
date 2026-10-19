@@ -8,6 +8,10 @@ import org.junit.Test
  * qualifier, then the pill. The title is never squeezed below its fair share
  * while there's decoration left to give up.
  *
+ * Production rows never show source names (owner 2026-10-19), so they pass no
+ * label width: the first step is skipped and the pill is what gives way. The
+ * label cases below keep the pure function's general behaviour.
+ *
  * Widths are in dp-like units: the decision is unit-agnostic.
  */
 class TrackRowFitTest {
@@ -38,20 +42,34 @@ class TrackRowFitTest {
 
     @Test
     fun `roomy row keeps everything as designed`() {
-        assertThat(fit(column = 200)).isEqualTo(TrackRowFitDefault)
+        assertThat(fit(column = 200, labelsExtra = 0)).isEqualTo(TrackRowFitDefault)
+    }
+
+    @Test
+    fun `roomy row with label widths passed shows the labels`() {
+        assertThat(fit(column = 200)).isEqualTo(TrackRowFit(showSourceLabels = true, badge = BadgeFit.FULL))
+    }
+
+    @Test
+    fun `rows never show source names - dots only with the full pill when the title has its share`() {
+        // Dots only, no label width: 170 - 74 = 96 ≥ 80, so the Hi-Res pill keeps its room.
+        assertThat(fit(column = 170, labelsExtra = 0)).isEqualTo(TrackRowFitDefault)
+        assertThat(TrackRowFitDefault.showSourceLabels).isFalse()
+        assertThat(TrackRowFitDefault.badge).isEqualTo(BadgeFit.FULL)
     }
 
     @Test
     fun `the Nude row - two labels and a Hi-Res pill - collapses labels to dots first`() {
         // 393 dp: the title column got ~68 with labels, the pill took 70 → "…".
-        val result = fit(column = 68, title = 38)
+        val result = fit(column = 68, title = 38)  // labels passed; the dots step frees 89
         assertThat(result).isEqualTo(TrackRowFit(showSourceLabels = false, badge = BadgeFit.FULL))
     }
 
     @Test
     fun `a short title that already fits never costs the row its labels`() {
-        // 120 - 70 - 4 = 46 ≥ 38 ("Nude").
-        assertThat(fit(column = 120, title = 38)).isEqualTo(TrackRowFitDefault)
+        // 120 - 70 - 4 = 46 ≥ 38 ("Nude"), so the labels-as-designed step wins.
+        assertThat(fit(column = 120, title = 38))
+            .isEqualTo(TrackRowFit(showSourceLabels = true, badge = BadgeFit.FULL))
     }
 
     @Test
@@ -88,10 +106,11 @@ class TrackRowFitTest {
     @Test
     fun `when a full fair share fits, every title width gets the default (title measuring is skipped)`() {
         // TrackListItem measures the title only when this shortcut fails; it must never change the answer.
+        // Checked with the row's real input (no label width).
         for (column in listOf(0, 40, 68, 120, 161, 200, 400)) {
-            if (fit(column = column, title = min) != TrackRowFitDefault) continue
+            if (fit(column = column, title = min, labelsExtra = 0) != TrackRowFitDefault) continue
             for (title in listOf(0, 10, 38, 79, 80, 81, 300)) {
-                assertThat(fit(column = column, title = title)).isEqualTo(TrackRowFitDefault)
+                assertThat(fit(column = column, title = title, labelsExtra = 0)).isEqualTo(TrackRowFitDefault)
             }
         }
     }
@@ -124,7 +143,8 @@ class TrackRowFitTest {
 
     @Test
     fun `one YouTube label and a Hi-Res pill keep the label when the title has its share`() {
-        // ~393 dp: column with one label ≈ 161; 161 - 74 = 87 ≥ 80.
-        assertThat(fit(column = 161, labelsExtra = labelsYouTube)).isEqualTo(TrackRowFitDefault)
+        // ~393 dp: column with one label ≈ 161; 161 - 74 = 87 ≥ 80. Only reachable when a caller passes label widths.
+        assertThat(fit(column = 161, labelsExtra = labelsYouTube))
+            .isEqualTo(TrackRowFit(showSourceLabels = true, badge = BadgeFit.FULL))
     }
 }

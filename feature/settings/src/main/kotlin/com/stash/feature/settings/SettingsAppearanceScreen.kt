@@ -251,6 +251,7 @@ fun SettingsAppearanceScreen(
 
 @Composable
 private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
+    com.stash.core.data.prefs.HomeSection.DISCOVER -> stringResource(R.string.settings_home_section_discover)
     com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> stringResource(R.string.settings_home_section_your_playlists)
     com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> stringResource(R.string.settings_home_section_new_releases)
     com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> stringResource(R.string.settings_home_section_qobuz_playlists)

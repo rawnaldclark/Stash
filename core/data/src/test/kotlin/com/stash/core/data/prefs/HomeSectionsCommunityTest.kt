@@ -30,13 +30,14 @@ class HomeSectionsCommunityTest {
 
         pref.setCommunityOn(true)
         assertTrue(pref.communityOn.first())
-        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first().first())
+        // Directly under Discover, which is pinned first.
+        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.COMMUNITY), pref.visibleSections.first().take(2))
 
         pref.move(HomeSection.COMMUNITY, up = false)
         pref.setCommunityOn(false)
         assertFalse(HomeSection.COMMUNITY in pref.visibleSections.first())
         pref.setCommunityOn(true)
-        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first()[1])
+        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first()[2])
     }
 
     @Test fun `placed by hand before it was ever on, it keeps that spot when turned on`() = runTest {
