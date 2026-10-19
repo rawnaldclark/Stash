@@ -146,7 +146,9 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
             null
         } else {
             YourListeningState(
-                recent = recent.map { it.track.toDomain() },
+                // Library duplicates of one song show once, the newest (the rail is newest first).
+                recent = recent.distinctBy { ListeningInsights.songKey(it.track.title, it.track.artist) }
+                    .map { it.track.toDomain() },
                 todayPlays = todayCount,
                 lastPlayedAt = recent.first().lastPlayedAt,
                 paused = paused,

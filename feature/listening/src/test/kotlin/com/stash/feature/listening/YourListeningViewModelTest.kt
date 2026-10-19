@@ -118,6 +118,16 @@ class YourListeningViewModelTest {
         assertThat(vm.state.value!!.week.streak).isEqualTo(450)
     }
 
+    @Test fun `recently played shows library duplicates of one song once`() = runTest {
+        val fake = FakeHistory()
+        fake.add(fake.track(1, title = "Garden", artist = "Death Plus"), TODAY, 60)
+        fake.add(fake.track(2, title = "garden", artist = "Death Plus"), TODAY, 70)
+        fake.add(fake.track(3, title = "Other"), TODAY, 80)
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.recent.map { it.id }).containsExactly(3L, 2L).inOrder()
+    }
+
     @Test fun `the Top songs door counts library duplicates as one song`() = runTest {
         val fake = FakeHistory()
         repeat(2) { fake.add(fake.track(1, title = "Garden", artist = "Death Plus"), TODAY, 60 + it) }

@@ -206,6 +206,9 @@ internal object ListeningInsights {
      * one heard last) stands for the song: its cover, what Play plays, the now-playing mark. Only
      * what the screens show: the library itself is untouched.
      */
+    /** The "same song" key [mergeSameSongs] uses first: title and main act, folded. */
+    fun songKey(title: String, artist: String): String = foldCase(title.trim()) + "|" + artistKey(artist)
+
     fun mergeSameSongs(rows: List<TopTrackRow>): List<TopTrackRow> {
         if (rows.size < 2) return rows
         // Union-find over rows: two rows sharing either key are one song.
@@ -220,7 +223,7 @@ internal object ListeningInsights {
         val firstWithKey = HashMap<String, Int>()
         rows.forEachIndexed { i, row ->
             val keys = buildList {
-                add("t:" + foldCase(row.track.title.trim()) + "|" + artistKey(row.track.artist))
+                add("t:" + songKey(row.track.title, row.track.artist))
                 row.track.isrc?.trim()?.takeIf { it.isNotEmpty() }?.let { add("i:" + foldCase(it)) }
             }
             for (k in keys) {
