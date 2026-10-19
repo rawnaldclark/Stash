@@ -11,11 +11,14 @@ The long version, for anyone who wants every detail. The short version is in the
 
 ## Where lossless comes from
 
-There's no Qobuz account or token inside the app. FLAC comes from the first of these that can serve the song:
+There's no Qobuz or Tidal account or token inside the app. FLAC comes from Qobuz or Tidal, through the first of these that can serve the song:
 
 - **Your own Qobuz account** — connect it in Settings › Audio & Quality. Connecting asks for your Qobuz email and password, which are sent once to Qobuz to mint a token; Stash stores the token, not the password. It then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
 - **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field (under Advanced on the same screen) and Stash routes through it.
 - **Stash's relay** — the official release build fetches a signed config at each cold start that lists `stash-relay.rawnaldclark.workers.dev`, a relay the project runs. With nothing of your own connected, Stash uses it for FLAC. Connect your own account and your phone uses your account first, falling back to the relay only for a song whose request on your account fails, or while Qobuz is rejecting your login. It hands your phone a short-lived Qobuz CDN link for the track; the audio comes from Qobuz's CDN, never through the relay. [What Stash talks to](#what-stash-talks-to) below says what it's sent. The relay hostname is not in the APK — a plain source checkout has no config URL, so a Stash you build yourself has this path switched off entirely.
+- **Stash's Tidal relay** — the official release build can also ask a Tidal relay the project runs. Like the Qobuz relay, it hands your phone a short-lived link and the audio comes from Tidal's CDN; only the first small setup piece of some streams (the part that describes the file) passes through the relay so your phone can play it. It is sent the Tidal track id, whether you want AAC, and the same random install id, never a credential. Tidal is also where the **AAC 320** download quality comes from.
+
+Every install gets 500 lossless songs a day, Qobuz and Tidal together, counted by your random install id. Past that, Stash waits until the next day or, with the lossy fallback on, plays from YouTube.
 
 When no lossless source can serve a song, it streams in AAC or Opus instead, and Now Playing shows where it came from. Downloads wait for FLAC by default and show as "Waiting for lossless"; to take an AAC or Opus copy instead, turn on **Lossy fallback** in Settings › Audio & Quality.
 

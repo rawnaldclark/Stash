@@ -196,7 +196,7 @@ Flip **Download** on (Sync tab) and your playlists get saved to your phone so th
 <summary><b>Where does the FLAC come from?</b></summary>
 <br>
 
-Stash looks every song up in a lossless catalog. If you have a Qobuz account you can connect it in Settings and it uses yours. If not, it uses the project's relay, which hands your phone a link and the audio comes straight from the source. No lossless copy? It plays AAC or Opus instead, and Now Playing tells you where it came from. The full details are in [PRIVACY.md](PRIVACY.md#where-lossless-comes-from).
+Qobuz and Tidal. Stash looks every song up there. If you have a Qobuz account you can connect it in Settings and it uses yours. If not, it uses the project's relays, which hand your phone a link and the audio comes straight from Qobuz or Tidal. Everyone gets 500 lossless songs a day, which is a lot. No lossless copy? It plays AAC or Opus instead, and Now Playing tells you where it came from. The full details are in [PRIVACY.md](PRIVACY.md#where-lossless-comes-from).
 
 </details>
 
@@ -307,7 +307,7 @@ Stash stands on a lot of great open-source work:
 
 ## Legal disclaimer
 
-Stash is an independent, unofficial project. It is **not affiliated with, endorsed by, or sponsored by Spotify, YouTube, Google, Qobuz, Apple, Deezer, Discord, Last.fm, ListenBrainz, MusicBrainz, JioSaavn, KuGou, LRCLIB, or any other service it connects to.** Third-party names and logos here are used only to identify the services they belong to, and all trademarks belong to their respective owners.
+Stash is an independent, unofficial project. It is **not affiliated with, endorsed by, or sponsored by Spotify, YouTube, Google, Qobuz, Tidal, Apple, Deezer, Discord, Last.fm, ListenBrainz, MusicBrainz, JioSaavn, KuGou, LRCLIB, or any other service it connects to.** Third-party names and logos here are used only to identify the services they belong to, and all trademarks belong to their respective owners.
 
 Stash is a tool for managing your own music library. You're responsible for complying with the Terms of Service of any music service you use Stash with. Downloading copyrighted content without a license may be illegal in your jurisdiction. The Stash project accepts no responsibility for misuse.
 
