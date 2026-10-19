@@ -529,6 +529,9 @@ private fun StashNavGraph(
                     // A double tap opens one story, not two (the second's cleanup would end the first's music).
                     navController.navigate(RecapRoute(kind, year, month)) { launchSingleTop = true }
                 },
+                onOpenLastFmRecap = { kind, year, month ->
+                    navController.navigate(RecapRoute(kind, year, month, source = "lastfm")) { launchSingleTop = true }
+                },
             )
         }
 

@@ -69,9 +69,10 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 /**
  * The Recap story (Screen 3): [kind] "month" or "year", [year], and [month] 1..12 for a month (0
  * for a year). Full screen: the scaffold hides the mini player and tab bar. The ViewModel reads
- * the arguments by these names.
+ * the arguments by these names. [source] "lastfm" tells the connected Last.fm account's recap
+ * (separate from Stash's own listening); anything else is Stash's own.
  */
-@Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0)
+@Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0, val source: String = "stash")
 
 @Serializable
 data class SearchArtistRoute(

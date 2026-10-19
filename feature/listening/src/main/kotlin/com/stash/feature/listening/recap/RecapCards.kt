@@ -295,6 +295,7 @@ internal fun RecapCardContent(
 @Composable
 private fun ColumnScope.IntroCard(card: RecapCard.Intro, period: RecapPeriod, colors: CardColors, mode: CardMode) {
     val count = countUp(card.plays, mode, delayMs = 500)
+    val voice = LocalRecapVoice.current
     Spacer(Modifier.weight(1f))
     Text(
         "${period.name()}.",
@@ -303,8 +304,8 @@ private fun ColumnScope.IntroCard(card: RecapCard.Intro, period: RecapPeriod, co
         modifier = Modifier.rise(appear(mode, 0)),
     )
     Spacer(Modifier.height(28.dp))
-    Column(Modifier.rise(appear(mode, 350)).clearAndSetSemantics { contentDescription = "You pressed play ${card.plays} times." }) {
-        Text("You pressed play", style = RecapType.body.copy(fontSize = 22.sp), color = RecapInk.secondary)
+    Column(Modifier.rise(appear(mode, 350)).clearAndSetSemantics { contentDescription = voice.introSentence(card.plays) }) {
+        Text(voice.introLead, style = RecapType.body.copy(fontSize = 22.sp), color = RecapInk.secondary)
         Text("%,d".format(count), style = RecapType.huge, color = colors.accent, maxLines = 1)
         Text("times.", style = RecapType.body.copy(fontSize = 22.sp), color = RecapInk.secondary)
     }
@@ -313,6 +314,10 @@ private fun ColumnScope.IntroCard(card: RecapCard.Intro, period: RecapPeriod, co
         card.covers.take(5).forEachIndexed { i, c ->
             RecapArt(c, 54.dp, RoundedCornerShape(10.dp), Modifier.rise(appear(mode, 900L + i * 110)))
         }
+    }
+    voice.credit?.let { credit ->
+        Spacer(Modifier.height(14.dp))
+        Text(credit, style = RecapType.small, color = RecapInk.tertiary, modifier = Modifier.rise(appear(mode, 1_400)))
     }
     Spacer(Modifier.height(8.dp))
 }
@@ -799,6 +804,10 @@ private fun ColumnScope.SummaryPoster(card: RecapCard.Summary, period: RecapPeri
             if (card.topGenre != null && card.clockLabel != null) Spacer(Modifier.width(16.dp))
             card.clockLabel?.let { SummaryFact(it.title, "${it.percent}% ${clockShort(it)}", Modifier.weight(1f)) }
         }
+    }
+    LocalRecapVoice.current.credit?.let { credit ->
+        Spacer(Modifier.height(16.dp))
+        Text(credit, style = RecapType.small, color = RecapInk.tertiary)
     }
     Spacer(Modifier.weight(1f))
 }
