@@ -38,8 +38,9 @@ enum class HomeSection(val key: String) {
 
     /**
      * "Your listening" (Pick 3, owner decision 2026-10-18: listening lives on Home only): Recently
-     * played and the doors into History and, later, Top songs, Stats and Your Year. Last, so an
-     * update appends it under the user's own arrangement; Home renders it only once there's a listen.
+     * played and the doors into History and, later, Top songs, Stats and Your Year. Last in the enum, so
+     * a stale saved order appends it; Home shows it first until the user reorders Home
+     * ([effectiveHomeSectionOrder]). Home renders it only once there's a listen.
      */
     YOUR_LISTENING("your_listening");
 
@@ -59,8 +60,17 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     return known + HomeSection.entries.filter { it !in known }
 }
 
+/**
+ * The order Home uses. Until the user reorders Home after this update ([promoted] false), Your listening
+ * leads (owner 2026-10-19: show the new feature first, once); any reorder saves the order and ends that.
+ */
+fun effectiveHomeSectionOrder(savedKeys: List<String>, promoted: Boolean): List<HomeSection> {
+    val resolved = resolveHomeSectionOrder(savedKeys)
+    return if (promoted) resolved else listOf(HomeSection.YOUR_LISTENING) + (resolved - HomeSection.YOUR_LISTENING)
+}
+
 /** Home before the preference loads, and when it can't be read: every section but Community, which is opt-in. */
-val DEFAULT_HOME_SECTIONS: List<HomeSection> = HomeSection.entries - HomeSection.COMMUNITY
+val DEFAULT_HOME_SECTIONS: List<HomeSection> = effectiveHomeSectionOrder(emptyList(), false) - HomeSection.COMMUNITY
 
 /**
  * What Home renders: [order] minus [hidden], and minus COMMUNITY unless [communityOn]. Community has its own
@@ -97,6 +107,8 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
     private val communityOnKey = booleanPreferencesKey("community_on")
+    /** Set by any write of [orderKey]: a reorder ends the one-time Your listening promotion. */
+    private val listeningPromotedKey = booleanPreferencesKey("your_listening_promoted_v1")
 
     /**
      * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
@@ -107,8 +119,8 @@ class HomeSectionsPreference @Inject constructor(
     }.distinctUntilChanged().catch { emit(false) }
 
     val order: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
-        resolveHomeSectionOrder(prefs[orderKey].toKeys())
-    }.distinctUntilChanged().catch { emit(resolveHomeSectionOrder(emptyList())) }
+        effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false)
+    }.distinctUntilChanged().catch { emit(effectiveHomeSectionOrder(emptyList(), false)) }
 
     val hidden: Flow<Set<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
@@ -146,18 +158,23 @@ class HomeSectionsPreference @Inject constructor(
      */
     val visibleSections: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         val hiddenSet = prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
-        visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, prefs[communityOnKey] ?: false)
+        visibleHomeSections(
+            effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false),
+            hiddenSet,
+            prefs[communityOnKey] ?: false,
+        )
     }.distinctUntilChanged().catch { emit(DEFAULT_HOME_SECTIONS) }
 
     /** Swap [section] one slot up or down in the full order. */
     suspend fun move(section: HomeSection, up: Boolean) {
         context.homeSectionsDataStore.edit { prefs ->
-            val current = resolveHomeSectionOrder(prefs[orderKey].toKeys()).toMutableList()
+            val current = effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false).toMutableList()
             val idx = current.indexOf(section)
             val target = if (up) idx - 1 else idx + 1
             if (idx < 0 || target !in current.indices) return@edit
             current[idx] = current[target].also { current[target] = current[idx] }
             prefs[orderKey] = current.joinToString(",") { it.key }
+            prefs[listeningPromotedKey] = true
             // Placed by hand before it was ever on: keep that spot when it's turned on.
             if (section == HomeSection.COMMUNITY && prefs[communityOnKey] == null) prefs[communityOnKey] = false
         }
@@ -179,7 +196,9 @@ class HomeSectionsPreference @Inject constructor(
     suspend fun setCommunityOn(on: Boolean) {
         context.homeSectionsDataStore.edit { prefs ->
             if (on && prefs[communityOnKey] == null) {
-                prefs[orderKey] = withCommunityFirst(resolveHomeSectionOrder(prefs[orderKey].toKeys())).joinToString(",") { it.key }
+                val effective = effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false)
+                prefs[orderKey] = withCommunityFirst(effective).joinToString(",") { it.key }
+                prefs[listeningPromotedKey] = true
             }
             prefs[communityOnKey] = on
         }

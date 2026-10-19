@@ -72,11 +72,12 @@ class HomeSectionOrderTest {
 
     @Test
     fun `community is off by default, including right after the update that adds it`() {
-        assertFalse(HomeSection.COMMUNITY in visibleHomeSections(resolveHomeSectionOrder(emptyList()), emptySet(), communityOn = false))
+        assertFalse(HomeSection.COMMUNITY in visibleHomeSections(effectiveHomeSectionOrder(emptyList(), false), emptySet(), communityOn = false))
+        // Saved before the update: Your listening leads (not promoted yet), the rest keep the saved order.
         val savedBeforeTheUpdate = listOf("your_playlists", "new_releases", "qobuz_playlists", "top_albums", "made_for_you", "radios", "mood_decades")
         assertEquals(
-            savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey) + HomeSection.YOUR_LISTENING,
-            visibleHomeSections(resolveHomeSectionOrder(savedBeforeTheUpdate), emptySet(), communityOn = false),
+            listOf(HomeSection.YOUR_LISTENING) + savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey),
+            visibleHomeSections(effectiveHomeSectionOrder(savedBeforeTheUpdate, promoted = false), emptySet(), communityOn = false),
         )
         // Home before the preference loads, and the preference's fallback when it can't be read.
         assertFalse(HomeSection.COMMUNITY in DEFAULT_HOME_SECTIONS)
@@ -110,6 +111,30 @@ class HomeSectionOrderTest {
         // New in the update, it shows (Home itself waits for the first listen).
         assertTrue(HomeSection.YOUR_LISTENING in visibleHomeSections(resolved, emptySet(), communityOn = true))
         assertTrue(HomeSection.YOUR_LISTENING in DEFAULT_HOME_SECTIONS)
+        // Home shows it first until the user reorders (effectiveHomeSectionOrder).
+        assertEquals(HomeSection.YOUR_LISTENING, effectiveHomeSectionOrder(saved, promoted = false).first())
+    }
+
+    @Test
+    fun `before a reorder your listening leads, whatever the saved order says`() {
+        val saved = listOf("radios", "top_albums", "your_listening")
+        val effective = effectiveHomeSectionOrder(saved, promoted = false)
+        assertEquals(HomeSection.YOUR_LISTENING, effective.first())
+        assertEquals(HomeSection.entries.size, effective.size)
+        assertEquals(resolveHomeSectionOrder(saved) - HomeSection.YOUR_LISTENING, effective.drop(1))
+    }
+
+    @Test
+    fun `after a reorder the saved order is used as it is`() {
+        val saved = listOf("radios", "your_listening", "top_albums")
+        assertEquals(resolveHomeSectionOrder(saved), effectiveHomeSectionOrder(saved, promoted = true))
+    }
+
+    @Test
+    fun `a fresh install puts your listening first, and community stays off`() {
+        assertEquals(HomeSection.YOUR_LISTENING, DEFAULT_HOME_SECTIONS.first())
+        assertEquals(HomeSection.entries.size - 1, DEFAULT_HOME_SECTIONS.size)
+        assertFalse(HomeSection.COMMUNITY in DEFAULT_HOME_SECTIONS)
     }
 
     @Test
