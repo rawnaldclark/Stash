@@ -14,20 +14,26 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.ArtistGenreDao
+import com.stash.core.data.db.dao.LastFmCacheDao
 import com.stash.core.data.db.entity.ArtistGenreEntity
 import com.stash.core.data.genre.GenreNormalizer
 import com.stash.core.data.genre.WeightedGenre
 import com.stash.core.data.genre.WeightedGenreCodec
 import com.stash.core.data.lastfm.LastFmApiClient
+import com.stash.core.data.lastfm.LastFmApiException
 import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.isTransientLastFmFailure
+import com.stash.core.data.lastfm.LastFmTag
+import com.stash.core.data.lastfm.LastFmTagsAnswer
+import com.stash.core.data.lastfm.isLastFmRateLimited
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -40,22 +46,35 @@ import java.util.concurrent.TimeUnit
  * and an artist's genre is what a listener means by "the genre" anyway.
  *
  * ## One run
- * Takes up to [BATCH_SIZE] artists from [ArtistGenreDao.missingArtists] (most-listened first, no
- * row yet or a stale miss), asks `artist.getTopTags` for each (the client's 7-day response cache,
- * Worker proxy and per-key rate-limit breakers apply), keeps only real genres
- * ([GenreNormalizer.topGenres]) and stores them. Paced at [REQUEST_INTERVAL_MS] like the other
- * Last.fm enrichment workers. Rows are written every [WRITE_EVERY] artists and when the run ends,
- * also when it is stopped, so a long first run keeps what it found.
+ * Takes up to [BATCH_SIZE] artists from [ArtistGenreDao.missingArtists] (most-listened first: no
+ * row yet, or a row past its refresh / retry age), asks `artist.getTopTags` for each (the client's
+ * 7-day response cache, Worker proxy and per-key rate-limit breakers apply), keeps only real
+ * genres ([GenreNormalizer.topGenres]) and stores them, paced at [REQUEST_INTERVAL_MS] like the
+ * other Last.fm enrichment workers. Rows are written every [WRITE_EVERY] artists and when the run
+ * ends, also when it is stopped. Expired Last.fm responses are pruned at the end, as
+ * SyncFinalizeWorker does, so the cache stays bounded for people who never sync.
  *
- * ## What gets written
- *  - genres found: TAGGED, kept for good;
- *  - Last.fm answered and has no genre (no tags, only non-genres, or "artist not found"):
- *    UNTAGGABLE, asked again after [ArtistGenreEntity.UNTAGGABLE_RETRY_MS];
- *  - a request failed (offline, 5xx, 429, every key throttled): nothing at first, since it is
- *    likely an outage, not the artist. Only when a LATER request in the same run succeeds is the
- *    failure known to be the artist's own, and then it is stored as FAILED, retried after
- *    [ArtistGenreEntity.FAILED_RETRY_MS], so one bad name can't head every run forever.
- *    [MAX_CONSECUTIVE_ERRORS] failures in a row end the run (Last.fm or the network is down).
+ * Only one run at a time in the process ([runLock]): the daily and the on-demand run have their own
+ * unique work names and could otherwise overlap and ask for the same artists twice.
+ *
+ * ## What each answer writes
+ *  - genres: TAGGED (fetched again after [ArtistGenreEntity.TAGGED_REFRESH_MS]);
+ *  - Last.fm answered with no genre (no tags, only non-genres, error 6 "not found", error 7
+ *    "invalid resource"): UNTAGGABLE, asked again after [ArtistGenreEntity.UNTAGGABLE_RETRY_MS];
+ *  - rate limited (HTTP 429, error 29, every key's breaker open): nothing. Says nothing about the
+ *    artist; left for the next run, and the run asks WorkManager for a retry;
+ *  - network failure (an [IOException]: offline, DNS, timeout): nothing — an outage, not the
+ *    artist; a run where nothing at all was answered asks for a retry;
+ *  - any other failure (HTTP 5xx, another Last.fm error, an unreadable body): FAILED, asked again
+ *    after [ArtistGenreEntity.FAILED_RETRY_MS], so an artist whose request keeps failing can't
+ *    head the queue and block every run.
+ *
+ * A refresh never loses genres: when a TAGGED artist's refresh finds no genre it keeps the old
+ * ones, and when it fails it keeps them and comes due again after the FAILED retry age.
+ *
+ * [MAX_CONSECUTIVE_ERRORS] failures in a row end the run. Only an answer fetched over the network
+ * counts as proof Last.fm is up and resets that count: cached answers are served even while every
+ * key is throttled, so they neither reset nor add to it.
  *
  * Without Last.fm credentials (CI builds, forks without a key) the worker does nothing and
  * succeeds. Reads listening history only: an empty history means nothing to do. The history Pause
@@ -66,6 +85,7 @@ class ArtistGenreWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val artistGenreDao: ArtistGenreDao,
+    private val lastFmCacheDao: LastFmCacheDao,
     private val lastFmApiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
 ) : CoroutineWorker(appContext, params) {
@@ -81,6 +101,38 @@ class ArtistGenreWorker @AssistedInject constructor(
             Log.d(TAG, "Last.fm credentials not configured; skipping")
             return Result.success()
         }
+        if (!runLock.tryLock()) {
+            Log.d(TAG, "another genre run is active; skipping")
+            return Result.success()
+        }
+        return try {
+            val result = fetchMissing()
+            pruneResponseCache()
+            result
+        } finally {
+            runLock.unlock()
+        }
+    }
+
+    /** What one request came back with. */
+    private sealed interface Outcome {
+        /** Last.fm answered (or "not found"); [fromNetwork] = not served from the local cache. */
+        data class Answer(val tags: List<LastFmTag>, val fromNetwork: Boolean) : Outcome
+        data object RateLimited : Outcome
+        data object NetworkDown : Outcome
+        data class ArtistFailure(val error: Throwable?) : Outcome
+    }
+
+    private class RunStats {
+        var tagged = 0
+        var untaggable = 0
+        var failed = 0
+        var rateLimited = 0
+        var networkDown = 0
+        val answered: Int get() = tagged + untaggable
+    }
+
+    private suspend fun fetchMissing(): Result {
         val artists = artistGenreDao.missingArtists(BATCH_SIZE, clock())
         if (artists.isEmpty()) {
             Log.d(TAG, "every listened artist has genres (or no history yet)")
@@ -99,18 +151,15 @@ class ArtistGenreWorker @AssistedInject constructor(
         Log.i(
             TAG,
             "done: tagged=${stats.tagged} untaggable=${stats.untaggable} failed=${stats.failed} " +
-                "unsettled=${stats.unsettled}",
+                "rateLimited=${stats.rateLimited} networkDown=${stats.networkDown}",
         )
-        // Nothing answered at all: retry with backoff rather than wait a day.
-        return if (stats.settled == 0 && stats.unsettled > 0) Result.retry() else Result.success()
-    }
-
-    private class RunStats {
-        var tagged = 0
-        var untaggable = 0
-        var failed = 0
-        var unsettled = 0
-        val settled: Int get() = tagged + untaggable + failed
+        return when {
+            // Throttled artists were left for later: come back once the breakers have cooled.
+            stats.rateLimited > 0 -> Result.retry()
+            // Nothing answered at all because the network was down: retry with backoff.
+            stats.answered == 0 && stats.failed == 0 && stats.networkDown > 0 -> Result.retry()
+            else -> Result.success()
+        }
     }
 
     private suspend fun fetchAll(
@@ -118,43 +167,90 @@ class ArtistGenreWorker @AssistedInject constructor(
         pending: MutableList<ArtistGenreEntity>,
         stats: RunStats,
     ) {
-        // Failures since the last success: an outage until a later success proves otherwise.
-        val unexplainedFailures = mutableListOf<String>()
+        var consecutiveFailures = 0
         for ((index, artist) in artists.withIndex()) {
             if (isStopped) break
             if (index > 0) pause(REQUEST_INTERVAL_MS)
 
-            val result = lastFmApiClient.getArtistTopTags(artist)
-            // isTransientLastFmFailure re-throws a cancellation runCatching captured.
-            if (result.isTransientLastFmFailure()) {
-                unexplainedFailures += artist
-                if (unexplainedFailures.size >= MAX_CONSECUTIVE_ERRORS) {
-                    Log.w(TAG, "stopping after ${unexplainedFailures.size} failed requests in a row")
-                    break
+            when (val outcome = classify(lastFmApiClient.getArtistTopTagsAnswer(artist))) {
+                is Outcome.Answer -> {
+                    if (outcome.fromNetwork) consecutiveFailures = 0
+                    val genres = GenreNormalizer.topGenres(outcome.tags)
+                    if (genres.isEmpty()) {
+                        pending += noGenreRow(artist)
+                        stats.untaggable++
+                    } else {
+                        pending += row(artist, genres, ArtistGenreEntity.STATUS_TAGGED, clock())
+                        stats.tagged++
+                    }
                 }
-                continue
-            }
-
-            val now = clock()
-            // Last.fm answered, so the failures before this one were about those artists.
-            unexplainedFailures.forEach { pending += row(it, emptyList(), ArtistGenreEntity.STATUS_FAILED, now) }
-            stats.failed += unexplainedFailures.size
-            unexplainedFailures.clear()
-
-            // A success, or Last.fm's "artist not found": both are answers.
-            val genres = GenreNormalizer.topGenres(result.getOrNull().orEmpty())
-            if (genres.isEmpty()) {
-                pending += row(artist, genres, ArtistGenreEntity.STATUS_UNTAGGABLE, now)
-                stats.untaggable++
-            } else {
-                pending += row(artist, genres, ArtistGenreEntity.STATUS_TAGGED, now)
-                stats.tagged++
+                Outcome.RateLimited -> {
+                    stats.rateLimited++
+                    consecutiveFailures++
+                }
+                Outcome.NetworkDown -> {
+                    stats.networkDown++
+                    consecutiveFailures++
+                }
+                is Outcome.ArtistFailure -> {
+                    Log.w(TAG, "genres for an artist failed: ${outcome.error?.message}")
+                    pending += failedRow(artist)
+                    stats.failed++
+                    consecutiveFailures++
+                }
             }
             if (pending.size >= WRITE_EVERY) flush(pending)
+            if (consecutiveFailures >= MAX_CONSECUTIVE_ERRORS) {
+                Log.w(TAG, "stopping after $consecutiveFailures failed requests in a row")
+                break
+            }
         }
-        // Failed without a later success, or not reached (outage, stopped): asked again next run.
-        stats.unsettled = artists.size - stats.settled
     }
+
+    /** Sorts a result; rethrows a cancellation the client's runCatching captured. */
+    private fun classify(result: kotlin.Result<LastFmTagsAnswer>): Outcome {
+        result.getOrNull()?.let { return Outcome.Answer(it.tags, fromNetwork = !it.fromCache) }
+        if (result.isLastFmRateLimited()) return Outcome.RateLimited // also rethrows cancellation
+        val error = result.exceptionOrNull()
+        if (error is LastFmApiException && error.code in FINAL_NO_DATA_ERRORS) {
+            // Last.fm itself answered that it has nothing: a network answer.
+            return Outcome.Answer(emptyList(), fromNetwork = true)
+        }
+        if (error is IOException) return Outcome.NetworkDown
+        return Outcome.ArtistFailure(error)
+    }
+
+    /**
+     * No genre found. A refresh of an artist that had genres keeps them (re-stamped, so it is not
+     * asked again for another refresh period) rather than wiping them on one empty answer.
+     */
+    private suspend fun noGenreRow(artist: String): ArtistGenreEntity {
+        val now = clock()
+        val existing = taggedRow(artist)
+        return existing?.copy(fetchedAt = now)
+            ?: row(artist, emptyList(), ArtistGenreEntity.STATUS_UNTAGGABLE, now)
+    }
+
+    /**
+     * The artist's own request failed. An artist that had genres keeps them and comes due again
+     * after the FAILED retry age, like any failed artist.
+     */
+    private suspend fun failedRow(artist: String): ArtistGenreEntity {
+        val now = clock()
+        val existing = taggedRow(artist)
+        return existing?.copy(
+            fetchedAt = now - ArtistGenreEntity.TAGGED_REFRESH_MS + ArtistGenreEntity.FAILED_RETRY_MS,
+        ) ?: row(artist, emptyList(), ArtistGenreEntity.STATUS_FAILED, now)
+    }
+
+    private suspend fun taggedRow(artist: String): ArtistGenreEntity? =
+        try {
+            artistGenreDao.get(artist)?.takeIf { it.status == ArtistGenreEntity.STATUS_TAGGED }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
 
     private fun row(artist: String, genres: List<WeightedGenre>, status: String, now: Long) =
         ArtistGenreEntity(
@@ -168,13 +264,24 @@ class ArtistGenreWorker @AssistedInject constructor(
         if (pending.isEmpty()) return
         try {
             artistGenreDao.upsertAll(pending.toList())
-            pending.clear()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // A failed write loses this batch only; those artists stay missing and come back next run.
             Log.w(TAG, "writing ${pending.size} genre rows failed: ${e.message}")
+        } finally {
             pending.clear()
+        }
+    }
+
+    /** Best effort, never fails the run (same rules as SyncFinalizeWorker). */
+    private suspend fun pruneResponseCache() {
+        try {
+            lastFmCacheDao.prune(clock() - LastFmApiClient.CACHE_TTL_MS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "pruning expired Last.fm responses failed: ${e.message}")
         }
     }
 
@@ -182,6 +289,12 @@ class ArtistGenreWorker @AssistedInject constructor(
         private const val TAG = "ArtistGenres"
         private const val PERIODIC_WORK_NAME = "stash_artist_genres"
         private const val ONE_TIME_WORK_NAME = "stash_artist_genres_now"
+
+        /** One run at a time per process, whichever unique work started it. */
+        internal val runLock = Mutex()
+
+        /** Last.fm errors that mean "nothing to find here": 6 not found, 7 invalid resource. */
+        private val FINAL_NO_DATA_ERRORS = setOf(LastFmApiException.NOT_FOUND, LastFmApiException.INVALID_RESOURCE)
 
         /** Artists per run: a first run over a year of history finishes in a couple of minutes. */
         internal const val BATCH_SIZE = 300

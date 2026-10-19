@@ -1,6 +1,7 @@
 package com.stash.core.data.listening
 
 import androidx.annotation.VisibleForTesting
+import com.stash.core.data.db.dao.ArtistGenreDao
 import com.stash.core.data.db.dao.DayCount
 import com.stash.core.data.db.dao.HistoryRow
 import com.stash.core.data.db.dao.HourCount
@@ -35,10 +36,13 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
     private val dao: ListeningHistoryDao,
     private val nowMs: () -> Long,
     private val zone: () -> ZoneId,
+    /** Clears the per-artist genre cache with the history ([deleteAll]). */
+    private val clearArtistGenres: suspend () -> Unit = {},
 ) {
 
     @Inject
-    constructor(dao: ListeningHistoryDao) : this(dao, System::currentTimeMillis, { ZoneId.systemDefault() })
+    constructor(dao: ListeningHistoryDao, artistGenreDao: ArtistGenreDao) :
+        this(dao, System::currentTimeMillis, { ZoneId.systemDefault() }, { artistGenreDao.deleteAll() })
 
     /** Today's epoch-day where the phone is now. */
     fun today(): Long = ListeningDay.today(nowMs(), zone())
@@ -133,7 +137,15 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
 
     suspend fun deleteRange(range: DayRange): Int = dao.deleteBetween(range.fromDay, range.toDay)
 
-    suspend fun deleteAll(): Int = dao.deleteAll()
+    /**
+     * Clears every listen, and the genre cache with it: its artist names are a list of what was
+     * listened to. (A day or range delete leaves the cache: other days still use those artists.)
+     */
+    suspend fun deleteAll(): Int {
+        val deleted = dao.deleteAll()
+        clearArtistGenres()
+        return deleted
+    }
 
     companion object {
         /** History page size; the UI prefetches when it nears the end. */

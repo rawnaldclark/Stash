@@ -8,6 +8,7 @@ import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.FAILED_RETRY_MS
 import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.STATUS_FAILED
 import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.STATUS_TAGGED
 import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.STATUS_UNTAGGABLE
+import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.TAGGED_REFRESH_MS
 import com.stash.core.data.db.entity.ArtistGenreEntity.Companion.UNTAGGABLE_RETRY_MS
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
@@ -110,12 +111,30 @@ class ArtistGenreDaoTest {
         assertTrue(dao.missingArtists(limit = 0, now = now).isEmpty())
     }
 
-    @Test fun `tagged artists are never fetched again, whatever the case`() = runTest {
+    @Test fun `tagged artists are not fetched again within the refresh age, whatever the case`() = runTest {
         listened("Drake", plays = 1)
         listened("Future", plays = 1)
-        dao.upsertAll(listOf(row("DRAKE", STATUS_TAGGED, fetchedAt = 0L)))
+        dao.upsertAll(listOf(row("DRAKE", STATUS_TAGGED, fetchedAt = now - TAGGED_REFRESH_MS + 60_000)))
 
         assertEquals(listOf("Future"), dao.missingArtists(limit = 300, now = now))
+    }
+
+    @Test fun `tagged artists are refreshed after 180 days`() = runTest {
+        listened("Drake", plays = 1)
+        dao.upsertAll(listOf(row("Drake", STATUS_TAGGED, fetchedAt = now - TAGGED_REFRESH_MS - 60_000)))
+
+        assertEquals(listOf("Drake"), dao.missingArtists(limit = 300, now = now))
+    }
+
+    @Test fun `Clear history also empties the genre cache`() = runTest {
+        listened("Drake", plays = 2)
+        dao.upsertAll(listOf(row("Drake", STATUS_TAGGED, fetchedAt = now)))
+        // The repository as Hilt builds it.
+        val history = com.stash.core.data.listening.ListeningHistoryRepository(db.listeningHistoryDao(), dao)
+
+        assertEquals(2, history.deleteAll())
+
+        assertTrue(dao.observeAll().first().isEmpty())
     }
 
     @Test fun `an untaggable artist waits its retry age`() = runTest {
