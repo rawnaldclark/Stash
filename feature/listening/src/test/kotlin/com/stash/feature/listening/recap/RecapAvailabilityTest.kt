@@ -87,6 +87,6 @@ class RecapAvailabilityTest {
     @Test fun `door subtitles use a short time`() {
         assertThat(shortTime(47 * 60_000L)).isEqualTo("47 min")
         assertThat(shortTime(11 * 3_600_000L + 20 * 60_000L)).isEqualTo("11 h")
-        assertThat(shortTime(11 * 3_600_000L + 40 * 60_000L)).isEqualTo("12 h")
+        assertThat(shortTime(11 * 3_600_000L + 40 * 60_000L)).isEqualTo("11 h")
     }
 }

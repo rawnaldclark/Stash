@@ -103,6 +103,7 @@ import coil3.size.Size as CoilSize
 import coil3.toBitmap
 import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.PaletteCache
+import com.stash.core.ui.ambient.PaletteKind
 import com.stash.core.ui.ambient.roles
 import com.stash.core.ui.share.ShareImage
 import com.stash.core.ui.theme.LocalStashColors
@@ -244,6 +245,11 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
         cards.mapNotNull { it.tint }.distinct().forEach { model ->
             if (model.key in palettes) return@forEach
             val palette = PaletteCache.load(context, artData(model)) ?: return@forEach
+            // A colourless cover (black, white, grey) would dress the card in grey: Stash purple instead.
+            if (palette.kind == PaletteKind.NEUTRAL) {
+                palettes[model.key] = BrandColors
+                return@forEach
+            }
             val roles = palette.roles(Ground.DARK)
             palettes[model.key] = CardColors(accent = roles.accent, glow = roles.vib, deep = roles.dom)
         }
@@ -268,10 +274,13 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
     }
 
     val quizBlocking = current is RecapCard.Quiz && quizAnswer == null
+    // Read through State inside the loop below (a plain value would be the one from when it started).
+    val pausedNow = rememberUpdatedState(paused)
+    val blockingNow = rememberUpdatedState(quizBlocking)
     // The progress bar of the card showing: runs while not held, moves on at the end.
     LaunchedEffect(index) {
         progress.snapTo(0f)
-        snapshotFlow { Triple(paused, autoAdvance, quizBlocking) }.collectLatest { (p, auto, blocking) ->
+        snapshotFlow { Triple(pausedNow.value, autoAdvance, blockingNow.value) }.collectLatest { (p, auto, blocking) ->
             if (p || !auto || blocking) return@collectLatest
             val card = cards[index]
             val duration = if (card is RecapCard.Quiz) QUIZ_AFTER_ANSWER_MS else RecapDeck.durationMs(card)
@@ -445,16 +454,25 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.storyGes
         var holding = false
         var dragging = false
         var total = Offset.Zero
+        var lastTime = down.uptimeMillis
         while (true) {
-            val event = withTimeoutOrNull(HOLD_MS) { awaitPointerEvent() }
+            // A finger held still still sends small moves: the hold is timed from the press, not
+            // from the last event.
+            val wait = (HOLD_MS - (lastTime - down.uptimeMillis)).coerceAtLeast(1)
+            val event = if (holding || dragging) awaitPointerEvent() else withTimeoutOrNull(wait) { awaitPointerEvent() }
             if (event == null) {
-                if (!dragging && !holding) {
-                    holding = true
-                    onHold(true)
-                }
+                holding = true
+                onHold(true)
                 continue
             }
             val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            lastTime = change.uptimeMillis
+            if (!holding && !dragging && change.pressed && lastTime - down.uptimeMillis >= HOLD_MS &&
+                abs(total.x) < slop && abs(total.y) < slop
+            ) {
+                holding = true
+                onHold(true)
+            }
             if (change.isConsumed && !dragging) {
                 if (holding) onHold(false)
                 break
@@ -590,7 +608,7 @@ private fun GlassPill(label: String, icon: ImageVector?, onClick: () -> Unit, mo
         modifier = modifier.height(44.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -598,7 +616,7 @@ private fun GlassPill(label: String, icon: ImageVector?, onClick: () -> Unit, mo
                 Icon(icon, contentDescription = null, tint = RecapInk.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(label, style = RecapType.name.copy(fontSize = 15.sp), color = RecapInk.primary)
+            Text(label, style = RecapType.name.copy(fontSize = 14.sp), color = RecapInk.primary, maxLines = 1, softWrap = false)
         }
     }
 }
@@ -613,8 +631,11 @@ internal object ShareSpec {
     const val SAFE_BOTTOM = 340
     const val SAFE_SIDES = 65
 
-    /** Drawn at 3 px per dp, so the card's dp layout is 360 x 640 whatever the phone. */
-    const val DENSITY = 3f
+    /**
+     * Drawn at 2.5 px per dp, so the card's dp layout is 432 x 768 whatever the phone: its safe
+     * area (about 380 x 530 dp) holds every card at the sizes it has on screen.
+     */
+    const val DENSITY = 2.5f
 }
 
 /**

@@ -16,10 +16,7 @@ data class RecapOffer(
     /** "11 h · #1 Garden". */
     val subtitle: String,
     val art: ArtModel?,
-) {
-    /** Your listening's banner: "Watch your October recap", "Watch your 2026 recap". */
-    val bannerText: String get() = "Watch your ${period.name()} recap"
-}
+) {}
 
 /**
  * The first of [candidates] with enough listens for a recap, as an offer; null when none
@@ -48,8 +45,8 @@ internal suspend fun readRecapOffer(
     return RecapOffer(period, period.title(today), subtitle, top?.art())
 }
 
-/** A door-sized time: "47 min", "11 h". */
+/** A door-sized time: "47 min", "11 h" (whole hours, never more than the screens' exact time says). */
 internal fun shortTime(ms: Long): String {
     val minutes = ((ms + 30_000) / 60_000).coerceAtLeast(1)
-    return if (minutes < 60) "$minutes min" else "%,d h".format(Locale.US, (minutes + 30) / 60)
+    return if (minutes < 60) "$minutes min" else "%,d h".format(Locale.US, minutes / 60)
 }

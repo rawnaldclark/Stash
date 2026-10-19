@@ -145,8 +145,7 @@ fun ListeningStatsScreen(
                 item(key = "recap") {
                     RecapDoorCard(
                         offer = offer,
-                        title = offer.bannerText,
-                        eyebrow = null,
+                        eyebrow = "Watch your recap",
                         onClick = { onOpenRecap(offer.period.kind, offer.period.year, offer.period.monthArg) },
                         modifier = Modifier.padding(start = Gutter, end = Gutter, top = 16.dp),
                     )

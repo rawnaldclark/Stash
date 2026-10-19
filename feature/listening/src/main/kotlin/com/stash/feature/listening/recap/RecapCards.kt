@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -221,7 +222,8 @@ private fun RankRow(
             textAlign = TextAlign.Start,
             modifier = Modifier.width(34.dp),
         )
-        art()
+        // A fixed slot, so every name starts at the same x though #1's art is bigger.
+        Box(Modifier.width(60.dp), contentAlignment = Alignment.CenterStart) { art() }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -551,15 +553,19 @@ private fun ColumnScope.QuizCard(
         Spacer(Modifier.height(10.dp))
     }
     Spacer(Modifier.height(10.dp))
+    // A fixed line, so the choices don't move when the answer appears.
     Text(
         text = when {
-            answer == null -> " "
+            answer == null -> ""
             answered && answer == card.correctIndex -> "You got it."
-            answered -> "Not quite. It's the one with the tick."
-            else -> "Here's the answer."
+            answered -> "Not quite. It was ${card.options[card.correctIndex].track.title}."
+            else -> "It was ${card.options[card.correctIndex].track.title}."
         },
         style = RecapType.name,
         color = RecapInk.primary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.height(28.dp),
     )
     Spacer(Modifier.weight(1f))
 }
@@ -651,6 +657,8 @@ private fun ColumnScope.ClockCard(card: RecapCard.Clock, colors: CardColors, mod
     )
     Spacer(Modifier.height(18.dp))
     val shown = appear(mode, 500, 900)
+    // The clock draws in the theme's primary: the card's accent here.
+    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(primary = colors.accent, onSurface = RecapInk.primary)) {
     ListeningClock(
         hourly = card.hourly.map { (it * shown).toInt() },
         peakHour = card.peakHour,
@@ -658,8 +666,9 @@ private fun ColumnScope.ClockCard(card: RecapCard.Clock, colors: CardColors, mod
         centerTop = "Peak",
         centerValue = peak,
         summary = "Listening clock. You listen most around $peak. ${card.label.title}: ${card.label.line}.",
-        modifier = Modifier.widthIn(max = 260.dp).fillMaxWidth().align(Alignment.CenterHorizontally),
+        modifier = Modifier.widthIn(max = 300.dp).fillMaxWidth().align(Alignment.CenterHorizontally),
     )
+    }
     Spacer(Modifier.weight(1f))
 }
 
@@ -740,19 +749,16 @@ private fun ColumnScope.SummaryPoster(card: RecapCard.Summary, period: RecapPeri
     val big = RecapDeck.bigTime(card.listenedMs)
     val value = countUp(big.value, mode, delayMs = 200)
     Spacer(Modifier.weight(0.5f))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RecapArt(card.songs.firstOrNull()?.art(), 64.dp, RoundedCornerShape(12.dp))
-        Spacer(Modifier.width(14.dp))
-        Text(card.title, style = RecapType.statement.copy(fontSize = 30.sp, lineHeight = 34.sp), color = RecapInk.primary, maxLines = 2)
-    }
-    Spacer(Modifier.height(20.dp))
+    Text(card.title, style = RecapType.statement.copy(fontSize = 28.sp, lineHeight = 32.sp), color = RecapInk.primary, maxLines = 2)
+    Spacer(Modifier.height(14.dp))
+    if (card.estimated) Text("About", style = RecapType.small, color = RecapInk.tertiary)
     Row(verticalAlignment = Alignment.Bottom) {
-        Text("%,d".format(value), style = RecapType.big, color = colors.accent)
+        Text("%,d".format(value), style = RecapType.big.copy(fontSize = 60.sp, lineHeight = 60.sp), color = colors.accent)
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.padding(bottom = 8.dp)) {
-            if (card.estimated) Text("about", style = RecapType.small, color = RecapInk.tertiary)
+        Column(Modifier.padding(bottom = 8.dp).weight(1f)) {
             Text("${big.unit} listened", style = RecapType.name.copy(fontSize = 18.sp), color = RecapInk.primary)
         }
+        RecapArt(card.songs.firstOrNull()?.art(), 72.dp, RoundedCornerShape(12.dp))
     }
     Spacer(Modifier.height(20.dp))
     Box(Modifier.fillMaxWidth().height(1.dp).background(RecapInk.faint))
@@ -784,7 +790,7 @@ private fun SummaryList(title: String, items: List<String>, colors: CardColors, 
         Text(title, style = RecapType.small, color = RecapInk.tertiary)
         Spacer(Modifier.height(8.dp))
         items.take(RecapDeck.RANKED).forEachIndexed { i, name ->
-            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "${i + 1}",
                     style = RecapType.name.copy(fontSize = 15.sp),
