@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  * unsigned):
  *
  *   adb shell am broadcast -a com.stash.debug.LASTFM_RECAP_USER --es username rawnclark -p com.stash.app.debug
- *   adb shell am broadcast -a com.stash.debug.LASTFM_RECAP_USER --es username "" -p com.stash.app.debug   (clear)
+ *   adb shell am broadcast -a com.stash.debug.LASTFM_RECAP_USER -p com.stash.app.debug   (no username: clear)
  *
  * While set, it wins over the connected account (Your listening → Past recaps → On Last.fm).
  * Declared only in the debug manifest, behind the DUMP permission (adb holds it; ordinary apps
