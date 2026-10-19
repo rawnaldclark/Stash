@@ -61,7 +61,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class YourListeningRoute(val range: String? = null)
 
 /**
- * Top songs / artists / albums (Screen 2). [kind] = "songs", "artists" or "albums"; [range] as in
+ * Top songs / artists / albums / genres (Screen 2). [kind] = "songs", "artists", "albums" or "genres"; [range] as in
  * [YourListeningRoute]. The ViewModel reads both by these names.
  */
 @Serializable data class TopRoute(val kind: String = "songs", val range: String? = null)

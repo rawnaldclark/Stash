@@ -1,6 +1,8 @@
 package com.stash.feature.listening
 
+import android.util.Log
 import androidx.annotation.VisibleForTesting
+import com.stash.core.data.genre.ArtistGenreRepository
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.listening.DayRange
@@ -86,6 +88,10 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     private val connectivityMonitor: ConnectivityMonitor,
     private val clock: Flow<Long>,
     computeDispatcher: CoroutineDispatcher,
+    /** Asks for genres of newly listened artists ([ArtistGenreRepository.requestRefresh]). */
+    requestGenreRefresh: () -> Unit = {},
+    /** Lets the genre request through at most once a day (shared by every Home in the process). */
+    genreGate: DailyGate = GenreRefreshGate,
 ) : ViewModel() {
 
     @Inject
@@ -94,7 +100,19 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
         historyPreference: ListeningHistoryPreference,
         playerRepository: PlayerRepository,
         connectivityMonitor: ConnectivityMonitor,
-    ) : this(history, historyPreference, playerRepository, connectivityMonitor, minuteClock(), Dispatchers.Default)
+        genres: ArtistGenreRepository,
+    ) : this(
+        history, historyPreference, playerRepository, connectivityMonitor, minuteClock(), Dispatchers.Default,
+        genres::requestRefresh,
+    )
+
+    init {
+        // Home's section shows the week, not genres, but asking here (once a day) means the genres
+        // are usually in by the time Your listening opens.
+        if (genreGate.tryPass(history.today())) {
+            runCatching(requestGenreRefresh).onFailure { Log.w(TAG, "genre refresh request failed", it) }
+        }
+    }
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 1)
 
@@ -172,6 +190,8 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     }
 
     companion object {
+        private const val TAG = "YourListening"
+
         /** The "Playing from" line of a queue started from the rail. */
         const val RECENT_LABEL = "Recently played"
 
@@ -182,5 +202,23 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 delay(60_000)
             }
         }
+    }
+}
+
+/** Lets something through once per day. */
+fun interface DailyGate {
+    /** True (and the day is spent) the first time it's asked on [day]; false after that day. */
+    fun tryPass(day: Long): Boolean
+}
+
+/** Home's once-a-day genre request, for the life of the process. */
+internal object GenreRefreshGate : DailyGate {
+    private var lastDay = Long.MIN_VALUE
+
+    @Synchronized
+    override fun tryPass(day: Long): Boolean {
+        if (day == lastDay) return false
+        lastDay = day
+        return true
     }
 }

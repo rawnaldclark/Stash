@@ -8,6 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopTrackRow
+import com.stash.core.data.genre.ArtistGenreIndex
+import com.stash.core.data.genre.ArtistGenreRepository
+import com.stash.core.data.genre.GenreShare
+import com.stash.core.data.genre.TopGenres
+import com.stash.core.data.genre.TopGenresCalculator
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningHistoryRepository
 import com.stash.core.data.listening.ListeningRange
@@ -39,6 +44,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -51,6 +57,7 @@ enum class TopKind(val key: String, val label: String) {
     SONGS("songs", "Songs"),
     ARTISTS("artists", "Artists"),
     ALBUMS("albums", "Albums"),
+    GENRES("genres", "Genres"),
     ;
 
     companion object {
@@ -58,6 +65,9 @@ enum class TopKind(val key: String, val label: String) {
         fun fromKey(key: String?): TopKind = entries.firstOrNull { it.key == key } ?: SONGS
     }
 }
+
+/** A genre on the Top screen: its share, and the artists that give it the most listening time. */
+data class TopGenreUi(val genre: GenreShare, val artists: List<String>)
 
 /** One ranked list on the Top screen; only the chosen [kind]'s list is filled. */
 data class TopUiState(
@@ -69,6 +79,11 @@ data class TopUiState(
     val songs: List<TopTrackRow> = emptyList(),
     val artists: List<TopArtistUi> = emptyList(),
     val albums: List<TopAlbumRow> = emptyList(),
+    val genres: List<TopGenreUi> = emptyList(),
+    /** How much of the range's listening time has a known genre, 0..1 (genres list only). */
+    val genreCoverage: Double = 0.0,
+    /** The range has listens to take genres from (genres list only). */
+    val genreHasListens: Boolean = false,
     /** Some time in the range is estimated from song length: the list ends in a footnote. */
     val estimated: Boolean = false,
 ) {
@@ -77,7 +92,11 @@ data class TopUiState(
             TopKind.SONGS -> songs.isEmpty()
             TopKind.ARTISTS -> artists.isEmpty()
             TopKind.ALBUMS -> albums.isEmpty()
+            TopKind.GENRES -> !genreHasListens
         }
+
+    /** Too little of the listening has a genre to rank genres honestly (DESIGN.md: < 50% hides them). */
+    val genresTooThin: Boolean get() = kind == TopKind.GENRES && genreCoverage < TopGenres.MIN_COVERAGE_TO_SHOW
 }
 
 /**
@@ -94,6 +113,8 @@ class TopViewModel @VisibleForTesting internal constructor(
     private val connectivityMonitor: ConnectivityMonitor,
     private val random: Random,
     computeDispatcher: CoroutineDispatcher,
+    /** Cached artist genres ([ArtistGenreRepository.genreIndex]). */
+    private val genreIndex: Flow<ArtistGenreIndex> = flowOf(ArtistGenreIndex.EMPTY),
 ) : ViewModel() {
 
     @Inject
@@ -103,7 +124,11 @@ class TopViewModel @VisibleForTesting internal constructor(
         artistImages: ArtistImageDao,
         playerRepository: PlayerRepository,
         connectivityMonitor: ConnectivityMonitor,
-    ) : this(savedStateHandle, history, artistImages, playerRepository, connectivityMonitor, Random.Default, Dispatchers.Default)
+        genres: ArtistGenreRepository,
+    ) : this(
+        savedStateHandle, history, artistImages, playerRepository, connectivityMonitor, Random.Default, Dispatchers.Default,
+        genres.genreIndex,
+    )
 
     private val _kind = MutableStateFlow(TopKind.fromKey(savedStateHandle.get<String>(ARG_KIND)))
     private val _range = MutableStateFlow(ListeningInsights.rangeOf(savedStateHandle.get<String>(ARG_RANGE)))
@@ -211,6 +236,23 @@ class TopViewModel @VisibleForTesting internal constructor(
             TopKind.ALBUMS -> combine(history.observeTopAlbums(days, ListeningInsights.SCAN_LIMIT), estimated) { rows, est ->
                 base.copy(albums = ListeningInsights.byMainAlbum(rows).take(ListeningInsights.TOP_LIMIT), estimated = est)
             }
+            // Genres of every main act in the range, weighted by listening time, as Your listening
+            // weighs them; each with the acts that give it the most time.
+            TopKind.GENRES -> combine(
+                history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT),
+                genreIndex,
+                estimated,
+            ) { rows, index, est ->
+                val acts = ListeningInsights.byMainArtist(rows)
+                val top = TopGenresCalculator.compute(ListeningInsights.artistWeights(acts), index, GENRES_LIMIT)
+                val artists = ListeningInsights.genreTopArtists(acts, index, top.items.map { it.key })
+                base.copy(
+                    genres = top.items.map { TopGenreUi(it, artists[it.key].orEmpty()) },
+                    genreCoverage = top.coverage,
+                    genreHasListens = acts.isNotEmpty(),
+                    estimated = est,
+                )
+            }
         }
     }
 
@@ -220,5 +262,8 @@ class TopViewModel @VisibleForTesting internal constructor(
         /** Nav arguments, by the route's property names. */
         const val ARG_KIND = "kind"
         const val ARG_RANGE = "range"
+
+        /** Genres on the Genres list (the whitelist keeps the long tail short anyway). */
+        const val GENRES_LIMIT = 30
     }
 }

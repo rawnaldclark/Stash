@@ -8,6 +8,8 @@ import com.stash.core.data.db.dao.HourCount
 import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopArtistRow
 import com.stash.core.data.db.dao.TopTrackRow
+import com.stash.core.data.genre.ArtistGenreIndex
+import com.stash.core.data.genre.ArtistWeight
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
 import kotlin.math.roundToInt
@@ -179,6 +181,41 @@ internal object ListeningInsights {
                 )
             }
             .sortedWith(compareByDescending<TopArtistRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+
+    /**
+     * The weights top genres are computed from: each main act's listening time ([byMainArtist]
+     * rows), so a genre's share is a share of time listened, not of plays.
+     */
+    fun artistWeights(acts: List<TopArtistRow>): List<ArtistWeight> = acts.map { ArtistWeight(it.artist, it.listenedMs) }
+
+    /**
+     * Each of [genreKeys]' top artists: the main acts ([byMainArtist] rows) that give the genre the
+     * most listening time, at most [perGenre] names each. An act's time is split across its genres
+     * the way top genres split it (by genre weight), so an act that is mostly rock but a little pop
+     * leads Rock before Pop. Genres nobody here carries map to an empty list.
+     */
+    fun genreTopArtists(
+        acts: List<TopArtistRow>,
+        index: ArtistGenreIndex,
+        genreKeys: List<String>,
+        perGenre: Int = 3,
+    ): Map<String, List<String>> {
+        val wanted = genreKeys.toSet()
+        val byGenre = HashMap<String, MutableList<Pair<String, Double>>>()
+        for (act in acts) {
+            if (act.listenedMs <= 0) continue
+            val genres = index.genresFor(act.artist)?.filter { it.weight.isFinite() && it.weight > 0f }.orEmpty()
+            val sum = genres.sumOf { it.weight.toDouble() }
+            if (sum <= 0.0) continue
+            for (g in genres) {
+                if (g.genre !in wanted) continue
+                byGenre.getOrPut(g.genre) { ArrayList() } += act.artist to act.listenedMs * g.weight / sum
+            }
+        }
+        return genreKeys.associateWith { key ->
+            byGenre[key].orEmpty().sortedByDescending { it.second }.take(perGenre).map { it.first }
+        }
+    }
 
     /**
      * Top albums by title and main act, as the Library's Albums tab merges them (a collab credit

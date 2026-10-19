@@ -3,6 +3,8 @@ package com.stash.feature.listening.top
 import androidx.lifecycle.SavedStateHandle
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.ArtistImageDao
+import com.stash.core.data.genre.ArtistGenreIndex
+import com.stash.core.data.genre.WeightedGenre
 import com.stash.core.data.listening.ListeningRange
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
@@ -46,10 +48,15 @@ class TopViewModelTest {
 
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun TestScope.viewModel(fake: FakeHistory, args: Map<String, Any?> = emptyMap(), handle: SavedStateHandle = SavedStateHandle(args)): TopViewModel {
+    private fun TestScope.viewModel(
+        fake: FakeHistory,
+        args: Map<String, Any?> = emptyMap(),
+        handle: SavedStateHandle = SavedStateHandle(args),
+        genres: ArtistGenreIndex = ArtistGenreIndex.EMPTY,
+    ): TopViewModel {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        return TopViewModel(handle, fake.repository(), artistImages, player, connectivity, Random(7), dispatcher).also { vm ->
+        return TopViewModel(handle, fake.repository(), artistImages, player, connectivity, Random(7), dispatcher, flowOf(genres)).also { vm ->
             backgroundScope.launch { vm.state.collect {} }
         }
     }
@@ -92,7 +99,8 @@ class TopViewModelTest {
     }
 
     @Test fun `an unknown kind opens on songs`() = runTest {
-        assertThat(TopKind.fromKey("genres")).isEqualTo(TopKind.SONGS)
+        assertThat(TopKind.fromKey("moods")).isEqualTo(TopKind.SONGS)
+        assertThat(TopKind.fromKey("genres")).isEqualTo(TopKind.GENRES)
         assertThat(TopKind.fromKey(null)).isEqualTo(TopKind.SONGS)
         assertThat(TopKind.fromKey("albums")).isEqualTo(TopKind.ALBUMS)
     }
@@ -169,5 +177,41 @@ class TopViewModelTest {
         vm.playFrom(1L); advanceUntilIdle()
         assertThat(messages).containsExactly(SONG_NEEDS_CONNECTION)
         coVerify(exactly = 0) { player.setQueue(any(), any(), any()) }
+    }
+
+    @Test fun `genres rank by listening time, each with its top artists`() = runTest {
+        val index = ArtistGenreIndex.of(
+            mapOf(
+                "Taro" to listOf(WeightedGenre("jazz", 1f)),
+                "Mira" to listOf(WeightedGenre("jazz", 1f), WeightedGenre("soul", 1f)),
+            ),
+        )
+        val vm = viewModel(library(), mapOf(TopViewModel.ARG_KIND to "genres"), genres = index)
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.kind).isEqualTo(TopKind.GENRES)
+        // Taro 720 000 ms of jazz; Mira 200 000 ms split half jazz, half soul.
+        assertThat(s.genres.map { it.genre.key }).containsExactly("jazz", "soul").inOrder()
+        assertThat(s.genres[0].artists).containsExactly("Taro", "Mira").inOrder()
+        assertThat(s.genres[1].artists).containsExactly("Mira")
+        assertThat(s.genreCoverage).isWithin(1e-9).of(1.0)
+        assertThat(s.genresTooThin).isFalse()
+        assertThat(s.isEmpty).isFalse()
+    }
+
+    @Test fun `genres known for under half the listening say so instead of ranking`() = runTest {
+        val index = ArtistGenreIndex.of(mapOf("Mira" to listOf(WeightedGenre("soul", 1f))))
+        val vm = viewModel(library(), mapOf(TopViewModel.ARG_KIND to "genres"), genres = index)
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.genreCoverage).isLessThan(0.5)
+        assertThat(s.genresTooThin).isTrue()
+        assertThat(s.isEmpty).isFalse()
+    }
+
+    @Test fun `genres of a range with no listens are empty`() = runTest {
+        val vm = viewModel(FakeHistory(), mapOf(TopViewModel.ARG_KIND to "genres"))
+        advanceUntilIdle()
+        assertThat(vm.state.value.isEmpty).isTrue()
     }
 }

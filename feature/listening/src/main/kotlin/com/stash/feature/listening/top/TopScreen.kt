@@ -34,7 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +52,9 @@ import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
 import com.stash.feature.listening.ui.EstimatedFootnote
+import com.stash.feature.listening.ui.GENRES_CREDIT
+import com.stash.feature.listening.ui.GenreBar
+import com.stash.feature.listening.ui.genreFractions
 import com.stash.feature.listening.ui.Gutter
 import com.stash.feature.listening.ui.ListeningTopBar
 import com.stash.feature.listening.ui.RangeChips
@@ -160,10 +168,89 @@ fun TopScreen(
                         art = { ArtImage(album.albumArtPath, album.albumArtUrl, 48.dp, SquareArt) },
                     )
                 }
+                TopKind.GENRES -> {
+                    if (s.genresTooThin) {
+                        item(key = "genres_thin") { GenresComingIn(s.genreCoverage) }
+                    } else {
+                        val fractions = genreFractions(s.genres.map { it.genre })
+                        itemsIndexed(s.genres, key = { _, g -> "g${g.genre.key}" }) { i, g ->
+                            GenreRow(rank = i + 1, genre = g, fraction = fractions[i])
+                        }
+                        item(key = "genres_credit") {
+                            Text(
+                                text = "Share of your listening time · $GENRES_CREDIT",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = StashTheme.extendedColors.textTertiary,
+                                modifier = Modifier.fillMaxWidth().padding(start = Gutter, end = Gutter, top = 12.dp),
+                            )
+                        }
+                    }
+                }
             }
             if (s.estimated && !s.isEmpty) item(key = "footnote") { EstimatedFootnote() }
         }
     }
+}
+
+/**
+ * One ranked genre: the rank numeral (as on the other lists), the name and percent over a bar,
+ * and the artists that give it the most listening time. Not tappable: there is no genre page yet.
+ */
+@Composable
+private fun GenreRow(rank: Int, genre: TopGenreUi, fraction: Float) {
+    val colors = StashTheme.extendedColors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = Gutter, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = "$rank",
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
+            color = if (rank == 1) MaterialTheme.colorScheme.primary else colors.textTertiary,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.width(34.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            GenreBar(
+                genre = genre.genre,
+                fraction = fraction,
+                color = if (rank == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+            )
+            if (genre.artists.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = genre.artists.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** Genres known for too little of the range to rank them: say so, with how far along it is. */
+@Composable
+private fun GenresComingIn(coverage: Double) {
+    val pct = (coverage * 100).roundToInt()
+    Text(
+        text = if (pct <= 0) {
+            "Genres for your artists are still on their way from Last.fm. They show up here once they've arrived."
+        } else {
+            "We know the genre of $pct% of your listening in this period so far. Genres show up here once that's over half."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Gutter + 8.dp, vertical = 48.dp),
+    )
 }
 
 /** Play and Shuffle, side by side, half the row each (as on Library's playlist pages). */

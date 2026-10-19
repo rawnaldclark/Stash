@@ -59,6 +59,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopTrackRow
+import com.stash.core.data.genre.GenreShare
 import com.stash.core.data.listening.ListeningStatsCalculator.Bucket
 import com.stash.core.data.listening.ListeningStatsCalculator.Granularity
 import com.stash.core.ui.components.bottomChromePadding
@@ -68,6 +69,9 @@ import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
 import com.stash.feature.listening.ui.EstimatedFootnote
+import com.stash.feature.listening.ui.GENRES_CREDIT
+import com.stash.feature.listening.ui.GenreBar
+import com.stash.feature.listening.ui.genreFractions
 import com.stash.feature.listening.ui.Gutter
 import com.stash.feature.listening.ui.ListeningTopBar
 import com.stash.feature.listening.ui.RangeChips
@@ -161,6 +165,14 @@ fun ListeningStatsScreen(
                     StatsSectionTitle("Top albums", action = "See all", onAction = { onOpenTop("albums", rangeKey) })
                 }
                 item(key = "albums") { key(s.range) { TopAlbumsRow(s.topAlbums, onOpenAlbum) } }
+            }
+            // Hidden until enough of the range's listening has a genre (a top genre from a sliver
+            // of it would be a guess shown as a fact).
+            if (s.topGenres.isShowable) {
+                item(key = "genres_title") {
+                    StatsSectionTitle("Top genres", action = "See all", onAction = { onOpenTop("genres", rangeKey) })
+                }
+                item(key = "genres") { GenresCard(s.topGenres.items) }
             }
             item(key = "clock_title") { StatsSectionTitle("When you listen") }
             item(key = "clock") { ClockCard(s, use24Hour) }
@@ -518,6 +530,30 @@ private fun RankBadge(rank: Int, modifier: Modifier = Modifier) {
 }
 
 private val AlbumSize = 132.dp
+
+// ── Top genres ──────────────────────────────────────────────────────────────
+
+/** Up to five genres as bars, each "% of your listening" time, with Last.fm's credit under them. */
+@Composable
+private fun GenresCard(genres: List<GenreShare>) {
+    val fractions = remember(genres) { genreFractions(genres) }
+    StatsCard(Modifier.padding(horizontal = Gutter)) {
+        genres.forEachIndexed { i, genre ->
+            if (i > 0) Spacer(Modifier.height(14.dp))
+            GenreBar(
+                genre = genre,
+                fraction = fractions[i],
+                color = if (i == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+            )
+        }
+    }
+    Text(
+        text = "Share of your listening time · $GENRES_CREDIT",
+        style = MaterialTheme.typography.bodySmall,
+        color = StashTheme.extendedColors.textTertiary,
+        modifier = Modifier.padding(start = Gutter, end = Gutter, top = 8.dp),
+    )
+}
 
 // ── When you listen ─────────────────────────────────────────────────────────
 

@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.db.entity.ArtistImageEntity
+import com.stash.core.data.genre.ArtistGenreIndex
+import com.stash.core.data.genre.WeightedGenre
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
 import com.stash.core.media.PlayerRepository
@@ -307,5 +309,49 @@ class ListeningStatsViewModelTest {
         vm.playTopSongs(); advanceUntilIdle()
         assertThat(messages).containsExactly(TOP_NEEDS_CONNECTION)
         coVerify(exactly = 0) { player.setQueue(any(), any(), any()) }
+    }
+
+    @Test fun `top genres weigh main acts by listening time, and opening asks for a genre refresh`() = runTest {
+        val fake = FakeHistory().apply {
+            // Taro: 6 listens x 200 s; "Taro, Mira" counts for Taro; Mira: 2 x 200 s; Unknown: 2 x 200 s.
+            repeat(5) { add(track(1, artist = "Taro"), TODAY, 600 + it) }
+            add(track(2, artist = "Taro, Mira"), TODAY, 700)
+            repeat(2) { add(track(3, artist = "Mira"), TODAY - 1, 600 + it) }
+            repeat(2) { add(track(4, artist = "Nobody Tagged"), TODAY - 2, 600 + it) }
+        }
+        val index = ArtistGenreIndex.of(
+            mapOf("Taro" to listOf(WeightedGenre("jazz", 1f)), "Mira" to listOf(WeightedGenre("soul", 1f))),
+        )
+        var refreshes = 0
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val vm = ListeningStatsViewModel(
+            SavedStateHandle(), fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY, dispatcher,
+            genreIndex = MutableStateFlow(index), requestGenreRefresh = { refreshes++ },
+        )
+        backgroundScope.launch { vm.state.collect {} }
+        advanceUntilIdle()
+        val genres = vm.state.value.topGenres
+        assertThat(refreshes).isEqualTo(1)
+        assertThat(genres.items.map { it.name }).containsExactly("Jazz", "Soul").inOrder()
+        assertThat(genres.items[0].share).isWithin(1e-9).of(0.75) // 6 of the 8 tagged listens' time
+        assertThat(genres.coverage).isWithin(1e-9).of(0.8) // 8 of 10
+        assertThat(genres.isShowable).isTrue()
+    }
+
+    @Test fun `genres for under half the listening are not showable`() = runTest {
+        val fake = FakeHistory().apply {
+            add(track(1, artist = "Taro"), TODAY, 600)
+            repeat(9) { add(track(2 + it.toLong(), artist = "Other $it"), TODAY, 700 + it) }
+        }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val vm = ListeningStatsViewModel(
+            SavedStateHandle(), fake.repository(), artistImages, player, connectivity, DayOfWeek.MONDAY, dispatcher,
+            genreIndex = MutableStateFlow(ArtistGenreIndex.of(mapOf("Taro" to listOf(WeightedGenre("jazz", 1f))))),
+        )
+        backgroundScope.launch { vm.state.collect {} }
+        advanceUntilIdle()
+        assertThat(vm.state.value.topGenres.isShowable).isFalse()
     }
 }
