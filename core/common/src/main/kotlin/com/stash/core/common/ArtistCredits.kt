@@ -13,6 +13,7 @@ package com.stash.core.common
 val ARTIST_CREDIT_ALLOWLIST: Set<String> = setOf(
     "AC/DC",
     "Earth, Wind & Fire",
+    "Tyler, The Creator",
     "Blood, Sweat & Tears",
     "Simon & Garfunkel",
     "Hall & Oates",
@@ -37,8 +38,8 @@ val ARTIST_CREDIT_ALLOWLIST: Set<String> = setOf(
  * separators.
  *
  * Known limitation (shared with [String.primaryArtist]): a single artist
- * whose own name contains ", " is truncated ("Tyler, The Creator" →
- * ["Tyler", "The Creator"]). Fixing that needs a structured artist list
+ * whose own name contains ", " and isn't allowlisted is truncated
+ * ("Peter, Bjorn and John" → ["Peter", "Bjorn and John"]). Fixing that needs a structured artist list
  * on TrackEntity; a comma-only split is the smallest conservative step
  * that fixes the reported collaboration cases.
  */
@@ -106,7 +107,7 @@ fun matchesArtistCredits(artist: String, albumArtist: String, query: String): Bo
  *
  * Known limitation (shared with the long-standing LastFmScrobbler helper
  * this replaces): a single artist whose own name contains ", " is truncated
- * ("Tyler, The Creator" → "Tyler"). Fixing that needs a structured artist
+ * when it isn't allowlisted ("Peter, Bjorn and John" → "Peter"). Fixing that needs a structured artist
  * list on TrackEntity; a comma-only split is the smallest conservative
  * step that fixes the reported collaboration cases.
  *

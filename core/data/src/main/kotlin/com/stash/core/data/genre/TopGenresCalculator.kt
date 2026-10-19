@@ -42,6 +42,39 @@ data class TopGenres(val items: List<GenreShare>, val coverage: Double) {
 }
 
 /**
+ * Cached genres keyed for lookup by any artist credit: keys are [ArtistGenreKey]s in lower case,
+ * matching the `artist_genres` primary key's COLLATE NOCASE. Built once per cache change (see
+ * [ArtistGenreRepository.genreIndex]) rather than on every top-genres computation.
+ */
+class ArtistGenreIndex private constructor(private val byKey: Map<String, List<WeightedGenre>>) {
+
+    /** Artists with genres. */
+    val size: Int get() = byKey.size
+
+    /** The genres of the act [credit] is keyed under ("Drake feat. Rihanna" -> Drake's), or null. */
+    fun genresFor(credit: String): List<WeightedGenre>? = byKey[ArtistGenreKey.of(credit).lowercase()]
+
+    override fun equals(other: Any?): Boolean = other is ArtistGenreIndex && other.byKey == byKey
+    override fun hashCode(): Int = byKey.hashCode()
+    override fun toString(): String = "ArtistGenreIndex(${byKey.size} artists)"
+
+    companion object {
+        val EMPTY = ArtistGenreIndex(emptyMap())
+
+        /** From genres under any artist names: each name is re-keyed through [ArtistGenreKey]. */
+        fun of(genres: Map<String, List<WeightedGenre>>): ArtistGenreIndex =
+            ArtistGenreIndex(genres.entries.associate { (name, list) -> ArtistGenreKey.of(name).lowercase() to list })
+
+        /**
+         * From `artist_genres` keys, which already are [ArtistGenreKey]s: lower-cased only, no
+         * credit parsing.
+         */
+        internal fun fromStoredKeys(genres: Map<String, List<WeightedGenre>>): ArtistGenreIndex =
+            ArtistGenreIndex(genres.entries.associate { (key, list) -> key.lowercase() to list })
+    }
+}
+
+/**
  * Top genres from top artists: pure arithmetic, no I/O.
  *
  * Each artist's weight is split across its genres in proportion to their genre weights (an artist
@@ -59,18 +92,23 @@ object TopGenresCalculator {
     /**
      * @param artists the range's artists with their weights; repeated or differently-credited
      *   entries for one act simply add up.
-     * @param genres cached genres by artist key ([ArtistGenreKey.of]); keys are matched ignoring
-     *   case, as the `artist_genres` primary key is COLLATE NOCASE.
+     * @param genres cached genres by artist name; re-keyed through [ArtistGenreKey] and matched
+     *   ignoring case, as the `artist_genres` primary key is COLLATE NOCASE. Screens use the
+     *   [ArtistGenreIndex] overload with the repository's shared index instead.
      * @param limit how many genres to return; 0 or less returns none (coverage is still computed).
      */
     fun compute(
         artists: List<ArtistWeight>,
         genres: Map<String, List<WeightedGenre>>,
         limit: Int = DEFAULT_LIMIT,
-    ): TopGenres {
-        val byKey = HashMap<String, List<WeightedGenre>>(genres.size * 2)
-        for ((name, list) in genres) byKey[ArtistGenreKey.of(name).lowercase()] = list
+    ): TopGenres = compute(artists, ArtistGenreIndex.of(genres), limit)
 
+    /** [compute] over an index built once ([ArtistGenreRepository.genreIndex]). */
+    fun compute(
+        artists: List<ArtistWeight>,
+        index: ArtistGenreIndex,
+        limit: Int = DEFAULT_LIMIT,
+    ): TopGenres {
         var total = 0.0
         var covered = 0.0
         val perGenre = HashMap<String, Double>()
@@ -78,7 +116,7 @@ object TopGenresCalculator {
             if (artist.weight <= 0L) continue
             val weight = artist.weight.toDouble()
             total += weight
-            val artistGenres = byKey[ArtistGenreKey.of(artist.name).lowercase()]
+            val artistGenres = index.genresFor(artist.name)
                 ?.filter { it.weight.isFinite() && it.weight > 0f && it.genre.isNotBlank() }
                 .orEmpty()
             val genreWeightSum = artistGenres.sumOf { it.weight.toDouble() }
