@@ -5,3 +5,5 @@ files:
     translation: /core/media/src/main/res/values-%android_code%/strings.xml
   - source: /app/src/debug/res/values/strings.xml
     translation: /app/src/debug/res/values-%android_code%/strings.xml
+  - source: /feature/settings/src/main/res/values/strings.xml
+    translation: /feature/settings/src/main/res/values-%android_code%/strings.xml
