@@ -284,10 +284,6 @@ Can't donate? A star, a bug report or telling a friend helps just as much.
 
 **Security:** found a hole? Please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
-<a href="https://github.com/rawnaldclark/Stash/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=rawnaldclark/Stash" alt="Everyone who's contributed to Stash" />
-</a>
-
 ---
 
 ## Thanks to
