@@ -28,14 +28,14 @@ class RecapAudioTest {
     private class FakeEngine : RecapPreviewEngine {
         val calls = mutableListOf<String>()
         val volumes = mutableListOf<Float>()
-        var listener: RecapPreviewEngine.Listener? = null
+        var engineListener: RecapPreviewEngine.Listener? = null
         var loaded: RecapSource? = null
         var loadedStartMs: Long = -1
         var playing = false
-        var volume = 1f
+        var gain = 1f
 
         override fun setListener(listener: RecapPreviewEngine.Listener?) {
-            this.listener = listener
+            engineListener = listener
         }
 
         override fun load(source: RecapSource, startPositionMs: Long) {
@@ -68,7 +68,7 @@ class RecapAudioTest {
         }
 
         override fun setVolume(volume: Float) {
-            this.volume = volume
+            gain = volume
             volumes += volume
         }
 
@@ -150,7 +150,7 @@ class RecapAudioTest {
         advanceUntilIdle()
         assertThat(w.engine.loads()).containsExactly("load:local:/music/1.flac@60000")
         assertThat(w.engine.playing).isTrue()
-        assertThat(w.engine.volume).isEqualTo(1f)
+        assertThat(w.engine.gain).isEqualTo(1f)
 
         w.audio.end()
         assertThat(w.engine.calls.last()).isEqualTo("release")
@@ -194,7 +194,7 @@ class RecapAudioTest {
         assertThat(bottom).isGreaterThan(0)
         assertThat(switchVolumes.subList(0, bottom + 1)).isInOrder(reverseOrder<Float>())
         assertThat(switchVolumes.subList(bottom, switchVolumes.size)).isInOrder()
-        assertThat(w.engine.volume).isEqualTo(1f)
+        assertThat(w.engine.gain).isEqualTo(1f)
     }
 
     @Test
@@ -360,7 +360,7 @@ class RecapAudioTest {
         advanceUntilIdle()
 
         assertThat(w.engine.calls.last()).isEqualTo("stop")
-        assertThat(w.engine.volume).isEqualTo(0f)
+        assertThat(w.engine.gain).isEqualTo(0f)
         // And coming back to song 1 plays it again (the quiet card cleared "current").
         w.audio.play(downloaded(1))
         advanceUntilIdle()
@@ -383,7 +383,7 @@ class RecapAudioTest {
         w.audio.resume()
         advanceUntilIdle()
         assertThat(w.engine.playing).isTrue()
-        assertThat(w.engine.volume).isEqualTo(1f)
+        assertThat(w.engine.gain).isEqualTo(1f)
     }
 
     @Test
@@ -399,7 +399,7 @@ class RecapAudioTest {
         w.audio.resume()
         advanceUntilIdle()
         assertThat(w.engine.playing).isTrue()
-        assertThat(w.engine.volume).isEqualTo(1f)
+        assertThat(w.engine.gain).isEqualTo(1f)
     }
 
     // ── interruptions, errors, Listen Together, background ───────────────────────────────────
@@ -411,7 +411,7 @@ class RecapAudioTest {
         w.audio.play(downloaded(1))
         advanceUntilIdle()
 
-        w.engine.listener!!.onInterrupted()
+        w.engine.engineListener!!.onInterrupted()
         w.audio.play(downloaded(2))
         advanceUntilIdle()
         w.audio.end()
@@ -427,7 +427,7 @@ class RecapAudioTest {
         w.audio.play(streamed(1))
         advanceUntilIdle()
 
-        w.engine.listener!!.onError("resolve failed")
+        w.engine.engineListener!!.onError("resolve failed")
         assertThat(w.engine.calls.last()).isEqualTo("stop")
 
         w.audio.play(downloaded(2))
@@ -445,7 +445,7 @@ class RecapAudioTest {
 
         w.audio.play(downloaded(2))
         testScheduler.advanceTimeBy(100) // fading song 1 out
-        w.engine.listener!!.onError("song 1 connection dropped")
+        w.engine.engineListener!!.onError("song 1 connection dropped")
         advanceUntilIdle()
 
         assertThat(w.engine.loads().last()).isEqualTo("load:local:/music/2.flac@60000")
