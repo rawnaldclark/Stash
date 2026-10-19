@@ -503,6 +503,30 @@ class RecapAudioTest {
     }
 
     @Test
+    fun `letting go while the next card's song is on its way never sounds the old song`() = runTest {
+        // The quiz pauses the story's song; the #1 reveal then plays a new song and lets go at once.
+        val w = World(this, FakeMain(meantToPlay = false))
+        w.audio.begin()
+        w.audio.play(downloaded(1))
+        advanceUntilIdle()
+        w.audio.pause()
+        advanceUntilIdle()
+        val mark = w.engine.calls.size
+
+        w.audio.play(downloaded(2))
+        w.audio.resume()
+        advanceUntilIdle()
+
+        val after = w.engine.calls.drop(mark)
+        val secondLoad = after.indexOfFirst { it.startsWith("load:") }
+        assertThat(secondLoad).isAtLeast(0)
+        // No "play" before the new song is loaded: the old one stayed silent.
+        assertThat(after.take(secondLoad)).doesNotContain("play")
+        assertThat(w.engine.playing).isTrue()
+        assertThat(w.engine.gain).isEqualTo(1f)
+    }
+
+    @Test
     fun `a song that loads during a hold waits, then fades in on release`() = runTest {
         val w = World(this, FakeMain(meantToPlay = false))
         w.audio.begin()

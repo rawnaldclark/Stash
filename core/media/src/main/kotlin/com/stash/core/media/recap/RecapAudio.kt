@@ -240,6 +240,9 @@ class RecapAudio internal constructor(
             if (s.currentTrackId == track.id) return@launch // the same song under the next card: keep going
             switchJob?.cancel()
             s.currentTrackId = track.id
+            // Marked now, not when the switch starts: a resume() queued right behind this play()
+            // must not sound the outgoing song (carryOn checks it).
+            s.loadingNext = true
             switchJob = scope.launch { switchTo(s, track, startFraction) }
         }
     }
@@ -335,6 +338,10 @@ class RecapAudio internal constructor(
     /** Sounds the current card's song again after a hold or the background, if nothing else forbids it. */
     private fun carryOn(s: Session) {
         if (s.silenced || s.quiet || s.currentTrackId == null) return
+        // A card change is on its way (fading out / finding / loading the new song): playing now
+        // would sound the OLD song for a moment (the #1 reveal after the quiz's pause). The switch
+        // starts the new one itself once it's loaded, since nothing silences it any more.
+        if (s.loadingNext) return
         engine.play()
         // A song that loaded while silenced is still at 0: fade it in. (A card change still in
         // flight does its own fade; a song paused mid-play is already at full gain.)
