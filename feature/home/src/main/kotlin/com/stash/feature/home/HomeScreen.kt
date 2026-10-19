@@ -251,7 +251,7 @@ fun HomeScreen(
                 val chrome = LocalAlbumChrome.current
                 Spacer(
                     modifier = Modifier
-                        .height(48.dp)
+                        .height(34.dp)
                         .aspectRatio(wordmark.intrinsicSize.width / wordmark.intrinsicSize.height)
                         .semantics { contentDescription = "Stash" }
                         .drawBehind {

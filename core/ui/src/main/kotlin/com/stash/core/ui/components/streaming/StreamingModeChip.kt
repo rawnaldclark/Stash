@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stash.core.common.constants.StashConstants
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -50,7 +51,7 @@ fun StreamingModeChip(
     if (!StashConstants.STREAMING_ENGINE_ENABLED) return
 
     val extendedColors = StashTheme.extendedColors
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = LocalAlbumChrome.current.accent
 
     Row(
         modifier = modifier

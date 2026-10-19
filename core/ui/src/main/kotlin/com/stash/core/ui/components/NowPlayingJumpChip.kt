@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxScope
@@ -19,10 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -34,10 +35,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.StashMotion
 import kotlinx.coroutines.launch
@@ -146,32 +150,35 @@ fun BoxScope.NowPlayingJumpChip(
     ) {
         val pointing = direction ?: lastDirection
         val up = pointing == NowPlayingJumpDirection.UP
-        // Opaque primary pill with a shadow: it floats over artwork and rows of any colour.
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shadowElevation = 6.dp,
+        val chrome = LocalAlbumChrome.current
+        val shape = RoundedCornerShape(50)
+        // Small see-through capsule in the playing cover's colour: the playing row's own glyph + which way it is.
+        Row(
+            modifier = Modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                .background(chrome.accent.copy(alpha = 0.16f))
+                .border(1.dp, chrome.accent.copy(alpha = 0.45f), shape)
+                .clickable(onClickLabel = "Scroll to it", role = Role.Button, onClick = jump)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = if (up) "Now playing, above" else "Now playing, below"
+                }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            // The click lives inside the Surface so the ripple is clipped to the pill.
-            Row(
-                modifier = Modifier
-                    .clickable(onClickLabel = "Scroll to it", role = Role.Button, onClick = jump)
-                    .padding(start = 14.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = "Now playing",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                )
-                Icon(
-                    imageVector = if (up) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                    // Merged into the row: "Now playing, below".
-                    contentDescription = if (up) "above" else "below",
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            Icon(
+                imageVector = Icons.Filled.GraphicEq,
+                contentDescription = null,
+                tint = chrome.accent,
+                modifier = Modifier.size(16.dp),
+            )
+            Icon(
+                imageVector = if (up) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                contentDescription = null,
+                tint = chrome.accent,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }

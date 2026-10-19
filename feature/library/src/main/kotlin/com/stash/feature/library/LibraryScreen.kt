@@ -123,6 +123,7 @@ import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SourceIndicator
@@ -679,6 +680,7 @@ private fun LibraryContent(
 
         // Compact header: On this device, shuffle, Import (+), search, and sort/filter icons, on the
         // right. No "Library" title: the tab bar already says where you are.
+        val chrome = LocalAlbumChrome.current
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -700,7 +702,7 @@ private fun LibraryContent(
                         .size(40.dp)
                         .background(
                             color = if (deviceTabActive) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                chrome.accent.copy(alpha = 0.18f)
                             } else {
                                 Color.Transparent
                             },
@@ -712,7 +714,7 @@ private fun LibraryContent(
                         Icons.Filled.Save,
                         contentDescription = "On this device",
                         tint = if (deviceTabActive) {
-                            MaterialTheme.colorScheme.primary
+                            chrome.accent
                         } else {
                             LocalContentColor.current
                         },
@@ -733,7 +735,7 @@ private fun LibraryContent(
                         deviceTabActive -> "Shuffle songs on this device"
                         else -> "Shuffle library"
                     },
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = chrome.accent,
                 )
             }
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
