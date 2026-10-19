@@ -51,8 +51,10 @@ class LastFmRecapMapperTest {
         assertThat(taro.track.id).isEqualTo(7L) // the library's row: story music plays its file
         assertThat(taro.track.filePath).isEqualTo("/music/taro.opus")
         val others = data.topSongs.drop(1)
-        // From the very bottom of the range: never a real row, never search's small negative ids.
-        assertThat(others.all { it.track.id < Long.MIN_VALUE + 10_000 }).isTrue()
+        // Between search's ids (the Int range) and scanned files' (-2^32 and below): never a real
+        // row, never a search result, and never taken for a local file (which would never stream).
+        assertThat(others.all { it.track.id < Int.MIN_VALUE.toLong() && it.track.id > com.stash.core.model.SCANNED_ID_BASE }).isTrue()
+        assertThat(others.none { com.stash.core.model.isScannedTrackId(it.track.id) }).isTrue()
         assertThat(others.map { it.track.id }.distinct()).hasSize(others.size)
         // In-memory songs carry their (estimated) length, so story music starts a third of the way in.
         val songs = data.topSongs.associateBy { it.track.title }

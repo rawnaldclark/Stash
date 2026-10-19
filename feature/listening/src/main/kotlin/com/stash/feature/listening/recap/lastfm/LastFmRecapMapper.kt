@@ -55,10 +55,13 @@ internal object LastFmRecapMapper {
     const val DEFAULT_SONG_MS = 210_000L
 
     /**
-     * In-memory songs' ids: [Long.MIN_VALUE] + rank. Far from real rows (positive) and from the
-     * small negative ids search results use, so no cache or list keyed by id can mix them up.
+     * In-memory songs' ids: this minus their rank. The negative id space is already shared out:
+     * search results use `videoId.hashCode()` (the Int range, down to -2^31) and scanned files use
+     * -2^32 and below ([com.stash.core.model.SCANNED_ID_BASE]: RecapAudio and the player treat
+     * those as local files and won't stream them). This band sits between the two, clear of both,
+     * with room for two billion songs.
      */
-    const val SYNTHETIC_ID_BASE = Long.MIN_VALUE
+    const val SYNTHETIC_ID_BASE = -2_200_000_000L
 
     /** Songs whose length is asked of Last.fm per story (most scrobbled first, no library length). */
     const val DURATION_ASKS = 20
@@ -125,7 +128,7 @@ internal object LastFmRecapMapper {
         // bottom of the range (never a real row, never search's own synthetic negative ids).
         val tracks = HashMap<String, TrackEntity>()
         val rows = groups.mapIndexed { i, g ->
-            val track = trackFor(g, input.localTracks[g.key], lengthOf(g.key), photoByArtist, syntheticId = SYNTHETIC_ID_BASE + i)
+            val track = trackFor(g, input.localTracks[g.key], lengthOf(g.key), photoByArtist, syntheticId = SYNTHETIC_ID_BASE - i)
             tracks[g.key] = track
             TopTrackRow(track, g.plays, g.lastUts * 1000, g.plays * lengthOf(g.key))
         }
