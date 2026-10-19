@@ -8,6 +8,7 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.stash.data.download.lossless.qobuz.QobuzSource
 import com.stash.data.download.lossless.quota.LosslessQuota
+import com.stash.data.download.lossless.tidal.TidalAacResolver
 import com.stash.data.download.lossless.relay.LosslessRelayClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
@@ -70,6 +71,7 @@ class LosslessRetryScheduler @Inject constructor(
     rateLimiter: AggregatorRateLimiter,
     private val relayClient: LosslessRelayClient,
     private val quota: LosslessQuota,
+    private val tidalAacResolver: TidalAacResolver,
 ) {
 
     /**
@@ -167,11 +169,22 @@ class LosslessRetryScheduler @Inject constructor(
 
         // 6. The Download quality changed: what was waiting waited under the old mode's rules
         // (no FLAC, or no AAC), so look again under the new one. Opus re-queues everything. Its
-        // own name, so a sweep already waiting (paced, or booked for the reset) can't swallow it.
+        // own name, so a sweep already waiting (paced, or booked for the reset) can't swallow it,
+        // and REPLACE: a sweep booked for the previous mode is replaced by one for this mode.
         losslessPrefsRef.downloadMode
             .distinctUntilChanged()
             .drop(1)
-            .onEach { enqueue(name = MODE_WORK_NAME) }
+            .onEach { enqueue(name = MODE_WORK_NAME, policy = ExistingWorkPolicy.REPLACE) }
+            .launchIn(scope)
+
+        // 7. Tidal was busy, paced or failing for a download that then waited (whatever the
+        // fallback): one sweep for when it should be free again. Its own name, KEEP: a sweep
+        // already booked for this covers every song that waited for it.
+        tidalAacResolver.retryEvents
+            .onEach { atMs ->
+                val waitSec = ((atMs - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+                enqueue(initialDelaySec = waitSec, name = TIDAL_WORK_NAME)
+            }
             .launchIn(scope)
     }
 
@@ -179,6 +192,7 @@ class LosslessRetryScheduler @Inject constructor(
         initialDelaySec: Long = 0,
         name: String = LosslessRetryWorker.UNIQUE_WORK_NAME,
         atReset: Boolean = false,
+        policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP,
     ) {
         val request = OneTimeWorkRequestBuilder<LosslessRetryWorker>()
             .setInitialDelay(initialDelaySec, TimeUnit.SECONDS)
@@ -190,11 +204,7 @@ class LosslessRetryScheduler @Inject constructor(
                 }
             }
             .build()
-        workManagerProvider().enqueueUniqueWork(
-            name,
-            ExistingWorkPolicy.KEEP,
-            request,
-        )
+        workManagerProvider().enqueueUniqueWork(name, policy, request)
     }
 
     internal companion object {
@@ -209,6 +219,9 @@ class LosslessRetryScheduler @Inject constructor(
 
         /** The sweep after a Download quality change (see trigger 6). */
         const val MODE_WORK_NAME = "lossless-retry-mode"
+
+        /** The sweep for when Tidal should be free again (see trigger 7). */
+        const val TIDAL_WORK_NAME = "lossless-retry-tidal"
 
         /** The reset sweep's unique work name (see trigger 5). */
         const val RESET_WORK_NAME = "lossless-retry-reset"

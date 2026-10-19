@@ -11,6 +11,9 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.model.DownloadMode
 import com.stash.core.model.DownloadStatus
+import com.stash.core.model.DownloadWaitReason
+import com.stash.data.download.lossless.tidal.TidalAac
+import kotlinx.coroutines.CancellationException
 import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.tidal.TidalAacResolver
@@ -46,15 +49,20 @@ import dagger.assisted.AssistedInject
  * [LosslessQuota.isSpent]), it touches nothing and retries later.
  *
  * By Download quality: in Lossless mode, as above. In AAC 320 mode a waiting row is one Tidal had
- * no AAC of ("Not available as AAC yet") or that waits for the allowance's reset (AAC counts
- * toward it too): the sweep asks Tidal for its AAC, never a lossless lookup, and re-queues the rows
- * it now has; the reset sweep re-queues them without a lookup, as in Lossless mode. In Opus
- * mode nothing waits: a row left waiting from another mode is re-queued as it is and downloads
- * from YouTube. The scheduler also runs a sweep when the mode changes.
+ * no AAC of ("Not available as AAC yet"): the sweep asks Tidal for its AAC (never a lossless
+ * lookup) and re-queues the rows it now has. In Opus mode nothing waits: a row left waiting from
+ * another mode is re-queued as it is and downloads from YouTube. The scheduler also runs a
+ * sweep when the mode changes.
  *
- * ponytail: a row whose track is genuinely unavailable is re-resolved on every
- * sweep (a Qobuz "locked" answer costs one relay quota each time); add a
- * per-row attempt count if the waiting set grows large.
+ * By the row's own reason ([DownloadWaitReason], kept on the row): one that waited because Tidal
+ * was busy is re-queued without a check (its download asks again, the one answer that counts);
+ * one waiting for the daily reset is left to the reset sweep.
+ *
+ * One answer per song: a match this sweep finds is handed to the download through
+ * [ResolvedSourceHandoff], which takes it instead of asking the relay a second time (a found
+ * answer costs a unit of the day's allowance). At most [MAX_LOOKUPS_PER_PASS] rows are looked up
+ * per pass, starting where the last pass stopped ([RetrySweepCursor]); an AAC miss is cached on
+ * its own stamp, so a row Tidal lacks costs nothing on the passes after.
  *
  * Enqueued by `LosslessRetryScheduler` (Task 9) under a unique work name
  * so multiple triggers within a short window collapse to a single sweep.
@@ -79,11 +87,13 @@ class LosslessRetryWorker @AssistedInject constructor(
     private val quota: LosslessQuota,
     private val losslessPrefs: LosslessSourcePreferences,
     private val tidalAacResolver: TidalAacResolver,
+    private val handoff: ResolvedSourceHandoff,
+    private val cursor: RetrySweepCursor,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
         val mode = losslessPrefs.downloadModeNow()
-        // The allowance's reset matters to every relay lookup, AAC included; Opus asks none.
+        // The allowance's reset matters to every relay lookup; Opus asks none.
         val atReset = mode != DownloadMode.OPUS && inputData.getBoolean(KEY_AT_RESET, false)
         if (atReset) {
             quota.awaitLoaded()
@@ -94,19 +104,22 @@ class LosslessRetryWorker @AssistedInject constructor(
         // download now is left out before it costs a lookup, still waiting: in Stream-only
         // mode one nobody asked for (#474), in Download mode one whose playlist was
         // switched off.
-        val deferred = downloadQueueDao.waitingForLosslessTracks(streamOnly = streamingPreference.current())
-        if (deferred.isEmpty()) {
-            return Result.success(
-                workDataOf(
-                    KEY_RESOLVED to 0,
-                    KEY_TOTAL to 0,
-                ),
-            )
+        val waiting = downloadQueueDao.waitingForLosslessTracks(streamOnly = streamingPreference.current())
+        if (waiting.isEmpty()) {
+            return Result.success(workDataOf(KEY_RESOLVED to 0, KEY_TOTAL to 0))
         }
 
+        // Rows that need a relay lookup are checked at most MAX_LOOKUPS_PER_PASS a pass, starting
+        // after the row the last pass stopped at, so the newer rows are reached too.
+        val start = cursor.get()
+        val ordered = waiting.sortedBy { it.id }.let { rows ->
+            rows.filter { it.id > start } + rows.filter { it.id <= start }
+        }
         var resolvedCount = 0
+        var lookups = 0
+        var stoppedAt: Long? = null
         val purpose = LosslessDownloadPurpose()
-        for (entry in deferred) {
+        for (entry in ordered) {
             val track = trackDao.getById(entry.trackId) ?: continue
             // The user picked this song's audio in Failed Matches (#531). Its
             // download is that video, waiting for Lossy fallback (turning it
@@ -114,56 +127,82 @@ class LosslessRetryWorker @AssistedInject constructor(
             // the recording they rejected, and asked the shared relay again
             // on every trigger, only for the download to wait again.
             if (track.matchPickedAt != null) continue
-            when (mode) {
-                // Opus mode never waits: the row downloads from YouTube now.
-                DownloadMode.OPUS -> {
+            val reason = DownloadWaitReason.fromCode(entry.errorMessage)
+            when {
+                // Opus mode never waits: the row downloads from YouTube now. At the reset every
+                // row goes as it is: its download makes the one lookup of the new day.
+                mode == DownloadMode.OPUS || atReset -> {
                     requeue(entry.id)
                     resolvedCount++
                     continue
                 }
-                // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup. At the reset,
-                // re-queued as it is: the download's own lookup is the one that counts.
-                DownloadMode.AAC -> {
-                    if (atReset) {
-                        requeue(entry.id)
-                        resolvedCount++
-                        continue
-                    }
-                    val aac = runCatching {
-                        tidalAacResolver.resolve(queryFor(track), aacOnly = true)
-                    }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
-                    if (aac != null) {
-                        requeue(entry.id)
-                        resolvedCount++
-                    }
+                // Tidal was busy: no verdict to check. The download asks again itself, and its
+                // answer is the only one (a check here would be a second).
+                reason == DownloadWaitReason.TIDAL_BUSY -> {
+                    requeue(entry.id)
+                    resolvedCount++
                     continue
                 }
-                DownloadMode.LOSSLESS -> Unit
+                // Waiting for the reset: the reset sweep takes it. Before then, nothing.
+                reason == DownloadWaitReason.RESET -> {
+                    if (quota.isSpent()) continue
+                    requeue(entry.id)
+                    resolvedCount++
+                    continue
+                }
+                reason == DownloadWaitReason.FALLBACK -> continue
             }
-            if (atReset) {
-                requeue(entry.id)
-                resolvedCount++
+            if (lookups >= MAX_LOOKUPS_PER_PASS) {
+                stoppedAt = entry.id - 1
+                break
+            }
+            lookups++
+            val query = queryFor(track)
+            if (mode == DownloadMode.AAC) {
+                // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup. A miss is
+                // cached on its own stamp (BitchordClient), so the next pass skips it for free.
+                when (val aac = tidalAacResolver.resolve(query, aacOnly = true)) {
+                    is TidalAac.Found -> {
+                        handoff.put(track.id, aac.source, ResolvedSourceHandoff.Kind.TIDAL_AAC)
+                        requeue(entry.id)
+                        resolvedCount++
+                    }
+                    TidalAac.NoAac -> Unit
+                    // Busy, paced or failed: the resolver booked the next sweep for when it clears.
+                    // A spent day: the reset sweep takes every row. Either way, stop here.
+                    is TidalAac.Unavailable -> {
+                        stoppedAt = entry.id - 1
+                        break
+                    }
+                }
                 continue
             }
             // runCatching mirrors DownloadManager's defensive pattern:
             // a single bad source / network blip mustn't halt the whole
             // sweep. Sources are also expected to swallow their own
-            // errors and return null, but defense in depth is cheap.
+            // errors and return null, but defense in depth is cheap. A stop
+            // is not a failure: it propagates.
             val match = runCatching {
-                withContext(purpose) { registry.resolve(queryFor(track)) }
-            }.getOrNull()
+                withContext(purpose) { registry.resolve(query) }
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull()
             if (match != null) {
+                // The download takes this match instead of asking again: one answer, one unit.
+                handoff.put(track.id, match, ResolvedSourceHandoff.Kind.LOSSLESS)
                 requeue(entry.id)
                 resolvedCount++
             } else if (purpose.pacedRetryAfterSec != null) {
                 // The pool is ahead of today's pace: every later row would be paced too.
+                cursor.set(entry.id - 1)
                 return Result.retry()
             }
         }
+        // A pass that stopped early starts with the row it stopped at (ids are its order); one
+        // that went all the way round starts from the beginning.
+        cursor.set(stoppedAt ?: 0L)
         return Result.success(
             workDataOf(
                 KEY_RESOLVED to resolvedCount,
-                KEY_TOTAL to deferred.size,
+                KEY_TOTAL to waiting.size,
             ),
         )
     }
@@ -185,6 +224,11 @@ class LosslessRetryWorker @AssistedInject constructor(
     }
 
     companion object {
+        /**
+         * Relay lookups one sweep makes at most. Rows past it wait for the next pass, which
+         * starts where this one stopped ([RetrySweepCursor]).
+         */
+        internal const val MAX_LOOKUPS_PER_PASS = 25
         const val UNIQUE_WORK_NAME = "lossless-retry"
 
         /**

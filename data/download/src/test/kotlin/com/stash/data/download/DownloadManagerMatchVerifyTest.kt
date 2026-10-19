@@ -142,7 +142,7 @@ class DownloadManagerMatchVerifyTest {
         losslessUrlDownloader = mockk<LosslessUrlDownloader>(relaxed = true),
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = jioSaavnResolver,
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac },
         trackFinalizer = mockk<TrackFinalizer>(relaxed = true),
         loudnessMeasurer = mockk<com.stash.core.data.audio.LoudnessMeasurer>(relaxed = true),
         metadataEmbedder = mockk<MetadataEmbedder>(relaxed = true),

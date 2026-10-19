@@ -77,7 +77,6 @@ class NowPlayingLyricsOffsetTest {
         musicRepository = musicRepository,
         likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
         losslessUpgrader = mockk(relaxed = true),
-        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),

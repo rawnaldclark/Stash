@@ -120,22 +120,33 @@ class BitchordClientCacheTest {
         assertThat(server.takeRequest().path).startsWith("/search")
         assertThat(server.takeRequest().path).contains("aac=only")
         // An aac=only answer says nothing about lossless: streaming's FLAC lookup still goes out.
-        assertThat(dao.rows.values.single().losslessMissAt).isNull()
+        assertThat(dao.rows.values.single { it.tidalId != null }.losslessMissAt).isNull()
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
         assertThat(streams.get()).isEqualTo(2)
     }
 
-    @Test fun `an aac=only miss is not cached, so it never stops streaming's aac=1 lookup`() = runBlocking {
+    @Test fun `an aac=only miss is cached on its own stamp, and never stops streaming's aac=1 lookup`() = runBlocking {
         streamReply = { r ->
             if (r.path!!.contains("aac=only")) MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") else ok(FLAC)
         }
 
         assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(streams.get()).isEqualTo(1)
+        // AAC mode asks no more for days: its sweep skips the song for free.
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = true)).isEqualTo(TidalLookup.NoMatch)
+        assertThat(streams.get()).isEqualTo(1)
 
-        val row = dao.rows.values.single()
-        assertThat(row.aacMissAt).isNull()
-        assertThat(row.losslessMissAt).isNull()
+        // Streaming's own stamps are untouched, and its lookup still goes out.
+        val song = dao.rows.values.single { it.tidalId != null }
+        assertThat(song.aacMissAt).isNull()
+        assertThat(song.losslessMissAt).isNull()
         assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Found::class.java)
+
+        // After the stamp's three days, AAC mode asks again.
+        now += BitchordClient.AAC_ONLY_MISS_TTL_MS
+        streamReply = { ok(AAC) }
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isInstanceOf(TidalLookup.Found::class.java)
     }
 
     @Test fun `a lossless_unavailable 404 is trusted the full 14 days`() = runBlocking {

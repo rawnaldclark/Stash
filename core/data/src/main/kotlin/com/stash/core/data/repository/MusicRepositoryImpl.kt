@@ -671,6 +671,11 @@ class MusicRepositoryImpl @Inject constructor(
     // discovery-worker partition. Removal nulls the file_path / flags
     // but keeps the row so the track remains streamable (Path A).
 
+    override suspend fun downloadWaitReason(trackId: Long): com.stash.core.model.DownloadWaitReason? =
+        downloadQueueDao.getByTrackId(trackId)
+            ?.takeIf { it.status == com.stash.core.model.DownloadStatus.WAITING_FOR_LOSSLESS }
+            ?.let { com.stash.core.model.DownloadWaitReason.fromCode(it.errorMessage) }
+
     override suspend fun queueDownload(trackId: Long): Boolean {
         val entity = trackDao.getById(trackId) ?: return false
         if (entity.isDownloaded) return false

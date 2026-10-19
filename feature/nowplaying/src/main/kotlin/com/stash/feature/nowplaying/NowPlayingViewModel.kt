@@ -86,8 +86,6 @@ class NowPlayingViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
     private val losslessUpgrader: LosslessUpgrader,
-    /** Download quality, for the wording of a download that waits ("not available as AAC yet"). */
-    private val downloadModeReader: com.stash.core.data.lossless.DownloadModeReader,
     // v0.9.36 Task 12 — lyrics view observes the lyrics row and may
     // enqueue a priority on-open fetch. WorkManager is sourced via
     // `WorkManager.getInstance(appContext)` to match the rest of the
@@ -1178,10 +1176,15 @@ class NowPlayingViewModel @Inject constructor(
                         ).first()
                     }
                     _downloadingKeys.update { it - key }
-                    val aacMode = outcome == DownloadWatch.WAITING_FOR_LOSSLESS &&
-                        runCatching { downloadModeReader.currentDownloadMode() }
-                            .getOrNull() == com.stash.core.model.DownloadMode.AAC
-                    outcome?.let { downloadWatchMessage(it, track.title, aacMode) }?.let { _userMessages.tryEmit(it) }
+                    // A waiting download says why, from its own queue row.
+                    val reason = if (outcome == DownloadWatch.WAITING_FOR_LOSSLESS) {
+                        runCatching { musicRepository.downloadWaitReason(realId) }
+                            .onFailure { if (it is CancellationException) throw it }
+                            .getOrNull()
+                    } else {
+                        null
+                    }
+                    outcome?.let { downloadWatchMessage(it, track.title, reason) }?.let { _userMessages.tryEmit(it) }
                 }
             }
         }

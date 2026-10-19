@@ -80,7 +80,7 @@ class TrackDownloaderImplDeferredTest {
 
     @Test
     fun `Deferred result writes WAITING_FOR_LOSSLESS to download_queue`() = runTest {
-        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred
+        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
         val queueEntry = DownloadQueueEntity(
             id = 42L,
             trackId = 7L,
@@ -93,7 +93,7 @@ class TrackDownloaderImplDeferredTest {
         // The downloader defers through the atomic deferIfInProgress (UPDATE ...
         // WHERE status = IN_PROGRESS), not a blind updateStatus, so a cancel that
         // raced the resolve cannot be overwritten back into the waiting state.
-        coVerify { downloadQueueDao.deferIfInProgress(42L) }
+        coVerify { downloadQueueDao.deferIfInProgress(42L, "wait:lossless") }
         assertTrue(
             "expected TrackDownloadOutcome.Deferred, got $outcome",
             outcome is TrackDownloadOutcome.Deferred,
@@ -105,7 +105,7 @@ class TrackDownloaderImplDeferredTest {
         // Edge case: queue entry already cleaned up. The translator must not
         // crash on a null lookup; it must still return Deferred so the worker
         // chain doesn't surface a Failed outcome.
-        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred
+        coEvery { downloadManager.downloadTrack(any(), any()) } returns TrackDownloadResult.Deferred()
         coEvery { downloadQueueDao.getByTrackId(any()) } returns null
 
         val outcome = newSubject().downloadTrack(stubTrack(id = 7L))

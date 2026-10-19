@@ -86,7 +86,7 @@ class SearchDownloadCoordinatorDeferTest {
         context = context,
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = jioSaavnResolver,
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac },
         losslessUrlDownloader = losslessUrlDownloader,
         audioDurationExtractor = audioDurationExtractor,
         downloadQueueDao = downloadQueueDao,
@@ -141,7 +141,7 @@ class SearchDownloadCoordinatorDeferTest {
         )
         // WAITING_FOR_LOSSLESS, and marked as the user's ask in the same write, so the
         // leftover cleanup keeps it and the lossless retry takes it (#532).
-        coVerify { downloadQueueDao.deferForTap(99L) }
+        coVerify { downloadQueueDao.deferForTap(99L, "wait:lossless") }
     }
 
     @Test

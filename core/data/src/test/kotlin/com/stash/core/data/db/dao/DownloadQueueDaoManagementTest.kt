@@ -131,7 +131,7 @@ class DownloadQueueDaoManagementTest {
 
         assertEquals(0, dao.completeIfInProgress(1, completedAt = 800))
         assertEquals(0, dao.failIfInProgress(1, "late", DownloadFailureType.NETWORK, 800))
-        assertEquals(0, dao.deferIfInProgress(1))
+        assertEquals(0, dao.deferIfInProgress(1, null))
         assertEquals(DownloadStatus.SKIPPED, dao.getStatusById(1))
     }
 
@@ -154,11 +154,13 @@ class DownloadQueueDaoManagementTest {
         seedQueue(3, 3, DownloadStatus.PENDING, createdAt = 300)
 
         assertEquals(1, dao.failIfInProgress(1, "boom", DownloadFailureType.NETWORK, 500))
-        assertEquals(1, dao.deferIfInProgress(2))
+        assertEquals(1, dao.deferIfInProgress(2, "wait:aac"))
         assertEquals(0, dao.failIfInProgress(3, "no", DownloadFailureType.NETWORK, 500))
         assertEquals(DownloadStatus.FAILED, dao.getStatusById(1))
         assertEquals(DownloadStatus.WAITING_FOR_LOSSLESS, dao.getStatusById(2))
         assertEquals(DownloadStatus.PENDING, dao.getStatusById(3))
+        // The row keeps why it waits.
+        assertEquals("wait:aac", dao.getById(2)?.errorMessage)
     }
 
     // ── Cancellation durability ─────────────────────────────────────────

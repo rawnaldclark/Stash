@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import com.stash.core.model.DownloadStatus
+import com.stash.core.model.DownloadWaitReason
 
 /** Where a download started from Now Playing has got to, as far as its ring around ⋮ cares. */
 internal enum class DownloadWatch {
@@ -36,11 +37,20 @@ internal fun downloadWatchOf(status: DownloadStatus?): DownloadWatch = when (sta
  * finished one speaks for itself (the ring goes, the Download action flips), and
  * one whose row is gone was removed on purpose.
  */
-internal fun downloadWatchMessage(watch: DownloadWatch, title: String, aacMode: Boolean = false): String? = when (watch) {
+internal fun downloadWatchMessage(
+    watch: DownloadWatch,
+    title: String,
+    reason: DownloadWaitReason? = null,
+): String? = when (watch) {
     DownloadWatch.FAILED -> "Couldn't download '$title'."
-    // Download quality AAC 320: the row waits because Tidal has no AAC of it yet.
-    DownloadWatch.WAITING_FOR_LOSSLESS ->
-        if (aacMode) "'$title' isn't available as AAC yet." else "Waiting for a lossless copy of '$title'."
+    // Why it waits, from its own queue row.
+    DownloadWatch.WAITING_FOR_LOSSLESS -> when (reason) {
+        DownloadWaitReason.AAC -> "'$title' isn't available as AAC yet."
+        DownloadWaitReason.RESET -> "'$title' is waiting for the daily reset."
+        DownloadWaitReason.TIDAL_BUSY -> "Tidal is busy. Trying '$title' again shortly."
+        DownloadWaitReason.FALLBACK -> "'$title' waits for Lossy fallback to be on."
+        DownloadWaitReason.LOSSLESS, null -> "Waiting for a lossless copy of '$title'."
+    }
     DownloadWatch.CANCELLED -> "Download of '$title' cancelled."
     DownloadWatch.RUNNING, DownloadWatch.DONE, DownloadWatch.GONE -> null
 }

@@ -83,7 +83,7 @@ class DownloadManagerDeferTest {
         mockk(relaxed = true)
     private val losslessHealthGate: com.stash.data.download.lossless.LosslessSourceHealthGate =
         mockk(relaxed = true)
-    private val tidalAacResolver: TidalAacResolver = mockk { coEvery { resolve(any()) } returns null }
+    private val tidalAacResolver: TidalAacResolver = mockk { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac }
     private val now = 1_792_238_400_000L
     private val losslessQuota = LosslessQuota.inMemory { now }
 
@@ -270,12 +270,12 @@ class DownloadManagerDeferTest {
     private fun allowanceSpent() = losslessQuota.onHeaders("500/500", "${now / 1000 + 3600}")
 
     private fun tidalAacHasIt() {
-        coEvery { tidalAacResolver.resolve(any()) } returns SourceResult(
+        coEvery { tidalAacResolver.resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.Found(SourceResult(
             sourceId = TidalAacResolver.SOURCE_ID,
             downloadUrl = "https://cdn.example/a.mp4",
             format = AudioFormat(codec = "aac", bitrateKbps = 320),
             confidence = 0.99f,
-        )
+        ))
     }
 
     @Test
@@ -290,7 +290,7 @@ class DownloadManagerDeferTest {
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
         assertTrue("expected Deferred, got $result", result is TrackDownloadResult.Deferred)
-        coVerify(exactly = 0) { tidalAacResolver.resolve(any()) }
+        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any(), any()) }
         coVerify(exactly = 0) { losslessUrlDownloader.download(any(), any(), any()) }
     }
 
@@ -309,7 +309,7 @@ class DownloadManagerDeferTest {
 
         // The lossy rungs ran: Tidal AAC first, then JioSaavn, then YouTube (whose empty search is Unmatched).
         assertTrue("expected the YouTube rung's Unmatched, got $result", result is TrackDownloadResult.Unmatched)
-        coVerify(exactly = 1) { tidalAacResolver.resolve(any()) }
+        coVerify(exactly = 1) { tidalAacResolver.resolve(any(), any(), any()) }
     }
 
     @Test
@@ -322,7 +322,7 @@ class DownloadManagerDeferTest {
 
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
-        coVerify(exactly = 1) { tidalAacResolver.resolve(any()) }
+        coVerify(exactly = 1) { tidalAacResolver.resolve(any(), any(), any()) }
         // The resolver had nothing, so the strict-FLAC download waits as before.
         assertTrue("expected Deferred, got $result", result is TrackDownloadResult.Deferred)
     }

@@ -345,8 +345,8 @@ class DownloadQueueDaoAskedForTest {
         val oldRow = queued("Old leftover", DownloadStatus.COMPLETED)
         val syncRow = queued("Sync's", DownloadStatus.FAILED, syncId = syncRun(), failureType = DownloadFailureType.NETWORK)
 
-        dao.deferForTap(rowOf(oldRow).id)
-        dao.deferForTap(rowOf(syncRow).id)
+        dao.deferForTap(rowOf(oldRow).id, null)
+        dao.deferForTap(rowOf(syncRow).id, null)
 
         assertThat(dao.waitingForLosslessTracks(streamOnly = true).map { it.trackId }).containsExactly(oldRow, syncRow)
         assertThat(dao.waitingForLosslessTracks(streamOnly = false).map { it.trackId }).containsExactly(oldRow, syncRow)
@@ -364,7 +364,7 @@ class DownloadQueueDaoAskedForTest {
     private suspend fun runWaitsForLossless(trackId: Long) {
         val id = rowOf(trackId).id
         assertThat(dao.claimForDownload(id)).isEqualTo(1)
-        assertThat(dao.deferIfInProgress(id)).isEqualTo(1)
+        assertThat(dao.deferIfInProgress(id, null)).isEqualTo(1)
     }
 
     private suspend fun syncRun(): Long = db.syncHistoryDao().insert(SyncHistoryEntity())

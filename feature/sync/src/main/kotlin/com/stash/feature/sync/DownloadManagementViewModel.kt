@@ -1,8 +1,6 @@
 package com.stash.feature.sync
 
-import com.stash.data.download.lossless.LosslessSourcePreferences
-import com.stash.data.download.lossless.quota.LosslessQuota
-import com.stash.core.model.DownloadMode
+import com.stash.core.model.DownloadWaitReason
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.DownloadManagementRow
@@ -43,6 +41,8 @@ data class DownloadManagementItem(
     val completedAt: Long?,
     val errorMessage: String?,
     val action: DownloadManagementAction,
+    /** Why a waiting row waits (kept on the row), or null: not waiting, or from before reasons were kept. */
+    val waitReason: DownloadWaitReason? = null,
 )
 
 data class DownloadManagementUiState(
@@ -51,30 +51,27 @@ data class DownloadManagementUiState(
     val active: List<DownloadManagementItem> = emptyList(),
     val history: List<DownloadManagementItem> = emptyList(),
     val message: String? = null,
-    /**
-     * Download quality is AAC 320: a waiting row is one Tidal has no AAC of yet, not one
-     * waiting for lossless.
-     */
-    val aacMode: Boolean = false,
-    /**
-     * The day's Tidal & Qobuz allowance is spent (Lossless or AAC mode): waiting rows go out
-     * after the reset, whatever else they wait for.
-     */
-    val allowanceSpent: Boolean = false,
 ) {
-    /** The waiting section's heading. */
-    val waitingLabel: String
-        get() = when {
-            allowanceSpent -> WAITING_FOR_RESET
-            aacMode -> NOT_AVAILABLE_AS_AAC
-            else -> "Waiting for lossless"
-        }
     val downloading: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.IN_PROGRESS }
     val queued: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.PENDING }
     val waiting: List<DownloadManagementItem>
         get() = active.filter { it.status == QueueStatus.WAITING_FOR_LOSSLESS }
+
+    /** The waiting section's heading: what they all wait for, or just "Waiting" when it differs. */
+    val waitingLabel: String
+        get() {
+            // A row from before reasons were kept waits for lossless.
+            val reasons = waiting.map { it.waitReason ?: DownloadWaitReason.LOSSLESS }.distinct()
+            return if (reasons.size > 1) "Waiting" else when (reasons.singleOrNull()) {
+                DownloadWaitReason.AAC -> "Not available as AAC yet"
+                DownloadWaitReason.RESET -> "Waiting for the daily reset"
+                DownloadWaitReason.TIDAL_BUSY -> "Waiting for Tidal"
+                DownloadWaitReason.FALLBACK -> "Waiting for Lossy fallback"
+                DownloadWaitReason.LOSSLESS, null -> "Waiting for lossless"
+            }
+        }
 }
 
 @HiltViewModel
@@ -83,8 +80,6 @@ class DownloadManagementViewModel @Inject constructor(
     private val downloadManager: DownloadManager,
     private val downloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val cancellationController: DownloadCancellationController,
-    losslessPrefs: LosslessSourcePreferences,
-    losslessQuota: LosslessQuota,
 ) : ViewModel() {
     private val selectedTab = MutableStateFlow(DownloadManagementTab.QUEUE)
     private val progressByTrackId = MutableStateFlow<Map<Long, DownloadProgress>>(emptyMap())
@@ -97,31 +92,19 @@ class DownloadManagementViewModel @Inject constructor(
     private val historyItems = downloadQueueDao.observeDownloadHistory(100)
         .map { rows -> rows.map { it.toItem(null) } }
 
-    private val activeRows = combine(
-        downloadQueueDao.observeActiveDownloadRows(),
-        losslessPrefs.downloadMode,
-        losslessQuota.state,
-    ) { rows, mode, _ ->
-        // AAC counts toward the allowance too; Opus never waits for it.
-        val spent = mode != DownloadMode.OPUS && losslessQuota.isSpent()
-        ActiveRows(rows, aacMode = mode == DownloadMode.AAC, allowanceSpent = spent)
-    }
-
     val uiState: StateFlow<DownloadManagementUiState> = combine(
-        activeRows,
+        downloadQueueDao.observeActiveDownloadRows(),
         historyItems,
         selectedTab,
         progressByTrackId,
         message,
-    ) { rows, history, tab, progress, currentMessage ->
+    ) { active, history, tab, progress, currentMessage ->
         DownloadManagementUiState(
             isLoading = false,
             selectedTab = tab,
-            active = rows.rows.map { it.toItem(progress[it.trackId], rows.aacMode, rows.allowanceSpent) },
+            active = active.map { it.toItem(progress[it.trackId]) },
             history = history,
             message = currentMessage,
-            aacMode = rows.aacMode,
-            allowanceSpent = rows.allowanceSpent,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -165,18 +148,9 @@ class DownloadManagementViewModel @Inject constructor(
     }
 }
 
-/** The active rows, and what a waiting one waits for. */
-private data class ActiveRows(val rows: List<DownloadManagementRow>, val aacMode: Boolean, val allowanceSpent: Boolean)
-
-private const val WAITING_FOR_RESET = "Waiting for the daily reset"
-private const val NOT_AVAILABLE_AS_AAC = "Not available as AAC yet"
-
-private fun DownloadManagementRow.toItem(
-    progress: DownloadProgress?,
-    aacMode: Boolean = false,
-    allowanceSpent: Boolean = false,
-): DownloadManagementItem {
+private fun DownloadManagementRow.toItem(progress: DownloadProgress?): DownloadManagementItem {
     val pipeline = progress?.status
+    val waitReason = DownloadWaitReason.fromCode(errorMessage).takeIf { status == QueueStatus.WAITING_FOR_LOSSLESS }
     return DownloadManagementItem(
         queueId = queueId,
         trackId = trackId,
@@ -194,9 +168,7 @@ private fun DownloadManagementRow.toItem(
             pipeline == PipelineStatus.TAGGING -> "Adding metadata"
             status == QueueStatus.IN_PROGRESS -> "In progress"
             status == QueueStatus.PENDING -> "Queued"
-            status == QueueStatus.WAITING_FOR_LOSSLESS && allowanceSpent -> WAITING_FOR_RESET
-            status == QueueStatus.WAITING_FOR_LOSSLESS && aacMode -> NOT_AVAILABLE_AS_AAC
-            status == QueueStatus.WAITING_FOR_LOSSLESS -> "Waiting for a lossless source"
+            status == QueueStatus.WAITING_FOR_LOSSLESS -> waitLabel(waitReason)
             status == QueueStatus.COMPLETED -> "Downloaded"
             status == QueueStatus.FAILED && failureType == DownloadFailureType.NO_MATCH -> "Needs review"
             status == QueueStatus.FAILED -> "Failed"
@@ -204,7 +176,9 @@ private fun DownloadManagementRow.toItem(
         },
         createdAt = createdAt,
         completedAt = completedAt,
-        errorMessage = errorMessage,
+        // A waiting row's error_message is its reason code, not an error.
+        errorMessage = errorMessage.takeIf { waitReason == null },
+        waitReason = waitReason,
         action = when {
             // WAITING_FOR_LOSSLESS is an active queue row the user can be
             // parked on indefinitely (no lossless source has it yet) — it
@@ -220,4 +194,13 @@ private fun DownloadManagementRow.toItem(
             else -> DownloadManagementAction.NONE
         },
     )
+}
+
+/** What a waiting row says, by why it waits. */
+internal fun waitLabel(reason: DownloadWaitReason?): String = when (reason) {
+    DownloadWaitReason.AAC -> "Not available as AAC yet"
+    DownloadWaitReason.RESET -> "Waiting for the daily reset"
+    DownloadWaitReason.TIDAL_BUSY -> "Tidal is busy. Trying again shortly."
+    DownloadWaitReason.FALLBACK -> "Waiting for Lossy fallback to be on"
+    DownloadWaitReason.LOSSLESS, null -> "Waiting for a lossless source"
 }

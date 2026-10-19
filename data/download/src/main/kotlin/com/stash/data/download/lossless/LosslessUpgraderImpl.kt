@@ -85,7 +85,7 @@ class LosslessUpgraderImpl @Inject constructor(
             }
             is TrackDownloadResult.Unmatched,
             is TrackDownloadResult.Failed,
-            TrackDownloadResult.Deferred -> UpgradeResult.NoMatch
+            is TrackDownloadResult.Deferred -> UpgradeResult.NoMatch
         }
     }.getOrElse { e ->
         // A stop is not a failed lookup: the caller (the FLAC upgrade worker's cancel

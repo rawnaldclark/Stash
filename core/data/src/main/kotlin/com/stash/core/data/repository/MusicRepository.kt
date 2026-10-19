@@ -243,6 +243,9 @@ interface MusicRepository {
      */
     suspend fun queueDownload(trackId: Long): Boolean
 
+    /** Why [trackId]'s download waits in the queue (its row keeps it), or null when it doesn't. */
+    suspend fun downloadWaitReason(trackId: Long): com.stash.core.model.DownloadWaitReason?
+
     /**
      * Remove the on-disk file for [trackId] and clear its download flags.
      * The row is preserved so the track remains streamable. Safe to call

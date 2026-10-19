@@ -11,6 +11,7 @@ import com.stash.data.download.lossless.bitchord.TidalLookup
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -47,7 +48,7 @@ class TidalAacResolverTest {
     @Test fun `AAC answer maps to an aac m4a SourceResult at 320 kbps`() = runTest {
         ready()
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Found(aac)
-        val r = resolver.resolve(query)!!
+        val r = (resolver.resolve(query) as TidalAac.Found).source
         assertThat(r.sourceId).isEqualTo(id)
         assertThat(r.format.codec).isEqualTo("aac")
         assertThat(r.format.fileExtension).isEqualTo("m4a")
@@ -59,34 +60,41 @@ class TidalAacResolverTest {
         coVerify { rateLimiter.reportSuccess(id) }
     }
 
-    @Test fun `a FLAC answer is ignored - the lossless chain owns FLAC`() = runTest {
+    @Test fun `a FLAC answer is no AAC verdict - the lossless chain owns FLAC, the download waits`() = runTest {
         ready()
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Found(aac.copy(codec = "flac", isDash = true, bitDepth = 24))
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.FAILED)
     }
 
     @Test fun `not configured means no lookup`() = runTest {
         ready()
         coEvery { client.isConfigured() } returns false
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.NoAac)
         coVerify(exactly = 0) { client.lookup(any(), any(), false) }
     }
 
-    @Test fun `rate limited means no lookup`() = runTest {
+    @Test fun `rate limited means no lookup, and a wait rather than a miss`() = runTest {
         ready(acquire = false)
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.RATE_LIMITED)
         coVerify(exactly = 0) { client.lookup(any(), any(), false) }
     }
 
-    @Test fun `open breaker means no lookup`() = runTest {
+    @Test fun `a tap (foreground) skips this device's pacing`() = runTest {
+        ready(acquire = false)
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Found(aac)
+        assertThat(resolver.resolve(query, foreground = true)).isInstanceOf(TidalAac.Found::class.java)
+        coVerify(exactly = 0) { rateLimiter.acquire(any()) }
+    }
+
+    @Test fun `open breaker means no lookup, and a wait`() = runTest {
         ready(broken = true)
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.FAILED)
         coVerify(exactly = 0) { client.lookup(any(), any(), false) }
     }
 
     @Test fun `switch off means no AAC request`() = runTest {
         ready(switchOn = false)
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.NoAac)
         coVerify(exactly = 0) { client.lookup(any(), any(), false) }
         coVerify(exactly = 0) { rateLimiter.acquire(any()) }
     }
@@ -96,44 +104,62 @@ class TidalAacResolverTest {
         coEvery { client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = true) } returns TidalLookup.NeedsRelay
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false, aacOnly = true) } returns TidalLookup.Found(aac)
 
-        val r = resolver.resolve(query, aacOnly = true)!!
+        val r = (resolver.resolve(query, aacOnly = true) as TidalAac.Found).source
 
         assertThat(r.format.codec).isEqualTo("aac")
         coVerify(exactly = 1) { client.lookup(query, allowAac = true, cacheOnly = false, aacOnly = true) }
         coVerify(exactly = 0) { client.lookup(any(), any(), false, false) }
     }
 
-    @Test fun `a spent day asks nothing, in either mode, and is no failure`() = runTest {
+    @Test fun `a spent day asks nothing, in either mode, and is a wait for the reset, no failure`() = runTest {
         ready()
-        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.Spent(0L)
+        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.Spent(5_000L)
 
-        assertThat(resolver.resolve(query)).isNull()
-        assertThat(resolver.resolve(query, aacOnly = true)).isNull()
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.SPENT, 5_000L))
+        assertThat(resolver.resolve(query, aacOnly = true)).isEqualTo(TidalAac.Unavailable(TidalAac.Reason.SPENT, 5_000L))
 
         coVerify(exactly = 0) { client.lookup(any(), any(), false, any()) }
         coVerify(exactly = 0) { rateLimiter.acquire(any()) }
         coVerify(exactly = 0) { rateLimiter.reportFailure(any()) }
     }
 
-    @Test fun `a thrown resolve counts as a failure and returns null`() = runTest {
+    @Test fun `a thrown resolve counts as a failure and is a wait`() = runTest {
         ready()
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } throws IllegalStateException("boom")
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.FAILED)
         coVerify { rateLimiter.reportFailure(id) }
     }
 
     @Test fun `a cached AAC miss costs no token and no request`() = runTest {
         ready()
         coEvery { client.lookup(any(), any(), true) } returns TidalLookup.NoMatch
-        assertThat(resolver.resolve(query)).isNull()
+        assertThat(resolver.resolve(query)).isEqualTo(TidalAac.NoAac)
         coVerify(exactly = 0) { rateLimiter.acquire(any()) }
         coVerify(exactly = 0) { client.lookup(any(), any(), false) }
     }
 
-    @Test fun `a busy pool reports rate-limited`() = runTest {
+    @Test fun `a busy pool is a wait until the relay says, announced for the retry sweep`() = runTest {
         ready()
-        coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Busy(1L)
-        assertThat(resolver.resolve(query)).isNull()
+        resolver.nowMs = { 1_000L }
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } returns TidalLookup.Busy(120_000L)
+        val events = mutableListOf<Long>()
+        val collecting = backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) {
+            resolver.retryEvents.collect { events += it }
+        }
+
+        val r = resolver.resolve(query) as TidalAac.Unavailable
+
+        assertThat(r.reason).isEqualTo(TidalAac.Reason.BUSY)
+        assertThat(r.retryAtMs).isEqualTo(120_000L)
+        assertThat(events).containsExactly(120_000L)
         coVerify { rateLimiter.reportRateLimited(id) }
+        collecting.cancel()
+    }
+
+    @Test fun `a busy pool already known costs no request either`() = runTest {
+        ready()
+        coEvery { client.lookup(any(), any(), true, any()) } returns TidalLookup.Busy(99_000_000L)
+        assertThat((resolver.resolve(query) as TidalAac.Unavailable).reason).isEqualTo(TidalAac.Reason.BUSY)
+        coVerify(exactly = 0) { client.lookup(any(), any(), false, any()) }
     }
 }

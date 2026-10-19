@@ -19,6 +19,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -54,6 +55,8 @@ class LosslessRetryWorkerTest {
         coEvery { downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
     }
     private val tidalAacResolver: com.stash.data.download.lossless.tidal.TidalAacResolver = mockk()
+    private val handoff = ResolvedSourceHandoff()
+    private val cursor = RetrySweepCursor.inMemory()
 
     private fun newWorker(): LosslessRetryWorker = LosslessRetryWorker(
         appContext = appContext,
@@ -66,6 +69,8 @@ class LosslessRetryWorkerTest {
         quota = quota,
         losslessPrefs = losslessPrefs,
         tidalAacResolver = tidalAacResolver,
+        handoff = handoff,
+        cursor = cursor,
     )
 
     /** The sweep the scheduler books for the allowance's reset. */
@@ -129,21 +134,21 @@ class LosslessRetryWorkerTest {
             listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
         coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
         // Tidal has song 1 as AAC now; song 2 still not.
-        coEvery { tidalAacResolver.resolve(any(), aacOnly = true) } answers {
-            if (firstArg<com.stash.data.download.lossless.TrackQuery>().title == "Track 1") stubSourceResult() else null
+        coEvery { tidalAacResolver.resolve(any(), aacOnly = true, foreground = any()) } answers {
+            if (firstArg<com.stash.data.download.lossless.TrackQuery>().title == "Track 1") com.stash.data.download.lossless.tidal.TidalAac.Found(stubSourceResult()) else com.stash.data.download.lossless.tidal.TidalAac.NoAac
         }
 
         newWorker().doWork()
 
         coVerify(exactly = 0) { registry.resolve(any()) }
-        coVerify(exactly = 2) { tidalAacResolver.resolve(any(), aacOnly = true) }
+        coVerify(exactly = 2) { tidalAacResolver.resolve(any(), aacOnly = true, foreground = any()) }
         coVerify(exactly = 1) { enqueuer.enqueue(100L) }
         coVerify(exactly = 0) { enqueuer.enqueue(101L) }
     }
 
     @Test
     fun `AAC mode's reset sweep, run while the day is still spent, touches nothing and retries`() = runTest {
-        // AAC counts toward the allowance, so its reset matters as it does for FLAC.
+        // Every relay lookup keys off the day's reset, AAC mode's too.
         mode(com.stash.core.model.DownloadMode.AAC)
         atReset()
         quota.onHeaders("500/500", "${now / 1000 + 120}")
@@ -153,7 +158,6 @@ class LosslessRetryWorkerTest {
 
         assertEquals(androidx.work.ListenableWorker.Result.retry(), result)
         coVerify(exactly = 0) { enqueuer.enqueue(any()) }
-        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
     }
 
     @Test
@@ -166,7 +170,7 @@ class LosslessRetryWorkerTest {
 
         newWorker().doWork()
 
-        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any(), any()) }
         coVerify(exactly = 1) { enqueuer.enqueue(100L) }
         coVerify(exactly = 1) { enqueuer.enqueue(101L) }
     }
@@ -181,9 +185,110 @@ class LosslessRetryWorkerTest {
         newWorker().doWork()
 
         coVerify(exactly = 0) { registry.resolve(any()) }
-        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any(), any()) }
         coVerify(exactly = 1) { enqueuer.enqueue(100L) }
         coVerify(exactly = 1) { enqueuer.enqueue(101L) }
+    }
+
+    @Test
+    fun `AAC mode hands what it found to the download, so the relay answers once`() = runTest {
+        mode(com.stash.core.model.DownloadMode.AAC)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+        coEvery { tidalAacResolver.resolve(any(), aacOnly = true, foreground = any()) } returns
+            com.stash.data.download.lossless.tidal.TidalAac.Found(stubSourceResult())
+
+        newWorker().doWork()
+
+        assertEquals(stubSourceResult(), handoff.take(1L, ResolvedSourceHandoff.Kind.TIDAL_AAC))
+    }
+
+    @Test
+    fun `Lossless mode hands the found match to the download too`() = runTest {
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+        coEvery { registry.resolve(any()) } returns stubSourceResult()
+
+        newWorker().doWork()
+
+        assertEquals(stubSourceResult(), handoff.take(1L, ResolvedSourceHandoff.Kind.LOSSLESS))
+    }
+
+    @Test
+    fun `a row that waited for a busy Tidal is re-queued with no check, in either mode`() = runTest {
+        for (m in listOf(com.stash.core.model.DownloadMode.LOSSLESS, com.stash.core.model.DownloadMode.AAC)) {
+            io.mockk.clearMocks(enqueuer, registry, tidalAacResolver, answers = false)
+            mode(m)
+            coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns
+                listOf(entry(id = 100L, trackId = 1L).copy(errorMessage = "wait:tidal_busy"))
+            coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+
+            newWorker().doWork()
+
+            coVerify(exactly = 1) { enqueuer.enqueue(100L) }
+            coVerify(exactly = 0) { registry.resolve(any()) }
+            coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any(), any()) }
+        }
+    }
+
+    @Test
+    fun `a row waiting for the reset is left alone while the day is spent`() = runTest {
+        quota.onHeaders("500/500", "${now / 1000 + 3600}")
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns
+            listOf(entry(id = 100L, trackId = 1L).copy(errorMessage = "wait:reset"))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+        coVerify(exactly = 0) { registry.resolve(any()) }
+    }
+
+    @Test
+    fun `AAC mode stops at a busy Tidal, the resolver having booked the next sweep`() = runTest {
+        mode(com.stash.core.model.DownloadMode.AAC)
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns
+            listOf(entry(id = 100L, trackId = 1L), entry(id = 101L, trackId = 2L))
+        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+        coEvery { tidalAacResolver.resolve(any(), aacOnly = true, foreground = any()) } returns
+            com.stash.data.download.lossless.tidal.TidalAac.Unavailable(com.stash.data.download.lossless.tidal.TidalAac.Reason.BUSY, 0L)
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { tidalAacResolver.resolve(any(), any(), any()) }
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+        assertEquals("the next pass starts with the row it stopped at", 99L, cursor.get())
+    }
+
+    @Test
+    fun `a pass looks up at most MAX_LOOKUPS_PER_PASS rows and the next pass starts after them`() = runTest {
+        val max = LosslessRetryWorker.MAX_LOOKUPS_PER_PASS
+        val rows = (1L..(max + 10L)).map { entry(id = it, trackId = it) }
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns rows
+        coEvery { trackDao.getById(any()) } answers { stubTrackEntity(firstArg()) }
+        val asked = mutableListOf<String>()
+        coEvery { registry.resolve(any()) } answers { asked += firstArg<TrackQuery>().title; null }
+
+        newWorker().doWork()
+        assertEquals(max, asked.size)
+        assertEquals("Track 1", asked.first())
+
+        asked.clear()
+        newWorker().doWork()
+        // The newer rows come first now, then it wraps round to the oldest.
+        assertEquals("Track ${max + 1}", asked.first())
+        assertEquals(max, asked.size)
+    }
+
+    @Test
+    fun `a stop during a lookup propagates instead of being swallowed`() = runTest {
+        coEvery { downloadQueueDao.waitingForLosslessTracks(any()) } returns listOf(entry(id = 100L, trackId = 1L))
+        coEvery { trackDao.getById(1L) } returns stubTrackEntity(1L)
+        coEvery { registry.resolve(any()) } throws kotlinx.coroutines.CancellationException("stopped")
+
+        val thrown = runCatching { newWorker().doWork() }.exceptionOrNull()
+
+        assertTrue(thrown is kotlinx.coroutines.CancellationException)
     }
 
     @Test

@@ -56,7 +56,7 @@ class DownloadManagerVideoLengthTest {
     }
     private val losslessUrlDownloader: LosslessUrlDownloader = mockk(relaxed = true)
     private val jioSaavnResolver: JioSaavnResolver = mockk { coEvery { resolve(any(), any()) } returns null }
-    private val tidalAacResolver: TidalAacResolver = mockk { coEvery { resolve(any()) } returns null }
+    private val tidalAacResolver: TidalAacResolver = mockk { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac }
     private val audioDurationExtractor: com.stash.core.data.audio.AudioDurationExtractor = mockk(relaxed = true)
     private val trackFinalizer: TrackFinalizer = mockk {
         coEvery { finalizeFile(any(), any(), any()) } returns TrackFinalizer.FinalizeResult.Success(
@@ -108,12 +108,12 @@ class DownloadManagerVideoLengthTest {
 
     /** Tidal answers with its AAC, and the fetched file measures [fileMs] at 320 kbps. */
     private fun tidalServes(fileMs: Long) {
-        coEvery { tidalAacResolver.resolve(any()) } returns SourceResult(
+        coEvery { tidalAacResolver.resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.Found(SourceResult(
             sourceId = TidalAacResolver.SOURCE_ID,
             downloadUrl = "https://sp-ad-cf.audio.tidal.com/x.mp4",
             format = AudioFormat(codec = "aac", bitrateKbps = 320, fileExtension = "m4a"),
             confidence = 0.85f,
-        )
+        ))
         coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
             Result.success(secondArg<File>().apply { writeText("fake-m4a-bytes") })
         }
@@ -123,7 +123,7 @@ class DownloadManagerVideoLengthTest {
     @Test
     fun `a YouTube music-video row asks Tidal for AAC with its length marked unreliable`() = runTest {
         val asked = slot<TrackQuery>()
-        coEvery { tidalAacResolver.resolve(capture(asked)) } returns null
+        coEvery { tidalAacResolver.resolve(capture(asked), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac
 
         newSubject().tryTidalAacDownload(youTubeRow(musicVideoType = "OMV"))
 
@@ -154,7 +154,7 @@ class DownloadManagerVideoLengthTest {
     fun `an official audio row keeps the tight window`() = runTest {
         val asked = slot<TrackQuery>()
         tidalServes(fileMs = 230_000L)
-        coEvery { tidalAacResolver.resolve(capture(asked)) } returns null
+        coEvery { tidalAacResolver.resolve(capture(asked), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac
 
         newSubject().tryTidalAacDownload(youTubeRow(musicVideoType = "ATV"))
 
@@ -172,7 +172,7 @@ class DownloadManagerVideoLengthTest {
     @Test
     fun `a Spotify row asks Tidal for AAC with its length trusted`() = runTest {
         val asked = slot<TrackQuery>()
-        coEvery { tidalAacResolver.resolve(capture(asked)) } returns null
+        coEvery { tidalAacResolver.resolve(capture(asked), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac
         val spotify = Track(id = 8L, title = "Song", artist = "Artist", durationMs = 210_000L, source = MusicSource.SPOTIFY)
 
         newSubject().tryTidalAacDownload(spotify)
@@ -193,6 +193,14 @@ class DownloadManagerVideoLengthTest {
         // Unknown expected length: any file; unreadable file: never.
         assertTrue(lossyAacLengthMatches(probedMs = 1_000L, expectedMs = 0L, lengthReliable = true))
         assertFalse(lossyAacLengthMatches(probedMs = null, expectedMs = 180_000L, lengthReliable = false))
+    }
+
+    @Test
+    fun `a preview-length file needs the tight window even for a video row`() {
+        // 30 s against a 45 s video is 33% off, inside the 40%, yet it is a preview.
+        assertFalse(lossyAacLengthMatches(probedMs = 30_000L, expectedMs = 45_000L, lengthReliable = false))
+        // A genuinely short song still passes when its length agrees.
+        assertTrue(lossyAacLengthMatches(probedMs = 31_000L, expectedMs = 33_000L, lengthReliable = false))
     }
 
     @Test

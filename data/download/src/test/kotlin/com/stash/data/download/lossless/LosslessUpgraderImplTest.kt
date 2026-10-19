@@ -127,7 +127,7 @@ class LosslessUpgraderImplTest {
 
     @Test fun `Deferred maps to NoMatch`() = runTest {
         coEvery { downloadManager.tryLosslessDownload(any(), forced = true) } returns
-            TrackDownloadResult.Deferred
+            TrackDownloadResult.Deferred()
         assertEquals(UpgradeResult.NoMatch, subject.upgradeToLossless(stubTrack()))
     }
 

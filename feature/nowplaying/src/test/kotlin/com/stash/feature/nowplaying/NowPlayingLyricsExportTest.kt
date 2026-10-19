@@ -191,7 +191,6 @@ class NowPlayingLyricsExportTest {
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = mockk<LosslessUpgrader>(relaxed = true),
-        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),

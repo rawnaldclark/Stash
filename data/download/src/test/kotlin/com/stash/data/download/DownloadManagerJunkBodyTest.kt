@@ -93,7 +93,7 @@ class DownloadManagerJunkBodyTest {
         losslessUrlDownloader = losslessUrlDownloader,
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = mockk<JioSaavnResolver> { coEvery { resolve(any(), any()) } returns null },
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac },
         trackFinalizer = trackFinalizer,
         loudnessMeasurer = mockk(relaxed = true),
         metadataEmbedder = mockk<MetadataEmbedder>(relaxed = true),

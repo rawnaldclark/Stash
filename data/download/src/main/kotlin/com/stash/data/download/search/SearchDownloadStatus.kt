@@ -49,6 +49,9 @@ sealed interface SearchDownloadStatus {
      */
     data object WaitingForAllowance : SearchDownloadStatus
 
+    /** Tidal was busy for its AAC: the download waits and is tried again shortly, whatever the fallback. */
+    data object WaitingForTidal : SearchDownloadStatus
+
     /** Which path delivered the bytes, for UI labelling. */
     enum class Source { LOSSLESS, TIDAL_AAC, JIOSAAVN, YOUTUBE }
 }

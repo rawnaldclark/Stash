@@ -84,7 +84,7 @@ class DownloadManagerTempFileTest {
         losslessUrlDownloader = mockk<LosslessUrlDownloader>(relaxed = true),
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = mockk<JioSaavnResolver> { coEvery { resolve(any(), any()) } returns null },
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac },
         trackFinalizer = mockk<TrackFinalizer>(relaxed = true),
         loudnessMeasurer = mockk(relaxed = true),
         metadataEmbedder = metadataEmbedder,

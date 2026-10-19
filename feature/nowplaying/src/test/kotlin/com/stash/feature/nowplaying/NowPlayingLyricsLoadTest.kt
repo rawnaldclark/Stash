@@ -94,7 +94,6 @@ class NowPlayingLyricsLoadTest {
             every { mirrorFailures } returns MutableSharedFlow()
         },
         losslessUpgrader = mockk(relaxed = true),
-        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = repository,
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),

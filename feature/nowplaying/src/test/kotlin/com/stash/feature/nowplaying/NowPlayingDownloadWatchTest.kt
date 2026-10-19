@@ -58,11 +58,12 @@ class DownloadWatchTest {
         assertNull(downloadWatchMessage(DownloadWatch.RUNNING, "Song"))
     }
 
-    @Test fun `in AAC 320 mode a waiting download says it isn't available as AAC yet`() {
-        assertEquals(
-            "'Song' isn't available as AAC yet.",
-            downloadWatchMessage(DownloadWatch.WAITING_FOR_LOSSLESS, "Song", aacMode = true),
-        )
+    @Test fun `a waiting download says why, from its row's reason`() {
+        val waiting = DownloadWatch.WAITING_FOR_LOSSLESS
+        assertEquals("'Song' isn't available as AAC yet.", downloadWatchMessage(waiting, "Song", com.stash.core.model.DownloadWaitReason.AAC))
+        assertEquals("'Song' is waiting for the daily reset.", downloadWatchMessage(waiting, "Song", com.stash.core.model.DownloadWaitReason.RESET))
+        assertEquals("Tidal is busy. Trying 'Song' again shortly.", downloadWatchMessage(waiting, "Song", com.stash.core.model.DownloadWaitReason.TIDAL_BUSY))
+        assertEquals("Waiting for a lossless copy of 'Song'.", downloadWatchMessage(waiting, "Song", null))
     }
 }
 
@@ -102,7 +103,6 @@ class NowPlayingDownloadRingTest {
         musicRepository = musicRepository,
         likeCoordinator = likeCoordinator,
         losslessUpgrader = mockk<LosslessUpgrader>(relaxed = true),
-        downloadModeReader = mockk(relaxed = true),
         lyricsRepository = mockk<LyricsRepository>(relaxed = true),
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),
