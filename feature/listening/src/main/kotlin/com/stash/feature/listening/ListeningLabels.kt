@@ -49,6 +49,59 @@ internal object ListeningLabels {
         }
     }
 
+    /**
+     * A compact listening time for stats: "47 min" under an hour, then "2 h" or "1 h 12 m". Zero
+     * reads "0 min" (a range with nothing heard), under a minute "1 min".
+     */
+    fun shortTime(ms: Long): String {
+        if (ms <= 0) return "0 min"
+        val minutes = ((ms + 30_000) / 60_000).coerceAtLeast(1)
+        val h = minutes / 60
+        val m = minutes % 60
+        return when {
+            h == 0L -> "$m min"
+            m == 0L -> "%,d h".format(Locale.US, h)
+            else -> "%,d h %d m".format(Locale.US, h, m)
+        }
+    }
+
+    /** A top row's numbers: "23 plays · 1 h 12 m" ("1 play" when the time is unknown). */
+    fun playsAndTime(plays: Int, listenedMs: Long): String =
+        if (listenedMs <= 0) plays(plays) else "${plays(plays)} · ${shortTime(listenedMs)}"
+
+    /**
+     * The dates a range covers: "Sep 19 – Oct 18", one date for a single day, and the years
+     * when the range isn't within the current year ("Dec 2, 2025 – Oct 18, 2026").
+     */
+    fun rangeCaption(fromDay: Long, toDay: Long, today: Long, locale: Locale = Locale.getDefault()): String {
+        val from = LocalDate.ofEpochDay(fromDay)
+        val to = LocalDate.ofEpochDay(toDay)
+        val thisYear = LocalDate.ofEpochDay(today).year
+        val pattern = if (from.year == thisYear && to.year == thisYear) "MMM d" else "MMM d, yyyy"
+        val f = DateTimeFormatter.ofPattern(pattern, locale)
+        return if (fromDay == toDay) to.format(f) else "${from.format(f)} – ${to.format(f)}"
+    }
+
+    /** An hour of the day for the listening clock: "9 PM", "12 AM", or "21:00". */
+    fun hour(hour: Int, use24Hour: Boolean, locale: Locale = Locale.getDefault()): String =
+        LocalTime.of(hour.coerceIn(0, 23), 0).format(DateTimeFormatter.ofPattern(if (use24Hour) "HH:mm" else "h a", locale))
+
+    /** "5-day streak", "1-day streak". */
+    fun streak(days: Int): String = "$days-day streak"
+
+    /** "1 day", "12 days". */
+    fun days(count: Int): String = if (count == 1) "1 day" else "$count days"
+
+    /** "1 time", "9 times". */
+    fun times(count: Int): String = if (count == 1) "1 time" else "$count times"
+
+    /** A short date for highlights: "Oct 11" (+ year outside the current one). */
+    fun shortDay(day: Long, today: Long, locale: Locale = Locale.getDefault()): String {
+        val date = LocalDate.ofEpochDay(day)
+        val pattern = if (date.year == LocalDate.ofEpochDay(today).year) "MMM d" else "MMM d, yyyy"
+        return date.format(DateTimeFormatter.ofPattern(pattern, locale))
+    }
+
     /** A day header's line after the title: "12 plays · 47 min"; null when the counts aren't known. */
     fun daySummary(plays: Int?, listenedMs: Long?): String? {
         if (plays == null || plays <= 0) return null

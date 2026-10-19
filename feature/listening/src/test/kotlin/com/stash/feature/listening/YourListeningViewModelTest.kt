@@ -93,6 +93,48 @@ class YourListeningViewModelTest {
         assertThat(historySubtitle(vm.state.value!!)).isEqualTo("Paused")
     }
 
+    @Test fun `the week card sums the last 7 days with a bar per day and the streak`() = runTest {
+        val fake = FakeHistory()
+        fake.add(fake.track(1), TODAY, 60, listenedMs = 120_000)
+        fake.add(fake.track(2), TODAY - 1, 60)
+        fake.add(fake.track(3), TODAY - 2, 60)
+        fake.add(fake.track(4), TODAY - 9, 60) // before the week: no bar, still not in the streak
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        val week = vm.state.value!!.week
+        assertThat(week.plays).isEqualTo(3)
+        assertThat(week.listenedMs).isEqualTo(120_000L + 2 * 200_000L)
+        assertThat(week.estimated).isTrue()
+        assertThat(week.bars).containsExactly(0L, 0L, 0L, 0L, 200_000L, 200_000L, 120_000L).inOrder()
+        assertThat(week.streak).isEqualTo(3)
+        assertThat(weekLine(week)).isEqualTo("3 plays · 3-day streak")
+    }
+
+    @Test fun `a streak longer than the week still counts every day`() = runTest {
+        val fake = FakeHistory().apply { fill(days = 12, perDay = 1) }
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.week.streak).isEqualTo(12)
+    }
+
+    @Test fun `week line without a streak or listens`() {
+        assertThat(weekLine(WeekSummary(60_000, 1, false, List(7) { 0L }, 1))).isEqualTo("1 play")
+        assertThat(weekLine(WeekSummary.EMPTY)).isEqualTo("Nothing yet this week")
+    }
+
+    @Test fun `the Top songs door names the 30-day number one`() = runTest {
+        val fake = FakeHistory()
+        fake.add(fake.track(1, title = "Taro"), TODAY, 60)
+        fake.add(fake.track(1, title = "Taro"), TODAY - 3, 60)
+        fake.add(fake.track(2, title = "Other"), TODAY, 70)
+        fake.add(fake.track(3, title = "Ancient"), TODAY - 40, 70)
+        fake.add(fake.track(3, title = "Ancient"), TODAY - 41, 70)
+        fake.add(fake.track(3, title = "Ancient"), TODAY - 42, 70)
+        val vm = viewModel(fake)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.topSongTitle).isEqualTo("Taro")
+    }
+
     @Test fun `tapping a recent song plays it with the rail queued`() = runTest {
         val fake = FakeHistory()
         fake.add(fake.track(1), TODAY, 60)

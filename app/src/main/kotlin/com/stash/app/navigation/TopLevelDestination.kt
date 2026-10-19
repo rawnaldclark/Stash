@@ -54,6 +54,18 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  */
 @Serializable data class ListeningHistoryRoute(val day: Long = -1L)
 
+/**
+ * Your listening (DESIGN.md wrapped-2026-10-18, Screen 1). [range] = a ListeningRange key ("7d",
+ * "30d", "3m", "12m", "all"), null for the default (30 days). The ViewModel reads it by this name.
+ */
+@Serializable data class YourListeningRoute(val range: String? = null)
+
+/**
+ * Top songs / artists / albums (Screen 2). [kind] = "songs", "artists" or "albums"; [range] as in
+ * [YourListeningRoute]. The ViewModel reads both by these names.
+ */
+@Serializable data class TopRoute(val kind: String = "songs", val range: String? = null)
+
 @Serializable
 data class SearchArtistRoute(
     val artistId: String,

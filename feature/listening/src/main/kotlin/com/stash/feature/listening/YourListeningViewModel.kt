@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningHistoryPreference
 import com.stash.core.data.listening.ListeningHistoryRepository
+import com.stash.core.data.listening.ListeningRange
+import com.stash.core.data.listening.ListeningStatsCalculator
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
@@ -44,7 +46,27 @@ data class YourListeningState(
     val paused: Boolean,
     /** The clock the ages were worked out at (epoch ms), so "2 h ago" moves on while Home is open. */
     val nowMs: Long,
+    /** The last 7 days, for the summary card. */
+    val week: WeekSummary = WeekSummary.EMPTY,
+    /** The #1 song of the last 30 days, for the Top songs door; null when there's none. */
+    val topSongTitle: String? = null,
 )
+
+/** Home's summary card: the last 7 days (today and the 6 before). */
+data class WeekSummary(
+    val listenedMs: Long,
+    val plays: Int,
+    /** Some of [listenedMs] is estimated from song length: the card says "about". */
+    val estimated: Boolean,
+    /** Listening time per day, oldest first, today last (7 values). */
+    val bars: List<Long>,
+    /** Consecutive listening days ending today (or yesterday). */
+    val streak: Int,
+) {
+    companion object {
+        val EMPTY = WeekSummary(0, 0, false, List(7) { 0L }, 0)
+    }
+}
 
 /**
  * Feeds [YourListeningSection]: the recent songs, today's count and the pause state, refreshed on
@@ -73,28 +95,53 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     /** One-off messages for a toast ("This song isn't downloaded…"). */
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
-    private val todayPlays: Flow<Int> = clock
-        .map { history.today() }
-        .distinctUntilChanged()
-        .flatMapLatest { today -> history.observeDayCounts(DayRange(today, today)) }
-        .map { counts -> counts.sumOf { it.plays } }
-        .distinctUntilChanged()
+    private val today: Flow<Long> = clock.map { history.today() }.distinctUntilChanged()
+
+    /**
+     * Today's count, the week's numbers and the streak, from one day-count read over the last
+     * [STREAK_WINDOW_DAYS] days (a streak longer than that reads as that long) and the week's totals.
+     */
+    private val days: Flow<Pair<Int, WeekSummary>> = today.flatMapLatest { t ->
+        val week = DayRange(t - 6, t)
+        combine(
+            history.observeTotals(week),
+            history.observeDayCounts(DayRange(t - STREAK_WINDOW_DAYS + 1, t)),
+        ) { totals, counts ->
+            val byDay = counts.associateBy { it.day }
+            val summary = WeekSummary(
+                listenedMs = totals.listenedMs,
+                plays = totals.plays,
+                estimated = totals.estimatedPlays > 0,
+                bars = (week.fromDay..week.toDay).map { byDay[it]?.listenedMs ?: 0L },
+                streak = ListeningStatsCalculator.currentStreak(counts, t)?.days ?: 0,
+            )
+            (byDay[t]?.plays ?: 0) to summary
+        }
+    }.distinctUntilChanged()
+
+    /** The last 30 days' #1 song. */
+    private val topSong: Flow<String?> = today.flatMapLatest { t ->
+        history.observeTopTracks(ListeningRange.Days30.toDayRange(t), 1)
+    }.map { it.firstOrNull()?.track?.title }.distinctUntilChanged()
 
     val state: StateFlow<YourListeningState?> = combine(
         history.observeRecentTracks(),
-        todayPlays,
+        days,
         historyPreference.paused,
         clock,
-    ) { recent, today, paused, now ->
+        topSong,
+    ) { recent, (todayCount, week), paused, now, top ->
         if (recent.isEmpty()) {
             null
         } else {
             YourListeningState(
                 recent = recent.map { it.track.toDomain() },
-                todayPlays = today,
+                todayPlays = todayCount,
                 lastPlayedAt = recent.first().lastPlayedAt,
                 paused = paused,
                 nowMs = now,
+                week = week,
+                topSongTitle = top,
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -114,6 +161,9 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
     companion object {
         /** The "Playing from" line of a queue started from the rail. */
         const val RECENT_LABEL = "Recently played"
+
+        /** How far back the Home streak looks. */
+        const val STREAK_WINDOW_DAYS = 400L
 
         /** The current time now and then once a minute, while collected. */
         private fun minuteClock(): Flow<Long> = flow {

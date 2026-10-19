@@ -25,6 +25,16 @@ internal const val SONG_NEEDS_CONNECTION = "This song isn't downloaded. Connect 
 /** "Play this day" offline when none of the day's songs is downloaded. */
 internal const val DAY_NEEDS_CONNECTION = "None of this day's songs are downloaded. Connect to play them."
 
+/** Play on a top songs list offline when none of its songs is downloaded. */
+internal const val TOP_NEEDS_CONNECTION = "None of these songs are downloaded. Connect to play them."
+
+/**
+ * A top songs list as a queue: Play starts at #1 ([tapped] false: offline, at the first
+ * downloaded song), a tapped song plays the list from there. Same connection rule as [planPlay].
+ */
+internal fun planTopSongs(tracks: List<Track>, index: Int, online: Boolean, tapped: Boolean): PlayPlan =
+    planPlay(tracks, index, online, tapped, noneMessage = TOP_NEEDS_CONNECTION)
+
 /** The song has a file on the phone, so it plays with no connection. */
 internal fun Track.isOnPhone(): Boolean = filePath != null
 

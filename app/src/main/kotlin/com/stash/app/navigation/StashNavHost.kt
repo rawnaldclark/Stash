@@ -28,7 +28,10 @@ import com.stash.feature.community.CommunitySection
 import com.stash.feature.community.rememberCommunityPosting
 import com.stash.feature.home.HomeScreen
 import com.stash.feature.listening.YourListeningSection
+import com.stash.core.common.primaryArtist
 import com.stash.feature.listening.history.HistoryScreen
+import com.stash.feature.listening.stats.ListeningStatsScreen
+import com.stash.feature.listening.top.TopScreen
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -182,7 +185,11 @@ private fun StashNavGraph(
                     )
                 },
                 yourListeningSection = {
-                    YourListeningSection(onOpenHistory = { navController.navigate(ListeningHistoryRoute()) })
+                    YourListeningSection(
+                        onOpenHistory = { navController.navigate(ListeningHistoryRoute()) },
+                        onOpenStats = { range -> navController.navigate(YourListeningRoute(range)) },
+                        onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
+                    )
                 },
             )
         }
@@ -504,6 +511,24 @@ private fun StashNavGraph(
 
         composable<ListeningHistoryRoute> {
             HistoryScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable<YourListeningRoute> {
+            ListeningStatsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenHistory = { day -> navController.navigate(ListeningHistoryRoute(day ?: -1L)) },
+                onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
+                onOpenArtist = { name -> navController.navigate(ArtistDetailRoute(name.primaryArtist())) },
+                onOpenAlbum = { album, artist -> navController.navigate(AlbumDetailRoute(album, artist)) },
+            )
+        }
+
+        composable<TopRoute> {
+            TopScreen(
+                onBack = { navController.popBackStack() },
+                onOpenArtist = { name -> navController.navigate(ArtistDetailRoute(name.primaryArtist())) },
+                onOpenAlbum = { album, artist -> navController.navigate(AlbumDetailRoute(album, artist)) },
+            )
         }
 
         composable<ListenJoinRoute> {
