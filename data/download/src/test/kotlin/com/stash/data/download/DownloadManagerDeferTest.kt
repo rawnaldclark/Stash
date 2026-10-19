@@ -115,12 +115,7 @@ class DownloadManagerDeferTest {
         // Every fetched file counts as audio here; DownloadManagerJunkBodyTest checks the gate.
         localFileOps = mockk<com.stash.core.data.files.LocalFileOps> { every { acceptDownloadOrDelete(any()) } returns true },
         losslessQuota = losslessQuota,
-    ).apply {
-        // Under testDebugUnitTest, BuildConfig.DEBUG is unconditionally true,
-        // which would otherwise make the strict-FLAC Deferred branch under
-        // test permanently unreachable. Force the real (release) behavior.
-        forceYoutubeFallbackOnDebugBuilds = false
-    }
+    )
 
     private fun stubTrack(): Track = Track(
         id = 42L,

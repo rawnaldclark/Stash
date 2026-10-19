@@ -10,7 +10,6 @@ import com.stash.core.data.mapper.toDomain
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.core.model.YouTubeVideoId
-import com.stash.data.download.BuildConfig
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
 import com.stash.data.download.files.MetadataEmbedder
@@ -90,6 +89,44 @@ internal fun isLosslessDurationDegraded(probedMs: Long?, expectedMs: Long): Bool
     return probedMs <= LOSSLESS_SAMPLE_MAX_MS && probedMs < expectedMs * LOSSLESS_SAMPLE_FRACTION
 }
 
+/** A lossy AAC file whose row's length is the song's must be within this many ms of it... */
+internal const val LOSSY_AAC_TOLERANCE_MS = 8_000L
+
+/** ...or this fraction of it, whichever is larger. */
+internal const val LOSSY_AAC_TOLERANCE_FRACTION = 0.03
+
+/**
+ * The share a lossy AAC file may differ from a row whose length is NOT the song's
+ * ([com.stash.data.download.lossless.TrackQuery.durationReliable] false: a YouTube music video,
+ * with its intro or outro). The same gap the catalog matcher allows such a row
+ * ([com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher]'s VIDEO_DRIFT_OK) when it picks
+ * the Tidal track, so a file of the track it picked is kept. It still rejects a preview stub
+ * (30 s of a 3-minute song is 83% off) and a file of some other, far longer or shorter recording.
+ */
+internal const val LOSSY_AAC_VIDEO_DRIFT = 0.40
+
+/**
+ * Whether a fetched lossy AAC file of [probedMs] can be the song of a row [expectedMs] long.
+ *
+ * [lengthReliable] true (a Spotify row, an official audio upload): within
+ * max([LOSSY_AAC_TOLERANCE_MS], [LOSSY_AAC_TOLERANCE_FRACTION]) of it, as before.
+ * False (a YouTube music video): within [LOSSY_AAC_VIDEO_DRIFT] of it. A video row's length is the
+ * video's, so the tight window threw away every Tidal AAC file of the very track streaming plays
+ * for that row ("Paint a Face": a 169 s file for a 180 s video).
+ *
+ * An unknown expected length accepts any file; an unreadable file is never accepted.
+ */
+internal fun lossyAacLengthMatches(probedMs: Long?, expectedMs: Long, lengthReliable: Boolean): Boolean {
+    if (expectedMs <= 0L) return true
+    if (probedMs == null) return false
+    val gap = kotlin.math.abs(probedMs - expectedMs)
+    return if (lengthReliable) {
+        gap <= maxOf(LOSSY_AAC_TOLERANCE_MS, (expectedMs * LOSSY_AAC_TOLERANCE_FRACTION).toLong())
+    } else {
+        gap < expectedMs * LOSSY_AAC_VIDEO_DRIFT
+    }
+}
+
 /**
  * Orchestrates the full download pipeline for a single track:
  *
@@ -144,16 +181,6 @@ class DownloadManager @Inject constructor(
     /** The daily lossless allowance: once spent, a FLAC-only download waits for its reset. */
     private val losslessQuota: LosslessQuota,
 ) {
-    /**
-     * Test/build seam for the debug-build lossy-fallback carve-out below.
-     * Defaults to the real [BuildConfig.DEBUG] so production behavior is
-     * unchanged, but unit tests — which always run under the debug test
-     * variant, where BuildConfig.DEBUG is unconditionally true — can flip
-     * this to false to actually exercise the release strict-FLAC deferral
-     * path instead of it being permanently unreachable in tests.
-     */
-    internal var forceYoutubeFallbackOnDebugBuilds: Boolean = BuildConfig.DEBUG
-
     /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
     private val concurrencySemaphore = Semaphore(8)
@@ -194,8 +221,6 @@ class DownloadManager @Inject constructor(
          * passes this for a 96 request, so the length check is what rejects it.
          */
         internal fun minJioSaavnBitrateKbps(expectedKbps: Int): Int = expectedKbps - expectedKbps / 5
-        private const val JIOSAAVN_DURATION_TOLERANCE_MS = 8_000L
-        private const val JIOSAAVN_DURATION_TOLERANCE_FRACTION = 0.03
 
         /**
          * Candidates [resolveUrl] verifies per search, best first. Only the top one
@@ -276,10 +301,7 @@ class DownloadManager @Inject constructor(
         val pickedId = track.youtubeId
             ?.takeIf { track.matchPickedAt != null && it.isNotBlank() }
         if (pickedId != null) {
-            if (losslessPrefs.enabledNow() &&
-                !losslessPrefs.youtubeFallbackEnabledNow() &&
-                !forceYoutubeFallbackOnDebugBuilds
-            ) {
+            if (losslessPrefs.enabledNow() && !losslessPrefs.youtubeFallbackEnabledNow()) {
                 Log.i(TAG, "deferring picked '${track.artist} - ${track.title}': fallback off")
                 return TrackDownloadResult.Deferred
             }
@@ -331,49 +353,36 @@ class DownloadManager @Inject constructor(
             // Stash Mix tracks fall through to yt-dlp here; both leaked lossy
             // downloads with fallback off, so both are removed. The mix one
             // was #521.)
+            //
+            // In every build: debug builds used to force the lossy chain here
+            // (JioSaavn, then YouTube) despite the switch, so a song with no FLAC
+            // and no Tidal AAC landed as a YouTube Opus file with the fallback off.
             if (!losslessPrefs.youtubeFallbackEnabledNow()) {
-                // A BUILD gate, not a runtime one: forceYoutubeFallbackOnDebugBuilds
-                // is BuildConfig.DEBUG. Debug/beta builds force the lossy chain
-                // (JioSaavn first, then YouTube); release builds keep real
-                // strict-FLAC. Nothing here consults LosslessAvailability, so a beta
-                // tester who HAS connected their own Qobuz account still gets the
-                // lossy fallback the moment a track fails to resolve. That is wrong
-                // but deliberate for now — it is the only thing keeping a beta
-                // tester's whole queue out of WAITING_FOR_LOSSLESS.
-                // Making this respect a connected account is Plan A2's job.
-                if (forceYoutubeFallbackOnDebugBuilds) {
-                    Log.i(
-                        TAG,
-                        "debug build: forcing lossy fallback despite fallback-off " +
-                            "for '${track.artist} - ${track.title}'",
-                    )
-                } else {
-                    // Tidal AAC has its own switch ("Tidal AAC when no FLAC"), so it
-                    // still runs with the YouTube fallback off; nothing else lossy does.
-                    // Not while the day's lossless allowance is spent: the song has not
-                    // shown it has no FLAC, only that FLAC must wait for the reset, and
-                    // with the fallback off nothing lossy is saved meanwhile.
-                    if (losslessQuota.isSpent()) {
-                        Log.i(TAG, "deferring '${track.artist} - ${track.title}': daily lossless allowance spent, fallback off")
-                        return TrackDownloadResult.Deferred
-                    }
-                    if (losslessPrefs.enabledNow()) tryTidalAacDownload(track)?.let { return it }
-                    Log.i(
-                        TAG,
-                        "deferring '${track.artist} - ${track.title}': lossless unavailable, fallback off",
-                    )
+                // Not while the day's lossless allowance is spent: the song has not
+                // shown it has no FLAC, only that FLAC must wait for the reset, and
+                // with the fallback off nothing lossy is saved meanwhile.
+                if (losslessQuota.isSpent()) {
+                    Log.i(TAG, "deferring '${track.artist} - ${track.title}': daily lossless allowance spent, fallback off")
                     return TrackDownloadResult.Deferred
                 }
+                // Tidal AAC has its own switch ("Tidal AAC when no FLAC", checked by the
+                // resolver), so it still runs with the YouTube fallback off; nothing else
+                // lossy does.
+                tryTidalAacDownload(track)?.let { return it }
+                Log.i(
+                    TAG,
+                    "deferring '${track.artist} - ${track.title}': no FLAC or Tidal AAC, fallback off",
+                )
+                return TrackDownloadResult.Deferred
             }
         }
 
-        // Step 1: Try the high-bitrate AAC fallback before YouTube. This is
-        // deliberately outside the lossless registry: AAC is lossy, and must
-        // never satisfy a strict-lossless request. If strict fallback is off,
-        // the branch above already returned Deferred before reaching here.
-        // Step 0: Tidal's 320 kbps AAC, only once the lossless rung ran and missed
-        // (lossless on); JioSaavn misses many of these tracks. Lossless off =
-        // unchanged chain. The resolver itself checks the user's switch.
+        // Step 1 (the YouTube fallback is on, or Lossless is off): the lossy rungs.
+        // These stay outside the lossless registry: AAC is lossy, and must never
+        // satisfy a strict-lossless request. Tidal's 320 kbps AAC comes first, only
+        // once the lossless rung ran and missed (lossless on); JioSaavn misses many of
+        // these tracks. Lossless off = unchanged chain. The resolver itself checks the
+        // user's switch.
         if (losslessPrefs.enabledNow()) {
             val tidalAacResult = tryTidalAacDownload(track)
             if (tidalAacResult != null) return tidalAacResult
@@ -580,9 +589,9 @@ class DownloadManager @Inject constructor(
             explicit = track.explicit,
             trackId = track.id,
         ).forLibrarySource(track.source, track.musicVideoType)
-        // Unlike Tidal AAC, this rung runs for a YouTube video row too: JioSaavnMatcher ignores
-        // durationReliable and only matches within the same max(8 s, 3%) of the row's length that
-        // [downloadLossyAac] checks, so a match here is never fetched to be thrown away.
+        // JioSaavnMatcher ignores durationReliable and only matches within max(8 s, 3%) of the
+        // row's length, so its file is held to that same window ([lossyAacLengthMatches] with a
+        // reliable length) and a match here is never fetched to be thrown away.
 
         val match = try {
             // The Download quality picker sets the JioSaavn variant too.
@@ -608,15 +617,12 @@ class DownloadManager @Inject constructor(
             explicit = track.explicit,
             trackId = track.id,
         ).forLibrarySource(track.source, track.musicVideoType)
-        // A YouTube music-video row: its length is the video's, which the matcher allows 40% off,
-        // but [downloadLossyAac] keeps only a file within max(8 s, 3%) of it. The relay would be
-        // asked, the file fetched and always thrown away (and the 30-day match cache repeats it).
-        // YouTube itself is this row's lossy source; FLAC (no length check past a preview stub)
-        // was already tried above.
-        if (!query.durationReliable) {
-            Log.d(TAG, "Tidal AAC skipped for '${track.artist} - ${track.title}': video length, no way to verify the file")
-            return null
-        }
+        // The query has the words, ISRC and length TidalStreamResolver asks with for this row
+        // (both through forLibrarySource), so it reads the same cached Tidal match the
+        // stream played. A YouTube music-video row's length is the video's: the matcher allows
+        // it 40% off, and so does the file check ([lossyAacLengthMatches]). It used to be held
+        // to max(8 s, 3%) and then skipped outright, so a song that streamed as Tidal AAC came
+        // down as YouTube Opus, or waited for FLAC with the fallback off.
         val match = try {
             tidalAacResolver.resolve(query)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -625,18 +631,27 @@ class DownloadManager @Inject constructor(
             Log.w(TAG, "Tidal AAC resolve failed for '${track.artist} - ${track.title}'", error)
             null
         } ?: return null
-        return downloadLossyAac(track, match, label = "Tidal", tempPrefix = "tidalaac")
+        return downloadLossyAac(
+            track,
+            match,
+            label = "Tidal",
+            tempPrefix = "tidalaac",
+            lengthReliable = query.durationReliable,
+        )
     }
 
     /**
      * Fetches an AAC [match] to a temp .m4a, checks codec/bitrate/duration, and
      * finalizes it. Shared by JioSaavn and Tidal AAC; null = try the next rung.
+     *
+     * @param lengthReliable whether the row's length is the song's; see [lossyAacLengthMatches].
      */
     private suspend fun downloadLossyAac(
         track: Track,
         match: SourceResult,
         label: String,
         tempPrefix: String,
+        lengthReliable: Boolean = true,
     ): TrackDownloadResult? {
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
         val tempFile = File(fileOrganizer.getTempDir(), "${tempPrefix}_${track.id}_${attemptTag()}.m4a")
@@ -656,12 +671,7 @@ class DownloadManager @Inject constructor(
         if (!acceptBeforeCommit(fetched, track, label)) return null
 
         val metadata = audioDurationExtractor.extract(fetched.absolutePath)
-        val durationTolerance = maxOf(
-            JIOSAAVN_DURATION_TOLERANCE_MS,
-            (track.durationMs * JIOSAAVN_DURATION_TOLERANCE_FRACTION).toLong(),
-        )
-        val durationValid = track.durationMs <= 0L ||
-            (metadata != null && kotlin.math.abs(metadata.durationMs - track.durationMs) <= durationTolerance)
+        val durationValid = lossyAacLengthMatches(metadata?.durationMs, track.durationMs, lengthReliable)
         val codecValid = metadata?.format == "aac"
         val bitrateValid = metadata != null &&
             metadata.bitrateKbps >= minJioSaavnBitrateKbps(match.format.bitrateKbps)
@@ -671,7 +681,8 @@ class DownloadManager @Inject constructor(
                 "$label media rejected for '${track.artist} - ${track.title}': " +
                     "format=${metadata?.format}, bitrate=${metadata?.bitrateKbps} " +
                     "(asked ${match.format.bitrateKbps}), " +
-                    "duration=${metadata?.durationMs}, expected=${track.durationMs}",
+                    "duration=${metadata?.durationMs}, expected=${track.durationMs} " +
+                    "(${if (lengthReliable) "song length" else "video length"})",
             )
             runCatching { fetched.delete() }
             return null
