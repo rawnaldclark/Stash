@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,15 +47,22 @@ fun HiResOutputSection(viewModel: HiResOutputViewModel = hiltViewModel()) {
     val supported = viewModel.isSupported
     var confirmBitPerfect by remember { mutableStateOf(false) }
 
-    SettingsSectionLabel("Hi-Res Output")
+    SettingsSectionLabel(stringResource(R.string.settings_hires_output_section))
     GlassCard {
         Column(modifier = Modifier.fillMaxWidth().selectableGroup()) {
             val now = verdict
+            val device = now?.deviceName
+            val verdictText = when {
+                now == null -> stringResource(R.string.settings_hires_verdict_idle)
+                device != null -> stringResource(
+                    R.string.settings_hires_verdict_now_with_device,
+                    now.headline,
+                    device,
+                )
+                else -> stringResource(R.string.settings_hires_verdict_now, now.headline)
+            }
             Text(
-                text = when {
-                    now == null -> "Play a song to see what it goes through on the way to your ears."
-                    else -> "Now: ${now.headline}" + (now.deviceName?.let { " · $it" } ?: "")
-                },
+                text = verdictText,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (now?.quality == SignalQuality.RESAMPLED) {
                     MaterialTheme.colorScheme.error
@@ -66,33 +74,29 @@ fun HiResOutputSection(viewModel: HiResOutputViewModel = hiltViewModel()) {
 
             SettingsPickerRow(
                 selected = mode == HiResOutputMode.STANDARD,
-                title = "Standard",
-                subtitle = "Android's shared mixer, like every app. It resamples songs that " +
-                    "don't match its own rate (usually 48 kHz).",
+                title = stringResource(R.string.settings_hires_mode_standard),
+                subtitle = stringResource(R.string.settings_hires_mode_standard_desc),
                 onClick = { viewModel.setMode(HiResOutputMode.STANDARD) },
             )
             val hiResRowModifier = Modifier.alpha(if (supported) 1f else 0.38f)
             SettingsPickerRow(
                 selected = mode == HiResOutputMode.MATCH_RATE,
-                title = "Match USB DAC to each song",
+                title = stringResource(R.string.settings_hires_mode_match_rate),
                 subtitle = if (supported) {
-                    "Your DAC runs at the song's own sample rate — 44.1, 96, 192 kHz — so nothing " +
-                        "is resampled. EQ, crossfade and notifications still work."
+                    stringResource(R.string.settings_hires_mode_match_rate_desc)
                 } else {
-                    "Needs Android 14 or newer."
+                    stringResource(R.string.settings_hires_needs_android_14)
                 },
                 onClick = { if (supported) viewModel.setMode(HiResOutputMode.MATCH_RATE) },
                 modifier = hiResRowModifier,
             )
             SettingsPickerRow(
                 selected = mode == HiResOutputMode.BIT_PERFECT,
-                title = "Bit-perfect USB",
+                title = stringResource(R.string.settings_hires_mode_bit_perfect),
                 subtitle = if (supported) {
-                    "Every sample reaches your DAC unaltered. EQ, normalization and crossfade are " +
-                        "bypassed, and volume is set on your DAC. Falls back to matching the sample " +
-                        "rate where your phone doesn't offer it."
+                    stringResource(R.string.settings_hires_mode_bit_perfect_desc)
                 } else {
-                    "Needs Android 14 or newer."
+                    stringResource(R.string.settings_hires_needs_android_14)
                 },
                 onClick = {
                     if (supported && mode != HiResOutputMode.BIT_PERFECT) confirmBitPerfect = true
@@ -101,9 +105,7 @@ fun HiResOutputSection(viewModel: HiResOutputViewModel = hiltViewModel()) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "These apply to USB DACs and USB-C dongles. The phone's own headphone jack, " +
-                    "speaker and Bluetooth always go through Android's mixer. Bluetooth also " +
-                    "re-encodes the audio.",
+                text = stringResource(R.string.settings_hires_footer_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -113,24 +115,18 @@ fun HiResOutputSection(viewModel: HiResOutputViewModel = hiltViewModel()) {
     if (confirmBitPerfect) {
         AlertDialog(
             onDismissRequest = { confirmBitPerfect = false },
-            title = { Text("Turn your DAC down first") },
+            title = { Text(stringResource(R.string.settings_hires_bit_perfect_dialog_title)) },
             text = {
-                Text(
-                    "In bit-perfect mode Android doesn't touch the volume: your DAC sets it. " +
-                        "If your DAC has no volume control of its own, the phone's volume keys may " +
-                        "stop working and music can play at full level.\n\n" +
-                        "Turn the volume down before you press play. EQ, normalization and " +
-                        "crossfade are bypassed while bit-perfect is active.",
-                )
+                Text(stringResource(R.string.settings_hires_bit_perfect_dialog_body))
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmBitPerfect = false
                     viewModel.setMode(HiResOutputMode.BIT_PERFECT)
-                }) { Text("Use bit-perfect") }
+                }) { Text(stringResource(R.string.settings_hires_bit_perfect_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmBitPerfect = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmBitPerfect = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         )
     }

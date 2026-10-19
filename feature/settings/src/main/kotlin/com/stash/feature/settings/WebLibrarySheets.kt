@@ -40,21 +40,21 @@ fun WebLibraryExportSheet(vm: WebLibraryExportViewModel) {
     val p = picker ?: return
     val sendActions = when (p.targets.size) {
         0 -> emptyList()
-        1 -> listOf(PickerAction("Send to ${p.targets[0].name}", { vm.send(p.targets[0]) }))
-        else -> listOf(PickerAction("Send to…", { choosingTarget = true }))
+        1 -> listOf(PickerAction(stringResource(R.string.web_library_export_send_to_target, p.targets[0].name), { vm.send(p.targets[0]) }))
+        else -> listOf(PickerAction(stringResource(R.string.web_library_export_send_to_picker), { choosingTarget = true }))
     }
     LibraryPickerSheet(
-        title = "What to include",
+        title = stringResource(R.string.web_library_export_what_to_include),
         pick = p.pick,
         onPick = vm::updatePick,
         actions = listOf(
-            PickerAction("Save as file", {
+            PickerAction(stringResource(R.string.web_library_export_save_as_file), {
                 vm.chooseFile()
                 saveLauncher.launch(WebLibraryFile.fileName(System.currentTimeMillis()))
             }, primary = true),
         ) + sendActions,
         onDismiss = vm::closePicker,
-        playsDetail = if (p.pick.plays >= WebLibraryFile.MAX_PLAYS) "your last %,d".format(WebLibraryFile.MAX_PLAYS) else null,
+        playsDetail = if (p.pick.plays >= WebLibraryFile.MAX_PLAYS) stringResource(R.string.web_library_export_plays_detail, WebLibraryFile.MAX_PLAYS) else null,
         busy = p.sending,
         message = p.message,
     )
@@ -69,13 +69,13 @@ private fun TargetChooser(targets: List<SendTarget>, onPick: (SendTarget) -> Uni
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Send to", style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(R.string.web_library_export_send_to_title), style = MaterialTheme.typography.titleLarge) },
         text = {
             Column {
                 for (t in targets) TextButton(onClick = { onPick(t) }) { Text(t.name) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }
 
@@ -86,18 +86,18 @@ fun WebLibraryImportSheets(vm: WebLibraryImportViewModel) {
     when (val s = state) {
         WebLibraryImportState.Idle -> Unit
         is WebLibraryImportState.Choosing -> LibraryPickerSheet(
-            title = "What to import",
+            title = stringResource(R.string.web_library_import_what_to_import),
             intro = WebLibraryImportViewModel.introOf(s.content),
             pick = s.pick,
             onPick = vm::updatePick,
-            actions = listOf(PickerAction("Import", vm::import, primary = true)),
+            actions = listOf(PickerAction(stringResource(R.string.web_library_import_action_import), vm::import, primary = true)),
             onDismiss = vm::dismiss,
         )
         WebLibraryImportState.Reading, WebLibraryImportState.Importing -> AlertDialog(
             onDismissRequest = {},
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text(if (s == WebLibraryImportState.Reading) "Reading the file" else "Adding to your library", style = MaterialTheme.typography.titleLarge) },
+            title = { Text(if (s == WebLibraryImportState.Reading) stringResource(R.string.web_library_import_reading_title) else stringResource(R.string.web_library_import_adding_title), style = MaterialTheme.typography.titleLarge) },
             text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
             confirmButton = {},
         )
@@ -105,17 +105,17 @@ fun WebLibraryImportSheets(vm: WebLibraryImportViewModel) {
             onDismissRequest = vm::dismiss,
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text("Imported", style = MaterialTheme.typography.titleLarge) },
+            title = { Text(stringResource(R.string.web_library_import_done_title), style = MaterialTheme.typography.titleLarge) },
             text = { Text(WebLibraryImportViewModel.resultText(s.result), style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = vm::dismiss) { Text("OK") } },
+            confirmButton = { TextButton(onClick = vm::dismiss) { Text(stringResource(R.string.web_library_export_ok)) } },
         )
         is WebLibraryImportState.Failed -> AlertDialog(
             onDismissRequest = vm::dismiss,
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
-            title = { Text("Couldn't import", style = MaterialTheme.typography.titleLarge) },
+            title = { Text(stringResource(R.string.web_library_import_failed_title), style = MaterialTheme.typography.titleLarge) },
             text = { Text(s.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) },
-            confirmButton = { TextButton(onClick = vm::dismiss) { Text("OK") } },
+            confirmButton = { TextButton(onClick = vm::dismiss) { Text(stringResource(R.string.web_library_export_ok)) } },
         )
     }
 }

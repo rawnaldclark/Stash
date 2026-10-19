@@ -13,9 +13,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.stash.core.model.QualityTier
+import com.stash.feature.settings.R
 
 /**
  * Reusable radio group for the legacy YouTube quality tier
@@ -56,12 +58,16 @@ internal fun AudioQualityPicker(
                 )
                 Column(modifier = Modifier.padding(start = 8.dp)) {
                     Text(
-                        text = tier.label,
+                        text = tier.displayLabel(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "${tier.bitrateKbps} kbps  ~${tier.sizeMbPerMinute} MB/min",
+                        text = stringResource(
+                            R.string.settings_audio_quality_bitrate_size,
+                            tier.bitrateKbps,
+                            tier.sizeMbPerMinute,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -70,3 +76,13 @@ internal fun AudioQualityPicker(
         }
     }
 }
+
+@Composable
+private fun QualityTier.displayLabel(): String = when (this) {
+    QualityTier.MAX -> stringResource(R.string.settings_quality_tier_max)
+    QualityTier.BEST -> stringResource(R.string.settings_quality_tier_best)
+    QualityTier.HIGH -> stringResource(R.string.settings_quality_tier_high)
+    QualityTier.NORMAL -> stringResource(R.string.settings_quality_tier_normal)
+    QualityTier.LOW -> stringResource(R.string.settings_quality_tier_low)
+}
+

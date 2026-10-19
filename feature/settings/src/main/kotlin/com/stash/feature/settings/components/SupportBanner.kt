@@ -32,8 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashCyan
+import com.stash.feature.settings.R
 import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashPurpleLight
 
@@ -69,12 +71,12 @@ fun SupportBanner(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "Support Stash",
+            text = stringResource(R.string.settings_support_title),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "Stash is free and made by volunteers. If it's useful to you, consider supporting the project.",
+            text = stringResource(R.string.settings_support_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -98,7 +100,7 @@ fun SupportBanner(
                         modifier = Modifier.size(16.dp),
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "Donate", style = MaterialTheme.typography.labelMedium)
+                    Text(text = stringResource(R.string.settings_support_donate), style = MaterialTheme.typography.labelMedium)
                 }
                 DropdownMenu(
                     expanded = showDonateMenu,
@@ -108,7 +110,7 @@ fun SupportBanner(
                         text = {
                             Column {
                                 Text(text = "rawnaldclark (rawn)", style = MaterialTheme.typography.bodyMedium)
-                                Text(text = "Owner, main dev", style = MaterialTheme.typography.bodySmall)
+                                Text(text = stringResource(R.string.settings_support_role_owner), style = MaterialTheme.typography.bodySmall)
                             }
                         },
                         onClick = {
@@ -121,7 +123,7 @@ fun SupportBanner(
                             Column {
                                 Text(text = "Paraliyzed_evo", style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    text = "Co-dev — makes the beta builds",
+                                    text = stringResource(R.string.settings_support_role_codev),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }
@@ -146,7 +148,7 @@ fun SupportBanner(
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "Star", style = MaterialTheme.typography.labelMedium)
+                Text(text = stringResource(R.string.settings_support_star), style = MaterialTheme.typography.labelMedium)
             }
         }
     }

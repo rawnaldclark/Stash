@@ -18,13 +18,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.common.constants.StashConstants
+import com.stash.feature.settings.R
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsRowPadV
-import com.stash.core.media.SleepTimerController
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsSegmented
@@ -63,30 +65,33 @@ fun SettingsPlaybackScreen(
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "Playback", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.settings_playback_title), onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
-            SettingsSectionLabel("Mode")
+            SettingsSectionLabel(stringResource(R.string.settings_mode_section))
             SettingsSegmented(
-                options = listOf("Stream only", "Download"),
+                options = listOf(
+                    stringResource(R.string.settings_mode_stream_only),
+                    stringResource(R.string.settings_mode_download),
+                ),
                 selectedIndex = if (streamingEnabled) 0 else 1,
                 onSelect = { viewModel.onStreamingToggle(it == 0) },
             )
 
-            SettingsSectionLabel("Streaming")
+            SettingsSectionLabel(stringResource(R.string.settings_streaming_section))
             SettingsGroupCard(
                 rows = buildList {
                     add {
                         SettingsToggleRow(
-                            title = "Stream on cellular",
-                            subtitle = "Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.",
+                            title = stringResource(R.string.settings_stream_on_cellular_title),
+                            subtitle = stringResource(R.string.settings_stream_on_cellular_desc),
                             checked = streamOnCellular,
                             onCheckedChange = viewModel::onStreamOnCellularToggle,
                         )
                     }
                     add {
                         SettingsToggleRow(
-                            title = "Stream via YouTube",
-                            subtitle = "Skip Qobuz and stream everything via YouTube. Turn this on if lossless playback is down or only playing short clips.",
+                            title = stringResource(R.string.settings_stream_via_youtube_title),
+                            subtitle = stringResource(R.string.settings_stream_via_youtube_desc),
                             checked = forceYouTubeFallback,
                             onCheckedChange = viewModel::setForceYouTubeFallback,
                         )
@@ -99,8 +104,8 @@ fun SettingsPlaybackScreen(
                     if (isDebuggableBuild) {
                         add {
                             SettingsToggleRow(
-                                title = "Force Qobuz only (debug)",
-                                subtitle = "Debug builds only. Routes streaming and downloads through Qobuz with no YouTube fallback.",
+                                title = stringResource(R.string.settings_force_qobuz_debug_title),
+                                subtitle = stringResource(R.string.settings_force_qobuz_debug_desc),
                                 checked = forceQbdlxOnly,
                                 onCheckedChange = viewModel::setForceQbdlxOnly,
                             )
@@ -110,19 +115,19 @@ fun SettingsPlaybackScreen(
             )
         } else {
             Text(
-                text = "Streaming is unavailable in this build.",
+                text = stringResource(R.string.settings_streaming_unavailable),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         // Autoplay: the queue's end seeds a song radio (streams, so it needs a connection).
-        SettingsSectionLabel("Autoplay")
+        SettingsSectionLabel(stringResource(R.string.settings_autoplay_section))
         SettingsGroupCard(
             rows = listOf {
                 SettingsToggleRow(
-                    title = "Autoplay radio",
-                    subtitle = "When the last song in the queue starts, keep the music going with a radio seeded from it. Needs a connection.",
+                    title = stringResource(R.string.settings_autoplay_radio_title),
+                    subtitle = stringResource(R.string.settings_autoplay_radio_desc),
                     checked = autoplayRadioEnabled,
                     onCheckedChange = viewModel::onAutoplayRadioToggle,
                 )
@@ -130,13 +135,13 @@ fun SettingsPlaybackScreen(
         )
         // Crossfade applies to both streamed and downloaded tracks, so it sits
         // outside the streaming-engine gate.
-        SettingsSectionLabel("Crossfade")
+        SettingsSectionLabel(stringResource(R.string.settings_crossfade_section))
         SettingsGroupCard(
             rows = buildList {
                 add {
                     SettingsToggleRow(
-                        title = "Crossfade",
-                        subtitle = "Fade the ending track into the next on auto-advance. Manual skips still cut instantly.",
+                        title = stringResource(R.string.settings_crossfade_title),
+                        subtitle = stringResource(R.string.settings_crossfade_desc),
                         checked = crossfadeEnabled,
                         onCheckedChange = viewModel::onCrossfadeToggle,
                     )
@@ -152,9 +157,12 @@ fun SettingsPlaybackScreen(
             },
         )
 
-        SettingsSectionLabel("Lyrics")
+        SettingsSectionLabel(stringResource(R.string.settings_lyrics_section))
         SettingsSegmented(
-            options = listOf("Apple Music", "LRC only"),
+            options = listOf(
+                stringResource(R.string.settings_lyrics_apple_music),
+                stringResource(R.string.settings_lyrics_lrc_only),
+            ),
             selectedIndex = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) 1 else 0,
             onSelect = {
                 lyricsViewModel.setSourcePreference(
@@ -164,13 +172,9 @@ fun SettingsPlaybackScreen(
         )
         Text(
             text = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) {
-                "Word-synced lyrics are off. Switching back doesn't re-fetch anything right away — " +
-                    "tracks pick up Apple Music's word-synced lyrics the next time they're fetched " +
-                    "(a new release's automatic pass, or \"Fetch lyrics\" in Library Health)."
+                stringResource(R.string.settings_lyrics_lrc_only_desc)
             } else {
-                "Prefers Apple Music's word-synced lyrics. Switching to LRC only removes any " +
-                    "stored word-synced lyrics and re-fetches from line-synced sources — use " +
-                    "\"Fetch lyrics\" in Library Health to run it now."
+                stringResource(R.string.settings_lyrics_apple_music_desc)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -218,12 +222,12 @@ private fun CrossfadeDurationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Duration",
+                text = stringResource(R.string.settings_crossfade_duration_label),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "$seconds sec",
+                text = pluralStringResource(R.plurals.settings_crossfade_duration_seconds, seconds, seconds),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

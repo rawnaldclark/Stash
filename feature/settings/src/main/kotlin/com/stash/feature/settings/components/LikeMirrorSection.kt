@@ -12,10 +12,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.feature.settings.R
 
 /**
  * v0.9.52 "Sync your likes" (Beta): per-service opt-in for mirroring
@@ -46,7 +48,7 @@ fun LikeMirrorSection(
     Column(modifier = modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Sync your likes",
+                text = stringResource(R.string.settings_like_mirror_title),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -55,7 +57,7 @@ fun LikeMirrorSection(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = "Mirror hearts to your accounts. Applies to new likes only.",
+            text = stringResource(R.string.settings_like_mirror_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -65,14 +67,14 @@ fun LikeMirrorSection(
             label = "Spotify",
             connected = spotifyConnected,
             enabled = spotifyEnabled,
-            connectHint = "Connect Spotify first",
+            connectHint = stringResource(R.string.settings_like_mirror_connect_first, "Spotify"),
             onToggle = onSpotifyToggle,
         )
         MirrorToggleRow(
             label = "YouTube Music",
             connected = ytConnected,
             enabled = ytMusicEnabled,
-            connectHint = "Connect YouTube Music first",
+            connectHint = stringResource(R.string.settings_like_mirror_connect_first, "YouTube Music"),
             onToggle = onYtMusicToggle,
         )
         // Last.fm loved tracks. Stash already imports your Last.fm loves; this is
@@ -81,7 +83,7 @@ fun LikeMirrorSection(
             label = "Last.fm",
             connected = lastFmConnected,
             enabled = lastFmEnabled,
-            connectHint = "Connect Last.fm first",
+            connectHint = stringResource(R.string.settings_like_mirror_connect_first, "Last.fm"),
             onToggle = onLastFmToggle,
         )
     }
@@ -102,7 +104,7 @@ private fun MirrorToggleRow(
                 if (connected) {
                     Modifier.clickable(
                         role = Role.Switch,
-                        onClickLabel = if (enabled) "Disable" else "Enable",
+                        onClickLabel = if (enabled) stringResource(R.string.settings_disable) else stringResource(R.string.settings_enable),
                     ) { onToggle(!enabled) }
                 } else {
                     Modifier

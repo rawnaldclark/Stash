@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,48 +78,49 @@ fun SettingsHubScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     val searchIndex = remember(
+        context,
         onOpenPlayback, onOpenAudioQuality, onOpenAccounts,
         onOpenLibraryStorage, onOpenAppearance, onOpenAbout,
     ) {
         listOf(
             SettingsSearchItem(
-                title = "Playback",
-                subtitle = "Sleep timer, autoplay radio, crossfade, gapless",
+                title = context.getString(R.string.settings_playback_title),
+                subtitle = context.getString(R.string.settings_playback_search_subtitle),
                 keywords = listOf("sleep timer", "autoplay", "radio", "crossfade", "gapless", "playback"),
                 icon = Icons.Rounded.PlayArrow,
                 onSelect = onOpenPlayback,
             ),
             SettingsSearchItem(
-                title = "Audio & Quality",
-                subtitle = "Streaming quality, lossless, download quality",
+                title = context.getString(R.string.settings_audio_quality_title),
+                subtitle = context.getString(R.string.settings_audio_quality_search_subtitle),
                 keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular"),
                 icon = Icons.Rounded.GraphicEq,
                 onSelect = onOpenAudioQuality,
             ),
             SettingsSearchItem(
-                title = "Accounts & Sync",
-                subtitle = "Spotify, YouTube Music, Last.fm",
+                title = context.getString(R.string.settings_accounts_sync_title),
+                subtitle = context.getString(R.string.settings_accounts_sync_search_subtitle),
                 keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble"),
                 icon = Icons.Rounded.Person,
                 onSelect = onOpenAccounts,
             ),
             SettingsSearchItem(
-                title = "Library & Storage",
-                subtitle = "Storage location, backups, downloads",
+                title = context.getString(R.string.settings_library_storage_title),
+                subtitle = context.getString(R.string.settings_library_storage_search_subtitle),
                 keywords = listOf("storage", "backup", "export", "import", "download", "move library", "web", "browser", "link", "pair"),
                 icon = Icons.Rounded.FolderOpen,
                 onSelect = onOpenLibraryStorage,
             ),
             SettingsSearchItem(
-                title = "Appearance",
-                subtitle = "Theme, AMOLED, Home layout",
+                title = context.getString(R.string.settings_appearance_title),
+                subtitle = context.getString(R.string.settings_appearance_search_subtitle),
                 keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open stash on", "start tab", "launch"),
                 icon = Icons.Rounded.Palette,
                 onSelect = onOpenAppearance,
             ),
             SettingsSearchItem(
-                title = "About & Help",
-                subtitle = "Version, diagnostics, crash reports",
+                title = context.getString(R.string.settings_about_title),
+                subtitle = context.getString(R.string.settings_about_search_subtitle),
                 keywords = listOf("about", "version", "diagnostics", "crash", "help"),
                 icon = Icons.Rounded.Info,
                 onSelect = onOpenAbout,
@@ -166,7 +168,7 @@ fun SettingsHubScreen(
         if (searchQuery.isNotBlank()) {
             if (searchResults.isEmpty()) {
                 Text(
-                    text = "No settings found for \"$searchQuery\"",
+                    text = stringResource(R.string.settings_search_no_results, searchQuery),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -194,7 +196,7 @@ fun SettingsHubScreen(
             rows = listOf(
                 {
                     SettingsNavRow(
-                        title = "Playback",
+                        title = stringResource(R.string.settings_playback_title),
                         subtitle = summaries.playback,
                         leadingIcon = Icons.Rounded.PlayArrow,
                         onClick = onOpenPlayback,
@@ -202,7 +204,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Audio & Quality",
+                        title = stringResource(R.string.settings_audio_quality_title),
                         subtitle = summaries.audioQuality,
                         leadingIcon = Icons.Rounded.GraphicEq,
                         onClick = onOpenAudioQuality,
@@ -210,7 +212,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Accounts & Sync",
+                        title = stringResource(R.string.settings_accounts_sync_title),
                         subtitle = summaries.accounts,
                         leadingIcon = Icons.Rounded.Person,
                         onClick = onOpenAccounts,
@@ -218,7 +220,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Library & Storage",
+                        title = stringResource(R.string.settings_library_storage_title),
                         subtitle = summaries.libraryStorage,
                         leadingIcon = Icons.Rounded.FolderOpen,
                         onClick = onOpenLibraryStorage,
@@ -226,7 +228,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Appearance",
+                        title = stringResource(R.string.settings_appearance_title),
                         subtitle = summaries.appearance,
                         leadingIcon = Icons.Rounded.Palette,
                         onClick = onOpenAppearance,
@@ -234,7 +236,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "About & Help",
+                        title = stringResource(R.string.settings_about_title),
                         subtitle = summaries.about,
                         leadingIcon = Icons.Rounded.Info,
                         onClick = onOpenAbout,

@@ -13,8 +13,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.stash.feature.settings.R
 
 /** Connection state for the ListenBrainz section. Mirrors LastFmAuthState's shape. */
 sealed interface ListenBrainzState {
@@ -54,14 +56,13 @@ fun ListenBrainzSection(
 ) {
     Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth()) {
         Text(
-            text = "ListenBrainz",
+            text = stringResource(R.string.settings_listenbrainz_title),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = "Open scrobbling from MetaBrainz. Your listening data stays yours " +
-                "and exportable.",
+            text = stringResource(R.string.settings_listenbrainz_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -78,7 +79,7 @@ fun ListenBrainzSection(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 Text(
-                    text = "Paste your user token from listenbrainz.org/profile.",
+                    text = stringResource(R.string.settings_listenbrainz_paste_token),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -86,7 +87,7 @@ fun ListenBrainzSection(
                 OutlinedTextField(
                     value = tokenInput,
                     onValueChange = onTokenInputChange,
-                    label = { Text("User token") },
+                    label = { Text(stringResource(R.string.settings_listenbrainz_user_token_label)) },
                     singleLine = true,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                         imeAction = ImeAction.Done,
@@ -99,13 +100,13 @@ fun ListenBrainzSection(
                     enabled = tokenInput.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Connect")
+                    Text(stringResource(R.string.settings_account_connect))
                 }
             }
 
             is ListenBrainzState.Validating -> {
                 Text(
-                    text = "Checking your token…",
+                    text = stringResource(R.string.settings_listenbrainz_validating),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -113,27 +114,27 @@ fun ListenBrainzSection(
 
             is ListenBrainzState.Connected -> {
                 Text(
-                    text = "Connected.",
+                    text = stringResource(R.string.settings_listenbrainz_connected),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = if (state.pendingListens > 0) {
-                        "Scrobbling plays from now on. ${state.pendingListens} queued to submit."
+                        stringResource(R.string.settings_listenbrainz_queued, state.pendingListens)
                     } else {
                         // Says "from now on" deliberately: a user who connects and
                         // then checks their ListenBrainz history should understand
                         // why their older plays are not there.
-                        "Scrobbling plays from now on. Everything up to date."
+                        stringResource(R.string.settings_listenbrainz_up_to_date)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 SettingsToggleRow(
-                    title = "Send now playing",
-                    subtitle = "Show what you're listening to in real time.",
+                    title = stringResource(R.string.settings_listenbrainz_now_playing_title),
+                    subtitle = stringResource(R.string.settings_listenbrainz_now_playing_subtitle),
                     checked = state.nowPlayingEnabled,
                     onCheckedChange = onNowPlayingToggle,
                 )
@@ -145,9 +146,9 @@ fun ListenBrainzSection(
                 ) {
                     Text(
                         text = when {
-                            isDraining -> "Syncing…"
-                            state.pendingListens == 0 -> "Nothing to sync"
-                            else -> "Sync listens now"
+                            isDraining -> stringResource(R.string.settings_lastfm_syncing)
+                            state.pendingListens == 0 -> stringResource(R.string.settings_lastfm_nothing_to_sync)
+                            else -> stringResource(R.string.settings_listenbrainz_sync_now)
                         },
                     )
                 }
@@ -159,7 +160,7 @@ fun ListenBrainzSection(
                         contentColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Disconnect")
+                    Text(stringResource(R.string.settings_account_disconnect))
                 }
             }
         }

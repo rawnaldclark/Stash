@@ -29,9 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.stash.core.auth.model.AuthState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.settings.R
 
 /**
  * A reusable card displaying a streaming service's connection status.
@@ -152,7 +154,7 @@ fun AccountConnectionCard(
                                         contentColor = Color.White,
                                     ),
                                 ) {
-                                    Text("Reconnect")
+                                    Text(stringResource(R.string.settings_account_reconnect))
                                 }
                                 TextButton(
                                     onClick = onDisconnect,
@@ -160,7 +162,7 @@ fun AccountConnectionCard(
                                         contentColor = MaterialTheme.colorScheme.error,
                                     ),
                                 ) {
-                                    Text("Disconnect")
+                                    Text(stringResource(R.string.settings_account_disconnect))
                                 }
                             }
                         } else if (needsAction && onNeedsAction != null) {
@@ -181,7 +183,7 @@ fun AccountConnectionCard(
                                     contentColor = MaterialTheme.colorScheme.error,
                                 ),
                             ) {
-                                Text("Disconnect")
+                                Text(stringResource(R.string.settings_account_disconnect))
                             }
                         }
                     }
@@ -193,7 +195,7 @@ fun AccountConnectionCard(
                                 contentColor = Color.White,
                             ),
                         ) {
-                            Text("Connect")
+                            Text(stringResource(R.string.settings_account_connect))
                         }
                     }
                 }

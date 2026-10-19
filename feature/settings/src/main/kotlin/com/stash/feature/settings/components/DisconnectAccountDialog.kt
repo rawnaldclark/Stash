@@ -6,6 +6,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 
 /**
  * Confirms disconnecting a source account (Spotify, YouTube Music) before it
@@ -26,13 +28,10 @@ fun DisconnectAccountDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Disconnect $serviceName?", style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(R.string.settings_disconnect_account_title, serviceName), style = MaterialTheme.typography.titleLarge) },
         text = {
             Text(
-                "Stash signs out of $serviceName on this phone and stops syncing it. " +
-                    "Songs from $serviceName still waiting to download are dropped from " +
-                    "the queue.\n\nSongs you've already downloaded stay in your library, " +
-                    "and you can reconnect any time.",
+                stringResource(R.string.settings_disconnect_account_body, serviceName),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -42,11 +41,11 @@ fun DisconnectAccountDialog(
                 onClick = onConfirm,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
-                Text("Disconnect")
+                Text(stringResource(R.string.settings_account_disconnect))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
         },
     )
 }

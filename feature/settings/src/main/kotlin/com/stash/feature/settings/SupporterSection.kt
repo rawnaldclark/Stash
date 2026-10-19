@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,6 +42,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.supporter.SupporterRepository
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.settings.R
 
 /** The Ko-fi page the supporter copy points at (the same one Home and About open). */
 private const val KOFI_URL = "https://ko-fi.com/rawnald"
@@ -63,13 +65,13 @@ internal fun SupporterSection(viewModel: SupporterViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Supporter · unlimited lossless",
+                text = stringResource(R.string.settings_supporter_active),
                 style = MaterialTheme.typography.bodySmall,
                 color = StashTheme.extendedColors.success,
                 modifier = Modifier.weight(1f),
             )
             // Only when this device holds the code (a supporter elsewhere has nothing to remove).
-            if (r.hasToken) TextButton(onClick = viewModel::removeCode) { Text("Remove from this device") }
+            if (r.hasToken) TextButton(onClick = viewModel::removeCode) { Text(stringResource(R.string.settings_supporter_remove_from_device)) }
         }
         is SupporterRow.Offer -> Row(
             modifier = Modifier
@@ -79,7 +81,7 @@ internal fun SupporterSection(viewModel: SupporterViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Unlimited lossless for supporters",
+                text = stringResource(R.string.settings_supporter_offer),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
@@ -147,10 +149,10 @@ private fun SupporterClaimSheet(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
-            Text("Unlimited lossless", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.settings_supporter_sheet_title), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.padding(top = 4.dp))
             Text(
-                "Any amount on Ko-fi unlocks unlimited lossless. Enter the email you used on Ko-fi and we'll send you a code.",
+                stringResource(R.string.settings_supporter_sheet_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -162,7 +164,7 @@ private fun SupporterClaimSheet(
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it.take(254) },
-                        label = { Text("Ko-fi email") },
+                        label = { Text(stringResource(R.string.settings_supporter_kofi_email_label)) },
                         singleLine = true,
                         enabled = !ui.busy,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Send),
@@ -171,13 +173,13 @@ private fun SupporterClaimSheet(
                     )
                     Footer(ui)
                     Button(onClick = send, enabled = !ui.busy && email.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                        Text("Email me a code")
+                        Text(stringResource(R.string.settings_supporter_email_code_button))
                     }
                 }
                 SupporterClaimUi.Step.Code -> {
                     val unlock = { if (!ui.busy && code.length == SupporterRepository.CODE_LENGTH) onUnlock(code) }
                     Text(
-                        "If ${ui.email} is on our Ko-fi list, a code is on its way. It can take a minute.",
+                        stringResource(R.string.settings_supporter_code_sent_desc, ui.email),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -185,7 +187,7 @@ private fun SupporterClaimSheet(
                     OutlinedTextField(
                         value = code,
                         onValueChange = { v -> code = v.filter { it.isDigit() }.take(SupporterRepository.CODE_LENGTH) },
-                        label = { Text("6-digit code") },
+                        label = { Text(stringResource(R.string.settings_supporter_code_label)) },
                         singleLine = true,
                         enabled = !ui.busy,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
@@ -197,7 +199,7 @@ private fun SupporterClaimSheet(
                         onClick = unlock,
                         enabled = !ui.busy && code.length == SupporterRepository.CODE_LENGTH,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Unlock") }
+                    ) { Text(stringResource(R.string.settings_supporter_unlock_button)) }
                     // A code that didn't work (wrong, expired or used up) is replaced from here.
                     TextButton(
                         onClick = {
@@ -206,21 +208,21 @@ private fun SupporterClaimSheet(
                         },
                         enabled = !ui.busy,
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Send a new code") }
+                    ) { Text(stringResource(R.string.settings_supporter_resend_code_button)) }
                     TextButton(onClick = onStartOver, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Use a different email")
+                        Text(stringResource(R.string.settings_supporter_different_email_button))
                     }
                 }
             }
 
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 TextButton(onClick = { runCatching { uriHandler.openUri(KOFI_URL) } }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Donate on Ko-fi")
+                    Text(stringResource(R.string.settings_supporter_donate_button))
                 }
                 // A stored code the relays don't honour (revoked, or not yet confirmed).
                 if (hasToken) {
                     TextButton(onClick = onRemoveCode, enabled = !ui.busy, modifier = Modifier.fillMaxWidth()) {
-                        Text("Remove supporter code from this device")
+                        Text(stringResource(R.string.settings_supporter_remove_code_button))
                     }
                 }
             }

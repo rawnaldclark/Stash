@@ -34,10 +34,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.stash.feature.settings.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.StartTab
 import com.stash.core.model.ThemeMode
@@ -81,15 +83,15 @@ fun SettingsAppearanceScreen(
     // finger. The store gets the value once, on release (or Reset).
     var draftScale by remember(uiScale, maxScale) { mutableFloatStateOf(minOf(uiScale, maxScale)) }
 
-    SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
-        SettingsSectionLabel("Theme")
+    SettingsScaffold(title = stringResource(R.string.settings_appearance_title), onBack = onBack, modifier = modifier) {
+        SettingsSectionLabel(stringResource(R.string.settings_theme_section))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ThemeThumbnail(
-                label = "Dark",
+                label = stringResource(R.string.settings_theme_dark),
                 selected = uiState.themeMode == ThemeMode.DARK,
                 darkPalette = true,
                 followSystem = false,
@@ -97,7 +99,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Light",
+                label = stringResource(R.string.settings_theme_light),
                 selected = uiState.themeMode == ThemeMode.LIGHT,
                 darkPalette = false,
                 followSystem = false,
@@ -105,7 +107,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Follow system",
+                label = stringResource(R.string.settings_theme_follow_system),
                 selected = uiState.themeMode == ThemeMode.SYSTEM,
                 darkPalette = false,
                 followSystem = true,
@@ -115,19 +117,19 @@ fun SettingsAppearanceScreen(
         }
 
         Text(
-            text = "Follow system matches your device's day/night setting.",
+            text = stringResource(R.string.settings_theme_follow_system_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Display size")
+        SettingsSectionLabel(stringResource(R.string.settings_display_size_section))
 
         SettingsSliderRow(
-            title = "UI scale",
+            title = stringResource(R.string.settings_ui_scale_title),
             valueLabel = String.format(java.util.Locale.US, "%.2fx", draftScale),
-            subtitle = "Resizes text and layout across the whole app. Applies when you let go.",
+            subtitle = stringResource(R.string.settings_ui_scale_subtitle),
             value = draftScale,
             onValueChange = { draftScale = UiScale.snap(it).coerceAtMost(maxScale) },
             onValueChangeFinished = { viewModel.onUiScaleChanged(draftScale) },
@@ -141,43 +143,46 @@ fun SettingsAppearanceScreen(
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Dark theme")
+        SettingsSectionLabel(stringResource(R.string.settings_dark_theme_section))
 
         SettingsToggleRow(
-            title = "Pure black (AMOLED)",
-            subtitle = "True-black backgrounds whenever dark theme is active — OLED pixels switch off",
+            title = stringResource(R.string.settings_amoled_title),
+            subtitle = stringResource(R.string.settings_amoled_subtitle),
             checked = uiState.amoledDark,
             onCheckedChange = viewModel::onAmoledDarkChanged,
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Now Playing")
+        SettingsSectionLabel(stringResource(R.string.settings_now_playing_section))
 
         SettingsToggleRow(
-            title = "Ambient motion",
-            subtitle = "Animated color wash behind Now Playing — switch off for a still backdrop that saves battery",
+            title = stringResource(R.string.settings_ambient_motion_title),
+            subtitle = stringResource(R.string.settings_ambient_motion_subtitle),
             checked = uiState.ambientAnimationEnabled,
             onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
         )
 
         Text(
-            text = "Ambient style",
+            text = stringResource(R.string.settings_ambient_style_title),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (uiState.ambientAnimationEnabled) 1f else 0.38f),
             // Lines up with the switch rows' titles above.
             modifier = Modifier.padding(start = com.stash.feature.settings.components.SettingsRowPadH, end = com.stash.feature.settings.components.SettingsRowPadH, top = 4.dp, bottom = 8.dp),
         )
         SettingsSegmented(
-            options = listOf("Soft glow", "Classic"), // AmbientStyle order
+            options = listOf(
+                stringResource(R.string.settings_ambient_style_soft_glow),
+                stringResource(R.string.settings_ambient_style_classic),
+            ), // AmbientStyle order
             selectedIndex = uiState.ambientStyle.ordinal,
             onSelect = { viewModel.onAmbientStyleChanged(com.stash.core.data.prefs.AmbientStyle.entries[it]) },
             enabled = uiState.ambientAnimationEnabled,
         )
         Text(
             text = if (uiState.ambientAnimationEnabled) {
-                "Soft glow drifts gently, like the web player. Classic is the original look."
+                stringResource(R.string.settings_ambient_style_desc)
             } else {
-                "Turn on Ambient motion to choose a style."
+                stringResource(R.string.settings_ambient_style_disabled_desc)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -185,23 +190,27 @@ fun SettingsAppearanceScreen(
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Open Stash on")
+        SettingsSectionLabel(stringResource(R.string.settings_open_stash_on_section))
         SettingsSegmented(
-            options = listOf("Home", "Library", "Search"), // StartTab order
+            options = listOf(
+                stringResource(R.string.settings_start_tab_home),
+                stringResource(R.string.settings_start_tab_library),
+                stringResource(R.string.settings_start_tab_search),
+            ), // StartTab order
             selectedIndex = startTab.ordinal,
             onSelect = { viewModel.onStartTabChanged(StartTab.entries[it]) },
         )
         Text(
-            text = "The tab Stash opens on when you start it.",
+            text = stringResource(R.string.settings_start_tab_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Home layout")
+        SettingsSectionLabel(stringResource(R.string.settings_home_layout_section))
         Text(
-            text = "Arrange Home's sections or hide the ones you don't use. The Discover hero stays on top.",
+            text = stringResource(R.string.settings_home_layout_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
@@ -212,9 +221,9 @@ fun SettingsAppearanceScreen(
             HomeSectionRow(
                 label = section.displayLabel(),
                 subtitle = when {
-                    community -> "Playlists and songs other Stash listeners are into. Your posts show your name."
+                    community -> stringResource(R.string.settings_home_section_community_desc)
                     section == com.stash.core.data.prefs.HomeSection.YOUR_LISTENING ->
-                        "Recently played and your History. Appears after your first listen."
+                        stringResource(R.string.settings_home_section_listening_desc)
                     else -> null
                 },
                 shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
@@ -229,8 +238,8 @@ fun SettingsAppearanceScreen(
         }
 
         SettingsToggleRow(
-            title = "Show Liked Songs on Home",
-            subtitle = "Your Stash, Spotify and YouTube likes as one card in Your playlists",
+            title = stringResource(R.string.settings_home_show_liked_title),
+            subtitle = stringResource(R.string.settings_home_show_liked_subtitle),
             checked = uiState.showLikedOnHome,
             onCheckedChange = viewModel::onShowLikedOnHomeChanged,
             // Hiding the whole section above overrides this switch — grey it
@@ -240,16 +249,17 @@ fun SettingsAppearanceScreen(
     }
 }
 
+@Composable
 private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
-    com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> "Your playlists"
-    com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
-    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Qobuz Playlists"
-    com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"
-    com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
-    com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
-    com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
-    com.stash.core.data.prefs.HomeSection.COMMUNITY -> "Community"
-    com.stash.core.data.prefs.HomeSection.YOUR_LISTENING -> "Your listening"
+    com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> stringResource(R.string.settings_home_section_your_playlists)
+    com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> stringResource(R.string.settings_home_section_new_releases)
+    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> stringResource(R.string.settings_home_section_qobuz_playlists)
+    com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> stringResource(R.string.settings_home_section_top_albums)
+    com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> stringResource(R.string.settings_home_section_made_for_you)
+    com.stash.core.data.prefs.HomeSection.RADIOS -> stringResource(R.string.settings_home_section_radios)
+    com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> stringResource(R.string.settings_home_section_mood_decades)
+    com.stash.core.data.prefs.HomeSection.COMMUNITY -> stringResource(R.string.settings_home_section_community)
+    com.stash.core.data.prefs.HomeSection.YOUR_LISTENING -> stringResource(R.string.settings_home_section_your_listening)
 }
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */
@@ -264,6 +274,7 @@ private fun HomeSectionRow(
     onMoveDown: () -> Unit,
     onShownChange: (Boolean) -> Unit,
 ) {
+    val showDesc = stringResource(R.string.settings_home_section_show_desc, label)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,7 +298,7 @@ private fun HomeSectionRow(
         IconButton(onClick = onMoveUp, enabled = canMoveUp) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowUp,
-                contentDescription = "Move $label up",
+                contentDescription = stringResource(R.string.settings_home_section_move_up, label),
                 tint = if (canMoveUp) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
@@ -298,7 +309,7 @@ private fun HomeSectionRow(
         IconButton(onClick = onMoveDown, enabled = canMoveDown) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = "Move $label down",
+                contentDescription = stringResource(R.string.settings_home_section_move_down, label),
                 tint = if (canMoveDown) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
@@ -309,7 +320,7 @@ private fun HomeSectionRow(
         com.stash.core.ui.components.StashSwitch(
             checked = shown,
             onCheckedChange = onShownChange,
-            modifier = Modifier.semantics { contentDescription = "Show $label on Home" },
+            modifier = Modifier.semantics { contentDescription = showDesc },
         )
     }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -53,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.LosslessQualityTier
+import com.stash.feature.settings.R
 import com.stash.feature.settings.components.AudioQualityPicker
 import com.stash.feature.settings.components.BetaPill
 import com.stash.feature.settings.components.LosslessRoutingStatus
@@ -102,11 +104,11 @@ fun SettingsAudioQualityScreen(
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
     val losslessToday by quotaViewModel.line.collectAsStateWithLifecycle()
 
-    SettingsScaffold(title = "Audio & Quality", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.settings_audio_quality_title), onBack = onBack, modifier = modifier) {
         // (a) Download tier — only when lossless OFF. The standalone yt-dlp
         // tier picker governs downloads when lossless routing is disabled.
         if (!uiState.losslessEnabled) {
-            SettingsSectionLabel("Audio Quality")
+            SettingsSectionLabel(stringResource(R.string.settings_audio_quality_section))
             GlassCard {
                 Column(
                     modifier = Modifier
@@ -114,13 +116,12 @@ fun SettingsAudioQualityScreen(
                         .selectableGroup(),
                 ) {
                     Text(
-                        text = "Download quality",
+                        text = stringResource(R.string.settings_download_quality_title),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "Sets YouTube downloads at the rates below, and JioSaavn at " +
-                            "96 kbps on Low and Normal, 160 on High, 320 on Best and Max.",
+                        text = stringResource(R.string.settings_download_quality_rates_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -134,10 +135,8 @@ fun SettingsAudioQualityScreen(
                     // with the lossless card — that is exactly the user it is for.
                     Spacer(modifier = Modifier.height(8.dp))
                     SettingsToggleRow(
-                        title = "Save Data",
-                        subtitle = "Streams YouTube at its lowest audio quality — about " +
-                            "2 MB per track instead of 5 — and JioSaavn at 96 kbps instead " +
-                            "of 320. Downloads are unaffected.",
+                        title = stringResource(R.string.settings_save_data_title),
+                        subtitle = stringResource(R.string.settings_save_data_subtitle),
                         checked = uiState.streamingSaveData,
                         onCheckedChange = viewModel::onStreamingSaveDataChanged,
                         titleTrailing = { BetaPill() },
@@ -147,20 +146,20 @@ fun SettingsAudioQualityScreen(
         }
 
         // (b) Lossless card.
-        SettingsSectionLabel("Lossless")
+        SettingsSectionLabel(stringResource(R.string.settings_lossless_section))
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsToggleRow(
-                    title = "Lossless",
+                    title = stringResource(R.string.settings_lossless_title),
                     // Three-way, because keying "FLAC routing active" on the toggle
                     // alone asserted it for every user with nothing configured — the
                     // day-one state — twenty lines above three "not connected" rows.
                     subtitle = when {
                         !uiState.losslessEnabled ->
-                            "Stream and download studio-quality FLAC. Off, everything plays via YouTube. Files ~10× larger than MP3."
+                            stringResource(R.string.settings_lossless_subtitle_off)
                         qbdlxExpired ->
-                            "No lossless source configured — see below. Files ~10× larger than MP3."
-                        else -> "FLAC for streaming and downloads. Files ~10× larger than MP3."
+                            stringResource(R.string.settings_lossless_subtitle_no_source)
+                        else -> stringResource(R.string.settings_lossless_subtitle_active)
                     },
                     checked = uiState.losslessEnabled,
                     onCheckedChange = viewModel::onLosslessEnabledChanged,
@@ -202,7 +201,7 @@ fun SettingsAudioQualityScreen(
                             if (qbdlxExpired) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "No lossless source configured — connect your Qobuz account below",
+                                    text = stringResource(R.string.settings_qobuz_no_source_warning),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -214,7 +213,7 @@ fun SettingsAudioQualityScreen(
                             // mint + sign its token under a matching app_id.
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Your Qobuz account",
+                                text = stringResource(R.string.settings_qobuz_account_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -225,19 +224,18 @@ fun SettingsAudioQualityScreen(
                             if (qobuzHasLogin) {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = qobuzConnectedEmail?.let { "Connected as $it" }
-                                        ?: "Connected (token)",
+                                    text = qobuzConnectedEmail?.let { stringResource(R.string.settings_connected_as, it) }
+                                        ?: stringResource(R.string.settings_qobuz_connected_token),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 TextButton(onClick = viewModel::onDisconnectQobuz) {
-                                    Text("Disconnect")
+                                    Text(stringResource(R.string.settings_disconnect))
                                 }
                             } else {
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Sign in with your own Qobuz subscription for " +
-                                        "guaranteed lossless.",
+                                    text = stringResource(R.string.settings_qobuz_signin_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -248,7 +246,7 @@ fun SettingsAudioQualityScreen(
                                     value = qobuzEmail,
                                     onValueChange = { qobuzEmail = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Qobuz email") },
+                                    label = { Text(stringResource(R.string.settings_qobuz_email_label)) },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                                 )
@@ -257,7 +255,7 @@ fun SettingsAudioQualityScreen(
                                     value = qobuzPassword,
                                     onValueChange = { qobuzPassword = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Password") },
+                                    label = { Text(stringResource(R.string.settings_password_label)) },
                                     singleLine = true,
                                     visualTransformation = PasswordVisualTransformation(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -281,9 +279,9 @@ fun SettingsAudioQualityScreen(
                                             strokeWidth = 2.dp,
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Connecting…")
+                                        Text(stringResource(R.string.settings_connecting))
                                     } else {
-                                        Text("Connect")
+                                        Text(stringResource(R.string.settings_connect))
                                     }
                                 }
                             }
@@ -292,7 +290,7 @@ fun SettingsAudioQualityScreen(
                         // -- Download quality picker --------------------------
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Download quality",
+                            text = stringResource(R.string.settings_download_quality_title),
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -305,8 +303,8 @@ fun SettingsAudioQualityScreen(
                             ).forEach { tier ->
                                 SettingsPickerRow(
                                     selected = uiState.losslessQualityTier == tier,
-                                    title = tier.displayLabel,
-                                    subtitle = tier.sizeHint,
+                                    title = tier.displayLabel(),
+                                    subtitle = tier.sizeHint(),
                                     onClick = { viewModel.onLosslessQualityTierChanged(tier) },
                                 )
                             }
@@ -315,10 +313,8 @@ fun SettingsAudioQualityScreen(
                         // -- Auto-upgrade to FLAC after sync ------------------
                         Spacer(modifier = Modifier.height(8.dp))
                         SettingsToggleRow(
-                            title = "Auto-upgrade to FLAC after sync",
-                            subtitle = "After every sync, look for lossless versions of your " +
-                                "downloads that aren't FLAC yet. You can also check by hand in " +
-                                "Library Health.",
+                            title = stringResource(R.string.settings_auto_flac_upgrade_title),
+                            subtitle = stringResource(R.string.settings_auto_flac_upgrade_subtitle),
                             checked = autoFlacUpgrade,
                             onCheckedChange = flacViewModel::setAutoEnabled,
                         )
@@ -326,9 +322,8 @@ fun SettingsAudioQualityScreen(
                         // -- Tidal AAC when a song has no FLAC ----------------
                         Spacer(modifier = Modifier.height(8.dp))
                         SettingsToggleRow(
-                            title = "Tidal AAC when no FLAC",
-                            subtitle = "Plays and downloads Tidal's 320 kbps AAC when a song has " +
-                                "no lossless version. Off = Tidal is used for FLAC only.",
+                            title = stringResource(R.string.settings_tidal_aac_fallback_title),
+                            subtitle = stringResource(R.string.settings_tidal_aac_fallback_subtitle),
                             checked = tidalAacFallback,
                             onCheckedChange = viewModel::onTidalAacFallbackChanged,
                         )
@@ -339,14 +334,14 @@ fun SettingsAudioQualityScreen(
                         // override: when on, both pickers are dimmed + inert and
                         // policy forces CD — the lowest lossless tier — on every network.
                         Spacer(modifier = Modifier.height(14.dp))
-                        SettingsSectionLabel("Streaming")
+                        SettingsSectionLabel(stringResource(R.string.settings_streaming_section))
                         GlassCard {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 val saveData = uiState.streamingSaveData
                                 val pickerAlpha = if (saveData) 0.4f else 1f
 
                                 Text(
-                                    text = "On Wi-Fi",
+                                    text = stringResource(R.string.settings_on_wifi),
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -362,8 +357,8 @@ fun SettingsAudioQualityScreen(
                                     ).forEach { tier ->
                                         SettingsPickerRow(
                                             selected = uiState.streamingWifiTier == tier,
-                                            title = tier.displayLabel,
-                                            subtitle = tier.sizeHint,
+                                            title = tier.displayLabel(),
+                                            subtitle = tier.sizeHint(),
                                             onClick = {
                                                 if (!saveData) viewModel.onStreamingWifiTierChanged(tier)
                                             },
@@ -373,7 +368,7 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "On cellular",
+                                    text = stringResource(R.string.settings_on_cellular),
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -389,8 +384,8 @@ fun SettingsAudioQualityScreen(
                                     ).forEach { tier ->
                                         SettingsPickerRow(
                                             selected = uiState.streamingCellularTier == tier,
-                                            title = tier.displayLabel,
-                                            subtitle = tier.sizeHint,
+                                            title = tier.displayLabel(),
+                                            subtitle = tier.sizeHint(),
                                             onClick = {
                                                 if (!saveData) viewModel.onStreamingCellularTierChanged(tier)
                                             },
@@ -400,14 +395,11 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 SettingsToggleRow(
-                                    title = "Save Data",
+                                    title = stringResource(R.string.settings_save_data_title),
                                     // Lossless stays lossless: Save Data is the LOWEST lossless
                                     // tier, not a drop to lossy. Less than FLAC is the lossless
                                     // toggle's job, and then this same switch trims JioSaavn and YouTube.
-                                    subtitle = "Streams CD quality instead of Hi-Res or Max on every " +
-                                        "network — about 28 MB per track instead of 70 or 140. Tracks " +
-                                        "that fall to JioSaavn or YouTube use their lowest audio quality. " +
-                                        "Downloads are unaffected.",
+                                    subtitle = stringResource(R.string.settings_save_data_lossless_subtitle),
                                     checked = uiState.streamingSaveData,
                                     onCheckedChange = viewModel::onStreamingSaveDataChanged,
                                     titleTrailing = { BetaPill() },
@@ -424,6 +416,7 @@ fun SettingsAudioQualityScreen(
                             targetValue = if (fallbackExpanded) 90f else 0f,
                             label = "fallback-chevron",
                         )
+                        val fallbackExpandedDesc = stringResource(if (fallbackExpanded) R.string.settings_state_expanded else R.string.settings_state_collapsed)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier
@@ -431,7 +424,7 @@ fun SettingsAudioQualityScreen(
                                 .clickable { fallbackExpanded = !fallbackExpanded }
                                 .semantics {
                                     role = Role.Button
-                                    stateDescription = if (fallbackExpanded) "expanded" else "collapsed"
+                                    stateDescription = fallbackExpandedDesc
                                 }
                                 .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -444,13 +437,13 @@ fun SettingsAudioQualityScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Lossy fallback",
+                                text = stringResource(R.string.settings_lossy_fallback_title),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                             )
                             Text(
-                                text = if (uiState.youtubeFallbackEnabled) "on" else "off",
+                                text = stringResource(if (uiState.youtubeFallbackEnabled) R.string.settings_state_on else R.string.settings_state_off),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -470,7 +463,7 @@ fun SettingsAudioQualityScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Use JioSaavn, then YouTube when a download has no lossless match",
+                                        text = stringResource(R.string.settings_lossy_fallback_switch_label),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
@@ -478,8 +471,7 @@ fun SettingsAudioQualityScreen(
                                 if (uiState.youtubeFallbackEnabled) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Sets YouTube downloads at the rates below, and JioSaavn at " +
-                                            "96 kbps on Low and Normal, 160 on High, 320 on Best and Max.",
+                                        text = stringResource(R.string.settings_download_quality_rates_desc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -498,6 +490,7 @@ fun SettingsAudioQualityScreen(
                             targetValue = if (advancedExpanded) 90f else 0f,
                             label = "advancedChevron",
                         )
+                        val advancedExpandedDesc = stringResource(if (advancedExpanded) R.string.settings_state_expanded else R.string.settings_state_collapsed)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier
@@ -507,7 +500,7 @@ fun SettingsAudioQualityScreen(
                                     role = Role.Button
                                     // Spec §Accessibility: announce collapsed/expanded
                                     // state to screen readers.
-                                    stateDescription = if (advancedExpanded) "expanded" else "collapsed"
+                                    stateDescription = advancedExpandedDesc
                                 }
                                 .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -520,7 +513,7 @@ fun SettingsAudioQualityScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Advanced",
+                                text = stringResource(R.string.settings_advanced),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -539,8 +532,7 @@ fun SettingsAudioQualityScreen(
                                 // hence Test, and hence commit-on-Done.
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Point Stash at your own lossless relay. " +
-                                        "It takes priority over Stash's.",
+                                    text = stringResource(R.string.settings_custom_relay_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -590,13 +582,13 @@ fun SettingsAudioQualityScreen(
                                         // `endpointWasFocused` gates the initial unfocused
                                         // callback, which would otherwise commit "".
                                         .onFocusChanged { state ->
-                                            if (endpointWasFocused && !state.isFocused) commitEndpoint()
+                                             if (endpointWasFocused && !state.isFocused) commitEndpoint()
                                             endpointWasFocused = state.isFocused
                                         },
-                                    label = { Text("Custom lossless endpoint") },
+                                    label = { Text(stringResource(R.string.settings_custom_endpoint_label)) },
                                     singleLine = true,
                                     isError = customEndpointError != null,
-                                    placeholder = { Text("https://…") },
+                                    placeholder = { Text(stringResource(R.string.settings_url_placeholder)) },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Uri,
                                         imeAction = ImeAction.Done,
@@ -622,22 +614,22 @@ fun SettingsAudioQualityScreen(
                                         onClick = viewModel::onTestCustomEndpoint,
                                         enabled = customEndpoint != null && !testing,
                                     ) {
-                                        Text("Test")
+                                        Text(stringResource(R.string.settings_test))
                                     }
                                     // Reachability, not health: any HTTP reply counts.
                                     when (customEndpointTest) {
                                         SettingsViewModel.EndpointTestState.TESTING -> Text(
-                                            text = "Testing…",
+                                            text = stringResource(R.string.settings_testing),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                         SettingsViewModel.EndpointTestState.REACHABLE -> Text(
-                                            text = "Reachable",
+                                            text = stringResource(R.string.settings_reachable),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = StashTheme.extendedColors.success,
                                         )
                                         SettingsViewModel.EndpointTestState.UNREACHABLE -> Text(
-                                            text = "Not reachable",
+                                            text = stringResource(R.string.settings_not_reachable),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.error,
                                         )
@@ -652,8 +644,7 @@ fun SettingsAudioQualityScreen(
                                 // above: a half-typed base must never be stored.
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "Optional: use your own BitChord server for Tidal " +
-                                        "instead of Stash's. Leave blank otherwise.",
+                                    text = stringResource(R.string.settings_bitchord_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -681,10 +672,10 @@ fun SettingsAudioQualityScreen(
                                             if (bitchordWasFocused && !state.isFocused) commitBitchord()
                                             bitchordWasFocused = state.isFocused
                                         },
-                                    label = { Text("Custom Tidal server (optional)") },
+                                    label = { Text(stringResource(R.string.settings_bitchord_server_label)) },
                                     singleLine = true,
                                     isError = bitchordEndpointError != null,
-                                    placeholder = { Text("https://…") },
+                                    placeholder = { Text(stringResource(R.string.settings_url_placeholder)) },
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Uri,
                                         imeAction = ImeAction.Done,
@@ -711,9 +702,9 @@ fun SettingsAudioQualityScreen(
                                     value = tokenDraft,
                                     onValueChange = { tokenDraft = it },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Access token (optional)") },
+                                    label = { Text(stringResource(R.string.settings_access_token_label)) },
                                     supportingText = {
-                                        Text(if (bitchordHasToken) "A token is saved" else "Only if your own server sets ACCESS_TOKEN")
+                                        Text(stringResource(if (bitchordHasToken) R.string.settings_bitchord_token_saved else R.string.settings_bitchord_token_hint))
                                     },
                                     singleLine = true,
                                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -732,7 +723,7 @@ fun SettingsAudioQualityScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value directly.",
+                                    text = stringResource(R.string.settings_squid_captcha_desc),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -741,9 +732,9 @@ fun SettingsAudioQualityScreen(
                                     value = uiState.squidWtfCaptchaCookie,
                                     onValueChange = viewModel::onSquidWtfCaptchaCookieChanged,
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("captcha_verified_at value") },
+                                    label = { Text(stringResource(R.string.settings_squid_captcha_label)) },
                                     singleLine = true,
-                                    placeholder = { Text("e.g. 1777687404951") },
+                                    placeholder = { Text(stringResource(R.string.settings_squid_captcha_placeholder)) },
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 TextButton(
@@ -751,7 +742,7 @@ fun SettingsAudioQualityScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(
-                                        text = "Reset lossless attempts",
+                                        text = stringResource(R.string.settings_reset_lossless_attempts),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -768,10 +759,24 @@ fun SettingsAudioQualityScreen(
         HiResOutputSection()
 
         // (d) Effects.
-        SettingsSectionLabel("Effects")
+        SettingsSectionLabel(stringResource(R.string.settings_effects_section))
         SettingsNavRow(
-            title = "Equalizer",
+            title = stringResource(R.string.settings_equalizer_title),
             onClick = onNavigateToEqualizer,
         )
     }
+}
+
+@Composable
+private fun LosslessQualityTier.displayLabel(): String = when (this) {
+    LosslessQualityTier.MAX -> stringResource(R.string.settings_lossless_tier_max)
+    LosslessQualityTier.HI_RES -> stringResource(R.string.settings_lossless_tier_hires)
+    LosslessQualityTier.CD -> stringResource(R.string.settings_lossless_tier_cd)
+}
+
+@Composable
+private fun LosslessQualityTier.sizeHint(): String = when (this) {
+    LosslessQualityTier.MAX -> stringResource(R.string.settings_lossless_tier_max_hint)
+    LosslessQualityTier.HI_RES -> stringResource(R.string.settings_lossless_tier_hires_hint)
+    LosslessQualityTier.CD -> stringResource(R.string.settings_lossless_tier_cd_hint)
 }

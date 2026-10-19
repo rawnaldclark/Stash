@@ -19,12 +19,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stash.data.download.lossless.RoutingRow
 import com.stash.data.download.lossless.RoutingState
+import com.stash.feature.settings.R
 
 /**
  * ROUTING status block for the lossless source chain.
@@ -61,7 +63,7 @@ internal fun LosslessRoutingStatus(
     val mono = FontFamily.Monospace
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "ROUTING",
+            text = stringResource(R.string.settings_lossless_routing_header),
             fontFamily = mono,
             style = MaterialTheme.typography.labelSmall.copy(
                 letterSpacing = 1.2.sp,
@@ -81,8 +83,7 @@ internal fun LosslessRoutingStatus(
         Text(
             // Never enumerate sources here: the rows above are the authority, and a
             // copy that names paths ends up crediting a user with ones they don't have.
-            text = "Lossless comes from the sources above. Misses try JioSaavn before " +
-                "falling back to YouTube, shown as \"via YT\" while it plays.",
+            text = stringResource(R.string.settings_lossless_routing_footer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

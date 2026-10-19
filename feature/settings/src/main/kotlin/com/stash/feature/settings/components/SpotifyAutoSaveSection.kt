@@ -13,10 +13,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.stash.feature.settings.R
 
 /**
  * v0.9.13: Spotify-side counterpart to [YouTubeHistorySyncSection] — auto-save
@@ -49,7 +52,7 @@ fun SpotifyAutoSaveSection(
                     if (spotifyConnected) {
                         Modifier.clickable(
                             role = Role.Switch,
-                            onClickLabel = if (enabled) "Disable" else "Enable",
+                            onClickLabel = if (enabled) stringResource(R.string.settings_disable) else stringResource(R.string.settings_enable),
                         ) { onToggle(!enabled) }
                     } else {
                         Modifier
@@ -61,7 +64,7 @@ fun SpotifyAutoSaveSection(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "Auto-save liked tracks",
+                        text = stringResource(R.string.settings_spotify_autosave_title),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (spotifyConnected) {
                             MaterialTheme.colorScheme.onSurface
@@ -75,9 +78,9 @@ fun SpotifyAutoSaveSection(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = if (!spotifyConnected) {
-                        "Connect Spotify first"
+                        stringResource(R.string.settings_spotify_autosave_connect_first)
                     } else {
-                        "Helps mixes refresh."
+                        stringResource(R.string.settings_spotify_autosave_subtitle)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -94,8 +97,9 @@ fun SpotifyAutoSaveSection(
 
         if (enabled && spotifyConnected) {
             Spacer(modifier = Modifier.height(8.dp))
+            val days = pluralStringResource(R.plurals.settings_spotify_autosave_threshold_days, threshold, threshold)
             Text(
-                text = "Threshold: $threshold day${if (threshold == 1) "" else "s"} in 30",
+                text = stringResource(R.string.settings_spotify_autosave_threshold, days),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -106,7 +110,7 @@ fun SpotifyAutoSaveSection(
                 steps = 8,
             )
             Text(
-                text = "Last 7 days: $autoSavedCountLast7Days tracks auto-saved",
+                text = stringResource(R.string.settings_spotify_autosave_last_7_days, autoSavedCountLast7Days),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

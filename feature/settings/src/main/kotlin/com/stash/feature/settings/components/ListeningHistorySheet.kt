@@ -37,11 +37,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.ListeningHistoryCounts
 import com.stash.feature.settings.ListeningHistorySettingsViewModel
+import com.stash.feature.settings.R
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -82,14 +85,15 @@ fun ListeningHistorySheet(
         containerColor = StashTheme.extendedColors.elevatedSurface,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-            Text("Listening history", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(stringResource(R.string.settings_listening_history_title), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(4.dp))
+            val playsStr = pluralStringResource(R.plurals.settings_listening_history_plays_count, counts.totalPlays, counts.totalPlays)
+            val sinceStr = counts.firstDay?.let { stringResource(R.string.settings_listening_history_since_date, longDate(it)) } ?: ""
             Text(
                 text = if (counts.totalPlays == 0) {
-                    "What this phone remembers about the songs you play."
+                    stringResource(R.string.settings_listening_history_sheet_subtitle_empty)
                 } else {
-                    "This phone remembers ${plays(counts.totalPlays)}" +
-                        (counts.firstDay?.let { " since ${longDate(it)}" } ?: "") + "."
+                    stringResource(R.string.settings_listening_history_sheet_subtitle_nonempty, playsStr, sinceStr)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -98,30 +102,35 @@ fun ListeningHistorySheet(
             SettingsGroupCard(
                 rows = listOf<@Composable () -> Unit>({
                     SettingsToggleRow(
-                        title = "Pause history",
-                        subtitle = "While paused, nothing you play is saved, and nothing is sent to Last.fm or ListenBrainz.",
+                        title = stringResource(R.string.settings_listening_history_pause_title),
+                        subtitle = stringResource(R.string.settings_listening_history_pause_subtitle),
                         checked = paused,
                         onCheckedChange = viewModel::setPaused,
                     )
                 }),
             )
-            SettingsSectionLabel("Clear")
+            SettingsSectionLabel(stringResource(R.string.settings_listening_history_clear_section))
             SettingsGroupCard(
                 rows = listOf<@Composable () -> Unit>(
                     {
                         ActionRow(
                             icon = Icons.Rounded.DateRange,
-                            title = "Clear a date range",
-                            subtitle = "Pick the first and last day",
+                            title = stringResource(R.string.settings_listening_history_clear_range_title),
+                            subtitle = stringResource(R.string.settings_listening_history_clear_range_subtitle),
                             enabled = counts.totalPlays > 0,
                             onClick = { pickingRange = true },
                         )
                     },
                     {
+                        val clearSubtitle = if (counts.totalPlays > 0) {
+                            pluralStringResource(R.plurals.settings_listening_history_plays_count, counts.totalPlays, counts.totalPlays)
+                        } else {
+                            stringResource(R.string.settings_listening_history_nothing_to_clear)
+                        }
                         ActionRow(
                             icon = Icons.Rounded.DeleteForever,
-                            title = "Clear everything",
-                            subtitle = if (counts.totalPlays > 0) plays(counts.totalPlays) else "Nothing to clear",
+                            title = stringResource(R.string.settings_listening_history_clear_everything_title),
+                            subtitle = clearSubtitle,
                             enabled = counts.totalPlays > 0,
                             tint = MaterialTheme.colorScheme.error,
                             onClick = { confirm = ClearRequest.Everything },
@@ -130,8 +139,9 @@ fun ListeningHistorySheet(
                 ),
             )
             Spacer(Modifier.height(10.dp))
+            val keepsScrobbles = stringResource(R.string.settings_listening_history_clear_keeps_scrobbles)
             Text(
-                text = "Clearing removes listens from this phone only. $CLEAR_KEEPS_SCROBBLES",
+                text = stringResource(R.string.settings_listening_history_clear_footer, keepsScrobbles),
                 style = MaterialTheme.typography.bodySmall,
                 color = StashTheme.extendedColors.textTertiary,
                 modifier = Modifier.padding(horizontal = 4.dp),
@@ -151,26 +161,29 @@ fun ListeningHistorySheet(
     }
 
     confirm?.let { request ->
+        val keepsScrobbles = stringResource(R.string.settings_listening_history_clear_keeps_scrobbles)
         val (title, n) = when (request) {
-            ClearRequest.Everything -> "Clear your whole listening history?" to counts.totalPlays
+            ClearRequest.Everything -> stringResource(R.string.settings_listening_history_confirm_everything_title) to counts.totalPlays
             is ClearRequest.Range -> {
                 val label = if (request.fromDay == request.toDay) {
                     longDate(request.fromDay)
                 } else {
                     "${longDate(request.fromDay)} – ${longDate(request.toDay)}"
                 }
-                "Clear $label?" to counts.playsIn(request.fromDay, request.toDay)
+                stringResource(R.string.settings_listening_history_confirm_range_title, label) to counts.playsIn(request.fromDay, request.toDay)
             }
         }
         AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text(title) },
             text = {
-                Text(
-                    (if (n > 0) "${plays(n).replaceFirstChar { it.uppercase() }} leave this phone's history, " +
-                        "and play counts are worked out again without them. " else "There are no listens on those days. ") +
-                        CLEAR_KEEPS_SCROBBLES,
-                )
+                val body = if (n > 0) {
+                    val pStr = pluralStringResource(R.plurals.settings_listening_history_plays_count, n, n).replaceFirstChar { it.uppercase() }
+                    pluralStringResource(R.plurals.settings_listening_history_confirm_plays_leave, n, pStr, keepsScrobbles)
+                } else {
+                    stringResource(R.string.settings_listening_history_confirm_no_listens, keepsScrobbles)
+                }
+                Text(body)
             },
             confirmButton = {
                 TextButton(
@@ -182,9 +195,9 @@ fun ListeningHistorySheet(
                         }
                         confirm = null
                     },
-                ) { Text("Clear", color = if (n > 0) MaterialTheme.colorScheme.error else Color.Unspecified) }
+                ) { Text(stringResource(R.string.settings_listening_history_confirm_clear_button), color = if (n > 0) MaterialTheme.colorScheme.error else Color.Unspecified) }
             },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text(stringResource(R.string.settings_cancel)) } },
         )
     }
 }
@@ -219,16 +232,16 @@ private fun ClearRangePicker(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(enabled = start != null, onClick = { if (start != null && end != null) onPicked(start, end) }) {
-                Text("Next")
+                Text(stringResource(R.string.settings_listening_history_picker_next))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
     ) {
         DateRangePicker(
             state = state,
             title = {
                 Text(
-                    "Days to clear",
+                    stringResource(R.string.settings_listening_history_picker_title),
                     modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp),
                 )
             },
