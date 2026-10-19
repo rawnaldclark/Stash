@@ -102,7 +102,7 @@ test("a signed FLAC stream costs one unit and carries the counter headers; a rel
   assert.equal(r.used(), 2);
 });
 
-test("DASH FLAC counts; AAC (?aac=1 on a CD-only track, ?aac=only) and 404s never do", async () => {
+test("DASH FLAC and Tidal's AAC (?aac=1 on a CD-only track, ?aac=only) each count one unit; 404s never do", async () => {
   const r = relay((url) => {
     if (url.includes("/tracks/3/")) return dash();
     if (url.includes("/tracks/4/")) return new Response(JSON.stringify({ subStatus: 4005 }), { status: 401 });
@@ -112,12 +112,28 @@ test("DASH FLAC counts; AAC (?aac=1 on a CD-only track, ?aac=only) and 404s neve
   const d = await r.call("/stream/td:3", signed("td:3"));
   assert.equal((await d.json()).manifest, "dash");
   assert.equal(d.headers.get("X-Stash-Lossless"), "1/500");
-  for (const [path, id, status] of [["/stream/td:1?aac=1", 1, 200], ["/stream/td:2", 2, 404], ["/stream/td:4", 4, 404], ["/stream/td:5?aac=only", 5, 200]]) {
+  for (const [path, id, status, counter] of [
+    ["/stream/td:1?aac=1", 1, 200, "2/500"],
+    ["/stream/td:2", 2, 404, null],
+    ["/stream/td:4", 4, 404, null],
+    ["/stream/td:5?aac=only", 5, 200, "3/500"],
+  ]) {
     const res = await r.call(path, signed(`td:${id}`));
     assert.equal(res.status, status, path);
-    assert.equal(res.headers.get("X-Stash-Lossless"), null, path);
+    if (status === 200) assert.equal((await res.json()).codec, "aac", path);
+    assert.equal(res.headers.get("X-Stash-Lossless"), counter, path);
   }
-  assert.equal(r.used(), 1);
+  assert.equal(r.used(), 3);
+});
+
+test("an AAC answer from the relay cache counts again, like a cached FLAC one", async () => {
+  const r = relay(() => aacInfo());
+  const first = await r.call("/stream/td:1?aac=only", signed("td:1"));
+  assert.equal((await first.json()).codec, "aac");
+  const hit = await r.call("/stream/td:1?aac=only", signed("td:1"));
+  assert.equal(hit.headers.get("X-Stash-Lossless"), "2/500");
+  assert.equal(r.calls.filter((c) => c.includes("playbackinfo")).length, 1, "the second came from the relay cache");
+  assert.equal(r.used(), 2);
 });
 
 test("at FREE_LOSSLESS_DAILY: 429 daily_lossless_cap with Retry-After to midnight UTC, no seat taken", async () => {
@@ -137,76 +153,27 @@ test("at FREE_LOSSLESS_DAILY: 429 daily_lossless_cap with Retry-After to midnigh
   assert.equal((await r.call("/stream/td:1", signed("td:1", { install: "install-0002" }))).status, 200);
 });
 
-test("over the cap, ?aac=1 plays Tidal's AAC (asked as HIGH, no hires lookup), uncounted, with the headers", async () => {
+test("over the cap every mode gets the 429, ?aac=1 and ?aac=only included: no uncounted AAC, no Tidal call", async () => {
   const r = relay(tidal(), { env: { FREE_LOSSLESS_DAILY: "2" } });
   r.setUsed(2);
-  const res = await r.call("/stream/td:1?aac=1", signed("td:1"));
-  assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.equal(body.codec, "aac");
-  assert.equal("hires" in body, false);
-  assert.equal(r.calls.length, 1);
-  assert.match(r.calls[0], /audioquality=HIGH/);
-  assert.equal(res.headers.get("X-Stash-Lossless"), "2/2");
+  for (const path of ["/stream/td:1", "/stream/td:1?aac=1", "/stream/td:1?aac=only"]) {
+    const res = await r.call(path, signed("td:1"));
+    assert.equal(res.status, 429, path);
+    assert.deepEqual(await res.json(), { error: "daily_lossless_cap", used: 2, limit: 2, resetsAt: nextResetSec(now()) }, path);
+    assert.equal(res.headers.get("X-Stash-Lossless"), "2/2", path);
+  }
+  assert.equal(r.calls.length, 0, "Tidal was never asked");
   assert.equal(r.used(), 2);
-  // Its cache namespace is its own: an under-cap ?aac=1 request for the track still gets FLAC.
-  const fresh = await r.call("/stream/td:1?aac=1", signed("td:1", { install: "install-0002" }));
-  assert.equal((await fresh.json()).codec, "flac");
 });
 
-test("over the cap, a warm ?aac=1 AAC answer is served from the cache: no Tidal call, uncounted, with the headers", async () => {
+test("a warm AAC answer in the relay cache is no way past the cap either", async () => {
   const r = relay(() => aacInfo(), { env: { FREE_LOSSLESS_DAILY: "2" } }); // a CD-only track: Tidal answers HIGH
   const warm = await r.call("/stream/td:1?aac=1", signed("td:1", { install: "install-0002" }));
   assert.equal((await warm.json()).codec, "aac");
-  assert.equal(r.calls.length, 1);
   r.setUsed(2);
   const res = await r.call("/stream/td:1?aac=1", signed("td:1"));
-  assert.equal(res.status, 200);
-  assert.equal((await res.json()).codec, "aac");
-  assert.equal(r.calls.length, 1, "answered from the warm aac=1 entry");
-  assert.equal(r.db.prepare("SELECT COUNT(*) AS n FROM tidal_response_cache WHERE cache_key LIKE '%aac=cap%'").get().n, 0, "no cold cap entry");
-  assert.equal(res.headers.get("X-Stash-Lossless"), "2/2");
+  assert.equal(res.status, 429);
   assert.equal(r.used(), 2);
-});
-
-test("over the cap, a warm ?aac=1 not_available is served from the cache; a warm FLAC entry is not, Tidal is asked for HIGH", async () => {
-  const r = relay((url) => {
-    if (url.includes("/tracks/7/")) return new Response(JSON.stringify({ subStatus: 4005 }), { status: 401 });
-    return url.includes("audioquality=HIGH") ? aacInfo() : flac();
-  }, { seats: 8, env: { FREE_LOSSLESS_DAILY: "1" } });
-  const other = { install: "install-0002" };
-  assert.equal((await r.call("/stream/td:7?aac=1", signed("td:7", other))).status, 404);
-  assert.equal((await (await r.call("/stream/td:8?aac=1", signed("td:8", other))).json()).codec, "flac");
-  assert.equal(r.calls.length, 2);
-  r.setUsed(1);
-  const miss = await r.call("/stream/td:7?aac=1", signed("td:7"));
-  assert.equal(miss.status, 404);
-  assert.deepEqual(await miss.json(), { error: "not_available" });
-  assert.equal(miss.headers.get("X-Stash-Lossless"), "1/1");
-  assert.equal(r.calls.length, 2, "the warm not_available, no Tidal call");
-  const aac = await r.call("/stream/td:8?aac=1", signed("td:8"));
-  assert.equal((await aac.json()).codec, "aac", "never the warm FLAC past the cap");
-  assert.equal(r.calls.length, 3);
-  assert.match(r.calls[2], /audioquality=HIGH/);
-  assert.equal(r.used(), 1);
-});
-
-test("over the cap, a HIGH answer that is not progressive AAC is a 404 with the counter headers, cached for hours not days", async () => {
-  const r = relay(() => dash(), { env: { FREE_LOSSLESS_DAILY: "1" } });
-  r.setUsed(1);
-  const res = await r.call("/stream/td:1?aac=1", signed("td:1"));
-  assert.equal(res.status, 404);
-  assert.deepEqual(await res.json(), { error: "lossless_unavailable" });
-  assert.equal(res.headers.get("X-Stash-Lossless"), "1/1");
-  assert.equal(res.headers.get("X-Stash-Lossless-Reset"), String(nextResetSec(now())));
-  const row = r.db.prepare("SELECT expires_at FROM tidal_response_cache WHERE cache_key LIKE '%:1:aac=cap:%'").get();
-  assert.ok(row, "cached under the cap key");
-  assert.ok(row.expires_at <= now() + 6 * 3600 + 1, "hours, not five days");
-  const again = await r.call("/stream/td:1?aac=1", signed("td:1"));
-  assert.equal(again.status, 404);
-  assert.equal(again.headers.get("X-Stash-Lossless"), "1/1", "the cached 404 carries the headers too");
-  assert.equal(r.calls.length, 1);
-  assert.equal(r.used(), 1);
 });
 
 test("legacy: a request with no install headers streams uncounted, as before", async () => {
@@ -439,7 +406,7 @@ test("bad signature, another key, garbage and a wrong tier get the normal quota,
   }
 });
 
-test("a revoked tid gets the normal quota (and ?aac=1 its AAC fallback)", async () => {
+test("a revoked tid gets the normal quota, AAC included", async () => {
   const r = supporterRelay();
   const t = token(KEYS.privateKey);
   assert.equal((await r.call("/stream/td:1", withToken(t, signed("td:1")))).status, 200);
@@ -448,7 +415,7 @@ test("a revoked tid gets the normal quota (and ?aac=1 its AAC fallback)", async 
   assert.equal(res.status, 429);
   assert.deepEqual(await res.json(), { error: "daily_lossless_cap", used: 1, limit: 1, resetsAt: nextResetSec(now()) });
   const aac = await r.call("/stream/td:3?aac=1", withToken(t, signed("td:3")));
-  assert.equal((await aac.json()).codec, "aac");
+  assert.equal(aac.status, 429);
   assert.equal(aac.headers.get("X-Stash-Lossless"), "1/1");
 });
 

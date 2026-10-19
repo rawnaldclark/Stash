@@ -45,18 +45,13 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
   be served uncounted, so there any failing signature is the 401.
   Without the `RELAY_KEY` secret the install headers are ignored and the counter is off (a warning per isolate);
   with `REQUIRE_INSTALL="1"` and no key, `/stream` is a 500 `server_misconfigured`.
-- **Counts (one unit):** a `200` `/stream` answer with `codec: "flac"`: progressive, DASH or `?web=1` edge, a relay
-  response-cache hit included. **Never:** AAC answers (`?aac=1` falling back, `?aac=only`), 404s, errors, busy,
-  searches, `/quota`, `/dash`.
+- **Counts (one unit):** a `200` `/stream` answer with `codec: "flac"` (progressive, DASH or `?web=1` edge) or
+  `codec: "aac"` (Tidal's AAC: `?aac=1` on a CD-only track, `?aac=only`), a relay response-cache hit included.
+  **Never:** 404s, errors, busy, searches, `/quota`, `/dash`.
 - **At the limit:** `429 {"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":<epoch s>}` with
-  `Retry-After` = seconds to `resetsAt` (the next UTC midnight); no seat is taken. **Except `?aac=1`**: past the limit
-  it is answered with Tidal's AAC, uncounted, with the counter headers, so streaming keeps playing lossy until the
-  reset. The relay first serves `?aac=1`'s own cached answer when that is already AAC (a CD-only track) or a
-  `not_available` miss, with no Tidal call; otherwise its own cache key `aac=cap`, then Tidal asked for `HIGH` (like
-  `?aac=only`, without the hires lookup). If Tidal's `HIGH` answer is not a progressive AAC file the answer is `404
-  lossless_unavailable` with the counter headers, cached under `aac=cap` for 6 h (not 5 days). `?aac=only` is never
-  capped or counted.
-- **Headers** on every counted answer, the over-cap `?aac=1` answers (AAC and 404), the 429 and `/quota`: `X-Stash-Lossless:
+  `Retry-After` = seconds to `resetsAt` (the next UTC midnight); no seat is taken. Every mode gets it, `?aac=1` and
+  `?aac=only` included: past the limit Tidal answers nothing, FLAC or AAC, until the reset.
+- **Headers** on every counted answer, the 429 and `/quota`: `X-Stash-Lossless:
   <used>/<limit>` (`used` after this answer; `<used>/unlimited` for a supporter) and `X-Stash-Lossless-Reset: <epoch
   s>`. JSON answers set no CORS headers, so there is no `Access-Control-Expose-Headers` to extend
   (`LOSSLESS_HEADER_NAMES` in `src/quota.js` is ready if that changes).
@@ -70,12 +65,12 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
   `wrangler.toml`, the same value as the Qobuz relay's). Only tier `supporter`, `v` 1, a 32-hex `tid` and an `iat` at
   most 300 s ahead are accepted (no expiry); verified tokens are cached per isolate. A missing, malformed, wrongly
   signed or revoked token is never an error: the request just gets the free quota. For a valid token the free limit
-  is skipped: headers read `<used>/unlimited` (`used` = the install's own count, which still counts every FLAC
-  answer) and `/quota` answers `{"supporter":true,"limit":null}`. The network, global and fair-share limits still
+  is skipped: headers read `<used>/unlimited` (`used` = the install's own count, which still counts every FLAC and
+  AAC answer) and `/quota` answers `{"supporter":true,"limit":null}`. The network, global and fair-share limits still
   apply to supporters.
-- **Per-token ceiling:** every FLAC answer under a token also counts in `usage` as subject `t:<tid>`. At
-  `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free limit applies
-  again (headers `<used>/500`, then the 429 or `?aac=1`'s AAC). This keeps a posted token from being a free pass.
+- **Per-token ceiling:** every counted answer (FLAC or AAC) under a token also counts in `usage` as subject
+  `t:<tid>`. At `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free
+  limit applies again (headers `<used>/500`, then the 429). This keeps a posted token from being a free pass.
 - **Revocation:** table `revoked_tokens(tid, revoked_at, reason)` in `stash-quota` (migration
   `infra/lossless-quota/migrations/0002_revoked_tokens.sql`, copied to `test/fixtures/quota_0002_revoked_tokens.sql`),
   checked in the same D1 read as the install's count. Revoke (the tid is in the token's first segment, base64url
