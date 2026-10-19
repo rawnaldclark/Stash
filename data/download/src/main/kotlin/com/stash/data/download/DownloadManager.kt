@@ -114,17 +114,17 @@ internal const val LOSSY_AAC_VIDEO_DRIFT = 0.40
  * video's, so the tight window threw away every Tidal AAC file of the very track streaming plays
  * for that row ("Paint a Face": a 169 s file for a 180 s video).
  *
+ * A file of [LOSSLESS_SAMPLE_MAX_MS] or less is held to the tight window whatever the row: the 40%
+ * would otherwise let a 30 s preview pass for a 45 s video row.
+ *
  * An unknown expected length accepts any file; an unreadable file is never accepted.
  */
 internal fun lossyAacLengthMatches(probedMs: Long?, expectedMs: Long, lengthReliable: Boolean): Boolean {
     if (expectedMs <= 0L) return true
     if (probedMs == null) return false
     val gap = kotlin.math.abs(probedMs - expectedMs)
-    return if (lengthReliable) {
-        gap <= maxOf(LOSSY_AAC_TOLERANCE_MS, (expectedMs * LOSSY_AAC_TOLERANCE_FRACTION).toLong())
-    } else {
-        gap < expectedMs * LOSSY_AAC_VIDEO_DRIFT
-    }
+    val tight = gap <= maxOf(LOSSY_AAC_TOLERANCE_MS, (expectedMs * LOSSY_AAC_TOLERANCE_FRACTION).toLong())
+    return if (lengthReliable || probedMs <= LOSSLESS_SAMPLE_MAX_MS) tight else gap < expectedMs * LOSSY_AAC_VIDEO_DRIFT
 }
 
 /**
