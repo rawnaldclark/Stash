@@ -274,8 +274,8 @@ private fun TrackListItemRow(
 
         Spacer(modifier = Modifier.width(SmallGap))
 
-        // -- Source indicator dot + label (dots only when space is tight) --
-        SourceIndicator(source = track.source, showLabel = fit.showSourceLabels)
+        // -- Source indicator: coloured dots only; source names are never shown in a row --
+        SourceIndicator(source = track.source, showLabel = false)
 
         // -- Overflow menu (only when not selecting) --
         if (!selectionActive && onMoreClick != null) {

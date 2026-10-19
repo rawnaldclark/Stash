@@ -2,6 +2,7 @@ package com.stash.feature.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,11 +23,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.model.MusicSource
+import com.stash.core.ui.components.HomeRailCardSize
+import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.core.ui.theme.StashTheme
@@ -35,9 +38,9 @@ import com.stash.core.ui.theme.StashTheme
 /**
  * Premium-Crisp card for one algorithmic mix on a Home rail.
  *
- * Mirrors [com.stash.core.ui.components.AlbumSquareCard]: a 140dp column with a
- * square cover, source dot, title, and — for the user's own Stash mixes — a
- * build-state line while their tracks populate.
+ * A [HomeRailCardSize] column: a square cover under a hairline ring (so a pale
+ * cover keeps its edge on the light theme), the source dot, the title, and —
+ * for the user's own Stash mixes — a build-state line while their tracks populate.
  *
  * @param title      Mix name shown under the cover (up to two lines).
  * @param artUrl     Optional cover art; upgraded via [ArtUrlUpgrader]. When null,
@@ -51,6 +54,8 @@ import com.stash.core.ui.theme.StashTheme
  * @param onLongPress Optional long-press — drives the Stash-mix action sheet;
  *                    streaming-mix cards pass null.
  * @param modifier   Applied to the root column.
+ * @param size       The cover's side and the card's width: [HomeRailCardSize] on Home's rails;
+ *                   the See-all grid passes [MixGridCardSize].
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,11 +67,12 @@ fun MixRailCard(
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    size: Dp = HomeRailCardSize,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
-            .width(140.dp)
+            .width(size)
             .pressScale(interactionSource)
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -76,7 +82,10 @@ fun MixRailCard(
             ),
     ) {
         Box {
-            val coverModifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp))
+            val coverModifier = Modifier
+                .size(size)
+                .clip(HomeRailCoverShape)
+                .border(1.dp, StashTheme.extendedColors.glassBorder, HomeRailCoverShape)
             if (artUrl != null) {
                 AsyncImage(
                     model = ArtUrlUpgrader.upgrade(artUrl),
@@ -93,7 +102,7 @@ fun MixRailCard(
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
             )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.labelLarge,
@@ -114,6 +123,9 @@ fun MixRailCard(
         }
     }
 }
+
+/** A mix card in the two-column See-all grid: two to a row fill a phone's width. */
+internal val MixGridCardSize = 140.dp
 
 /** Source-tinted top-left→bottom-right gradient for the artless cover fallback. */
 @Composable

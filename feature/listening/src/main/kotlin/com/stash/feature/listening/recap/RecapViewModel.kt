@@ -20,6 +20,8 @@ import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
 import com.stash.feature.listening.PlayPlan
 import com.stash.feature.listening.planTopSongs
+import com.stash.feature.listening.recap.lastfm.LastFmRecapLoad
+import com.stash.feature.listening.recap.lastfm.LastFmRecapSource
 import com.stash.feature.listening.stats.ListeningInsights
 import com.stash.feature.listening.stats.artistsWithPhotos
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,8 +44,21 @@ import javax.inject.Inject
 sealed interface RecapUiState {
     data object Loading : RecapUiState
 
-    /** Too few listens in the period for a story (or the route named no period). */
-    data class Empty(val title: String) : RecapUiState
+    /** A Last.fm recap reading its scrobbles: [line] says how far ("Reading your scrobbles… 400 of 939"). */
+    data class Fetching(val title: String, val line: String) : RecapUiState
+
+    /**
+     * No story: too few listens in the period (or the route named no period). [message] replaces
+     * the default line (a Last.fm recap's reasons: not connected, private profile, offline…);
+     * [canRetry] offers Try again (offline, busy).
+     */
+    data class Empty(
+        val title: String,
+        val message: String? = null,
+        val canRetry: Boolean = false,
+        /** Offer "Open Settings" (Last.fm isn't connected). */
+        val openSettings: Boolean = false,
+    ) : RecapUiState
 
     data class Ready(
         val period: RecapPeriod,
@@ -56,7 +71,12 @@ sealed interface RecapUiState {
         val cues: List<SongCue>,
         /** Songs "Play your top songs" plays and "Save as playlist" saves, #1 first. */
         val topSongs: List<TopTrackRow>,
-    ) : RecapUiState
+        /** Whose listening this is (Stash's own or Last.fm's), and the words that go with it. */
+        val voice: RecapVoice = RecapVoice.Stash,
+    ) : RecapUiState {
+        /** The share images' footer: "Stash · October 2026" / "Stash · Last.fm · October 2026". */
+        val footer: String get() = voice.footer(longName)
+    }
 }
 
 /**
@@ -81,6 +101,8 @@ class RecapViewModel @VisibleForTesting internal constructor(
     private val musicRepository: MusicRepository,
     private val connectivityMonitor: ConnectivityMonitor,
     private val computeDispatcher: CoroutineDispatcher,
+    /** The Last.fm recap's data (route source "lastfm"); never consulted for Stash's own recap. */
+    private val lastFm: LastFmRecapSource = LastFmRecapSource.None,
 ) : ViewModel() {
 
     @Inject
@@ -94,10 +116,11 @@ class RecapViewModel @VisibleForTesting internal constructor(
         playerRepository: PlayerRepository,
         musicRepository: MusicRepository,
         connectivityMonitor: ConnectivityMonitor,
+        lastFm: LastFmRecapSource,
     ) : this(
         savedStateHandle, history, artistImages, genres.genreIndex, audio,
         recapPreference.muted, recapPreference::setMuted, playerRepository, musicRepository, connectivityMonitor,
-        Dispatchers.Default,
+        Dispatchers.Default, lastFm,
     )
 
     private val period: RecapPeriod? = RecapPeriod.fromRoute(
@@ -105,6 +128,9 @@ class RecapViewModel @VisibleForTesting internal constructor(
         savedStateHandle.get<Int>(ARG_YEAR) ?: 0,
         savedStateHandle.get<Int>(ARG_MONTH) ?: 0,
     )
+
+    /** Whose listening the story tells: the route's source ("lastfm"), else Stash's own. */
+    private val voice: RecapVoice = RecapVoice.of(savedStateHandle.get<String>(ARG_SOURCE))
 
     private val _state = MutableStateFlow<RecapUiState>(RecapUiState.Loading)
     val state: StateFlow<RecapUiState> = _state.asStateFlow()
@@ -155,7 +181,8 @@ class RecapViewModel @VisibleForTesting internal constructor(
             return
         }
         val today = history.today()
-        val title = p.title(today)
+        val title = voice.title(p.title(today))
+        if (voice.source == RecapSource.LASTFM) return loadLastFm(p, today, title)
         _state.value = try {
             val data = withContext(computeDispatcher) { readData(p, today) }
             val cards = RecapDeck.build(data, title)
@@ -170,6 +197,46 @@ class RecapViewModel @VisibleForTesting internal constructor(
             Log.w(TAG, "recap failed", e)
             RecapUiState.Empty(title)
         }
+    }
+
+    /**
+     * The Last.fm recap: scrobbles from Last.fm mapped to the same [RecapData], so the same deck,
+     * music and share images follow. Nothing of Stash's own history is read or written for it.
+     */
+    private suspend fun loadLastFm(p: RecapPeriod, today: Long, title: String) {
+        _state.value = RecapUiState.Fetching(title, LastFmRecapVoice.READING)
+        _state.value = try {
+            // Off the main thread: matching the library, the look-ups and the mapping are real work.
+            val load = withContext(computeDispatcher) {
+                lastFm.load(p, today) { progress -> _state.value = RecapUiState.Fetching(title, LastFmRecapVoice.progressLine(progress)) }
+            }
+            when (load) {
+                is LastFmRecapLoad.Ready -> {
+                    val cards = withContext(computeDispatcher) { RecapDeck.build(load.data, title) }
+                    if (cards.isEmpty()) {
+                        RecapUiState.Empty(title, LastFmRecapVoice.NOT_ENOUGH)
+                    } else {
+                        RecapUiState.Ready(p, title, p.longName(), cards, RecapDeck.cues(cards, load.data), load.data.topSongs, voice)
+                    }
+                }
+                LastFmRecapLoad.NotConnected -> RecapUiState.Empty(title, LastFmRecapVoice.NOT_CONNECTED, openSettings = true)
+                is LastFmRecapLoad.NotEnough -> RecapUiState.Empty(title, LastFmRecapVoice.NOT_ENOUGH)
+                is LastFmRecapLoad.Failed -> RecapUiState.Empty(title, LastFmRecapVoice.failure(load.reason), LastFmRecapVoice.canRetry(load.reason))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Last.fm recap failed", e)
+            RecapUiState.Empty(title, LastFmRecapVoice.failure(null), canRetry = true)
+        }
+    }
+
+    /** Try again after a Last.fm recap couldn't load (offline, busy). */
+    fun retry() {
+        val s = _state.value as? RecapUiState.Empty ?: return
+        if (!s.canRetry) return
+        _state.value = RecapUiState.Loading
+        viewModelScope.launch { load() }
     }
 
     /** Every number the story tells, read once (one-off reads of the same queries Your listening uses). */
@@ -194,18 +261,8 @@ class RecapViewModel @VisibleForTesting internal constructor(
 
         // An artist's most played song in the period, never the #1: the cards that play these come
         // before the quiz and must not give its answer away (songs are most played first).
-        val no1Key = songs.firstOrNull()?.let { ListeningInsights.songKey(it.track.title, it.track.artist) }
-        fun topSongOf(artistName: String): TopTrackRow? {
-            val key = ListeningInsights.artistKey(artistName)
-            return songs.firstOrNull {
-                ListeningInsights.artistKey(it.track.artist) == key &&
-                    ListeningInsights.songKey(it.track.title, it.track.artist) != no1Key
-            }
-        }
-        val artistTopSongs = topArtists.mapNotNull { a -> topSongOf(a.name)?.let { a.key to it } }.toMap()
-        val genreSong = genres.items.firstOrNull()?.let { top ->
-            ListeningInsights.genreTopArtists(credits, index, listOf(top.key), perGenre = 1)[top.key]?.firstOrNull()
-        }?.let(::topSongOf)
+        val artistTopSongs = RecapPicks.artistTopSongs(songs, topArtists)
+        val genreSong = RecapPicks.genreSong(songs, credits, index, genres)
 
         val topArtistKey = topArtists.firstOrNull()?.key
         val topArtistDays = if (topArtistKey == null) {
@@ -341,6 +398,8 @@ class RecapViewModel @VisibleForTesting internal constructor(
     /** "Play your top songs": the story's music ends without bringing the old queue back, then the top songs play. */
     fun playTopSongs() {
         val ready = _state.value as? RecapUiState.Ready ?: return
+        // A Last.fm recap's songs may not be in the library: it has no end actions (the screen hides them).
+        if (!ready.voice.endActions) return
         val tracks = ready.topSongs.map { it.track.toDomain() }
         if (tracks.isEmpty() || startingPlayback) return
         // A double tap must not set the queue twice (or close the story twice).
@@ -370,6 +429,8 @@ class RecapViewModel @VisibleForTesting internal constructor(
      */
     fun saveAsPlaylist() {
         val ready = _state.value as? RecapUiState.Ready ?: return
+        // A playlist needs library rows: never for a Last.fm recap.
+        if (!ready.voice.endActions) return
         if (_saved.value) return
         val ids = ready.topSongs.map { it.track.id }.distinct()
         if (ids.isEmpty()) return
@@ -406,6 +467,7 @@ class RecapViewModel @VisibleForTesting internal constructor(
         const val ARG_KIND = "kind"
         const val ARG_YEAR = "year"
         const val ARG_MONTH = "month"
+        const val ARG_SOURCE = "source"
 
         /** [quizAnswer] for a skipped quiz. */
         const val QUIZ_SKIPPED = -1

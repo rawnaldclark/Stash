@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** What the Listening history sheet needs to say before clearing: listens per day, all of them. */
@@ -43,6 +44,8 @@ data class ListeningHistoryCounts(
 class ListeningHistorySettingsViewModel @Inject constructor(
     private val history: ListeningHistoryRepository,
     private val preference: ListeningHistoryPreference,
+    /** The Last.fm recap's own copy of scrobbles: "Clear everything" leaves none of it either. */
+    private val lastFmRecapStore: com.stash.core.data.lastfm.recap.LastFmRecapStore,
 ) : ViewModel() {
 
     /** For the row's subtitle and the sheet's switch. */
@@ -72,7 +75,11 @@ class ListeningHistorySettingsViewModel @Inject constructor(
     fun clearRange(fromDay: Long, toDay: Long) = clear { history.deleteRange(DayRange(minOf(fromDay, toDay), maxOf(fromDay, toDay))) }
 
     /** Clears the whole history on this phone. */
-    fun clearAll() = clear { history.deleteAll() }
+    fun clearAll() = clear {
+        // Only this phone's copies: nothing on Last.fm itself is touched.
+        runCatching { withContext(kotlinx.coroutines.Dispatchers.IO) { lastFmRecapStore.clearUsers() } }
+        history.deleteAll()
+    }
 
     private fun clear(delete: suspend () -> Int) {
         viewModelScope.launch {

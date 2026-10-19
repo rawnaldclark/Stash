@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -34,3 +35,12 @@ fun CardRail(
         )
     }
 }
+
+/**
+ * The cover (and width) of a Home rail card: the mix and playlist cards, Liked Songs and Recently
+ * played, so every card rail on Home steps at one size. Was 140 dp.
+ */
+val HomeRailCardSize = 120.dp
+
+/** The corners of a Home rail card's cover. */
+val HomeRailCoverShape = RoundedCornerShape(10.dp)

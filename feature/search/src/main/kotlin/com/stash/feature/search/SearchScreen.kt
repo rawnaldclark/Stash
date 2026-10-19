@@ -140,14 +140,6 @@ fun SearchScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding(),
         ) {
-            // Command hero: the page owns its name like Library/Sync do.
-            Text(
-                text = "Search",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 20.dp, top = 8.dp),
-            )
             SearchBar(
                 query = state.query,
                 onQueryChanged = viewModel::onQueryChanged,

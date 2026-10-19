@@ -41,5 +41,18 @@
                 <action android:name="com.stash.debug.RECAP_AUDIO" />
             </intent-filter>
         </receiver>
+        <!--
+            Debug only: points the Last.fm recap at a Last.fm username for testing without a login
+            (com.stash.app.debug.DebugLastFmRecapUser). Same DUMP guard as above.
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugLastFmRecapUser"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.debug.LASTFM_RECAP_USER" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

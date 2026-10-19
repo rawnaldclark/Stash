@@ -31,6 +31,9 @@ class LastFmRateLimitGate @Inject constructor() {
     fun isOpen(key: String, nowMs: Long): Boolean =
         (states[key]?.openUntilMs ?: 0L) > nowMs
 
+    /** When [key]'s breaker closes again (epoch ms); 0 or a past time when it isn't open. */
+    fun openUntil(key: String): Long = states[key]?.openUntilMs ?: 0L
+
     /**
      * Record a rate-limit response for [key]. Opens that key for a cooldown
      * that doubles with each consecutive hit (base, 2×, 4×, …), capped at

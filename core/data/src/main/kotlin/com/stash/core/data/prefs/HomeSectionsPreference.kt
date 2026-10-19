@@ -21,10 +21,11 @@ import javax.inject.Singleton
 
 /**
  * The reorderable/hideable content sections of the Home tab, in default
- * order. The Discover hero pager is NOT one of these — it's Home's front
- * door and stays pinned on top.
+ * order.
  */
 enum class HomeSection(val key: String) {
+    /** Daily Discover and your mixes (the hero pager). Pinned on top until 2026-10-19; now movable and hideable like the rest. First, so it stays on top by default. */
+    DISCOVER("discover"),
     YOUR_PLAYLISTS("your_playlists"),
     NEW_RELEASES("new_releases"),
     QOBUZ_PLAYLISTS("qobuz_playlists"),
@@ -38,8 +39,9 @@ enum class HomeSection(val key: String) {
 
     /**
      * "Your listening" (Pick 3, owner decision 2026-10-18: listening lives on Home only): Recently
-     * played and the doors into History and, later, Top songs, Stats and Your Year. Last, so an
-     * update appends it under the user's own arrangement; Home renders it only once there's a listen.
+     * played and the doors into History and, later, Top songs, Stats and Your Year. Last in the enum, so
+     * a stale saved order appends it; Home shows it first until the user reorders Home
+     * ([effectiveHomeSectionOrder]). Home renders it only once there's a listen.
      */
     YOUR_LISTENING("your_listening");
 
@@ -53,14 +55,35 @@ enum class HomeSection(val key: String) {
  * saved keys are dropped (removed in an update), known sections missing
  * from the saved order are appended in default order (added in an
  * update) — so a stale preference can never hide a new section.
+ *
+ * The exception is DISCOVER when it's missing: every order saved before it
+ * existed had Discover pinned on top, so a missing DISCOVER goes to the FRONT.
  */
 fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     val known = savedKeys.mapNotNull(HomeSection::fromKey).distinct()
-    return known + HomeSection.entries.filter { it !in known }
+    val missing = HomeSection.entries.filter { it !in known }
+    val front = if (HomeSection.DISCOVER in missing) listOf(HomeSection.DISCOVER) else emptyList()
+    return front + known + (missing - HomeSection.DISCOVER)
+}
+
+/**
+ * The order Home uses. Until the user reorders Home after this update ([promoted] false), Your listening
+ * leads (owner 2026-10-19: show the new feature first, once); any reorder saves the order and ends that.
+ * It goes directly under Discover when Discover is first, otherwise first.
+ */
+fun effectiveHomeSectionOrder(savedKeys: List<String>, promoted: Boolean): List<HomeSection> {
+    val resolved = resolveHomeSectionOrder(savedKeys)
+    if (promoted) return resolved
+    val rest = resolved - HomeSection.YOUR_LISTENING
+    return if (rest.firstOrNull() == HomeSection.DISCOVER) {
+        listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING) + rest.drop(1)
+    } else {
+        listOf(HomeSection.YOUR_LISTENING) + rest
+    }
 }
 
 /** Home before the preference loads, and when it can't be read: every section but Community, which is opt-in. */
-val DEFAULT_HOME_SECTIONS: List<HomeSection> = HomeSection.entries - HomeSection.COMMUNITY
+val DEFAULT_HOME_SECTIONS: List<HomeSection> = effectiveHomeSectionOrder(emptyList(), false) - HomeSection.COMMUNITY
 
 /**
  * What Home renders: [order] minus [hidden], and minus COMMUNITY unless [communityOn]. Community has its own
@@ -69,9 +92,18 @@ val DEFAULT_HOME_SECTIONS: List<HomeSection> = HomeSection.entries - HomeSection
 fun visibleHomeSections(order: List<HomeSection>, hidden: Set<HomeSection>, communityOn: Boolean): List<HomeSection> =
     order.filter { it !in hidden && (communityOn || it != HomeSection.COMMUNITY) }
 
-/** [order] with COMMUNITY first: where it lands the first time it's turned on, under the Discover hero. */
-fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> =
-    listOf(HomeSection.COMMUNITY) + (order - HomeSection.COMMUNITY)
+/**
+ * [order] with COMMUNITY moved up: where it lands the first time it's turned on, directly under the Discover
+ * pager when Discover is first, otherwise first.
+ */
+fun withCommunityFirst(order: List<HomeSection>): List<HomeSection> {
+    val rest = order - HomeSection.COMMUNITY
+    return if (rest.firstOrNull() == HomeSection.DISCOVER) {
+        listOf(HomeSection.DISCOVER, HomeSection.COMMUNITY) + rest.drop(1)
+    } else {
+        listOf(HomeSection.COMMUNITY) + rest
+    }
+}
 
 /** The tab a plain cold launch opens on (#428). Missing or unknown stored values read as [HOME]. */
 enum class StartTab { HOME, LIBRARY, SEARCH }
@@ -97,6 +129,8 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
     private val communityOnKey = booleanPreferencesKey("community_on")
+    /** Set by any write of [orderKey]: a reorder ends the one-time Your listening promotion. */
+    private val listeningPromotedKey = booleanPreferencesKey("your_listening_promoted_v1")
 
     /**
      * Show one Liked Songs card — the STASH_LIKED + LIKED_SONGS playlists
@@ -107,8 +141,8 @@ class HomeSectionsPreference @Inject constructor(
     }.distinctUntilChanged().catch { emit(false) }
 
     val order: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
-        resolveHomeSectionOrder(prefs[orderKey].toKeys())
-    }.distinctUntilChanged().catch { emit(resolveHomeSectionOrder(emptyList())) }
+        effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false)
+    }.distinctUntilChanged().catch { emit(effectiveHomeSectionOrder(emptyList(), false)) }
 
     val hidden: Flow<Set<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
@@ -146,18 +180,23 @@ class HomeSectionsPreference @Inject constructor(
      */
     val visibleSections: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         val hiddenSet = prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
-        visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, prefs[communityOnKey] ?: false)
+        visibleHomeSections(
+            effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false),
+            hiddenSet,
+            prefs[communityOnKey] ?: false,
+        )
     }.distinctUntilChanged().catch { emit(DEFAULT_HOME_SECTIONS) }
 
     /** Swap [section] one slot up or down in the full order. */
     suspend fun move(section: HomeSection, up: Boolean) {
         context.homeSectionsDataStore.edit { prefs ->
-            val current = resolveHomeSectionOrder(prefs[orderKey].toKeys()).toMutableList()
+            val current = effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false).toMutableList()
             val idx = current.indexOf(section)
             val target = if (up) idx - 1 else idx + 1
             if (idx < 0 || target !in current.indices) return@edit
             current[idx] = current[target].also { current[target] = current[idx] }
             prefs[orderKey] = current.joinToString(",") { it.key }
+            prefs[listeningPromotedKey] = true
             // Placed by hand before it was ever on: keep that spot when it's turned on.
             if (section == HomeSection.COMMUNITY && prefs[communityOnKey] == null) prefs[communityOnKey] = false
         }
@@ -179,7 +218,9 @@ class HomeSectionsPreference @Inject constructor(
     suspend fun setCommunityOn(on: Boolean) {
         context.homeSectionsDataStore.edit { prefs ->
             if (on && prefs[communityOnKey] == null) {
-                prefs[orderKey] = withCommunityFirst(resolveHomeSectionOrder(prefs[orderKey].toKeys())).joinToString(",") { it.key }
+                val effective = effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false)
+                prefs[orderKey] = withCommunityFirst(effective).joinToString(",") { it.key }
+                prefs[listeningPromotedKey] = true
             }
             prefs[communityOnKey] = on
         }
