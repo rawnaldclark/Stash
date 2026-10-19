@@ -37,6 +37,12 @@ sealed interface SearchDownloadStatus {
      */
     data object WaitingForLossless : SearchDownloadStatus
 
+    /**
+     * AAC 320 download mode: Tidal has no AAC of this song yet and the lossy fallback is off.
+     * Waits like [WaitingForLossless] (the same queue status); the UI says "Not available as AAC yet".
+     */
+    data object WaitingForAac : SearchDownloadStatus
+
     /** Which path delivered the bytes, for UI labelling. */
     enum class Source { LOSSLESS, TIDAL_AAC, JIOSAAVN, YOUTUBE }
 }

@@ -91,6 +91,18 @@ class TidalAacResolverTest {
         coVerify(exactly = 0) { rateLimiter.acquire(any()) }
     }
 
+    @Test fun `AAC download mode asks aac=only and ignores the Lossless-mode switch`() = runTest {
+        ready(switchOn = false)
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = true) } returns TidalLookup.NeedsRelay
+        coEvery { client.lookup(query, allowAac = true, cacheOnly = false, aacOnly = true) } returns TidalLookup.Found(aac)
+
+        val r = resolver.resolve(query, aacOnly = true)!!
+
+        assertThat(r.format.codec).isEqualTo("aac")
+        coVerify(exactly = 1) { client.lookup(query, allowAac = true, cacheOnly = false, aacOnly = true) }
+        coVerify(exactly = 0) { client.lookup(any(), any(), false, false) }
+    }
+
     @Test fun `a thrown resolve counts as a failure and returns null`() = runTest {
         ready()
         coEvery { client.lookup(query, allowAac = true, cacheOnly = false) } throws IllegalStateException("boom")

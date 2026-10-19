@@ -45,6 +45,8 @@ class LosslessDiagnosticsContributorTest {
     private val losslessPrefs: LosslessSourcePreferences = mockk {
         coEvery { enabledNow() } returns true
         coEvery { qualityTierNow() } returns LosslessQualityTier.HI_RES
+        coEvery { downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
+        coEvery { youtubeFallbackEnabledNow() } returns false
         coEvery { customLosslessEndpointNow() } returns null
     }
     private val streamingQuality: StreamingQualityPreferences = mockk { coEvery { saveDataNow() } returns false }
@@ -64,7 +66,8 @@ class LosslessDiagnosticsContributorTest {
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
         val s = contributor().section()
         assertThat(s).contains("Mode:               Download (sync writes files)")
-        assertThat(s).contains("Lossless:           on · Hi-Res (24-bit/96 kHz)")
+        assertThat(s).contains("Lossless streaming: on")
+        assertThat(s).contains("Download quality:   Lossless · Hi-Res (24-bit/96 kHz) · lossy fallback off")
         assertThat(s).contains("Save Data:          off")
         assertThat(s).contains("Stream on cellular: on")
     }

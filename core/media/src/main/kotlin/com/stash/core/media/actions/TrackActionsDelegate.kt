@@ -517,6 +517,12 @@ class TrackActionsDelegate @Inject constructor(
                             _waitingForLosslessIds.update { it + key }
                             _userMessages.tryEmit("Waiting for lossless source…")
                         }
+                        is SearchDownloadStatus.WaitingForAac -> {
+                            // AAC 320 download mode: Tidal has no AAC of it yet. Waits the same way.
+                            _downloadingIds.update { it - key }
+                            _waitingForLosslessIds.update { it + key }
+                            _userMessages.tryEmit("Not available as AAC yet")
+                        }
                     }
                 }
             } catch (e: CancellationException) {

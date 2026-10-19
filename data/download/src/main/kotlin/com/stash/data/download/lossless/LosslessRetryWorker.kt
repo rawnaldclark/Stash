@@ -9,9 +9,11 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
+import com.stash.core.model.DownloadMode
 import com.stash.core.model.DownloadStatus
 import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.quota.LosslessQuota
+import com.stash.data.download.lossless.tidal.TidalAacResolver
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import kotlinx.coroutines.withContext
 import dagger.assisted.Assisted
@@ -43,6 +45,12 @@ import dagger.assisted.AssistedInject
  * lossless anywhere simply waits again). Run before the reset on the relays' clock (still
  * [LosslessQuota.isSpent]), it touches nothing and retries later.
  *
+ * By Download quality: in Lossless mode, as above. In AAC 320 mode a waiting row is one Tidal had
+ * no AAC of ("Not available as AAC yet"): the sweep asks Tidal for its AAC (no lossless lookup,
+ * so the daily allowance and its reset don't apply) and re-queues the rows it now has. In Opus
+ * mode nothing waits: a row left waiting from another mode is re-queued as it is and downloads
+ * from YouTube. The scheduler also runs a sweep when the mode changes.
+ *
  * ponytail: a row whose track is genuinely unavailable is re-resolved on every
  * sweep (a Qobuz "locked" answer costs one relay quota each time); add a
  * per-row attempt count if the waiting set grows large.
@@ -68,10 +76,14 @@ class LosslessRetryWorker @AssistedInject constructor(
     private val singleTrackDownloadEnqueuer: SingleTrackDownloadEnqueuer,
     private val streamingPreference: StreamingPreference,
     private val quota: LosslessQuota,
+    private val losslessPrefs: LosslessSourcePreferences,
+    private val tidalAacResolver: TidalAacResolver,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val atReset = inputData.getBoolean(KEY_AT_RESET, false)
+        val mode = losslessPrefs.downloadModeNow()
+        // The allowance's reset matters only to lossless lookups.
+        val atReset = mode == DownloadMode.LOSSLESS && inputData.getBoolean(KEY_AT_RESET, false)
         if (atReset) {
             quota.awaitLoaded()
             // Early on the relays' clock: every download would be skipped (or capped) again.
@@ -101,6 +113,26 @@ class LosslessRetryWorker @AssistedInject constructor(
             // the recording they rejected, and asked the shared relay again
             // on every trigger, only for the download to wait again.
             if (track.matchPickedAt != null) continue
+            when (mode) {
+                // Opus mode never waits: the row downloads from YouTube now.
+                DownloadMode.OPUS -> {
+                    requeue(entry.id)
+                    resolvedCount++
+                    continue
+                }
+                // AAC 320 mode: Tidal's AAC only (?aac=only), never a lossless lookup.
+                DownloadMode.AAC -> {
+                    val aac = runCatching {
+                        tidalAacResolver.resolve(queryFor(track), aacOnly = true)
+                    }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
+                    if (aac != null) {
+                        requeue(entry.id)
+                        resolvedCount++
+                    }
+                    continue
+                }
+                DownloadMode.LOSSLESS -> Unit
+            }
             if (atReset) {
                 requeue(entry.id)
                 resolvedCount++
@@ -111,16 +143,7 @@ class LosslessRetryWorker @AssistedInject constructor(
             // sweep. Sources are also expected to swallow their own
             // errors and return null, but defense in depth is cheap.
             val match = runCatching {
-                withContext(purpose) { registry.resolve(
-                    TrackQuery(
-                        artist = track.artist,
-                        title = track.title,
-                        album = track.album.takeIf { it.isNotBlank() },
-                        isrc = track.isrc,
-                        durationMs = track.durationMs.takeIf { it > 0 },
-                        spotifyUri = track.spotifyUri,
-                    ).forLibrarySource(track.source, track.musicVideoType),
-                ) }
+                withContext(purpose) { registry.resolve(queryFor(track)) }
             }.getOrNull()
             if (match != null) {
                 requeue(entry.id)
@@ -137,6 +160,16 @@ class LosslessRetryWorker @AssistedInject constructor(
             ),
         )
     }
+
+    /** The catalog query for a library row, as the download makes it. */
+    private fun queryFor(track: com.stash.core.data.db.entity.TrackEntity): TrackQuery = TrackQuery(
+        artist = track.artist,
+        title = track.title,
+        album = track.album.takeIf { it.isNotBlank() },
+        isrc = track.isrc,
+        durationMs = track.durationMs.takeIf { it > 0 },
+        spotifyUri = track.spotifyUri,
+    ).forLibrarySource(track.source, track.musicVideoType)
 
     /** Back to PENDING, and its download starts now. */
     private suspend fun requeue(queueId: Long) {

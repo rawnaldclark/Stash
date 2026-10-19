@@ -15,8 +15,8 @@ import org.robolectric.RobolectricTestRunner
 /**
  * Verifies the toggle-flip side effects on [LosslessSourcePreferences]:
  *
- *  - `setEnabled(false)` releases all `WAITING_FOR_LOSSLESS` rows.
- *  - `setEnabled(true)` does NOT touch the queue.
+ *  - `setEnabled` (now the STREAMING Lossless switch) never touches the queue: downloads
+ *    wait under the download mode, which it doesn't change.
  *  - `setYoutubeFallbackEnabled(true)` releases all deferred rows.
  *  - `setYoutubeFallbackEnabled(false)` does NOT touch the queue.
  *
@@ -52,10 +52,9 @@ class LosslessSourcePreferencesRequeueTest {
     }
 
     @Test
-    fun `setEnabled false requeues all deferred rows`() = runTest {
-        coEvery { downloadQueueDao.requeueWaitingForLossless() } returns 5
+    fun `setEnabled false no longer requeues, the switch is streaming only`() = runTest {
         prefs.setEnabled(false)
-        coVerify { downloadQueueDao.requeueWaitingForLossless() }
+        coVerify(exactly = 0) { downloadQueueDao.requeueWaitingForLossless() }
     }
 
     @Test

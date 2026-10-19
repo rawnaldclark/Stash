@@ -59,7 +59,7 @@ class DownloadManagerTempFileTest {
     @Before
     fun setUp() {
         every { qualityPrefs.qualityTier } returns flowOf(QualityTier.MAX)
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
         coEvery { trackDao.getById(any()) } returns null
         coEvery { fileOrganizer.getTempDir() } returns tmp.root
         downloaded = tmp.newFile("dl_7_abcd1234.opus").apply { writeText("audio") }

@@ -90,7 +90,7 @@ class SearchDownloadCoordinatorCompletionTest {
         context = context,
         losslessPrefs = losslessPrefs,
         jioSaavnResolver = jioSaavnResolver,
-        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any()) } returns null },
+        tidalAacResolver = mockk<com.stash.data.download.lossless.tidal.TidalAacResolver> { coEvery { resolve(any(), any()) } returns null },
         losslessUrlDownloader = losslessUrlDownloader,
         audioDurationExtractor = audioDurationExtractor,
         downloadQueueDao = downloadQueueDao,
@@ -128,7 +128,9 @@ class SearchDownloadCoordinatorCompletionTest {
     )
 
     private fun arrangeFinalizedYtDlpDownload() {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        // AAC mode, fallback on, Tidal has nothing: the lossy chain, JioSaavn then YouTube.
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.AAC
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
         val tempFile = File.createTempFile("search_yt", ".opus").apply { deleteOnExit() }
         coEvery {
             downloadExecutor.download(any(), any(), any(), any(), any())
@@ -155,7 +157,8 @@ class SearchDownloadCoordinatorCompletionTest {
     }
 
     private fun arrangeFinalizedJioSaavnDownload() {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.AAC
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
         coEvery { jioSaavnResolver.resolve(any(), any()) } returns SourceResult(
             sourceId = JioSaavnResolver.SOURCE_ID,
             downloadUrl = "https://aac.saavncdn.com/song_320.mp4",
@@ -234,7 +237,19 @@ class SearchDownloadCoordinatorCompletionTest {
     }
 
     @Test
-    fun `lossless disabled still tries JioSaavn before YouTube`() = runTest {
+    fun `Opus mode goes straight to YouTube, never JioSaavn`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertTrue(statuses.last() is SearchDownloadStatus.Completed)
+        coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
+        coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `the lossy fallback still tries JioSaavn before YouTube`() = runTest {
         arrangeFinalizedYtDlpDownload()
 
         val statuses = newSubject().download(track()).toList()
@@ -457,7 +472,7 @@ class SearchDownloadCoordinatorCompletionTest {
     }
     @Test
     fun `yt-dlp cancellation is propagated`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
         coEvery {
             downloadExecutor.download(any(), any(), any(), any(), any())
         } throws CancellationException("cancelled")

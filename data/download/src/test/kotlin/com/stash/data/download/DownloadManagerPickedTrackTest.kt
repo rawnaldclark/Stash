@@ -121,7 +121,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a picked track downloads its picked video, not a lossless or JioSaavn match`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns true
 
         newSubject().downloadTrack(
@@ -137,7 +137,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a picked YouTube-library track skips the canonicalizer`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
 
         newSubject().downloadTrack(track = pickedTrack(source = MusicSource.YOUTUBE), preResolvedUrl = null)
 
@@ -147,7 +147,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a picked track still waits when the YouTube fallback is off`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
 
         val result = newSubject().downloadTrack(track = pickedTrack(), preResolvedUrl = null)
@@ -163,7 +163,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a picked id that isn't a YouTube video id is never handed to yt-dlp`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
 
         val result = newSubject().downloadTrack(
             track = pickedTrack().copy(youtubeId = "../x"),
@@ -176,7 +176,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a stored id that isn't a YouTube video id is never handed to yt-dlp`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
 
         listOf(MusicSource.SPOTIFY, MusicSource.YOUTUBE).forEach { source ->
             val result = newSubject().downloadTrack(
@@ -191,7 +191,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a queued URL whose id isn't a YouTube video id is never handed to yt-dlp`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
 
         listOf(
             "https://music.youtube.com/watch?v=../x",
@@ -210,7 +210,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a queued watch URL with a real video id still downloads`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
 
         newSubject().downloadTrack(
             track = pickedTrack().copy(youtubeId = null, matchPickedAt = null),
@@ -230,7 +230,7 @@ class DownloadManagerPickedTrackTest {
 
     @Test
     fun `a queued watch URL reaches yt-dlp rebuilt from its id, on its own YouTube host`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
         val queued = mapOf(
             "https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=RDAMVM1" to "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
             "https://www.youtube.com/watch?t=3&v=V-uIp-WuD60" to "https://www.youtube.com/watch?v=V-uIp-WuD60",

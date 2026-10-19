@@ -18,7 +18,11 @@ import com.stash.core.model.UpgradeResult
  * their default settings.
  */
 interface LosslessUpgrader {
-    /** Whether automatic lossless downloads are enabled by the master preference. */
+    /**
+     * Whether downloads are in Lossless mode (Settings › Download quality). False in AAC 320 and
+     * Opus mode: the FLAC upgrade sweeps (after a sync, Library Health's check) don't run then. An
+     * upgrade the user asks for by name (Find in FLAC, an "Upgrade to FLAC" selection) still does.
+     */
     suspend fun isLosslessEnabled(): Boolean
 
     /**

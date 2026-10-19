@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.lossless.DownloadModeReader
+import com.stash.core.model.DownloadMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,7 +48,7 @@ private val Context.losslessDataStore: DataStore<Preferences> by preferencesData
 class LosslessSourcePreferences @Inject constructor(
     @ApplicationContext private val context: Context,
     private val downloadQueueDao: DownloadQueueDao,
-) {
+) : DownloadModeReader {
     private val priorityKey = stringPreferencesKey("priority_order")
     private val minQualityKey = stringPreferencesKey("min_quality")
     private val enabledKey = booleanPreferencesKey("enabled")
@@ -60,6 +62,7 @@ class LosslessSourcePreferences @Inject constructor(
     private val qualityTierKey = stringPreferencesKey("lossless_quality_tier")
     private val youtubeFallbackKey = booleanPreferencesKey("youtube_fallback_enabled")
     private val tidalAacFallbackKey = booleanPreferencesKey("tidal_aac_fallback")
+    private val downloadModeKey = stringPreferencesKey("download_mode")
     // Retained only so [purgeRetiredSourceKeys] can delete them from existing
     // installs; the antra and arcod sources were removed.
     private val antraSessionKey = stringPreferencesKey("antra_session_cookie")
@@ -160,12 +163,62 @@ class LosslessSourcePreferences @Inject constructor(
         }
     }
 
+    /**
+     * The Lossless switch, which now governs STREAMING only: downloads follow [downloadMode].
+     * The download mode is pinned first, in the same edit, so turning lossless streaming
+     * off or on never changes what a download saves (a user who never had a stored mode
+     * would otherwise have it follow this switch through [legacyDownloadMode]). It no longer
+     * releases waiting downloads: they wait under the download mode, which this doesn't touch.
+     */
     suspend fun setEnabled(value: Boolean) {
-        context.losslessDataStore.edit { prefs -> prefs[enabledKey] = value }
-        // WAITING_FOR_LOSSLESS only makes sense under "lossless on +
-        // fallback off". Disabling lossless releases all deferred rows
-        // back to PENDING for the standard yt-dlp worker chain.
-        if (!value) downloadQueueDao.requeueWaitingForLossless()
+        context.losslessDataStore.edit { prefs ->
+            if (prefs[downloadModeKey] == null) prefs[downloadModeKey] = legacyDownloadMode(prefs).name
+            prefs[enabledKey] = value
+        }
+    }
+
+    /**
+     * What a download saves: Lossless, AAC 320 or Opus ([DownloadMode]). One setting for every
+     * download path; streaming keeps [enabled].
+     *
+     * Before this setting, the Lossless switch decided downloads too: on = FLAC first, off = the
+     * lossy chain. Until a mode is stored it reads from that switch ([legacyDownloadMode]), and
+     * [migrateDownloadMode] stores it once at app start, so an existing user's downloads carry
+     * on as they were.
+     */
+    val downloadMode: Flow<DownloadMode> = context.losslessDataStore.data.map { prefs ->
+        DownloadMode.fromName(prefs[downloadModeKey]) ?: legacyDownloadMode(prefs)
+    }.distinctUntilChanged().catch { emit(DownloadMode.LOSSLESS) }
+
+    suspend fun downloadModeNow(): DownloadMode = downloadMode.first()
+
+    suspend fun setDownloadMode(mode: DownloadMode) {
+        context.losslessDataStore.edit { prefs -> prefs[downloadModeKey] = mode.name }
+    }
+
+    /**
+     * Stores the download mode the old Lossless switch implied (on = [DownloadMode.LOSSLESS],
+     * off = [DownloadMode.OPUS]) when none is stored yet. Once, silently; a no-op afterwards.
+     * Returns the stored mode.
+     */
+    suspend fun migrateDownloadMode(): DownloadMode {
+        var mode = DownloadMode.LOSSLESS
+        context.losslessDataStore.edit { prefs ->
+            val stored = DownloadMode.fromName(prefs[downloadModeKey])
+            mode = stored ?: legacyDownloadMode(prefs).also { prefs[downloadModeKey] = it.name }
+        }
+        return mode
+    }
+
+    /** The mode the old Lossless switch meant for downloads: on (the default) = Lossless, off = Opus. */
+    private fun legacyDownloadMode(prefs: Preferences): DownloadMode =
+        if (prefs[enabledKey] ?: true) DownloadMode.LOSSLESS else DownloadMode.OPUS
+
+    override suspend fun currentDownloadMode(): DownloadMode = downloadModeNow()
+
+    /** Tests: write keys as an older build stored them, bypassing today's setters. */
+    internal suspend fun writeRawForTest(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        context.losslessDataStore.edit { block(it) }
     }
 
     /**

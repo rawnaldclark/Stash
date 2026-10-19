@@ -89,7 +89,7 @@ class SearchDownloadCoordinatorReuseTest {
     fun setUp() {
         every { context.cacheDir } returns tmpCacheDir
         every { localFileOps.acceptDownloadOrDelete(any()) } returns true
-        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
         val tempFile = File.createTempFile("search_reuse", ".opus").apply { deleteOnExit() }
         coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } returns DownloadResult.Success(tempFile)
         coEvery { trackFinalizer.finalizeFile(any(), any(), any(), any()) } returns

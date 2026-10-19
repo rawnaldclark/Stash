@@ -38,12 +38,15 @@ class LosslessUpgraderImplTest {
         availability,
     )
 
-    @Test fun `isLosslessEnabled delegates to the master preference`() = runTest {
-        coEvery { losslessPrefs.enabledNow() } returns false
-
+    @Test fun `FLAC upgrade sweeps run only in Lossless download mode, not on the streaming switch`() = runTest {
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.AAC
         assertEquals(false, subject.isLosslessEnabled())
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
+        assertEquals(false, subject.isLosslessEnabled())
+        coEvery { losslessPrefs.downloadModeNow() } returns com.stash.core.model.DownloadMode.LOSSLESS
+        assertEquals(true, subject.isLosslessEnabled())
 
-        coVerify(exactly = 1) { losslessPrefs.enabledNow() }
+        coVerify(exactly = 0) { losslessPrefs.enabledNow() }
     }
 
     @Test fun `Success maps to Upgraded`() = runTest {

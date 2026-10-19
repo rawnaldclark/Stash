@@ -630,6 +630,15 @@ class StashApplication : Application(), Configuration.Provider {
         // deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
         losslessRetryScheduler.start()
+
+        // Download quality replaced the Lossless switch for downloads: store the mode that
+        // switch meant (on = Lossless, off = Opus) once, silently, so it never follows the
+        // switch, which is now streaming only. A no-op once a mode is stored.
+        applicationScope.launch {
+            runCatching { losslessSourcePreferences.migrateDownloadMode() }
+                .onSuccess { android.util.Log.i("StashApp", "download quality: $it") }
+                .onFailure { android.util.Log.w("StashApp", "download mode migration failed", it) }
+        }
     }
 
     /**

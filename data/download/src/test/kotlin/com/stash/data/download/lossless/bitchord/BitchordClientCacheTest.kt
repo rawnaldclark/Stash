@@ -111,6 +111,33 @@ class BitchordClientCacheTest {
         assertThat(searches.get() to streams.get()).isEqualTo(1 to 2)
     }
 
+    @Test fun `AAC download mode asks with aac=only and gets AAC even for a song Tidal has in FLAC`() = runBlocking {
+        streamReply = { r -> if (r.path!!.contains("aac=only")) ok(AAC) else ok(FLAC) }
+
+        val aac = client.lookup(query, allowAac = true, aacOnly = true) as TidalLookup.Found
+
+        assertThat(aac.stream.codec).isEqualTo("aac")
+        assertThat(server.takeRequest().path).startsWith("/search")
+        assertThat(server.takeRequest().path).contains("aac=only")
+        // An aac=only answer says nothing about lossless: streaming's FLAC lookup still goes out.
+        assertThat(dao.rows.values.single().losslessMissAt).isNull()
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(streams.get()).isEqualTo(2)
+    }
+
+    @Test fun `an aac=only miss is not cached, so it never stops streaming's aac=1 lookup`() = runBlocking {
+        streamReply = { r ->
+            if (r.path!!.contains("aac=only")) MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") else ok(FLAC)
+        }
+
+        assertThat(client.lookup(query, allowAac = true, aacOnly = true)).isEqualTo(TidalLookup.NoMatch)
+
+        val row = dao.rows.values.single()
+        assertThat(row.aacMissAt).isNull()
+        assertThat(row.losslessMissAt).isNull()
+        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Found::class.java)
+    }
+
     @Test fun `a lossless_unavailable 404 is trusted the full 14 days`() = runBlocking {
         streamReply = { MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") }
         assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)

@@ -3,6 +3,7 @@ package com.stash.data.download
 import com.stash.core.data.audio.AudioMetadata
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.model.DownloadMode
 import com.stash.core.model.MusicSource
 import com.stash.core.model.QualityTier
 import com.stash.core.model.Track
@@ -131,11 +132,16 @@ class DownloadManagerAacDecisionTest {
         ),
     }
 
-    private fun arrange(fallbackOn: Boolean, tidalHasAac: Boolean, allowanceSpent: Boolean) {
-        clearMocks(tidalAacResolver, jioSaavnResolver, downloadExecutor, losslessUrlDownloader, answers = false)
-        coEvery { losslessPrefs.enabledNow() } returns true
+    private fun arrange(
+        fallbackOn: Boolean,
+        tidalHasAac: Boolean,
+        allowanceSpent: Boolean,
+        mode: DownloadMode = DownloadMode.LOSSLESS,
+    ) {
+        clearMocks(tidalAacResolver, jioSaavnResolver, downloadExecutor, losslessUrlDownloader, losslessRegistry, answers = false)
+        coEvery { losslessPrefs.downloadModeNow() } returns mode
         coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns fallbackOn
-        coEvery { tidalAacResolver.resolve(any()) } returns if (tidalHasAac) tidalAac else null
+        coEvery { tidalAacResolver.resolve(any(), any()) } returns if (tidalHasAac) tidalAac else null
         losslessQuota.onHeaders(if (allowanceSpent) "500/500" else "10/500", "${now / 1000 + 3600}")
     }
 
@@ -151,7 +157,7 @@ class DownloadManagerAacDecisionTest {
                 val result = download(row)
 
                 assertTrue("$row, AAC=$tidalHasAac: expected Deferred, got $result", result is TrackDownloadResult.Deferred)
-                coVerify(exactly = 0) { tidalAacResolver.resolve(any()) }
+                coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
                 coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
                 coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
             }
@@ -179,7 +185,7 @@ class DownloadManagerAacDecisionTest {
             val result = download(row)
 
             assertTrue("$row: expected Deferred, got $result", result is TrackDownloadResult.Deferred)
-            coVerify(exactly = 1) { tidalAacResolver.resolve(any()) }
+            coVerify(exactly = 1) { tidalAacResolver.resolve(any(), any()) }
             coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
             coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
         }
@@ -224,7 +230,7 @@ class DownloadManagerAacDecisionTest {
             // The stubbed yt-dlp run ends in an error: reaching it is what counts here.
             assertTrue("$row: expected the YouTube rung's failure, got $result", result is TrackDownloadResult.Failed)
             coVerifyOrder {
-                tidalAacResolver.resolve(any())
+                tidalAacResolver.resolve(any(), any())
                 jioSaavnResolver.resolve(any(), any())
                 downloadExecutor.download(any(), any(), any(), any(), any())
             }
@@ -235,7 +241,7 @@ class DownloadManagerAacDecisionTest {
     fun `Tidal is asked with the row's own words, length and reliability, as streaming asks`() = runTest {
         arrange(fallbackOn = false, tidalHasAac = false, allowanceSpent = false)
         val asked = mutableListOf<com.stash.data.download.lossless.TrackQuery>()
-        coEvery { tidalAacResolver.resolve(capture(asked)) } returns null
+        coEvery { tidalAacResolver.resolve(capture(asked), any()) } returns null
 
         download(Row.YOUTUBE_MUSIC_VIDEO)
         download(Row.SPOTIFY)
@@ -244,6 +250,104 @@ class DownloadManagerAacDecisionTest {
         assertEquals(false, asked[0].durationReliable)
         assertEquals(170_000L, asked[1].durationMs)
         assertEquals(true, asked[1].durationReliable)
+    }
+
+    // -- Download quality: AAC 320 ----------------------------------------------------------
+    //
+    // | fallback | Tidal AAC | result                                                   |
+    // |----------|-----------|----------------------------------------------------------|
+    // | any      | has it    | Tidal AAC (?aac=only), even for a song with FLAC         |
+    // | off      | none      | waits ("Not available as AAC yet")                      |
+    // | on       | none      | JioSaavn, then YouTube                                   |
+    // Never a lossless lookup, so the daily allowance doesn't enter into it.
+
+    @Test
+    fun `AAC mode saves Tidal AAC for every row type, and never asks for FLAC`() = runTest {
+        for (row in Row.values()) {
+            for (fallbackOn in listOf(false, true)) {
+                for (spent in listOf(false, true)) {
+                    arrange(fallbackOn = fallbackOn, tidalHasAac = true, allowanceSpent = spent, mode = DownloadMode.AAC)
+
+                    val result = download(row)
+
+                    assertEquals("$row, fallback=$fallbackOn, spent=$spent", TrackDownloadResult.Success(SAVED_AAC), result)
+                    coVerify(exactly = 1) { tidalAacResolver.resolve(any(), aacOnly = true) }
+                    coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
+                    coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
+                    coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `AAC mode with no Tidal AAC and the fallback off waits, never FLAC, JioSaavn or YouTube`() = runTest {
+        for (row in Row.values()) {
+            arrange(fallbackOn = false, tidalHasAac = false, allowanceSpent = false, mode = DownloadMode.AAC)
+
+            val result = download(row)
+
+            assertTrue("$row: expected Deferred, got $result", result is TrackDownloadResult.Deferred)
+            coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
+            coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
+            coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        }
+    }
+
+    @Test
+    fun `AAC mode with no Tidal AAC and the fallback on goes to JioSaavn, then YouTube`() = runTest {
+        for (row in Row.values()) {
+            arrange(fallbackOn = true, tidalHasAac = false, allowanceSpent = false, mode = DownloadMode.AAC)
+
+            val result = download(row)
+
+            assertTrue("$row: expected the YouTube rung's failure, got $result", result is TrackDownloadResult.Failed)
+            coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
+            coVerifyOrder {
+                tidalAacResolver.resolve(any(), aacOnly = true)
+                jioSaavnResolver.resolve(any(), any())
+                downloadExecutor.download(any(), any(), any(), any(), any())
+            }
+        }
+    }
+
+    // -- Download quality: Opus --------------------------------------------------------------
+
+    @Test
+    fun `Opus mode downloads from YouTube only, whatever the fallback, Tidal or the allowance`() = runTest {
+        for (row in Row.values()) {
+            for (fallbackOn in listOf(false, true)) {
+                arrange(fallbackOn = fallbackOn, tidalHasAac = true, allowanceSpent = true, mode = DownloadMode.OPUS)
+
+                val result = download(row)
+
+                assertTrue("$row, fallback=$fallbackOn: expected the YouTube rung, got $result", result is TrackDownloadResult.Failed)
+                coVerify(exactly = 1) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+                coVerify(exactly = 0) { losslessRegistry.resolve(any()) }
+                coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
+                coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
+            }
+        }
+    }
+
+    // -- A song whose audio the user picked (Failed Matches) ----------------------------------
+
+    @Test
+    fun `a picked song waits with the fallback off in Lossless and AAC mode, and downloads its video in Opus`() = runTest {
+        val picked = Row.YOUTUBE_MUSIC_VIDEO.track.copy(matchPickedAt = 1L)
+        for (mode in DownloadMode.entries) {
+            arrange(fallbackOn = false, tidalHasAac = true, allowanceSpent = false, mode = mode)
+
+            val result = newSubject().downloadTrack(picked, preResolvedUrl = null)
+
+            if (mode == DownloadMode.OPUS) {
+                assertTrue("$mode: expected the YouTube rung, got $result", result is TrackDownloadResult.Failed)
+            } else {
+                assertTrue("$mode: expected Deferred, got $result", result is TrackDownloadResult.Deferred)
+                coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+            }
+            coVerify(exactly = 0) { tidalAacResolver.resolve(any(), any()) }
+        }
     }
 
     private val tidalAac = SourceResult(

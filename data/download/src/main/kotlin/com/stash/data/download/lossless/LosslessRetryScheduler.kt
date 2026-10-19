@@ -164,6 +164,15 @@ class LosslessRetryScheduler @Inject constructor(
                 enqueue(initialDelaySec = waitSec, name = RESET_WORK_NAME, atReset = true)
             }
             .launchIn(scope)
+
+        // 6. The Download quality changed: what was waiting waited under the old mode's rules
+        // (no FLAC, or no AAC), so look again under the new one. Opus re-queues everything. Its
+        // own name, so a sweep already waiting (paced, or booked for the reset) can't swallow it.
+        losslessPrefsRef.downloadMode
+            .distinctUntilChanged()
+            .drop(1)
+            .onEach { enqueue(name = MODE_WORK_NAME) }
+            .launchIn(scope)
     }
 
     private fun enqueue(
@@ -197,6 +206,9 @@ class LosslessRetryScheduler @Inject constructor(
          * firing.
          */
         const val COOKIE_DEBOUNCE_MS = 1_000L
+
+        /** The sweep after a Download quality change (see trigger 6). */
+        const val MODE_WORK_NAME = "lossless-retry-mode"
 
         /** The reset sweep's unique work name (see trigger 5). */
         const val RESET_WORK_NAME = "lossless-retry-reset"

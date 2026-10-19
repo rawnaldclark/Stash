@@ -83,7 +83,12 @@ class LosslessDiagnosticsContributor @Inject constructor(
         val lossless = losslessPrefs.enabledNow()
         return buildString {
             appendLine("Mode:               " + if (download) "Download (sync writes files)" else "Stream only (sync writes nothing)")
-            appendLine("Lossless:           " + if (lossless) "on · ${losslessPrefs.qualityTierNow().displayLabel}" else "off")
+            appendLine("Lossless streaming: " + onOff(lossless))
+            appendLine("Download quality:   " + when (losslessPrefs.downloadModeNow()) {
+                com.stash.core.model.DownloadMode.LOSSLESS -> "Lossless · ${losslessPrefs.qualityTierNow().displayLabel}"
+                com.stash.core.model.DownloadMode.AAC -> "AAC 320"
+                com.stash.core.model.DownloadMode.OPUS -> "Opus"
+            } + " · lossy fallback " + onOff(losslessPrefs.youtubeFallbackEnabledNow()))
             appendLine("Save Data:          " + onOff(streamingQuality.saveDataNow()))
             append("Stream on cellular: " + onOff(streamingPreference.streamOnCellular.first()))
         }

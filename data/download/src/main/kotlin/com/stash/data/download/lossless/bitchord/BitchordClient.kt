@@ -240,19 +240,29 @@ class BitchordClient @Inject constructor(
      * the relay's Tidal client, so the server can answer with Tidal's 320 kbps AAC instead
      * (`?aac=1`). Lossless downloads leave it off so AAC is never saved as FLAC. A cached
      * lossless miss does not block an AAC lookup: each mode keeps its own miss stamp.
+     *
+     * [aacOnly]: the AAC 320 download mode. Tidal's AAC for ANY track, even one it has in FLAC
+     * (`?aac=only`, which the relay never answers with lossless). Implies [allowAac]. A cached
+     * AAC miss skips it; its own miss is not cached (see [fetch]).
      */
-    suspend fun lookup(query: TrackQuery, allowAac: Boolean = false, cacheOnly: Boolean = false): TidalLookup {
+    suspend fun lookup(
+        query: TrackQuery,
+        allowAac: Boolean = false,
+        cacheOnly: Boolean = false,
+        aacOnly: Boolean = false,
+    ): TidalLookup {
+        val aac = allowAac || aacOnly
         val now = nowMs()
         if (now < busyUntilMs) return TidalLookup.Busy(busyUntilMs)
         val key = cacheKey(query)
-        if (cachedMiss(readCache(key), allowAac, now)) return TidalLookup.NoMatch
-        if (!allowAac && quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
+        if (cachedMiss(readCache(key), aac, now)) return TidalLookup.NoMatch
+        if (!aac && quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
 
-        val flightKey = "$key|aac=$allowAac"
+        val flightKey = "$key|aac=${if (aacOnly) "only" else aac.toString()}"
         inFlight[flightKey]?.let { return it.await() }
-        val fresh = lookupScope.async(start = CoroutineStart.LAZY) { fetch(server, query, key, allowAac) }
+        val fresh = lookupScope.async(start = CoroutineStart.LAZY) { fetch(server, query, key, aac, aacOnly) }
         val existing = inFlight.putIfAbsent(flightKey, fresh)
         val deferred = if (existing != null) {
             // Lost the race: drop ours (a LAZY async is still attached to the scope's job).
@@ -268,7 +278,13 @@ class BitchordClient @Inject constructor(
     }
 
     /** The network half of [lookup]; runs once per song and mode at a time. */
-    private suspend fun fetch(server: TidalRelay, query: TrackQuery, key: String, allowAac: Boolean): TidalLookup =
+    private suspend fun fetch(
+        server: TidalRelay,
+        query: TrackQuery,
+        key: String,
+        allowAac: Boolean,
+        aacOnly: Boolean = false,
+    ): TidalLookup =
         withContext(Dispatchers.IO) {
             val base = server.base.toHttpUrlOrNull() ?: return@withContext TidalLookup.Failed
             val token = server.token
@@ -316,7 +332,12 @@ class BitchordClient @Inject constructor(
                     // Hints the server uses if its own Tidal metadata lookup fails.
                     .addQueryParameter("title", match.title)
                     .addQueryParameter("artist", match.artist)
-                    .apply { if (allowAac) addQueryParameter("aac", "1") }
+                    .apply {
+                        when {
+                            aacOnly -> addQueryParameter("aac", "only")
+                            allowAac -> addQueryParameter("aac", "1")
+                        }
+                    }
                     .build()
                 // Only the owner's relay (from the signed config) verifies install headers; a
                 // user's own server never sees our install id.
@@ -325,19 +346,24 @@ class BitchordClient @Inject constructor(
                     is Reply.Ok -> {
                         val stream = toStream(json.decodeFromString<BitchordStreamResponse>(r.body), match, allowAac)
                         if (stream == null) {
-                            stampMiss(match, allowAac)
+                            if (!aacOnly) stampMiss(match, allowAac)
                             TidalLookup.NoMatch
                         } else {
                             // The relay prefers lossless, so an AAC answer means there is none —
                             // unless the day's allowance is spent: then AAC is all it would serve.
-                            if (stream.codec == "aac" && !quota.isSpent()) writeCache(match.copy(losslessMissAt = nowMs()))
+                            // An ?aac=only answer is AAC whatever Tidal has, so it says nothing.
+                            if (!aacOnly && stream.codec == "aac" && !quota.isSpent()) {
+                                writeCache(match.copy(losslessMissAt = nowMs()))
+                            }
                             TidalLookup.Found(stream)
                         }
                     }
                     // lossless_unavailable: a real answer about this song. not_available (or a body
                     // we can't read) may be a transient refusal: a short miss, see [stampMiss].
                     is Reply.NotFound -> {
-                        stampMiss(match, allowAac, definitive = r.definitive)
+                        // Not for ?aac=only: the shared AAC stamp would also stop streaming's
+                        // ?aac=1, which can still get FLAC for this song.
+                        if (!aacOnly) stampMiss(match, allowAac, definitive = r.definitive)
                         TidalLookup.NoMatch
                     }
                     is Reply.Busy -> busy(r.untilMs)

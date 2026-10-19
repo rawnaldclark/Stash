@@ -32,6 +32,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.forLibrarySource
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossyAacLengthMatches
+import com.stash.core.model.DownloadMode
 import com.stash.core.model.MusicSource
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.prefs.toYtDlpArgs
@@ -224,7 +225,7 @@ class SearchDownloadCoordinator @Inject constructor(
                 )
             }
             is DownloadJobResult.Deferred -> {
-                emit(SearchDownloadStatus.WaitingForLossless)
+                emit(if (job.forAac) SearchDownloadStatus.WaitingForAac else SearchDownloadStatus.WaitingForLossless)
             }
         }
     }
@@ -233,17 +234,37 @@ class SearchDownloadCoordinator @Inject constructor(
     // Internal: resolve + route
     // -------------------------------------------------------------------------
 
-    private suspend fun performDownload(track: TrackItem): DownloadJobResult {
-        // Master lossless switch OFF → skip the registry (and the strict-FLAC
-        // defer) entirely and go straight to yt-dlp, mirroring
-        // DownloadManager.executeDownload. Without this, "lossless off" still
-        // resolved the registry, missed (sources down / no captcha cookie),
-        // and — with fallback also off — deferred to WAITING_FOR_LOSSLESS, so
-        // artist-page / search downloads hung on "waiting for lossless" forever.
-        if (!losslessPrefs.enabledNow()) {
-            return finalizeFromLossyFallback(track)
+    /**
+     * Routes by the user's Download quality, as DownloadManager does: Lossless (FLAC first),
+     * AAC 320 (Tidal's AAC only, no lossless lookup) or Opus (YouTube only).
+     */
+    private suspend fun performDownload(track: TrackItem): DownloadJobResult =
+        when (losslessPrefs.downloadModeNow()) {
+            DownloadMode.LOSSLESS -> performLosslessDownload(track)
+            DownloadMode.AAC -> performAacDownload(track)
+            // Opus (smallest): YouTube only. No registry, Tidal or JioSaavn lookup, and so no
+            // "waiting for lossless" either: with lossless off this path used to hang there.
+            DownloadMode.OPUS -> DownloadJobResult.Resolved(
+                source = SearchDownloadStatus.Source.YOUTUBE,
+                outcome = finalizeFromYtDlp(track),
+            )
         }
 
+    /**
+     * AAC 320: Tidal's AAC whatever Tidal has (`?aac=only`), never FLAC. With none: JioSaavn and
+     * then YouTube when the lossy fallback is on, otherwise [SearchDownloadStatus.WaitingForAac].
+     */
+    private suspend fun performAacDownload(track: TrackItem): DownloadJobResult {
+        tryTidalAac(track, aacOnly = true)?.let { return it }
+        if (!losslessPrefs.youtubeFallbackEnabledNow()) {
+            Log.i(TAG, "deferring search download '${track.artist} - ${track.title}': not available as AAC yet, fallback off")
+            return deferUntilAvailable(track, forAac = true)
+        }
+        return finalizeFromLossyFallback(track)
+    }
+
+    /** Lossless: FLAC first, then Tidal's AAC, then (fallback on) JioSaavn and YouTube. */
+    private suspend fun performLosslessDownload(track: TrackItem): DownloadJobResult {
         val match = runCatching { registry.resolve(track.toQuery()) }
             .onFailure { e ->
                 if (e is CancellationException) throw e
@@ -268,14 +289,14 @@ class SearchDownloadCoordinator @Inject constructor(
             // DownloadManager, rather than being saved as Tidal AAC for good.
             if (losslessQuota.isSpent()) {
                 Log.i(TAG, "deferring search download '${track.artist} - ${track.title}': daily lossless allowance spent, fallback off")
-                return deferForLossless(track)
+                return deferUntilAvailable(track, forAac = false)
             }
             tryTidalAac(track)?.let { return it }
             Log.i(
                 TAG,
                 "deferring search download '${track.artist} - ${track.title}': no FLAC or Tidal AAC, fallback off",
             )
-            return deferForLossless(track)
+            return deferUntilAvailable(track, forAac = false)
         }
 
         return finalizeFromLossyFallback(track, losslessAttempted = true)
@@ -290,7 +311,7 @@ class SearchDownloadCoordinator @Inject constructor(
      * deferred. It also marks the row as the user's ask, a sync's too: otherwise the leftover
      * cleanup would drop it, and the lossless retry skip it (#532).
      */
-    private suspend fun deferForLossless(track: TrackItem): DownloadJobResult.Deferred {
+    private suspend fun deferUntilAvailable(track: TrackItem, forAac: Boolean): DownloadJobResult.Deferred {
         runCatching {
             val trackId = trackDao.findByYoutubeId(track.videoId)?.id
             if (trackId != null) {
@@ -302,7 +323,7 @@ class SearchDownloadCoordinator @Inject constructor(
             if (e is CancellationException) throw e
             Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
         }
-        return DownloadJobResult.Deferred
+        return DownloadJobResult.Deferred(forAac)
     }
 
     /**
@@ -314,9 +335,9 @@ class SearchDownloadCoordinator @Inject constructor(
      * the download takes the Tidal track the stream played, and its file is held to that
      * row's length the way the matcher held the match ([lossyAacLengthMatches]).
      */
-    private suspend fun tryTidalAac(track: TrackItem): DownloadJobResult.Resolved? {
+    private suspend fun tryTidalAac(track: TrackItem, aacOnly: Boolean = false): DownloadJobResult.Resolved? {
         val query = tidalAacQuery(track)
-        val tidalMatch = runCatching { tidalAacResolver.resolve(query) }
+        val tidalMatch = runCatching { tidalAacResolver.resolve(query, aacOnly = aacOnly) }
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 Log.w(TAG, "Tidal AAC resolve threw for ${track.videoId}: ${error.message}")
@@ -1005,8 +1026,11 @@ class SearchDownloadCoordinator @Inject constructor(
             val outcome: TrackFinalizer.FinalizeResult,
         ) : DownloadJobResult
 
-        /** v0.9.17: lossless unavailable + fallback off → WaitingForLossless. */
-        data object Deferred : DownloadJobResult
+        /**
+         * Waits in the queue: no lossless (or, [forAac], no Tidal AAC in AAC mode) and the
+         * fallback off. The flow emits WaitingForLossless or WaitingForAac.
+         */
+        data class Deferred(val forAac: Boolean) : DownloadJobResult
     }
 
     /** Distinguishes fallback-safe temp failures from terminal post-commit outcomes. */

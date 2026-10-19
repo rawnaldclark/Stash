@@ -57,11 +57,13 @@ class LosslessRetrySchedulerTest {
     private val context: Context = mockk(relaxed = true)
     private val workManager: WorkManager = mockk(relaxed = true)
     private val cookieFlow = MutableStateFlow<String?>(null)
+    private val downloadModeFlow = MutableStateFlow(com.stash.core.model.DownloadMode.LOSSLESS)
     private val lastBadCookieFlow = MutableStateFlow<String?>(null)
     private val resetEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
     private val losslessPrefs: LosslessSourcePreferences = mockk {
         every { captchaCookieValue } returns cookieFlow
+        every { downloadMode } returns downloadModeFlow
     }
     private val qobuzSource: QobuzSource = mockk {
         every { lastKnownBadCookie } returns lastBadCookieFlow
@@ -128,6 +130,26 @@ class LosslessRetrySchedulerTest {
         verify(exactly = 1) {
             workManager.enqueueUniqueWork(
                 LosslessRetryWorker.UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                any<OneTimeWorkRequest>(),
+            )
+        }
+    }
+
+    @Test
+    fun `a Download quality change sweeps the waiting rows under the new mode, on its own name`() = runTest(UnconfinedTestDispatcher()) {
+        newSubject(backgroundScope)
+        // Nothing at start: the stored mode's first emission is not a change.
+        verify(exactly = 0) {
+            workManager.enqueueUniqueWork(LosslessRetryScheduler.MODE_WORK_NAME, any(), any<OneTimeWorkRequest>())
+        }
+
+        downloadModeFlow.value = com.stash.core.model.DownloadMode.AAC
+        advanceUntilIdle()
+
+        verify(exactly = 1) {
+            workManager.enqueueUniqueWork(
+                LosslessRetryScheduler.MODE_WORK_NAME,
                 ExistingWorkPolicy.KEEP,
                 any<OneTimeWorkRequest>(),
             )

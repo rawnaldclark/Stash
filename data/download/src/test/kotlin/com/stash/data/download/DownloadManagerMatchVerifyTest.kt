@@ -117,7 +117,7 @@ class DownloadManagerMatchVerifyTest {
         every { qualityTier } returns flowOf(QualityTier.MAX)
     }
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true) {
-        coEvery { enabledNow() } returns false
+        coEvery { downloadModeNow() } returns com.stash.core.model.DownloadMode.OPUS
     }
     private val jioSaavnResolver: JioSaavnResolver = mockk {
         coEvery { resolve(any(), any()) } returns null

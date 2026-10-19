@@ -28,6 +28,10 @@ import kotlinx.coroutines.CancellationException
  * reason (rate limit, breaker race, a degraded flag); this resolver returns null
  * for it rather than save FLAC through the AAC path — the lossless chain owns
  * FLAC, its retry picks the track up later.
+ *
+ * AAC 320 download mode ([resolve] with `aacOnly`): Tidal's AAC for any track, even one it has in
+ * FLAC (`?aac=only`). The user chose AAC for every download, so the "Tidal AAC when no FLAC"
+ * switch (a Lossless-mode choice) does not apply, and no lossless lookup is made.
  */
 @Singleton
 class TidalAacResolver @Inject constructor(
@@ -35,9 +39,9 @@ class TidalAacResolver @Inject constructor(
     private val rateLimiter: AggregatorRateLimiter,
     private val prefs: LosslessSourcePreferences,
 ) {
-    suspend fun resolve(query: TrackQuery): SourceResult? {
+    suspend fun resolve(query: TrackQuery, aacOnly: Boolean = false): SourceResult? {
         val label = "${query.artist} - ${query.title}"
-        if (!prefs.tidalAacFallbackNow()) return null
+        if (!aacOnly && !prefs.tidalAacFallbackNow()) return null
         if (!client.isConfigured()) return null
         if (rateLimiter.stateOf(SOURCE_ID).isCircuitBroken ||
             rateLimiter.stateOf(TidalLosslessSource.SOURCE_ID).isCircuitBroken
@@ -46,7 +50,7 @@ class TidalAacResolver @Inject constructor(
             return null
         }
         // A cached AAC miss (or no match at all) and an open pool-busy circuit cost nothing.
-        when (client.lookup(query, allowAac = true, cacheOnly = true)) {
+        when (client.lookup(query, allowAac = true, cacheOnly = true, aacOnly = aacOnly)) {
             TidalLookup.NoMatch, TidalLookup.Off, is TidalLookup.Busy -> return null
             else -> Unit
         }
@@ -55,7 +59,7 @@ class TidalAacResolver @Inject constructor(
             return null
         }
         val outcome = try {
-            client.lookup(query, allowAac = true)
+            client.lookup(query, allowAac = true, aacOnly = aacOnly)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -73,7 +77,7 @@ class TidalAacResolver @Inject constructor(
             Log.i(TAG, "skip '$label': relay answered ${stream.codec} (dash=${stream.isDash}); lossless chain owns it")
             return null
         }
-        Log.i(TAG, "match '$label' -> ${stream.trackId} aac ${stream.bitrateKbps} kbps")
+        Log.i(TAG, "match '$label' -> ${stream.trackId} aac ${stream.bitrateKbps} kbps${if (aacOnly) " (AAC mode)" else ""}")
         return SourceResult(
             sourceId = SOURCE_ID,
             downloadUrl = stream.url,
