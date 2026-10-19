@@ -37,6 +37,7 @@ import com.stash.core.data.sync.workers.LoudnessBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
+import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.media.streaming.KennyyHealthProbe
@@ -477,6 +478,9 @@ class StashApplication : Application(), Configuration.Provider {
             YtDlpUpdateWorker.schedulePeriodicUpdate(this@StashApplication)
             UpdateCheckWorker.schedulePeriodicCheck(this@StashApplication)
             LoudnessBackfillWorker.schedulePeriodic(this@StashApplication)
+            // Genres of listened artists for Top genres in "Your listening". Not behind the Stash
+            // Mixes switch like TagEnrichmentWorker: listening stats don't depend on mixes.
+            ArtistGenreWorker.schedulePeriodic(this@StashApplication)
         }
         // Auto-sync used to be one delayed chain that nothing re-armed, so an
         // upgrading user with it on has no daily trigger yet. KEEP leaves an

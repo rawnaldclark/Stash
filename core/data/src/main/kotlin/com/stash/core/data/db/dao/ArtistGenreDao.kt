@@ -1,0 +1,104 @@
+package com.stash.core.data.db.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import com.stash.core.data.db.entity.ArtistGenreEntity
+import com.stash.core.data.genre.ArtistGenreKey
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * The `artist_genres` cache (v60): Last.fm genres per listened artist.
+ *
+ * Written only by [com.stash.core.data.sync.workers.ArtistGenreWorker]; read by
+ * [com.stash.core.data.genre.ArtistGenreRepository] for Top genres. Writes are batched into one
+ * transaction so the observed flow re-emits once per batch, not once per artist.
+ */
+@Dao
+interface ArtistGenreDao {
+
+    /** Every cached row, whatever its status. The table holds one row per listened artist. */
+    @Query("SELECT * FROM artist_genres")
+    fun observeAll(): Flow<List<ArtistGenreEntity>>
+
+    /** The row for one artist key, or null; COLLATE NOCASE like the primary key. */
+    @Query("SELECT * FROM artist_genres WHERE artist_name = :artistKey COLLATE NOCASE")
+    suspend fun get(artistKey: String): ArtistGenreEntity?
+
+    /**
+     * Every artist credit in listening history with its number of listens, in no particular
+     * order. Includes plays from another device (they're the user's listening too, and the
+     * screens that show genres may count them). Raw credits: [missingArtists] collapses them to
+     * artist keys in Kotlin, as [ArtistGenreKey] can't be expressed in SQL.
+     */
+    @Query(
+        """
+        SELECT t.artist AS credit, COUNT(*) AS plays
+        FROM listening_events e
+        JOIN tracks t ON t.id = e.track_id
+        WHERE TRIM(t.artist) != ''
+        GROUP BY t.artist
+        """,
+    )
+    suspend fun listenedArtistCredits(): List<ArtistCreditPlays>
+
+    /**
+     * Artist keys that need no fetch now: genres found (kept for good), or a miss / failure not
+     * yet old enough to retry. COLLATE NOCASE keys; compare case-insensitively.
+     */
+    @Query(
+        """
+        SELECT artist_name FROM artist_genres
+        WHERE status = 'TAGGED'
+           OR (status = 'UNTAGGABLE' AND fetched_at > :untaggableSettledAfter)
+           OR (status = 'FAILED' AND fetched_at > :failedSettledAfter)
+        """,
+    )
+    suspend fun settledArtistKeys(untaggableSettledAfter: Long, failedSettledAfter: Long): List<String>
+
+    /**
+     * Up to [limit] listened artists (as [ArtistGenreKey]s) whose genres should be fetched: no row
+     * yet, or a miss / failure past its retry age. Most-listened first, so the artists that weigh
+     * most in Top genres are covered first; ties by name for a stable order. Credits that collapse
+     * to one key ("Drake", "Drake, Future", "drake") add their listens together.
+     *
+     * One transaction so the history and the cache are read at the same moment.
+     */
+    @Transaction
+    suspend fun missingArtists(limit: Int, now: Long): List<String> {
+        if (limit <= 0) return emptyList()
+        val settled = settledArtistKeys(
+            untaggableSettledAfter = now - ArtistGenreEntity.UNTAGGABLE_RETRY_MS,
+            failedSettledAfter = now - ArtistGenreEntity.FAILED_RETRY_MS,
+        ).mapTo(HashSet()) { it.lowercase() }
+
+        // lower-case key -> (first spelling seen, summed listens)
+        val byKey = LinkedHashMap<String, Pair<String, Long>>()
+        for (row in listenedArtistCredits()) {
+            val key = ArtistGenreKey.of(row.credit)
+            if (key.isEmpty()) continue
+            val lower = key.lowercase()
+            if (lower in settled) continue
+            val previous = byKey[lower]
+            byKey[lower] = (previous?.first ?: key) to ((previous?.second ?: 0L) + row.plays)
+        }
+        return byKey.values
+            .sortedWith(compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first.lowercase() })
+            .take(limit)
+            .map { it.first }
+    }
+
+    /** Insert or replace [rows] in one transaction ([ArtistGenreEntity.artistName] is the key). */
+    @Transaction
+    suspend fun upsertAll(rows: List<ArtistGenreEntity>) {
+        if (rows.isNotEmpty()) upsertRows(rows)
+    }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRows(rows: List<ArtistGenreEntity>)
+}
+
+/** One artist credit and how many listens it has (see [ArtistGenreDao.listenedArtistCredits]). */
+data class ArtistCreditPlays(val credit: String, val plays: Long)
