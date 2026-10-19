@@ -284,6 +284,20 @@ Can't donate? A star, a bug report or telling a friend helps just as much.
 
 **Security:** found a hole? Please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
+Everyone who's helped build Stash:
+
+<p>
+  <a href="https://github.com/rawnaldclark"><img src="https://github.com/rawnaldclark.png?size=112" width="56" height="56" alt="rawnaldclark" title="rawnaldclark" /></a>
+  <a href="https://github.com/ParaliyzedEvo"><img src="https://github.com/ParaliyzedEvo.png?size=112" width="56" height="56" alt="ParaliyzedEvo" title="ParaliyzedEvo" /></a>
+  <a href="https://github.com/chaudhary-lakshay"><img src="https://github.com/chaudhary-lakshay.png?size=112" width="56" height="56" alt="chaudhary-lakshay" title="chaudhary-lakshay" /></a>
+  <a href="https://github.com/arpitagarwal1301"><img src="https://github.com/arpitagarwal1301.png?size=112" width="56" height="56" alt="arpitagarwal1301" title="arpitagarwal1301" /></a>
+  <a href="https://github.com/yuriikot2010"><img src="https://github.com/yuriikot2010.png?size=112" width="56" height="56" alt="yuriikot2010" title="yuriikot2010" /></a>
+  <a href="https://github.com/JoshDui"><img src="https://github.com/JoshDui.png?size=112" width="56" height="56" alt="JoshDui" title="JoshDui" /></a>
+  <a href="https://github.com/winstriker"><img src="https://github.com/winstriker.png?size=112" width="56" height="56" alt="winstriker" title="winstriker" /></a>
+  <a href="https://github.com/devRoemer"><img src="https://github.com/devRoemer.png?size=112" width="56" height="56" alt="devRoemer" title="devRoemer" /></a>
+  <a href="https://github.com/midlan"><img src="https://github.com/midlan.png?size=112" width="56" height="56" alt="midlan" title="midlan" /></a>
+</p>
+
 ---
 
 ## Thanks to
