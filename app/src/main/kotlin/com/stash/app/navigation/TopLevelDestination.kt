@@ -66,6 +66,13 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  */
 @Serializable data class TopRoute(val kind: String = "songs", val range: String? = null)
 
+/**
+ * The Recap story (Screen 3): [kind] "month" or "year", [year], and [month] 1..12 for a month (0
+ * for a year). Full screen: the scaffold hides the mini player and tab bar. The ViewModel reads
+ * the arguments by these names.
+ */
+@Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0)
+
 @Serializable
 data class SearchArtistRoute(
     val artistId: String,

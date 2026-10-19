@@ -65,6 +65,7 @@ import com.stash.core.data.listening.ListeningStatsCalculator.Granularity
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
+import com.stash.feature.listening.recap.RecapDoorCard
 import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
@@ -102,9 +103,11 @@ fun ListeningStatsScreen(
     onOpenTop: (kind: String, range: String) -> Unit,
     onOpenArtist: (name: String) -> Unit,
     onOpenAlbum: (album: String, artist: String) -> Unit,
+    onOpenRecap: (kind: String, year: Int, month: Int) -> Unit = { _, _, _ -> },
     viewModel: ListeningStatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val recap by viewModel.recapOffer.collectAsStateWithLifecycle()
     val selected by viewModel.range.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val use24Hour = remember(context) { DateFormat.is24HourFormat(context) }
@@ -137,6 +140,17 @@ fun ListeningStatsScreen(
                     color = StashTheme.extendedColors.textTertiary,
                     modifier = Modifier.padding(start = Gutter, end = Gutter, top = 8.dp),
                 )
+            }
+            recap?.let { offer ->
+                item(key = "recap") {
+                    RecapDoorCard(
+                        offer = offer,
+                        title = offer.bannerText,
+                        eyebrow = null,
+                        onClick = { onOpenRecap(offer.period.kind, offer.period.year, offer.period.monthArg) },
+                        modifier = Modifier.padding(start = Gutter, end = Gutter, top = 16.dp),
+                    )
+                }
             }
             item(key = "hero") {
                 HeroCard(s, onOpenDay = { onOpenHistory(it) })

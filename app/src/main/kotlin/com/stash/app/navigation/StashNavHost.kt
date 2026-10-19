@@ -30,6 +30,7 @@ import com.stash.feature.home.HomeScreen
 import com.stash.feature.listening.YourListeningSection
 import com.stash.core.common.primaryArtist
 import com.stash.feature.listening.history.HistoryScreen
+import com.stash.feature.listening.recap.RecapScreen
 import com.stash.feature.listening.stats.ListeningStatsScreen
 import com.stash.feature.listening.top.TopScreen
 import com.stash.feature.home.MixBrowseScreen
@@ -189,6 +190,7 @@ private fun StashNavGraph(
                         onOpenHistory = { navController.navigate(ListeningHistoryRoute()) },
                         onOpenStats = { range -> navController.navigate(YourListeningRoute(range)) },
                         onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
+                        onOpenRecap = { kind, year, month -> navController.navigate(RecapRoute(kind, year, month)) },
                     )
                 },
             )
@@ -520,7 +522,13 @@ private fun StashNavGraph(
                 onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
                 onOpenArtist = { name -> navController.navigate(ArtistDetailRoute(name.primaryArtist())) },
                 onOpenAlbum = { album, artist -> navController.navigate(AlbumDetailRoute(album, artist)) },
+                onOpenRecap = { kind, year, month -> navController.navigate(RecapRoute(kind, year, month)) },
             )
+        }
+
+        // Full screen over everything (StashScaffold hides the bottom chrome on this route).
+        composable<RecapRoute> {
+            RecapScreen(onClose = { navController.popBackStack() })
         }
 
         composable<TopRoute> {

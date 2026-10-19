@@ -51,7 +51,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import com.stash.feature.listening.recap.RecapAvailability
+import com.stash.feature.listening.recap.RecapOffer
+import com.stash.feature.listening.recap.readRecapOffer
+import java.time.LocalDate
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -202,6 +207,24 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
             SharingStarted.WhileSubscribed(5_000),
             ListeningStatsState(range = _range.value, today = today.value),
         )
+
+    /**
+     * The recap the banner above the hero offers for the chosen range ("Watch your October recap";
+     * the year for 12 months and All time), or null when none has enough listens.
+     */
+    val recapOffer: StateFlow<RecapOffer?> = combine(_range, today) { r, t -> r to t }
+        .mapLatest { (r, t) ->
+            try {
+                readRecapOffer(history, RecapAvailability.bannerCandidates(LocalDate.ofEpochDay(t), r), t)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "recap offer failed", e)
+                null
+            }
+        }
+        .flowOn(computeDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun selectRange(range: ListeningRange) {
         if (range !in ListeningInsights.RANGES) return

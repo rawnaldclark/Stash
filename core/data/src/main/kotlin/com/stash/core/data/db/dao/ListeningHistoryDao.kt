@@ -191,6 +191,25 @@ internal object ListeningHistorySql {
             "GROUP BY w.track_id) r " +
             "INNER JOIN tracks t ON t.id = r.tid ORDER BY r.lastAt DESC, r.tid ASC LIMIT :limit"
 
+    /**
+     * Per day in the range, each artist credit's listens (one row per day and credit, ignoring case):
+     * the Recap's "days you played them" calendar. Grouped by day and song off the covering index
+     * first, so songs are joined once per day they were heard, not once per listen.
+     */
+    const val ARTIST_DAYS =
+        "SELECT a.day AS day, t.artist AS artist, SUM(a.plays) AS plays " +
+            "FROM (SELECT le.day AS day, le.track_id AS tid, COUNT(*) AS plays FROM " + LE + " le " +
+            "GROUP BY le.day, le.track_id) a INNER JOIN tracks t ON t.id = a.tid " +
+            "GROUP BY a.day, LOWER(t.artist) ORDER BY a.day"
+
+    /**
+     * The very first listen of any of :trackIds (one song can be several library rows), all time:
+     * the Recap's "First played Oct 2 at 8:11 PM". Read off the track_id index (a song has few listens).
+     */
+    const val FIRST_LISTEN =
+        "SELECT started_at AS startedAt, local_day AS localDay, local_minute AS localMinute " +
+            "FROM listening_events WHERE track_id IN (:trackIds) ORDER BY started_at ASC, id ASC LIMIT 1"
+
     const val YEARS =
         "SELECT DISTINCT CAST(strftime('%Y', d * 86400, 'unixepoch') AS INTEGER) AS year " +
             "FROM (SELECT DISTINCT COALESCE(local_day, started_at / 86400000) AS d FROM listening_events) " +
@@ -314,6 +333,14 @@ interface ListeningHistoryDao {
     /** The earliest day with a listen (see [ListeningHistorySql.FIRST_LISTEN_DAY]), or null. */
     @Query(ListeningHistorySql.FIRST_LISTEN_DAY)
     suspend fun firstListenDay(): Long?
+
+    /** Each artist credit's listens per day in the range (see [ListeningHistorySql.ARTIST_DAYS]). */
+    @Query(ListeningHistorySql.ARTIST_DAYS)
+    suspend fun artistDays(fromDay: Long, toDay: Long): List<ArtistDayRow>
+
+    /** The first listen ever of any of [trackIds], or null (see [ListeningHistorySql.FIRST_LISTEN]). */
+    @Query(ListeningHistorySql.FIRST_LISTEN)
+    suspend fun firstListen(trackIds: List<Long>): FirstListen?
 
     /** Every calendar year with a listen, newest first (an epoch-day * 86400 is that date at UTC midnight). */
     @Query(ListeningHistorySql.YEARS)
@@ -512,6 +539,12 @@ data class ListeningTotals(
 }
 
 data class HourCount(val hour: Int, val plays: Int)
+
+/** One artist credit's listens on one day. */
+data class ArtistDayRow(val day: Long, val artist: String, val plays: Int)
+
+/** When a listen started: the instant, and the listener's local day and minute when stamped (v59). */
+data class FirstListen(val startedAt: Long, val localDay: Long?, val localMinute: Int?)
 
 data class ObsessionRow(
     @Embedded val track: TrackEntity,

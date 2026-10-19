@@ -1,7 +1,9 @@
 package com.stash.core.data.listening
 
 import androidx.annotation.VisibleForTesting
+import com.stash.core.data.db.dao.ArtistDayRow
 import com.stash.core.data.db.dao.ArtistGenreDao
+import com.stash.core.data.db.dao.FirstListen
 import com.stash.core.data.db.dao.DayCount
 import com.stash.core.data.db.dao.HistoryRow
 import com.stash.core.data.db.dao.HourCount
@@ -129,6 +131,13 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
 
     suspend fun obsession(range: DayRange): ObsessionRow? = dao.obsession(range.fromDay, range.toDay)
 
+    /** Each artist credit's listens per day in [range] (the Recap's calendar of days with an artist). */
+    suspend fun artistDays(range: DayRange): List<ArtistDayRow> = dao.artistDays(range.fromDay, range.toDay)
+
+    /** The first listen ever of any of [trackIds] (library rows of one song), or null. */
+    suspend fun firstListen(trackIds: List<Long>): FirstListen? =
+        if (trackIds.isEmpty()) null else dao.firstListen(trackIds.distinct().take(MAX_BIND_IDS))
+
     // ── Privacy (this phone only) ────────────────────────────────────
 
     suspend fun deleteListen(eventId: Long): Int = dao.deleteEvent(eventId)
@@ -159,5 +168,8 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
 
         /** How many of the newest listens "Recently played" looks through for its songs. */
         const val RECENT_WINDOW = 300
+
+        /** Library rows of one song looked up at once (far under SQLite's bind limit). */
+        private const val MAX_BIND_IDS = 50
     }
 }

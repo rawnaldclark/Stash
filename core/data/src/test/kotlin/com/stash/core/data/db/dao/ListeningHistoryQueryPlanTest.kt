@@ -82,12 +82,25 @@ class ListeningHistoryQueryPlanTest {
         assertIndexOnly("newTracks", ListeningHistorySql.NEW_TRACKS)
         assertIndexOnly("countNewTracks", ListeningHistorySql.COUNT_NEW_TRACKS)
         assertIndexOnly("obsession", ListeningHistorySql.OBSESSION)
+        assertIndexOnly("artistDays", ListeningHistorySql.ARTIST_DAYS)
+    }
+
+    @Test fun `a song's first listen reads the track_id index`() {
+        val p = db.openHelper.readableDatabase.query(
+            "EXPLAIN QUERY PLAN " + ListeningHistorySql.FIRST_LISTEN.replace(":trackIds", "?, ?"), arrayOf<Any>(1L, 2L),
+        ).use { c ->
+            val detail = c.getColumnIndexOrThrow("detail")
+            buildList { while (c.moveToNext()) add(c.getString(detail)) }
+        }
+        val reads = historyReads(p)
+        assertTrue(p.toString(), reads.isNotEmpty())
+        reads.forEach { assertTrue("$it in $p", it.contains("SEARCH") && it.contains("index_listening_events_track_id")) }
     }
 
     @Test fun `songs are joined by primary key after grouping`() {
         for (sql in listOf(
             ListeningHistorySql.TOP_TRACKS, ListeningHistorySql.TOP_ARTISTS, ListeningHistorySql.TOP_ALBUMS,
-            ListeningHistorySql.TOTALS, ListeningHistorySql.NEW_TRACKS,
+            ListeningHistorySql.TOTALS, ListeningHistorySql.NEW_TRACKS, ListeningHistorySql.ARTIST_DAYS,
         )) {
             val p = plan(sql)
             assertTrue(p.toString(), p.any { Regex("""\bSEARCH (TABLE )?(tracks AS )?t\b.*PRIMARY KEY""").containsMatchIn(it) })

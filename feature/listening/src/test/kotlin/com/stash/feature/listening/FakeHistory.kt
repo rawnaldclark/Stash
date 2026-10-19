@@ -1,6 +1,8 @@
 package com.stash.feature.listening
 
+import com.stash.core.data.db.dao.ArtistDayRow
 import com.stash.core.data.db.dao.DayCount
+import com.stash.core.data.db.dao.FirstListen
 import com.stash.core.data.db.dao.HistoryRow
 import com.stash.core.data.db.dao.HourCount
 import com.stash.core.data.db.dao.ListeningTotals
@@ -217,6 +219,16 @@ internal class FakeHistory(val today: Long = TODAY) {
         }
         every { repo.observeHourHistogram(any()) } answers { val r = firstArg<DayRange>(); version.map { hours(r) } }
         coEvery { repo.obsession(any()) } answers { obsession(firstArg()) }
+        coEvery { repo.artistDays(any()) } answers {
+            val r = firstArg<DayRange>()
+            inRange(r).groupBy { it.event.localDay!! to it.track.artist.lowercase() }
+                .map { (k, g) -> ArtistDayRow(k.first, g.first().track.artist, g.size) }.sortedBy { it.day }
+        }
+        coEvery { repo.firstListen(any()) } answers {
+            val ids = firstArg<List<Long>>().toSet()
+            rows.filter { it.track.id in ids }.minByOrNull { it.event.startedAt }
+                ?.let { FirstListen(it.event.startedAt, it.event.localDay, it.event.localMinute) }
+        }
         coEvery { repo.countNewTracksIn(any()) } answers { newRows(firstArg()).distinctBy { it.track.id }.size }
         coEvery { repo.newTracksIn(any(), any()) } answers { trackRows(newRows(firstArg())).take(secondArg()) }
         coEvery { repo.deleteListen(any()) } answers { val id = firstArg<Long>(); delete { it.event.id == id } }

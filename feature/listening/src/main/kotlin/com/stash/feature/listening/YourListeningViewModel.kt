@@ -34,6 +34,13 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.CancellationException
+import com.stash.feature.listening.recap.RecapAvailability
+import com.stash.feature.listening.recap.RecapOffer
+import com.stash.feature.listening.recap.readRecapOffer
+import java.time.LocalDate
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -57,6 +64,8 @@ data class YourListeningState(
     val week: WeekSummary = WeekSummary.EMPTY,
     /** The #1 song of the last 30 days, for the Top songs door; null when there's none. */
     val topSongTitle: String? = null,
+    /** The recap on the Recap card ("Your October so far"); null when no period has enough listens. */
+    val recap: RecapOffer? = null,
 )
 
 /** Home's summary card: the last 7 days (today and the 6 before), "Last 7 days" on screen. */
@@ -153,13 +162,31 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
         history.observeTopTracks(ListeningRange.Days30.toDayRange(t), ListeningInsights.SCAN_LIMIT)
     }.map { ListeningInsights.mergeSameSongs(it).firstOrNull()?.track?.title }.distinctUntilChanged()
 
+    /**
+     * The Recap card's recap (PHASE3-STORY-SPEC: Dec 1 – Jan 15 the year, a month's first week last
+     * month, else this month so far; each needs 20 listens), read again when today moves on or a
+     * listen lands (the week's totals change). Null on a failed read: the card simply isn't shown.
+     */
+    private val recap: Flow<RecapOffer?> = today.flatMapLatest { t ->
+        history.observeTotals(DayRange(t - 6, t)).map { it.plays }.distinctUntilChanged().mapLatest {
+            try {
+                readRecapOffer(history, RecapAvailability.doorCandidates(LocalDate.ofEpochDay(t)), t)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "recap offer failed", e)
+                null
+            }
+        }
+    }.onStart { emit(null) }.distinctUntilChanged()
+
     val state: StateFlow<YourListeningState?> = combine(
         history.observeRecentTracks(),
         days,
         historyPreference.paused,
         clock,
-        topSong,
-    ) { recent, (todayCount, week), paused, now, top ->
+        combine(topSong, recap, ::Pair),
+    ) { recent, (todayCount, week), paused, now, (top, recapOffer) ->
         if (recent.isEmpty()) {
             null
         } else {
@@ -173,6 +200,7 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 nowMs = now,
                 week = week,
                 topSongTitle = top,
+                recap = recapOffer,
             )
         }
     }.flowOn(computeDispatcher).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

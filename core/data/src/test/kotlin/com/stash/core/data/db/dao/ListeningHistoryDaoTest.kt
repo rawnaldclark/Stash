@@ -349,6 +349,34 @@ class ListeningHistoryDaoTest {
         assertNull(dao.obsession(500, 600))
     }
 
+    @Test fun `artist days count each credit's listens per day, ignoring case`() = runTest {
+        track(1, "A", "Taro")
+        track(2, "B", "taro")
+        track(3, "C", "Mira")
+        repeat(2) { listen(1, 10) }
+        listen(2, 10)
+        listen(3, 11)
+        listen(1, 12)
+        listen(1, 50) // outside
+        val rows = dao.artistDays(0, 20)
+        assertEquals(listOf(10L, 11L, 12L), rows.map { it.day })
+        assertEquals(3, rows.first { it.day == 10L }.plays)
+        assertEquals("mira", rows.first { it.day == 11L }.artist.lowercase())
+    }
+
+    @Test fun `first listen is the earliest of any of the song's rows, all time`() = runTest {
+        track(1, "A", "X")
+        track(2, "A", "X")
+        track(3, "Other", "Y")
+        listen(1, 30, minute = 100)
+        listen(2, 20, minute = 1201)
+        listen(3, 5, minute = 0)
+        val first = dao.firstListen(listOf(1, 2))!!
+        assertEquals(20L, first.localDay)
+        assertEquals(1201, first.localMinute)
+        assertNull(dao.firstListen(listOf(99)))
+    }
+
     @Test fun `first listen day and the years with listens`() = runTest {
         assertNull(dao.firstListenDay())
         assertEquals(emptyList<Int>(), dao.yearsWithListens())

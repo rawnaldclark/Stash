@@ -107,6 +107,8 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    // The Recap story is full screen: no mini player, no tab bar, drawn under the status bar.
+    val immersive = navBackStackEntry?.destination?.hasRoute<RecapRoute>() == true
 
     // The player: mini player <-> Now Playing as one finger-driven sheet.
     val playerSheet = rememberPlayerSheetState()
@@ -314,7 +316,7 @@ fun StashScaffold(
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            if (!selectionActive) {
+            if (!selectionActive && !immersive) {
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
@@ -390,12 +392,12 @@ fun StashScaffold(
         SideEffect { bottomChromeHeight = bottomChrome }
         val contentPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
-            top = innerPadding.calculateTopPadding(),
+            top = if (immersive) 0.dp else innerPadding.calculateTopPadding(),
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
         CompositionLocalProvider(
-            LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome,
+            LocalBottomChromeInset provides if (selectionActive || immersive) 0.dp else bottomChrome,
             // The NavHost takes its host lifecycle from here and caps every page at it.
             LocalLifecycleOwner provides pageLifecycleOwner,
         ) {
@@ -406,7 +408,8 @@ fun StashScaffold(
                 .padding(contentPadding)
                 // The bottom chrome owns the system bar inset, so screens' own Scaffolds don't
                 // pad it again.
-                .consumeWindowInsets(innerPadding)
+                // (Not on the full-screen Recap story: it pads the system bars itself.)
+                .consumeWindowInsets(if (immersive) PaddingValues(0.dp) else innerPadding)
                 // The page steps back (5 %) as the player opens; the glass blurs what's
                 // inside this layer, the unscaled page, and is off while the player moves.
                 .graphicsLayer {
