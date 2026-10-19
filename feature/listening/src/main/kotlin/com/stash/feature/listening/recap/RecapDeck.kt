@@ -31,9 +31,12 @@ data class RecapData(
     /** Main acts heard in the period. */
     val artistCount: Int,
     val genres: TopGenres = TopGenres.EMPTY,
-    /** Each top artist's most played song in the period, by [TopArtistUi.key]. */
+    /**
+     * Each top artist's most played song in the period other than the #1 song, by
+     * [TopArtistUi.key]: the artist cards come before the quiz, so they must not play its answer.
+     */
     val artistTopSongs: Map<String, TopTrackRow> = emptyMap(),
-    /** The most played song of the top genre's leading artist (the genres card's music). */
+    /** The top genre's leading artist's most played song other than the #1 (the genres card's music). */
     val genreSong: TopTrackRow? = null,
     /** Days in [days] the top artist was played. */
     val topArtistDays: Set<Long> = emptySet(),
@@ -41,12 +44,13 @@ data class RecapData(
     val hourly: List<Int> = List(24) { 0 },
     val longestStreak: Streak? = null,
     val busiestDay: DayCount? = null,
-    /** The most played song on [busiestDay], with its plays that day. */
-    val busiestDaySong: TopTrackRow? = null,
+    /** The most played songs on [busiestDay] (up to 3), with their plays that day. */
+    val busiestDaySongs: List<TopTrackRow> = emptyList(),
     val obsession: ObsessionRow? = null,
     /** Songs first heard in the period (0 when history starts inside it: everything is new). */
     val newSongs: Int = 0,
-    val bestNewFind: TopTrackRow? = null,
+    /** The most played songs first heard in the period (a few, so a hero of an earlier card can be skipped). */
+    val newFinds: List<TopTrackRow> = emptyList(),
     /** The first listen ever of the #1 song. */
     val topSongFirstListen: FirstListen? = null,
 ) {
@@ -61,6 +65,9 @@ sealed interface RecapCard {
 
     /** The images the card draws, for preloading a share image. */
     val images: List<ArtModel> get() = listOfNotNull(tint)
+
+    /** The one image drawn big (decoded large for a share image; the rest are small). */
+    val hero: ArtModel? get() = null
 
     /** A card that reveals something (ranks, the #1): it stays up longer. */
     val isReveal: Boolean get() = false
@@ -81,6 +88,8 @@ sealed interface RecapCard {
 
     data class TopArtist(
         val artist: TopArtistUi,
+        /** Time is partly estimated from song length: "about". */
+        val estimated: Boolean,
         val daysPlayed: Int,
         /** Days of the period so far (the "of 31 days"). */
         val daysInPeriod: Int,
@@ -89,7 +98,9 @@ sealed interface RecapCard {
         val grid: DayRange,
         val today: Long,
         override val tint: ArtModel?,
-    ) : RecapCard
+    ) : RecapCard {
+        override val hero: ArtModel? get() = artist.art()
+    }
 
     data class TopArtists(val artists: List<TopArtistUi>, override val tint: ArtModel?) : RecapCard {
         override val images: List<ArtModel> get() = artists.mapNotNull { it.art() }
@@ -100,7 +111,13 @@ sealed interface RecapCard {
         override val images: List<ArtModel> get() = options.mapNotNull { it.art() }
     }
 
-    data class TopSong(val song: TopTrackRow, val firstListen: FirstListen?, override val tint: ArtModel?) : RecapCard {
+    data class TopSong(
+        val song: TopTrackRow,
+        val firstListen: FirstListen?,
+        val estimated: Boolean,
+        override val tint: ArtModel?,
+    ) : RecapCard {
+        override val hero: ArtModel? get() = song.art()
         override val isReveal: Boolean get() = true
     }
 
@@ -121,11 +138,18 @@ sealed interface RecapCard {
     data class Streak(
         val longest: com.stash.core.data.listening.ListeningStatsCalculator.Streak?,
         val busiest: DayCount?,
+        /** The day's most played song, shown as a row; null when [dayTop] is shown instead. */
         val busiestSong: TopTrackRow?,
+        /**
+         * The day's top songs as covers, instead of one song row, when that song was already the
+         * hero of an earlier card (the same day as On repeat, or the #1).
+         */
+        val dayTop: List<TopTrackRow>,
+        val estimated: Boolean,
         val today: Long,
         override val tint: ArtModel?,
     ) : RecapCard {
-        override val images: List<ArtModel> get() = listOfNotNull(busiestSong?.art())
+        override val images: List<ArtModel> get() = listOfNotNull(busiestSong?.art()) + dayTop.mapNotNull { it.art() }
     }
 
     data class Discoveries(val newSongs: Int, val best: TopTrackRow?, override val tint: ArtModel?) : RecapCard
@@ -229,6 +253,8 @@ object RecapDeck {
         val artists = data.topArtists
         val no1 = songs.firstOrNull()?.art()
         val clock = clockLabel(data.hourly)
+        // Songs already the hero of an earlier card; later cards avoid them where they can.
+        val heroes = HashSet<String>()
         return buildList {
             add(RecapCard.Intro(data.totals.plays, songs.take(RANKED).mapNotNull { it.art() }.distinct(), no1))
             if (data.totals.listenedMs > 0) {
@@ -248,6 +274,7 @@ object RecapDeck {
                 add(
                     RecapCard.TopArtist(
                         artist = top,
+                        estimated = data.estimated,
                         daysPlayed = played.size,
                         daysInPeriod = data.days.length.toInt(),
                         playedDays = played,
@@ -262,20 +289,37 @@ object RecapDeck {
             }
             quiz(songs, data.period)?.let(::add)
             val first = songs.firstOrNull()
-            if (first != null && first.plays >= TOP_SONG_MIN_PLAYS) add(RecapCard.TopSong(first, data.topSongFirstListen, no1))
+            if (first != null && first.plays >= TOP_SONG_MIN_PLAYS) {
+                add(RecapCard.TopSong(first, data.topSongFirstListen, data.estimated, no1))
+                heroes += songKeyOf(first)
+            }
             if (songs.size >= TOP_SONGS_MIN) add(RecapCard.TopSongs(songs.take(RANKED), songs.getOrNull(1)?.art() ?: no1))
-            data.obsession?.takeIf { it.plays >= ON_REPEAT_MIN_PLAYS }?.let { o ->
+            val onRepeat = data.obsession?.takeIf { it.plays >= ON_REPEAT_MIN_PLAYS }
+            onRepeat?.let { o ->
                 add(RecapCard.OnRepeat(o, o.track.let { t -> (t.albumArtPath ?: t.albumArtUrl)?.let(::ArtModel) }))
+                heroes += ListeningInsights.songKey(o.track.title, o.track.artist)
             }
             val peak = ListeningInsights.peakHour(data.hourly.toIntArray())
             if (peak != null && clock != null) add(RecapCard.Clock(data.hourly, peak, clock, no1))
             val streak = data.longestStreak?.takeIf { it.days >= STREAK_MIN_DAYS }
             val busiest = data.busiestDay?.takeIf { it.plays >= BUSIEST_MIN_PLAYS }
             if (streak != null || busiest != null) {
-                add(RecapCard.Streak(streak, busiest, data.busiestDaySong.takeIf { busiest != null }, data.today, data.busiestDaySong?.art() ?: no1))
+                val daySong = data.busiestDaySongs.firstOrNull().takeIf { busiest != null }
+                // The day's song was already an earlier card's hero (the same day as On repeat,
+                // or the #1): show the day's top covers instead of the same song again.
+                val repeats = daySong != null && (
+                    (onRepeat != null && onRepeat.day == busiest?.day) || songKeyOf(daySong) in heroes
+                    )
+                val dayTop = if (repeats && data.busiestDaySongs.size > 1) data.busiestDaySongs.take(DAY_TOP) else emptyList()
+                val single = daySong.takeIf { dayTop.isEmpty() }
+                add(RecapCard.Streak(streak, busiest, single, dayTop, data.estimated, data.today, daySong?.art() ?: no1))
+                single?.let { heroes += songKeyOf(it) }
             }
             if (data.newSongs >= DISCOVERIES_MIN) {
-                add(RecapCard.Discoveries(data.newSongs, data.bestNewFind, data.bestNewFind?.art() ?: no1))
+                // Best find: the most played new song that wasn't already an earlier card's hero,
+                // when there is one (never invented: always one of the period's real new songs).
+                val best = data.newFinds.firstOrNull { songKeyOf(it) !in heroes } ?: data.newFinds.firstOrNull()
+                add(RecapCard.Discoveries(data.newSongs, best, best?.art() ?: no1))
             }
             add(
                 RecapCard.Summary(
@@ -303,7 +347,8 @@ object RecapDeck {
         if (pool.size < QUIZ_OPTIONS - 1) return null
         val random = Random(seedOf(period))
         val options = (pool.shuffled(random).take(QUIZ_OPTIONS - 1) + no1).shuffled(random)
-        return RecapCard.Quiz(options, options.indexOf(no1), no1.art())
+        // No cover colour: the #1's would give the answer away.
+        return RecapCard.Quiz(options, options.indexOf(no1), tint = null)
     }
 
     /** One seed per period, so reopening a recap asks the same quiz in the same order. */
@@ -372,7 +417,8 @@ object RecapDeck {
         val no1 = songs.firstOrNull()
         val no2 = songs.getOrNull(1) ?: no1
         val no5 = songs.getOrNull(RANKED - 1) ?: songs.lastOrNull()
-        val topArtistSong = data.topArtists.firstOrNull()?.let { data.artistTopSongs[it.key] } ?: no1
+        // Never the #1 before its reveal (artistTopSongs excludes it): none = keep the song before.
+        val topArtistSong = data.topArtists.firstOrNull()?.let { data.artistTopSongs[it.key] }
         var previous: SongCue = no5?.let(SongCue::Play) ?: SongCue.Silence
         return cards.map { card ->
             val explicit: TopTrackRow? = when (card) {
@@ -400,6 +446,11 @@ object RecapDeck {
         card.isReveal -> REVEAL_MS
         else -> CARD_MS
     }
+
+    /** Covers on the busiest-day card when its song repeats an earlier hero. */
+    const val DAY_TOP = 3
+
+    private fun songKeyOf(row: TopTrackRow): String = ListeningInsights.songKey(row.track.title, row.track.artist)
 
     const val CARD_MS = 6_000L
     const val REVEAL_MS = 9_000L

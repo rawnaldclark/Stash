@@ -10,6 +10,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,7 +21,7 @@ import javax.inject.Singleton
  *
  * Every call but [endAndWait] returns at once: the work runs on an app-lifetime main-thread scope,
  * not the ViewModel's, so an [end] from the screen's onDispose still runs while the ViewModel is
- * being cleared (RecapAudio serialises begin/end itself, so a quick close-and-reopen is safe).
+ * being cleared, and all calls run strictly in the order they were made.
  */
 interface RecapStoryAudio {
     fun begin()
@@ -38,21 +40,28 @@ interface RecapStoryAudio {
 internal class RecapStoryAudioImpl @Inject constructor(private val audio: RecapAudio) : RecapStoryAudio {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    override fun begin() {
-        scope.launch { audio.begin() }
+    /**
+     * Every call runs through this one lock, in the order made: a play() right behind a begin()
+     * (a quick reopen, unmuting) waits for the story to exist instead of being ignored as "no
+     * story open", which left the first card silent. The lock is fair (FIFO).
+     */
+    private val order = Mutex()
+
+    private fun inOrder(block: suspend () -> Unit) {
+        scope.launch { order.withLock { block() } }
     }
 
-    override fun play(track: Track) = audio.play(track)
+    override fun begin() = inOrder { audio.begin() }
 
-    override fun pause() = audio.pause()
+    override fun play(track: Track) = inOrder { audio.play(track) }
 
-    override fun resume() = audio.resume()
+    override fun pause() = inOrder { audio.pause() }
 
-    override fun end(restoreMain: Boolean) {
-        scope.launch { audio.end(restoreMain) }
-    }
+    override fun resume() = inOrder { audio.resume() }
 
-    override suspend fun endAndWait(restoreMain: Boolean) = audio.end(restoreMain)
+    override fun end(restoreMain: Boolean) = inOrder { audio.end(restoreMain) }
+
+    override suspend fun endAndWait(restoreMain: Boolean) = order.withLock { audio.end(restoreMain) }
 }
 
 @Module

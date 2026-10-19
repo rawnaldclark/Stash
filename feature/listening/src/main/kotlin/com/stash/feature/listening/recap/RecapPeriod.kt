@@ -85,6 +85,9 @@ sealed class RecapPeriod {
     }
 }
 
+/** One recap on Your listening's "Past recaps" row, with its listens. */
+data class PastRecap(val period: RecapPeriod, val plays: Int)
+
 /**
  * Which recap Home's door and Your listening's banner offer (PHASE3-STORY-SPEC "Which recaps
  * exist"). Pure: the caller counts listens per candidate and takes the first that qualifies.
@@ -123,6 +126,28 @@ object RecapAvailability {
     /** The first candidate with enough listens ([playsIn] counts a candidate's), or null. */
     suspend fun firstQualifying(candidates: List<RecapPeriod>, playsIn: suspend (RecapPeriod) -> Int): RecapPeriod? =
         candidates.firstOrNull { playsIn(it) >= MIN_PLAYS }
+
+    /**
+     * Every recap the history holds, for Your listening's "Past recaps": each month with
+     * [MIN_PLAYS] listens (this month too, "so far"), newest first, then each FINISHED year with
+     * as many. [playsPerDay] is (epoch-day, listens) for the whole history.
+     */
+    fun pastRecaps(playsPerDay: List<Pair<Long, Int>>, today: LocalDate): List<PastRecap> {
+        val byMonth = HashMap<RecapPeriod.MonthOf, Int>()
+        val byYear = HashMap<Int, Int>()
+        for ((day, plays) in playsPerDay) {
+            val d = LocalDate.ofEpochDay(day)
+            byMonth.merge(RecapPeriod.MonthOf(d.year, d.monthValue), plays, Int::plus)
+            byYear.merge(d.year, plays, Int::plus)
+        }
+        val months = byMonth.filter { it.value >= MIN_PLAYS }
+            .entries.sortedWith(compareByDescending<Map.Entry<RecapPeriod.MonthOf, Int>> { it.key.year }.thenByDescending { it.key.month })
+            .map { PastRecap(it.key, it.value) }
+        val years = byYear.filter { it.key < today.year && it.value >= MIN_PLAYS }
+            .entries.sortedByDescending { it.key }
+            .map { PastRecap(RecapPeriod.YearOf(it.key), it.value) }
+        return months + years
+    }
 
     /** The year featured on [today], or null outside December 1 – January 15. */
     fun featuredYear(today: LocalDate): Int? = when {

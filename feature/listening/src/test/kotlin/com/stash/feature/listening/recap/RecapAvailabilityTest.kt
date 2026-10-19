@@ -84,6 +84,23 @@ class RecapAvailabilityTest {
         assertThat(month(2026, 12).inProgress(jan15)).isFalse()
     }
 
+    @Test fun `past recaps list every month with twenty listens, newest first, then finished years`() {
+        fun day(y: Int, m: Int, d: Int) = LocalDate.of(y, m, d).toEpochDay()
+        val counts = listOf(
+            day(2025, 12, 3) to 25, // a qualifying month in a finished year
+            day(2026, 8, 9) to 12, day(2026, 8, 20) to 7, // August: 19, not enough
+            day(2026, 9, 2) to 40,
+            day(2026, 10, 18) to 21, // this month so far
+        )
+        val past = RecapAvailability.pastRecaps(counts, d(2026, 10, 18))
+        assertThat(past.map { it.period }).containsExactly(
+            month(2026, 10), month(2026, 9), month(2025, 12), RecapPeriod.YearOf(2025),
+        ).inOrder()
+        assertThat(past.first().plays).isEqualTo(21)
+        // This year isn't finished: no "2026" tile yet.
+        assertThat(past.map { it.period }).doesNotContain(RecapPeriod.YearOf(2026))
+    }
+
     @Test fun `door subtitles use a short time`() {
         assertThat(shortTime(47 * 60_000L)).isEqualTo("47 min")
         assertThat(shortTime(11 * 3_600_000L + 20 * 60_000L)).isEqualTo("11 h")

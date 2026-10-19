@@ -139,6 +139,7 @@ class RecapViewModel @VisibleForTesting internal constructor(
     private var userHeld = false
     private var silenced = false
     private var mutedLoaded = false
+    private var startingPlayback = false
 
     init {
         viewModelScope.launch {
@@ -180,20 +181,30 @@ class RecapViewModel @VisibleForTesting internal constructor(
         }
         val scan = history.observeTopTracks(days, ListeningInsights.SCAN_LIMIT).first()
         val songs = ListeningInsights.mergeSameSongs(scan)
-        val acts = ListeningInsights.byMainArtist(history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT).first())
+        val credits = history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT).first()
+        val acts = ListeningInsights.byMainArtist(credits)
         val photos = artistImages.observeAll().first()
         val topArtists = artistsWithPhotos(acts.take(RecapDeck.RANKED), photos)
-        val index = genreIndex.first()
-        val genres = TopGenresCalculator.compute(ListeningInsights.artistWeights(acts), index, RecapDeck.GENRES_SHOWN)
+        // A broken genre cache costs the genres card, never the story.
+        val index = runCatching { genreIndex.first() }
+            .onFailure { if (it is CancellationException) throw it; Log.w(TAG, "genre index failed", it) }
+            .getOrDefault(ArtistGenreIndex.EMPTY)
+        // Raw credits keyed like the genre cache (same numbers as Your listening).
+        val genres = TopGenresCalculator.compute(ListeningInsights.artistWeights(credits), index, RecapDeck.GENRES_SHOWN)
 
-        // Each artist's most played song in the period (songs are most played first).
+        // An artist's most played song in the period, never the #1: the cards that play these come
+        // before the quiz and must not give its answer away (songs are most played first).
+        val no1Key = songs.firstOrNull()?.let { ListeningInsights.songKey(it.track.title, it.track.artist) }
         fun topSongOf(artistName: String): TopTrackRow? {
             val key = ListeningInsights.artistKey(artistName)
-            return songs.firstOrNull { ListeningInsights.artistKey(it.track.artist) == key }
+            return songs.firstOrNull {
+                ListeningInsights.artistKey(it.track.artist) == key &&
+                    ListeningInsights.songKey(it.track.title, it.track.artist) != no1Key
+            }
         }
         val artistTopSongs = topArtists.mapNotNull { a -> topSongOf(a.name)?.let { a.key to it } }.toMap()
         val genreSong = genres.items.firstOrNull()?.let { top ->
-            ListeningInsights.genreTopArtists(acts, index, listOf(top.key), perGenre = 1)[top.key]?.firstOrNull()
+            ListeningInsights.genreTopArtists(credits, index, listOf(top.key), perGenre = 1)[top.key]?.firstOrNull()
         }?.let(::topSongOf)
 
         val topArtistKey = topArtists.firstOrNull()?.key
@@ -206,15 +217,18 @@ class RecapViewModel @VisibleForTesting internal constructor(
         val hourly = ListeningInsights.hourly(history.observeHourHistogram(days).first()).toList()
         val dayCounts = history.observeDayCounts(days).first()
         val busiest = ListeningStatsCalculator.busiestDay(dayCounts)
-        val busiestSong = busiest?.let { b ->
-            history.listensOn(b.day).groupBy { it.track.id }.maxByOrNull { it.value.size }?.let { (_, rows) ->
-                TopTrackRow(rows.first().track, rows.size, rows.maxOf { it.event.startedAt })
-            }
-        }
+        // The busiest day's top songs (one row per song, as everywhere), most played first.
+        val busiestSongs = busiest?.let { b ->
+            history.listensOn(b.day)
+                .groupBy { ListeningInsights.songKey(it.track.title, it.track.artist) }
+                .map { (_, rows) -> TopTrackRow(rows.first().track, rows.size, rows.maxOf { it.event.startedAt }) }
+                .sortedWith(compareByDescending<TopTrackRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+                .take(RecapDeck.DAY_TOP)
+        }.orEmpty()
         val first = history.firstListenDay()
         val wholeHistory = first == null || first >= days.fromDay
         val newSongs = if (wholeHistory) 0 else history.countNewTracksIn(days)
-        val best = if (newSongs > 0) history.newTracksIn(days, 1).firstOrNull() else null
+        val newFinds = if (newSongs > 0) ListeningInsights.mergeSameSongs(history.newTracksIn(days, NEW_FINDS)) else emptyList()
 
         // The #1's first listen across every library row of that song (merged rows share the key).
         val no1 = songs.firstOrNull()
@@ -238,10 +252,10 @@ class RecapViewModel @VisibleForTesting internal constructor(
             hourly = hourly,
             longestStreak = ListeningStatsCalculator.longestStreak(dayCounts),
             busiestDay = busiest,
-            busiestDaySong = busiestSong,
+            busiestDaySongs = busiestSongs,
             obsession = history.obsession(days),
             newSongs = newSongs,
-            bestNewFind = best,
+            newFinds = newFinds,
             topSongFirstListen = history.firstListen(no1Ids),
         )
     }
@@ -328,7 +342,9 @@ class RecapViewModel @VisibleForTesting internal constructor(
     fun playTopSongs() {
         val ready = _state.value as? RecapUiState.Ready ?: return
         val tracks = ready.topSongs.map { it.track.toDomain() }
-        if (tracks.isEmpty()) return
+        if (tracks.isEmpty() || startingPlayback) return
+        // A double tap must not set the queue twice (or close the story twice).
+        startingPlayback = true
         viewModelScope.launch {
             when (val plan = planTopSongs(tracks, 0, connectivityMonitor.isConnected(), tapped = false)) {
                 is PlayPlan.Play -> {
@@ -340,12 +356,18 @@ class RecapViewModel @VisibleForTesting internal constructor(
                     playerRepository.setQueue(plan.tracks, plan.startIndex, PlaybackSource.Listening(ready.title))
                     _closeRequests.tryEmit(Unit)
                 }
-                is PlayPlan.Blocked -> _messages.tryEmit(plan.message)
+                is PlayPlan.Blocked -> {
+                    startingPlayback = false
+                    _messages.tryEmit(plan.message)
+                }
             }
         }
     }
 
-    /** "Save as playlist": the top songs as a playlist named "Your October 2026". Once per recap. */
+    /**
+     * "Save as playlist": the top songs as a playlist named "Your October 2026". Saving the same
+     * recap again (here or a later visit) adds to that playlist rather than making a second one.
+     */
     fun saveAsPlaylist() {
         val ready = _state.value as? RecapUiState.Ready ?: return
         if (_saved.value) return
@@ -354,8 +376,19 @@ class RecapViewModel @VisibleForTesting internal constructor(
         _saved.value = true
         viewModelScope.launch {
             try {
-                musicRepository.createPlaylistWithTracks(playlistName(ready.period), ids)
-                _messages.tryEmit("Saved to your playlists")
+                val name = playlistName(ready.period)
+                val existing = musicRepository.getUserCreatedPlaylists().first()
+                    .firstOrNull { it.name.equals(name, ignoreCase = true) }
+                if (existing != null) {
+                    // Adds only what isn't there yet: the songs already in it keep their places.
+                    val have = musicRepository.getTracksByPlaylist(existing.id).first().map { it.id }.toSet()
+                    val missing = ids.filter { it !in have }
+                    if (missing.isNotEmpty()) musicRepository.addTracksToPlaylist(missing, existing.id)
+                    _messages.tryEmit("Updated your playlist")
+                } else {
+                    musicRepository.createPlaylistWithTracks(name, ids)
+                    _messages.tryEmit("Saved to your playlists")
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -379,6 +412,9 @@ class RecapViewModel @VisibleForTesting internal constructor(
 
         /** Songs "Play your top songs" queues and "Save as playlist" saves. */
         const val PLAYLIST_SIZE = 50
+
+        /** New songs read for the best find, so one already shown on an earlier card can be skipped. */
+        const val NEW_FINDS = 5
 
         /** "Your October 2026" / "Your 2026". */
         fun playlistName(period: RecapPeriod): String = "Your ${period.longName()}"

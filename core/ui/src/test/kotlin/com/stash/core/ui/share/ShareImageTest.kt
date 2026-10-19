@@ -5,33 +5,40 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.time.ZoneOffset
 
-/** Share image file names and the one-image-at-a-time share folder. */
+/** Share image file names (readable, timestamped) and the share folder's cleanup (by age). */
 class ShareImageTest {
 
     @get:Rule val tmp = TemporaryFolder()
 
-    @Test fun `names are lower case words joined by hyphens`() {
-        assertThat(ShareImage.fileName("Stash · Your October 2026 — Top songs!")).isEqualTo("stash-your-october-2026-top-songs.png")
-        assertThat(ShareImage.fileName("  ")).isEqualTo("stash.png")
-        assertThat(ShareImage.fileName("Ünïcode ✨")).isEqualTo("n-code.png")
+    /** 2026-10-19 00:12:05 UTC. */
+    private val now = 1_792_368_725_000L
+
+    @Test fun `names are lower case words joined by hyphens, with the time`() {
+        assertThat(ShareImage.fileName("Stash · Your October 2026 — Top songs!", now, ZoneOffset.UTC))
+            .isEqualTo("stash-your-october-2026-top-songs-20261019-001205.png")
+        assertThat(ShareImage.fileName("  ", now, ZoneOffset.UTC)).isEqualTo("stash-20261019-001205.png")
+        assertThat(ShareImage.fileName("Ünïcode ✨", now, ZoneOffset.UTC)).isEqualTo("n-code-20261019-001205.png")
+    }
+
+    @Test fun `two shares a second apart are two files`() {
+        assertThat(ShareImage.fileName("a", now, ZoneOffset.UTC)).isNotEqualTo(ShareImage.fileName("a", now + 1_000, ZoneOffset.UTC))
     }
 
     @Test fun `long names are cut without a trailing hyphen`() {
-        val name = ShareImage.fileName("a".repeat(47) + " bbbb")
-        assertThat(name.length).isAtMost(48 + 4)
-        assertThat(name).doesNotContain("-.png")
+        val name = ShareImage.fileName("a".repeat(47) + " bbbb", now, ZoneOffset.UTC)
+        assertThat(name).doesNotContain("--")
+        assertThat(name.removeSuffix("-20261019-001205.png").length).isAtMost(48)
     }
 
-    @Test fun `clearing the folder keeps only the file asked for`() {
+    @Test fun `only files older than ten minutes are deleted`() {
         val dir = tmp.newFolder("share")
-        val old1 = File(dir, "a.png").apply { writeText("x") }
-        val old2 = File(dir, "b.png").apply { writeText("x") }
-        val keep = File(dir, "c.png").apply { writeText("x") }
-        assertThat(ShareImage.clearOld(dir, keep)).isEqualTo(2)
-        assertThat(old1.exists()).isFalse()
-        assertThat(old2.exists()).isFalse()
-        assertThat(keep.exists()).isTrue()
-        assertThat(ShareImage.clearOld(File(dir, "missing"))).isEqualTo(0)
+        val old = File(dir, "old.png").apply { writeText("x"); setLastModified(now - ShareImage.MAX_AGE_MS - 1_000) }
+        val recent = File(dir, "recent.png").apply { writeText("x"); setLastModified(now - 60_000) }
+        assertThat(ShareImage.clearOld(dir, now)).isEqualTo(1)
+        assertThat(old.exists()).isFalse()
+        assertThat(recent.exists()).isTrue()
+        assertThat(ShareImage.clearOld(File(dir, "missing"), now)).isEqualTo(0)
     }
 }

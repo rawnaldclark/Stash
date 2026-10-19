@@ -46,10 +46,10 @@ class RecapDeckTest {
         hourly = List(24) { if (it == 21) 10 else 1 },
         longestStreak = ListeningStatsCalculator.Streak(6, days.fromDay + 2, days.fromDay + 7),
         busiestDay = DayCount(days.fromDay + 10, 28, 4_000_000),
-        busiestDaySong = TopTrackRow(track(1), 9, 0L),
+        busiestDaySongs = listOf(TopTrackRow(track(1), 9, 0L), TopTrackRow(track(2), 6, 0L), TopTrackRow(track(3), 4, 0L)),
         obsession = ObsessionRow(track(1), days.fromDay + 10, 9),
         newSongs = 37,
-        bestNewFind = TopTrackRow(track(4), 12, 0L),
+        newFinds = listOf(TopTrackRow(track(4), 12, 0L), TopTrackRow(track(6), 3, 0L)),
     )
 
     @Test fun `a full month tells every card, in the story's order`() {
@@ -172,6 +172,56 @@ class RecapDeckTest {
         assertThat(id("OnRepeat")).isEqualTo(2L) // keeps the top songs card's song
         assertThat(id("Discoveries")).isEqualTo(2L)
         assertThat(id("Summary")).isEqualTo(1L)
+    }
+
+    @Test fun `the quiz wears Stash purple, not the answer's cover`() {
+        val quiz = RecapDeck.build(full(), "t").filterIsInstance<RecapCard.Quiz>().single()
+        assertThat(quiz.tint).isNull()
+    }
+
+    @Test fun `an artist with no song but the number one keeps the song before, never plays the answer`() {
+        val data = full().copy(artistTopSongs = emptyMap())
+        val cards = RecapDeck.build(data, "t")
+        val cues = RecapDeck.cues(cards, data)
+        val kinds = cards.map { it::class.simpleName }
+        val beforeQuiz = cues.subList(0, kinds.indexOf("Quiz"))
+        assertThat(beforeQuiz.filterIsInstance<SongCue.Play>().map { it.song.track.id }).doesNotContain(1L)
+    }
+
+    @Test fun `the busiest day on the same day as On repeat shows the day's top covers, not the song again`() {
+        // On repeat and the busiest day are both days.fromDay + 10, both song 1.
+        val streak = RecapDeck.build(full(), "t").filterIsInstance<RecapCard.Streak>().single()
+        assertThat(streak.busiestSong).isNull()
+        assertThat(streak.dayTop.map { it.track.id }).containsExactly(1L, 2L, 3L).inOrder()
+    }
+
+    @Test fun `a different busiest day shows its song as a row`() {
+        val data = full().copy(busiestDay = DayCount(days.fromDay + 3, 28, 4_000_000), busiestDaySongs = listOf(TopTrackRow(track(7), 9, 0L)))
+        val streak = RecapDeck.build(data, "t").filterIsInstance<RecapCard.Streak>().single()
+        assertThat(streak.busiestSong?.track?.id).isEqualTo(7L)
+        assertThat(streak.dayTop).isEmpty()
+    }
+
+    @Test fun `best find skips a song an earlier card already showed off, when there's another`() {
+        // Song 4 is the busiest day's song (a row), so the best find moves to song 6.
+        val data = full().copy(
+            busiestDay = DayCount(days.fromDay + 3, 28, 4_000_000),
+            busiestDaySongs = listOf(TopTrackRow(track(4), 9, 0L)),
+        )
+        val best = RecapDeck.build(data, "t").filterIsInstance<RecapCard.Discoveries>().single().best
+        assertThat(best?.track?.id).isEqualTo(6L)
+        // With no other new song, the truth stands: the same song.
+        val only = data.copy(newFinds = listOf(TopTrackRow(track(4), 12, 0L)))
+        assertThat(RecapDeck.build(only, "t").filterIsInstance<RecapCard.Discoveries>().single().best?.track?.id).isEqualTo(4L)
+    }
+
+    @Test fun `times are about when estimated, on every card that shows one`() {
+        val cards = RecapDeck.build(full(), "t")
+        assertThat(cards.filterIsInstance<RecapCard.TopSong>().single().estimated).isTrue()
+        assertThat(cards.filterIsInstance<RecapCard.TopArtist>().single().estimated).isTrue()
+        assertThat(cards.filterIsInstance<RecapCard.Streak>().single().estimated).isTrue()
+        assertThat(playsAndTime(7, 600_000, estimated = true)).isEqualTo("7 plays · about 10 min")
+        assertThat(playsAndTime(7, 600_000, estimated = false)).isEqualTo("7 plays · 10 min")
     }
 
     @Test fun `reveal cards stay up longer`() {

@@ -114,7 +114,8 @@ fun YourListeningSection(
                 ListeningDoor(
                     icon = Icons.Rounded.Leaderboard,
                     title = "Top songs",
-                    subtitle = s.topSongTitle?.let { "#1 $it" } ?: "Last 30 days",
+                    // Its range said out loud: the Recap card above counts a calendar month.
+                    subtitle = s.topSongTitle?.let { "#1 $it · 30 days" } ?: "Last 30 days",
                     onClick = { onOpenTop("songs", ListeningRange.Days30.key) },
                 ),
                 ListeningDoor(

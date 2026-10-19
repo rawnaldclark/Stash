@@ -7,7 +7,9 @@ import com.stash.core.data.genre.ArtistGenreIndex
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaybackSource
+import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import com.stash.feature.listening.FakeHistory
 import com.stash.feature.listening.FakeHistory.Companion.TODAY
@@ -179,6 +181,7 @@ class RecapViewModelTest {
     }
 
     @Test fun `Save as playlist names it after the period, once`() = runTest {
+        every { music.getUserCreatedPlaylists() } returns flowOf(emptyList())
         coEvery { music.createPlaylistWithTracks(any(), any()) } returns 7L
         val vm = viewModel(october())
         advanceUntilIdle()
@@ -187,6 +190,41 @@ class RecapViewModelTest {
         advanceUntilIdle()
         coVerify(exactly = 1) { music.createPlaylistWithTracks("Your October 2026", match { it.first() == 1L }) }
         assertThat(vm.saved.value).isTrue()
+    }
+
+    @Test fun `a rotation (screen recreated, no close) keeps one story playing`() = runTest {
+        val vm = viewModel(october())
+        advanceUntilIdle()
+        vm.startAudio()
+        vm.onCard(0)
+        // The recreated screen starts again; it never called closeAudio() (a config change isn't a close).
+        vm.startAudio()
+        vm.onCard(0)
+        assertThat(audio.calls.count { it == "begin" }).isEqualTo(1)
+        assertThat(audio.calls.none { it.startsWith("end") }).isTrue()
+    }
+
+    @Test fun `a double tap on Play your top songs sets the queue once`() = runTest {
+        val vm = viewModel(october())
+        advanceUntilIdle()
+        vm.startAudio()
+        vm.playTopSongs()
+        vm.playTopSongs()
+        advanceUntilIdle()
+        coVerify(exactly = 1) { player.setQueue(any(), any(), any()) }
+        assertThat(audio.calls.count { it.startsWith("endAndWait") }).isEqualTo(1)
+    }
+
+    @Test fun `saving a recap that already has its playlist adds to it instead of a second one`() = runTest {
+        val existing = Playlist(id = 9, name = "Your October 2026", source = MusicSource.BOTH)
+        every { music.getUserCreatedPlaylists() } returns flowOf(listOf(existing))
+        every { music.getTracksByPlaylist(9) } returns flowOf(listOf(Track(id = 1, title = "Song 1", artist = "Artist 1")))
+        val vm = viewModel(october())
+        advanceUntilIdle()
+        vm.saveAsPlaylist()
+        advanceUntilIdle()
+        coVerify(exactly = 0) { music.createPlaylistWithTracks(any(), any()) }
+        coVerify(exactly = 1) { music.addTracksToPlaylist(match { 1L !in it && it.isNotEmpty() }, 9) }
     }
 
     @Test fun `the quiz keeps the first answer`() = runTest {

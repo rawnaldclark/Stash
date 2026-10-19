@@ -249,6 +249,14 @@ private fun ThinBar(fraction: Float, color: Color, modifier: Modifier = Modifier
 
 private fun plays(n: Int) = ListeningLabels.plays(n)
 
+/** "7 plays · about 10 min" when the time is partly estimated (the Minutes card's rule), else exact. */
+internal fun playsAndTime(plays: Int, listenedMs: Long, estimated: Boolean): String =
+    if (listenedMs <= 0) ListeningLabels.plays(plays)
+    else "${ListeningLabels.plays(plays)} · ${if (estimated) "about " else ""}${ListeningLabels.listenTime(listenedMs)}"
+
+/** "28 plays · about 1 h 36 min" (the same rule). */
+internal fun daySummary(plays: Int, listenedMs: Long, estimated: Boolean): String = playsAndTime(plays, listenedMs, estimated)
+
 // ── The cards ───────────────────────────────────────────────────────────────
 
 /**
@@ -393,7 +401,7 @@ private fun ColumnScope.TopArtistCard(card: RecapCard.TopArtist, colors: CardCol
     DayDots(card.grid, card.playedDays, card.today, colors.accent, appear(mode, 700, 900))
     Spacer(Modifier.height(16.dp))
     Text(
-        ListeningLabels.playsAndTime(card.artist.plays, card.artist.listenedMs),
+        playsAndTime(card.artist.plays, card.artist.listenedMs, card.estimated),
         style = RecapType.small,
         color = RecapInk.tertiary,
         modifier = Modifier.rise(appear(mode, 900)),
@@ -471,7 +479,7 @@ private fun ColumnScope.TopSongsCard(card: RecapCard.TopSongs, colors: CardColor
         val p = appear(mode, 300L + (n - 1 - i) * 520L, 560)
         RankRow(
             rank = i + 1,
-            title = s.track.title,
+            title = s.displayTitle,
             subtitle = s.track.artist,
             trailing = plays(s.plays),
             art = { RecapArt(s.art(), if (i == 0) 60.dp else 50.dp, RoundedCornerShape(8.dp)) },
@@ -522,7 +530,7 @@ private fun ColumnScope.QuizCard(
                 .then(if (!revealed && !mode.share) Modifier.clickable { onAnswer(i) } else Modifier)
                 .semantics(mergeDescendants = true) {
                     contentDescription = buildString {
-                        append("${song.track.title} by ${song.track.artist}")
+                        append("${song.displayTitle} by ${song.track.artist}")
                         if (revealed && correct) append(", your number one")
                         else if (picked) append(", your pick")
                     }
@@ -533,7 +541,7 @@ private fun ColumnScope.QuizCard(
             RecapArt(song.art(), 46.dp, RoundedCornerShape(8.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(song.track.title, style = RecapType.name.copy(fontSize = 17.sp), color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.displayTitle, style = RecapType.name.copy(fontSize = 17.sp), color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(song.track.artist, style = RecapType.small, color = RecapInk.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (revealed && (correct || picked)) {
@@ -553,8 +561,8 @@ private fun ColumnScope.QuizCard(
         text = when {
             answer == null -> ""
             answered && answer == card.correctIndex -> "You got it."
-            answered -> "Not quite. It was ${card.options[card.correctIndex].track.title}."
-            else -> "It was ${card.options[card.correctIndex].track.title}."
+            answered -> "Not quite. It was ${card.options[card.correctIndex].displayTitle}."
+            else -> "It was ${card.options[card.correctIndex].displayTitle}."
         },
         style = RecapType.name,
         color = RecapInk.primary,
@@ -577,7 +585,7 @@ private fun ColumnScope.TopSongCard(card: RecapCard.TopSong, colors: CardColors,
     )
     Spacer(Modifier.height(22.dp))
     Text(
-        card.song.track.title,
+        card.song.displayTitle,
         style = RecapType.statement.copy(fontSize = 36.sp, lineHeight = 40.sp),
         color = RecapInk.primary,
         maxLines = 2,
@@ -587,7 +595,7 @@ private fun ColumnScope.TopSongCard(card: RecapCard.TopSong, colors: CardColors,
     Text(card.song.track.artist, style = RecapType.body, color = RecapInk.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rise(appear(mode, 800)))
     Spacer(Modifier.height(14.dp))
     Column(Modifier.rise(appear(mode, 1_100))) {
-        Text(ListeningLabels.playsAndTime(card.song.plays, card.song.listenedMs), style = RecapType.name.copy(fontSize = 17.sp), color = colors.accent)
+        Text(playsAndTime(card.song.plays, card.song.listenedMs, card.estimated), style = RecapType.name.copy(fontSize = 17.sp), color = colors.accent)
         card.firstListen?.let { f ->
             Spacer(Modifier.height(4.dp))
             Text("First played ${firstPlayed(f)}", style = RecapType.small, color = RecapInk.tertiary)
@@ -620,7 +628,7 @@ private fun ColumnScope.OnRepeatCard(card: RecapCard.OnRepeat, colors: CardColor
         RecapArt((o.track.albumArtPath ?: o.track.albumArtUrl)?.let(::ArtModel), 72.dp, RoundedCornerShape(12.dp))
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(o.track.title, style = RecapType.statement.copy(fontSize = 28.sp, lineHeight = 32.sp), color = RecapInk.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(RecapTitles.display(o.track.title), style = RecapType.statement.copy(fontSize = 28.sp, lineHeight = 32.sp), color = RecapInk.primary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(o.track.artist, style = RecapType.small, color = RecapInk.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -691,15 +699,34 @@ private fun ColumnScope.StreakCard(card: RecapCard.Streak, colors: CardColors, m
             Spacer(Modifier.height(6.dp))
             Text(ListeningLabels.absoluteDay(b.day, card.today), style = RecapType.statement, color = RecapInk.primary)
             Spacer(Modifier.height(6.dp))
-            Text(ListeningLabels.daySummary(b.plays, b.listenedMs).orEmpty(), style = RecapType.body, color = RecapInk.secondary)
+            Text(daySummary(b.plays, b.listenedMs, card.estimated), style = RecapType.body, color = RecapInk.secondary)
             card.busiestSong?.let { s ->
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(18.dp))
+                Text("Most played that day", style = RecapType.small, color = RecapInk.tertiary)
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RecapArt(s.art(), 48.dp, RoundedCornerShape(8.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Mostly ${s.track.title}", style = RecapType.name.copy(fontSize = 17.sp), color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${ListeningLabels.times(s.plays)} that day", style = RecapType.small, color = RecapInk.tertiary)
+                        Text(s.displayTitle, style = RecapType.name.copy(fontSize = 17.sp), color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(ListeningLabels.times(s.plays), style = RecapType.small, color = RecapInk.tertiary)
+                    }
+                }
+            }
+            // The day's song was already an earlier card's hero: the day's top songs as covers.
+            if (card.busiestSong == null && card.dayTop.isNotEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                Text("Most played that day", style = RecapType.small, color = RecapInk.tertiary)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    card.dayTop.forEach { s ->
+                        Column(Modifier.width(76.dp).semantics(mergeDescendants = true) {
+                            contentDescription = "${s.displayTitle}, ${ListeningLabels.times(s.plays)}"
+                        }) {
+                            RecapArt(s.art(), 76.dp, RoundedCornerShape(10.dp))
+                            Spacer(Modifier.height(6.dp))
+                            Text(ListeningLabels.times(s.plays), style = RecapType.small, color = RecapInk.secondary, maxLines = 1)
+                        }
                     }
                 }
             }
@@ -724,7 +751,7 @@ private fun ColumnScope.DiscoveriesCard(card: RecapCard.Discoveries, colors: Car
                 RecapArt(s.art(), 60.dp, RoundedCornerShape(10.dp))
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.track.title, style = RecapType.name, color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(s.displayTitle, style = RecapType.name, color = RecapInk.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(s.track.artist, style = RecapType.small, color = RecapInk.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.width(10.dp))
@@ -761,7 +788,7 @@ private fun ColumnScope.SummaryPoster(card: RecapCard.Summary, period: RecapPeri
     Row(Modifier.fillMaxWidth()) {
         SummaryList("Top artists", card.artists.map { it.name }, colors, Modifier.weight(1f))
         Spacer(Modifier.width(16.dp))
-        SummaryList("Top songs", card.songs.map { it.track.title }, colors, Modifier.weight(1f))
+        SummaryList("Top songs", card.songs.map { it.displayTitle }, colors, Modifier.weight(1f))
     }
     if (card.topGenre != null || card.clockLabel != null) {
         Spacer(Modifier.height(18.dp))

@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
@@ -123,6 +124,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.reflect.KProperty
 
 private const val TAG = "RecapScreen"
 
@@ -160,8 +162,13 @@ fun RecapScreen(
         launch { viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() } }
         viewModel.closeRequests.collect { onClose() }
     }
-    // end() from the close action AND from leaving composition (RecapAudio's contract).
-    DisposableEffect(viewModel) { onDispose { viewModel.closeAudio() } }
+    // end() from the close action AND from leaving composition (RecapAudio's contract), but not
+    // when the activity is only being recreated (rotation, dark mode): the ViewModel and the story
+    // live on, and closing there would leave it silent over the user's music.
+    val activity = LocalContext.current.findActivity()
+    DisposableEffect(viewModel) {
+        onDispose { if (activity?.isChangingConfigurations != true) viewModel.closeAudio() }
+    }
     BackHandler { close() }
     LightStatusBarIcons()
 
@@ -219,6 +226,14 @@ private fun EmptyRecap(title: String, onClose: () -> Unit) {
     }
 }
 
+/** A card index kept within 0..[last] on every read and write ([index] in [Story]). */
+private class CoercedIndex(private val state: MutableState<Int>, private val last: Int) {
+    operator fun getValue(thisRef: Any?, property: KProperty<*>): Int = state.value.coerceIn(0, last)
+    operator fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) {
+        state.value = value.coerceIn(0, last)
+    }
+}
+
 /** A share in progress: the card, its colours and its images, decoded in software. */
 private data class ShareJob(val index: Int, val colors: CardColors, val images: Map<String, ImageBitmap>, val quizAnswer: Int?)
 
@@ -234,7 +249,12 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
     val cards = s.cards
     val last = cards.lastIndex
 
-    var index by rememberSaveable { mutableStateOf(0) }
+    // Restored after process death the deck may be shorter (a listen deleted): never past its end.
+    val savedIndex = rememberSaveable { mutableStateOf(0) }
+    val coercedIndex: CoercedIndex = remember(last) { CoercedIndex(savedIndex, last) }
+    var index by coercedIndex
+    // Bumped when the card showing restarts (back on the first card), so its timer starts over.
+    var restartTick by remember { mutableStateOf(0) }
     var held by remember { mutableStateOf(false) }
     var shareJob by remember { mutableStateOf<ShareJob?>(null) }
     var dragY by remember { mutableStateOf(0f) }
@@ -257,7 +277,7 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
         }
     }
     fun colorsOf(card: RecapCard) = card.tint?.let { palettes[it.key] } ?: BrandColors
-    val current = cards[index.coerceIn(0, last)]
+    val current = cards[index]
     val target = colorsOf(current)
     val glow by animateColorAsState(target.glow, tween(900), label = "glow")
     val deep by animateColorAsState(target.deep, tween(900), label = "deep")
@@ -275,7 +295,9 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
 
     fun go(to: Int) {
         val next = to.coerceIn(0, last)
-        if (next == index) scope.launch { progress.snapTo(0f) } else index = next
+        // Same card (back on the first one): restart its timer through the effect's key, not a
+        // snapTo that would cancel the running animation and leave it stalled.
+        if (next == index) restartTick++ else index = next
     }
 
     val quizBlocking = current is RecapCard.Quiz && quizAnswer == null
@@ -283,7 +305,7 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
     val pausedNow = rememberUpdatedState(paused)
     val blockingNow = rememberUpdatedState(quizBlocking)
     // The progress bar of the card showing: runs while not held, moves on at the end.
-    LaunchedEffect(index) {
+    LaunchedEffect(index, restartTick) {
         progress.snapTo(0f)
         snapshotFlow { Triple(pausedNow.value, autoAdvance, blockingNow.value) }.collectLatest { (p, auto, blocking) ->
             if (p || !auto || blocking) return@collectLatest
@@ -299,7 +321,7 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
         if (shareJob != null) return
         val card = cards[i]
         scope.launch {
-            val images = loadShareImages(context, card.images + listOfNotNull(card.tint))
+            val images = loadShareImages(context, card.images + listOfNotNull(card.tint), hero = card.hero)
             shareJob = ShareJob(i, colorsOf(card), images, quizAnswer)
         }
     }
@@ -404,6 +426,8 @@ private fun Story(s: RecapUiState.Ready, viewModel: RecapViewModel, onClose: () 
                     Log.w(TAG, "share failed", e)
                     Toast.makeText(context, "Couldn't share the image.", Toast.LENGTH_SHORT).show()
                 } finally {
+                    // Written to the PNG (or failed): the 1080x1920 bitmap isn't needed any more.
+                    bitmap?.recycle()
                     shareJob = null
                 }
             }
@@ -485,9 +509,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.storyGes
             total += change.positionChange()
             if (!dragging && total.y > slop && abs(total.y) > abs(total.x)) {
                 dragging = true
-                if (holding) {
-                    holding = false
-                    onHold(false)
+                // The story (and its song) waits while it's being dragged down.
+                if (!holding) {
+                    holding = true
+                    onHold(true)
                 }
             }
             if (dragging) {
@@ -496,7 +521,10 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.storyGes
             }
             if (!change.pressed) {
                 when {
-                    dragging -> onDragEnd(total.y)
+                    dragging -> {
+                        onHold(false)
+                        onDragEnd(total.y)
+                    }
                     holding -> onHold(false)
                     abs(total.x) < slop && abs(total.y) < slop -> onTap(change.position.x)
                 }
@@ -676,7 +704,11 @@ private fun ShareCapture(job: ShareJob, card: RecapCard, period: RecapPeriod, lo
             withFrameNanos { }
             withFrameNanos { }
             val image = layer.toImageBitmap().asAndroidBitmap()
-            if (image.config == Bitmap.Config.HARDWARE) image.copy(Bitmap.Config.ARGB_8888, false) else image
+            if (image.config == Bitmap.Config.HARDWARE) {
+                image.copy(Bitmap.Config.ARGB_8888, false).also { image.recycle() }
+            } else {
+                image
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -718,13 +750,15 @@ private fun ShareCard(card: RecapCard, period: RecapPeriod, longName: String, co
 }
 
 /** Decodes [models] in software (allowHardware(false)) for a share image; missing ones are left out. */
-private suspend fun loadShareImages(context: Context, models: List<ArtModel>): Map<String, ImageBitmap> = coroutineScope {
-    models.distinct().map { model ->
+private suspend fun loadShareImages(context: Context, models: List<ArtModel>, hero: ArtModel?): Map<String, ImageBitmap> = coroutineScope {
+    (models + listOfNotNull(hero)).distinct().map { model ->
         async {
             try {
+                // Decoded at the size drawn: only the card's one big image is large.
+                val px = if (model == hero) SHARE_HERO_PX else SHARE_ART_PX
                 val request = ImageRequest.Builder(context)
                     .data(artData(model))
-                    .size(CoilSize(SHARE_ART_PX, SHARE_ART_PX))
+                    .size(CoilSize(px, px))
                     .allowHardware(false)
                     .build()
                 val result = SingletonImageLoader.get(context).execute(request)
@@ -738,5 +772,8 @@ private suspend fun loadShareImages(context: Context, models: List<ArtModel>): M
     }.awaitAll().filterNotNull().toMap()
 }
 
-/** Decode size of share-image art: sharp at the largest size drawn (the #1 cover, ~700 px). */
-private const val SHARE_ART_PX = 720
+/** Decode size of a share image's big image (the #1 cover is ~580 px there). */
+private const val SHARE_HERO_PX = 640
+
+/** Decode size of every other image in a share image (covers of 50-80 dp at 2.5 px/dp). */
+private const val SHARE_ART_PX = 200

@@ -190,7 +190,10 @@ private fun StashNavGraph(
                         onOpenHistory = { navController.navigate(ListeningHistoryRoute()) },
                         onOpenStats = { range -> navController.navigate(YourListeningRoute(range)) },
                         onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
-                        onOpenRecap = { kind, year, month -> navController.navigate(RecapRoute(kind, year, month)) },
+                        onOpenRecap = { kind, year, month ->
+                    // A double tap opens one story, not two (the second's cleanup would end the first's music).
+                    navController.navigate(RecapRoute(kind, year, month)) { launchSingleTop = true }
+                },
                     )
                 },
             )
@@ -522,13 +525,18 @@ private fun StashNavGraph(
                 onOpenTop = { kind, range -> navController.navigate(TopRoute(kind, range)) },
                 onOpenArtist = { name -> navController.navigate(ArtistDetailRoute(name.primaryArtist())) },
                 onOpenAlbum = { album, artist -> navController.navigate(AlbumDetailRoute(album, artist)) },
-                onOpenRecap = { kind, year, month -> navController.navigate(RecapRoute(kind, year, month)) },
+                onOpenRecap = { kind, year, month ->
+                    // A double tap opens one story, not two (the second's cleanup would end the first's music).
+                    navController.navigate(RecapRoute(kind, year, month)) { launchSingleTop = true }
+                },
             )
         }
 
         // Full screen over everything (StashScaffold hides the bottom chrome on this route).
-        composable<RecapRoute> {
-            RecapScreen(onClose = { navController.popBackStack() })
+        composable<RecapRoute> { entry ->
+            // Pops only while the story is the top entry: a close racing a swipe-down or "Play your
+            // top songs" (two closes) must not pop Home as well.
+            RecapScreen(onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() })
         }
 
         composable<TopRoute> {

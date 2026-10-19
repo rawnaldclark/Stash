@@ -52,8 +52,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import com.stash.feature.listening.recap.PastRecap
 import com.stash.feature.listening.recap.RecapAvailability
 import com.stash.feature.listening.recap.RecapOffer
 import com.stash.feature.listening.recap.readRecapOffer
@@ -216,18 +219,40 @@ class ListeningStatsViewModel @VisibleForTesting internal constructor(
      * the year for 12 months and All time), or null when none has enough listens.
      */
     val recapOffer: StateFlow<RecapOffer?> = combine(_range, today) { r, t -> r to t }
-        .mapLatest { (r, t) ->
-            try {
-                readRecapOffer(history, RecapAvailability.bannerCandidates(LocalDate.ofEpochDay(t), r), t)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "recap offer failed", e)
-                null
+        .flatMapLatest { (r, t) ->
+            // Read again as listens land (the week's play count moves), like Home's Recap card.
+            history.observeTotals(DayRange(t - 6, t)).map { it.plays }.distinctUntilChanged().mapLatest {
+                try {
+                    readRecapOffer(history, RecapAvailability.bannerCandidates(LocalDate.ofEpochDay(t), r), t)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "recap offer failed", e)
+                    null
+                }
             }
         }
         .flowOn(computeDispatcher)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * "Past recaps" at the bottom of the screen: every month with enough listens (newest first)
+     * and every finished year, from one day-count read over the whole history (live).
+     */
+    val pastRecaps: StateFlow<List<PastRecap>> = today
+        .flatMapLatest { t ->
+            flow {
+                val first = history.firstListenDay() ?: t
+                emitAll(history.observeDayCounts(DayRange(minOf(first, t), t)))
+            }.map { counts -> RecapAvailability.pastRecaps(counts.map { it.day to it.plays }, LocalDate.ofEpochDay(t)) }
+        }
+        .catch { e ->
+            if (e is CancellationException) throw e
+            Log.w(TAG, "past recaps failed", e)
+            emit(emptyList())
+        }
+        .flowOn(computeDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun selectRange(range: ListeningRange) {
         if (range !in ListeningInsights.RANGES) return

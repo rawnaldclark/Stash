@@ -29,18 +29,20 @@ internal suspend fun readRecapOffer(
 ): RecapOffer? {
     var plays = 0
     var listenedMs = 0L
+    var estimated = false
     val period = RecapAvailability.firstQualifying(candidates) { p ->
         val totals = history.observeTotals(p.dayRange(today)).first()
         plays = totals.plays
         listenedMs = totals.listenedMs
+        estimated = totals.estimatedPlays > 0
         totals.plays
     } ?: return null
     val top = ListeningInsights.mergeSameSongs(
         history.observeTopTracks(period.dayRange(today), ListeningInsights.SCAN_LIMIT).first(),
     ).firstOrNull()
     val subtitle = listOfNotNull(
-        shortTime(listenedMs).takeIf { listenedMs > 0 } ?: "$plays plays",
-        top?.let { "#1 ${it.track.title}" },
+        shortTime(listenedMs).takeIf { listenedMs > 0 }?.let { if (estimated) "about $it" else it } ?: "$plays plays",
+        top?.let { "#1 ${it.displayTitle}" },
     ).joinToString(" · ")
     return RecapOffer(period, period.title(today), subtitle, top?.art())
 }
