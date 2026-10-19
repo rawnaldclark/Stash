@@ -112,12 +112,12 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
         genres: ArtistGenreRepository,
     ) : this(
         history, historyPreference, playerRepository, connectivityMonitor, minuteClock(), Dispatchers.Default,
-        genres::requestRefresh,
+        { genres.requestRefresh(unmeteredOnly = true) },
     )
 
     init {
-        // Home's section shows the week, not genres, but asking here (once a day) means the genres
-        // are usually in by the time Your listening opens.
+        // Home's section shows the week, not genres, but asking here (once a day, on Wi-Fi) means
+        // the genres are usually in by the time Your listening opens.
         if (genreGate.tryPass(history.today())) {
             runCatching(requestGenreRefresh).onFailure { Log.w(TAG, "genre refresh request failed", it) }
         }
@@ -239,8 +239,8 @@ fun interface DailyGate {
     fun tryPass(day: Long): Boolean
 }
 
-/** Home's once-a-day genre request, for the life of the process. */
-internal object GenreRefreshGate : DailyGate {
+/** Lets the first ask of each day through, for as long as it lives. */
+internal class OncePerDayGate : DailyGate {
     private var lastDay = Long.MIN_VALUE
 
     @Synchronized
@@ -250,3 +250,6 @@ internal object GenreRefreshGate : DailyGate {
         return true
     }
 }
+
+/** Home's once-a-day genre request, for the life of the process. */
+internal val GenreRefreshGate: DailyGate = OncePerDayGate()

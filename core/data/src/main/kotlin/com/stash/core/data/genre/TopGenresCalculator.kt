@@ -15,7 +15,8 @@ data class ArtistWeight(val name: String, val weight: Long)
  *
  * @property key the canonical genre ("hip-hop"), stable for lookups and tests.
  * @property name the display name ("Hip-Hop").
- * @property share 0..1 of the listening that HAS a genre (so the shown bars add up to at most 100%).
+ * @property share 0..1 of ALL the range's listening, genre or not ("34% of your listening time" is
+ *   true as written); the shares add up to at most [TopGenres.coverage].
  * @property weight the genre's absolute weight in the caller's unit (fractional: an artist's weight
  *   is split across its genres).
  */
@@ -79,8 +80,9 @@ class ArtistGenreIndex private constructor(private val byKey: Map<String, List<W
  *
  * Each artist's weight is split across its genres in proportion to their genre weights (an artist
  * that is "hip-hop 1.0, r&b 0.5" gives two thirds of its minutes to Hip-Hop and one third to R&B),
- * then summed per genre. Shares are relative to the weight that has a genre; [TopGenres.coverage]
- * says how much that is of the whole.
+ * then summed per genre. Shares are of the whole range's weight (genre-less listening included), so
+ * they add up to [TopGenres.coverage] at most; [TopGenres.coverage] says how much of the whole has a
+ * genre.
  *
  * O(A·G + K log K) for A artists, G ≤ 3 genres each and K distinct genres.
  */
@@ -139,7 +141,9 @@ object TopGenresCalculator {
                     GenreShare(
                         key = key,
                         name = GenreNormalizer.displayName(key),
-                        share = (weight / covered).coerceIn(0.0, 1.0),
+                        // Of ALL the range's listening (not just the part with a genre), so
+                        // "34% of your listening time" is literally true at any coverage.
+                        share = (weight / total).coerceIn(0.0, 1.0),
                         weight = weight,
                     )
                 }

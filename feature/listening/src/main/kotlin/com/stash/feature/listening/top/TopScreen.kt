@@ -39,7 +39,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,7 +51,8 @@ import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
 import com.stash.feature.listening.ui.EstimatedFootnote
-import com.stash.feature.listening.ui.GENRES_CREDIT
+import com.stash.feature.listening.ui.genreCredit
+import com.stash.feature.listening.ui.genresThinMessage
 import com.stash.feature.listening.ui.GenreBar
 import com.stash.feature.listening.ui.genreFractions
 import com.stash.feature.listening.ui.Gutter
@@ -170,7 +170,7 @@ fun TopScreen(
                 }
                 TopKind.GENRES -> {
                     if (s.genresTooThin) {
-                        item(key = "genres_thin") { GenresComingIn(s.genreCoverage) }
+                        item(key = "genres_thin") { GenresComingIn(genresThinMessage(s.genreCoverage, s.genresCached)) }
                     } else {
                         val fractions = genreFractions(s.genres.map { it.genre })
                         itemsIndexed(s.genres, key = { _, g -> "g${g.genre.key}" }) { i, g ->
@@ -178,7 +178,7 @@ fun TopScreen(
                         }
                         item(key = "genres_credit") {
                             Text(
-                                text = "Share of your listening time · $GENRES_CREDIT",
+                                text = genreCredit(s.genreCoverage),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = StashTheme.extendedColors.textTertiary,
                                 modifier = Modifier.fillMaxWidth().padding(start = Gutter, end = Gutter, top = 12.dp),
@@ -236,16 +236,11 @@ private fun GenreRow(rank: Int, genre: TopGenreUi, fraction: Float) {
     }
 }
 
-/** Genres known for too little of the range to rank them: say so, with how far along it is. */
+/** Genres known for too little of the range to rank them: say so ([genresThinMessage]). */
 @Composable
-private fun GenresComingIn(coverage: Double) {
-    val pct = (coverage * 100).roundToInt()
+private fun GenresComingIn(message: String) {
     Text(
-        text = if (pct <= 0) {
-            "Genres for your artists are still on their way from Last.fm. They show up here once they've arrived."
-        } else {
-            "We know the genre of $pct% of your listening in this period so far. Genres show up here once that's over half."
-        },
+        text = message,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,

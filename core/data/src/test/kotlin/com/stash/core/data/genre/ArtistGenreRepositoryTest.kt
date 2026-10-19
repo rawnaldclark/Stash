@@ -37,6 +37,14 @@ class ArtistGenreRepositoryTest {
         assertNull(index.genresFor("Local Rip"))
     }
 
+    @Test fun `rows written before rap was folded read like a fresh fetch`() {
+        // As cached on the rig by an earlier build: "rap" kept next to "emo rap".
+        val stale = listOf(WeightedGenre("emo rap", 1f), WeightedGenre("rap", 0.44f))
+        val index = ArtistGenreRepository.toIndex(listOf(row("Death Plus", ArtistGenreEntity.STATUS_TAGGED, stale)))
+        // "rap" is Hip-Hop now, and Hip-Hop is the umbrella of Emo Rap: only Emo Rap stays.
+        assertEquals(listOf(WeightedGenre("emo rap", 1f)), index.genresFor("Death Plus"))
+    }
+
     @Test fun `codec round-trips and reads junk as no genres`() {
         val genres = listOf(WeightedGenre("hip-hop", 1f), WeightedGenre("r&b", 0.5f))
         assertEquals(genres, WeightedGenreCodec.decode(WeightedGenreCodec.encode(genres)))

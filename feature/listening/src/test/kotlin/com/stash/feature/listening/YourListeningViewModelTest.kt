@@ -48,6 +48,21 @@ class YourListeningViewModelTest {
         }
     }
 
+    @Test fun `Home asks for genres through the once-a-day gate`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var asks = 0
+        val gate = OncePerDayGate()
+        val fake = FakeHistory()
+        repeat(2) {
+            YourListeningViewModel(fake.repository(), preference, player, connectivity, now, dispatcher, { asks++ }, gate)
+        }
+        assertThat(asks).isEqualTo(1) // the second Home of the day doesn't ask again
+        val tomorrow = FakeHistory(today = TODAY + 1)
+        YourListeningViewModel(tomorrow.repository(), preference, player, connectivity, now, dispatcher, { asks++ }, gate)
+        assertThat(asks).isEqualTo(2)
+    }
+
     @Test fun `no listens yet, the section stays hidden`() = runTest {
         val vm = viewModel(FakeHistory())
         advanceUntilIdle()

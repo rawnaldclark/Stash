@@ -206,7 +206,30 @@ class TopViewModelTest {
         val s = vm.state.value
         assertThat(s.genreCoverage).isLessThan(0.5)
         assertThat(s.genresTooThin).isTrue()
+        assertThat(s.genresCached).isTrue()
         assertThat(s.isEmpty).isFalse()
+    }
+
+    @Test fun `a featured credit counts for its act, not as a second artist`() = runTest {
+        val fake = FakeHistory().apply {
+            repeat(3) { add(track(1, artist = "Drake"), TODAY, 600 + it) }
+            repeat(2) { add(track(2, artist = "Drake feat. Rihanna"), TODAY, 700 + it) }
+            add(track(3, artist = "Earth, Wind & Fire, Chicago"), TODAY, 800)
+        }
+        val index = ArtistGenreIndex.of(
+            mapOf(
+                "Drake" to listOf(WeightedGenre("hip-hop", 1f)),
+                "Earth, Wind & Fire" to listOf(WeightedGenre("funk", 1f)),
+            ),
+        )
+        val vm = viewModel(fake, mapOf(TopViewModel.ARG_KIND to "genres"), genres = index)
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.genres.map { it.genre.key }).containsExactly("hip-hop", "funk").inOrder()
+        assertThat(s.genres[0].artists).containsExactly("Drake") // one act, not two
+        assertThat(s.genres[0].genre.share).isWithin(1e-9).of(5.0 / 6) // 5 of 6 listens, same length
+        assertThat(s.genres[1].artists).containsExactly("Earth, Wind & Fire") // not dropped
+        assertThat(s.genreCoverage).isWithin(1e-9).of(1.0)
     }
 
     @Test fun `genres of a range with no listens are empty`() = runTest {

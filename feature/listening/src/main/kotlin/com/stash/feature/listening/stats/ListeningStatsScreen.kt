@@ -70,7 +70,7 @@ import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
 import com.stash.feature.listening.ui.CircleArt
 import com.stash.feature.listening.ui.EstimatedFootnote
-import com.stash.feature.listening.ui.GENRES_CREDIT
+import com.stash.feature.listening.ui.genreCredit
 import com.stash.feature.listening.ui.GenreBar
 import com.stash.feature.listening.ui.genreFractions
 import com.stash.feature.listening.ui.Gutter
@@ -185,7 +185,7 @@ fun ListeningStatsScreen(
                 item(key = "genres_title") {
                     StatsSectionTitle("Top genres", action = "See all", onAction = { onOpenTop("genres", rangeKey) })
                 }
-                item(key = "genres") { GenresCard(s.topGenres.items) }
+                item(key = "genres") { GenresCard(s.topGenres.items, s.topGenres.coverage) }
             }
             item(key = "clock_title") { StatsSectionTitle("When you listen") }
             item(key = "clock") { ClockCard(s, use24Hour) }
@@ -548,7 +548,7 @@ private val AlbumSize = 132.dp
 
 /** Up to five genres as bars, each "% of your listening" time, with Last.fm's credit under them. */
 @Composable
-private fun GenresCard(genres: List<GenreShare>) {
+private fun GenresCard(genres: List<GenreShare>, coverage: Double) {
     val fractions = remember(genres) { genreFractions(genres) }
     StatsCard(Modifier.padding(horizontal = Gutter)) {
         genres.forEachIndexed { i, genre ->
@@ -561,7 +561,7 @@ private fun GenresCard(genres: List<GenreShare>) {
         }
     }
     Text(
-        text = "Share of your listening time · $GENRES_CREDIT",
+        text = genreCredit(coverage),
         style = MaterialTheme.typography.bodySmall,
         color = StashTheme.extendedColors.textTertiary,
         modifier = Modifier.padding(start = Gutter, end = Gutter, top = 8.dp),

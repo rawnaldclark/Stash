@@ -84,6 +84,8 @@ data class TopUiState(
     val genreCoverage: Double = 0.0,
     /** The range has listens to take genres from (genres list only). */
     val genreHasListens: Boolean = false,
+    /** The genre cache has any artist at all (no genre in the range then means "not enough", not "on its way"). */
+    val genresCached: Boolean = false,
     /** Some time in the range is estimated from song length: the list ends in a footnote. */
     val estimated: Boolean = false,
 ) {
@@ -240,16 +242,21 @@ class TopViewModel @VisibleForTesting internal constructor(
             // weighs them; each with the acts that give it the most time.
             TopKind.GENRES -> combine(
                 history.observeTopArtists(days, ListeningInsights.ARTIST_SCAN_LIMIT),
-                genreIndex,
+                genreIndex.catch { e ->
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "genre index failed", e)
+                    emit(ArtistGenreIndex.EMPTY)
+                },
                 estimated,
             ) { rows, index, est ->
-                val acts = ListeningInsights.byMainArtist(rows)
-                val top = TopGenresCalculator.compute(ListeningInsights.artistWeights(acts), index, GENRES_LIMIT)
-                val artists = ListeningInsights.genreTopArtists(acts, index, top.items.map { it.key })
+                // Raw credits, keyed like the genre cache (see ListeningInsights.artistWeights).
+                val top = TopGenresCalculator.compute(ListeningInsights.artistWeights(rows), index, GENRES_LIMIT)
+                val artists = ListeningInsights.genreTopArtists(rows, index, top.items.map { it.key })
                 base.copy(
                     genres = top.items.map { TopGenreUi(it, artists[it.key].orEmpty()) },
                     genreCoverage = top.coverage,
-                    genreHasListens = acts.isNotEmpty(),
+                    genreHasListens = rows.any { it.listenedMs > 0 },
+                    genresCached = index.size > 0,
                     estimated = est,
                 )
             }
