@@ -184,15 +184,25 @@ suspend fun updateNowPlaying(
     }
 
     /** Top tags for an artist. Used as fallback + as a coarse genre signal. */
-    suspend fun getArtistTopTags(artist: String): Result<List<LastFmTag>> = runCatching {
+    suspend fun getArtistTopTags(artist: String): Result<List<LastFmTag>> =
+        getArtistTopTagsAnswer(artist).map { it.tags }
+
+    /**
+     * [getArtistTopTags], also saying whether the answer came from the local response cache.
+     * ArtistGenreWorker needs that: only an answer fetched over the network shows Last.fm is
+     * reachable and not throttling, since cached answers are served even while every key is
+     * rate limited.
+     */
+    suspend fun getArtistTopTagsAnswer(artist: String): Result<LastFmTagsAnswer> = runCatching {
         val params = sortedMapOf(
             "method" to "artist.getTopTags",
             "api_key" to credentials.apiKey,
             "artist" to artist,
             "autocorrect" to "1",
         )
-        val response = unsignedGet(params, cacheable = true)
-        parseTopTags(response["toptags"]?.jsonObject)
+        var fromCache = false
+        val response = unsignedGet(params, cacheable = true, onCacheHit = { fromCache = true })
+        LastFmTagsAnswer(tags = parseTopTags(response["toptags"]?.jsonObject), fromCache = fromCache)
     }
 
     /** Artist bio + MBID via artist.getInfo. Cacheable (routes through the proxy
@@ -476,6 +486,7 @@ suspend fun updateNowPlaying(
     private suspend fun unsignedGet(
         params: Map<String, String>,
         cacheable: Boolean = false,
+        onCacheHit: () -> Unit = {},
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheKey = if (cacheable) lastFmCacheKey(params) else null
@@ -488,6 +499,7 @@ suspend fun updateNowPlaying(
                 if (cached != null &&
                     System.currentTimeMillis() - cached.fetchedAt < CACHE_TTL_MS
                 ) {
+                    onCacheHit()
                     return@withContext json.parseToJsonElement(cached.json).jsonObject
                 }
             }
@@ -515,7 +527,7 @@ suspend fun updateNowPlaying(
                 // HTTP 429 — hard rate limit. Trip this source's breaker, then throw.
                 if (code == 429) {
                     rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
-                    error("Last.fm GET failed: HTTP 429 (rate limited)")
+                    throw LastFmRateLimitedException("Last.fm GET failed: HTTP 429 (rate limited)")
                 }
                 if (code !in 200..299) {
                     // Last.fm sends some API errors (6 "not found" among them)
@@ -588,7 +600,7 @@ suspend fun updateNowPlaying(
                 keys = credentials.readApiKeys,
                 startIndex = readKeyCounter.getAndIncrement(),
                 isOpen = { rateLimitGate.isOpen(it, now) },
-            ) ?: error("Last.fm rate-limited; skipping request (all keys throttled)")
+            ) ?: throw LastFmRateLimitedException("Last.fm rate-limited; skipping request (all keys throttled)")
             send(API_URL, readKey, params.toMutableMap().apply { this["api_key"] = readKey })
         }
 
@@ -698,6 +710,9 @@ suspend fun updateNowPlaying(
 
 /** Parsed tag row from track/artist top-tag endpoints. [weight] in 0..1. */
 data class LastFmTag(val name: String, val weight: Float)
+
+/** Top tags plus where they came from: [fromCache] = the local response cache, not the network. */
+data class LastFmTagsAnswer(val tags: List<LastFmTag>, val fromCache: Boolean)
 
 /** Parsed similar-artist from `artist.getSimilar`. [match] in 0..1. */
 data class LastFmSimilarArtist(val name: String, val match: Float)
