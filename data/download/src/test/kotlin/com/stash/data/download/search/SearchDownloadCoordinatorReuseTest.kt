@@ -82,6 +82,7 @@ class SearchDownloadCoordinatorReuseTest {
         loudnessMeasurer = mockk<LoudnessMeasurer>(relaxed = true),
         lyricsFetchTrigger = mockk<LyricsFetchTrigger>(relaxed = true),
         qualityPrefs = qualityPrefs,
+        losslessQuota = com.stash.data.download.lossless.quota.LosslessQuota.inMemory(),
     )
 
     @Before

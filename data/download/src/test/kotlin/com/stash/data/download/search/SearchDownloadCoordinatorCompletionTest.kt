@@ -98,6 +98,7 @@ class SearchDownloadCoordinatorCompletionTest {
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
         qualityPrefs = qualityPrefs,
+        losslessQuota = com.stash.data.download.lossless.quota.LosslessQuota.inMemory(),
     )
 
     @Before

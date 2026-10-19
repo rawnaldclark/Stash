@@ -29,6 +29,10 @@ import com.stash.data.download.lossless.LosslessSourceRegistry
 import com.stash.data.download.lossless.LosslessUrlDownloader
 import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
+import com.stash.data.download.lossless.forLibrarySource
+import com.stash.data.download.lossless.quota.LosslessQuota
+import com.stash.data.download.lossyAacLengthMatches
+import com.stash.core.model.MusicSource
 import com.stash.data.download.lyrics.LyricsFetchTrigger
 import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.shared.TrackFinalizer
@@ -112,6 +116,12 @@ class SearchDownloadCoordinator @Inject constructor(
      * fallback path. Without it yt-dlp picks its default `bv*+ba/b` (video).
      */
     private val qualityPrefs: QualityPreference,
+    /**
+     * The daily lossless allowance. While it is spent and the fallback is off, a download
+     * waits for the reset instead of saving Tidal AAC, as [DownloadManager] does: the
+     * lossless rung skipped the relays, so the song has not shown it has no FLAC.
+     */
+    private val losslessQuota: LosslessQuota,
 ) {
     // App-lifetime scope. Class is @Singleton.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -250,51 +260,73 @@ class SearchDownloadCoordinator @Inject constructor(
 
         // v0.9.17 strict-FLAC defer branch — mirrors DownloadManager.
         // No Stash-Mix exemption: search-tab is always an explicit user
-        // action, so the fallback pref governs unconditionally.
+        // action, so the fallback pref governs unconditionally. Nothing from
+        // JioSaavn or YouTube is saved below this line with the fallback off.
         if (!losslessPrefs.youtubeFallbackEnabledNow()) {
+            // The day's lossless allowance is spent: the relays were skipped, so the
+            // song has not shown it has no FLAC. It waits for the reset, as in
+            // DownloadManager, rather than being saved as Tidal AAC for good.
+            if (losslessQuota.isSpent()) {
+                Log.i(TAG, "deferring search download '${track.artist} - ${track.title}': daily lossless allowance spent, fallback off")
+                return deferForLossless(track)
+            }
             tryTidalAac(track)?.let { return it }
             Log.i(
                 TAG,
-                "deferring search download '${track.artist} - ${track.title}': lossless unavailable, fallback off",
+                "deferring search download '${track.artist} - ${track.title}': no FLAC or Tidal AAC, fallback off",
             )
-            // Mark the queue row WAITING_FOR_LOSSLESS so the retry scheduler
-            // (Task 9) can pick it up later. Lookup is best-effort and
-            // chained on the local Track row — the search-tab path bypasses
-            // download_queue for fresh tracks, so most search defers won't
-            // find a row here. The write only matters when the user re-taps
-            // Download on a track the sync pipeline previously deferred. It also
-            // marks the row as the user's ask, a sync's too: otherwise the leftover
-            // cleanup would drop it, and the lossless retry skip it (#532).
-            runCatching {
-                val trackId = trackDao.findByYoutubeId(track.videoId)?.id
-                if (trackId != null) {
-                    downloadQueueDao.getByTrackId(trackId)?.let { row ->
-                        downloadQueueDao.deferForTap(row.id)
-                    }
-                }
-            }.onFailure { e ->
-                if (e is CancellationException) throw e
-                Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
-            }
-            return DownloadJobResult.Deferred
+            return deferForLossless(track)
         }
 
         return finalizeFromLossyFallback(track, losslessAttempted = true)
     }
 
     /**
+     * The strict-FLAC wait: [DownloadJobResult.Deferred], and the song's queue row, when it has
+     * one, marked WAITING_FOR_LOSSLESS so the retry scheduler picks it up later. Lookup is
+     * best-effort and chained on the local Track row — the search-tab path bypasses
+     * download_queue for fresh tracks, so most search defers won't find a row here. The write
+     * only matters when the user re-taps Download on a track the sync pipeline previously
+     * deferred. It also marks the row as the user's ask, a sync's too: otherwise the leftover
+     * cleanup would drop it, and the lossless retry skip it (#532).
+     */
+    private suspend fun deferForLossless(track: TrackItem): DownloadJobResult.Deferred {
+        runCatching {
+            val trackId = trackDao.findByYoutubeId(track.videoId)?.id
+            if (trackId != null) {
+                downloadQueueDao.getByTrackId(trackId)?.let { row ->
+                    downloadQueueDao.deferForTap(row.id)
+                }
+            }
+        }.onFailure { e ->
+            if (e is CancellationException) throw e
+            Log.w(TAG, "WAITING_FOR_LOSSLESS DAO write failed for ${track.videoId}: ${e.message}")
+        }
+        return DownloadJobResult.Deferred
+    }
+
+    /**
      * Tidal's 320 kbps AAC for a track the lossless rung missed, or null. It has its
      * own switch ("Tidal AAC when no FLAC", checked by the resolver), so it runs even
      * with the YouTube fallback off.
+     *
+     * Asked with [tidalAacQuery]: the query streaming makes for this video's library row, so
+     * the download takes the Tidal track the stream played, and its file is held to that
+     * row's length the way the matcher held the match ([lossyAacLengthMatches]).
      */
     private suspend fun tryTidalAac(track: TrackItem): DownloadJobResult.Resolved? {
-        val tidalMatch = runCatching { tidalAacResolver.resolve(track.toQuery()) }
+        val query = tidalAacQuery(track)
+        val tidalMatch = runCatching { tidalAacResolver.resolve(query) }
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 Log.w(TAG, "Tidal AAC resolve threw for ${track.videoId}: ${error.message}")
             }.getOrNull()
         if (tidalMatch != null) {
-            when (val attempt = finalizeFromSource(track, tidalMatch)) {
+            val length = AacLength(
+                expectedMs = query.durationMs ?: 0L,
+                reliable = query.durationReliable,
+            )
+            when (val attempt = finalizeFromSource(track, tidalMatch, length)) {
                 is SourceFinalizeAttempt.BeforeCommitFailure -> Log.w(
                     TAG,
                     "Tidal AAC failed before commit for ${track.videoId}; moving on: " +
@@ -368,9 +400,15 @@ class SearchDownloadCoordinator @Inject constructor(
         is SourceFinalizeAttempt.AfterCommit -> attempt.outcome
     }
 
+    /**
+     * @param aacLength the length a lossy AAC file is checked against, and whether it is the
+     *        song's ([lossyAacLengthMatches]). Null = the search result's own length, trusted:
+     *        JioSaavn's matcher already held its match to that window.
+     */
     private suspend fun finalizeFromSource(
         track: TrackItem,
         match: SourceResult,
+        aacLength: AacLength? = null,
     ): SourceFinalizeAttempt {
         // SearchPreviewMediaSource's key: only used to free the preview's bytes
         // once this download is committed. The lossless fetch below reads under
@@ -445,13 +483,14 @@ class SearchDownloadCoordinator @Inject constructor(
 
         if (isLossyAac) {
             val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
-            if (!isValidJioSaavnMedia(metadata, track, match.format.bitrateKbps)) {
+            val length = aacLength ?: AacLength(expectedMs = (track.durationSeconds * 1_000).toLong(), reliable = true)
+            if (!isValidLossyAac(metadata, length, match.format.bitrateKbps)) {
                 runCatching { tempFile.delete() }
                 return SourceFinalizeAttempt.BeforeCommitFailure(
                     "${match.sourceId} media failed AAC quality validation: format=${metadata?.format}, " +
                         "bitrate=${metadata?.bitrateKbps} (asked ${match.format.bitrateKbps}), " +
                         "duration=${metadata?.durationMs}, " +
-                        "expected=${(track.durationSeconds * 1_000).toLong()}",
+                        "expected=${length.expectedMs} (${if (length.reliable) "song length" else "video length"})",
                 )
             }
         } else {
@@ -512,20 +551,61 @@ class SearchDownloadCoordinator @Inject constructor(
         return SourceFinalizeAttempt.AfterCommit(outcome)
     }
 
-    private fun isValidJioSaavnMedia(
+    /** An AAC file at the bitrate asked for, as long as [length] allows ([lossyAacLengthMatches]). */
+    private fun isValidLossyAac(
         metadata: com.stash.core.data.audio.AudioMetadata?,
-        track: TrackItem,
+        length: AacLength,
         expectedKbps: Int,
     ): Boolean {
         metadata ?: return false
         if (metadata.format != "aac" || metadata.bitrateKbps < DownloadManager.minJioSaavnBitrateKbps(expectedKbps)) {
             return false
         }
-        if (track.durationSeconds <= 0) return true
-        val expectedMs = (track.durationSeconds * 1_000).toLong()
-        val toleranceMs = maxOf(8_000L, (expectedMs * 0.03).toLong())
-        return kotlin.math.abs(metadata.durationMs - expectedMs) <= toleranceMs
+        return lossyAacLengthMatches(metadata.durationMs, length.expectedMs, length.reliable)
     }
+
+    /**
+     * The Tidal AAC query for [track]: the one streaming makes for this video's library row
+     * (TidalStreamResolver: the row's words, ISRC and length through [forLibrarySource]), so
+     * both read one cached Tidal match and agree on whether the length is the song's.
+     *
+     * Without a row (a search result never played), the row this download would create:
+     * YouTube-sourced, with the result's words, album and length. A music video's length is
+     * then marked unreliable, as it is for the same video once it is in the library.
+     * The lossless rung keeps [toQuery]: this changes only the Tidal AAC lookup.
+     */
+    private suspend fun tidalAacQuery(track: TrackItem): TrackQuery {
+        val row = try {
+            trackDao.findByYoutubeId(track.videoId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "row lookup for the Tidal AAC query failed for ${track.videoId}: ${e.message}")
+            null
+        }
+        val query = if (row != null) {
+            TrackQuery(
+                artist = row.artist,
+                title = row.title,
+                album = row.album.takeIf { it.isNotBlank() },
+                isrc = row.isrc?.takeIf { it.isNotBlank() },
+                durationMs = row.durationMs.takeIf { it > 0 },
+                trackId = row.id,
+            ).forLibrarySource(row.source, row.musicVideoType)
+        } else {
+            track.toQuery().forLibrarySource(MusicSource.YOUTUBE)
+        }
+        Log.d(
+            TAG,
+            "Tidal AAC query for ${track.videoId}: '${query.artist} - ${query.title}' " +
+                "${query.durationMs}ms (${if (query.durationReliable) "song length" else "video length"}" +
+                (if (row != null) ", row ${row.id})" else ", no row)"),
+        )
+        return query
+    }
+
+    /** The length a lossy AAC file is checked against, and whether it is the song's own. */
+    private data class AacLength(val expectedMs: Long, val reliable: Boolean)
 
     // -------------------------------------------------------------------------
     // YouTube / yt-dlp fallback path

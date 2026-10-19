@@ -71,6 +71,7 @@ class SearchDownloadCoordinatorDeferTest {
     private val loudnessMeasurer: com.stash.core.data.audio.LoudnessMeasurer = mockk(relaxed = true)
     private val lyricsFetchTrigger: LyricsFetchTrigger = mockk(relaxed = true)
     private val qualityPrefs: QualityPreference = mockk { every { qualityTier } returns flowOf(QualityTier.MAX) }
+    private val losslessQuota = com.stash.data.download.lossless.quota.LosslessQuota.inMemory()
 
     private fun newSubject(): SearchDownloadCoordinator = SearchDownloadCoordinator(
         registry = registry,
@@ -93,6 +94,7 @@ class SearchDownloadCoordinatorDeferTest {
         loudnessMeasurer = loudnessMeasurer,
         lyricsFetchTrigger = lyricsFetchTrigger,
         qualityPrefs = qualityPrefs,
+        losslessQuota = losslessQuota,
     )
 
     private fun stubTrack(): TrackItem = TrackItem(
