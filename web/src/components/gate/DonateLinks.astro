@@ -1,25 +1,59 @@
 ---
-/** Where to give: Ko-fi and GitHub Sponsors go to rawn (the owner), PayPal to Evo (co-developer), as in the README. */
+/** Where to give, per person as in the README: rawn (the owner) has Ko-fi, PayPal and GitHub Sponsors, Evo (co-developer) has PayPal. */
 import Icon from '../Icon.astro';
 import { LINKS } from '../../data/site';
 ---
 
 <div class="donate">
-  <ul role="list" class="links">
-    <li>
-      <a class="button button-small kofi" href={LINKS.kofi}><Icon name="kofi" size="18px" />Ko-fi</a>
-    </li>
-    <li>
-      <a class="button button-small sponsors" href={LINKS.sponsors}><Icon name="github-sponsors" size="18px" />GitHub Sponsors</a>
-    </li>
-    <li>
-      <a class="button button-small paypal" href={LINKS.paypal}><Icon name="paypal" size="18px" />PayPal</a>
-    </li>
-  </ul>
-  <p class="who">Ko-fi and GitHub Sponsors go to rawn, who makes Stash. PayPal goes to Evo, who co-develops it.</p>
+  <div class="person">
+    <a class="face" href={LINKS.githubRawn} aria-label="rawn on GitHub"><img src="/people/rawn.jpg" width="36" height="36" alt="" /></a>
+    <ul role="list" class="links">
+      <li>
+        <a class="button button-small kofi" href={LINKS.kofi}><Icon name="kofi" size="18px" />Ko-fi</a>
+      </li>
+      <li>
+        <a class="button button-small paypal" href={LINKS.paypalRawn}><Icon name="paypal" size="18px" />PayPal</a>
+      </li>
+      <li>
+        <a class="button button-small sponsors" href={LINKS.sponsors}><Icon name="github-sponsors" size="18px" />Sponsors</a>
+      </li>
+    </ul>
+  </div>
+  <div class="person">
+    <a class="face" href={LINKS.githubEvo} aria-label="Evo on GitHub"><img src="/people/evo.jpg" width="36" height="36" alt="" /></a>
+    <ul role="list" class="links">
+      <li>
+        <a class="button button-small paypal" href={LINKS.paypalEvo}><Icon name="paypal" size="18px" />PayPal</a>
+      </li>
+    </ul>
+  </div>
+  <p class="who">rawn (top) makes Stash. Evo (bottom) co-develops it.</p>
 </div>
 
 <style>
+  .person {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .person + .person {
+    margin-top: 10px;
+  }
+
+  .face {
+    flex: none;
+    border-radius: 50%;
+  }
+
+  .face img {
+    display: block;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--glass-border-bright);
+  }
+
   .links {
     display: flex;
     flex-wrap: wrap;

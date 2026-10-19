@@ -45,7 +45,11 @@ export const LINKS = {
   securityAdvisory: `${REPO}/security/advisories/new`,
   discord: 'https://discord.gg/vcbjEby5PC',
   kofi: 'https://ko-fi.com/rawnald',
-  paypal: 'https://www.paypal.com/paypalme/Paraliyzedevo',
+  /** rawn (owner) gets Ko-fi, Sponsors and his PayPal; Evo (co-developer) gets his PayPal. */
+  paypalRawn: 'https://www.paypal.me/rawnaldclark',
+  paypalEvo: 'https://www.paypal.com/paypalme/Paraliyzedevo',
+  githubRawn: 'https://github.com/rawnaldclark',
+  githubEvo: 'https://github.com/ParaliyzedEvo',
   sponsors: 'https://github.com/sponsors/rawnaldclark',
   crowdin: 'https://crowdin.com/project/stash-music-player',
   obtainium: 'https://obtainium.imranr.dev/',

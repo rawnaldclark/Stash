@@ -41,30 +41,45 @@ import { LINKS } from '../../data/site';
         <p>Stash is free, open source, and has no ads or analytics. If you'd like to chip in:</p>
         <ul role="list" class="people">
           <li>
-            <div>
-              <strong>rawnaldclark (rawn)</strong>
-              <span>Owner, main dev</span>
-            </div>
-            <a class="button button-small kofi" href={LINKS.kofi}>
-              <Icon name="kofi" size="18px" />
-              Ko-fi
+            <a class="person" href={LINKS.githubRawn}>
+              <img src="/people/rawn.jpg" width="48" height="48" alt="" />
+              <span class="who">
+                <strong>rawn</strong>
+                <span>Made Stash, main dev</span>
+              </span>
             </a>
+            <div class="give">
+              <a class="button button-small kofi" href={LINKS.kofi}>
+                <Icon name="kofi" size="18px" />
+                Ko-fi
+              </a>
+              <a class="button button-small paypal" href={LINKS.paypalRawn}>
+                <Icon name="paypal" size="18px" />
+                PayPal
+              </a>
+              <a class="button button-small sponsors" href={LINKS.sponsors}>
+                <Icon name="github-sponsors" size="18px" />
+                Sponsors
+              </a>
+            </div>
           </li>
           <li>
-            <div>
-              <strong>Paraliyzed_evo</strong>
-              <span>Co-dev, makes the beta builds</span>
-            </div>
-            <a class="button button-small paypal" href={LINKS.paypal}>
-              <Icon name="paypal" size="18px" />
-              PayPal
+            <a class="person" href={LINKS.githubEvo}>
+              <img src="/people/evo.jpg" width="48" height="48" alt="" />
+              <span class="who">
+                <strong>Evo</strong>
+                <span>Co-dev, makes the beta builds</span>
+              </span>
             </a>
+            <div class="give">
+              <a class="button button-small paypal" href={LINKS.paypalEvo}>
+                <Icon name="paypal" size="18px" />
+                PayPal
+              </a>
+            </div>
           </li>
         </ul>
-        <p class="small">
-          You can also <a href={LINKS.sponsors}>sponsor on GitHub</a> for recurring support. A star, a bug report,
-          or telling a friend helps just as much. Thanks.
-        </p>
+        <p class="small">A star, a bug report, or telling a friend helps just as much. Thanks.</p>
       </div>
     </div>
 
@@ -167,28 +182,63 @@ import { LINKS } from '../../data/site';
 
   .people li {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     gap: 16px;
-    padding: 16px 16px 16px 20px;
+    padding: 18px 20px;
     border-radius: var(--radius-xl);
     border: 1px solid var(--glass-border);
     background: var(--glass);
   }
 
-  .people div {
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .person img {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--glass-border-bright);
+  }
+
+  .person:hover strong {
+    text-decoration: underline;
+  }
+
+  .who {
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
 
-  .people strong {
+  .who strong {
     font-weight: 600;
   }
 
-  .people span {
+  .who span {
     color: var(--text-2);
     font-size: 0.9375rem;
+  }
+
+  .give {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sponsors {
+    background: var(--glass);
+    border-color: var(--glass-border-bright);
+    color: var(--text);
+  }
+
+  .sponsors :global(.icon) {
+    color: #db61a2; /* GitHub Sponsors pink */
   }
 
   .kofi {
@@ -202,7 +252,8 @@ import { LINKS } from '../../data/site';
   }
 
   .kofi:hover,
-  .paypal:hover {
+  .paypal:hover,
+  .sponsors:hover {
     transform: translateY(-1px);
     filter: brightness(1.08);
   }
@@ -226,13 +277,6 @@ import { LINKS } from '../../data/site';
     .grid,
     .people {
       grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  @media (max-width: 420px) {
-    .people li {
-      flex-direction: column;
-      align-items: flex-start;
     }
   }
 
