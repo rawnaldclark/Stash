@@ -11,6 +11,8 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.stash.core.model.CloudProvider
 import com.stash.core.model.CloudRef
 import com.stash.core.model.STASH_CLOUD_SCHEME
@@ -41,7 +43,8 @@ fun cloudPlaybackUri(cloudUri: String?): Uri =
  * request headers (never in the URI, so never in the cache key, [getUri] or an error message)
  * through [authorizedHttpFactory], an OkHttp source that drops `Authorization` if Google ever
  * redirects to another host. A 403 `cannotDownloadAbusiveFile` becomes
- * [CloudFileBlockedException] ("Google blocked this file") instead of a retry. A link the content host refuses
+ * [CloudFileBlockedException] ("Google blocked this file"), which [CloudLoadErrorPolicy] never
+ * retries. A link the content host refuses
  * (401/403/404/410: expired or revoked) is resolved again and the open retried once at the same
  * position. When the host sends no Content-Length, the length comes from the file size in the
  * provider's metadata, or seeking (and Android Auto's scrubber) breaks.
@@ -51,6 +54,30 @@ fun cloudPlaybackUri(cloudUri: String?): Uri =
  */
 /** The cloud file changed since the library last scanned it (see [CloudResolvingDataSource]). */
 class CloudFileChangedException : IOException("the cloud file changed since the last scan")
+
+/**
+ * The player's load-error policy for `stash-cloud://` items: [delegate]'s, except that a file the
+ * provider refuses to serve ([CloudFileBlockedException]) or one that changed since the scan
+ * ([CloudFileChangedException]) fails at once. ExoPlayer's default retries any IOException that
+ * isn't a FileNotFoundException or a parse error a few times, and each of those retries would
+ * cost an API call to learn the same answer.
+ */
+@OptIn(UnstableApi::class)
+class CloudLoadErrorPolicy(
+    private val delegate: LoadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(),
+) : LoadErrorHandlingPolicy by delegate {
+
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long =
+        if (isPermanent(loadErrorInfo.exception)) C.TIME_UNSET else delegate.getRetryDelayMsFor(loadErrorInfo)
+
+    companion object {
+        /** True when [e] or one of its causes says retrying this file can't help. */
+        fun isPermanent(e: Throwable): Boolean =
+            generateSequence(e) { it.cause }.take(MAX_CAUSES).any { it is CloudFileBlockedException || it is CloudFileChangedException }
+
+        private const val MAX_CAUSES = 8
+    }
+}
 
 @OptIn(UnstableApi::class)
 class CloudResolvingDataSource(

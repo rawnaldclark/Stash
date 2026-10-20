@@ -106,7 +106,10 @@ class StashMediaSourceFactory(
 
     private val cloudSourceFactory: DataSource.Factory =
         cloudDataSourceFactory ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
-    private val cloudFactory = DefaultMediaSourceFactory(cloudSourceFactory)
+    // A blocked or changed cloud file fails at once instead of being retried (CloudLoadErrorPolicy).
+    private val cloudFactory = DefaultMediaSourceFactory(cloudSourceFactory).apply {
+        setLoadErrorHandlingPolicy(CloudLoadErrorPolicy())
+    }
 
     override fun setDrmSessionManagerProvider(
         provider: DrmSessionManagerProvider,
@@ -124,7 +127,7 @@ class StashMediaSourceFactory(
         localFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
-        cloudFactory.setLoadErrorHandlingPolicy(policy)
+        cloudFactory.setLoadErrorHandlingPolicy(CloudLoadErrorPolicy(policy))
         return this
     }
 

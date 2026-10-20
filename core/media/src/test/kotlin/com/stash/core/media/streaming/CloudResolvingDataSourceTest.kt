@@ -4,6 +4,9 @@ import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.CloudProvider
 import com.stash.core.model.CloudRef
@@ -225,5 +228,23 @@ class CloudResolvingDataSourceTest {
         }
         assertThat(e.message).isEqualTo("Google blocked this file")
         assertThat(drive.calls).isEqualTo(1)
+    }
+
+    @Test
+    fun `the player never retries a blocked or changed cloud file, but still retries a dropped connection`() {
+        val policy = CloudLoadErrorPolicy()
+        fun retryDelay(e: IOException) = policy.getRetryDelayMsFor(
+            LoadErrorHandlingPolicy.LoadErrorInfo(
+                LoadEventInfo(1, DataSpec(Uri.parse(driveRef.toUri())), 0),
+                MediaLoadData(C.DATA_TYPE_MEDIA),
+                e,
+                /* errorCount = */ 2,
+            ),
+        )
+
+        assertThat(retryDelay(CloudFileBlockedException("Google blocked this file"))).isEqualTo(C.TIME_UNSET)
+        assertThat(retryDelay(CloudFileChangedException())).isEqualTo(C.TIME_UNSET)
+        assertThat(retryDelay(IOException("wrapped", CloudFileBlockedException("x")))).isEqualTo(C.TIME_UNSET)
+        assertThat(retryDelay(java.net.SocketTimeoutException())).isNotEqualTo(C.TIME_UNSET)
     }
 }
