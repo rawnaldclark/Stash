@@ -108,6 +108,12 @@ jobs:
           # disabled, so a build without them is valid — it just ships no relays.
           LOSSLESS_CONFIG_URL: ${{ secrets.LOSSLESS_CONFIG_URL }}
           LOSSLESS_CONFIG_PUBKEY: ${{ secrets.LOSSLESS_CONFIG_PUBKEY }}
+          # Optional cloud storage (#247). Public-client ids, not secrets, but kept with the rest. Unset = that provider
+          # is hidden in the APK. GOOGLE_DRIVE_ENABLED=true only once the release-key Android client exists in Cloud
+          # project stash-drive-512203 (it does since 2026-10-20) and the consent screen is in production.
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          ONEDRIVE_CLIENT_ID: ${{ secrets.ONEDRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_ENABLED: ${{ secrets.GOOGLE_DRIVE_ENABLED }}
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Locate release APK
