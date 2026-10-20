@@ -2,7 +2,6 @@ package com.stash.data.cloud.provider.gdrive
 
 import com.stash.core.data.db.dao.CloudDao
 import com.stash.core.data.db.entity.CloudAccountEntity
-import com.stash.core.data.db.entity.CloudFolderEntity
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.auth.CloudTokenManager
 import com.stash.data.cloud.auth.TokenResult
@@ -73,6 +72,9 @@ class GoogleDrivePicks(
             ),
         )
         val folderId = picksFolder(accountId)
+        // Songs Stash saved to this Drive (on another phone, or before a reinstall) come along.
+        val uploads = uploadsFolder(accountId)
+        if (existing == null) scanNow(uploads)
         val known = dao.folderItemIds(folderId).toSet()
         val fresh = fileIds.filter { it !in known }
         if (fresh.isNotEmpty()) {
@@ -83,17 +85,15 @@ class GoogleDrivePicks(
     }
 
     /** The account's picks folder row, made on first use. */
-    private suspend fun picksFolder(accountId: Long): Long {
-        dao.getFolders(accountId).firstOrNull { it.itemId == GoogleDriveProvider.PICKS_ITEM_ID }?.let { return it.id }
-        val id = dao.insertFolder(
-            CloudFolderEntity(
-                accountId = accountId, itemId = GoogleDriveProvider.PICKS_ITEM_ID,
-                name = GoogleDriveProvider.PICKS_NAME, path = "", addedAt = clock(),
-            ),
-        )
-        // insertFolder ignores a conflict (-1): another pick made the row at the same moment.
-        return if (id > 0) id else dao.getFolders(accountId).first { it.itemId == GoogleDriveProvider.PICKS_ITEM_ID }.id
-    }
+    private suspend fun picksFolder(accountId: Long): Long =
+        dao.driveFolderRow(accountId, GoogleDriveProvider.PICKS_ITEM_ID, clock()).id
+
+    /**
+     * The account's "Saved from Stash" row, so songs Stash saved to this Drive (from any phone)
+     * are found by its scans.
+     */
+    private suspend fun uploadsFolder(accountId: Long): Long =
+        dao.driveFolderRow(accountId, GoogleDriveProvider.UPLOADS_ITEM_ID, clock()).id
 
     companion object {
         /** What Settings says after a pick. */

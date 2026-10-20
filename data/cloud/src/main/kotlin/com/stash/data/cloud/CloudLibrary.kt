@@ -62,6 +62,7 @@ class CloudLibrary @Inject constructor(
     private val googleAuthorizer: GoogleAuthorizer,
     private val googlePicks: GoogleDrivePicks,
     private val googlePickStore: GooglePickStore,
+    private val uploads: com.stash.data.cloud.upload.CloudUploads,
 ) {
     /**
      * For work that must finish once started even if the screen that asked is closed (filing a
@@ -110,7 +111,10 @@ class CloudLibrary @Inject constructor(
      */
     suspend fun completeGooglePick(data: Intent?): GooglePickOutcome = appScope.async {
         try {
-            googlePicks.accept(googleAuthorizer.pickerResult(data))
+            googlePicks.accept(googleAuthorizer.pickerResult(data)).also {
+                // A reconnect: songs waiting to be saved to Drive go now.
+                if (it is GooglePickOutcome.Added) uploads.resume()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -155,6 +159,8 @@ class CloudLibrary @Inject constructor(
         scheduler.cancelRunning()
         val folderIds = dao.getFolders(accountId).map { it.id }
         val kind = CloudProvider.fromId(account.provider)
+        // Stop uploading to it; pending uploads go with the account row. Nothing in Drive is touched.
+        if (kind == CloudProvider.GOOGLE_DRIVE) uploads.onAccountRemoved(accountId)
         var forgotten: String? = null
         val removal = withFolderLocks(folderIds) {
             kind?.let { forgotten = tokens.forget(it, accountId) }

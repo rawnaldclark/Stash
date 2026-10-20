@@ -20,6 +20,7 @@ import com.stash.data.cloud.CloudConfig
 import com.stash.data.cloud.provider.CloudApiException
 import com.stash.data.cloud.provider.CloudAuthRequiredException
 import com.stash.data.cloud.provider.CloudItemNotFoundException
+import com.stash.data.cloud.provider.gdrive.driveFolderRow
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -47,6 +48,13 @@ class CloudScanWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val only = inputData.getLong(KEY_FOLDER_ID, -1L).takeIf { it > 0 }
         val full = inputData.getBoolean(KEY_FULL, false)
+        // Google Drive accounts connected before "Save to Google Drive" get their "Saved from
+        // Stash" row, so songs saved from another phone are found too.
+        if (only == null) {
+            dao.getAccounts().filter { it.provider == com.stash.core.model.CloudProvider.GOOGLE_DRIVE.id }.forEach {
+                dao.driveFolderRow(it.id, com.stash.data.cloud.provider.gdrive.GoogleDriveProvider.UPLOADS_ITEM_ID, System.currentTimeMillis())
+            }
+        }
         val folders = if (only != null) listOfNotNull(dao.getFolder(only)) else dao.getAllFolders()
         var retry = false
         for (folder in folders) {

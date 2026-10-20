@@ -34,4 +34,9 @@ abstract class DownloadModule {
     @Binds
     @Singleton
     abstract fun bindQualityPreference(impl: QualityPreferencesManager): QualityPreference
+
+    /** Save to Google Drive names songs the way the downloader does ([DriveUploadNaming]). */
+    @Binds
+    @Singleton
+    abstract fun bindUploadNaming(impl: com.stash.data.download.cloud.DriveUploadNaming): com.stash.data.cloud.upload.UploadNaming
 }

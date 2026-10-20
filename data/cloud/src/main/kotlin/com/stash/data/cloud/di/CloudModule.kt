@@ -26,6 +26,15 @@ import com.stash.data.cloud.provider.onedrive.OneDriveProvider
 import com.stash.data.cloud.scan.CloudArtStore
 import com.stash.data.cloud.scan.CloudScanScheduler
 import com.stash.data.cloud.scan.CloudScanner
+import com.stash.data.cloud.upload.AndroidLocalAudioFiles
+import com.stash.data.cloud.upload.CloudUploadSettings
+import com.stash.data.cloud.upload.DriveFolders
+import com.stash.data.cloud.upload.DriveUploadApi
+import com.stash.data.cloud.upload.DriveUploader
+import com.stash.data.cloud.upload.LocalAudioFiles
+import com.stash.data.cloud.upload.PrefsCloudUploadSettings
+import com.stash.data.cloud.upload.ResumableUpload
+import com.stash.data.cloud.upload.UploadNaming
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -100,13 +109,51 @@ object CloudModule {
         tokens: CloudTokenManager,
         dao: CloudDao,
         picks: GooglePickStore,
+        @Named(DRIVE_GATE) driveGate: RequestGate,
     ): Map<CloudProvider, CloudStorageProvider> = mapOf(
         // One gate per provider: each has its own rate limits.
         CloudProvider.DROPBOX to DropboxProvider(config.dropboxAppKey, dropboxAuth, CloudHttp(client, RequestGate()), tokens),
         CloudProvider.ONEDRIVE to OneDriveProvider(config.oneDriveClientId, oneDriveAuth, CloudHttp(client, RequestGate()), tokens),
         CloudProvider.GOOGLE_DRIVE to GoogleDriveProvider(
-            config.isEnabled(CloudProvider.GOOGLE_DRIVE), googleDriveAuth, CloudHttp(client, RequestGate()), tokens, dao, picks,
+            config.isEnabled(CloudProvider.GOOGLE_DRIVE), googleDriveAuth, CloudHttp(client, driveGate), tokens, dao, picks,
         ),
+    )
+
+    /** Google Drive's one request gate: the scan, playback links and uploads share its limits. */
+    @Provides
+    @Singleton
+    @Named(DRIVE_GATE)
+    fun provideDriveGate(): RequestGate = RequestGate()
+
+    /**
+     * Uploads talk to Drive through the content client (no logging interceptors): a resumable
+     * session address is a credential and comes back in a header.
+     */
+    @Provides
+    @Singleton
+    fun provideDriveUploadApi(
+        @Named(CONTENT_CLIENT) client: OkHttpClient,
+        @Named(DRIVE_GATE) gate: RequestGate,
+        tokens: CloudTokenManager,
+    ): DriveUploadApi = DriveUploadApi(CloudHttp(client, gate), tokens)
+
+    @Provides
+    @Singleton
+    fun provideDriveUploader(
+        dao: CloudDao,
+        api: DriveUploadApi,
+        settings: CloudUploadSettings,
+        @Named(CONTENT_CLIENT) client: OkHttpClient,
+        @Named(DRIVE_GATE) gate: RequestGate,
+        files: LocalAudioFiles,
+        naming: UploadNaming,
+    ): DriveUploader = DriveUploader(
+        dao = dao,
+        api = api,
+        folders = DriveFolders(api, settings),
+        session = ResumableUpload(client.newBuilder().writeTimeout(60, TimeUnit.SECONDS).build(), gate, files),
+        files = files,
+        naming = naming,
     )
 
     @Provides
@@ -138,6 +185,7 @@ object CloudModule {
     ): CloudScanner = CloudScanner(dao, providers, links, { link, offset, length -> ranges.fetch(link.url, offset, length, link.headers) }, art::save)
 
     const val CONTENT_CLIENT = "cloud_content"
+    const val DRIVE_GATE = "gdrive_gate"
 }
 
 @Module
@@ -151,4 +199,13 @@ interface CloudBindings {
 
     @Binds
     fun googlePickStore(impl: PrefsGooglePickStore): GooglePickStore
+
+    @Binds
+    fun uploadSettings(impl: PrefsCloudUploadSettings): CloudUploadSettings
+
+    @Binds
+    fun localAudioFiles(impl: AndroidLocalAudioFiles): LocalAudioFiles
+
+    @Binds
+    fun uploadRunner(impl: com.stash.data.cloud.upload.CloudUploadScheduler): com.stash.data.cloud.upload.CloudUploadRunner
 }

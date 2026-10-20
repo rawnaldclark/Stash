@@ -316,6 +316,46 @@ interface CloudDao {
     @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED'")
     suspend fun countQueuedUploads(): Int
 
+    // The worker writes single columns, never a whole row it read earlier: the user may have
+    // queued, unqueued or re-saved the song meanwhile.
+
+    /** A new resumable session for [trackId] (null clears it: the old one expired). */
+    @Query(
+        """
+        UPDATE cloud_uploads SET session_uri = :uri, session_size = :size, session_md5 = :md5,
+            bytes_sent = 0, updated_at = :now
+        WHERE track_id = :trackId
+        """,
+    )
+    suspend fun setUploadSession(trackId: Long, uri: String?, size: Long?, md5: String?, now: Long)
+
+    /** Bytes Drive has committed so far (progress, and where a resume would start). */
+    @Query("UPDATE cloud_uploads SET bytes_sent = :bytes, updated_at = :now WHERE track_id = :trackId")
+    suspend fun setUploadProgress(trackId: Long, bytes: Long, now: Long)
+
+    /** The song is done with, one way or another ([state] DONE or SKIPPED); its session is spent. */
+    @Query(
+        """
+        UPDATE cloud_uploads SET state = :state, drive_file_id = COALESCE(:fileId, drive_file_id), error = :error,
+            session_uri = NULL, session_size = NULL, session_md5 = NULL, updated_at = :now
+        WHERE track_id = :trackId
+        """,
+    )
+    suspend fun finishUpload(trackId: Long, state: String, fileId: String?, error: String?, now: Long)
+
+    /**
+     * One more failed try for [trackId]: it goes to the back of the queue, and after
+     * [maxAttempts] tries it is FAILED (the card counts it; saving it again starts over).
+     */
+    @Query(
+        """
+        UPDATE cloud_uploads SET attempts = attempts + 1, error = :error, queued_at = :now, updated_at = :now,
+            state = CASE WHEN attempts + 1 >= :maxAttempts THEN 'FAILED' ELSE state END
+        WHERE track_id = :trackId
+        """,
+    )
+    suspend fun failUploadAttempt(trackId: Long, error: String, maxAttempts: Int, now: Long)
+
     @Query("SELECT state, COUNT(*) AS count FROM cloud_uploads WHERE account_id = :accountId GROUP BY state")
     fun observeUploadCounts(accountId: Long): Flow<List<CloudUploadCount>>
 

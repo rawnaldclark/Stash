@@ -55,8 +55,11 @@ suspend fun Call.await(bufferBody: Boolean): Response = suspendCancellableCorout
     })
 }
 
-/** An API answer read whole: status, body text and the one header the callers need. */
-data class ApiResponse(val code: Int, val body: String, val retryAfter: String?) {
+/**
+ * An API answer read whole: status, body text and the headers the callers need ([location]: a
+ * Drive resumable upload's session address, a credential, so never logged).
+ */
+data class ApiResponse(val code: Int, val body: String, val retryAfter: String?, val location: String? = null) {
     val isSuccessful: Boolean get() = code in 200..299
 }
 
@@ -98,7 +101,7 @@ class CloudHttp(
         while (true) {
             gate.acquire(priority)
             val response = client.newCall(build(token)).await()
-            val result = response.use { ApiResponse(it.code, it.body?.string().orEmpty(), it.header("Retry-After")) }
+            val result = response.use { ApiResponse(it.code, it.body?.string().orEmpty(), it.header("Retry-After"), it.header("Location")) }
             when {
                 result.code == 401 && accessToken != null && !refreshed -> {
                     refreshed = true

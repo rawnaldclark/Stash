@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
  * Drive API v3 shapes and the pure decisions made on them, kept apart from HTTP so the tests can
  * feed recorded answers straight in.
  */
-internal object GoogleDriveJson {
+object GoogleDriveJson {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -23,6 +23,8 @@ internal object GoogleDriveJson {
         val modifiedTime: String? = null,
         val parents: List<String>? = null,
         val trashed: Boolean? = null,
+        /** Private to Stash (set on the files it uploads); only asked for by the upload side. */
+        val appProperties: Map<String, String>? = null,
     ) {
         val sizeBytes: Long get() = size?.toLongOrNull()?.coerceAtLeast(0) ?: 0
 
@@ -34,6 +36,10 @@ internal object GoogleDriveJson {
          */
         val version: String? get() = md5Checksum ?: headRevisionId ?: modifiedTime
     }
+
+    /** `files.list`: one page of files and where the next starts. */
+    @Serializable
+    data class FileListJson(val files: List<FileJson> = emptyList(), val nextPageToken: String? = null)
 
     @Serializable
     data class AboutJson(val user: UserJson? = null)
@@ -62,6 +68,28 @@ internal object GoogleDriveJson {
     const val FILE_FIELDS = "id,name,mimeType,size,md5Checksum,headRevisionId,modifiedTime,parents,trashed"
 
     fun file(body: String): FileJson = json.decodeFromString(FileJson.serializer(), body)
+
+    fun fileList(body: String): FileListJson = json.decodeFromString(FileListJson.serializer(), body)
+
+    /** `files.list` fields for songs: the file fields above, per file, plus the paging token. */
+    const val LIST_FIELDS = "nextPageToken,files($FILE_FIELDS)"
+
+    /**
+     * True when Drive refused because the user's storage is full (`storageQuotaExceeded`, 403):
+     * backup pauses and the card says so. Not a rate limit: waiting won't fix it.
+     */
+    fun isStorageFull(code: Int, body: String): Boolean =
+        code == 403 && STORAGE_FULL_REASON in errorReasons(body)
+
+    /** True when [code]/[body] is Drive's "slow down" (429, 5xx, or a 403 rate-limit reason). */
+    fun isSlowDown(code: Int, body: String): Boolean =
+        code == 429 || code >= 500 || (code == 403 && errorReasons(body).any { it in RATE_LIMIT_REASONS })
+
+    /**
+     * A value for a Drive search query (`q`), quoted: backslash and single quote escaped, so a
+     * folder named "Guns N' Roses" can't end the string early.
+     */
+    fun quote(value: String): String = "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
     fun about(body: String): AboutJson = json.decodeFromString(AboutJson.serializer(), body)
 
@@ -131,6 +159,7 @@ internal object GoogleDriveJson {
     }
 
     const val ABUSE_REASON = "cannotDownloadAbusiveFile"
+    const val STORAGE_FULL_REASON = "storageQuotaExceeded"
     private val LOST_ACCESS_REASONS = setOf("appNotAuthorizedToFile", "insufficientFilePermissions", "notFound")
     /**
      * Drive's 403 "slow down" reasons: per-user and per-project rate limits, and the daily

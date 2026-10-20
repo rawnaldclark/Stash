@@ -19,6 +19,7 @@ import com.stash.data.cloud.provider.ScanEntry
 import com.stash.data.cloud.provider.ScanPage
 import com.stash.data.cloud.provider.ScanRoot
 import com.stash.data.cloud.scan.CloudFiles
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.util.concurrent.ConcurrentHashMap
 
@@ -48,6 +49,14 @@ import java.util.concurrent.ConcurrentHashMap
  * page reports any removal, the token's account (`about`) is checked against the account row,
  * once per token; on a mismatch the token is forgotten (the card shows "Reconnect") and nothing
  * is removed.
+ *
+ * **Saved from Stash.** Songs Stash itself uploaded ("Save to Google Drive", backup) carry the
+ * private app property `stashUpload=1`. drive.file lets the app see every file it created, on any
+ * phone signed in to the same Google account, so the account's second folder row
+ * ([UPLOADS_ITEM_ID]) is scanned with one paged `files.list` for that property. Each run is a full
+ * listing (the scanner's generation sweep removes what was trashed); it costs one request per
+ * [UPLOADS_PAGE_SIZE] songs. On the phone that uploaded a song, the file is already linked to its
+ * local track, so the scan sees it as known and never adds it twice.
  *
  * Quota: Drive allows about 1 TB of downloads a day per Cloud project, shared by every user of
  * the app. Nothing enforces it here.
@@ -81,6 +90,7 @@ class GoogleDriveProvider(
     override suspend fun describeFolder(accountId: Long, folderId: String): CloudEntry? = null
 
     override suspend fun scanPage(accountId: Long, root: ScanRoot, cursor: String?): ScanPage {
+        if (root.itemId == UPLOADS_ITEM_ID) return scanUploads(accountId, cursor)
         val folderId = dao.getFolders(accountId).firstOrNull { it.itemId == root.itemId }?.id
             ?: throw CloudItemNotFoundException("Google Drive picks are gone")
         val position = Cursor.parse(cursor)
@@ -131,6 +141,46 @@ class GoogleDriveProvider(
         val hasMore = remaining.size > batch.size
         val next = if (hasMore) Cursor(mode, batch.last()).encode() else Cursor.DONE
         return ScanPage(entries, next, hasMore)
+    }
+
+    /**
+     * One page of the songs Stash uploaded to this Drive. Cursor: null = first page of a full
+     * listing, `page:<token>` = the next page, `done` after the last (the next run is a new full
+     * listing: [CursorExpiredException]).
+     */
+    private suspend fun scanUploads(accountId: Long, cursor: String?): ScanPage {
+        if (cursor == Cursor.DONE) throw CursorExpiredException("Google Drive: list saved songs again")
+        val pageToken = cursor?.takeIf { it.startsWith(PAGE_PREFIX) }?.removePrefix(PAGE_PREFIX)
+        // The listing's sweep removes every saved song it didn't see: never on another account's word.
+        requireSameAccount(accountId)
+        val r = http.execute(RequestPriority.BACKGROUND, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
+            val url = "$API/files".toHttpUrl().newBuilder()
+                .addQueryParameter("q", UPLOADS_QUERY)
+                .addQueryParameter("fields", GoogleDriveJson.LIST_FIELDS)
+                .addQueryParameter("pageSize", UPLOADS_PAGE_SIZE.toString())
+                .addQueryParameter("spaces", "drive")
+                .apply { pageToken?.let { addQueryParameter("pageToken", it) } }
+                .build()
+            Request.Builder().url(url).header("Authorization", "Bearer $token").build()
+        }
+        if (!r.isSuccessful) {
+            if (GoogleDriveJson.isSlowDown(r.code, r.body)) {
+                http.backOff(RequestGate.parseRetryAfter(r.retryAfter) ?: RequestGate.DEFAULT_BACKOFF_MS)
+                throw CloudUnavailableException(SLOW_DOWN)
+            }
+            throw CloudApiException(r.code, "Google Drive answered ${r.code}")
+        }
+        val page = GoogleDriveJson.fileList(r.body)
+        val entries = page.files.filter { it.trashed != true && CloudFiles.isAudio(it.name.orEmpty(), it.mimeType) }.map { f ->
+            ScanEntry.File(
+                id = f.id, name = f.name.orEmpty(), size = f.sizeBytes, version = f.version,
+                eTag = f.headRevisionId, mimeType = f.mimeType, parentId = f.parents?.firstOrNull(),
+                // Names come from the song's own tags (Stash embeds them in its downloads).
+                folders = emptyList(), remotePath = null,
+            )
+        }
+        val next = page.nextPageToken?.takeIf { it.isNotBlank() }
+        return ScanPage(entries, next?.let { PAGE_PREFIX + it } ?: Cursor.DONE, hasMore = next != null)
     }
 
     override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink {
@@ -243,6 +293,21 @@ class GoogleDriveProvider(
         /** The one folder row per account that holds its picked songs. */
         const val PICKS_ITEM_ID = "picked"
         const val PICKS_NAME = "Picked songs"
+
+        /** The folder row per account for songs Stash saved to the user's Drive. */
+        const val UPLOADS_ITEM_ID = "stash-uploads"
+        const val UPLOADS_NAME = "Saved from Stash"
+        const val UPLOADS_PATH = "/Stash"
+
+        /** The private property every file Stash uploads carries, and the search for it. */
+        const val UPLOAD_MARKER_KEY = "stashUpload"
+        const val UPLOAD_MARKER_VALUE = "1"
+        const val UPLOADS_QUERY =
+            "appProperties has { key='$UPLOAD_MARKER_KEY' and value='$UPLOAD_MARKER_VALUE' } and trashed = false"
+
+        /** Songs per `files.list` page of saved songs (Drive allows up to 1000). */
+        const val UPLOADS_PAGE_SIZE = 200
+        private const val PAGE_PREFIX = "page:"
 
         /** One `files.get` per id; at the gate's ~5/s a page is a few seconds of work, saved after. */
         const val PAGE_SIZE = 25

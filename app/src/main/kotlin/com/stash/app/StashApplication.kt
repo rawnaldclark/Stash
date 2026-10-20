@@ -140,6 +140,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var downloadNetworkPreference: DownloadNetworkPreference
 
+    /** Save to Google Drive: resumes a waiting upload queue and, while backup is on, queues new downloads. */
+    @Inject
+    lateinit var cloudUploads: com.stash.data.cloud.upload.CloudUploads
+
     @Inject
     lateinit var losslessSourcePreferences: com.stash.data.download.lossless.LosslessSourcePreferences
 
@@ -621,6 +625,7 @@ class StashApplication : Application(), Configuration.Provider {
         youTubeHistoryScrobbler.start()
         autoSaveScrobbler.start()
         discordRpcCoordinator.start()
+        cloudUploads.start()
         // Generic listen sinks (ListenBrainz). No-ops until connected.
         listenSinkCoordinator.start()
 
