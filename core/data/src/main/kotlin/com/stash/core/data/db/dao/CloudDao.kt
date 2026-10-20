@@ -149,10 +149,16 @@ interface CloudDao {
     @Query("UPDATE cloud_items SET seen_generation = :generation, scanned_at = :now WHERE track_id = :trackId")
     suspend fun markSeen(trackId: Long, generation: Long, now: Long)
 
-    @Query("SELECT COUNT(*) FROM cloud_items WHERE account_id = :accountId")
+    // The account's cloud songs, for the disconnect dialog. Only `CLOUD` tracks: a local song
+    // linked to the copy Stash saved in Google Drive is never removed by a disconnect.
+
+    @Query("SELECT COUNT(*) FROM cloud_items i INNER JOIN tracks t ON t.id = i.track_id WHERE i.account_id = :accountId AND t.source = 'CLOUD'")
     suspend fun countItems(accountId: Long): Int
 
-    @Query("SELECT COUNT(*) FROM cloud_items i INNER JOIN tracks t ON t.id = i.track_id WHERE i.account_id = :accountId AND t.is_downloaded = 1")
+    @Query(
+        "SELECT COUNT(*) FROM cloud_items i INNER JOIN tracks t ON t.id = i.track_id " +
+            "WHERE i.account_id = :accountId AND t.source = 'CLOUD' AND t.is_downloaded = 1",
+    )
     suspend fun countDownloadedItems(accountId: Long): Int
 
     // ── Tracks the scan writes ───────────────────────────────────────────
