@@ -97,7 +97,8 @@ class CloudTrackDownloader @Inject constructor(
             .apply { link.headers.forEach { (k, v) -> header(k, v) } }
             .header("Accept-Encoding", "identity")
             .build()
-        fetchClient.newCall(request).await().use { response ->
+        // Unbuffered: a song can be hundreds of MB; it is copied to disk in chunks below (worker thread).
+        fetchClient.newCall(request).await(bufferBody = false).use { response ->
             if (response.code != 200) {
                 // Only a 403 body is read (small JSON): it says whether Google blocked the file.
                 val blocked = response.code == 403 &&
