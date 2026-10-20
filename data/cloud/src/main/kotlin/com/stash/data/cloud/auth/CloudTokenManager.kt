@@ -120,12 +120,16 @@ class CloudTokenManager @Inject constructor(
 
     /**
      * Disconnect: the token is forgotten on this phone. Under the account's lock, so a refresh
-     * already in flight finishes first and can't save a token back after this.
+     * already in flight finishes first and can't save a token back after this. Returns the access
+     * token it forgot (null when there was none), for a provider that caches it elsewhere too.
      */
-    suspend fun forget(provider: CloudProvider, accountId: Long) {
+    suspend fun forget(provider: CloudProvider, accountId: Long): String? {
         val key = keyFor(provider, accountId)
-        locks.getOrPut(key) { Mutex() }.withLock { store.clear(key) }
+        val forgotten = locks.getOrPut(key) { Mutex() }.withLock {
+            store.get(key)?.accessToken.also { store.clear(key) }
+        }
         _changes.value++
+        return forgotten
     }
 
     companion object {

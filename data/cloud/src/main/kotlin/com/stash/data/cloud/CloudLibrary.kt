@@ -23,6 +23,10 @@ import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
 import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
 import com.stash.data.cloud.provider.gdrive.GooglePickStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import com.stash.data.cloud.scan.CloudScanScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -59,6 +63,13 @@ class CloudLibrary @Inject constructor(
     private val googlePicks: GoogleDrivePicks,
     private val googlePickStore: GooglePickStore,
 ) {
+    /**
+     * For work that must finish once started even if the screen that asked is closed (filing a
+     * pick: account row, token, folder row, pending ids). Lives as long as the app, like this
+     * singleton.
+     */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** Providers this build can connect (empty = the whole feature stays hidden). */
     val enabledProviders: List<CloudProvider> get() = config.enabledProviders
 
@@ -94,17 +105,20 @@ class CloudLibrary @Inject constructor(
 
     /**
      * Files what the picker returned: connects the account on its first pick, queues the new
-     * songs and starts their scan.
+     * songs and starts their scan. Runs in the app's scope: leaving Settings cancels only the
+     * wait for the outcome, never the filing half-way (a token saved without its picks queued).
      */
-    suspend fun completeGooglePick(data: Intent?): GooglePickOutcome = try {
-        googlePicks.accept(googleAuthorizer.pickerResult(data))
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        // Never the message: it may echo an API response.
-        Log.w("CloudLibrary", "Google Drive pick failed: ${e.javaClass.simpleName}")
-        GooglePickOutcome.Failed("Couldn't add songs from Google Drive. Check your connection and try again.")
-    }
+    suspend fun completeGooglePick(data: Intent?): GooglePickOutcome = appScope.async {
+        try {
+            googlePicks.accept(googleAuthorizer.pickerResult(data))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Never the message: it may echo an API response.
+            Log.w("CloudLibrary", "Google Drive pick failed: ${e.javaClass.simpleName}")
+            GooglePickOutcome.Failed("Couldn't add songs from Google Drive. Check your connection and try again.")
+        }
+    }.await()
 
     /** Opens [provider]'s sign-in page in a Custom Tab (a plain browser when none is installed). */
     fun connect(activityContext: Context, provider: CloudProvider) {
@@ -131,7 +145,8 @@ class CloudLibrary @Inject constructor(
     /**
      * Disconnect: forgets the tokens on this phone and removes the account's songs, except the
      * downloaded ones, which stay as local files. (The access Stash was granted can also be
-     * revoked on the provider's website; nothing is sent to the provider here.)
+     * revoked on the provider's website; nothing is sent to the provider here. Google Drive's token
+     * is also dropped from Play services' cache on the phone.)
      */
     suspend fun disconnect(accountId: Long): CloudRemoval {
         val account = dao.getAccount(accountId) ?: return CloudRemoval(0, 0)
@@ -139,13 +154,27 @@ class CloudLibrary @Inject constructor(
         // scan writes rows for a removed account or refreshes (and re-saves) its token after.
         scheduler.cancelRunning()
         val folderIds = dao.getFolders(accountId).map { it.id }
+        val kind = CloudProvider.fromId(account.provider)
+        var forgotten: String? = null
         val removal = withFolderLocks(folderIds) {
-            CloudProvider.fromId(account.provider)?.let { tokens.forget(it, accountId) }
+            kind?.let { forgotten = tokens.forget(it, accountId) }
             for (id in folderIds) googlePickStore.clear(id)
             dao.removeAccount(accountId)
         }
+        if (kind == CloudProvider.GOOGLE_DRIVE) forgotten?.let { clearGoogleToken(it) }
         resumeScans()
         return removal
+    }
+
+    /** Best effort: the account is already gone here, whatever Play services says. */
+    private suspend fun clearGoogleToken(token: String) {
+        try {
+            googleAuthorizer.clearToken(token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CloudLibrary", "Google token not cleared: ${e.javaClass.simpleName}")
+        }
     }
 
     /** The folders and files in [folderId] (null = the top of the drive), folders first. */

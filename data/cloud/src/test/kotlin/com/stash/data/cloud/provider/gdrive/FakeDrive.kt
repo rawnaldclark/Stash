@@ -108,6 +108,8 @@ class FakeAuthorizer(var next: String? = "tok2") : GoogleAuthorizer {
         failure?.let { throw it }
         return next
     }
+    val cleared = mutableListOf<String>()
+    override suspend fun clearToken(token: String) { cleared += token }
     override suspend fun pickerIntent(accountName: String?): IntentSender = error("not in unit tests")
     override fun pickerResult(data: Intent?): GooglePickerResult = error("not in unit tests")
 }

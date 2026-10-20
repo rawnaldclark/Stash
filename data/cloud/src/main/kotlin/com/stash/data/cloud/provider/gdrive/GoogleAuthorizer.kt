@@ -47,6 +47,12 @@ interface GoogleAuthorizer {
      */
     suspend fun silentToken(accountName: String?, stale: String?): String?
 
+    /**
+     * Drops [token] from Play services' token cache (on disconnect), so it is never handed out
+     * again. It does not revoke the app's access: that is done on the Google account's page.
+     */
+    suspend fun clearToken(token: String)
+
     /** The picker, as an IntentSender for the Settings screen to launch. */
     suspend fun pickerIntent(accountName: String?): IntentSender
 
@@ -75,7 +81,7 @@ class PlayServicesGoogleAuthorizer @Inject constructor(
     override suspend fun silentToken(accountName: String?, stale: String?): String? {
         if (stale != null) {
             try {
-                client.clearToken(ClearTokenRequest.builder().setToken(stale).build()).await()
+                clearToken(stale)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -96,6 +102,10 @@ class PlayServicesGoogleAuthorizer @Inject constructor(
         // A resolution means Google wants to show UI: that's a reconnect, not something to do silently.
         if (result.hasResolution()) return null
         return result.accessToken
+    }
+
+    override suspend fun clearToken(token: String) {
+        client.clearToken(ClearTokenRequest.builder().setToken(token).build()).await()
     }
 
     override suspend fun pickerIntent(accountName: String?): IntentSender {

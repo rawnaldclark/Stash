@@ -199,7 +199,8 @@ class AuthTest {
         tm.saveNew(CloudProvider.DROPBOX, 4, TokenResult("a", "r", 3600))
         assertThat(tm.hasToken(CloudProvider.DROPBOX, 4)).isTrue()
         assertThat(tm.changes.value).isEqualTo(before + 1)
-        tm.forget(CloudProvider.DROPBOX, 4)
+        // The forgotten token comes back, for Google Drive to clear from Play services too.
+        assertThat(tm.forget(CloudProvider.DROPBOX, 4)).isEqualTo("a")
         assertThat(tm.hasToken(CloudProvider.DROPBOX, 4)).isFalse()
         assertThat(tm.changes.value).isEqualTo(before + 2)
     }

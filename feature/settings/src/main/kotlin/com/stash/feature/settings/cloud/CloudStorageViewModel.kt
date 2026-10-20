@@ -128,7 +128,11 @@ class CloudStorageViewModel @Inject constructor(
         }
     }
 
-    /** The picker's result Intent (null when it was dismissed). */
+    /**
+     * The picker's result Intent (null when it was dismissed). The filing itself runs in the
+     * app's scope ([CloudLibrary.completeGooglePick]); leaving Settings meanwhile loses only the
+     * message, never half a pick.
+     */
     fun finishGooglePick(data: Intent?) {
         viewModelScope.launch {
             googlePickMessage(cloud.completeGooglePick(data))?.let { _messages.tryEmit(it) }
