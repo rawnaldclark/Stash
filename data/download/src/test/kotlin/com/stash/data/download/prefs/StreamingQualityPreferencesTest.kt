@@ -45,6 +45,7 @@ class StreamingQualityPreferencesTest {
         assertThat(prefs.wifiTier.first()).isEqualTo(LosslessQualityTier.HI_RES)
         assertThat(prefs.cellularTier.first()).isEqualTo(LosslessQualityTier.CD)
         assertThat(prefs.saveData.first()).isFalse()
+        assertThat(prefs.preferTidalAacNow()).isFalse() // opt-in
     }
 
     @Test
@@ -70,5 +71,14 @@ class StreamingQualityPreferencesTest {
         prefs.setSaveData(true)
         assertThat(prefs.cellularTier.first()).isEqualTo(LosslessQualityTier.HI_RES)
         assertThat(prefs.saveData.first()).isTrue()
+    }
+
+    @Test
+    fun `prefer Tidal AAC round-trips`() = runTest {
+        val prefs = newPrefs(LosslessQualityTier.HI_RES)
+        prefs.setPreferTidalAac(true)
+        assertThat(prefs.preferTidalAacNow()).isTrue()
+        prefs.setPreferTidalAac(false)
+        assertThat(prefs.preferTidalAac.first()).isFalse()
     }
 }
