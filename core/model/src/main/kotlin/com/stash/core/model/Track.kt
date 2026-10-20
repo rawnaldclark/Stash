@@ -78,12 +78,12 @@ data class Track(
      * reconstructed by `PlayerRepositoryImpl.MediaItem.toTrack` from
      * the playing `MediaItem`'s extras. Never persisted to Room.
      *
-     * Conventional values: `"kennyy"` / `"squid"` (Qobuz lossless) or
-     * `"youtube"` (yt-dlp / InnerTube extraction, lossy). NULL when
+     * Conventional values: `"qbdlx"` (`"kennyy"` / `"squid"` parked) for
+     * Qobuz, `"tidal"` (FLAC or AAC), `"jiosaavn"`, `"youtube"`. NULL when
      * playback is from a downloaded file or no extras were attached.
      *
-     * Used by `NowPlayingScreen` to render a "via YT" suffix on the
-     * format chip when the streaming fallback kicks in.
+     * Named in Now Playing ("via Qobuz", and at the head of the signal
+     * path's Source line) through `StreamService.displayName`.
      */
     val streamOrigin: String? = null,
     /**

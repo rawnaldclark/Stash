@@ -147,4 +147,22 @@ class SignalPathExplainerTest {
         assertThat(SignalPathExplainer.khz(96_000)).isEqualTo("96 kHz")
         assertThat(SignalPathExplainer.khz(352_800)).isEqualTo("352.8 kHz")
     }
+
+    @Test fun `the streaming service heads the Source line`() {
+        val v = SignalPathExplainer.explain(flac2496, out(), dspActive = false)!!.withService("Qobuz")
+        assertThat(v.stages.first { it.title == "Source" }.detail).isEqualTo("Qobuz · FLAC · 24-bit · 96 kHz")
+        // Only the Source line changes.
+        assertThat(v.stages.drop(1)).isEqualTo(SignalPathExplainer.explain(flac2496, out(), false)!!.stages.drop(1))
+    }
+
+    @Test fun `a downloaded file names no service`() {
+        val v = SignalPathExplainer.explain(flac1644, out(), dspActive = false)!!
+        assertThat(v.withService(null)).isEqualTo(v)
+        assertThat(v.stages.first { it.title == "Source" }.detail).isEqualTo("FLAC · 16-bit · 44.1 kHz")
+    }
+
+    @Test fun `no source line means no service to add`() {
+        val v = SignalPathExplainer.explain(null, out(), dspActive = false)!!
+        assertThat(v.withService("Tidal")).isEqualTo(v)
+    }
 }

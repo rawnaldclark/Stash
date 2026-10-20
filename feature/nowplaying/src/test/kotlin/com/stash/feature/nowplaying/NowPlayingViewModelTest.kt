@@ -150,6 +150,17 @@ class NowPlayingCodecOverlayTest {
         assertEquals("youtube", result?.streamOrigin)
     }
 
+    /** The Tidal origin must reach the display track: it is what names "Tidal" in Now Playing. */
+    @Test fun `tidal stream overlays its origin for the service label`() {
+        val base = streamTrack(fileFormat = "opus", origin = null)
+        val streamFormat = streamTrack(fileFormat = "aac", origin = "tidal")
+
+        val result = overlayDisplayTrack(isHttpStreaming = true, streamFormat = streamFormat, baseTrack = base)
+
+        assertEquals("tidal", result?.streamOrigin)
+        assertEquals("Tidal", com.stash.core.media.streaming.StreamService.displayName(result?.streamOrigin))
+    }
+
     @Test fun `http stream still overlays FLAC`() {
         val base = streamTrack(fileFormat = "opus", origin = null)
         val streamFormat = streamTrack(fileFormat = "flac", origin = "kennyy", bits = 24)

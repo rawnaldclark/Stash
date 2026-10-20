@@ -70,10 +70,30 @@ data class SignalVerdict(
 )
 
 /**
+ * The same verdict with the streaming service named at the head of the Source
+ * line: "Qobuz · FLAC · 24-bit · 96 kHz". The output stage reads only the
+ * decoder's format and never knows where the bytes came from, so Now Playing
+ * (which holds the track's stream origin) adds it here. Unchanged when
+ * [service] is null (a downloaded or local file) or there is no Source line.
+ */
+fun SignalVerdict.withService(service: String?): SignalVerdict {
+    if (service.isNullOrBlank()) return this
+    if (stages.none { it.title == SignalPathExplainer.SOURCE_TITLE }) return this
+    return copy(
+        stages = stages.map {
+            if (it.title == SignalPathExplainer.SOURCE_TITLE) it.copy(detail = "$service · ${it.detail}") else it
+        },
+    )
+}
+
+/**
  * Explains, honestly, what happens to the music between the file and the DAC:
  * the "signal path" the hi-fi players show. Pure, so the wording is tested.
  */
 object SignalPathExplainer {
+
+    /** Title of the first stage: the file or stream the decoder reads. */
+    const val SOURCE_TITLE = "Source"
 
     fun explain(source: SourceFormat?, output: OutputPathState?, dspActive: Boolean): SignalVerdict? {
         if (output == null) return null
@@ -84,7 +104,7 @@ object SignalPathExplainer {
         if (source != null) {
             val bits = source.bitsPerSample?.let { "$it-bit · " } ?: ""
             stages += SignalStage(
-                title = "Source",
+                title = SOURCE_TITLE,
                 detail = "${source.codec} · $bits${khz(srcRate)}",
                 ok = source.lossless,
             )

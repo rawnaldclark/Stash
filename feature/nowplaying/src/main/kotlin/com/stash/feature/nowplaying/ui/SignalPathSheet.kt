@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.output.HiResOutputController
 import com.stash.core.media.output.SignalQuality
 import com.stash.core.media.output.SignalVerdict
+import com.stash.core.media.output.withService
 import com.stash.core.ui.theme.StashTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -70,12 +71,17 @@ private fun SignalQuality.color(): Color = when (this) {
  * honest answer the hi-fi players give (Roon calls it the signal path), so a
  * listener can see whether their 24/96 FLAC is reaching the DAC as 24/96 —
  * and what to change when it isn't.
+ *
+ * @param service the streaming service the song is coming from ("Qobuz",
+ *   "Tidal"), named at the head of the Source line; null for a downloaded or
+ *   local file, whose source isn't stored.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SignalPathSheet(
     onDismiss: () -> Unit,
     onOpenSettings: (() -> Unit)?,
+    service: String? = null,
     viewModel: SignalPathViewModel = hiltViewModel(),
 ) {
     val verdict by viewModel.verdict.collectAsStateWithLifecycle()
@@ -97,7 +103,7 @@ fun SignalPathSheet(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
             Spacer(modifier = Modifier.height(16.dp))
-            val v = verdict
+            val v = verdict?.withService(service)
             if (v == null) {
                 Text(
                     text = "Start playing to see the path from file to DAC.",
