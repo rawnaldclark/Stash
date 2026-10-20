@@ -101,12 +101,16 @@ class SyncFinalizeWorkerSnapshotPruneTest {
     @Test fun `a finished sync drops Last fm responses past their TTL and keeps fresh ones`() = runBlocking {
         val cache = db.lastFmCacheDao()
         val now = System.currentTimeMillis()
-        cache.upsert(LastFmCacheEntity(cacheKey = "stale", json = "{}", fetchedAt = now - 8L * 24 * 3600 * 1000))
+        // Rows are kept for the longer of the two TTLs (a remembered "not found"
+        // lives 14 days), so only rows past that go.
+        cache.upsert(LastFmCacheEntity(cacheKey = "stale", json = "{}", fetchedAt = now - 15L * 24 * 3600 * 1000))
+        cache.upsert(LastFmCacheEntity(cacheKey = "miss", json = """{"stash_miss":true,"error":"6"}""", fetchedAt = now - 8L * 24 * 3600 * 1000))
         cache.upsert(LastFmCacheEntity(cacheKey = "fresh", json = "{}", fetchedAt = now - 3600 * 1000))
 
         assertEquals(ListenableWorker.Result.success(), finalize(syncId = 5))
 
         assertEquals(null, cache.get("stale"))
+        assertEquals("a week-old miss is still believed", true, cache.get("miss") != null)
         assertEquals("{}", cache.get("fresh")?.json)
     }
 
