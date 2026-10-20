@@ -926,3 +926,265 @@ test("?aac=only&hires=0 (the app's AAC downloads) makes no metadata call; ?aac=o
     assert.equal(metaCalls(f).length, 1);
   });
 });
+
+// ---- TIDAL_V2_MANIFESTS: openapi v2 trackManifests ahead of v1 playbackinfo for lossless streams ----
+
+const isV2 = (url) => url.startsWith("https://openapi.tidal.com/v2/trackManifests/");
+const v2Calls = (f) => f.calls.filter((c) => isV2(c.url));
+/** A Tidal-shaped v2 MPD: one FLAC Representation "<label>,<rate>,<bits>", absolute segment URLs, no DRM. */
+const v2Mpd = (label = "FLAC", rate = 44100, bits = 16, extra = "") => `<?xml version="1.0" encoding="UTF-8"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static"><Period><AdaptationSet mimeType="audio/mp4" contentType="audio">${extra}<Representation id="${label},${rate},${bits}" codecs="flac" bandwidth="${rate * bits * 2}" audioSamplingRate="${rate}"><SegmentTemplate timescale="${rate}" initialization="https://sp-ad-fa.audio.tidal.com/mediatracks/x/0.mp4?token=t" media="https://sp-ad-fa.audio.tidal.com/mediatracks/x/$Number$.mp4?token=t" startNumber="1"><SegmentTimeline><S d="176128" r="3"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>`;
+/** A v2 trackManifests JSON:API answer; `uri` defaults to the uriScheme=DATA inline MPD. */
+function v2Answer({ formats = ["FLAC"], drmData = null, mpd = v2Mpd(), uri, status = 200, attributes = {} } = {}) {
+  return new Response(JSON.stringify({ data: { id: "1", type: "trackManifests", attributes: {
+    trackPresentation: "FULL", formats, drmData, uri: uri ?? `data:application/dash+xml;base64,${Buffer.from(mpd).toString("base64")}`, ...attributes,
+  } } }), { status, headers: { "content-type": "application/vnd.api+json" } });
+}
+/** Tidal stub: v2 answer from `v2()`, v1 playbackinfo from `v1()` (default HIGH AAC, the capped CD answer). */
+const tidalV2 = (v2, v1 = () => aacResponse()) => async (url) => (isV2(url) ? v2(url) : v1(url));
+function v2Fixture(opts) {
+  const f = fixture(opts);
+  f.env.TIDAL_V2_MANIFESTS = "1";
+  return f;
+}
+
+test("v2 flag off (unset or \"0\"): no openapi call, v1 cache keys, byte-identical answers", async () => {
+  for (const flag of [undefined, "0", "true"]) {
+    const f = fixture({ tidalResponse: tidalV2(() => v2Answer(), () => playbackInfo("HI_RES_LOSSLESS", "application/dash+xml", MPD)) });
+    if (flag !== undefined) f.env.TIDAL_V2_MANIFESTS = flag;
+    await withFetch(null, f.fetchTidal, async () => {
+      const body = await (await worker.fetch(authorizedRequest("/stream/td:654"), f.env)).json();
+      assert.equal(body.bitDepth, 24, String(flag));
+      assert.equal(body.sampleRate, 96000);
+    });
+    assert.equal(v2Calls(f).length, 0, String(flag));
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual([...f.responseCache.keys()], ["stream:US:654:aac=:web=app"]);
+    assert.equal(f.hiresCache.size, 0);
+  }
+});
+
+test("v2 FLAC (CD): one call, the v1 hi-res DASH answer shape at 16/44.1, MPD served from D1, hires=false cached", async () => {
+  const f = v2Fixture({ tidalResponse: tidalV2(() => v2Answer({ formats: ["FLAC"] })) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:5004797"), f.env);
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.deepEqual(Object.keys(body).sort(), ["bitDepth", "bitrate", "codec", "container", "manifest", "sampleRate", "url"], "same fields as a v1 DASH answer");
+    assert.equal(body.codec, "flac");
+    assert.equal(body.container, "fmp4");
+    assert.equal(body.manifest, "dash");
+    assert.equal(body.bitDepth, 16);
+    assert.equal(body.sampleRate, 44100);
+    assert.equal(body.bitrate, 1411);
+    assert.match(body.url, /^https:\/\/relay\.example\/dash\/td\/5004797\.mpd\?exp=\d+&sig=[0-9a-f]{64}$/);
+    const mpd = await worker.fetch(new Request(body.url), f.env);
+    assert.equal(mpd.status, 200);
+    assert.equal(mpd.headers.get("content-type"), "application/dash+xml");
+    assert.equal(await mpd.text(), v2Mpd());
+  });
+  assert.equal(f.calls.length, 1, "no v1 call, no metadata call");
+  const call = new URL(f.calls[0].url);
+  assert.equal(call.pathname, "/v2/trackManifests/5004797");
+  assert.deepEqual(call.searchParams.getAll("formats"), ["FLAC", "FLAC_HIRES"]);
+  for (const [k, v] of [["countryCode", "US"], ["adaptive", "false"], ["manifestType", "MPEG_DASH"], ["uriScheme", "DATA"], ["usage", "PLAYBACK"]]) assert.equal(call.searchParams.get(k), v, k);
+  assert.equal(f.calls[0].options.headers.Accept, "application/vnd.api+json");
+  assert.equal(f.calls[0].options.headers.authorization, "Bearer test-tidal-access-token");
+  assert.equal(f.accountCaps.length, 1);
+  assert.deepEqual(f.hiresCache.get("5004797").hires, 0);
+  assert.deepEqual([...f.responseCache.keys()], ["stream:US:5004797:aac=:web=app:v2"]);
+});
+
+test("v2 FLAC_HIRES: hi-res DASH at 24/48 and hires=true cached, so ?aac=only needs no metadata call", async () => {
+  const f = v2Fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: tidalV2(() => v2Answer({ formats: ["FLAC_HIRES"], mpd: v2Mpd("FLAC_HIRES", 48000, 24) })) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const body = await (await worker.fetch(authorizedRequest("/stream/td:491159843"), f.env)).json();
+    assert.equal(body.manifest, "dash");
+    assert.equal(body.bitDepth, 24);
+    assert.equal(body.sampleRate, 48000);
+    assert.equal(body.bitrate, 2304);
+    assert.equal(f.hiresCache.get("491159843").hires, 1);
+    const aac = await (await worker.fetch(authorizedRequest("/stream/td:491159843?aac=only"), f.env)).json();
+    assert.equal(aac.codec, "aac");
+    assert.equal(aac.hires, true);
+  });
+  assert.equal(v2Calls(f).length, 1);
+  assert.equal(metaCalls(f).length, 0, "hires came from the v2 answer");
+});
+
+test("v2 answers ?aac=1 with FLAC when it has it; ?web=1 gets the signed edge DASH answer", async () => {
+  const f = v2Fixture({ tidalResponse: tidalV2(() => v2Answer()) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const body = await (await worker.fetch(authorizedRequest("/stream/td:1?aac=1"), f.env)).json();
+    assert.equal(body.codec, "flac");
+    assert.equal(body.bitDepth, 16);
+  });
+  const g = v2Fixture({ tidalResponse: tidalV2(() => v2Answer()) });
+  Object.assign(g.env, EDGE);
+  await withFetch(null, g.fetchTidal, async () => {
+    const b = await (await worker.fetch(authorizedRequest("/stream/td:2?web=1"), g.env)).json();
+    assert.equal(b.edge, true);
+    assert.equal(b.manifest, "dash");
+    assert.equal(b.audioQuality, "LOSSLESS");
+    assert.equal(b.bitDepth, 16);
+    assert.equal(b.sampleRate, 44100);
+    assert.equal(decodeToken(b.url).x, v2Mpd());
+  });
+  assert.equal(g.calls.length, 1);
+  assert.equal(g.dbWrites.filter(({ sql }) => sql.includes("tidal_dash_manifests")).length, 0);
+});
+
+test("v2 refusals fall back to v1 on the same seat: two calls, bumpSeat counts the second; v1's answer per mode", async () => {
+  const t = Math.floor(Date.now() / 1000);
+  const cases = [
+    ["drm", () => v2Answer({ drmData: { drmSystem: "WIDEVINE" } }), true],
+    ["drm in MPD", () => v2Answer({ mpd: v2Mpd("FLAC", 44100, 16, '<ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>') }), true],
+    ["no FLAC", () => v2Answer({ formats: ["AACLC"] }), true],
+    ["empty formats", () => v2Answer({ formats: [] }), true],
+    ["preview", () => v2Answer({ attributes: { trackPresentation: "PREVIEW" } }), true],
+    ["404", () => new Response(JSON.stringify({ errors: [{ status: "404" }] }), { status: 404 }), true],
+    ["500", () => new Response("", { status: 500 }), false],
+    ["403", () => new Response("{}", { status: 403 }), false],
+    ["not JSON", () => new Response("<html>", { status: 200 }), false],
+    ["no attributes", () => new Response(JSON.stringify({ data: {} }), { status: 200 }), false],
+    ["bad data URI", () => v2Answer({ uri: "data:application/dash+xml;base64,!!!" }), false],
+    ["not an MPD", () => v2Answer({ uri: `data:text/plain;base64,${Buffer.from("hello").toString("base64")}` }), false],
+    ["foreign manifest host", () => v2Answer({ uri: "https://evil.example/a.mpd" }), false],
+    ["network error", () => { throw new TypeError("connection reset"); }, false],
+  ];
+  for (const [name, v2, definitive] of cases) {
+    const f = v2Fixture({ pool: true, accounts: [{ ...liveAccount(), hour_n: 0, day_n: 0 }, { ...liveAccount(), id: "spare", hour_n: 0, day_n: 0 }], tidalResponse: tidalV2(v2) });
+    await withFetch(null, f.fetchTidal, async () => {
+      const r = await worker.fetch(authorizedRequest("/stream/td:77"), f.env);
+      assert.equal(r.status, 404, name);
+      assert.deepEqual(await r.json(), { error: "lossless_unavailable" }, name);
+    });
+    assert.equal(f.calls.length, 2, `${name}: v2 then v1`);
+    assert.ok(isV2(f.calls[0].url), name);
+    assert.equal(new URL(f.calls[1].url).searchParams.get("audioquality"), "HI_RES_LOSSLESS", name);
+    assert.equal(f.accountCaps.length, 1, `${name}: one seat`);
+    assert.equal(f.accounts[0].hour_n, 2, `${name}: both calls counted on the seat`);
+    assert.equal(f.accounts[1].hour_n, 0, `${name}: the spare seat untouched`);
+    assert.equal(f.hiresCache.size, 0, name);
+    const ttl = f.responseCache.get("stream:US:77:aac=:web=app:v2").expires_at - t;
+    if (definitive) assert.ok(ttl > 4 * 86400, `${name}: definitive, cached 5 days`);
+    else assert.ok(ttl <= 6 * 3600 + 2, `${name}: transient, cached 6 h`);
+  }
+  // The same fallback for ?aac=1 is v1's AAC; a v1 hi-res DASH answer still plays.
+  const f = v2Fixture({ tidalResponse: tidalV2(() => v2Answer({ drmData: {} })) });
+  const g = v2Fixture({ tidalResponse: tidalV2(() => v2Answer({ formats: ["AACLC"] }), () => playbackInfo("HI_RES_LOSSLESS", "application/dash+xml", MPD)) });
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await (await worker.fetch(authorizedRequest("/stream/td:78?aac=1"), f.env)).json()).codec, "aac");
+  });
+  await withFetch(null, g.fetchTidal, async () => {
+    const b = await (await worker.fetch(authorizedRequest("/stream/td:79"), g.env)).json();
+    assert.equal(b.bitDepth, 24);
+    assert.equal(b.sampleRate, 96000);
+  });
+});
+
+test("v2 429 cools the seat like a v1 429 and answers busy: no v1 call, nothing cached", async () => {
+  const f = v2Fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: tidalV2(() => new Response("{}", { status: 429 })) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:321"), f.env);
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { error: "busy" });
+    assert.equal(r.headers.get("retry-after"), "300");
+  });
+  assert.equal(f.calls.length, 1);
+  assert.equal(playbackCalls(f).length, 0);
+  assert.equal(f.accountCaps.length, 1, "no second seat");
+  assert.equal(f.responseCache.size, 0);
+  assert.ok(f.dbWrites.some(({ sql, args }) => sql.includes("strikes=") && args[1] === 120 && args[2] === 960));
+  assert.deepEqual(f.upstream429Events.map(({ endpoint }) => endpoint), ["trackmanifests"]);
+});
+
+test("v2 401 refresh: a failed refresh cools the seat and the next seat answers on v1 (2 calls in all)", async () => {
+  const accounts = [liveAccount(), { ...liveAccount(), id: "b", access_token: "b-token" }];
+  const f = v2Fixture({ accounts, tidalResponse: async (url, options) => {
+    if (isV2(url)) return new Response(JSON.stringify({ errors: [{ status: "401" }] }), { status: 401 });
+    return options.headers.authorization === "Bearer b-token" ? playbackInfo("HI_RES_LOSSLESS", "application/dash+xml", MPD) : new Response("{}", { status: 500 });
+  } });
+  await withFetch(null, f.fetchTidal, async () => {
+    assert.equal((await worker.fetch(authorizedRequest("/stream/td:9"), f.env)).status, 200);
+  });
+  assert.equal(f.calls.length, 2);
+  assert.ok(isV2(f.calls[0].url));
+  assert.ok(f.calls[1].url.includes("/playbackinfopostpaywall"));
+  assert.ok(f.dbWrites.some(({ sql, args }) => sql.includes("SET cooling_until=?") && args[1] === "test-account"));
+  assert.equal(f.dbWrites.some(({ sql }) => sql.includes("state='dead'")), false);
+});
+
+test("v2 401 after a successful refresh is a strike + busy, like v1; the refreshed token is used for the retry", async () => {
+  const f = v2Fixture({ tidalResponse: async (url) => (url.startsWith("https://auth.tidal.com/")
+    ? new Response(JSON.stringify({ access_token: "fresh-token", expires_in: 3600 }), { status: 200 })
+    : new Response("{}", { status: 401 })) });
+  // The mocked D1 cannot claim the refresh lock; let it, so refreshAccount completes.
+  const prepare = f.env.DB.prepare.bind(f.env.DB);
+  f.env.DB.prepare = (sql) => {
+    const s = prepare(sql);
+    if (sql.includes("SET refresh_lock_until=?") && sql.includes("RETURNING *")) s.first = async () => ({ ...liveAccount() });
+    return s;
+  };
+  await withFetch(null, f.fetchTidal, async () => {
+    const r = await worker.fetch(authorizedRequest("/stream/td:9"), f.env);
+    assert.equal(r.status, 503);
+    assert.deepEqual(await r.json(), { error: "busy" });
+  });
+  const api = f.calls.filter((c) => !c.url.startsWith("https://auth.tidal.com/"));
+  assert.equal(api.length, 2, "v2 + its refresh retry; no v1 on top (budget of 2)");
+  assert.ok(api.every((c) => isV2(c.url)));
+  assert.equal(api[1].options.headers.authorization, "Bearer fresh-token");
+  assert.ok(f.dbWrites.some(({ sql }) => sql.includes("strikes=")));
+});
+
+test("?aac=only never calls v2 and keeps its v1 cache key", async () => {
+  const f = v2Fixture({ accounts: [liveAccount(), liveAccount(), liveAccount()], tidalResponse: tidalV2(() => v2Answer(), (url) => (url.includes("/playbackinfopostpaywall") ? aacResponse() : new Response("{}", { status: 200 }))) });
+  await withFetch(null, f.fetchTidal, async () => {
+    for (const q of ["?aac=only&hires=0", "?aac=only"]) {
+      const body = await (await worker.fetch(authorizedRequest(`/stream/td:5${q}`), f.env)).json();
+      assert.equal(body.codec, "aac", q);
+    }
+  });
+  assert.equal(v2Calls(f).length, 0);
+  assert.equal(new URL(playbackCalls(f)[0].url).searchParams.get("audioquality"), "HIGH");
+  assert.ok([...f.responseCache.keys()].every((k) => !k.endsWith(":v2")));
+});
+
+test("v2 with an https uri fetches the MPD from Tidal's manifest host (no credentials)", async () => {
+  const f = v2Fixture({ tidalResponse: async (url) => {
+    if (isV2(url)) return v2Answer({ uri: "https://im-fa.manifest.tidal.com/1/manifests/x.mpd?token=1700000000~sig" });
+    if (url.startsWith("https://im-fa.manifest.tidal.com/")) return new Response(v2Mpd(), { status: 200 });
+    return aacResponse();
+  } });
+  await withFetch(null, f.fetchTidal, async () => {
+    const body = await (await worker.fetch(authorizedRequest("/stream/td:3"), f.env)).json();
+    assert.equal(body.manifest, "dash");
+    assert.equal(body.bitDepth, 16);
+  });
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[1].options.headers.authorization, undefined);
+});
+
+test("v2 logs one tidal_stream line per stream with the lane and result; flag off logs none", async () => {
+  const lines = [];
+  const original = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    const f = v2Fixture({ accounts: [liveAccount(), liveAccount()], tidalResponse: async (url) => (isV2(url)
+      ? (url.includes("/trackManifests/1?") ? v2Answer() : v2Answer({ drmData: {} }))
+      : aacResponse()) });
+    const off = fixture({ tidalResponse: async () => losslessResponse() });
+    await withFetch(null, f.fetchTidal, async () => {
+      await worker.fetch(authorizedRequest("/stream/td:1"), f.env);
+      await worker.fetch(authorizedRequest("/stream/td:2"), f.env);
+      await worker.fetch(authorizedRequest("/stream/td:2"), f.env); // cache hit: no upstream, no line
+    });
+    await withFetch(null, off.fetchTidal, async () => { await worker.fetch(authorizedRequest("/stream/td:3"), off.env); });
+  } finally { console.log = original; }
+  const streams = lines.filter((l) => l.startsWith("tidal_stream ")).map((l) => JSON.parse(l.slice(13)));
+  assert.deepEqual(streams, [
+    { track: "1", path: "v2", formats: ["FLAC"], bits: 16, rate: 44100, status: 200, codec: "flac" },
+    { track: "2", path: "v1", reason: "drm", formats: ["FLAC"], status: 404, error: "lossless_unavailable" },
+  ]);
+  assert.ok(lines.every((l) => !l.includes("token")), "no tokens in the log");
+});

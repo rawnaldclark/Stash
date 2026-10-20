@@ -221,3 +221,27 @@ test("migration 0008 drops cached not_available answers and keeps everything els
     ["search:US:abc", "stream:US:2:aac=:web=app"]);
   assert.equal(seat(db, "a").last_call_at, 200, "seeded from the latest of last_used_at / last_playback_at");
 });
+
+const v2Doc = (formats, rep) => new Response(JSON.stringify({ data: { attributes: { formats, drmData: null, uri: `data:application/dash+xml;base64,${Buffer.from(
+  `<MPD><Period><AdaptationSet><Representation id="${rep}" codecs="flac"><SegmentTemplate initialization="https://sp-ad-fa.audio.tidal.com/0.mp4" media="https://sp-ad-fa.audio.tidal.com/$Number$.mp4"/></Representation></AdaptationSet></Period></MPD>`).toString("base64")}` } } }), { status: 200 });
+const isV2 = (url) => url.startsWith("https://openapi.tidal.com/v2/trackManifests/");
+
+test("real SQL: TIDAL_V2_MANIFESTS — a v2 FLAC answer is one counted call + a hires row; a v2 refusal + v1 fallback counts two", async () => {
+  const db = database();
+  addSeat(db, "a");
+  const r = relay(db, (url) => (isV2(url) ? (url.includes("/trackManifests/1?") ? v2Doc(["FLAC_HIRES"], "FLAC_HIRES,96000,24") : v2Doc(["AACLC"], "x")) : playable()));
+  r.env.TIDAL_V2_MANIFESTS = "1";
+  const hit = await (await r.call("/stream/td:1")).json();
+  assert.equal(hit.manifest, "dash");
+  assert.equal(hit.bitDepth, 24);
+  assert.equal(seat(db, "a").hour_n, 1);
+  assert.deepEqual({ ...db.prepare("SELECT hires FROM tidal_hires_cache WHERE track_id='1'").get() }, { hires: 1 });
+  assert.ok(db.prepare("SELECT 1 FROM tidal_dash_manifests WHERE track_id='1'").get());
+  db.prepare("UPDATE tidal_accounts SET last_call_at=0 WHERE id='a'").run();
+  const fallback = await r.call("/stream/td:2");
+  assert.equal(fallback.status, 200, "v1 answered after v2 had no FLAC");
+  assert.equal(seat(db, "a").hour_n, 3, "v2 + v1 both counted on the seat");
+  assert.ok(seat(db, "a").last_call_at >= now() - 1);
+  assert.equal(r.calls.length, 3);
+  assert.ok(db.prepare("SELECT 1 FROM tidal_response_cache WHERE cache_key='stream:US:1:aac=:web=app:v2'").get(), "the v2 DASH answer is cached under the :v2 key");
+});

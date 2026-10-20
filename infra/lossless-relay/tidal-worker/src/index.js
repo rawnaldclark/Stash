@@ -3,6 +3,9 @@ import { verifySigned, MAX_SKEW_S } from "./auth.js";
 import { readStanding, spendLossless, losslessHeaders, capAnswer, quotaBody, pruneUsage } from "./quota.js";
 
 const API = "https://api.tidal.com/v1";
+// TIDAL_V2_MANIFESTS=1: lossless streams ask the openapi v2 trackManifests endpoint first. Since ~April 2026 v1
+// playbackinfo caps this client ID at HIGH (AAC) for LOSSLESS, while v2 hands the same seat token CD FLAC as DASH.
+const V2_API = "https://openapi.tidal.com/v2";
 const AUTH = "https://auth.tidal.com/v1/oauth2";
 const UA = "okhttp/5.3.2";
 const SCOPE = "r_usr+w_usr+w_sub";
@@ -246,7 +249,10 @@ function searchError() { return json({ error: "upstream_error" }, 502); }
 async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(request.url))) {
   const url = new URL(request.url);
   const web = url.searchParams.get("web") === "1" ? "web" : "app";
-  const keyFor = (mode) => `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${mode}:web=${web}`;
+  // With v2 on, lossless answers get their own namespace: the v1-era lossless_unavailable entries (5 days) must
+  // not hide a track v2 can now serve as FLAC. ?aac=only stays on v1, so its keys never change.
+  const v2 = v2Manifests(env) && aac !== "only" ? ":v2" : "";
+  const keyFor = (mode) => `stream:${env.TIDAL_COUNTRY_CODE || "US"}:${trackId}:aac=${mode}:web=${web}${v2}`;
   const noHires = skipsHires(url, aac);
   const key = keyFor(noHires ? "only-nohires" : aac);
   // ?aac=only&hires=0 (the app's AAC downloads) is served by the full ?aac=only entry when that is
@@ -256,11 +262,14 @@ async function stream(trackId, request, env, quota = {}, aac = aacMode(new URL(r
   if (quota.globalFull) return { response: globalCapped(), upstream: false };
   if (await softOpenBlocks(env)) return { response: busy(), upstream: false };
   if (!await upstreamAllowed(request, env)) return { response: busy(UPSTREAM_RL_RETRY_AFTER), upstream: false };
-  const response = await streamUncached(trackId, request, env, aac);
+  const trace = {};
+  const response = await streamUncached(trackId, request, env, aac, trace);
   let body;
   try { body = await response.clone().json(); } catch { return { response, upstream: true }; }
+  if (trace.path) logV2Stream(trackId, trace, response, body);
   if (response.status === 404 && body.error === "lossless_unavailable") {
-    await cacheJson(env, key, response, RESPONSE_CACHE_TTL);
+    // After a transient v2 failure the v1 verdict is cached like not_available: v2 may serve it on the next ask.
+    await cacheJson(env, key, response, trace.transient ? NOT_AVAILABLE_TTL : RESPONSE_CACHE_TTL);
   } else if (response.status === 404 && body.error === "not_available") {
     await cacheJson(env, key, response, NOT_AVAILABLE_TTL);
   } else if (response.status === 200) {
@@ -285,7 +294,8 @@ function aacMode(url) {
   return aac === "1" || aac === "only" ? aac : "";
 }
 
-async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url))) {
+/** @param trace filled for stream()'s log line and cache TTL when the v2 path runs: path, reason, formats, bits, rate, transient. */
+async function streamUncached(trackId, request, env, aac = aacMode(new URL(request.url)), trace = {}) {
   // ?aac=1: when no account can play the track losslessly, answer with Tidal's AAC
   // stream (labelled codec "aac") instead of lossless_unavailable. Opt-in so the
   // download path, which must never save AAC as FLAC, keeps the lossless-only answer.
@@ -297,7 +307,13 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   // after a seat-level failure (failed refresh, Tidal 5xx), never for a
   // track-level answer: with this client ID CD-only tracks always come back HIGH (AAC),
   // and a 4005 is a track/rights refusal, so asking another seat just burns budget.
+  // TIDAL_V2_MANIFESTS=1 (lossless modes only): v2 trackManifests first, v1 HI_RES_LOSSLESS (then the AAC handling
+  // below) as the fallback on the same seat. `budget` counts real upstream calls (tidalFetch's refresh retry
+  // included) and holds a stream to 2 on this path; with the flag off it is never consulted.
+  const useV2 = v2Manifests(env) && !aacOnly;
+  const budget = { calls: 0 };
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (useV2 && budget.calls >= 2) break;
     const account = await takeAccount(env);
     if (!account) return noSeat(env);
     const fresh = await refreshIfNeeded(account, env);
@@ -305,7 +321,20 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
       await coolAccount(env, account.id, 300);
       continue;
     }
-    const data = await playbackInfo(trackId, fresh, env, aacOnly ? "HIGH" : "HI_RES_LOSSLESS");
+    let data;
+    if (useV2 && budget.calls === 0) {
+      const v2 = await v2Stream(trackId, request, env, account, fresh, allowAac, budget, trace);
+      if (v2.response) return v2.response;
+      if (v2.seatFailed) { await coolAccount(env, account.id, 300); continue; } // v2's 401 refresh failed: like a v1 5xx
+      // A second call straight after the first on this seat, counted like tidalFetch's refresh retry. Past the
+      // budget (v2 already spent a refresh retry) the app retries shortly; the seat's token is fresh by then.
+      if (budget.calls >= 2) { trace.reason += "+budget"; return busy(PACING_RETRY_AFTER); }
+      await bumpSeat(env, account.id);
+      // No refresh retry here: v2 just used (or refreshed) this token, so a 401 now is a refusal, not an expiry.
+      data = await playbackInfo(trackId, budget.account || fresh, env, "HI_RES_LOSSLESS", { budget, refresh: false });
+    } else {
+      data = await playbackInfo(trackId, fresh, env, aacOnly ? "HIGH" : "HI_RES_LOSSLESS", useV2 ? { budget } : undefined);
+    }
     if (data.status === 401) {
       const denial = await data.clone().json().catch(() => ({}));
       if (denial.subStatus === 4005) return json({ error: "not_available" }, 404);
@@ -335,6 +364,134 @@ async function streamUncached(trackId, request, env, aac = aacMode(new URL(reque
   }
   return json({ error: "upstream_unavailable" }, 503);
 }
+
+/** TIDAL_V2_MANIFESTS: "1" = on; unset, "0" or anything else = off (v1 only, as before). */
+function v2Manifests(env) { return env.TIDAL_V2_MANIFESTS === "1"; }
+
+const V2_ACCEPT = "application/vnd.api+json";
+// Reasons v2 is definitively not the answer for this track (cached as long as the v1 verdict). Anything else
+// (5xx, 403, timeouts, parse failures, a bad MPD) is transient: a v1 lossless_unavailable after it is cached 6 h.
+const V2_DEFINITIVE = new Set(["no_flac", "drm", "preview", "not_found", "not_flac"]);
+
+/**
+ * The v2 lossless lane: GET openapi v2 /trackManifests/{id} (FLAC + FLAC_HIRES, DASH, inline data: MPD) on the
+ * seat streamUncached took, through tidalFetch (same headers, 401 refresh + retry, bumpSeat). A clear FLAC MPD
+ * becomes a v1-shaped DASH playbackinfo and goes through streamInfo / edgeInfo, so the app gets the same answer
+ * as a v1 hi-res DASH track, and tidal_hires_cache is written from it (no metadata call needed later).
+ * @returns {Promise<{response?: Response, seatFailed?: boolean, fallback?: string}>} response = final answer
+ * (FLAC, or busy on a 429/refused session); seatFailed = the 401 refresh failed (seat already cooled);
+ * fallback = why v1 should answer instead. Never throws.
+ */
+async function v2Stream(trackId, request, env, seat, account, allowAac, budget, trace) {
+  trace.path = "v2";
+  const fallback = (reason) => {
+    trace.path = "v1";
+    trace.reason = reason;
+    trace.transient = !V2_DEFINITIVE.has(reason);
+    return { fallback: reason };
+  };
+  try {
+    const p = new URLSearchParams({ countryCode: env.TIDAL_COUNTRY_CODE || "US", adaptive: "false", manifestType: "MPEG_DASH", uriScheme: "DATA", usage: "PLAYBACK" });
+    p.append("formats", "FLAC");
+    p.append("formats", "FLAC_HIRES");
+    let r;
+    try {
+      r = await tidalFetch(`/trackManifests/${trackId}?${p}`, account, env, { base: V2_API, accept: V2_ACCEPT, budget });
+    } catch { return fallback("network"); }
+    if (r.status === 429) {
+      trace.reason = "429";
+      await onUpstream429(env, seat, "trackmanifests");
+      return { response: busy() };
+    }
+    if (r.status === 503 && (await r.clone().json().catch(() => ({}))).error === "refresh_failed") {
+      trace.path = "v1"; trace.reason = "refresh_failed";
+      return { seatFailed: true };
+    }
+    if (r.status === 401) { // survived tidalFetch's refresh + retry: the same strike v1 gives
+      trace.reason = "401";
+      await onSessionRefused(env, seat, "trackmanifests");
+      return { response: busy() };
+    }
+    if (r.status === 404) return fallback("not_found");
+    if (!r.ok) {
+      console.warn(`tidal_trackmanifests ${JSON.stringify({ account: String(seat.id).slice(-4), status: r.status })}`);
+      return fallback(`http_${r.status}`);
+    }
+    const doc = await r.json().catch(() => null);
+    const a = doc?.data?.attributes;
+    if (!a || typeof a !== "object") return fallback("parse");
+    const formats = Array.isArray(a.formats) ? a.formats.map(String) : [];
+    trace.formats = formats;
+    if (a.drmData != null) return fallback("drm");
+    // Defensive: the probe saw no preview marker, but a preview/sample answer must never play as the track.
+    if ((a.trackPresentation && String(a.trackPresentation).toUpperCase() !== "FULL") || a.previewReason) return fallback("preview");
+    if (!formats.includes("FLAC") && !formats.includes("FLAC_HIRES")) return fallback("no_flac");
+    const xml = await v2Mpd(a.uri);
+    if (!xml) return fallback("manifest");
+    if (/<(?:\w+:)?ContentProtection\b|\bcenc:|pssh/i.test(xml)) return fallback("drm");
+    if (!/codecs="[^"]*flac/i.test(xml)) return fallback("not_flac");
+    // Representation id "FLAC,44100,16" / "FLAC_HIRES,48000,24"; audioSamplingRate and the format as fallbacks.
+    const rep = /<(?:\w+:)?Representation\b[^>]*\bid="(FLAC(?:_HIRES)?),(\d+),(\d+)"/i.exec(xml);
+    const hires = rep ? rep[1].toUpperCase() === "FLAC_HIRES" : !formats.includes("FLAC");
+    const rate = Number(rep?.[2]) || Number(/audioSamplingRate="(\d+)"/i.exec(xml)?.[1]) || 44100;
+    const bits = Number(rep?.[3]) || (hires ? 24 : 16);
+    const sampleRate = rate >= 8000 && rate <= 768000 ? rate : 44100;
+    const bitDepth = [16, 24, 32].includes(bits) ? bits : (hires ? 24 : 16);
+    Object.assign(trace, { bits: bitDepth, rate: sampleRate });
+    const info = { audioQuality: hires ? "HI_RES_LOSSLESS" : "LOSSLESS", manifestMimeType: "application/dash+xml", manifest: b64(new TextEncoder().encode(xml)), bitDepth, sampleRate };
+    const web = webEdge(request, env);
+    const response = web ? await edgeInfo(trackId, info, env, web) : await streamInfo(trackId, request, env, info, allowAac);
+    if (response.status !== 200) return fallback(`dash_${(await response.clone().json().catch(() => ({}))).error || response.status}`);
+    // v2 offered its best of FLAC/FLAC_HIRES, so a FLAC-only answer also settles "not hi-res".
+    await env.DB.prepare("INSERT OR REPLACE INTO tidal_hires_cache(track_id,hires,checked_at) VALUES(?,?,?)")
+      .bind(String(trackId), hires ? 1 : 0, now()).run().catch(() => {});
+    return { response };
+  } catch {
+    return fallback("error");
+  }
+}
+
+/**
+ * The MPD text from v2's `uri`: an inline data: URI (uriScheme=DATA, base64 or percent-encoded), or an https link
+ * on a *.tidal.com host (fetched without credentials; ~1 h signed link). null when neither works.
+ */
+async function v2Mpd(uri) {
+  if (typeof uri !== "string") return null;
+  let xml = null;
+  if (uri.startsWith("data:")) {
+    const comma = uri.indexOf(",");
+    if (comma < 0) return null;
+    const meta = uri.slice(5, comma);
+    let payload = uri.slice(comma + 1);
+    try {
+      if (payload.includes("%")) payload = decodeURIComponent(payload);
+      xml = /;base64$/i.test(meta) ? new TextDecoder().decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0))) : payload;
+    } catch { return null; }
+  } else if (uri.startsWith("https://")) {
+    try {
+      const host = new URL(uri).hostname;
+      if (host !== "tidal.com" && !host.endsWith(".tidal.com")) return null;
+      const r = await fetch(uri, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(9000) });
+      if (!r.ok) return null;
+      xml = await r.text();
+    } catch { return null; }
+  }
+  return xml && /<(?:\w+:)?MPD\b/.test(xml) ? xml : null;
+}
+
+/** One line per stream on the v2 path, for `wrangler tail`: which lane answered and what it was. No tokens or URLs. */
+function logV2Stream(trackId, trace, response, body) {
+  const line = { track: String(trackId), path: trace.path };
+  if (trace.reason) line.reason = trace.reason;
+  if (trace.formats) line.formats = trace.formats;
+  if (trace.bits) { line.bits = trace.bits; line.rate = trace.rate; }
+  line.status = response.status;
+  if (body?.codec) line.codec = body.codec;
+  if (body?.error) line.error = body.error;
+  console.log(`tidal_stream ${JSON.stringify(line)}`);
+}
+
+function b64(bytes) { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s); }
 
 /**
  * After takeAccount found no seat: true when some seat is free under its caps and
@@ -676,9 +833,9 @@ async function dash(request, trackId, env, isInit) {
  * is final. The old quality x country walk cost up to 6 calls per stream for CD-only
  * tracks, which this client never receives as FLAC, and drew Tidal 429s.
  */
-async function playbackInfo(trackId, account, env, quality) {
+async function playbackInfo(trackId, account, env, quality, opts) {
   const p = new URLSearchParams({ countryCode: env.TIDAL_COUNTRY_CODE || "US", audioquality: quality, playbackmode: "STREAM", assetpresentation: "FULL" });
-  const r = await tidalFetch(`/tracks/${trackId}/playbackinfopostpaywall?${p}`, account, env);
+  const r = await tidalFetch(`/tracks/${trackId}/playbackinfopostpaywall?${p}`, account, env, opts);
   if (!r.ok && r.status !== 429) { // a 429 is logged by the caller's onUpstream429
     // Redacted: last 4 of the seat id, status and Tidal's user message only.
     const details = await r.clone().json().catch(() => ({}));
@@ -921,10 +1078,17 @@ async function refreshIfNeeded(account, env) {
   return refreshAccount(account, env);
 }
 
-async function tidalFetch(path, account, env) {
-  const headers = tidalHeaders(account.access_token);
-  let r = await fetch(`${API}${path}`, { headers, signal: AbortSignal.timeout(9000) });
-  if (r.status === 401 && account.refresh_token) {
+/**
+ * One Tidal API call (plus one retry after a 401-triggered refresh). opts (the v2 path only; omitted = v1 as always):
+ * base = API root, accept = Accept header, refresh: false = no refresh retry, budget = { calls } counted per real
+ * upstream call, and budget.account = the refreshed account when a refresh happened.
+ */
+async function tidalFetch(path, account, env, opts = {}) {
+  const base = opts.base || API;
+  const headers = tidalHeaders(account.access_token, opts.accept);
+  if (opts.budget) opts.budget.calls++;
+  let r = await fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(9000) });
+  if (r.status === 401 && account.refresh_token && opts.refresh !== false) {
     // Tidal subStatus 4005 is an asset/rights refusal, not an expired session.
     const error = await r.clone().json().catch(() => ({}));
     if (error.subStatus === 4005) return r;
@@ -936,15 +1100,17 @@ async function tidalFetch(path, account, env) {
       return json({ error: "refresh_failed" }, 503);
     }
     await bumpSeat(env, account.id); // the retry is a second upstream call on this seat
-    r = await fetch(`${API}${path}`, { headers: tidalHeaders(fresh.access_token), signal: AbortSignal.timeout(9000) });
+    if (opts.budget) { opts.budget.calls++; opts.budget.account = fresh; }
+    r = await fetch(`${base}${path}`, { headers: tidalHeaders(fresh.access_token, opts.accept), signal: AbortSignal.timeout(9000) });
   }
   return r;
 }
 
 function oauthHeaders() { return { "User-Agent": UA, Accept: "application/json", "X-Platform": "android", "X-Tidal-Platform": "android", "content-type": "application/x-www-form-urlencoded" }; }
-function tidalHeaders(accessToken) {
+function tidalHeaders(accessToken, accept) {
   const headers = { ...oauthHeaders() };
   delete headers["content-type"];
+  if (accept) headers.Accept = accept;
   if (accessToken?.startsWith("CzET")) headers["x-tidal-token"] = accessToken;
   else headers.authorization = `Bearer ${accessToken}`;
   return headers;
