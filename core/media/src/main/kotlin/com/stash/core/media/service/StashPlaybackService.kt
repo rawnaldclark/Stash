@@ -660,8 +660,14 @@ class StashPlaybackService : MediaLibraryService() {
                                 // there would hold the stored-URL fallback (and the next
                                 // track's art) behind it for the 30s socket timeouts.
                                 .setExecutorService(SizedArtBitmapLoader.loadExecutor)
+                                // DefaultDataSource so covers stored on the phone (cloud songs'
+                                // art, a bare file path) load too; http(s) still goes through
+                                // the shared OkHttp client.
                                 .setDataSourceFactory(
-                                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                                    androidx.media3.datasource.DefaultDataSource.Factory(
+                                        this,
+                                        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient),
+                                    ),
                                 )
                                 .setMaximumOutputDimension(SizedArtBitmapLoader.TARGET_PX)
                                 .build(),
