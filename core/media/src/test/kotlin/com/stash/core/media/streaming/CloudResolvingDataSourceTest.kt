@@ -121,6 +121,15 @@ class CloudResolvingDataSourceTest {
     }
 
     @Test
+    fun `a file changed since the scan fails instead of mixing old cached bytes with new ones`() {
+        val source = CloudResolvingDataSource(resolver) { http { 100L } }
+        val stale = ref.copy(version = "rev0") // the provider now reports rev1
+        assertThrows(CloudFileChangedException::class.java) {
+            source.open(DataSpec.Builder().setUri(Uri.parse(stale.toUri())).build())
+        }
+    }
+
+    @Test
     fun `cache key is provider, item and version`() {
         val key = CloudResolvingDataSource.CACHE_KEY_FACTORY.buildCacheKey(DataSpec(Uri.parse(ref.toUri())))
         assertThat(key).isEqualTo("dropbox:id:song:rev1")

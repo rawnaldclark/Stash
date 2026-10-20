@@ -41,6 +41,9 @@ fun cloudPlaybackUri(cloudUri: String?): Uri =
  * Runs on ExoPlayer's loader thread; the one blocking resolve per open is the same trade
  * [LazyResolvingDataSource] makes.
  */
+/** The cloud file changed since the library last scanned it (see [CloudResolvingDataSource]). */
+class CloudFileChangedException : IOException("the cloud file changed since the last scan")
+
 @OptIn(UnstableApi::class)
 class CloudResolvingDataSource(
     private val resolver: CloudLinkResolver,
@@ -58,13 +61,30 @@ class CloudResolvingDataSource(
     override fun open(dataSpec: DataSpec): Long {
         val ref = CloudRef.parse(dataSpec.uri.toString()) ?: throw IOException("not a cloud song: ${dataSpec.uri.scheme}")
         val link = runBlocking { resolver.resolve(ref, RequestPriority.INTERACTIVE) }
+        requireSameVersion(ref, link)
         return try {
             openWith(link, dataSpec)
         } catch (e: HttpDataSource.InvalidResponseCodeException) {
             if (e.responseCode !in REFRESH_CODES) throw e
             resolver.invalidate(ref)
             val fresh = runBlocking { resolver.resolve(ref, RequestPriority.INTERACTIVE, fresh = true) }
+            requireSameVersion(ref, fresh)
             openWith(fresh, dataSpec)
+        }
+    }
+
+    /**
+     * The stream cache keys bytes by the version in the item's URI (`?v=`). If the file changed in
+     * the cloud since the scan, the link now serves the NEW bytes, and caching them under the old
+     * key would splice two files into one song. Fail instead (the player skips it); the next scan
+     * gives the song its new version and it plays again.
+     */
+    private fun requireSameVersion(ref: CloudRef, link: CloudLink) {
+        val expected = ref.version ?: return
+        val actual = link.version ?: return
+        if (expected != actual) {
+            resolver.invalidate(ref)
+            throw CloudFileChangedException()
         }
     }
 
