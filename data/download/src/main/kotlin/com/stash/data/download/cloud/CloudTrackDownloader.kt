@@ -9,6 +9,8 @@ import com.stash.data.cloud.di.CloudModule
 import com.stash.data.cloud.net.RequestPriority
 import com.stash.data.cloud.net.await
 import com.stash.data.cloud.playback.CloudLinkResolver
+import com.stash.data.cloud.provider.CloudLink
+import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
 import com.stash.data.download.TrackDownloadResult
 import com.stash.data.download.files.FileOrganizer
 import kotlinx.coroutines.CancellationException
@@ -26,7 +28,8 @@ import javax.inject.Singleton
 
 /**
  * Downloads a [MusicSource.CLOUD] song: the user's own file, copied byte for byte from their
- * cloud (Dropbox temporary link / OneDrive downloadUrl, no Authorization header) into the
+ * cloud (Dropbox temporary link / OneDrive downloadUrl with no Authorization header; Google
+ * Drive's alt=media with the link's bearer header, which OkHttp drops on a cross-host redirect) into the
  * library where every other download lands ([FileOrganizer.commitDownload]). No search, no
  * matching, no lossless lookup, no re-encode: what is in the cloud is what lands on the phone.
  *
@@ -50,13 +53,15 @@ class CloudTrackDownloader @Inject constructor(
         val temp = File(fileOrganizer.getTempDir(), "cloud_${track.id}_${UUID.randomUUID().toString().take(8)}.$ext")
         return try {
             var link = links.resolve(ref, RequestPriority.INTERACTIVE)
-            val code = fetch(link.url, temp, link.size, onProgress)
-            if (code in REFRESH_CODES) {
+            val first = fetch(link, temp, onProgress)
+            if (first.blocked) return fail(temp, GoogleDriveProvider.BLOCKED_MESSAGE)
+            if (first.code in REFRESH_CODES) {
                 link = links.resolve(ref, RequestPriority.INTERACTIVE, fresh = true)
-                val retry = fetch(link.url, temp, link.size, onProgress)
-                if (retry != 200) return fail(temp, "Cloud answered $retry")
-            } else if (code != 200) {
-                return fail(temp, "Cloud answered $code")
+                val retry = fetch(link, temp, onProgress)
+                if (retry.blocked) return fail(temp, GoogleDriveProvider.BLOCKED_MESSAGE)
+                if (retry.code != 200) return fail(temp, "Cloud answered ${retry.code}")
+            } else if (first.code != 200) {
+                return fail(temp, "Cloud answered ${first.code}")
             }
             if (link.size > 0 && temp.length() != link.size) return fail(temp, "Cloud download was cut short")
 
@@ -79,11 +84,26 @@ class CloudTrackDownloader @Inject constructor(
         }
     }
 
-    /** Streams [url] into [dest]; returns the HTTP status (200 = written whole). */
-    private suspend fun fetch(url: String, dest: File, size: Long, onProgress: (Float) -> Unit): Int {
-        val request = Request.Builder().url(url).header("Accept-Encoding", "identity").build()
+    /** An HTTP status, and whether it was Google refusing a file it flagged as abusive. */
+    private data class Fetched(val code: Int, val blocked: Boolean = false)
+
+    /**
+     * Streams [link] into [dest] (with the link's headers: Google Drive's bearer token);
+     * 200 = written whole.
+     */
+    private suspend fun fetch(link: CloudLink, dest: File, onProgress: (Float) -> Unit): Fetched {
+        val size = link.size
+        val request = Request.Builder().url(link.url)
+            .apply { link.headers.forEach { (k, v) -> header(k, v) } }
+            .header("Accept-Encoding", "identity")
+            .build()
         fetchClient.newCall(request).await().use { response ->
-            if (response.code != 200) return response.code
+            if (response.code != 200) {
+                // Only a 403 body is read (small JSON): it says whether Google blocked the file.
+                val blocked = response.code == 403 &&
+                    GoogleDriveProvider.isAbusiveFileRefusal(403, runCatching { response.peekBody(MAX_ERROR_BODY).bytes() }.getOrNull())
+                return Fetched(response.code, blocked)
+            }
             withContext(Dispatchers.IO) {
                 val total = size.takeIf { it > 0 } ?: response.body!!.contentLength()
                 response.body!!.byteStream().use { input ->
@@ -101,7 +121,7 @@ class CloudTrackDownloader @Inject constructor(
                     }
                 }
             }
-            return 200
+            return Fetched(200)
         }
     }
 
@@ -113,6 +133,7 @@ class CloudTrackDownloader @Inject constructor(
     companion object {
         private const val TAG = "CloudDownload"
         private val REFRESH_CODES = setOf(401, 403, 404, 410)
+        private const val MAX_ERROR_BODY = 16L * 1024
 
         /** The library file's extension for a cloud song's `file_format` (ALAC lives in .m4a). */
         internal fun extensionFor(format: String): String = when (val f = format.lowercase()) {

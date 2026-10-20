@@ -1,6 +1,8 @@
 package com.stash.feature.settings.cloud
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.CloudFolderWithCount
@@ -9,6 +11,8 @@ import com.stash.data.cloud.CloudAccount
 import com.stash.data.cloud.CloudLibrary
 import com.stash.data.cloud.auth.CloudAuthEvent
 import com.stash.data.cloud.provider.CloudEntry
+import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
+import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,11 +44,25 @@ data class CloudBrowseState(
     val current: CloudEntry? get() = trail.lastOrNull()
 }
 
+/**
+ * What Settings says after a trip to Google's picker; null when there's nothing to say (the
+ * user backed out).
+ */
+internal fun googlePickMessage(outcome: GooglePickOutcome): String? = when (outcome) {
+    GooglePickOutcome.Cancelled -> null
+    is GooglePickOutcome.Failed -> outcome.message
+    is GooglePickOutcome.Added -> buildString {
+        if (outcome.isNewAccount) append("Google Drive connected as ${outcome.displayName}. ")
+        append(GoogleDrivePicks.message(outcome))
+        if (outcome.added > 0 && outcome.isNewAccount) append(" Wi-Fi is best for big batches.")
+    }
+}
+
 /** A disconnect waiting for the user's yes, with what it will do. */
 data class PendingCloudDisconnect(val accountId: Long, val provider: CloudProvider, val removed: Int, val kept: Int)
 
 /**
- * Settings for cloud storage libraries (Dropbox, OneDrive): the account cards under Accounts and
+ * Settings for cloud storage libraries (Dropbox, OneDrive, Google Drive): the account cards under Accounts and
  * the Cloud folders section under Library & Storage share this ViewModel. Everything is hidden
  * when the build has no provider key ([available] false).
  */
@@ -86,6 +104,34 @@ class CloudStorageViewModel @Inject constructor(
                     is CloudAuthEvent.Failed -> _messages.tryEmit(event.message)
                 }
             }
+        }
+    }
+
+    /** True for Google Drive: songs are picked in Google's picker, not as a folder browsed here. */
+    fun usesPicker(provider: CloudProvider): Boolean = cloud.usesPicker(provider)
+
+    /**
+     * Opens Google's picker: for [accountId] ("Add songs", "Reconnect"), or a new account when
+     * null (the first pick connects Google Drive). [launch] starts the IntentSender; its result
+     * comes back to [finishGooglePick].
+     */
+    fun startGooglePick(accountId: Long?, launch: (IntentSender) -> Unit) {
+        viewModelScope.launch {
+            try {
+                launch(cloud.googlePickerIntent(accountId))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("CloudSettings", "Google picker didn't open: ${e::class.simpleName}")
+                _messages.tryEmit("Couldn't open Google Drive. Check your connection and that Google Play services is up to date.")
+            }
+        }
+    }
+
+    /** The picker's result Intent (null when it was dismissed). */
+    fun finishGooglePick(data: Intent?) {
+        viewModelScope.launch {
+            googlePickMessage(cloud.completeGooglePick(data))?.let { _messages.tryEmit(it) }
         }
     }
 

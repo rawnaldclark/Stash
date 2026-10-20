@@ -86,6 +86,12 @@ val dropboxAppKey: String =
     (localProperties.getProperty("DROPBOX_APP_KEY") ?: System.getenv("DROPBOX_APP_KEY")).orEmpty().trim()
 val oneDriveClientId: String =
     (localProperties.getProperty("ONEDRIVE_CLIENT_ID") ?: System.getenv("ONEDRIVE_CLIENT_ID")).orEmpty().trim()
+// Google Drive (drive.file + the Android Picker) has no id in the app: Google matches the Android
+// OAuth client by package name + signing-certificate SHA-1 in Cloud project stash-drive-512203.
+//   GOOGLE_DRIVE_ENABLED=true   once those clients exist for this build's package and key
+val googleDriveEnabled: Boolean =
+    (localProperties.getProperty("GOOGLE_DRIVE_ENABLED") ?: System.getenv("GOOGLE_DRIVE_ENABLED")).orEmpty().trim()
+        .equals("true", ignoreCase = true)
 
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
@@ -151,6 +157,7 @@ android {
         // `db-<app key>://1/connect`. A dummy key keeps the Dropbox filter valid when none is set.
         buildConfigField("String", "DROPBOX_APP_KEY", "\"$dropboxAppKey\"")
         buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"$oneDriveClientId\"")
+        buildConfigField("boolean", "GOOGLE_DRIVE_ENABLED", "$googleDriveEnabled")
         manifestPlaceholders["dropboxAppKey"] = dropboxAppKey.lowercase().ifEmpty { "unconfigured" }
         // Last.fm API credentials exposed via BuildConfig for the app-level
         // Hilt module to inject into LastFmApiClient. Empty strings are

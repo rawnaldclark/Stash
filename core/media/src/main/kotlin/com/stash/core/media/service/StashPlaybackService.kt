@@ -590,12 +590,13 @@ class StashPlaybackService : MediaLibraryService() {
             // Tidal may answer with a DASH MPD, so with a server set placeholders
             // resolve before their media source is chosen.
             resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
-            // The user's own cloud files: pre-authenticated links, no Authorization header.
+            // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google
+            // Drive's alt=media with a bearer header through the OkHttp source below.
             cloudDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.factory(
-                cloudLinkResolver, streamCache, ::cloudHttpDataSource,
+                cloudLinkResolver, streamCache, ::cloudHttpDataSource, ::cloudAuthorizedHttpDataSource,
             ),
             cloudUncachedDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.uncachedFactory(
-                cloudLinkResolver, ::cloudHttpDataSource,
+                cloudLinkResolver, ::cloudHttpDataSource, ::cloudAuthorizedHttpDataSource,
             ),
         )
         this.mediaSourceFactory = mediaSourceFactory
@@ -1066,6 +1067,24 @@ class StashPlaybackService : MediaLibraryService() {
             .setUserAgent("Stash")
             .setConnectTimeoutMs(10_000)
             .setReadTimeoutMs(30_000)
+            .createDataSource()
+
+    /**
+     * For cloud links that carry a bearer token (Google Drive). OkHttp, not DefaultHttpDataSource:
+     * OkHttp drops `Authorization` when a redirect leaves the host, and this client has no
+     * interceptors, so the token is never logged.
+     */
+    private val cloudAuthorizedClient: okhttp3.OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .apply { interceptors().clear(); networkInterceptors().clear() }
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    private fun cloudAuthorizedHttpDataSource(): androidx.media3.datasource.HttpDataSource =
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(cloudAuthorizedClient)
+            .setUserAgent("Stash")
             .createDataSource()
 
     private fun buildExoPlayer(

@@ -11,11 +11,14 @@ import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
+import com.stash.core.model.CloudProvider
 import com.stash.core.model.CloudRef
 import com.stash.core.model.STASH_CLOUD_SCHEME
 import com.stash.data.cloud.net.RequestPriority
 import com.stash.data.cloud.playback.CloudLinkResolver
+import com.stash.data.cloud.provider.CloudFileBlockedException
 import com.stash.data.cloud.provider.CloudLink
+import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
 
@@ -33,7 +36,12 @@ fun cloudPlaybackUri(cloudUri: String?): Uri =
  *
  * At open() the item's short-lived link (OneDrive `downloadUrl`, Dropbox temporary link) comes
  * from [CloudLinkResolver] (cached per file, so a seek doesn't cost an API call), and the bytes
- * are read from it with HTTP Range and no Authorization header. A link the content host refuses
+ * are read from it with HTTP Range and no Authorization header. Google Drive has no such link:
+ * its [CloudLink] is the `alt=media` address plus a bearer token in [CloudLink.headers], sent as
+ * request headers (never in the URI, so never in the cache key, [getUri] or an error message)
+ * through [authorizedHttpFactory], an OkHttp source that drops `Authorization` if Google ever
+ * redirects to another host. A 403 `cannotDownloadAbusiveFile` becomes
+ * [CloudFileBlockedException] ("Google blocked this file") instead of a retry. A link the content host refuses
  * (401/403/404/410: expired or revoked) is resolved again and the open retried once at the same
  * position. When the host sends no Content-Length, the length comes from the file size in the
  * provider's metadata, or seeking (and Android Auto's scrubber) breaks.
@@ -47,8 +55,15 @@ class CloudFileChangedException : IOException("the cloud file changed since the 
 @OptIn(UnstableApi::class)
 class CloudResolvingDataSource(
     private val resolver: CloudLinkResolver,
+    /**
+     * For links that carry headers (a bearer token): must not forward them across hosts. Null =
+     * [httpFactory] (tests). Before [httpFactory] so callers can still pass that as a trailing lambda.
+     */
+    authorizedHttpFactory: (() -> HttpDataSource)? = null,
     private val httpFactory: () -> HttpDataSource,
 ) : DataSource {
+
+    private val authorizedHttpFactory: () -> HttpDataSource = authorizedHttpFactory ?: httpFactory
 
     private var delegate: DataSource? = null
     private var openedUri: Uri? = null
@@ -65,11 +80,24 @@ class CloudResolvingDataSource(
         return try {
             openWith(link, dataSpec)
         } catch (e: HttpDataSource.InvalidResponseCodeException) {
+            throwIfBlocked(ref, e)
             if (e.responseCode !in REFRESH_CODES) throw e
             resolver.invalidate(ref)
             val fresh = runBlocking { resolver.resolve(ref, RequestPriority.INTERACTIVE, fresh = true) }
             requireSameVersion(ref, fresh)
-            openWith(fresh, dataSpec)
+            try {
+                openWith(fresh, dataSpec)
+            } catch (again: HttpDataSource.InvalidResponseCodeException) {
+                throwIfBlocked(ref, again)
+                throw again
+            }
+        }
+    }
+
+    /** Google refuses to serve a file it flagged as abusive: say so, and don't retry. */
+    private fun throwIfBlocked(ref: CloudRef, e: HttpDataSource.InvalidResponseCodeException) {
+        if (ref.provider == CloudProvider.GOOGLE_DRIVE && GoogleDriveProvider.isAbusiveFileRefusal(e.responseCode, e.responseBody)) {
+            throw CloudFileBlockedException(GoogleDriveProvider.BLOCKED_MESSAGE)
         }
     }
 
@@ -90,9 +118,13 @@ class CloudResolvingDataSource(
 
     private fun openWith(link: CloudLink, spec: DataSpec): Long {
         closeQuietly()
-        val http = httpFactory()
+        val http = if (link.headers.isEmpty()) httpFactory() else authorizedHttpFactory()
         listeners.forEach(http::addTransferListener)
-        val length = http.open(spec.buildUpon().setUri(Uri.parse(link.url)).build())
+        val request = spec.buildUpon()
+            .setUri(Uri.parse(link.url))
+            .apply { if (link.headers.isNotEmpty()) setHttpRequestHeaders(spec.httpRequestHeaders + link.headers) }
+            .build()
+        val length = http.open(request)
         delegate = http
         openedUri = Uri.parse(link.url)
         if (length != C.LENGTH_UNSET.toLong()) return length
@@ -134,8 +166,13 @@ class CloudResolvingDataSource(
          * The DataSource.Factory the player uses for cloud items: the evicting stream cache over
          * [CloudResolvingDataSource]. A cache hit never resolves a link at all.
          */
-        fun factory(resolver: CloudLinkResolver, cache: SimpleCache?, httpFactory: () -> HttpDataSource): DataSource.Factory {
-            val upstream = DataSource.Factory { CloudResolvingDataSource(resolver, httpFactory) }
+        fun factory(
+            resolver: CloudLinkResolver,
+            cache: SimpleCache?,
+            httpFactory: () -> HttpDataSource,
+            authorizedHttpFactory: () -> HttpDataSource = httpFactory,
+        ): DataSource.Factory {
+            val upstream = DataSource.Factory { CloudResolvingDataSource(resolver, authorizedHttpFactory, httpFactory) }
             if (cache == null) return upstream
             return CacheDataSource.Factory()
                 .setCache(cache)
@@ -145,7 +182,11 @@ class CloudResolvingDataSource(
         }
 
         /** Uncached, for Cast (the speaker's reads must not fill the phone's cache). */
-        fun uncachedFactory(resolver: CloudLinkResolver, httpFactory: () -> HttpDataSource): DataSource.Factory =
-            DataSource.Factory { CloudResolvingDataSource(resolver, httpFactory) }
+        fun uncachedFactory(
+            resolver: CloudLinkResolver,
+            httpFactory: () -> HttpDataSource,
+            authorizedHttpFactory: () -> HttpDataSource = httpFactory,
+        ): DataSource.Factory =
+            DataSource.Factory { CloudResolvingDataSource(resolver, authorizedHttpFactory, httpFactory) }
     }
 }

@@ -1,6 +1,9 @@
 package com.stash.feature.settings.cloud
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +22,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.LibraryAdd
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material3.AlertDialog
@@ -56,6 +61,21 @@ import com.stash.feature.settings.components.SettingsSectionLabel
 private fun accentOf(provider: CloudProvider): Color = when (provider) {
     CloudProvider.DROPBOX -> Color(0xFF0061FE)
     CloudProvider.ONEDRIVE -> Color(0xFF0078D4)
+    CloudProvider.GOOGLE_DRIVE -> Color(0xFF1FA463)
+}
+
+/**
+ * Google's picker, ready to launch: call it with an account id ("Add songs", "Reconnect") or null
+ * (connect a new account; its first pick is the sign-in). The result goes back to the ViewModel.
+ */
+@Composable
+private fun rememberGooglePicker(viewModel: CloudStorageViewModel): (Long?) -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        viewModel.finishGooglePick(result.data)
+    }
+    return { accountId ->
+        viewModel.startGooglePick(accountId) { sender -> launcher.launch(IntentSenderRequest.Builder(sender).build()) }
+    }
 }
 
 /** Shows [CloudStorageViewModel.messages] as toasts while the screen is on. */
@@ -79,6 +99,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
     val pending by viewModel.pendingDisconnect.collectAsStateWithLifecycle()
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val openGooglePicker = rememberGooglePicker(viewModel)
     CloudMessages(viewModel)
 
     SettingsSectionLabel("Cloud storage")
@@ -92,16 +113,29 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                 ?: AuthState.NotConnected,
             // A restored backup brings the account back without its sign-in: reconnect.
             expired = row != null && !row.signedIn,
-            onConnect = { viewModel.connect(context, provider) },
+            onConnect = {
+                // Google Drive's picker is its sign-in too (and its reconnect, for the same account).
+                if (viewModel.usesPicker(provider)) openGooglePicker(row?.account?.id)
+                else viewModel.connect(context, provider)
+            },
             onDisconnect = { row?.let { viewModel.requestDisconnect(it.account) } },
             extraContent = row?.takeIf { it.signedIn }?.let { r ->
                 {
-                    SettingsNavRow(
-                        title = "Add a music folder",
-                        subtitle = "Stash plays and downloads what's in it. Read-only: nothing is changed in your ${provider.displayName}.",
-                        leadingIcon = Icons.Rounded.CreateNewFolder,
-                        onClick = { viewModel.openBrowser(r.account.id, r.account.displayName) },
-                    )
+                    if (viewModel.usesPicker(provider)) {
+                        SettingsNavRow(
+                            title = "Add songs from Google Drive",
+                            subtitle = "Pick the songs Stash may play and download. It sees only the files you pick, read-only.",
+                            leadingIcon = Icons.Rounded.LibraryAdd,
+                            onClick = { openGooglePicker(r.account.id) },
+                        )
+                    } else {
+                        SettingsNavRow(
+                            title = "Add a music folder",
+                            subtitle = "Stash plays and downloads what's in it. Read-only: nothing is changed in your ${provider.displayName}.",
+                            leadingIcon = Icons.Rounded.CreateNewFolder,
+                            onClick = { viewModel.openBrowser(r.account.id, r.account.displayName) },
+                        )
+                    }
                 }
             },
         )
@@ -152,6 +186,7 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     var confirmRemove by rememberSaveable { mutableStateOf<Long?>(null) }
+    val openGooglePicker = rememberGooglePicker(viewModel)
     CloudMessages(viewModel)
 
     SettingsSectionLabel("Cloud folders")
@@ -162,11 +197,19 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     }
     accounts.filter { it.signedIn }.forEach { row ->
         rows += {
-            SettingsNavRow(
-                title = if (accounts.size > 1) "Add a folder from ${row.account.provider.displayName}" else "Add a folder",
-                leadingIcon = Icons.Rounded.CreateNewFolder,
-                onClick = { viewModel.openBrowser(row.account.id, row.account.displayName) },
-            )
+            if (viewModel.usesPicker(row.account.provider)) {
+                SettingsNavRow(
+                    title = "Add songs from Google Drive",
+                    leadingIcon = Icons.Rounded.LibraryAdd,
+                    onClick = { openGooglePicker(row.account.id) },
+                )
+            } else {
+                SettingsNavRow(
+                    title = if (accounts.size > 1) "Add a folder from ${row.account.provider.displayName}" else "Add a folder",
+                    leadingIcon = Icons.Rounded.CreateNewFolder,
+                    onClick = { viewModel.openBrowser(row.account.id, row.account.displayName) },
+                )
+            }
         }
     }
     if (folders.isNotEmpty()) {
@@ -222,10 +265,17 @@ private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider
         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Folder, contentDescription = null, tint = provider?.let(::accentOf) ?: MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        // Google Drive's "folder" is the set of songs the user picked, not a place in the drive.
+        val picked = provider == CloudProvider.GOOGLE_DRIVE
+        Icon(
+            if (picked) Icons.Rounded.LibraryMusic else Icons.Rounded.Folder,
+            contentDescription = null,
+            tint = provider?.let(::accentOf) ?: MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(folder.path.ifEmpty { "/" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (picked) folder.name else folder.path.ifEmpty { "/" }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(provider?.displayName, status).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
