@@ -139,7 +139,8 @@ class CloudScanner(
         /** Best sibling cover per folder key, and songs in that folder still without art. */
         private val covers = HashMap<String, Pair<Int, ScanEntry.File>>()
         private val needArt = HashMap<String, MutableList<Long>>()
-        private val coverDone = HashSet<String>()
+        /** A folder's fetched cover (null = tried and failed), reused for its songs on later pages. */
+        private val coverPaths = HashMap<String, String?>()
 
         var added = 0
         var updated = 0
@@ -220,11 +221,10 @@ class CloudScanner(
         suspend fun applyCovers() {
             for ((key, ids) in needArt.entries.toList()) {
                 val cover = covers[key]?.second ?: continue
-                if (key in coverDone) continue
-                coverDone += key
-                val path = downloadCover(cover) ?: continue
-                dao.setArtIfMissing(ids, path)
+                // Fetched once per folder; songs of that folder on later pages reuse it.
+                val path = if (coverPaths.containsKey(key)) coverPaths[key] else downloadCover(cover).also { coverPaths[key] = it }
                 needArt.remove(key)
+                if (path != null) dao.setArtIfMissing(ids, path)
             }
         }
 

@@ -130,6 +130,22 @@ class CloudScannerTest {
     }
 
     @Test
+    fun `a folder's cover is fetched once and reaches its songs on later pages too`() = runTest {
+        val cover = file("id:c", "folder.png", "r1", Fixtures.PNG, listOf("A", "B"))
+        val one = file("id:1", "1.mp3", "r1", ByteArray(400), listOf("A", "B"))
+        val two = file("id:2", "2.mp3", "r1", ByteArray(400), listOf("A", "B"))
+        provider.pages = mutableListOf(
+            ScanPage(listOf(cover, one), "c1", hasMore = true),
+            ScanPage(listOf(two), "c2", hasMore = false),
+        )
+
+        scanner().scan(folderId)
+
+        assertThat(tracks().map { it.albumArtPath }.toSet()).containsExactly("/art/${Fixtures.PNG.size}.jpg")
+        assertThat(reads["https://dl/id:c"]).isEqualTo(1)
+    }
+
+    @Test
     fun `incremental pass reads only what changed and removes deletions`() = runTest {
         val a = file("id:a", "a.flac", "r1", flac("A", "X", "Y"), listOf("X", "Y"))
         val b = file("id:b", "b.flac", "r1", flac("B", "X", "Y"), listOf("X", "Y"))

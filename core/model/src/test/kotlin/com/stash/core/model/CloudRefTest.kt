@@ -40,7 +40,7 @@ class CloudRefTest {
             "",
             "stash-resolve://track/1",
             "https://graph.microsoft.com/v1.0/me",
-            "stash-cloud://dropbox/1/abc",
+            "stash-cloud://gdrive/1/abc", // not a provider Stash knows
             "stash-cloud://onedrive/0/abc",
             "stash-cloud://onedrive/x/abc",
             "stash-cloud://onedrive/1/",
