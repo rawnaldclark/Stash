@@ -15,9 +15,15 @@
 #   secret ("pepper")                     it (missingForGate in web/worker/index.js), and the import too
 #   sign-in codes: 8 digits, 10 minutes   eightDigitCode, web/worker/crypto.js; CODE_TTL_S, web/worker/codes.js
 #   stash_signin lasts 30 minutes         SIGNIN_SECONDS, web/worker/session.js
+#   cloud check twice a day (app)         CloudScanWorker 12 h, data/cloud/.../scan/CloudScanWorker.kt
+#   cloud check at most every 3 h (web)   scanIfDue, the web player's src/lib/cloud/service.ts
+#
+# The cloud storage section keeps the anchor "cloud-storage" (the empty div before
+# its heading; the heading's own slug is the long one), because
+# Google's OAuth verification links to /privacy#cloud-storage. Don't rename it.
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-10-13
+updated: 2026-10-20
 ---
 
 ## The short version
@@ -26,6 +32,7 @@ updated: 2026-10-13
 - Linking Stash on the web needs no account. What you choose to share between your devices is end-to-end encrypted.
 - Your credentials live on your phone. The Spotify, YouTube and Discord tokens are encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink), keyed per install in Android's hardware-backed Keystore; the rest (Qobuz, Last.fm, ListenBrainz) sit in app-private storage. When yt-dlp runs, Stash gives it a temporary copy of your YouTube cookie in a private file only Stash can read, and deletes it as soon as yt-dlp is done.
 - Each credential is only ever sent to the service it belongs to, over TLS 1.2 or higher. A handful of hosts the project runs are contacted too, and none of them ever receives a credential.
+- Your cloud storage (Dropbox, OneDrive, Google Drive), if you connect it, is read-only and goes straight between the provider and your phone or browser. No Stash server ever sees your files or your sign-in. See [Your cloud storage](#cloud-storage).
 - Stash is free software under the GNU General Public License, version 3 or later, and every line of code is open source, so anything on this page can be checked in the [source code](https://github.com/rawnaldclark/Stash).
 
 ## What Stash talks to
@@ -88,6 +95,14 @@ These features use a Worker the project runs. It answers at `stashfm.app`, the d
 
 - **Linking Stash on the web**: a separate Worker the project runs, at `sync.stashfm.app`, used only after you link Stash on the web (Settings › Library & Storage › Link Stash on the web). It stores, end-to-end encrypted with a key only your linked devices have, what you chose to share between them: what's playing and your queue (when "Pick up where you left off" is on), the likes, plays and playlists you chose to mirror, and anything you send to the other device. The Worker can't read any of it; it sees sizes, times and a random id per device. Each device checks it when Stash opens and sends to it when what's playing or your mirrored library changes; while mirroring is on, the app also checks every 6 hours in the background and Stash on the web every few minutes while it's open. Logins, files, downloads and settings never go. Your IP address is used for rate limiting and isn't stored. A device that hasn't been seen for 90 days is removed, and a link with no devices left is deleted; what's playing is deleted after 7 days, and a send after 7 days or when it's received. Unlinking cuts a device off at once. Cloudflare's 30-day recovery history holds only the encrypted data.
 
+### Cloud storage hosts
+
+Only after you connect a provider, and only in builds and on the web player where that provider is turned on. What each one is asked for and what it's sent is under [Your cloud storage](#cloud-storage).
+
+- **Dropbox** (`www.dropbox.com` for its sign-in page, `api.dropboxapi.com`, and the `*.dropboxusercontent.com` links your files are read from).
+- **OneDrive** (`login.microsoftonline.com` for the Microsoft sign-in, `graph.microsoft.com`, and the download host each file's link points to, such as `*.files.1drv.com`, `my.microsoftpersonalcontent.com` or `*.sharepoint.com`).
+- **Google Drive** (`accounts.google.com` for the Google sign-in, `www.googleapis.com` for the songs you picked, and `oauth2.googleapis.com` to revoke access; in the app the sign-in and file picker are Google Play services' own, on the web the picker loads from `apis.google.com` and `docs.google.com`).
+
 ### Updates and housekeeping
 
 - **GitHub** (`api.github.com`): the update checks, for Stash itself and for yt-dlp's nightly builds, at every cold start and daily.
@@ -97,6 +112,44 @@ These features use a Worker the project runs. It answers at `stashfm.app`, the d
 ### Album art
 
 - **Album art and artist photos** load straight from the service they come from: Spotify (`i.scdn.co`, `mosaic.scdn.co`, and `*.spotifycdn.com` hosts such as `pickasso.spotifycdn.com` for its mixes), YouTube (`i.ytimg.com`, `lh3.googleusercontent.com`, `yt3.googleusercontent.com`, `yt3.ggpht.com`), Last.fm (`lastfm.freetls.fastly.net`, `lastfm-img.freetls.fastly.net`), Qobuz (`static.qobuz.com`) and JioSaavn (`c.saavncdn.com`). A short song link can also bring a cover from Deezer (`cdn-images.dzcdn.net`, `e-cdns-images.dzcdn.net`). A playlist cover loads from whatever image address its service hands back. Each image host sees your IP address, as with any image on the web.
+
+<div id="cloud-storage"></div>
+
+## Your cloud storage (Dropbox, OneDrive, Google Drive)
+
+You can play music you keep in your own Dropbox, OneDrive or Google Drive, in the Android app (Settings › Accounts) and in the web player at `play.stashfm.app` (Settings › Cloud storage). Each provider appears only in builds where it's turned on, and nothing is contacted until you connect it.
+
+Your browser or phone talks to the provider directly. Your sign-in, your file list, tags, covers and the audio go straight between the provider and you, and no Stash server, the web player's own included, ever sees a token, a file name or a byte of audio.
+
+### What each provider is asked for
+
+- **Dropbox**: read-only access, `files.metadata.read` and `files.content.read`. Stash lists the folders you pick and reads the songs in them.
+- **OneDrive**: read-only access, `Files.Read`, plus `offline_access` (to stay signed in) and `User.Read` (to show which account is connected). Stash lists the folders you pick and reads the songs in them.
+- **Google Drive**: `drive.file`, which lets Stash see only the files you pick in Google's own file picker, and nothing else in your Drive. Google's consent screen says this permission could also let an app create and change files; Stash only reads the songs you picked, and never writes, creates, changes or deletes anything in your Drive.
+
+Stash never writes to your Dropbox or OneDrive either.
+
+### What Stash reads, and where it's kept
+
+- **File names and details** (name, size, when it changed, and a version or checksum) of the songs in the folders you pick, or the songs you pick in Google Drive, so Stash can list them and notice when one is added, changed, trashed or removed.
+- **The start of each new or changed song** (a few hundred KB, sometimes its end too), for its tags (title, artist, album) and its cover.
+- **The song itself**, when you play it or, in the app, download it.
+- **Your account's name and email**, only to label the connected account in Settings.
+
+The app checks your picked folders and songs for changes about twice a day, and when you tap Rescan now; the web player checks when you open it, at most every 3 hours. The provider sees which of your files are opened, and your IP address, as with any app you connect to it.
+
+All of this stays on your phone or in your browser. In the app, the sign-in tokens are stored encrypted with Google's [Tink](https://developers.google.com/tink), keyed in Android's hardware-backed Keystore, and are sent only to the provider they came from. In the web player, the tokens, the song list and the covers are kept in that browser's IndexedDB, for stashfm.app only. Google Drive songs in the web player play through the player's own service worker, which runs in your browser and adds your Google token to the request to Google; it keeps nothing.
+
+Data from your cloud storage is never sent to Stash's servers or to anyone else, never used for advertising, never sold, never used to train AI or machine-learning models, and no person reads it. Stash has no server-side copy to share.
+
+### Disconnecting and revoking access
+
+- **In Stash**: Disconnect in the app's Settings › Accounts, or in the web player's Settings › Cloud storage. Stash forgets the tokens and removes that account's songs from your library; songs the app already downloaded stay on your phone as ordinary files. The web player also asks Dropbox and Google to revoke its token when you disconnect.
+- **At the provider**, which removes Stash's access everywhere at once: [Google Account › Third-party connections](https://myaccount.google.com/connections), [Microsoft account › Apps and services](https://account.live.com/consent/Manage), or [Dropbox › Connected apps](https://www.dropbox.com/account/connected_apps).
+
+### Google API Services
+
+Stash's use and transfer to any other app of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
 ## What runs without being asked
 
@@ -117,6 +170,7 @@ Some of the requests above happen without you tapping anything. These are all of
 - Daily: the Stash and yt-dlp update checks.
 - Once after each app update, on Wi-Fi: the lyrics upgrade pass described under Lyrics, unless the lyrics source is set to LRC only.
 - Once after each app update, with a connection: album art for downloaded songs whose files don't carry their tags yet, from the hosts listed under Album art.
+- Twice a day, while you have cloud storage connected: a check of your picked folders or songs for changes, with that provider only (see [Your cloud storage](#cloud-storage)).
 
 **While Stash Mixes is on**, which is the default (turn it off with "Stash Mixes (beta)" in Settings › Library & Storage):
 
@@ -129,7 +183,7 @@ Some of the requests above happen without you tapping anything. These are all of
 
 - With Download on, after downloads finish: a pass that looks for FLAC copies of downloaded songs that came in lossy, in Qobuz's catalog, then through your account or the relay.
 
-**Only if you turn it on**: Auto-sync, which syncs your library on the days and at the time you pick; and scrobbling, likes mirroring, YouTube Music history and Discord Rich Presence, as described above.
+**Only if you turn it on**: Auto-sync, which syncs your library on the days and at the time you pick; and scrobbling, likes mirroring, YouTube Music history, Discord Rich Presence and cloud storage, as described above.
 
 Opening Home also loads the Qobuz rows, unless you've turned them off, and the supporters list.
 
