@@ -86,8 +86,14 @@ class CloudTokenManager @Inject constructor(
 
     suspend fun hasToken(provider: CloudProvider, accountId: Long): Boolean = store.get(keyFor(provider, accountId)) != null
 
-    /** Disconnect: the token is forgotten on this phone. */
-    suspend fun forget(provider: CloudProvider, accountId: Long) = store.clear(keyFor(provider, accountId))
+    /**
+     * Disconnect: the token is forgotten on this phone. Under the account's lock, so a refresh
+     * already in flight finishes first and can't save a token back after this.
+     */
+    suspend fun forget(provider: CloudProvider, accountId: Long) {
+        val key = keyFor(provider, accountId)
+        locks.getOrPut(key) { Mutex() }.withLock { store.clear(key) }
+    }
 
     companion object {
         /** Refresh this long before expiry so a token never dies mid-request. */

@@ -75,23 +75,28 @@ class CloudAuthCoordinator @Inject constructor(
         val pendingState = prefs.getString(KEY_STATE, null)
         val verifier = prefs.getString(KEY_VERIFIER, null)
         val started = prefs.getLong(KEY_STARTED, 0)
-        prefs.edit().clear().apply()
 
         val auth = pendingProvider?.let { auths[it] }
         if (auth == null || pendingState == null || verifier == null || System.currentTimeMillis() - started > MAX_AGE_MS) {
+            prefs.edit().clear().apply()
             return CloudAuthEvent.Failed(pendingProvider, "That sign-in has expired. Try connecting again.")
         }
-        return when (val result = auth.parseCallback(uri)) {
-            CallbackResult.NotMine -> CloudAuthEvent.Failed(pendingProvider, "Unexpected sign-in response.")
+        // Only a redirect carrying this sign-in's state ends it. Any app can open the redirect
+        // activity with a made-up URI; that must not cancel (or complete) the user's sign-in.
+        val result = auth.parseCallback(uri)
+        val state = when (result) {
+            is CallbackResult.Code -> result.state
+            is CallbackResult.Denied -> result.state
+            CallbackResult.NotMine -> null
+        }
+        if (state != pendingState) {
+            return CloudAuthEvent.Failed(pendingProvider, "Sign-in didn't match. Try connecting again.")
+        }
+        prefs.edit().clear().apply()
+        return when (result) {
+            is CallbackResult.Code -> connect(pendingProvider, auth, result.code, verifier)
             is CallbackResult.Denied -> CloudAuthEvent.Failed(pendingProvider, result.message)
-            is CallbackResult.Code -> {
-                // A redirect that doesn't carry our state was not started by this sign-in.
-                if (result.state != pendingState) {
-                    CloudAuthEvent.Failed(pendingProvider, "Sign-in didn't match. Try connecting again.")
-                } else {
-                    connect(pendingProvider, auth, result.code, verifier)
-                }
-            }
+            CallbackResult.NotMine -> CloudAuthEvent.Failed(pendingProvider, "Unexpected sign-in response.")
         }
     }
 

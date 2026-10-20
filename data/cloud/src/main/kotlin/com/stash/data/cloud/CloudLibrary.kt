@@ -47,6 +47,7 @@ class CloudLibrary @Inject constructor(
     private val coordinator: CloudAuthCoordinator,
     private val tokens: CloudTokenManager,
     private val scheduler: CloudScanScheduler,
+    private val scanner: com.stash.data.cloud.scan.CloudScanner,
 ) {
     /** Providers this build can connect (empty = the whole feature stays hidden). */
     val enabledProviders: List<CloudProvider> get() = config.enabledProviders
@@ -89,9 +90,14 @@ class CloudLibrary @Inject constructor(
      */
     suspend fun disconnect(accountId: Long): CloudRemoval {
         val account = dao.getAccount(accountId) ?: return CloudRemoval(0, 0)
-        CloudProvider.fromId(account.provider)?.let { tokens.forget(it, accountId) }
-        val removal = dao.removeAccount(accountId)
-        if (dao.getAllFolders().isEmpty()) scheduler.cancelPeriodic()
+        // Stop scans first, and wait out any still inside one of this account's folders, so no
+        // scan writes rows for a removed account or refreshes (and re-saves) its token after.
+        scheduler.cancelRunning()
+        val removal = withFolderLocks(dao.getFolders(accountId).map { it.id }) {
+            CloudProvider.fromId(account.provider)?.let { tokens.forget(it, accountId) }
+            dao.removeAccount(accountId)
+        }
+        resumeScans()
         return removal
     }
 
@@ -124,10 +130,22 @@ class CloudLibrary @Inject constructor(
 
     /** Unpicks a folder; its songs go, downloaded ones stay as local files. */
     suspend fun removeFolder(folderId: Long): CloudRemoval {
-        val removal = dao.removeFolder(folderId)
-        if (dao.getAllFolders().isEmpty()) scheduler.cancelPeriodic()
+        scheduler.cancelRunning()
+        val removal = scanner.withFolderLock(folderId) { dao.removeFolder(folderId) }
+        resumeScans()
         return removal
     }
+
+    /** Other folders' scans were cancelled with the removed one's: they carry on from their cursors. */
+    private suspend fun resumeScans() {
+        if (dao.getAllFolders().isEmpty()) return
+        scheduler.scanNow(null)
+        scheduler.ensurePeriodic()
+    }
+
+    private suspend fun <T> withFolderLocks(folderIds: List<Long>, block: suspend () -> T): T =
+        if (folderIds.isEmpty()) block()
+        else scanner.withFolderLock(folderIds.first()) { withFolderLocks(folderIds.drop(1), block) }
 
     suspend fun rescanAll() = scheduler.scanNow(null)
 

@@ -111,12 +111,25 @@ class CloudScanScheduler @Inject constructor(
         if (!config.anyEnabled) return
         val request = PeriodicWorkRequestBuilder<CloudScanWorker>(12, TimeUnit.HOURS)
             .setConstraints(constraints())
+            // Not now: the folder that made this call was just handed to scanNow. (The scanner's
+            // per-folder lock also keeps two runs off one folder.)
+            .setInitialDelay(12, TimeUnit.HOURS)
             .addTag(TAG)
             .build()
         workManager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
     fun cancelPeriodic() {
+        workManager.cancelUniqueWork(PERIODIC)
+    }
+
+    /**
+     * Stops whatever scan is running (both the one-off and the periodic run), so a folder or
+     * account can be removed without a scan writing into it. The scanner notices the
+     * cancellation at its next suspension point and releases its folder lock.
+     */
+    fun cancelRunning() {
+        workManager.cancelUniqueWork(UNIQUE)
         workManager.cancelUniqueWork(PERIODIC)
     }
 
