@@ -146,10 +146,27 @@ class GoogleDriveScanTest {
         assertThat(title("1AAAAAAAAA")).isEqualTo("Alpha (2026 edit)")
         assertThat(dao.getItem(accountId, "1BBBBBBBBB")).isNull()
         assertThat(dao.getItem(accountId, "1CCCCCCCCC")).isNull()
+        // The token's account was checked before anything was removed, once for the whole pass.
+        assertThat(drive.aboutCalls()).hasSize(1)
         // Same rule as the other providers: a downloaded song stays, as a local file.
         val kept = dao.getTrack(downloadedTrack)!!
         assertThat(kept.source.name).isEqualTo("LOCAL")
         assertThat(kept.cloudUri).isNull()
+    }
+
+    @Test
+    fun `a token for another Google account removes nothing and asks for a reconnect`() = runTest {
+        scanThreePicks()
+        // A silent re-authorization landed on a different account: none of the picks are visible.
+        drive.permissionId = "perm-OTHER"
+        drive.files.values.forEach { it.gone = true }
+
+        assertThrows(CloudAuthRequiredException::class.java) { kotlinx.coroutines.runBlocking { scanner().scan(folderId) } }
+
+        assertThat(title("1AAAAAAAAA")).isEqualTo("Alpha")
+        assertThat(title("1BBBBBBBBB")).isEqualTo("Bravo")
+        assertThat(title("1CCCCCCCCC")).isEqualTo("Charlie")
+        assertThat(tokens.hasToken(CloudProvider.GOOGLE_DRIVE, accountId)).isFalse()
     }
 
     @Test

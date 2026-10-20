@@ -44,7 +44,10 @@ internal object GoogleDriveJson {
         val emailAddress: String? = null,
         /** Stable per Google account; the `cloud_accounts.remote_id`. */
         val permissionId: String? = null,
-    )
+    ) {
+        /** The `cloud_accounts.remote_id` this user is stored under (email when Drive gave no permissionId). */
+        val remoteId: String? get() = permissionId ?: emailAddress
+    }
 
     @Serializable
     private data class ErrorEnvelope(val error: ErrorJson? = null)

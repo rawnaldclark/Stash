@@ -8,6 +8,7 @@ import com.stash.data.cloud.net.CloudHttp
 import com.stash.data.cloud.net.RequestGate
 import com.stash.data.cloud.net.RequestPriority
 import com.stash.data.cloud.provider.CloudApiException
+import com.stash.data.cloud.provider.CloudAuthRequiredException
 import com.stash.data.cloud.provider.CloudEntry
 import com.stash.data.cloud.provider.CloudItemNotFoundException
 import com.stash.data.cloud.provider.CloudLink
@@ -19,7 +20,7 @@ import com.stash.data.cloud.provider.ScanPage
 import com.stash.data.cloud.provider.ScanRoot
 import com.stash.data.cloud.scan.CloudFiles
 import okhttp3.Request
-import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Google Drive under `drive.file` (owner decision 2026-10-20): Stash sees only files the user
@@ -40,6 +41,13 @@ import java.io.IOException
  *
  * Streaming has no pre-signed link: [link] is `files/{id}?alt=media` plus the bearer token in
  * [CloudLink.headers], with the size from metadata (Drive may send no Content-Length).
+ *
+ * **Same account.** A file Stash can't see answers 404, exactly like one that was deleted, so a
+ * token for the wrong Google account (a silent re-authorization without a stored account name
+ * can land on whichever account the phone offers) would read as "every song is gone". Before a
+ * page reports any removal, the token's account (`about`) is checked against the account row,
+ * once per token; on a mismatch the token is forgotten (the card shows "Reconnect") and nothing
+ * is removed.
  *
  * Quota: Drive allows about 1 TB of downloads a day per Cloud project, shared by every user of
  * the app. Nothing enforces it here.
@@ -117,6 +125,8 @@ class GoogleDriveProvider(
                 is GoogleDriveJson.Lookup.Failed -> throw CloudApiException(lookup.status, "Google Drive answered ${lookup.status}")
             }
         }
+        // Nothing leaves the library (or the pending list) on the word of another account's token.
+        if (entries.any { it is ScanEntry.Removed }) requireSameAccount(accountId)
         if (prune.isNotEmpty()) picks.remove(folderId, prune)
         val hasMore = remaining.size > batch.size
         val next = if (hasMore) Cursor(mode, batch.last()).encode() else Cursor.DONE
@@ -164,6 +174,37 @@ class GoogleDriveProvider(
         return lookup
     }
 
+    /** accountId → the token last confirmed to belong to that account. */
+    private val confirmedTokens = ConcurrentHashMap<Long, String>()
+
+    /**
+     * Throws unless the current token is the account row's Google account. A token for another
+     * account is forgotten ([CloudAuthRequiredException], "Reconnect"), never used to remove songs.
+     */
+    private suspend fun requireSameAccount(accountId: Long) {
+        val expected = dao.getAccount(accountId)?.remoteId ?: throw CloudItemNotFoundException("Google Drive account is gone")
+        if (confirmedTokens[accountId] == tokens.accessToken(provider, accountId)) return
+        var usedToken: String? = null
+        val r = http.execute(RequestPriority.BACKGROUND, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
+            usedToken = token
+            Request.Builder().url(ABOUT_URL).header("Authorization", "Bearer $token").build()
+        }
+        if (!r.isSuccessful) {
+            if (r.code == 429 || r.code >= 500) {
+                http.backOff(RequestGate.parseRetryAfter(r.retryAfter) ?: RequestGate.DEFAULT_BACKOFF_MS)
+                throw CloudUnavailableException(SLOW_DOWN)
+            }
+            throw CloudApiException(r.code, "Google Drive account lookup answered ${r.code}")
+        }
+        val actual = runCatching { GoogleDriveJson.about(r.body).user?.remoteId }.getOrNull()
+            ?: throw CloudApiException(r.code, "Google Drive account lookup had no id")
+        if (actual != expected) {
+            tokens.forget(provider, accountId)
+            throw CloudAuthRequiredException(accountId, "Google Drive answered for another Google account")
+        }
+        usedToken?.let { confirmedTokens[accountId] = it }
+    }
+
     private fun metadataRequest(id: String, token: String?): Request =
         Request.Builder()
             .url("$API/files/${seg(id)}?fields=${GoogleDriveJson.FILE_FIELDS}&supportsAllDrives=true")
@@ -195,6 +236,9 @@ class GoogleDriveProvider(
 
     companion object {
         const val API = "https://www.googleapis.com/drive/v3"
+
+        /** Who a token belongs to (allowed under drive.file); permissionId is stable per account. */
+        const val ABOUT_URL = "$API/about?fields=user(displayName,emailAddress,permissionId)"
 
         /** The one folder row per account that holds its picked songs. */
         const val PICKS_ITEM_ID = "picked"

@@ -45,14 +45,14 @@ class GoogleDriveAuth(
     /** Who picked: Drive's `about` (allowed under drive.file), permissionId being stable per account. */
     override suspend fun identity(accessToken: String): CloudIdentity {
         val request = Request.Builder()
-            .url("${GoogleDriveProvider.API}/about?fields=user(displayName,emailAddress,permissionId)")
+            .url(GoogleDriveProvider.ABOUT_URL)
             .header("Authorization", "Bearer $accessToken")
             .build()
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) throw IOException("Google Drive account lookup answered ${response.code}")
             val user = GoogleDriveJson.about(response.body?.string().orEmpty()).user
                 ?: throw IOException("Google Drive account lookup had no user")
-            val id = user.permissionId ?: user?.emailAddress ?: throw IOException("Google Drive account lookup had no id")
+            val id = user.remoteId ?: throw IOException("Google Drive account lookup had no id")
             return CloudIdentity(id, user.displayName ?: user.emailAddress ?: "Google Drive", user.emailAddress)
         }
     }

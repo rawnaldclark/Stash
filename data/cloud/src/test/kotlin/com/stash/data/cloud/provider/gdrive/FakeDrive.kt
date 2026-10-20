@@ -39,6 +39,9 @@ class FakeDrive : Interceptor {
     val validTokens = mutableSetOf("tok1")
     var abusive = mutableSetOf<String>()
 
+    /** The Google account the tokens belong to, as `about` reports it. */
+    var permissionId = "perm-123"
+
     val client: OkHttpClient = OkHttpClient.Builder().addInterceptor(this).build()
 
     fun add(f: File) {
@@ -53,6 +56,8 @@ class FakeDrive : Interceptor {
 
     fun mediaCalls() = requests.filter { it.url.queryParameter("alt") == "media" }
 
+    fun aboutCalls() = requests.filter { it.url.pathSegments.lastOrNull() == "about" }
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val req = chain.request()
         requests += req
@@ -60,7 +65,7 @@ class FakeDrive : Interceptor {
         if (token !in validTokens) return respond(req, 401, """{"error":{"code":401,"errors":[{"reason":"authError"}]}}""")
         val path = req.url.pathSegments
         if (path.lastOrNull() == "about") {
-            return respond(req, 200, """{"user":{"displayName":"Ron","emailAddress":"ron@example.com","permissionId":"perm-123"}}""")
+            return respond(req, 200, """{"user":{"displayName":"Ron","emailAddress":"ron@example.com","permissionId":"$permissionId"}}""")
         }
         val id = path.last()
         val f = files[id] ?: return respond(req, 404, """{"error":{"code":404,"errors":[{"reason":"notFound"}]}}""")
