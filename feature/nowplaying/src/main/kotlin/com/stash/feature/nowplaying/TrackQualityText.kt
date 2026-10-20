@@ -1,14 +1,13 @@
 package com.stash.feature.nowplaying
 
-import com.stash.core.media.streaming.StreamService
 import com.stash.core.model.Track
 
 /**
  * Formats a one-line quality summary for the Now Playing screen.
  *
  * Examples:
- *   - All four fields known:  `FLAC · 24-bit/96.0 kHz · 4233 kbps · via Qobuz`
- *   - Codec + bitrate only:    `OPUS · 160 kbps · via YouTube`
+ *   - All four fields known:  `FLAC · 24-bit/96.0 kHz · 4233 kbps`
+ *   - Codec + bitrate only:    `OPUS · 160 kbps`
  *   - Codec only:              `FLAC` (data not yet backfilled)
  *
  * Returns null only when the codec is blank — in that case the caller
@@ -39,10 +38,19 @@ internal fun trackQualityText(track: Track): String? {
             add("${bitDepth}-bit/${"%.1f".format(sampleRateKHz)} kHz")
         }
         if (bitrate != null) add("$bitrate kbps")
-        // Name the service a stream is coming from: "via Qobuz", "via Tidal",
-        // "via JioSaavn", "via YouTube". The codec alone can't say it (Qobuz,
-        // Tidal and YouTube all serve AAC); only the stream origin can. A
-        // downloaded or local file carries no origin, so it names nothing.
-        StreamService.displayName(track.streamOrigin)?.let { add("via $it") }
+        // Flag the YouTube fallback so the user can tell when a track is
+        // playing from yt-dlp/InnerTube extraction rather than Qobuz. The
+        // codec ("AAC") alone doesn't convey this — Qobuz also serves AAC
+        // at MP3_320 tier. Only the streamOrigin field distinguishes the
+        // two. We don't badge "via Kennyy" / "via squid" because those
+        // are the expected primary sources; only the lossy fallback
+        // deserves a callout.
+        //
+        // The service a lossless stream comes from (Qobuz, Tidal) is named
+        // only in the signal-path sheet's Source row, never on this line.
+        when (track.streamOrigin) {
+            "jiosaavn" -> add("via JioSaavn")
+            "youtube" -> add("via YT")
+        }
     }.joinToString(" · ")
 }
