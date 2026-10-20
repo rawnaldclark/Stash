@@ -38,6 +38,11 @@ class GoogleDriveJsonTest {
     fun `rate limits are never read as gone`() {
         assertThat(GoogleDriveJson.classify(403, error403("userRateLimitExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
         assertThat(GoogleDriveJson.classify(403, error403("rateLimitExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
+        assertThat(GoogleDriveJson.classify(403, error403("sharingRateLimitExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
+        // Daily quotas: the project's downloads are shared by every user, so these do happen.
+        assertThat(GoogleDriveJson.classify(403, error403("dailyLimitExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
+        assertThat(GoogleDriveJson.classify(403, error403("quotaExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
+        assertThat(GoogleDriveJson.classify(403, error403("downloadQuotaExceeded"))).isEqualTo(GoogleDriveJson.Lookup.Throttled)
         assertThat(GoogleDriveJson.classify(429, "")).isEqualTo(GoogleDriveJson.Lookup.Throttled)
         assertThat(GoogleDriveJson.classify(503, "")).isEqualTo(GoogleDriveJson.Lookup.Throttled)
     }

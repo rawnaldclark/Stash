@@ -5,12 +5,14 @@ import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.auth.CloudTokenManager
 import com.stash.data.cloud.net.ApiResponse
 import com.stash.data.cloud.net.CloudHttp
+import com.stash.data.cloud.net.RequestGate
 import com.stash.data.cloud.net.RequestPriority
 import com.stash.data.cloud.provider.CloudApiException
 import com.stash.data.cloud.provider.CloudEntry
 import com.stash.data.cloud.provider.CloudItemNotFoundException
 import com.stash.data.cloud.provider.CloudLink
 import com.stash.data.cloud.provider.CloudStorageProvider
+import com.stash.data.cloud.provider.CloudUnavailableException
 import com.stash.data.cloud.provider.CursorExpiredException
 import com.stash.data.cloud.provider.ScanEntry
 import com.stash.data.cloud.provider.ScanPage
@@ -107,7 +109,7 @@ class GoogleDriveProvider(
                     prune += id
                     entries += ScanEntry.Removed(id, null)
                 }
-                GoogleDriveJson.Lookup.Throttled -> throw IOException("Google Drive asked us to slow down")
+                GoogleDriveJson.Lookup.Throttled -> throw CloudUnavailableException(SLOW_DOWN)
                 is GoogleDriveJson.Lookup.Failed -> throw CloudApiException(lookup.status, "Google Drive answered ${lookup.status}")
             }
         }
@@ -119,14 +121,13 @@ class GoogleDriveProvider(
 
     override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink {
         var usedToken: String? = null
-        val r = http.execute(priority, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
-            usedToken = token
-            metadataRequest(itemId, token)
-        }
-        val file = when (val lookup = GoogleDriveJson.classify(r.code, r.body)) {
+        val lookup = lookup(accountId, itemId, priority) { usedToken = it }
+        val file = when (lookup) {
             is GoogleDriveJson.Lookup.Present -> lookup.file
             GoogleDriveJson.Lookup.Gone -> throw CloudItemNotFoundException("Google Drive file is gone or no longer shared with Stash")
-            GoogleDriveJson.Lookup.Throttled -> throw IOException("Google Drive asked us to slow down")
+            // Connectivity-type, not a problem with this file: a scan pauses rather than filing
+            // the song without its tags.
+            GoogleDriveJson.Lookup.Throttled -> throw CloudUnavailableException(SLOW_DOWN)
             is GoogleDriveJson.Lookup.Failed -> throw CloudApiException(lookup.status, "Google Drive answered ${lookup.status}")
         }
         // The token that just worked (after any 401 refresh) is the one the content request uses.
@@ -134,11 +135,26 @@ class GoogleDriveProvider(
         return CloudLink(mediaUrl(itemId), file.sizeBytes, file.version, clock(), mapOf("Authorization" to "Bearer $token"))
     }
 
-    private suspend fun lookup(accountId: Long, id: String, priority: RequestPriority): GoogleDriveJson.Lookup {
+    /**
+     * `files.get` for [id], classified. [onToken] sees the token each attempt used (the last one
+     * is the one that answered). A "slow down" pauses every Drive caller through the gate, as a
+     * 429 does for the other providers, before the caller gives up for now.
+     */
+    private suspend fun lookup(
+        accountId: Long,
+        id: String,
+        priority: RequestPriority,
+        onToken: (String?) -> Unit = {},
+    ): GoogleDriveJson.Lookup {
         val r: ApiResponse = http.execute(priority, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
+            onToken(token)
             metadataRequest(id, token)
         }
-        return GoogleDriveJson.classify(r.code, r.body)
+        val lookup = GoogleDriveJson.classify(r.code, r.body)
+        if (lookup == GoogleDriveJson.Lookup.Throttled) {
+            http.backOff(RequestGate.parseRetryAfter(r.retryAfter) ?: RequestGate.DEFAULT_BACKOFF_MS)
+        }
+        return lookup
     }
 
     private fun metadataRequest(id: String, token: String?): Request =
@@ -192,6 +208,8 @@ class GoogleDriveProvider(
             GoogleDriveJson.isAbusiveFileRefusal(code, body?.let { String(it, Charsets.UTF_8) })
 
         const val BLOCKED_MESSAGE = "Google blocked this file"
+
+        private const val SLOW_DOWN = "Google Drive asked us to slow down"
 
         private fun seg(id: String) = java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")
     }

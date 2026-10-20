@@ -80,6 +80,12 @@ class CloudHttp(
      * @param accessToken `null` = current token; non-null = the token the server just rejected.
      * @param build Builds the request for a given access token (null for unauthenticated calls).
      */
+    /**
+     * Pauses every caller of this provider for [millis], for a "slow down" the provider says in
+     * its own words rather than with a 429/503 (Google Drive's 403 rate-limit reasons).
+     */
+    fun backOff(millis: Long) = gate.backOff(millis)
+
     suspend fun execute(
         priority: RequestPriority,
         accessToken: (suspend (rejected: String?) -> String)?,

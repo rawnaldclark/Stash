@@ -50,6 +50,7 @@ class GoogleDriveScanTest {
     private val store = MemoryTokenStore()
     private val picks = InMemoryGooglePickStore()
     private lateinit var tokens: CloudTokenManager
+    private val gate = RequestGate(requestsPerSecond = 1000)
     private lateinit var provider: GoogleDriveProvider
     private var accountId = 0L
     private var folderId = 0L
@@ -62,7 +63,7 @@ class GoogleDriveScanTest {
         tokens = CloudTokenManager(store, mapOf(CloudProvider.GOOGLE_DRIVE to auth))
         tokens.nowSeconds = { 1_000 }
         provider = GoogleDriveProvider(
-            enabled = true, auth = auth, http = CloudHttp(drive.client, RequestGate(requestsPerSecond = 1000)),
+            enabled = true, auth = auth, http = CloudHttp(drive.client, gate),
             tokens = tokens, dao = dao, picks = picks, clock = { 5_000 }, pageSize = 2,
         )
         accountId = dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-123", displayName = "Ron", email = "ron@example.com", connectedAt = 0))
@@ -183,10 +184,26 @@ class GoogleDriveScanTest {
         drive.files.getValue("1BBBBBBBBB").throttled = true
         drive.files.getValue("1CCCCCCCCC").gone = true
 
-        assertThrows(IOException::class.java) { kotlinx.coroutines.runBlocking { scanner().scan(folderId) } }
+        // Retryable like a dropped connection: the worker pauses and carries on later.
+        assertThrows(CloudUnavailableException::class.java) { kotlinx.coroutines.runBlocking { scanner().scan(folderId) } }
 
         assertThat(title("1CCCCCCCCC")).isEqualTo("Charlie")
         assertThat(title("1BBBBBBBBB")).isEqualTo("Bravo")
+        // Every Drive caller waits it out, as with a 429 elsewhere.
+        assertThat(gate.remainingBackOffMs()).isGreaterThan(0L)
+    }
+
+    @Test
+    fun `a slow down while resolving a link is retryable, not a problem with the file`() = runTest {
+        drive.files.getValue("1AAAAAAAAA").throttled = true
+
+        val e = assertThrows(IOException::class.java) {
+            kotlinx.coroutines.runBlocking { provider.link(accountId, "1AAAAAAAAA", RequestPriority.INTERACTIVE) }
+        }
+
+        assertThat(e).isInstanceOf(CloudUnavailableException::class.java)
+        assertThat(CloudScanner.isConnectivityFailure(e)).isTrue()
+        assertThat(gate.remainingBackOffMs()).isGreaterThan(0L)
     }
 
     @Test

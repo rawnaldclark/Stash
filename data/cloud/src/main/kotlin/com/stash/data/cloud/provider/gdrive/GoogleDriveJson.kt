@@ -129,7 +129,14 @@ internal object GoogleDriveJson {
 
     const val ABUSE_REASON = "cannotDownloadAbusiveFile"
     private val LOST_ACCESS_REASONS = setOf("appNotAuthorizedToFile", "insufficientFilePermissions", "notFound")
-    private val RATE_LIMIT_REASONS = setOf("rateLimitExceeded", "userRateLimitExceeded", "sharingRateLimitExceeded")
+    /**
+     * Drive's 403 "slow down" reasons: per-user and per-project rate limits, and the daily
+     * request/download quotas (the project's ~1 TB a day is shared by every user of the app).
+     */
+    private val RATE_LIMIT_REASONS = setOf(
+        "rateLimitExceeded", "userRateLimitExceeded", "sharingRateLimitExceeded",
+        "dailyLimitExceeded", "quotaExceeded", "downloadQuotaExceeded",
+    )
 
     /** Drive file ids are URL-safe base64-ish; bounded so a hostile value can't be huge. */
     private val DRIVE_ID = Regex("[A-Za-z0-9_-]{8,256}")
