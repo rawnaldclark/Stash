@@ -39,7 +39,7 @@ import javax.inject.Singleton
  * Uploads the queued songs (`cloud_uploads` rows in QUEUED), oldest first, one at a time, until
  * none are left: "Save to Google Drive" and "Back up my downloads" both end up here.
  *
- * Runs only on the network the download setting allows (Wi-Fi by default) and as a foreground
+ * Runs only on the network the Sync tab's Wi-Fi only setting allows (Wi-Fi by default) and as a foreground
  * job with a progress notification, since a big batch takes a while. Losing the network or the
  * process costs little: each song's resumable session and committed offset are on its row, and
  * the next run carries on from there.
@@ -184,7 +184,7 @@ interface CloudUploadRunner {
 }
 
 /**
- * Starts [CloudUploadWorker]. Network rule = the download setting (Wi-Fi only by default), like
+ * Starts [CloudUploadWorker]. Network rule = the Sync tab's Wi-Fi only setting (on by default), like
  * downloads and cloud scans; no setting of its own.
  */
 @Singleton

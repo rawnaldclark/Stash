@@ -309,7 +309,7 @@ private fun DriveBackupRows(status: UploadStatus, accountId: Long, viewModel: Cl
     SettingsToggleRow(
         title = "Back up my downloads to Google Drive",
         subtitle = status.line
-            ?: "New downloads are saved to a Stash folder in your Drive, on the network your download setting allows.",
+            ?: "New downloads are saved to a Stash folder in your Drive. Like syncing, this waits for Wi-Fi when Sync is set to Wi-Fi only.",
         checked = status.backupOn,
         onCheckedChange = { viewModel.setDriveBackup(accountId, it) },
     )
