@@ -82,7 +82,8 @@ class CloudTrackDownloader @Inject constructor(
     /** Streams [url] into [dest]; returns the HTTP status (200 = written whole). */
     private suspend fun fetch(url: String, dest: File, size: Long, onProgress: (Float) -> Unit): Int {
         val request = Request.Builder().url(url).header("Accept-Encoding", "identity").build()
-        fetchClient.newCall(request).await().use { response ->
+        // Unbuffered: a song can be hundreds of MB; it is copied to disk in chunks below (worker thread).
+        fetchClient.newCall(request).await(bufferBody = false).use { response ->
             if (response.code != 200) return response.code
             withContext(Dispatchers.IO) {
                 val total = size.takeIf { it > 0 } ?: response.body!!.contentLength()

@@ -19,10 +19,20 @@ import kotlin.coroutines.resumeWithException
  * streaming hit NetworkOnMainThreadException on OneDrive. Every answer here is small (listings,
  * tokens, bounded tag ranges).
  */
-suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+suspend fun Call.await(): Response = await(bufferBody = true)
+
+/**
+ * The same, with [bufferBody] = false for a body too big to hold in memory (a song download): the
+ * caller must then read it on a background thread, as [com.stash.data.download] does in its worker.
+ */
+suspend fun Call.await(bufferBody: Boolean): Response = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { runCatching { cancel() } }
     enqueue(object : Callback {
         override fun onResponse(call: Call, response: Response) {
+            if (!bufferBody) {
+                cont.resume(response) { _, _, _ -> response.close() }
+                return
+            }
             val buffered = try {
                 val body = response.body
                 if (body == null) {
