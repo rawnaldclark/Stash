@@ -23,11 +23,13 @@ class StreamQualityPolicyTest {
         wifi: LosslessQualityTier = LosslessQualityTier.MAX,
         cell: LosslessQualityTier = LosslessQualityTier.CD,
         saveData: Boolean = false,
+        preferTidalAac: Boolean = false,
     ) {
         every { connectivity.isCellular() } returns cellular
         coEvery { prefs.wifiTierNow() } returns wifi
         coEvery { prefs.cellularTierNow() } returns cell
         coEvery { prefs.saveDataNow() } returns saveData
+        coEvery { prefs.preferTidalAacNow() } returns preferTidalAac
         coEvery { losslessPrefs.enabledNow() } returns true
     }
 
@@ -108,4 +110,22 @@ class StreamQualityPolicyTest {
         assertThat(cache.get(1L)).isNull()
     }
 
+
+    @Test fun `prefer Tidal AAC is off by default and exposed when on`() = runTest {
+        setup(cellular = false)
+        assertThat(policy.preferTidalAac()).isFalse()
+        setup(cellular = false, preferTidalAac = true)
+        assertThat(policy.preferTidalAac()).isTrue()
+    }
+
+    /** A FLAC link cached while the switch was off must not keep playing once it's on (and back). */
+    @Test fun `flipping prefer Tidal AAC drops the cached URLs`() = runTest {
+        setup(cellular = false)
+        policy.preferTidalAac()
+        cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
+
+        coEvery { prefs.preferTidalAacNow() } returns true
+        policy.preferTidalAac()                      // what the registry asks at each resolve
+        assertThat(cache.get(1L)).isNull()
+    }
 }

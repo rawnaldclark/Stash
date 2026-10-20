@@ -16,7 +16,7 @@ import javax.inject.Singleton
  * changing this class's callers' shape beyond the new branch.
  *
  * Also the one place that notices the effective quality CHANGING between resolves
- * (Save Data or the Lossless switch flipped, a tier picked, Wi-Fi → cellular) and drops the
+ * (Save Data, Prefer Tidal AAC or the Lossless switch flipped, a tier picked, Wi-Fi → cellular) and drops the
  * [StreamUrlCache], whose entries are keyed by track id alone with ~1 h TTLs —
  * otherwise the old tier's URLs kept being served for up to an hour after the
  * user asked for something else.
@@ -29,7 +29,12 @@ class StreamQualityPolicy @Inject constructor(
     private val losslessPrefs: LosslessSourcePreferences,
 ) {
     /** Everything a resolve's quality depends on. A change between resolves means every cached URL is for the wrong quality. */
-    private data class Decision(val lossless: Boolean, val saveData: Boolean, val tier: LosslessQualityTier)
+    private data class Decision(
+        val lossless: Boolean,
+        val saveData: Boolean,
+        val tier: LosslessQualityTier,
+        val preferTidalAac: Boolean = false,
+    )
 
     @Volatile private var lastDecision: Decision? = null
 
@@ -51,6 +56,13 @@ class StreamQualityPolicy @Inject constructor(
      */
     suspend fun saveData(): Boolean = snapshot().saveData
 
+    /**
+     * "Prefer Tidal AAC while streaming": [StreamSourceRegistry] asks Tidal for AAC before
+     * Qobuz when true. Read here, at the start of every resolve, so flipping it drops the
+     * cached URLs of the other kind (FLAC cached while it was off, AAC while it was on).
+     */
+    suspend fun preferTidalAac(): Boolean = snapshot().preferTidalAac
+
     // ponytail: cleared at the next RESOLVE after a change, not at the change itself — a
     // track whose URL was prefetched just before can still play once at the old quality.
     // Stamping entries with their quality and checking at read time closes that; not yet earned.
@@ -63,7 +75,12 @@ class StreamQualityPolicy @Inject constructor(
         }
         // The Lossless switch is read here too: with it off the lossless resolvers never ask
         // for a tier, so the lossy path's [saveData] read is what notices the flip.
-        val decision = Decision(lossless = losslessPrefs.enabledNow(), saveData = saveData, tier = tier)
+        val decision = Decision(
+            lossless = losslessPrefs.enabledNow(),
+            saveData = saveData,
+            tier = tier,
+            preferTidalAac = prefs.preferTidalAacNow(),
+        )
         val previous = lastDecision
         lastDecision = decision
         if (previous != null && previous != decision) urlCache.clear()

@@ -125,6 +125,34 @@ class BitchordClientCacheTest {
         assertThat(streams.get()).isEqualTo(2)
     }
 
+    /**
+     * The exact request "Prefer Tidal AAC while streaming" (and the AAC download mode) makes:
+     * `aac=only` plus `hires=0` (no Hi-Res seat call), never `aac=1`.
+     */
+    @Test fun `aac=only asks with hires=0 and no aac=1`() = runBlocking {
+        streamReply = { ok(AAC) }
+
+        client.lookup(query, allowAac = true, aacOnly = true)
+
+        server.takeRequest() // /search
+        val stream = server.takeRequest().requestUrl!!
+        assertThat(stream.queryParameterValues("aac")).containsExactly("only")
+        assertThat(stream.queryParameter("hires")).isEqualTo("0")
+        assertThat(stream.queryParameter("client")).isEqualTo("media3")
+    }
+
+    /** A cached FLAC miss (Tidal has no lossless of it) must not stop the AAC-only lookup. */
+    @Test fun `a lossless miss does not block an aac=only lookup`() = runBlocking {
+        streamReply = { r ->
+            if (r.path!!.contains("aac=only")) ok(AAC) else MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""")
+        }
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.NoMatch)
+
+        val aac = client.lookup(query, allowAac = true, aacOnly = true) as TidalLookup.Found
+        assertThat(aac.stream.codec).isEqualTo("aac")
+        assertThat(searches.get() to streams.get()).isEqualTo(1 to 2)
+    }
+
     @Test fun `an aac=only miss is cached on its own stamp, and never stops streaming's aac=1 lookup`() = runBlocking {
         streamReply = { r ->
             if (r.path!!.contains("aac=only")) MockResponse().setResponseCode(404).setBody("""{"error":"lossless_unavailable"}""") else ok(FLAC)
