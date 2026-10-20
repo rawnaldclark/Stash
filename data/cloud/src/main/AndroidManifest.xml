@@ -1,2 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+            Cloud storage sign-in redirects (spec 2026-10-19-cloud-storage-design.md).
+            OneDrive: <applicationId>://oauth/onedrive (debug and release each get their own).
+            Dropbox: db-<app key>://1/connect, the scheme Dropbox's own Android SDK signs in with.
+            ${dropboxAppKey} comes from the app's manifestPlaceholders (a dummy when no key is set).
+        -->
+        <activity
+            android:name="com.stash.data.cloud.auth.CloudAuthRedirectActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" android:host="oauth" android:path="/onedrive" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="db-${dropboxAppKey}" android:host="1" android:path="/connect" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

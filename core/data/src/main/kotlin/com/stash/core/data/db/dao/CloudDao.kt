@@ -157,6 +157,22 @@ interface CloudDao {
         sizeBytes: Long,
     )
 
+    /** A new cloud song: its track row and its item row, together or not at all. */
+    @Transaction
+    suspend fun insertScanned(track: TrackEntity, item: CloudItemEntity): Long {
+        val id = insertTrack(track)
+        upsertItem(item.copy(trackId = id))
+        return id
+    }
+
+    /** Sibling cover art found after the songs: only fills songs that have none. */
+    @Query("UPDATE tracks SET album_art_path = :path WHERE id IN (:trackIds) AND album_art_path IS NULL")
+    suspend fun setArtIfMissing(trackIds: List<Long>, path: String)
+
+    /** The songs directly in the cloud folder [parentItemId] (a deleted OneDrive folder reports only itself). */
+    @Query("SELECT track_id FROM cloud_items WHERE account_id = :accountId AND parent_item_id = :parentItemId")
+    suspend fun trackIdsInParent(accountId: Long, parentItemId: String): List<Long>
+
     // ── Removal (see the class KDoc) ─────────────────────────────────────
 
     @Query("DELETE FROM tracks WHERE is_downloaded = 0 AND source = 'CLOUD' AND id IN (:trackIds)")
@@ -173,6 +189,20 @@ interface CloudDao {
 
     @Query("SELECT track_id FROM cloud_items WHERE folder_id = :folderId")
     suspend fun folderTrackIds(folderId: Long): List<Long>
+
+    /**
+     * The songs in [folderId] at [path] or under it (a deleted Dropbox entry may be a whole
+     * folder). [path] is lower-cased like `remote_path`. `substr` instead of LIKE, so a path
+     * holding `%` or `_` matches only itself.
+     */
+    @Query(
+        """
+        SELECT track_id FROM cloud_items
+        WHERE folder_id = :folderId
+          AND (remote_path = :path OR substr(remote_path, 1, length(:path) + 1) = :path || '/')
+        """,
+    )
+    suspend fun trackIdsUnderPath(folderId: Long, path: String): List<Long>
 
     @Query("SELECT track_id FROM cloud_items WHERE account_id = :accountId")
     suspend fun accountTrackIds(accountId: Long): List<Long>

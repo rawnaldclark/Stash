@@ -7,7 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * v61: a connected cloud storage account (spec 2026-10-19-cloud-storage-design.md).
+ * v61: a connected cloud storage account, Dropbox or OneDrive (spec 2026-10-19-cloud-storage-design.md).
  *
  * Holds only who the account is. Its OAuth tokens live in the Tink-encrypted token store under
  * this row's [id], never in the database, so a restored backup brings the account back without
@@ -86,6 +86,7 @@ data class CloudFolderEntity(
 )
 
 /** What the last scan of a [CloudFolderEntity] did. */
+// WAITING = waiting for the network rule (Wi-Fi) or a reconnect.
 enum class CloudScanStatus { RUNNING, OK, ERROR, WAITING }
 
 /**
@@ -149,4 +150,10 @@ data class CloudItemEntity(
     val seenGeneration: Long,
     @ColumnInfo(name = "scanned_at")
     val scannedAt: Long,
+    /**
+     * The file's full path in the cloud, lower-cased, when the provider reports changes by path
+     * (Dropbox's `deleted` entries carry no id, only `path_lower`). Null for OneDrive.
+     */
+    @ColumnInfo(name = "remote_path")
+    val remotePath: String? = null,
 )

@@ -76,6 +76,17 @@ val lastFmExtraApiKeys: String =
 val lastFmProxyUrl: String =
     localProperties.getProperty("lastfm.proxyUrl") ?: System.getenv("LASTFM_PROXY_URL").orEmpty()
 
+// ── Cloud storage libraries (spec 2026-10-19-cloud-storage-design.md) ─────
+//
+// Public-client ids (PKCE, no secret) from `local.properties` or env vars (CI):
+//   DROPBOX_APP_KEY=...      Dropbox app key ("Full Dropbox", files.metadata.read + files.content.read)
+//   ONEDRIVE_CLIENT_ID=...   Microsoft app registration (Files.Read offline_access User.Read)
+// Empty = that provider is hidden everywhere (a plain checkout and CI build without either).
+val dropboxAppKey: String =
+    (localProperties.getProperty("DROPBOX_APP_KEY") ?: System.getenv("DROPBOX_APP_KEY")).orEmpty().trim()
+val oneDriveClientId: String =
+    (localProperties.getProperty("ONEDRIVE_CLIENT_ID") ?: System.getenv("ONEDRIVE_CLIENT_ID")).orEmpty().trim()
+
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
 // Release builds talk to https://sync.stashfm.app with the feature on (it shipped; the flag stays as the off switch).
@@ -135,7 +146,12 @@ android {
         versionCode = 153
         versionName = "0.9.117"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
+        // Cloud storage sign-in. OneDrive redirects to `${applicationId}://oauth/onedrive` (the
+        // data:cloud manifest declares it, so debug and release each get their own); Dropbox to
+        // `db-<app key>://1/connect`. A dummy key keeps the Dropbox filter valid when none is set.
+        buildConfigField("String", "DROPBOX_APP_KEY", "\"$dropboxAppKey\"")
+        buildConfigField("String", "ONEDRIVE_CLIENT_ID", "\"$oneDriveClientId\"")
+        manifestPlaceholders["dropboxAppKey"] = dropboxAppKey.lowercase().ifEmpty { "unconfigured" }
         // Last.fm API credentials exposed via BuildConfig for the app-level
         // Hilt module to inject into LastFmApiClient. Empty strings are
         // valid — the Settings UI just disables the connect button.
@@ -252,6 +268,8 @@ dependencies {
     implementation(project(":feature:community"))
     implementation(project(":feature:listening"))
     implementation(project(":data:download"))
+    // Cloud storage libraries: CloudConfigModule hands BuildConfig's keys to data:cloud.
+    implementation(project(":data:cloud"))
     // data:ytmusic provides AlbumSummary, used by SearchScreen/ArtistProfileScreen
     // callback signatures that StashNavHost wires up for Album Discovery.
     implementation(project(":data:ytmusic"))

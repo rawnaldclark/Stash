@@ -6,9 +6,10 @@ import java.net.URLEncoder
 /** The scheme of a cloud song's stream address. */
 const val STASH_CLOUD_SCHEME = "stash-cloud"
 
-/** Cloud storage providers Stash can read from. Only OneDrive in this slice. */
+/** Cloud storage providers Stash can read from. */
 enum class CloudProvider(val id: String, val displayName: String) {
-    ONEDRIVE("onedrive", "OneDrive");
+    ONEDRIVE("onedrive", "OneDrive"),
+    DROPBOX("dropbox", "Dropbox");
 
     companion object {
         fun fromId(id: String?): CloudProvider? = entries.firstOrNull { it.id == id }
@@ -17,10 +18,11 @@ enum class CloudProvider(val id: String, val displayName: String) {
 
 /**
  * Where a [MusicSource.CLOUD] song lives:
- * `stash-cloud://<provider>/<accountId>/<itemId>?v=<cTag>`.
+ * `stash-cloud://<provider>/<accountId>/<itemId>?v=<version>`.
  *
  * [accountId] is Stash's own `cloud_accounts` row id (not the provider's user id), [itemId] the
- * provider's file id, and [version] the file's content tag (OneDrive cTag), so a stream cache key
+ * provider's file id (OneDrive item id, Dropbox `id:…`), and [version] the file's content version
+ * (OneDrive cTag, Dropbox rev), so a stream cache key
  * built from it ([cacheKey]) changes when the file's bytes do. Pure Kotlin (no android.net.Uri) so
  * the scanner, the player and their unit tests share one parser.
  */

@@ -1610,8 +1610,8 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
-         * v60 -> v61: cloud storage libraries (spec 2026-10-19-cloud-storage-design.md, OneDrive
-         * first).
+         * v60 -> v61: cloud storage libraries (spec 2026-10-19-cloud-storage-design.md; Dropbox and
+         * OneDrive).
          *  - `tracks.cloud_uri`: a CLOUD song's `stash-cloud://` stream address. Plain column add;
          *    every existing row gets NULL (no existing song is a cloud song).
          *  - `cloud_accounts`, `cloud_folders`, `cloud_items`: new, empty tables. Tokens are not
@@ -1651,7 +1651,7 @@ abstract class StashDatabase : RoomDatabase() {
                         "`item_id` TEXT NOT NULL, `name` TEXT NOT NULL, `relative_path` TEXT NOT NULL, " +
                         "`parent_item_id` TEXT, `c_tag` TEXT, `e_tag` TEXT, `size` INTEGER NOT NULL, " +
                         "`mime_type` TEXT, `seen_generation` INTEGER NOT NULL, `scanned_at` INTEGER NOT NULL, " +
-                        "PRIMARY KEY(`track_id`), " +
+                        "`remote_path` TEXT, PRIMARY KEY(`track_id`), " +
                         "FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
                         "FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
                         "FOREIGN KEY(`folder_id`) REFERENCES `cloud_folders`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",

@@ -6,7 +6,7 @@ plugins {
 }
 
 // Cloud storage libraries (spec docs/superpowers/specs/2026-10-19-cloud-storage-design.md).
-// OneDrive first: sign-in (AppAuth + PKCE), folder browse, the resumable library scan,
+// Dropbox and OneDrive: sign-in (PKCE), folder browse, the resumable library scan,
 // ranged tag reading and the playback/download link resolver. The user's own files go
 // straight from their cloud to the phone; nothing here talks to a Stash server.
 android {
@@ -15,6 +15,8 @@ android {
     testOptions {
         unitTests {
             isReturnDefaultValues = true
+            // Robolectric scanner test runs an in-memory StashDatabase.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -35,8 +37,12 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)
-    // OneDrive sign-in: authorization code + PKCE through a Custom Tab.
-    api(libs.appauth)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.room.runtime)
+    testImplementation(libs.room.ktx)
+    // Custom Tabs for the sign-in browser (small; AppAuth is not used: one PKCE path serves both providers).
+    implementation("androidx.browser:browser:1.8.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.truth)

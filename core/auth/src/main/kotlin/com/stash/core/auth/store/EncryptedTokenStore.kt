@@ -13,6 +13,7 @@ import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -53,6 +54,11 @@ class EncryptedTokenStore @Inject constructor(
     private val encryption: TinkEncryptionManager,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    private companion object {
+        const val CLOUD_PREFIX = "cloud_token_"
+        val CLOUD_ACCOUNT_KEY = Regex("[a-z]+_[0-9]+")
+    }
 
     private object Keys {
         val SPOTIFY = stringPreferencesKey("spotify_token")
@@ -129,6 +135,32 @@ class EncryptedTokenStore @Inject constructor(
         context.authDataStore.edit { it.remove(Keys.DISCORD) }
     }
 
+    // ── Cloud storage accounts (OneDrive, …) ─────────────────────────────
+
+    /**
+     * The stored OAuth token of one cloud storage account, or null when there is none (never
+     * connected, disconnected, or unreadable after a keyset reset). [accountKey] is the
+     * provider plus Stash's account row id ("onedrive_12"): one blob per account, so two
+     * connected accounts never share a token.
+     */
+    suspend fun getCloudToken(accountKey: String): ServiceToken? =
+        context.authDataStore.data.first()[cloudKey(accountKey)]?.let { decryptToken(it) }
+
+    /** Persists a cloud account's token (refresh tokens rotate, so every refresh saves again). */
+    suspend fun saveCloudToken(accountKey: String, token: ServiceToken) {
+        saveBlob(cloudKey(accountKey), encryptStored(token.toStoredToken(null)))
+    }
+
+    /** Forgets a cloud account's token (disconnect). */
+    suspend fun clearCloudToken(accountKey: String) {
+        context.authDataStore.edit { it.remove(cloudKey(accountKey)) }
+    }
+
+    private fun cloudKey(accountKey: String): Preferences.Key<String> {
+        require(accountKey.matches(CLOUD_ACCOUNT_KEY)) { "bad cloud account key" }
+        return stringPreferencesKey(CLOUD_PREFIX + accountKey)
+    }
+
     /**
      * Writes one service's blob. If the keyset was just replaced because the
      * old one could no longer be opened (see [TinkEncryptionManager]), every
@@ -141,6 +173,8 @@ class EncryptedTokenStore @Inject constructor(
                 prefs.remove(Keys.SPOTIFY)
                 prefs.remove(Keys.YOUTUBE)
                 prefs.remove(Keys.DISCORD)
+                prefs.asMap().keys.map { it.name }.filter { it.startsWith(CLOUD_PREFIX) }
+                    .forEach { prefs.remove(stringPreferencesKey(it)) }
             }
             prefs[key] = blob
         }
