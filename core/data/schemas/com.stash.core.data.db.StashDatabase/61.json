@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 61,
-    "identityHash": "2b5739f7d019f47b996a9b74f8fc4647",
+    "identityHash": "3d20b75c19a6c41d8835d395ad0c45fb",
     "entities": [
       {
         "tableName": "tracks",
@@ -2799,7 +2799,7 @@
       },
       {
         "tableName": "cloud_items",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `account_id` INTEGER NOT NULL, `folder_id` INTEGER NOT NULL, `item_id` TEXT NOT NULL, `name` TEXT NOT NULL, `relative_path` TEXT NOT NULL, `parent_item_id` TEXT, `c_tag` TEXT, `e_tag` TEXT, `size` INTEGER NOT NULL, `mime_type` TEXT, `seen_generation` INTEGER NOT NULL, `scanned_at` INTEGER NOT NULL, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`folder_id`) REFERENCES `cloud_folders`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`track_id` INTEGER NOT NULL, `account_id` INTEGER NOT NULL, `folder_id` INTEGER NOT NULL, `item_id` TEXT NOT NULL, `name` TEXT NOT NULL, `relative_path` TEXT NOT NULL, `parent_item_id` TEXT, `c_tag` TEXT, `e_tag` TEXT, `size` INTEGER NOT NULL, `mime_type` TEXT, `seen_generation` INTEGER NOT NULL, `scanned_at` INTEGER NOT NULL, `remote_path` TEXT, PRIMARY KEY(`track_id`), FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`folder_id`) REFERENCES `cloud_folders`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "trackId",
@@ -2874,6 +2874,11 @@
             "columnName": "scanned_at",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "remotePath",
+            "columnName": "remote_path",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -2943,7 +2948,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2b5739f7d019f47b996a9b74f8fc4647')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3d20b75c19a6c41d8835d395ad0c45fb')"
     ]
   }
 }

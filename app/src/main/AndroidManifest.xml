@@ -58,6 +58,33 @@
             either stacks a second copy of the app or, when the link matches the one Stash was launched with,
             delivers nothing at all (an invite for the session you're in did nothing).
         -->
+        <!--
+            Cloud storage sign-in redirects (spec 2026-10-19-cloud-storage-design.md).
+            OneDrive: <applicationId>://oauth/onedrive (debug and release each get their own).
+            Dropbox: db-<app key>://1/connect, the scheme Dropbox's own Android SDK signs in with.
+            ${dropboxAppKey} comes from app/build.gradle.kts (a dummy when no key is set). Declared here, not in
+            data:cloud's manifest, because only the app defines that placeholder.
+        -->
+        <activity
+            android:name="com.stash.data.cloud.auth.CloudAuthRedirectActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" android:host="oauth" android:path="/onedrive" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="db-${dropboxAppKey}" android:host="1" android:path="/connect" />
+            </intent-filter>
+        </activity>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/Theme.Stash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
