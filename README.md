@@ -35,7 +35,7 @@ No Stash account, no analytics, your logins stay on your phone. Free and open so
 - Spotify + YouTube Music together: liked songs, playlists, daily mixes
 - Finds the right version of a song. Almost always. If it doesn't, flag it and pick the right one
 - Your listening: top songs, stats, and a recap of your month
-- Got your own music in Dropbox? Connect it and stream or download it like everything else (OneDrive is coming)
+- Got your own music in Dropbox, OneDrive or Google Drive? Connect it and stream or download it like everything else (on Google Drive you pick the songs)
 
 </td>
     <td width="50%" valign="top">
