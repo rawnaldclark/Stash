@@ -13,15 +13,21 @@ import androidx.work.WorkerParameters
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
+import com.stash.core.data.lastfm.LastFmApiException
+import com.stash.core.data.lastfm.LastFmCachedMiss
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
+import com.stash.core.data.lastfm.LastFmLookupRules
+import com.stash.core.data.lastfm.LastFmTrackInfo
 import com.stash.core.model.YouTubeVideoId
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
- * One-shot backfill that repairs Discovery-pipeline metadata gaps on
- * already-downloaded tracks. Two independent passes run per invocation:
+ * Backfill that repairs Discovery-pipeline metadata gaps. Three passes run
+ * per invocation:
  *
  * ## Pass 1 — `album_art_url`
  * Fills missing art on is_downloaded=1 tracks with a null `album_art_url`.
@@ -32,31 +38,31 @@ import kotlinx.coroutines.delay
  *   - Fallback `https://i.ytimg.com/vi/<id>/maxresdefault.jpg` when the row
  *     has a `youtube_id` and Last.fm had nothing. A video without that
  *     variant is walked down to sd/hq by `ArtFallbackInterceptor`.
- *   - Skip when neither source yields anything — leave for a future pass.
- * Rate-limited to one Last.fm call every 220ms.
+ *   - Neither: the row waits out a back-off before it is tried again.
  *
  * ## Pass 2 — `duration_ms`
- * Fills missing duration on is_downloaded=1 tracks with `duration_ms = 0`.
- * Uses `MediaMetadataRetriever` via [AudioDurationExtractor] to read the
- * authoritative value straight off the container — no network, matches
- * exactly what ExoPlayer sees at play-time. Separate from Pass 1 because
- * not every art-missing row has zero duration (and vice versa), and the
- * duration pass has no network dependency.
+ * Fills missing duration on is_downloaded=1 tracks with `duration_ms = 0`,
+ * read off the file with [AudioDurationExtractor]. No network.
  *
- * ## Scope
- * Both passes cover the same root cohort — Stash Discover stubs whose
- * `persistMatchMetadata` couldn't write full metadata because the YT
- * match surfaced no thumbnail, no duration, or tripped the UNIQUE
- * constraint on youtube_id and rolled back the whole UPDATE. See the
- * v0.5.3 and v0.5.4 commit messages for the detailed pipeline trace.
+ * ## Pass 3 — stream-only stubs
+ * One `track.getInfo` per stub fills art and duration together.
  *
- * ## Scheduling
- * Scheduled once per install from [com.stash.app.StashApplication.onCreate]
- * with `ExistingWorkPolicy.KEEP`, so re-launches become no-ops once the
- * worker completes. Idempotent: if interrupted mid-pass (process killed,
- * Last.fm rate-limited), the remaining rows are picked up by the next
- * scheduled pass because both fill queries are guarded by the still-blank
- * condition.
+ * ## Keeping the Last.fm traffic to what can fill something
+ * This worker was most of the Last.fm proxy's traffic: it re-asked about the
+ * same unfillable rows (voice notes, "Unknown Artist" files, deep cuts) on
+ * every run, and it ran on every cold start and after every mix refresh,
+ * sometimes as two runs at once. Now:
+ *  - rows that can't match anything are never looked up
+ *    ([LastFmLookupRules.isUnlookable]), and YouTube presentation tags are
+ *    stripped from titles first ([LastFmLookupRules.cleanTitle]);
+ *  - Last.fm's "not found" is remembered by the client for two weeks
+ *    ([LastFmCachedMiss]), so repeats cost no request;
+ *  - a row no source could fill waits out
+ *    [LastFmEnrichmentBackoff.Pass.ART_BACKFILL], so the batch moves on;
+ *  - a run goes ahead only for new rows or every few hours
+ *    ([ArtBackfillSchedule]);
+ *  - there is one unique work name, so two runs never overlap.
+ * A lookup that answers from the cache is not rate-limited (no request).
  */
 @HiltWorker
 class ArtBackfillWorker @AssistedInject constructor(
@@ -66,108 +72,200 @@ class ArtBackfillWorker @AssistedInject constructor(
     private val lastFmApiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
     private val audioDurationExtractor: AudioDurationExtractor,
+    private val backoff: LastFmEnrichmentBackoff,
+    private val schedule: ArtBackfillSchedule,
 ) : CoroutineWorker(appContext, params) {
+
+    /** Test seam for "now". */
+    internal var clock: () -> Long = System::currentTimeMillis
 
     companion object {
         private const val TAG = "ArtBackfill"
-        private const val WORK_NAME = "stash_art_backfill"
-        private const val MIX_REFRESH_WORK_NAME = "stash_art_backfill_mix_refresh"
+
+        /**
+         * The one unique work name, for every enqueue. There used to be a
+         * second ("…_mix_refresh") for the mix-refresh path, which let two
+         * runs walk the same rows through Last.fm at the same time.
+         */
+        internal const val WORK_NAME = "stash_art_backfill"
+
+        /** The retired second name; cancelled on enqueue so a queued one can't still run. */
+        private const val RETIRED_MIX_REFRESH_WORK_NAME = "stash_art_backfill_mix_refresh"
+
         private const val BATCH_SIZE = 500
         private const val REQUEST_INTERVAL_MS = 220L
 
-        /**
-         * Schedule the one-shot backfill. `KEEP` policy: if a previous run
-         * is queued or running, leave it; if it already succeeded this
-         * install, don't re-enqueue. Re-launches become no-ops.
-         */
-        fun enqueueOneTime(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-            val work = OneTimeWorkRequestBuilder<ArtBackfillWorker>()
-                .setConstraints(constraints)
-                .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                work,
-            )
-        }
+        /** Transient Last.fm failures in a row that end a pass's lookups (an outage). */
+        private const val MAX_TRANSIENT_IN_A_ROW = 5
 
         /**
-         * v0.9.38 — re-fire the backfill after each
-         * [StashMixRefreshWorker] cycle so freshly-created stream-only
-         * stubs gain art + duration within one refresh. Distinct work
-         * name so the install-time one-shot ([enqueueOneTime]) keeps its
-         * own semantics and the two never compete. Both pass paths are
-         * idempotent — every UPDATE guards on "still missing" — so
-         * concurrent runs would no-op cleanly anyway, but separate names
-         * keep the WorkManager log clear.
-         *
-         * `KEEP`, not `REPLACE`: a mix refresh runs on every cold start and
-         * after every discovery drain, and a pass over a full batch is
-         * minutes of rate-limited Last.fm calls, so REPLACE cancelled the
-         * in-flight pass each time and it could never finish. A refresh
-         * that lands while a pass is running leaves it be; its new stubs
-         * are the newest rows, which the next pass serves first
-         * ([TrackDao.findStreamableMetadataBackfillCandidates]).
+         * The cold-start enqueue. `KEEP`: a run already queued or running is
+         * left alone. A finished run doesn't block the next enqueue (that's
+         * WorkManager's KEEP), so the worker itself decides whether there is
+         * anything to do ([ArtBackfillSchedule]); a cold start with nothing
+         * new costs three small queries and no request.
          */
-        fun enqueueFromMixRefresh(context: Context) {
+        fun enqueueOneTime(context: Context) = enqueue(context, ExistingWorkPolicy.KEEP)
+
+        /**
+         * After each [StashMixRefreshWorker] cycle, so freshly-created
+         * stream-only stubs gain art + duration within one refresh. Same
+         * unique name as [enqueueOneTime]. `APPEND_OR_REPLACE`: a refresh that
+         * lands while a run is going queues one more run after it, which picks
+         * up the stubs the refresh just made (a run already under way may have
+         * read its batch before they existed); the queued run does nothing if
+         * there turns out to be nothing new.
+         */
+        fun enqueueFromMixRefresh(context: Context) = enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
+
+        private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
             val work = OneTimeWorkRequestBuilder<ArtBackfillWorker>()
                 .setConstraints(constraints)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                MIX_REFRESH_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
-                work,
-            )
+            val workManager = WorkManager.getInstance(context)
+            workManager.cancelUniqueWork(RETIRED_MIX_REFRESH_WORK_NAME)
+            workManager.enqueueUniqueWork(WORK_NAME, policy, work)
         }
     }
 
     override suspend fun doWork(): Result {
-        runArtPass()
+        val startedAt = clock()
+        // One cheap probe per pass: the newest row any pass would look at.
+        val newest = listOfNotNull(
+            trackDao.findArtBackfillCandidates(1).firstOrNull()?.id,
+            trackDao.findDurationBackfillCandidates(1).firstOrNull()?.id,
+            trackDao.findStreamableMetadataBackfillCandidates(1).firstOrNull()?.id,
+        ).maxOrNull()
+        val state = schedule.read()
+        if (!ArtBackfillSchedule.shouldRun(state, newest, startedAt)) {
+            Log.i(TAG, "skipped: no new rows (newest=$newest, seen=${state.watermarkId}) and last run was recent")
+            return Result.success()
+        }
+        // Stamped at the start: a run that is killed part-way doesn't make the
+        // next cold start redo it at once (its rows come back after the interval).
+        schedule.recordRun(startedAt, newest ?: 0L)
+        stats = Stats()
+        runArtPass(startedAt)
         runDurationPass()
-        runStreamableMetadataPass()
+        runStreamableMetadataPass(startedAt)
+        Log.i(
+            TAG,
+            "run done: lastfm network=${stats.network} cached=${stats.cached} " +
+                "skippedUnlookable=${stats.unlookable} transient=${stats.transient}",
+        )
         return Result.success()
+    }
+
+    /** How the lookups of one run went, for the log line that proves the traffic. */
+    private class Stats {
+        var network = 0
+        var cached = 0
+        var unlookable = 0
+        var transient = 0
+    }
+
+    private var stats = Stats()
+
+    /** What a `track.getInfo` lookup for one row came to. */
+    private enum class Lookup {
+        /** Last.fm answered (a track, or a final "not found"). */
+        ANSWERED,
+
+        /** Never sent: the row can't match anything ([LastFmLookupRules.isUnlookable]). */
+        UNLOOKABLE,
+
+        /** Failed for a reason that may pass (network, 5xx, rate limit). Retried next run. */
+        TRANSIENT,
+    }
+
+    private class LookupResult(val info: LastFmTrackInfo?, val kind: Lookup, val fromNetwork: Boolean)
+
+    /**
+     * One `track.getInfo` for [artist]/[title], cleaned of YouTube
+     * presentation tags first, or none at all for an unlookable row. The
+     * client answers repeats from its cache, misses included
+     * ([com.stash.core.data.lastfm.LastFmCachedMiss]).
+     */
+    private suspend fun lookUp(artist: String, title: String): LookupResult {
+        if (LastFmLookupRules.isUnlookable(artist, title)) {
+            stats.unlookable++
+            return LookupResult(null, Lookup.UNLOOKABLE, fromNetwork = false)
+        }
+        var cached = false
+        val result = lastFmApiClient.getTrackInfo(
+            artist = LastFmLookupRules.cleanArtist(artist),
+            title = LastFmLookupRules.cleanTitle(title),
+            onCacheHit = { cached = true },
+        )
+        if (cached) stats.cached++ else stats.network++
+        result.getOrNull()?.let { return LookupResult(it, Lookup.ANSWERED, fromNetwork = !cached) }
+        val error = result.exceptionOrNull()
+        if (error is CancellationException) throw error
+        if (error is LastFmApiException && error.errorCode in LastFmCachedMiss.FINAL_ERROR_CODES) {
+            return LookupResult(null, Lookup.ANSWERED, fromNetwork = !cached)
+        }
+        stats.transient++
+        return LookupResult(null, Lookup.TRANSIENT, fromNetwork = !cached)
     }
 
     /**
      * Pass 1: repair missing `album_art_url`. Network-bound (Last.fm),
      * rate-limited to respect Last.fm's ceiling. Graceful no-op when no
      * candidates match the query.
+     *
+     * A row neither source could fill waits out the back-off
+     * ([LastFmEnrichmentBackoff.Pass.ART_BACKFILL]) before it is tried again,
+     * so the batch moves on to other rows instead of re-asking about the same
+     * ones every run. A transient failure doesn't count against a row; five
+     * in a row end the Last.fm part of the pass (an outage).
      */
-    private suspend fun runArtPass() {
-        val candidates = trackDao.findArtBackfillCandidates(BATCH_SIZE)
+    private suspend fun runArtPass(startedAt: Long) {
+        val candidates = backoff.candidateRows(
+            LastFmEnrichmentBackoff.Pass.ART_BACKFILL, BATCH_SIZE, startedAt, { it.id },
+        ) { limit -> trackDao.findArtBackfillCandidates(limit) }
         if (candidates.isEmpty()) {
             Log.d(TAG, "no tracks need art backfill")
             return
         }
         Log.i(TAG, "backfilling art for ${candidates.size} tracks")
 
-        val lastFmConfigured = credentials.isConfigured
+        var lastFmUsable = credentials.isConfigured
         var filled = 0
-        var skipped = 0
+        val unfillable = mutableListOf<Long>()
+        var transientInARow = 0
         for (row in candidates) {
-            val artUrl = resolveArt(row, lastFmConfigured)
+            val lookup = if (lastFmUsable) lookUp(row.artist, row.title) else null
+            val artUrl = lookup?.info?.bestImageUrl?.takeIf { it.isNotBlank() } ?: youTubeArt(row.youtubeId)
             if (artUrl != null) {
                 runCatching { trackDao.fillMissingAlbumArtUrl(row.id, artUrl) }
                     .onSuccess { filled++ }
                     .onFailure { e ->
                         Log.w(TAG, "fillMissingAlbumArtUrl failed for trackId=${row.id}", e)
                     }
-            } else {
-                skipped++
+            } else if (lookup?.kind == Lookup.ANSWERED || lookup?.kind == Lookup.UNLOOKABLE ||
+                (lookup == null && !credentials.isConfigured)
+            ) {
+                // Every source had its say and none had art. (A row the outage
+                // stop left unasked isn't one: it is tried next run.)
+                unfillable += row.id
             }
-            // Rate limit. Applies after every candidate because the Last.fm
-            // path is the common one; for rows where we only hit the YT
-            // fallback the delay is a cheap no-op relative to whatever the
-            // next row's Last.fm call costs.
-            delay(REQUEST_INTERVAL_MS)
+            if (lookup?.kind == Lookup.TRANSIENT) {
+                if (++transientInARow >= MAX_TRANSIENT_IN_A_ROW) {
+                    Log.w(TAG, "art pass: $transientInARow Last.fm failures in a row; no more lookups this run")
+                    lastFmUsable = false
+                }
+            } else if (lookup != null) {
+                transientInARow = 0
+            }
+            // Rate limit, only after a request actually went out: a cached or
+            // skipped row costs Last.fm nothing.
+            if (lookup?.fromNetwork == true) delay(REQUEST_INTERVAL_MS)
         }
-        Log.i(TAG, "art backfill done: filled=$filled skipped=$skipped (no art found)")
+        backoff.recordFailures(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, unfillable, startedAt)
+        Log.i(TAG, "art backfill done: filled=$filled unfillable=${unfillable.size} (backed off)")
     }
 
     /**
@@ -211,17 +309,22 @@ class ArtBackfillWorker @AssistedInject constructor(
      * One Last.fm `track.getInfo` lookup per candidate yields both
      * `bestImageUrl` and `durationMs`, so we issue a single network call
      * and apply both UPDATEs guarded by their existing "only-if-blank"
-     * predicates. Rate-limited like [runArtPass] to respect Last.fm's
-     * 5 req/s ceiling. No-ops when Last.fm isn't configured (the user
-     * hasn't supplied an API key) — the play-time hydration path remains
-     * the fallback for those installs.
+     * predicates. Rate-limited like [runArtPass]. No-ops when Last.fm isn't
+     * configured — the play-time hydration path remains the fallback.
+     *
+     * A stub Last.fm answered without filling both (no such track, no art,
+     * no duration, which is common) stays a candidate by the query's rule;
+     * it now waits out the back-off instead of being asked about again on
+     * every run.
      */
-    private suspend fun runStreamableMetadataPass() {
+    private suspend fun runStreamableMetadataPass(startedAt: Long) {
         if (!credentials.isConfigured) {
             Log.d(TAG, "Last.fm not configured — skipping stream-only metadata backfill")
             return
         }
-        val candidates = trackDao.findStreamableMetadataBackfillCandidates(BATCH_SIZE)
+        val candidates = backoff.candidateRows(
+            LastFmEnrichmentBackoff.Pass.ART_BACKFILL, BATCH_SIZE, startedAt, { it.id },
+        ) { limit -> trackDao.findStreamableMetadataBackfillCandidates(limit) }
         if (candidates.isEmpty()) {
             Log.d(TAG, "no stream-only stubs need metadata backfill")
             return
@@ -230,58 +333,51 @@ class ArtBackfillWorker @AssistedInject constructor(
 
         var artFilled = 0
         var durationFilled = 0
-        var skipped = 0
+        val unfillable = mutableListOf<Long>()
+        var transientInARow = 0
         for (row in candidates) {
-            val info = runCatching {
-                lastFmApiClient.getTrackInfo(row.artist, row.title).getOrNull()
-            }.getOrNull()
-            if (info == null) {
-                skipped++
-                delay(REQUEST_INTERVAL_MS)
+            val lookup = lookUp(row.artist, row.title)
+            if (lookup.fromNetwork) delay(REQUEST_INTERVAL_MS)
+            if (lookup.kind == Lookup.TRANSIENT) {
+                if (++transientInARow >= MAX_TRANSIENT_IN_A_ROW) {
+                    Log.w(TAG, "stream-only pass: $transientInARow Last.fm failures in a row; stopping")
+                    break
+                }
                 continue
             }
-            info.bestImageUrl?.takeIf { it.isNotBlank() }?.let { artUrl ->
+            transientInARow = 0
+            val info = lookup.info
+            val art = info?.bestImageUrl?.takeIf { it.isNotBlank() }
+            val ms = info?.durationMs?.takeIf { it > 0 }
+            art?.let { artUrl ->
                 runCatching { trackDao.fillMissingAlbumArtUrl(row.id, artUrl) }
                     .onSuccess { artFilled++ }
                     .onFailure { e ->
                         Log.w(TAG, "stream-only art fill failed for trackId=${row.id}", e)
                     }
             }
-            info.durationMs?.takeIf { it > 0 }?.let { ms ->
-                runCatching { trackDao.fillMissingDuration(row.id, ms) }
+            ms?.let {
+                runCatching { trackDao.fillMissingDuration(row.id, it) }
                     .onSuccess { durationFilled++ }
                     .onFailure { e ->
                         Log.w(TAG, "stream-only duration fill failed for trackId=${row.id}", e)
                     }
             }
-            delay(REQUEST_INTERVAL_MS)
+            // Missing either one leaves the row a candidate: back it off. (A row
+            // that only lacked the one it got is no longer a candidate, so the
+            // entry is harmless.)
+            if (art == null || ms == null) unfillable += row.id
         }
+        backoff.recordFailures(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, unfillable, startedAt)
         Log.i(
             TAG,
             "stream-only backfill done: art=$artFilled duration=$durationFilled " +
-                "skipped=$skipped (Last.fm miss)",
+                "incomplete=${unfillable.size} (backed off)",
         )
     }
 
-    /**
-     * Fallback chain for a single candidate. Returns the first non-null
-     * result from Last.fm → YT maxresdefault, or null if neither yielded a URL.
-     */
-    private suspend fun resolveArt(
-        row: com.stash.core.data.db.dao.ArtBackfillRow,
-        lastFmConfigured: Boolean,
-    ): String? {
-        if (lastFmConfigured) {
-            val lfm = runCatching {
-                lastFmApiClient.getTrackInfo(row.artist, row.title).getOrNull()?.bestImageUrl
-            }.getOrNull()
-            if (!lfm.isNullOrBlank()) return lfm
-        }
+    /** The YouTube still for a row with a real video id, else null. */
+    private fun youTubeArt(youtubeId: String?): String? =
         // Only an id with the YouTube video-id shape is built into a URL.
-        val vid = row.youtubeId
-        if (YouTubeVideoId.isValid(vid)) {
-            return "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
-        }
-        return null
-    }
+        if (YouTubeVideoId.isValid(youtubeId)) "https://i.ytimg.com/vi/$youtubeId/maxresdefault.jpg" else null
 }

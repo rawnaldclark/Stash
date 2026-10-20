@@ -45,10 +45,42 @@ class LastFmEnrichmentBackoff internal constructor(
 ) {
     @Inject constructor(@ApplicationContext context: Context) : this(context.lastFmEnrichmentBackoffDataStore)
 
-    /** One enrichment worker's record. */
-    enum class Pass(internal val key: Preferences.Key<Set<String>>) {
+    /**
+     * One enrichment worker's record: how long a track waits ([backoffMs]) and
+     * how many tracks are remembered ([maxEntries]).
+     */
+    enum class Pass(
+        internal val key: Preferences.Key<Set<String>>,
+        internal val backoffMs: Long = BACKOFF_MS,
+        internal val maxEntries: Int = MAX_ENTRIES,
+    ) {
         TAGS(stringSetPreferencesKey("tags")),
         TRACK_INFO(stringSetPreferencesKey("track_info")),
+
+        /**
+         * ArtBackfillWorker: rows its Last.fm lookup answered but couldn't fill
+         * (not found, no art, no duration), or that are never looked up (voice
+         * notes, "Unknown Artist"). As long as a remembered miss
+         * ([LastFmCachedMiss.TTL_MS]), so a row waits as long as its answer is
+         * believed; more entries because a library can hold hundreds of such
+         * files and the batch is 500.
+         */
+        ART_BACKFILL(stringSetPreferencesKey("art_backfill"), LastFmCachedMiss.TTL_MS, 2_000),
+    }
+
+    /**
+     * [candidates] for rows of any shape: up to [batchSize] of [fetch]'s rows
+     * whose [id] [pass] has not failed on within its back-off.
+     */
+    suspend fun <T> candidateRows(
+        pass: Pass,
+        batchSize: Int,
+        nowMs: Long,
+        id: (T) -> Long,
+        fetch: suspend (limit: Int) -> List<T>,
+    ): List<T> {
+        val backedOff = backedOff(pass, nowMs)
+        return fetch(batchSize + backedOff.size).filterNot { id(it) in backedOff }.take(batchSize)
     }
 
     /**
@@ -71,7 +103,7 @@ class LastFmEnrichmentBackoff internal constructor(
     /** The tracks [pass] failed on within [BACKOFF_MS] of [nowMs]. */
     internal suspend fun backedOff(pass: Pass, nowMs: Long): Set<Long> = try {
         decode(dataStore.data.first()[pass.key].orEmpty())
-            .filterValues { failedAt -> isBackedOff(failedAt, nowMs) }
+            .filterValues { failedAt -> isBackedOff(failedAt, nowMs, pass.backoffMs) }
             .keys
     } catch (e: CancellationException) {
         throw e
@@ -90,10 +122,10 @@ class LastFmEnrichmentBackoff internal constructor(
         try {
             dataStore.edit { prefs ->
                 val entries = decode(prefs[pass.key].orEmpty())
-                    .filterValues { failedAt -> isBackedOff(failedAt, nowMs) }
+                    .filterValues { failedAt -> isBackedOff(failedAt, nowMs, pass.backoffMs) }
                     .toMutableMap()
                 trackIds.forEach { entries[it] = nowMs }
-                prefs[pass.key] = encode(entries)
+                prefs[pass.key] = encode(entries, pass.maxEntries)
             }
         } catch (e: CancellationException) {
             throw e
@@ -115,8 +147,8 @@ class LastFmEnrichmentBackoff internal constructor(
          * Inside the window. A failure stamped in the future (the clock moved
          * back) counts as over, so a clock change can't hide a track for good.
          */
-        fun isBackedOff(failedAtMs: Long, nowMs: Long): Boolean =
-            nowMs - failedAtMs in 0 until BACKOFF_MS
+        fun isBackedOff(failedAtMs: Long, nowMs: Long, backoffMs: Long = BACKOFF_MS): Boolean =
+            nowMs - failedAtMs in 0 until backoffMs
 
         /** `"<trackId>:<failedAtMs>"` entries; anything else is skipped. */
         fun decode(raw: Set<String>): Map<Long, Long> = raw.mapNotNull { entry ->
@@ -125,10 +157,10 @@ class LastFmEnrichmentBackoff internal constructor(
             if (id == null || failedAt == null) null else id to failedAt
         }.toMap()
 
-        /** The newest [MAX_ENTRIES] of [entries], encoded for [decode]. */
-        fun encode(entries: Map<Long, Long>): Set<String> = entries.entries
+        /** The newest [maxEntries] of [entries], encoded for [decode]. */
+        fun encode(entries: Map<Long, Long>, maxEntries: Int = MAX_ENTRIES): Set<String> = entries.entries
             .sortedByDescending { it.value }
-            .take(MAX_ENTRIES)
+            .take(maxEntries)
             .mapTo(HashSet()) { "${it.key}:${it.value}" }
     }
 }

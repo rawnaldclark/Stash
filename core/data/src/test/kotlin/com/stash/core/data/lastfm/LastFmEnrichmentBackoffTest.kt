@@ -79,6 +79,30 @@ class LastFmEnrichmentBackoffTest {
         assertEquals(mapOf(7L to 100L), LastFmEnrichmentBackoff.decode(setOf("7:100", "junk", "8:", ":9")))
     }
 
+    @Test fun `the art backfill waits as long as a remembered miss, not a week`() = runTest {
+        backoff.recordFailures(Pass.ART_BACKFILL, listOf(1L), NOW)
+
+        assertEquals(setOf(1L), backoff.backedOff(Pass.ART_BACKFILL, NOW + LastFmEnrichmentBackoff.BACKOFF_MS))
+        assertTrue(backoff.backedOff(Pass.ART_BACKFILL, NOW + LastFmCachedMiss.TTL_MS).isEmpty())
+        assertTrue("its own record", backoff.backedOff(Pass.TAGS, NOW).isEmpty())
+    }
+
+    @Test fun `the art backfill remembers more rows than a batch`() = runTest {
+        backoff.recordFailures(Pass.ART_BACKFILL, (1L..1_500L).toList(), NOW)
+
+        assertEquals(1_500, backoff.backedOff(Pass.ART_BACKFILL, NOW + 1).size)
+    }
+
+    @Test fun `candidate rows of any shape leave out the backed-off ones`() = runTest {
+        data class Row(val id: Long, val title: String)
+        val rows = (1L..20L).map { Row(it, "t$it") }
+        backoff.recordFailures(Pass.ART_BACKFILL, listOf(1L, 2L), NOW)
+
+        val batch = backoff.candidateRows(Pass.ART_BACKFILL, 3, NOW + 1, { it.id }) { limit -> rows.take(limit) }
+
+        assertEquals(listOf(3L, 4L, 5L), batch.map { it.id })
+    }
+
     private companion object {
         const val NOW = 1_800_000_000_000L
     }
