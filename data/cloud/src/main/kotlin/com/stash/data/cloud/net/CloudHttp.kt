@@ -6,16 +6,37 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Runs an OkHttp call without blocking a thread, and cancels it when the coroutine is cancelled. */
+/**
+ * Runs an OkHttp call without blocking a thread, and cancels it when the coroutine is cancelled.
+ *
+ * The body is read whole on OkHttp's thread before the caller resumes: callers read it as soon as
+ * they get it, and a caller on the main thread (the folder picker) reading a body that was still
+ * streaming hit NetworkOnMainThreadException on OneDrive. Every answer here is small (listings,
+ * tokens, bounded tag ranges).
+ */
 suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { runCatching { cancel() } }
     enqueue(object : Callback {
         override fun onResponse(call: Call, response: Response) {
-            cont.resume(response) { _, _, _ -> response.close() }
+            val buffered = try {
+                val body = response.body
+                if (body == null) {
+                    response
+                } else {
+                    val bytes = body.bytes()
+                    response.newBuilder().body(bytes.toResponseBody(body.contentType())).build()
+                }
+            } catch (e: IOException) {
+                response.close()
+                if (!cont.isCancelled) cont.resumeWithException(e)
+                return
+            }
+            cont.resume(buffered) { _, _, _ -> buffered.close() }
         }
 
         override fun onFailure(call: Call, e: IOException) {

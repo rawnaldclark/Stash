@@ -191,6 +191,7 @@ class CloudStorageViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                android.util.Log.w("CloudBrowse", "browse failed: ${e::class.simpleName}")
                 _browse.update { it?.copy(loading = false, error = "Couldn't load this folder. Check your connection.") }
             }
         }

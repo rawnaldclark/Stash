@@ -91,8 +91,15 @@ class OneDriveProvider(
     override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink {
         val r = get(accountId, "$GRAPH/me/drive/items/${seg(itemId)}?\$select=id,size,cTag,eTag,file,@microsoft.graph.downloadUrl", priority)
         if (r.code == 404) throw CloudItemNotFoundException("OneDrive has no item $itemId")
-        val item = json.decodeFromString(ItemJson.serializer(), ok(r).body)
-        val url = item.downloadUrl ?: throw CloudApiException(r.code, "OneDrive item has no download link")
+        var item = json.decodeFromString(ItemJson.serializer(), ok(r).body)
+        // Personal accounts can answer a $select with the old `@content.downloadUrl` name, or
+        // leave the link out of a $select answer entirely (seen 2026-10-20): ask once without it.
+        if (item.link == null) {
+            val full = get(accountId, "$GRAPH/me/drive/items/${seg(itemId)}", priority)
+            if (full.code == 404) throw CloudItemNotFoundException("OneDrive has no item $itemId")
+            item = json.decodeFromString(ItemJson.serializer(), ok(full).body)
+        }
+        val url = item.link ?: throw CloudApiException(r.code, "OneDrive item has no download link")
         return CloudLink(url, item.size ?: 0, item.cTag, clock())
     }
 
@@ -109,7 +116,7 @@ class OneDriveProvider(
             parentId = item.parentReference?.id,
             folders = null, // delta omits parentReference.path; the scanner resolves it from ids
             remotePath = null,
-            downloadUrl = item.downloadUrl,
+            downloadUrl = item.link,
         )
         else -> null
     }
@@ -144,7 +151,11 @@ class OneDriveProvider(
         val deleted: DeletedJson? = null,
         val parentReference: ParentJson? = null,
         @SerialName("@microsoft.graph.downloadUrl") val downloadUrl: String? = null,
-    )
+        @SerialName("@content.downloadUrl") val contentDownloadUrl: String? = null,
+    ) {
+        /** The pre-authenticated download link under either name Graph uses. */
+        val link: String? get() = downloadUrl ?: contentDownloadUrl
+    }
 
     @Serializable internal data class FileJson(val mimeType: String? = null)
     @Serializable internal data class FolderJson(val childCount: Int? = null)
