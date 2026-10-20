@@ -41,6 +41,52 @@ class TidalStreamResolver @Inject constructor(
         client.lookup(track.toQuery(), allowAac = losslessPrefs.tidalAacFallbackNow(), cacheOnly = true) ==
             com.stash.data.download.lossless.bitchord.TidalLookup.NeedsRelay
 
+    /**
+     * [needsRelay] for the "Prefer Tidal AAC while streaming" rung ([resolveAacOnly]): true
+     * when an `?aac=only` lookup for [track] would have to ask the relay. No request is made.
+     */
+    suspend fun needsRelayAacOnly(track: TrackEntity): Boolean =
+        client.lookup(track.toQuery(), allowAac = true, cacheOnly = true, aacOnly = true) ==
+            com.stash.data.download.lossless.bitchord.TidalLookup.NeedsRelay
+
+    /**
+     * Tidal's 320 kbps AAC for [track] even when Tidal has it in FLAC: the opt-in
+     * "Prefer Tidal AAC while streaming" rung, which runs ahead of Qobuz to save data.
+     *
+     * The same request the AAC 320 download mode makes (`?aac=only&hires=0`, see
+     * [BitchordClient.lookup]'s `aacOnly`), with its own in-flight key and its own miss stamp,
+     * so an AAC-only miss never hides the FLAC lookup the Tidal lossless rung makes, nor the
+     * other way round. It counts toward the daily allowance like any Tidal lookup; a spent
+     * day, a busy pool, a miss or an error return null at once and the chain goes on.
+     *
+     * Anything but AAC is refused: a self-hosted server that predates `aac=only` answers as if
+     * the flag weren't there, and a FLAC from here would skip Qobuz while saving no data.
+     */
+    suspend fun resolveAacOnly(track: TrackEntity): StreamUrl? {
+        if (!client.isConfigured()) return null
+        val lookup = client.lookup(track.toQuery(), allowAac = true, aacOnly = true)
+        val s = (lookup as? com.stash.data.download.lossless.bitchord.TidalLookup.Found)?.stream ?: run {
+            Log.d(TAG, "aac_only no_result id=${track.id} (${lookup.javaClass.simpleName})")
+            return null
+        }
+        if (!s.codec.equals("aac", ignoreCase = true)) {
+            Log.i(TAG, "aac_only answered '${s.codec}' for id=${track.id}; not AAC, leaving it to the chain")
+            return null
+        }
+        Log.i(TAG, "aac_only resolved id=${track.id} ${s.bitrateKbps} kbps")
+        return StreamUrl(
+            url = s.url,
+            expiresAtMs = s.expiresAtMs,
+            codec = s.codec,
+            bitsPerSample = null,
+            sampleRateHz = s.sampleRateHz.takeIf { it > 0 },
+            bitrateKbps = s.bitrateKbps.takeIf { it > 0 },
+            coverArtUrl = s.coverArtUrl,
+            origin = ORIGIN,
+            isDash = s.isDash,
+        )
+    }
+
     private fun TrackEntity.toQuery() = TrackQuery(
         artist = artist,
         title = title,

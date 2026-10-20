@@ -264,6 +264,8 @@
     <string name="settings_on_wifi">On Wi-Fi</string>
     <string name="settings_on_cellular">On cellular</string>
     <string name="settings_save_data_lossless_subtitle">Streams CD quality instead of Hi-Res or Max on every network — about 28 MB per track instead of 70 or 140. Tracks that fall to JioSaavn or YouTube use their lowest audio quality. Downloads are unaffected.</string>
+    <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
     <string name="settings_state_expanded">expanded</string>
     <string name="settings_state_collapsed">collapsed</string>
     <string name="settings_lossy_fallback_title">Lossy fallback</string>

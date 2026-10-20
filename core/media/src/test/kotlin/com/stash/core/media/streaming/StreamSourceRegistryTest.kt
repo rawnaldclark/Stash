@@ -55,6 +55,135 @@ class StreamSourceRegistryTest {
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal,
     )
 
+    private fun registryPreferringAac(tidal: TidalStreamResolver, prefer: Boolean) = StreamSourceRegistry(
+        kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+        LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal, null,
+        mockk<StreamQualityPolicy> { coEvery { preferTidalAac() } returns prefer },
+    )
+
+    private fun aacStream() = StreamUrl(
+        url = "https://example.test/tidal.mp4", expiresAtMs = Long.MAX_VALUE, codec = "aac", bitrateKbps = 320, origin = "tidal",
+    )
+
+    @Test
+    fun `prefer Tidal AAC on asks Tidal AAC before Qobuz`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveAacOnly(any()) } returns aacStream()
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryPreferringAac(tidal, prefer = true).resolve(stubTrack())
+
+        assertThat(result!!.codec).isEqualTo("aac")
+        assertThat(result.origin).isEqualTo("tidal")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `prefer Tidal AAC falls straight through to Qobuz on a miss`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        // Busy, spent, 429 and errors all reach the registry as null from resolveAacOnly.
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveAacOnly(any()) } returns null
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryPreferringAac(tidal, prefer = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("qbdlx")
+        coVerifyOrder {
+            tidal.resolveAacOnly(any())
+            qbdlx.resolve(any())
+        }
+    }
+
+    @Test
+    fun `prefer Tidal AAC that throws still reaches Qobuz`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveAacOnly(any()) } throws IllegalStateException("boom")
+        }
+
+        assertThat(registryPreferringAac(tidal, prefer = true).resolve(stubTrack())!!.origin).isEqualTo("qbdlx")
+    }
+
+    @Test
+    fun `prefer Tidal AAC off keeps the chain as it was`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryPreferringAac(tidal, prefer = false).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        assertThat(result.codec).isEqualTo("flac")
+        coVerifyOrder {
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+        }
+        coVerify(exactly = 0) { tidal.resolveAacOnly(any()) }
+        coVerify(exactly = 0) { tidal.needsRelayAacOnly(any()) }
+    }
+
+    @Test
+    fun `prefer Tidal AAC is skipped with the Lossless switch off`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { losslessPrefs.enabledNow() } returns false
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val tidal: TidalStreamResolver = mockk()
+
+        val result = registryPreferringAac(tidal, prefer = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("youtube")
+        coVerify(exactly = 0) { tidal.resolveAacOnly(any()) }
+    }
+
+    @Test
+    fun `a speculative prefetch with prefer Tidal AAC on never asks the relay`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { needsRelayAacOnly(any()) } returns true
+            coEvery { needsRelay(any()) } returns false
+        }
+
+        val result = registryPreferringAac(tidal, prefer = true)
+            .resolve(stubTrack(), allowYouTube = true, allowYtDlp = true, speculative = true)
+
+        // No FLAC cached for a song the real play will stream as AAC.
+        assertThat(result).isNull()
+        coVerify(exactly = 0) { tidal.resolveAacOnly(any()) }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `speculative prefetch with prefer Tidal AAC on walks on past a cached AAC miss`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { needsRelayAacOnly(any()) } returns false
+            coEvery { resolveAacOnly(any()) } returns null
+            coEvery { needsRelay(any()) } returns false
+            coEvery { resolve(any()) } returns null
+        }
+
+        val result = registryPreferringAac(tidal, prefer = true)
+            .resolve(stubTrack(), allowYouTube = true, allowYtDlp = true, speculative = true)
+
+        assertThat(result!!.origin).isEqualTo("qbdlx")
+    }
+
     @Test
     fun `speculative prefetch never asks the Tidal relay and caches no lossy stand-in`() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false

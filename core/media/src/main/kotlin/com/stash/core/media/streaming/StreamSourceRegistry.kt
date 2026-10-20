@@ -27,6 +27,9 @@ import javax.inject.Singleton
  * — null from one resolver just means "try the next one".
  *
  * Current order:
+ *   0. Opt-in only ("Prefer Tidal AAC while streaming", off by default):
+ *      [TidalStreamResolver.resolveAacOnly], Tidal's 320 kbps AAC ahead of
+ *      Qobuz to save data. Any miss goes straight on to 1.
  *   1. [QbdlxStreamResolver]   — `qbdlx`, the DIRECT Qobuz API (signed
  *      requests against the user's own connected account, or a relay standing
  *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
@@ -81,6 +84,8 @@ class StreamSourceRegistry internal constructor(
     private val tidal: TidalStreamResolver? = null,
     /** The daily lossless allowance; null in hand-built tests (never spent). */
     private val losslessQuota: LosslessQuota? = null,
+    /** Streaming quality settings ("Prefer Tidal AAC"); null in hand-built tests (setting off). */
+    private val qualityPolicy: StreamQualityPolicy? = null,
 ) {
     @Inject
     constructor(
@@ -95,9 +100,11 @@ class StreamSourceRegistry internal constructor(
         diagnosticsLog: PlaybackDiagnosticsLog,
         tidal: TidalStreamResolver,
         losslessQuota: LosslessQuota,
+        qualityPolicy: StreamQualityPolicy,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
+        qualityPolicy,
     )
     /**
      * Try each resolver in priority order; return the first non-null
@@ -231,6 +238,10 @@ class StreamSourceRegistry internal constructor(
         // leave the chain and the track streams from the lossy rungs. It outranks the
         // force-source test toggles: a stale force pref must not override a user choice.
         val lossless = losslessPrefs.enabledNow()
+        // "Prefer Tidal AAC while streaming" (Settings › Audio & Quality, off by default). Read
+        // through the policy on every resolve, so a flip also drops the cached URLs of the
+        // other kind. Off: the chain below is exactly what it was before the setting existed.
+        val preferTidalAac = qualityPolicy?.preferTidalAac() == true
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
                 // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
@@ -260,6 +271,24 @@ class StreamSourceRegistry internal constructor(
                 // side) — re-enabling is uncommenting these two lines.
                 // add("kennyy" to kennyy::resolve)
                 // add("squid" to qobuz::resolve)
+
+                // Prefer Tidal AAC: Tidal's 320 kbps AAC (`?aac=only&hires=0`, the AAC
+                // download mode's request) ahead of Qobuz, for a listener saving data. Only
+                // where the Tidal rung itself runs (foreground, Lossless on, a relay set), and
+                // a miss, busy pool, spent day or error falls straight to qbdlx below with no
+                // wait. Its own in-flight key and miss stamp in BitchordClient, so it never
+                // hides the Tidal FLAC lookup further down (or the other way round).
+                val tidalAacRung = tidal
+                if (preferTidalAac && allowYtDlp && lossless && tidalAacRung != null) {
+                    // Speculative: like the Tidal rung, never make the relay search for a
+                    // look-ahead. Stopping here (rather than skipping) keeps a Qobuz FLAC from
+                    // being cached for a track the real play would stream as AAC.
+                    if (speculative && tidalAacRung.needsRelayAacOnly(track)) {
+                        add(TIDAL_DEFERRED to { _: TrackEntity -> null })
+                    } else {
+                        add(TIDAL_AAC to { t: TrackEntity -> tidalAacRung.resolveAacOnly(t) })
+                    }
+                }
 
                 // qbdlx (direct Qobuz API) is the primary lossless source:
                 // plain Range-seekable FLAC, no proxy, no client-side decrypt —
@@ -306,7 +335,8 @@ class StreamSourceRegistry internal constructor(
         Log.i(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
-                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless",
+                "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless" +
+                if (preferTidalAac) " preferTidalAac=true" else "",
         )
 
         // P3 (2026-09-06): the YouTube fast lane (one InnerTube round trip and a
@@ -418,5 +448,6 @@ class StreamSourceRegistry internal constructor(
     private companion object {
         private const val TAG = "StreamSourceRegistry"
         private const val TIDAL_DEFERRED = "tidal-deferred"
+        private const val TIDAL_AAC = "tidal-aac"
     }
 }

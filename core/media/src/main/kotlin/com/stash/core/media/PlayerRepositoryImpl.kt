@@ -763,7 +763,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
     /** The body of [setQueueInternal], run while [queueBuildsInFlight] counts it. */
     private suspend fun setQueueBuilding(
-        tracks: List<Track>,
+        requested: List<Track>,
         startIndex: Int,
         startPositionMs: Long,
         source: com.stash.core.model.PlaybackSource,
@@ -782,7 +782,11 @@ class PlayerRepositoryImpl @Inject constructor(
         val generation = setQueueGeneration.incrementAndGet()
 
         val controller = ensureController() ?: return
-        if (tracks.isEmpty()) return
+        if (requested.isEmpty()) return
+        // Synthetic stream ids (an artist page's or a YouTube album's songs) become library ids,
+        // so the saved queue resumes after the app is closed (withQueueIdentity). A real id is a
+        // pure check, no DB. Id 0 is left as it was: those callers persist their own tracks.
+        val tracks = requested.map { if (it.id == 0L) it else it.withQueueIdentity() }
 
         val safeStart = startIndex.coerceIn(0, tracks.size - 1)
 
@@ -1223,8 +1227,11 @@ class PlayerRepositoryImpl @Inject constructor(
         keepCurrent: Boolean,
     ): RadioStartResult {
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
-        val (session, firstBatch) = radioGenerator.start(seed)
-        if (firstBatch.isEmpty()) return RadioStartResult.NoStation
+        val (session, generated) = radioGenerator.start(seed)
+        if (generated.isEmpty()) return RadioStartResult.NoStation
+        // Library ids before queueing: the generator's ids are videoId hashes with no row, so a
+        // saved radio queue resumed into nothing after the app was closed (withQueueIdentity).
+        val firstBatch = generated.map { it.withQueueIdentity() }
         radioSession = session
         radioActive = true
         // Only ONE grower may run: startRadio bypasses setQueueInternal (which is
@@ -1304,10 +1311,12 @@ class PlayerRepositoryImpl @Inject constructor(
                 stopRadio()
                 return
             }
-            // Streaming tracks → stash-resolve:// placeholders (see startRadio). The logical queue
-            // first, as in addNext: the add is reported, and the queue published, during the call.
-            currentQueueTracks = currentQueueTracks + batch
-            controller.addMediaItems(batch.map { it.toQueueMediaItem() })
+            // Library ids, as in startRadio, so the grown queue resumes too. Streaming tracks →
+            // stash-resolve:// placeholders (see startRadio). The logical queue first, as in
+            // addNext: the add is reported, and the queue published, during the call.
+            val queued = batch.map { it.withQueueIdentity() }
+            currentQueueTracks = currentQueueTracks + queued
+            controller.addMediaItems(queued.map { it.toQueueMediaItem() })
         }
     }
 
@@ -1353,9 +1362,26 @@ class PlayerRepositoryImpl @Inject constructor(
      * Native Qobuz rows reach per-track actions without a video id, which
      * previously mapped every one of them to id=0. Persist those transient
      * rows before queueing so different songs cannot share one cached URL.
+     *
+     * A synthetic stream id (`videoId.hashCode().toLong()`: radio, an artist page's or a
+     * YouTube album's non-library songs) is persisted too, by the same test as
+     * [MusicRepository.ensureTrackPersisted]: the saved queue holds these ids, and the cold-start
+     * resume ([PlaybackResumer]) drops every id with no `tracks` row, so a radio queue came
+     * back as nothing and a mixed one lost its current song. Search plays take this road since
+     * 53814e39. If the save fails the synthetic id is kept: the song still plays, it just
+     * won't come back after a restart. All Songs files keep their own ids (never saved).
      */
-    private suspend fun Track.withQueueIdentity(): Track =
-        if (id != 0L) this else copy(id = musicRepository.ensureTrackPersisted(this))
+    private suspend fun Track.withQueueIdentity(): Track {
+        val syntheticId = !youtubeId.isNullOrBlank() && id == youtubeId.hashCode().toLong()
+        if (id == 0L) return copy(id = musicRepository.ensureTrackPersisted(this))
+        if (!syntheticId || isScannedSong) return this
+        return runCatching { copy(id = musicRepository.ensureTrackPersisted(this)) }
+            .getOrElse { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "withQueueIdentity: could not persist '$title' — queued under a transient id", e)
+                this
+            }
+    }
 
     /**
      * A track may join the queue unless it is confirmed unavailable. Streaming

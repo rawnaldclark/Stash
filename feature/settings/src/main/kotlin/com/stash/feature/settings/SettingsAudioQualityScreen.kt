@@ -100,6 +100,7 @@ fun SettingsAudioQualityScreen(
     val bitchordEndpointError by viewModel.bitchordEndpointError.collectAsStateWithLifecycle()
     val bitchordHasToken by viewModel.bitchordHasToken.collectAsStateWithLifecycle()
     val tidalAacFallback by viewModel.tidalAacFallback.collectAsStateWithLifecycle()
+    val preferTidalAacStreaming by viewModel.preferTidalAacStreaming.collectAsStateWithLifecycle()
     val flacViewModel: FlacUpgradeViewModel = hiltViewModel()
     val autoFlacUpgrade by flacViewModel.autoEnabled.collectAsStateWithLifecycle()
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
@@ -373,6 +374,17 @@ fun SettingsAudioQualityScreen(
                                         checked = uiState.streamingSaveData,
                                         onCheckedChange = viewModel::onStreamingSaveDataChanged,
                                         titleTrailing = { BetaPill() },
+                                    )
+
+                                    // Opt-in: Tidal's 320 kbps AAC ahead of Qobuz while streaming.
+                                    // Lives here because it only applies with Lossless on (the
+                                    // Tidal rung is a lossless-relay rung); downloads ignore it.
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    SettingsToggleRow(
+                                        title = stringResource(R.string.settings_prefer_tidal_aac_streaming_title),
+                                        subtitle = stringResource(R.string.settings_prefer_tidal_aac_streaming_subtitle),
+                                        checked = preferTidalAacStreaming,
+                                        onCheckedChange = viewModel::onPreferTidalAacStreamingChanged,
                                     )
                                 }
                             }

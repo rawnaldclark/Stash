@@ -33,6 +33,8 @@ internal val Context.streamingQualityDataStore: DataStore<Preferences> by prefer
  *    respective transport. Cellular defaults to CD (the data-saving floor).
  *  - [saveData] — master override; when true, callers should force CD on
  *    every network. The override itself lives in StreamQualityPolicy.
+ *  - [preferTidalAac] — opt-in (default off): streaming asks Tidal for its
+ *    320 kbps AAC before Qobuz, to save data. Downloads ignore it.
  *
  * Lives in :data:download (not :core:data's StreamingPreference) because
  * [LosslessQualityTier] is defined here and :core:data cannot depend on
@@ -46,6 +48,7 @@ class StreamingQualityPreferences @Inject constructor(
     private val wifiKey = stringPreferencesKey("streaming_wifi_tier")
     private val cellularKey = stringPreferencesKey("streaming_cellular_tier")
     private val saveDataKey = booleanPreferencesKey("streaming_save_data")
+    private val preferTidalAacKey = booleanPreferencesKey("prefer_tidal_aac_streaming")
 
     val wifiTier: Flow<LosslessQualityTier> = context.streamingQualityDataStore.data.map { prefs ->
         prefs[wifiKey]?.let { runCatching { LosslessQualityTier.valueOf(it) }.getOrNull() }
@@ -63,7 +66,13 @@ class StreamingQualityPreferences @Inject constructor(
 
     suspend fun wifiTierNow(): LosslessQualityTier = wifiTier.first()
     suspend fun cellularTierNow(): LosslessQualityTier = cellularTier.first()
+    /** "Prefer Tidal AAC while streaming": off unless the user turns it on. */
+    val preferTidalAac: Flow<Boolean> = context.streamingQualityDataStore.data.map { prefs ->
+        prefs[preferTidalAacKey] ?: false
+    }
+
     suspend fun saveDataNow(): Boolean = saveData.first()
+    suspend fun preferTidalAacNow(): Boolean = preferTidalAac.first()
 
     suspend fun setWifiTier(tier: LosslessQualityTier) {
         context.streamingQualityDataStore.edit { it[wifiKey] = tier.name }
@@ -75,6 +84,10 @@ class StreamingQualityPreferences @Inject constructor(
 
     suspend fun setSaveData(value: Boolean) {
         context.streamingQualityDataStore.edit { it[saveDataKey] = value }
+    }
+
+    suspend fun setPreferTidalAac(value: Boolean) {
+        context.streamingQualityDataStore.edit { it[preferTidalAacKey] = value }
     }
 
     /**

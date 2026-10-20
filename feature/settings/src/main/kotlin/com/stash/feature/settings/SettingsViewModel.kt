@@ -1851,6 +1851,15 @@ class SettingsViewModel @Inject constructor(
     fun onStreamingSaveDataChanged(value: Boolean) =
         viewModelScope.launch { streamingQualityPrefs.setSaveData(value) }
 
+    /** "Prefer Tidal AAC while streaming": Tidal's AAC ahead of Qobuz to save data. Default off. */
+    val preferTidalAacStreaming: StateFlow<Boolean> =
+        streamingQualityPrefs.preferTidalAac
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Persist "Prefer Tidal AAC while streaming". */
+    fun onPreferTidalAacStreamingChanged(value: Boolean) =
+        viewModelScope.launch { streamingQualityPrefs.setPreferTidalAac(value) }
+
     /**
      * Clear the rate-limiter's circuit breaker for the squid.wtf
      * source. Useful when the breaker tripped on a transient outage
