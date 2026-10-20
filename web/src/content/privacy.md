@@ -32,7 +32,7 @@ updated: 2026-10-20
 - Linking Stash on the web needs no account. What you choose to share between your devices is end-to-end encrypted.
 - Your credentials live on your phone. The Spotify, YouTube and Discord tokens are encrypted with AES-256-GCM via Google's [Tink](https://developers.google.com/tink), keyed per install in Android's hardware-backed Keystore; the rest (Qobuz, Last.fm, ListenBrainz) sit in app-private storage. When yt-dlp runs, Stash gives it a temporary copy of your YouTube cookie in a private file only Stash can read, and deletes it as soon as yt-dlp is done.
 - Each credential is only ever sent to the service it belongs to, over TLS 1.2 or higher. A handful of hosts the project runs are contacted too, and none of them ever receives a credential.
-- Your cloud storage (Dropbox, OneDrive, Google Drive), if you connect it, is read-only and goes straight between the provider and your phone or browser. No Stash server ever sees your files or your sign-in. See [Your cloud storage](#cloud-storage).
+- Your cloud storage (Dropbox, OneDrive, Google Drive), if you connect it, is read-only and goes straight between the provider and your phone or browser. The one exception is a choice you make in the app: saving your downloads to a Stash folder in your Google Drive. No Stash server ever sees your files or your sign-in. See [Your cloud storage](#cloud-storage).
 - Stash is free software under the GNU General Public License, version 3 or later, and every line of code is open source, so anything on this page can be checked in the [source code](https://github.com/rawnaldclark/Stash).
 
 ## What Stash talks to
@@ -101,7 +101,7 @@ Only after you connect a provider, and only in builds and on the web player wher
 
 - **Dropbox** (`www.dropbox.com` for its sign-in page, `api.dropboxapi.com`, and the `*.dropboxusercontent.com` links your files are read from).
 - **OneDrive** (`login.microsoftonline.com` for the Microsoft sign-in, `graph.microsoft.com`, and the download host each file's link points to, such as `*.files.1drv.com`, `my.microsoftpersonalcontent.com` or `*.sharepoint.com`).
-- **Google Drive** (`accounts.google.com` for the Google sign-in, `www.googleapis.com` for the songs you picked, and `oauth2.googleapis.com` to revoke access; in the app the sign-in and file picker are Google Play services' own, on the web the picker loads from `apis.google.com` and `docs.google.com`).
+- **Google Drive** (`accounts.google.com` for the Google sign-in, `www.googleapis.com` for the songs you picked and, if you ask the app to, for saving your downloads to it, and `oauth2.googleapis.com` to revoke access; in the app the sign-in and file picker are Google Play services' own, on the web the picker loads from `apis.google.com` and `docs.google.com`).
 
 ### Updates and housekeeping
 
@@ -125,9 +125,19 @@ Your browser or phone talks to the provider directly. Your sign-in, your file li
 
 - **Dropbox**: read-only access, `files.metadata.read` and `files.content.read`. Stash lists the folders you pick and reads the songs in them.
 - **OneDrive**: read-only access, `Files.Read`, plus `offline_access` (to stay signed in) and `User.Read` (to show which account is connected). Stash lists the folders you pick and reads the songs in them.
-- **Google Drive**: `drive.file`, which lets Stash see only the files you pick in Google's own file picker, and nothing else in your Drive. Google's consent screen says this permission could also let an app create and change files; Stash only reads the songs you picked, and never writes, creates, changes or deletes anything in your Drive.
+- **Google Drive**: `drive.file`, which lets Stash see only the files you pick in Google's own file picker, and nothing else in your Drive. The same permission lets Stash create files and see the files it created. The app uses that only when you ask it to save your downloads (below); otherwise Stash only reads the songs you picked. It never changes, moves or deletes any file it didn't create.
 
-Stash never writes to your Dropbox or OneDrive either.
+Stash never writes to your Dropbox or OneDrive.
+
+### Saving your downloads to Google Drive (app only)
+
+Only if you ask: "Save to Google Drive" in a song's, album's or playlist's menu, or the "Back up my downloads to Google Drive" switch in Settings › Accounts (off by default). Then:
+
+- The app uploads the songs it downloaded, straight from your phone to Google, into a folder called **Stash** in your Drive (Stash › artist › album). Songs from All Songs and songs already in your cloud are never uploaded.
+- Each file is labelled in Drive with a private tag only Stash reads (that it came from Stash, and the song's ISRC or its artist, title and length), so the same song isn't uploaded twice and your other phones signed in to the same Google account find it.
+- Uploads follow the Sync tab's Wi-Fi only setting, and pick up where they stopped after a dropped connection.
+- Stash never deletes anything from your Drive, with one exception: a file it has just uploaded that arrives damaged (its checksum doesn't match) is removed and sent again. Removing a download from your phone, or disconnecting, leaves the Drive copy where it is.
+
 
 ### What Stash reads, and where it's kept
 
@@ -144,7 +154,7 @@ Data from your cloud storage is never sent to Stash's servers or to anyone else,
 
 ### Disconnecting and revoking access
 
-- **In Stash**: Disconnect in the app's Settings › Accounts, or in the web player's Settings › Cloud storage. Stash forgets the tokens and removes that account's songs from your library; songs the app already downloaded stay on your phone as ordinary files. The web player also asks Dropbox and Google to revoke its token when you disconnect.
+- **In Stash**: Disconnect in the app's Settings › Accounts, or in the web player's Settings › Cloud storage. Stash forgets the tokens and removes that account's songs from your library; songs the app already downloaded stay on your phone as ordinary files, and songs it saved to your Google Drive stay in your Drive. The web player also asks Dropbox and Google to revoke its token when you disconnect.
 - **At the provider**, which removes Stash's access everywhere at once: [Google Account › Third-party connections](https://myaccount.google.com/connections), [Microsoft account › Apps and services](https://account.live.com/consent/Manage), or [Dropbox › Connected apps](https://www.dropbox.com/account/connected_apps).
 
 ### Google API Services
