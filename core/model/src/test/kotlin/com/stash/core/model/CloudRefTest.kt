@@ -40,11 +40,19 @@ class CloudRefTest {
             "",
             "stash-resolve://track/1",
             "https://graph.microsoft.com/v1.0/me",
-            "stash-cloud://gdrive/1/abc", // not a provider Stash knows
+            "stash-cloud://box/1/abc", // not a provider Stash knows
             "stash-cloud://onedrive/0/abc",
             "stash-cloud://onedrive/x/abc",
             "stash-cloud://onedrive/1/",
             "stash-cloud://onedrive/1/a/b",
         ).forEach { assertThat(CloudRef.parse(it)).isNull() }
+    }
+
+    @Test
+    fun `google drive refs round-trip with the md5 as version`() {
+        val ref = CloudRef(CloudProvider.GOOGLE_DRIVE, 7, "1AbCdEfGhIj-_K", "9e107d9d372bb6826bd81d3542a419d6")
+        assertThat(ref.toUri()).isEqualTo("stash-cloud://gdrive/7/1AbCdEfGhIj-_K?v=9e107d9d372bb6826bd81d3542a419d6")
+        assertThat(CloudRef.parse(ref.toUri())).isEqualTo(ref)
+        assertThat(ref.cacheKey).isEqualTo("gdrive:1AbCdEfGhIj-_K:9e107d9d372bb6826bd81d3542a419d6")
     }
 }
