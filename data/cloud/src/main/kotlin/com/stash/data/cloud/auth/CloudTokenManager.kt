@@ -5,6 +5,9 @@ import com.stash.core.auth.store.EncryptedTokenStore
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.provider.CloudAuthRequiredException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
@@ -46,6 +49,14 @@ class CloudTokenManager @Inject constructor(
 
     private val locks = ConcurrentHashMap<String, Mutex>()
 
+    private val _changes = MutableStateFlow(0L)
+
+    /**
+     * Bumps when a sign-in is stored or forgotten. The account row is inserted before its first
+     * token is saved (the key needs the row id), so anything showing "signed in" re-checks on this.
+     */
+    val changes: StateFlow<Long> = _changes.asStateFlow()
+
     /** A usable access token for [accountId]; refreshes when it is expired, expiring or [rejected]. */
     suspend fun accessToken(provider: CloudProvider, accountId: Long, rejected: String? = null): String {
         val key = keyFor(provider, accountId)
@@ -82,6 +93,7 @@ class CloudTokenManager @Inject constructor(
             keyFor(provider, accountId),
             ServiceToken(result.accessToken, refresh, nowSeconds() + result.expiresInSeconds, result.scope),
         )
+        _changes.value++
     }
 
     suspend fun hasToken(provider: CloudProvider, accountId: Long): Boolean = store.get(keyFor(provider, accountId)) != null
@@ -93,6 +105,7 @@ class CloudTokenManager @Inject constructor(
     suspend fun forget(provider: CloudProvider, accountId: Long) {
         val key = keyFor(provider, accountId)
         locks.getOrPut(key) { Mutex() }.withLock { store.clear(key) }
+        _changes.value++
     }
 
     companion object {

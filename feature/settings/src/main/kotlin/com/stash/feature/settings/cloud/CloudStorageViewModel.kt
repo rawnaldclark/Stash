@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -55,7 +56,9 @@ class CloudStorageViewModel @Inject constructor(
     val available: Boolean = cloud.isAvailable
     val providers: List<CloudProvider> = cloud.enabledProviders
 
-    val accounts: StateFlow<List<CloudAccountRow>> = cloud.accounts
+    // Combined with signInChanges: a new account's row appears a moment before its first token
+    // is saved, and without the re-check it read "Session expired" until the app restarted.
+    val accounts: StateFlow<List<CloudAccountRow>> = combine(cloud.accounts, cloud.signInChanges) { list, _ -> list }
         .map { list -> list.map { CloudAccountRow(it, cloud.isSignedIn(it)) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

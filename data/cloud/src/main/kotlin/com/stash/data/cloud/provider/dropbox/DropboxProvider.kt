@@ -155,7 +155,9 @@ class DropboxProvider(
 
     @Serializable
     internal data class EntryJson(
-        @SerialName(".tag") val tag: String,
+        // get_temporary_link's `metadata` is a plain FileMetadata with no ".tag" (it is only
+        // a union in list_folder / get_metadata answers), so a missing tag means a file.
+        @SerialName(".tag") val tag: String = "file",
         val name: String,
         val id: String? = null,
         @SerialName("path_lower") val pathLower: String? = null,

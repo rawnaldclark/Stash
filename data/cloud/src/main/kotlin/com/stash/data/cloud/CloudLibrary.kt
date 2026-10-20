@@ -60,6 +60,9 @@ class CloudLibrary @Inject constructor(
 
     val folders: Flow<List<CloudFolderWithCount>> = dao.observeFolders()
 
+    /** Bumps when a sign-in is stored or forgotten: re-check [isSignedIn] on it. */
+    val signInChanges: Flow<Long> get() = tokens.changes
+
     val authEvents: SharedFlow<CloudAuthEvent> get() = coordinator.events
 
     /** Opens [provider]'s sign-in page in a Custom Tab (a plain browser when none is installed). */

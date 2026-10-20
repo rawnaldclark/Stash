@@ -158,6 +158,19 @@ class AuthTest {
     }
 
     @Test
+    fun `storing or forgetting a sign-in bumps changes, so the account card re-checks`() = runTest {
+        val store = MemoryStore()
+        val tm = CloudTokenManager(store, emptyMap())
+        val before = tm.changes.value
+        tm.saveNew(CloudProvider.DROPBOX, 4, TokenResult("a", "r", 3600))
+        assertThat(tm.hasToken(CloudProvider.DROPBOX, 4)).isTrue()
+        assertThat(tm.changes.value).isEqualTo(before + 1)
+        tm.forget(CloudProvider.DROPBOX, 4)
+        assertThat(tm.hasToken(CloudProvider.DROPBOX, 4)).isFalse()
+        assertThat(tm.changes.value).isEqualTo(before + 2)
+    }
+
+    @Test
     fun `verifier never equals challenge`() {
         val v = Pkce.newVerifier()
         val c = Pkce.challenge(v)
