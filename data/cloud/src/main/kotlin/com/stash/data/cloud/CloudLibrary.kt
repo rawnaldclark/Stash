@@ -150,7 +150,7 @@ class CloudLibrary @Inject constructor(
         if (folderIds.isEmpty()) block()
         else scanner.withFolderLock(folderIds.first()) { withFolderLocks(folderIds.drop(1), block) }
 
-    suspend fun rescanAll() = scheduler.scanNow(null)
+    suspend fun rescanAll() = scheduler.scanNow(null, full = true)
 
     private fun CloudAccountEntity.toAccount(): CloudAccount? =
         CloudProvider.fromId(provider)?.let { CloudAccount(id, it, displayName, email, connectedAt) }

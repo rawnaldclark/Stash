@@ -341,6 +341,27 @@ class CloudScannerTest {
     }
 
     @Test
+    fun `a full rescan reads again a file whose tags failed, an incremental one doesn't`() = runTest {
+        val bad = file("id:bad", "02 Broken.flac", "r1", flac("Fixed Title", "Band", "Album"), listOf("Band", "Album"))
+        provider.failLinkFor += "id:bad"
+        provider.pages = mutableListOf(ScanPage(listOf(bad), "d1", false))
+        scanner().scan(folderId)
+        assertThat(tracks().map { it.title }).containsExactly("Broken")
+
+        provider.failLinkFor.clear()
+        provider.pages = mutableListOf(ScanPage(emptyList(), "d2", false))
+        scanner().scan(folderId) // incremental: nothing changed in the cloud
+        assertThat(tracks().map { it.title }).containsExactly("Broken")
+
+        provider.pages = mutableListOf(ScanPage(listOf(bad), "d3", false))
+        val result = scanner().scan(folderId, full = true)!!
+        assertThat(provider.cursorsAsked.last()).isNull() // a full listing, not from the saved cursor
+        assertThat(result.updated).isEqualTo(1)
+        assertThat(tracks().map { it.title }).containsExactly("Fixed Title")
+        assertThat(dao.getItem(accountId, "id:bad")!!.cTag).isEqualTo("r1")
+    }
+
+    @Test
     fun `a connection failure stops the page without moving the cursor`() = runTest {
         val f = file("id:n", "n.flac", "r1", flac("N", "X", "Y"), emptyList())
         provider.pages = mutableListOf(ScanPage(listOf(f), "d1", false))

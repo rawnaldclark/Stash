@@ -46,11 +46,12 @@ class CloudScanWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val only = inputData.getLong(KEY_FOLDER_ID, -1L).takeIf { it > 0 }
+        val full = inputData.getBoolean(KEY_FULL, false)
         val folders = if (only != null) listOfNotNull(dao.getFolder(only)) else dao.getAllFolders()
         var retry = false
         for (folder in folders) {
             try {
-                val r = scanner.scan(folder.id) { n -> setProgressAsync(workDataOf(KEY_PROCESSED to n, KEY_FOLDER_ID to folder.id)) }
+                val r = scanner.scan(folder.id, full) { n -> setProgressAsync(workDataOf(KEY_PROCESSED to n, KEY_FOLDER_ID to folder.id)) }
                 if (r != null) Log.i(TAG, "folder ${folder.id}: +${r.added} ~${r.updated} -${r.removed} =${r.unchanged}")
             } catch (e: CancellationException) {
                 throw e
@@ -76,6 +77,7 @@ class CloudScanWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_FOLDER_ID = "folder_id"
+        const val KEY_FULL = "full"
         const val KEY_PROCESSED = "processed"
         private const val TAG = "CloudScan"
         private const val MAX_ATTEMPTS = 8
@@ -94,12 +96,12 @@ class CloudScanScheduler @Inject constructor(
 ) {
     private val workManager: WorkManager get() = WorkManager.getInstance(context)
 
-    /** Scan [folderId] now (or every folder when null). */
-    suspend fun scanNow(folderId: Long? = null) {
+    /** Scan [folderId] now (or every folder when null); [full] re-lists everything (Rescan now). */
+    suspend fun scanNow(folderId: Long? = null, full: Boolean = false) {
         if (!config.anyEnabled) return
         val request = OneTimeWorkRequestBuilder<CloudScanWorker>()
             .setConstraints(constraints())
-            .setInputData(workDataOf(CloudScanWorker.KEY_FOLDER_ID to (folderId ?: -1L)))
+            .setInputData(workDataOf(CloudScanWorker.KEY_FOLDER_ID to (folderId ?: -1L), CloudScanWorker.KEY_FULL to full))
             .addTag(TAG)
             .build()
         // APPEND: a "scan this new folder" asked during a full scan runs after it, not instead.

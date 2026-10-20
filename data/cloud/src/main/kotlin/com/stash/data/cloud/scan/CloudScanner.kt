@@ -93,17 +93,22 @@ class CloudScanner(
         folderLocks.getOrPut(folderId) { Mutex() }.withLock { block() }
 
     /** Scans folder row [folderId]; returns null when it no longer exists. */
-    suspend fun scan(folderId: Long, onProgress: (processed: Int) -> Unit = {}): CloudScanResult? =
-        withFolderLock(folderId) { scanLocked(folderId, onProgress) }
+    /**
+     * Scans [folderId]. [full] forces a full pass even with a saved cursor ("Rescan now"): the
+     * listing is cheap, unchanged files are skipped by version, and files whose tags couldn't be
+     * read before (no version stored) are read again.
+     */
+    suspend fun scan(folderId: Long, full: Boolean = false, onProgress: (processed: Int) -> Unit = {}): CloudScanResult? =
+        withFolderLock(folderId) { scanLocked(folderId, full, onProgress) }
 
-    private suspend fun scanLocked(folderId: Long, onProgress: (processed: Int) -> Unit): CloudScanResult? {
+    private suspend fun scanLocked(folderId: Long, full: Boolean, onProgress: (processed: Int) -> Unit): CloudScanResult? {
         var folder = dao.getFolder(folderId) ?: return null
         val account = dao.getAccount(folder.accountId) ?: return null
         val providerKind = CloudProvider.fromId(account.provider) ?: return null
         val provider = providers[providerKind]?.takeIf { it.isConfigured } ?: return null
         val root = ScanRoot(folder.itemId, folder.path)
 
-        if (folder.scanCursor == null) folder = startFullPass(folder)
+        if (full || folder.scanCursor == null) folder = startFullPass(folder)
         folder = folder.copy(lastScanStatus = CloudScanStatus.RUNNING.name, lastScanError = null)
         dao.updateFolder(folder)
 
