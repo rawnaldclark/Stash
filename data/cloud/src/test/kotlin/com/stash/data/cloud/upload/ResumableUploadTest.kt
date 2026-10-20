@@ -149,6 +149,28 @@ class ResumableUploadTest {
         assertThat(e.status).isEqualTo(400)
     }
 
+    @Test fun `Drive keeping nothing, again and again, stops instead of looping`() = runTest {
+        val uri = session()
+        drive.keepPerPiece = 0
+        assertThrows(CloudUnavailableException::class.java) {
+            kotlinx.coroutines.runBlocking { upload.upload(uri, "/m/a.flac", song.size.toLong(), 0) {} }
+        }
+        assertThat(drive.pieces().size).isAtMost(4)
+    }
+
+    @Test fun `a file that can't be read is the song's problem, not the connection's`() = runTest {
+        val uri = session()
+        val broken = object : LocalAudioFiles {
+            override suspend fun size(path: String) = song.size.toLong()
+            override fun open(path: String, offset: Long): java.io.InputStream = throw java.io.IOException("EIO")
+        }
+        val failing = ResumableUpload(drive.client, gate, broken, chunkSize = chunk)
+        assertThrows(LocalFileException::class.java) {
+            kotlinx.coroutines.runBlocking { failing.upload(uri, "/m/a.flac", song.size.toLong(), 0) {} }
+        }
+        assertThrows(LocalFileException::class.java) { kotlinx.coroutines.runBlocking { broken.md5("/m/a.flac") } }
+    }
+
     @Test fun `Range headers become the next offset`() {
         assertThat(ResumableUpload.committedOffset("bytes=0-262143")).isEqualTo(262144L)
         assertThat(ResumableUpload.committedOffset(null)).isEqualTo(0L)

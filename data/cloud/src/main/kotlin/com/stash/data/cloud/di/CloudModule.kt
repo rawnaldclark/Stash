@@ -182,7 +182,11 @@ object CloudModule {
         links: CloudLinkResolver,
         ranges: RangeFetcher,
         art: CloudArtStore,
-    ): CloudScanner = CloudScanner(dao, providers, links, { link, offset, length -> ranges.fetch(link.url, offset, length, link.headers) }, art::save)
+    ): CloudScanner = CloudScanner(
+        dao, providers, links, { link, offset, length -> ranges.fetch(link.url, offset, length, link.headers) }, art::save,
+        // Songs Stash saved to Drive that are already downloads here are linked, not added twice.
+        localSongs = { com.stash.data.cloud.upload.UploadKeys.downloadsByKey(dao) },
+    )
 
     const val CONTENT_CLIENT = "cloud_content"
     const val DRIVE_GATE = "gdrive_gate"

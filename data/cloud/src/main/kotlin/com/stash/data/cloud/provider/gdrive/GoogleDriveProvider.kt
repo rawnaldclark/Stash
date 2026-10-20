@@ -156,7 +156,7 @@ class GoogleDriveProvider(
         val r = http.execute(RequestPriority.BACKGROUND, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
             val url = "$API/files".toHttpUrl().newBuilder()
                 .addQueryParameter("q", UPLOADS_QUERY)
-                .addQueryParameter("fields", GoogleDriveJson.LIST_FIELDS)
+                .addQueryParameter("fields", "nextPageToken,files(${GoogleDriveJson.FILE_FIELDS},appProperties)")
                 .addQueryParameter("pageSize", UPLOADS_PAGE_SIZE.toString())
                 .addQueryParameter("spaces", "drive")
                 .apply { pageToken?.let { addQueryParameter("pageToken", it) } }
@@ -177,6 +177,7 @@ class GoogleDriveProvider(
                 eTag = f.headRevisionId, mimeType = f.mimeType, parentId = f.parents?.firstOrNull(),
                 // Names come from the song's own tags (Stash embeds them in its downloads).
                 folders = emptyList(), remotePath = null,
+                songKey = f.appProperties?.get(com.stash.data.cloud.upload.UploadKeys.TRACK_KEY),
             )
         }
         val next = page.nextPageToken?.takeIf { it.isNotBlank() }

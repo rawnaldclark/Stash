@@ -13,10 +13,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
@@ -160,14 +160,26 @@ class CloudUploads @Inject constructor(
             } catch (e: Exception) {
                 Log.w(TAG, "upload queue not resumed: ${e.javaClass.simpleName}")
             }
-            settings.backupAccountId
-                .flatMapLatest { account ->
-                    if (account == null) emptyFlow()
-                    else dao.observeDownloadsWithoutUpload().distinctUntilChanged().filter { it > 0 }.map { account }
+            // A database hiccup must not end backup until the next app start: watch again.
+            while (true) {
+                try {
+                    settings.backupAccountId
+                        .flatMapLatest { account ->
+                            // No distinctUntilChanged: if queueing failed, the next change to the
+                            // library tries again even when the count is the same.
+                            if (account == null) emptyFlow()
+                            else dao.observeDownloadsWithoutUpload().filter { it > 0 }.map { account }
+                        }
+                        // A playlist download lands song by song: one pass a few seconds after the last.
+                        .debounce(WATCH_DEBOUNCE_MS)
+                        .collect { account -> queueNewDownloads(account) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "backup watcher restarting: ${e.javaClass.simpleName}")
+                    delay(WATCH_RESTART_MS)
                 }
-                // A playlist download lands song by song: one pass a few seconds after the last.
-                .debounce(WATCH_DEBOUNCE_MS)
-                .collect { account -> queueNewDownloads(account) }
+            }
         }
     }
 
@@ -187,6 +199,7 @@ class CloudUploads @Inject constructor(
     companion object {
         private const val TAG = "CloudUploads"
         private const val WATCH_DEBOUNCE_MS = 3_000L
+        private const val WATCH_RESTART_MS = 30_000L
 
         /** The toast after a "Save to Google Drive" tap on a song, album or playlist. */
         fun message(r: SaveRequest): String {

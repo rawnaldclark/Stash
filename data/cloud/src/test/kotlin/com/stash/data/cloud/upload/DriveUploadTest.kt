@@ -60,7 +60,7 @@ class DriveUploadTest {
         val dao: CloudDao = db.cloudDao()
         val files = MemoryAudioFiles()
         val folderCache = MemoryFolderCache()
-        private val store = MemoryTokenStore()
+        val store = MemoryTokenStore()
         private val auth = GoogleDriveAuth(FakeAuthorizer(), drive.client)
         val tokens = CloudTokenManager(store, mapOf(CloudProvider.GOOGLE_DRIVE to auth)).apply { nowSeconds = { 1_000 } }
         val accountId: Long
@@ -105,7 +105,9 @@ class DriveUploadTest {
         fun scanner(): CloudScanner {
             val providers = mapOf(CloudProvider.GOOGLE_DRIVE to provider)
             val ranges = RangeFetcher(drive.client)
-            return CloudScanner(dao, providers, CloudLinkResolver(providers), { l, o, n -> ranges.fetch(l.url, o, n, l.headers) }, { _, _ -> null }, clock = { 9_000 })
+            return CloudScanner(dao, providers, CloudLinkResolver(providers), { l, o, n -> ranges.fetch(l.url, o, n, l.headers) }, { _, _ -> null }, clock = { 9_000 },
+                localSongs = { UploadKeys.downloadsByKey(dao) },
+            )
         }
 
         suspend fun uploadsFolder() = dao.driveFolderRow(accountId, GoogleDriveProvider.UPLOADS_ITEM_ID, 0)
@@ -200,6 +202,35 @@ class DriveUploadTest {
         // Never a local song: only its link goes.
         assertThat(a.dao.getTrack(track)).isNotNull()
         assertThat(a.dao.getItemForTrack(track)).isNull()
+    }
+
+    @Test fun `the saved-songs listing pages through every file and skips Stash's folders and others' files`() = runTest {
+        val folder = drive.newId("0D")
+        repeat(GoogleDriveProvider.UPLOADS_PAGE_SIZE + 5) { i ->
+            drive.addFile("s$i.flac", folder, flac("Song $i", size = 10), mapOf(GoogleDriveProvider.UPLOAD_MARKER_KEY to "1"))
+        }
+        drive.addFile("mine.flac", folder, flac("Not Stash's", size = 10)) // no marker: never listed
+        val b = Phone()
+
+        val r = b.scanSaved()
+
+        assertThat(r.added).isEqualTo(GoogleDriveProvider.UPLOADS_PAGE_SIZE + 5)
+        assertThat(drive.requests.count { it.url.encodedPath == "/drive/v3/files" && it.method == "GET" }).isEqualTo(2)
+    }
+
+    @Test fun `a token for another Google account lists nothing away`() = runTest {
+        val a = Phone()
+        a.save(a.download("Alpha", flac("Alpha")))
+        val b = Phone()
+        b.scanSaved()
+        drive.permissionId = "someone-else"
+        drive.validTokens += "tok2"
+        // b's token now answers for another account: the listing must not sweep b's songs.
+        b.store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, b.accountId), ServiceToken("tok2", "ron@example.com", 1_000 + 3_000))
+        assertThrows(com.stash.data.cloud.provider.CloudAuthRequiredException::class.java) {
+            runBlocking { b.scanner().scan(b.uploadsFolder().id, full = true) }
+        }
+        assertThat(b.trackCount()).isEqualTo(1)
     }
 
     @Test fun `a reinstall or second phone reuses the copy already in Drive instead of uploading again`() = runTest {
@@ -349,6 +380,52 @@ class DriveUploadTest {
         assertThat(phone.dao.getTrack(dup)).isNull()
         assertThat(phone.dao.getItem(phone.accountId, "1Fdup")!!.trackId).isEqualTo(track)
         assertThat(phone.trackCount()).isEqualTo(1)
+    }
+
+    @Test fun `after a disconnect and reconnect the scan links this phone's saved songs again instead of adding them twice`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        phone.save(track)
+        phone.dao.removeAccount(phone.accountId)
+        assertThat(phone.dao.getItemForTrack(track)).isNull()
+        // Reconnected: a new account row, the same Google account.
+        val again = phone.dao.insertAccount(CloudAccountEntity(provider = "gdrive", remoteId = "perm-123", displayName = "Ron", email = "ron@example.com", connectedAt = 1))
+        phone.store.save(CloudTokenManager.keyFor(CloudProvider.GOOGLE_DRIVE, again), ServiceToken("tok1", "ron@example.com", 1_000 + 3_000))
+        val folder = phone.dao.driveFolderRow(again, GoogleDriveProvider.UPLOADS_ITEM_ID, 0)
+        drive.requests.clear()
+
+        val r = phone.scanner().scan(folder.id)!!
+
+        assertThat(r.added).isEqualTo(0)
+        assertThat(phone.trackCount()).isEqualTo(1)
+        assertThat(phone.dao.getItemForTrack(track)!!.accountId).isEqualTo(again)
+        // Known by its tag: no bytes read for it.
+        assertThat(drive.requests.none { it.url.queryParameter("alt") == "media" }).isTrue()
+    }
+
+    @Test fun `a phone that already downloaded the same song links another phone's copy to it`() = runTest {
+        val a = Phone()
+        a.save(a.download("Alpha", flac("Alpha"), isrc = "USABC1234567"))
+        val b = Phone()
+        // b downloaded the same recording on its own (other bytes, same ISRC).
+        val bTrack = b.download("Alpha", flac("Alpha", size = 700_000), isrc = "USABC1234567")
+
+        val r = b.scanSaved()
+
+        assertThat(r.added).isEqualTo(0)
+        assertThat(b.trackCount()).isEqualTo(1)
+        assertThat(b.dao.getItemForTrack(bTrack)!!.itemId).isEqualTo(drive.files().single().id)
+    }
+
+    @Test fun `a Drive song someone already used is never deleted to make room for a link`() = runTest {
+        val phone = Phone()
+        val track = phone.download("Alpha", flac("Alpha"))
+        val folder = phone.uploadsFolder()
+        val dup = phone.dao.insertScanned(TrackEntity(title = "Alpha", artist = "Artist", source = MusicSource.CLOUD), item(phone, folder.id, "1Fdup"))
+        phone.db.openHelper.writableDatabase.execSQL("UPDATE tracks SET stash_liked_at = 5 WHERE id = $dup")
+
+        assertThat(phone.dao.linkUpload(track, item(phone, folder.id, "1Fdup"))).isFalse()
+        assertThat(phone.dao.getTrack(dup)).isNotNull()
     }
 
     @Test fun `a downloaded Drive song is never removed to make room for a link`() = runTest {

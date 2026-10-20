@@ -52,7 +52,14 @@ class CloudScanWorker @AssistedInject constructor(
         // Stash" row, so songs saved from another phone are found too.
         if (only == null) {
             dao.getAccounts().filter { it.provider == com.stash.core.model.CloudProvider.GOOGLE_DRIVE.id }.forEach {
-                dao.driveFolderRow(it.id, com.stash.data.cloud.provider.gdrive.GoogleDriveProvider.UPLOADS_ITEM_ID, System.currentTimeMillis())
+                try {
+                    dao.driveFolderRow(it.id, com.stash.data.cloud.provider.gdrive.GoogleDriveProvider.UPLOADS_ITEM_ID, System.currentTimeMillis())
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Disconnected meanwhile: nothing to scan for it.
+                    Log.w(TAG, "saved-songs folder not made: ${e.javaClass.simpleName}")
+                }
             }
         }
         val folders = if (only != null) listOfNotNull(dao.getFolder(only)) else dao.getAllFolders()

@@ -93,6 +93,9 @@ class CloudUploadWorker @AssistedInject constructor(
             } catch (e: CloudAuthRequiredException) {
                 Log.i(TAG, "Google Drive needs a reconnect: uploads wait")
                 return Result.success()
+            } catch (e: LocalFileException) {
+                Log.w(TAG, "one song's file couldn't be read: ${e.cause?.javaClass?.simpleName ?: "it got shorter"}")
+                dao.failUploadAttempt(row.trackId, "Couldn't read this song's file.", MAX_ATTEMPTS, now())
             } catch (e: CloudApiException) {
                 Log.w(TAG, "upload of one song failed: HTTP ${e.status}")
                 dao.failUploadAttempt(row.trackId, "Google Drive didn't take this song (error ${e.status}).", MAX_ATTEMPTS, now())
@@ -192,8 +195,16 @@ class CloudUploadScheduler @Inject constructor(
 ) : CloudUploadRunner {
     private val workManager: WorkManager get() = WorkManager.getInstance(context)
 
+    /**
+     * At most one run waits behind a running one; a run that hasn't started is replaced, so it
+     * picks up the current network rule (the user may have allowed mobile data since).
+     */
     override suspend fun kick() {
         if (!config.isEnabled(CloudProvider.GOOGLE_DRIVE)) return
+        val infos = workManager.getWorkInfosForUniqueWorkFlow(UNIQUE).first()
+        val running = infos.any { it.state == WorkInfo.State.RUNNING }
+        val waiting = infos.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
+        if (running && waiting) return // the run already queued behind it will see the new songs
         val wifiOnly = syncPreferences.preferences.first().wifiOnly
         val request = OneTimeWorkRequestBuilder<CloudUploadWorker>()
             .setConstraints(
@@ -203,7 +214,7 @@ class CloudUploadScheduler @Inject constructor(
             )
             .addTag(UNIQUE)
             .build()
-        workManager.enqueueUniqueWork(UNIQUE, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        workManager.enqueueUniqueWork(UNIQUE, if (running) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.REPLACE, request)
     }
 
     override fun cancel() {

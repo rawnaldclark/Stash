@@ -3,6 +3,7 @@ package com.stash.data.cloud.upload
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import com.stash.core.data.db.dao.CloudDao
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +32,13 @@ fun interface UploadNaming {
 /** Drive refused because the user's storage is full: backup pauses until the user tries again. */
 class DriveFullException : IOException("Google Drive is full")
 
+/**
+ * The song's file on the phone couldn't be read (an SD card error, a folder grant gone, the file
+ * changing mid-upload): a problem with this song, not with the connection, so the worker counts a
+ * failed try for it and moves on instead of retrying the whole queue behind it.
+ */
+class LocalFileException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
 /** A resumable session Drive no longer knows (404/410, about a week old): start a new one. */
 class UploadSessionExpiredException(status: Int) : IOException("upload session answered $status")
 
@@ -48,13 +56,19 @@ interface LocalAudioFiles {
     /** Lower-case hex md5 of the whole file (what Drive reports as md5Checksum). */
     suspend fun md5(path: String): String = withContext(Dispatchers.IO) {
         val digest = MessageDigest.getInstance("MD5")
-        open(path, 0).use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val n = input.read(buffer)
-                if (n < 0) break
-                digest.update(buffer, 0, n)
+        try {
+            open(path, 0).use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    digest.update(buffer, 0, n)
+                }
             }
+        } catch (e: IOException) {
+            throw LocalFileException("the song's file couldn't be read", e)
+        } catch (e: SecurityException) {
+            throw LocalFileException("the song's file couldn't be read", e)
         }
         digest.digest().joinToString("") { "%02x".format(it) }
     }
@@ -117,6 +131,14 @@ object UploadKeys {
     }
 
     private fun norm(s: String) = s.trim().lowercase(Locale.ROOT).replace(Regex("\\s+"), " ")
+
+    /**
+     * This phone's downloads that aren't linked to a cloud file, by [trackKey] (the first one
+     * wins): what the Drive scan uses to recognise a saved song that is already here.
+     */
+    suspend fun downloadsByKey(dao: CloudDao): Map<String, Long> = buildMap {
+        for (d in dao.unlinkedDownloads()) putIfAbsent(trackKey(d.isrc, d.artist, d.title, d.durationMs), d.id)
+    }
 
     /** The MIME type Drive is told for a song file, by its extension. */
     fun mimeType(extension: String): String = when (extension.lowercase(Locale.ROOT)) {

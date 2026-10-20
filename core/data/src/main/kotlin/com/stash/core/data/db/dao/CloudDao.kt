@@ -30,6 +30,15 @@ data class CloudFolderWithCount(
     @ColumnInfo(name = "track_count") val trackCount: Int,
 )
 
+/** A download not linked to any cloud file, with what its Save to Drive track key is made of. */
+data class UnlinkedDownload(
+    val id: Long,
+    val isrc: String?,
+    val artist: String,
+    val title: String,
+    @ColumnInfo(name = "duration_ms") val durationMs: Long,
+)
+
 /** How many of an account's upload rows are in one [CloudUploadState]. */
 data class CloudUploadCount(val state: String, val count: Int)
 
@@ -382,6 +391,14 @@ interface CloudDao {
     )
     suspend fun insertUploadsForDownloads(accountId: Long, state: String, now: Long)
 
+    /**
+     * Downloads with no cloud link, for the Drive scan to recognise a song Stash saved (from this
+     * phone before a disconnect, or from another phone) as one already here, instead of adding it
+     * a second time.
+     */
+    @Query("SELECT id, isrc, artist, title, duration_ms FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_items i WHERE i.track_id = tracks.id)")
+    suspend fun unlinkedDownloads(): List<UnlinkedDownload>
+
     /** How many uploadable downloads have no upload row: what the backup switch watches for. */
     @Query("SELECT COUNT(*) FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_uploads u WHERE u.track_id = tracks.id)")
     fun observeDownloadsWithoutUpload(): Flow<Int>
@@ -417,11 +434,12 @@ interface CloudDao {
                 else -> updateUpload(
                     row.copy(
                         state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
-                        attempts = 0, error = null,
+                        attempts = 0, error = null, accountId = accountId,
+                    ).let {
                         // A session belongs to the account that opened it.
-                        sessionUri = row.sessionUri.takeIf { row.accountId == accountId },
-                        accountId = accountId,
-                    ),
+                        if (row.accountId == accountId) it
+                        else it.copy(sessionUri = null, sessionSize = null, sessionMd5 = null, bytesSent = 0)
+                    },
                 )
             }
             queued++
@@ -434,20 +452,43 @@ interface CloudDao {
      * [trackId], so the Drive scan treats that file as this song and never files it as a second
      * one. The track keeps playing its own file.
      *
-     * When the file already has a row for another track: a stream-only cloud song (this phone's
-     * scan filed the upload before it was linked, or it came from another phone) gives way to the
-     * local track; anything else (a downloaded cloud song, another local song with the same bytes)
-     * keeps the file, and nothing is linked (returns false).
+     * When the file already has a row for another track: a stream-only cloud song nobody has
+     * used yet (this phone's scan filed the upload a moment before it was linked) gives way to the
+     * local track; anything else (a downloaded cloud song, one in a playlist, liked or played,
+     * another local song) keeps the file, and nothing is linked (returns false): no one's likes,
+     * plays or playlists are ever lost to a link.
+     *
+     * The row's `seen_generation` is the folder's generation read here, inside the transaction,
+     * so a full pass that started meanwhile can't sweep the link it just saw.
      */
     @Transaction
     suspend fun linkUpload(trackId: Long, item: CloudItemEntity): Boolean {
         getItem(item.accountId, item.itemId)?.let { other ->
             if (other.trackId != trackId) {
                 val track = getTrack(other.trackId)
-                if (track != null && (track.source != MusicSource.CLOUD || track.isDownloaded)) return false
+                if (track != null && (track.source != MusicSource.CLOUD || track.isDownloaded || hasUserData(track.id))) return false
                 removeItems(listOf(other.trackId))
             }
         }
+        val generation = getFolder(item.folderId)?.scanGeneration ?: item.seenGeneration
+        return linkItem(trackId, item.copy(seenGeneration = generation))
+    }
+
+    /**
+     * True when [trackId] is in a playlist, liked, or has been played: a song that must not be
+     * deleted to make room for a link.
+     */
+    @Query(
+        """
+        SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE track_id = :trackId)
+            OR EXISTS(SELECT 1 FROM listening_events WHERE track_id = :trackId)
+            OR EXISTS(SELECT 1 FROM tracks WHERE id = :trackId AND (stash_liked_at IS NOT NULL OR play_count > 0))
+        """,
+    )
+    suspend fun hasUserData(trackId: Long): Boolean
+
+    /** [linkUpload]'s second half: points [trackId]'s link at [item]'s file, which no other row holds now. */
+    suspend fun linkItem(trackId: Long, item: CloudItemEntity): Boolean {
         val mine = getItemForTrack(trackId)
         when {
             mine == null -> insertItem(item.copy(trackId = trackId))

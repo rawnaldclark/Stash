@@ -87,6 +87,7 @@ class ResumableUpload(
         require(size > 0) { "nothing to upload" }
         var offset = from.coerceIn(0, size)
         var errors = 0
+        var stalled = 0
         while (true) {
             currentCoroutineContext().ensureActive()
             if (offset >= size) {
@@ -113,6 +114,9 @@ class ResumableUpload(
                 is Outcome.Finished -> return outcome.file
                 is Outcome.Committed -> {
                     errors = 0
+                    // Drive kept nothing of a whole piece, again and again: stop rather than loop.
+                    stalled = if (outcome.offset > offset) 0 else stalled + 1
+                    if (stalled >= maxServerErrors) throw CloudUnavailableException("Google Drive isn't keeping the upload")
                     offset = outcome.offset
                     onCommitted(offset)
                 }
@@ -171,12 +175,23 @@ class ResumableUpload(
         override fun contentLength(): Long = length
 
         override fun writeTo(sink: BufferedSink) {
-            files.open(path, offset).use { input ->
+            // Reading the phone's file failing is the song's problem ([LocalFileException]);
+            // writing to the socket failing is the connection's (a plain IOException).
+            val input = try {
+                files.open(path, offset)
+            } catch (e: Exception) {
+                throw LocalFileException("the song's file couldn't be opened", e)
+            }
+            input.use {
                 val buffer = ByteArray(64 * 1024)
                 var left = length
                 while (left > 0) {
-                    val n = input.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
-                    if (n < 0) throw IOException("the file got shorter while uploading")
+                    val n = try {
+                        it.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
+                    } catch (e: IOException) {
+                        throw LocalFileException("the song's file couldn't be read", e)
+                    }
+                    if (n < 0) throw LocalFileException("the file got shorter while uploading")
                     sink.write(buffer, 0, n)
                     left -= n
                 }

@@ -82,6 +82,7 @@ sealed interface ScanEntry {
      *   known (OneDrive delta omits paths): the scanner resolves it.
      * @property remotePath Lower-cased full path, for providers that report deletions by path.
      * @property downloadUrl A ready link when the page carried one (saves a request).
+     * @property songKey The song's Save to Drive track key, on files Stash itself uploaded.
      */
     data class File(
         val id: String,
@@ -94,6 +95,7 @@ sealed interface ScanEntry {
         val folders: List<String>?,
         val remotePath: String?,
         val downloadUrl: String? = null,
+        val songKey: String? = null,
     ) : ScanEntry
 
     /** A folder under (or equal to) the root; feeds the scanner's id → path map. */

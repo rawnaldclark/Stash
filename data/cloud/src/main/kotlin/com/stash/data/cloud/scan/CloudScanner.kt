@@ -39,6 +39,14 @@ fun interface RangeSource {
     suspend fun fetch(link: CloudLink, offset: Long, length: Int): ByteArray
 }
 
+/**
+ * The phone's own downloads by Save to Drive track key: a file Stash uploaded whose key matches
+ * one is that song, linked to it rather than added as a second copy.
+ */
+fun interface LocalSongKeys {
+    suspend fun load(): Map<String, Long>
+}
+
 /** What one folder's scan did. */
 data class CloudScanResult(val added: Int, val updated: Int, val removed: Int, val unchanged: Int)
 
@@ -85,6 +93,7 @@ class CloudScanner(
     private val ranges: RangeSource,
     private val art: ArtSaver,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val localSongs: LocalSongKeys = LocalSongKeys { emptyMap() },
 ) {
     private val folderLocks = ConcurrentHashMap<Long, Mutex>()
 
@@ -197,6 +206,10 @@ class CloudScanner(
             liveIds += f.id
 
             val existing = dao.getItem(folder.accountId, f.id)
+            if (existing == null && f.songKey != null && linkToLocal(f, folders)) {
+                unchanged++
+                return
+            }
             if (existing != null && f.version != null && existing.cTag == f.version && dao.getTrack(existing.trackId) != null) {
                 // Same bytes, maybe a new place (rename / move): the location follows the file.
                 dao.refreshLocation(
@@ -250,6 +263,31 @@ class CloudScanner(
                 id
             }
             if (artPath == null) needArt.getOrPut(key) { mutableListOf() } += trackId
+        }
+
+        /** Downloads by track key, loaded once per pass; an entry leaves once linked. */
+        private var localKeys: MutableMap<String, Long>? = null
+
+        /**
+         * A song Stash saved to the cloud that is already a download here (this phone saved it
+         * before a disconnect, or another phone saved the same song): link the file to that
+         * download instead of adding a second song. True when linked.
+         */
+        private suspend fun linkToLocal(f: ScanEntry.File, folders: List<String>): Boolean {
+            val keys = localKeys ?: localSongs.load().toMutableMap().also { localKeys = it }
+            val trackId = keys[f.songKey] ?: return false
+            val linked = dao.linkUpload(
+                trackId,
+                CloudItemEntity(
+                    trackId = trackId, accountId = folder.accountId, folderId = folder.id, itemId = f.id,
+                    name = f.name, relativePath = folders.joinToString("/"), parentItemId = f.parentId,
+                    cTag = f.version, eTag = f.eTag, size = f.size, mimeType = f.mimeType,
+                    seenGeneration = folder.scanGeneration, scannedAt = clock(), remotePath = f.remotePath,
+                ),
+            )
+            // One download links to one file; a second file with the same key is its own song.
+            keys.remove(f.songKey)
+            return linked
         }
 
         /**
