@@ -137,7 +137,10 @@ class LikeCoordinator internal constructor(
         // Skipped on unlike — we can't have saved to a platform we never
         // resolved. Best-effort: a failed/ambiguous match just means that one
         // destination is skipped this time, exactly as before.
-        if (op.liked) {
+        // A cloud song (the user's own Dropbox / OneDrive file) is never searched for on Spotify or
+        // YouTube: that would write an online id onto it, the first step of matching it. It still
+        // reaches Last.fm, which goes by artist and title.
+        if (op.liked && track.source != com.stash.core.model.MusicSource.CLOUD) {
             if (mirrorSpotify && track.spotifyUri == null) {
                 crossPlatformResolver.ensureSpotifyUri(track)?.let { track = track.copy(spotifyUri = it) }
             }

@@ -240,6 +240,21 @@ class LikeCoordinatorTest {
         }
     }
 
+    @Test fun `liking a cloud song never looks it up on Spotify or YouTube, Last_fm still fires`() = runTest {
+        mirrorPrefs(spotify = true, yt = true, lastFm = true)
+        coEvery { trackDao.getById(7L) } returns entity(spotifyUri = null, youtubeId = null)
+            .copy(source = com.stash.core.model.MusicSource.CLOUD)
+        coEvery { dispatcher.like(any(), any()) } returns mapOf(Destination.LAST_FM to Result.success(Unit))
+        val c = coordinator()
+
+        c.setLiked(7L, liked = true)
+        advanceTimeBy(10_000L); runCurrent()
+
+        coVerify(exactly = 0) { resolver.ensureSpotifyUri(any()) }
+        coVerify(exactly = 0) { resolver.ensureYoutubeId(any()) }
+        coVerify(exactly = 1) { dispatcher.like(any(), setOf(Destination.LAST_FM)) }
+    }
+
     @Test fun `track gone from DB is a silent skip`() = runTest {
         mirrorPrefs(spotify = true, yt = false)
         coEvery { trackDao.getById(7L) } returns null

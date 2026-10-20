@@ -187,6 +187,27 @@ class DatabaseBackupMergeTest {
         }
 
     @Test
+    fun `merge leaves out cloud songs, which belong to the backup phone's cloud account`() = runTest {
+        val uri = buildBackupZip { backup ->
+            backup.trackDao().insert(track("Normal", spotifyUri = "spotify:track:n"))
+            backup.trackDao().insert(
+                track("From Dropbox").copy(
+                    source = MusicSource.CLOUD,
+                    cloudUri = "stash-cloud://dropbox/1/id%3Aabc?v=r1",
+                    canonicalTitle = "",
+                    canonicalArtist = "",
+                ),
+            )
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue(result.isSuccess)
+        val titles = live.trackDao().getAllForIntegrityScan().map { it.title }
+        assertEquals(listOf("Normal"), titles)
+    }
+
+    @Test
     fun `merge adds only missing tracks and unions memberships without touching settings`() =
         runTest {
             // Live: shared song S + live-only song X; playlist P1 holding S.

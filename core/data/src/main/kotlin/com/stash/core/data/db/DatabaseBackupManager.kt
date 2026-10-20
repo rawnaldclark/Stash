@@ -886,6 +886,12 @@ class DatabaseBackupManager @Inject constructor(
                 /** Backup track id → live track id (inserted or matched). */
                 val trackIdMap = HashMap<Long, Long>(backupTracks.size)
                 for (track in backupTracks.sortedBy { it.id }) {
+                    // A cloud song belongs to a cloud account on the phone that made the backup
+                    // (its cloud_uri names that phone's account row, and merge brings no
+                    // cloud_items): it would be a song nothing can play or remove. Left out;
+                    // connecting the same account here scans it back. Its playlist memberships
+                    // are skipped with it (they map through trackIdMap).
+                    if (track.source == com.stash.core.model.MusicSource.CLOUD) continue
                     val words = lookupWords(track)
                     val existing = track.spotifyUri?.let { liveBySpotifyUri[it] }
                         ?: track.youtubeId?.let { liveByYoutubeId[it] }
