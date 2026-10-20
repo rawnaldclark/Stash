@@ -43,9 +43,9 @@ class CloudAuthCoordinator @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs by lazy { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
-    private val _events = MutableSharedFlow<CloudAuthEvent>(replay = 1, extraBufferCapacity = 4)
+    private val _events = MutableSharedFlow<CloudAuthEvent>(extraBufferCapacity = 4)
 
-    /** Sign-in results; replays the last one so a recreated Settings screen still sees it. */
+    /** Sign-in results, for the Settings screen that started the sign-in (its ViewModel outlives the browser). */
     val events: SharedFlow<CloudAuthEvent> = _events.asSharedFlow()
 
     /** Starts a sign-in with [provider]; returns the URL to open in a Custom Tab. */

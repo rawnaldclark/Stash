@@ -292,6 +292,12 @@ fun SettingsAccountsScreen(
             },
         )
 
+        // Dropbox / OneDrive: the user's own music in their cloud storage. Hidden in a build
+        // without provider keys.
+        com.stash.feature.settings.cloud.CloudAccountsSection(
+            viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+        )
+
         // Last.fm renders via its own composable (web-auth / cookie / OAuth UX
         // differs enough from AccountConnectionCard). The deep-link
         // bringIntoViewRequester from the monolith is dropped here.

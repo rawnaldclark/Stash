@@ -401,6 +401,11 @@ fun SettingsLibraryStorageScreen(
             )
         }
 
+        // -- Cloud folders (Dropbox / OneDrive; only once an account is connected) --
+        com.stash.feature.settings.cloud.CloudFoldersSection(
+            viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+        )
+
         // -- Storage ----------------------------------------------------------
         SettingsSectionLabel(stringResource(R.string.settings_storage_section))
 

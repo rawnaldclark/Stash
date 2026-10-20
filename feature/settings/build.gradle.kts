@@ -19,6 +19,8 @@ dependencies {
     implementation(project(":data:lyrics"))
     // For MoveLibraryCoordinator + MoveLibraryState (storage migration UI).
     implementation(project(":data:download"))
+    // Cloud storage libraries (Dropbox / OneDrive): accounts and cloud folders settings.
+    implementation(project(":data:cloud"))
     implementation(libs.compose.material.icons.extended)
     // For the "Fix wrong-version downloads" backfill trigger in Settings,
     // which enqueues YtLibraryBackfillWorker via WorkManager.
