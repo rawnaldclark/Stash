@@ -258,4 +258,70 @@ class PlayerRepositoryRadioTest {
         coVerify(exactly = 0) { radioGenerator.nextBatch(any()) }
         verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
     }
+
+    /** A radio / artist-page / YouTube-album track: queued under a hash of its video id, no row. */
+    private fun synthetic(videoId: String) = Track(
+        id = videoId.hashCode().toLong(), title = "t-$videoId", artist = "a", youtubeId = videoId, isStreamable = true,
+    )
+
+    @Test fun `startRadio queues the station under library ids so it resumes after a restart`() = runTest {
+        // The saved queue is a list of ids and the cold-start resume drops every id with no
+        // `tracks` row: a station queued under its video-id hashes came back as nothing.
+        coEvery { streamingPreference.current() } returns true
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(synthetic("vA"), synthetic("vB")))
+        coEvery { musicRepository.ensureTrackPersisted(match { it.youtubeId == "vA" }) } returns 101L
+        coEvery { musicRepository.ensureTrackPersisted(match { it.youtubeId == "vB" }) } returns 102L
+        val items = slot<List<MediaItem>>()
+        every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
+
+        repo.startRadio(RadioSeed.Artist("MBV", "id"))
+
+        assertThat(items.captured.map { it.mediaId }).containsExactly("101", "102").inOrder()
+        assertThat(repo.currentQueueTracks.map { it.id }).containsExactly(101L, 102L).inOrder()
+    }
+
+    @Test fun `growRadio appends the batch under library ids`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
+        coEvery { radioGenerator.nextBatch(session) } returns listOf(synthetic("vC"))
+        coEvery { musicRepository.ensureTrackPersisted(match { it.youtubeId == "vC" }) } returns 103L
+        repo.startRadio(RadioSeed.Artist("MBV", "id"))
+        every { controller.mediaItemCount } returns 1
+        val appended = slot<List<MediaItem>>()
+        every { controller.addMediaItems(capture(appended)) } returns Unit
+
+        repo.growRadio()
+
+        assertThat(appended.captured.map { it.mediaId }).containsExactly("103")
+        assertThat(repo.currentQueueTracks.map { it.id }).containsExactly(1L, 103L).inOrder()
+        // A real library id is never re-persisted.
+        coVerify(exactly = 0) { musicRepository.ensureTrackPersisted(match { it.id == 1L }) }
+    }
+
+    @Test fun `a station still starts when saving a track fails, under its transient id`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val session = mockk<RadioSession>(relaxed = true)
+        val t = synthetic("vD")
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(t))
+        coEvery { musicRepository.ensureTrackPersisted(any()) } throws IllegalStateException("db")
+        val items = slot<List<MediaItem>>()
+        every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
+
+        assertThat(repo.startRadio(RadioSeed.Artist("MBV", "id"))).isEqualTo(RadioStartResult.Started)
+        assertThat(items.captured.map { it.mediaId }).containsExactly(t.id.toString())
+    }
+
+    @Test fun `setQueue persists synthetic ids and leaves library ids alone`() = runTest {
+        // An artist page's or a YouTube album's songs reach setQueue under video-id hashes.
+        coEvery { musicRepository.ensureTrackPersisted(match { it.youtubeId == "vE" }) } returns 105L
+        val items = slot<List<MediaItem>>()
+        every { controller.setMediaItems(capture(items), any<Int>(), any<Long>()) } returns Unit
+
+        repo.setQueue(listOf(track(7), synthetic("vE")), startIndex = 1)
+
+        assertThat(items.captured.map { it.mediaId }).containsExactly("7", "105").inOrder()
+        coVerify(exactly = 1) { musicRepository.ensureTrackPersisted(any()) }
+    }
 }
