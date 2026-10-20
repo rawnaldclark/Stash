@@ -10,7 +10,7 @@ GLOBAL_DAILY_CAP = "34667"     # 13×2000 was 26000; raised ~33% on 2026-10-03 a
 INSTALL_DAILY_CAP = "500"      # doubled 300→600 on 09-11; raised to 800 (~33%) on 10-03; lowered to 500 on 10-08
 ACCOUNT_HOURLY_CAP = "621"     # 467→621 (~33%) on 2026-10-14; 350→467 on 2026-10-03; 100/h failed for all 7 accounts on 09-19
 ACCOUNT_DAILY_CAP = "11000"    # 8000→11000 on 2026-10-13; originally doubled 1000→2000 on 09-08
-ACCOUNT_UNCAPPED_LABELS = "acct-new-5" # bypasses only this account's hourly/daily limits; shared/install/network limits remain
+ACCOUNT_UNCAPPED_LABELS = "acct-new-5,acct-new-6" # bypasses only these accounts' hourly/daily limits; shared/install/network limits remain
 ACCOUNT_NO_COOLDOWN_LABELS = "acct-new-5" # transient upstream failures won't cool this account; other limits still apply
 DOWNLOAD_PACE_HEADROOM_PCT = "13" # 10→13 (+30%) on 2026-10-03; streams first, downloads take what the pool can spare
 # Per network (IPv4 address, IPv6 /56), added 2026-10-11 so a script rotating install ids can't take the whole
@@ -22,7 +22,7 @@ NETWORK_FREE_404_DAILY = "100" # Qobuz 404s (unknown ids) that spare the network
 # The daily lossless counter shared with the Tidal relay (QUOTA_DB below): free lossless answers per install per
 # UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap. INSTALL_DAILY_CAP above stays as the
 # relay's own per-install cap and abuse telemetry.
-FREE_LOSSLESS_DAILY = "500"
+FREE_LOSSLESS_DAILY = "400" # 500→400 on 2026-10-20
 # Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
 # Ed25519 public key (standard base64 of the raw 32 bytes; public by design, the private half is the tip jar's
 # secret). SUPPORTER_DAILY_CAP is the per-token safety ceiling: past it that day the token counts as free.
@@ -61,6 +61,6 @@ crons = ["17 * * * *"]
 #   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
 #   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
 #   QOBUZ_ACCOUNTS_EXTRA  optional additive JSON array; lets the pool grow without replacing QOBUZ_ACCOUNTS.
-#   QOBUZ_ACCOUNTS_RECOVERED, QOBUZ_ACCOUNTS_RECOVERED_2, and QOBUZ_ACCOUNTS_RECOVERED_3 are optional additive JSON arrays.
+#   QOBUZ_ACCOUNTS_RECOVERED through QOBUZ_ACCOUNTS_RECOVERED_4 are optional additive JSON arrays.
 #   IP_SALT         random secret salting the stored network hash. Turns on the per-network caps above and the
 #                   IP column `npm run report` reads. Never the relay key (that one is public).

@@ -22,7 +22,8 @@
  * A valid supporter token (optional header X-Stash-Entitlement, on mints and /v1/quota) lifts that limit and
  * INSTALL_DAILY_CAP, up to SUPPORTER_DAILY_CAP a day per token; the network, /48 and global caps still apply.
  * Secrets: RELAY_KEY, RELAY_KEY_PREV (optional), QOBUZ_ACCOUNTS, QOBUZ_ACCOUNTS_EXTRA and
- *          QOBUZ_ACCOUNTS_RECOVERED, QOBUZ_ACCOUNTS_RECOVERED_2 and QOBUZ_ACCOUNTS_RECOVERED_3 (optional additive arrays).
+ *          QOBUZ_ACCOUNTS_RECOVERED, QOBUZ_ACCOUNTS_RECOVERED_2, QOBUZ_ACCOUNTS_RECOVERED_3 and
+ *          QOBUZ_ACCOUNTS_RECOVERED_4 (optional additive arrays).
  *          Deploy: see README.md.
  */
 import { createHmac } from "node:crypto";
@@ -174,7 +175,7 @@ async function mint(request, url, env, fetchImpl, nowSec, ctx) {
     const accounts = parseAccounts(env);
     // Every label needs a D1 row BEFORE selection, or the LRU never reaches an account added to the
     // secret while the old ones are still under their caps. Once per isolate per secret value.
-    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || ""]);
+    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || "", env.QOBUZ_ACCOUNTS_RECOVERED_4 || ""]);
     if (ensured.get(env.DB) !== accountSecretVersion) {
         await ensureAccounts(env.DB, accounts.map((a) => a.label));
         ensured.set(env.DB, accountSecretVersion);
@@ -429,7 +430,7 @@ function vars(env) {
 
 /** Account secrets are operator-written JSON arrays; malformed values degrade to no entries, not a 500 loop. */
 function parseAccounts(env) {
-    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3].flatMap((raw) => {
+    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4].flatMap((raw) => {
         try {
             const a = JSON.parse(raw || "[]");
             return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];

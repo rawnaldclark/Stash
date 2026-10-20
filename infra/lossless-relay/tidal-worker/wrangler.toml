@@ -21,7 +21,7 @@ NETWORK_SEARCH_DAILY_CAP = "2000" # uncached (upstream) searches per network per
 EDGE_BASE = "https://stash-tidal-edge.stashfm.deno.net" # tidal-edge on Deno Deploy (Tidal's CDN refuses Cloudflare); ?web=1 signs links for it with the EDGE_SECRET secret
 # The daily lossless counter shared with the Qobuz relay (QUOTA_DB below): free FLAC answers per verified install
 # per UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
-FREE_LOSSLESS_DAILY = "500"
+FREE_LOSSLESS_DAILY = "400" # 500→400 on 2026-10-20
 # Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
 # Ed25519 public key (standard base64 of the raw 32 bytes; public by design, the private half is the tip jar's
 # secret). SUPPORTER_DAILY_CAP is the per-token safety ceiling: past it that day the token counts as free.
