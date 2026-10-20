@@ -42,6 +42,8 @@ const socialImage = new URL(SITE.socialImage, SITE.url).href;
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+    <!-- Google Search Console ownership of stashfm.app (needed by the Stash Drive OAuth app's brand verification). Keep it. -->
+    <meta name="google-site-verification" content="yRySI1co1FIPa5CVyxr1Ifj55DwAZbWNqcpd5EWhCks" />
 
     <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="#f6f3ff" />
