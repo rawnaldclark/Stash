@@ -10,13 +10,18 @@ import androidx.room.Update
 import com.stash.core.data.db.entity.CloudAccountEntity
 import com.stash.core.data.db.entity.CloudFolderEntity
 import com.stash.core.data.db.entity.CloudItemEntity
+import com.stash.core.data.db.entity.CloudUploadEntity
+import com.stash.core.data.db.entity.CloudUploadState
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.MusicSource
 import kotlinx.coroutines.flow.Flow
 
 /** One cloud folder with how many songs its scan has found, for Settings. */
 data class CloudFolderWithCount(
     val id: Long,
     @ColumnInfo(name = "account_id") val accountId: Long,
+    /** The provider's id for the folder (Google Drive: "picked", or "stash-uploads" for saved songs). */
+    @ColumnInfo(name = "item_id") val itemId: String,
     val name: String,
     val path: String,
     @ColumnInfo(name = "last_scan_at") val lastScanAt: Long?,
@@ -24,6 +29,9 @@ data class CloudFolderWithCount(
     @ColumnInfo(name = "last_scan_error") val lastScanError: String?,
     @ColumnInfo(name = "track_count") val trackCount: Int,
 )
+
+/** How many of an account's upload rows are in one [CloudUploadState]. */
+data class CloudUploadCount(val state: String, val count: Int)
 
 /** What removing cloud songs did: rows deleted, and downloaded songs kept as local files. */
 data class CloudRemoval(val deletedTracks: Int, val keptAsLocal: Int)
@@ -68,7 +76,7 @@ interface CloudDao {
 
     @Query(
         """
-        SELECT f.id, f.account_id, f.name, f.path, f.last_scan_at, f.last_scan_status, f.last_scan_error,
+        SELECT f.id, f.account_id, f.item_id, f.name, f.path, f.last_scan_at, f.last_scan_status, f.last_scan_error,
                (SELECT COUNT(*) FROM cloud_items i WHERE i.folder_id = f.id) AS track_count
         FROM cloud_folders f
         ORDER BY f.account_id ASC, f.path ASC
@@ -285,8 +293,133 @@ interface CloudDao {
         return removal
     }
 
+    // ── Uploads: Save to Google Drive / Back up my downloads (v62) ───────
+    //
+    // A song can be uploaded when it is a download on this phone (a file Stash wrote) and not a
+    // cloud song itself ([UPLOADABLE]). Cloud songs are already in the user's cloud, and their one
+    // `cloud_items` row is taken by the file they came from.
+
+    @Query("SELECT * FROM cloud_uploads WHERE track_id = :trackId")
+    suspend fun getUpload(trackId: Long): CloudUploadEntity?
+
+    /** REPLACE is safe here: nothing references an upload row. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putUpload(row: CloudUploadEntity)
+
+    @Update
+    suspend fun updateUpload(row: CloudUploadEntity)
+
+    /** The oldest queued upload: the worker's next song. */
+    @Query("SELECT * FROM cloud_uploads WHERE state = 'QUEUED' ORDER BY queued_at ASC, track_id ASC LIMIT 1")
+    suspend fun nextQueuedUpload(): CloudUploadEntity?
+
+    @Query("SELECT COUNT(*) FROM cloud_uploads WHERE state = 'QUEUED'")
+    suspend fun countQueuedUploads(): Int
+
+    @Query("SELECT state, COUNT(*) AS count FROM cloud_uploads WHERE account_id = :accountId GROUP BY state")
+    fun observeUploadCounts(accountId: Long): Flow<List<CloudUploadCount>>
+
+    /** Of [trackIds], the ones that can be uploaded (downloaded, file on record, not a cloud song). */
+    @Query("SELECT id FROM tracks WHERE id IN (:trackIds) AND $UPLOADABLE")
+    suspend fun uploadableTrackIds(trackIds: List<Long>): List<Long>
+
+    /**
+     * Gives every uploadable download without an upload row one, in [state]: `EXISTING` when the
+     * backup switch is turned on (they are only counted, for "Back up N existing downloads"),
+     * `QUEUED` for downloads made while it is on. Rows that exist are left alone.
+     */
+    @Query(
+        """
+        INSERT OR IGNORE INTO cloud_uploads (track_id, account_id, state, origin, queued_at, updated_at, bytes_sent, attempts)
+        SELECT id, :accountId, :state, 'BACKUP', :now, :now, 0, 0 FROM tracks WHERE $UPLOADABLE
+        """,
+    )
+    suspend fun insertUploadsForDownloads(accountId: Long, state: String, now: Long)
+
+    /** How many uploadable downloads have no upload row: what the backup switch watches for. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE $UPLOADABLE AND NOT EXISTS (SELECT 1 FROM cloud_uploads u WHERE u.track_id = tracks.id)")
+    fun observeDownloadsWithoutUpload(): Flow<Int>
+
+    /** "Back up N existing downloads": queues them all. */
+    @Query("UPDATE cloud_uploads SET state = 'QUEUED', origin = 'BACKUP', queued_at = :now, updated_at = :now WHERE state = 'EXISTING'")
+    suspend fun queueExistingUploads(now: Long): Int
+
+    /** The backup switch turned off: what it queued goes back to waiting (the user's own saves carry on). */
+    @Query("UPDATE cloud_uploads SET state = 'EXISTING', updated_at = :now WHERE state = 'QUEUED' AND origin = 'BACKUP'")
+    suspend fun unqueueBackupUploads(now: Long): Int
+
+    /**
+     * Queues [trackIds] (already checked uploadable) for [accountId]. A song already queued stays
+     * as it is; any other row (saved before, skipped, failed, waiting) is queued again: the worker
+     * finds a copy still in Drive by its tag and only links it again.
+     *
+     * @return how many were newly queued.
+     */
+    @Transaction
+    suspend fun queueUploads(trackIds: List<Long>, accountId: Long, origin: String, now: Long): Int {
+        var queued = 0
+        for (id in trackIds) {
+            val row = getUpload(id)
+            when {
+                row == null -> putUpload(
+                    CloudUploadEntity(
+                        trackId = id, accountId = accountId, state = CloudUploadState.QUEUED.name,
+                        origin = origin, queuedAt = now, updatedAt = now,
+                    ),
+                )
+                row.state == CloudUploadState.QUEUED.name -> continue
+                else -> updateUpload(
+                    row.copy(
+                        state = CloudUploadState.QUEUED.name, origin = origin, queuedAt = now, updatedAt = now,
+                        attempts = 0, error = null,
+                        // A session belongs to the account that opened it.
+                        sessionUri = row.sessionUri.takeIf { row.accountId == accountId },
+                        accountId = accountId,
+                    ),
+                )
+            }
+            queued++
+        }
+        return queued
+    }
+
+    /**
+     * Links the Drive file in [item] (just uploaded, or found already there) to the local track
+     * [trackId], so the Drive scan treats that file as this song and never files it as a second
+     * one. The track keeps playing its own file.
+     *
+     * When the file already has a row for another track: a stream-only cloud song (this phone's
+     * scan filed the upload before it was linked, or it came from another phone) gives way to the
+     * local track; anything else (a downloaded cloud song, another local song with the same bytes)
+     * keeps the file, and nothing is linked (returns false).
+     */
+    @Transaction
+    suspend fun linkUpload(trackId: Long, item: CloudItemEntity): Boolean {
+        getItem(item.accountId, item.itemId)?.let { other ->
+            if (other.trackId != trackId) {
+                val track = getTrack(other.trackId)
+                if (track != null && (track.source != MusicSource.CLOUD || track.isDownloaded)) return false
+                removeItems(listOf(other.trackId))
+            }
+        }
+        val mine = getItemForTrack(trackId)
+        when {
+            mine == null -> insertItem(item.copy(trackId = trackId))
+            mine.accountId == item.accountId && mine.itemId == item.itemId -> updateItem(item.copy(trackId = trackId))
+            else -> {
+                // Linked to an earlier upload (trashed since): the new file takes its place.
+                deleteItemRows(listOf(trackId))
+                insertItem(item.copy(trackId = trackId))
+            }
+        }
+        return true
+    }
+
     companion object {
         /** Below SQLite's 999 bind-variable limit with room to spare. */
         const val BIND_CHUNK = 500
+
+        /** A `tracks` row Stash can upload: a download with its file on record, not a cloud song. */
+        const val UPLOADABLE = "is_downloaded = 1 AND file_path IS NOT NULL AND source != 'CLOUD'"
     }
 }

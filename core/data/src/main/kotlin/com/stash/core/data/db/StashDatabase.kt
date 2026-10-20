@@ -110,8 +110,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudAccountEntity::class,
         com.stash.core.data.db.entity.CloudFolderEntity::class,
         com.stash.core.data.db.entity.CloudItemEntity::class,
+        com.stash.core.data.db.entity.CloudUploadEntity::class,
     ],
-    version = 61,
+    version = 62,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1668,6 +1669,30 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v61 -> v62: Save to Google Drive / Back up my downloads. One new, empty table,
+         * `cloud_uploads` (one row per local track on its way to Drive, with its resumable
+         * session). Nothing existing changes.
+         */
+        val MIGRATION_61_62 = object : Migration(61, 62) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_uploads` (" +
+                        "`track_id` INTEGER NOT NULL, `account_id` INTEGER NOT NULL, `state` TEXT NOT NULL, " +
+                        "`origin` TEXT NOT NULL, `queued_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, " +
+                        "`session_uri` TEXT, `session_size` INTEGER, `session_md5` TEXT, " +
+                        "`bytes_sent` INTEGER NOT NULL DEFAULT 0, `drive_file_id` TEXT, " +
+                        "`attempts` INTEGER NOT NULL DEFAULT 0, `error` TEXT, PRIMARY KEY(`track_id`), " +
+                        "FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cloud_uploads_account_id` ON `cloud_uploads` (`account_id`)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_cloud_uploads_state_queued_at` ON `cloud_uploads` (`state`, `queued_at`)",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1765,6 +1790,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_58_59,
                 MIGRATION_59_60,
                 MIGRATION_60_61,
+                MIGRATION_61_62,
             )
         }
     }

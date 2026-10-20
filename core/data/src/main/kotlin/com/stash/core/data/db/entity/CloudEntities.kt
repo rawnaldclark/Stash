@@ -157,3 +157,78 @@ data class CloudItemEntity(
     @ColumnInfo(name = "remote_path")
     val remotePath: String? = null,
 )
+
+/**
+ * Where one downloaded song stands in "Save to Google Drive" / "Back up my downloads"
+ * (v62). [EXISTING] rows are downloads that existed when backup was turned on: not queued, only
+ * counted for "Back up N existing downloads".
+ */
+enum class CloudUploadState { EXISTING, QUEUED, DONE, SKIPPED, FAILED }
+
+/** Why a row was queued: the user's tap on one song/album/playlist, or the backup switch. */
+enum class CloudUploadOrigin { MANUAL, BACKUP }
+
+/**
+ * v62: one row per local track that is (or was) on its way to the user's Google Drive.
+ * [trackId] is both key and FK, so a track is never uploaded twice and deleting it drops the row;
+ * [accountId] CASCADEs too, so disconnecting Drive clears every pending upload (the files already
+ * in Drive are not touched).
+ *
+ * The resumable session lives here so an upload carries on after a lost connection or process
+ * death: [sessionUri] (Drive's `upload_id` address, valid about a week) is only reused while the
+ * local file still has [sessionSize] bytes and md5 [sessionMd5]; otherwise a new session starts.
+ * [bytesSent] is the server's last committed offset, for progress.
+ *
+ * Once uploaded, [driveFileId] names the Drive file; the track's `cloud_items` row (folder "Saved
+ * from Stash") is what links them for the scanner.
+ */
+@Entity(
+    tableName = "cloud_uploads",
+    foreignKeys = [
+        ForeignKey(
+            entity = TrackEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["track_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = CloudAccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["account_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["account_id"]),
+        Index(value = ["state", "queued_at"]),
+    ],
+)
+data class CloudUploadEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "track_id")
+    val trackId: Long,
+    @ColumnInfo(name = "account_id")
+    val accountId: Long,
+    /** [CloudUploadState] name. */
+    val state: String,
+    /** [CloudUploadOrigin] name. */
+    val origin: String,
+    @ColumnInfo(name = "queued_at")
+    val queuedAt: Long,
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: Long,
+    @ColumnInfo(name = "session_uri")
+    val sessionUri: String? = null,
+    @ColumnInfo(name = "session_size")
+    val sessionSize: Long? = null,
+    @ColumnInfo(name = "session_md5")
+    val sessionMd5: String? = null,
+    @ColumnInfo(name = "bytes_sent", defaultValue = "0")
+    val bytesSent: Long = 0,
+    @ColumnInfo(name = "drive_file_id")
+    val driveFileId: String? = null,
+    @ColumnInfo(name = "attempts", defaultValue = "0")
+    val attempts: Int = 0,
+    /** Plain words for the last problem with this song (never an API body). */
+    val error: String? = null,
+)
