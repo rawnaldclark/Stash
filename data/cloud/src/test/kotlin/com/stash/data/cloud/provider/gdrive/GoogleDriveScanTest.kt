@@ -216,6 +216,8 @@ class GoogleDriveScanTest {
         assertThat(link.version).isEqualTo("md5a")
         assertThat(link.toString()).doesNotContain("tok1")
         assertThat(link.toString()).doesNotContain("googleapis")
+        // The token (stored as expiring at 4 000 s) goes first: the link stops before it does.
+        assertThat(link.expiresAtMs).isEqualTo((4_000 - CloudTokenManager.EXPIRY_MARGIN_SECONDS) * 1000)
     }
 
     @Test

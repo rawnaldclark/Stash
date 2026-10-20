@@ -107,6 +107,18 @@ class RangeFetcherAndLinksTest {
     }
 
     @Test
+    fun `a cached link never outlives the credential inside it`() {
+        var clock = 0L
+        val cache = CloudLinkCache { clock }
+        cache.put("k", CloudLink("https://x", 1, "v", fetchedAtMs = 0, expiresAtMs = 300))
+
+        clock = 299
+        assertThat(cache.get("k", ttlMs = 1_000)).isNotNull()
+        clock = 300 // the token died well inside the provider's ttl
+        assertThat(cache.get("k", ttlMs = 1_000)).isNull()
+    }
+
+    @Test
     fun `cache key ignores the version and URL, separates accounts`() {
         val a = CloudLinkCache.keyOf(CloudRef(CloudProvider.DROPBOX, 1, "id:x", "r1"))
         assertThat(a).isEqualTo(CloudLinkCache.keyOf(CloudRef(CloudProvider.DROPBOX, 1, "id:x", "r2")))

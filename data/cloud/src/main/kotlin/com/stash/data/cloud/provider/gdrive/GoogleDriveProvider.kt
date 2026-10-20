@@ -59,7 +59,11 @@ class GoogleDriveProvider(
     override val isConfigured: Boolean = enabled
     override val pickedFiles: Boolean get() = true
 
-    /** The link carries a token good for ~55 min; keep it well inside that. A 401 resolves anew anyway. */
+    /**
+     * At most this long; each link also stops at its bearer token's expiry
+     * ([CloudLink.expiresAtMs]), so a cached link never outlives the token inside it. A 401
+     * resolves anew anyway.
+     */
     override val linkTtlMs: Long = 30 * 60_000L
 
     /** No folder browsing under drive.file: the picker is the browser. */
@@ -132,7 +136,10 @@ class GoogleDriveProvider(
         }
         // The token that just worked (after any 401 refresh) is the one the content request uses.
         val token = usedToken ?: throw CloudApiException(0, "no Google Drive token")
-        return CloudLink(mediaUrl(itemId), file.sizeBytes, file.version, clock(), mapOf("Authorization" to "Bearer $token"))
+        // The link dies with its token. A token already replaced meanwhile: don't cache the link at all.
+        val now = clock()
+        val expiresAt = tokens.usableUntilMs(provider, accountId, token) ?: now
+        return CloudLink(mediaUrl(itemId), file.sizeBytes, file.version, now, mapOf("Authorization" to "Bearer $token"), expiresAt)
     }
 
     /**

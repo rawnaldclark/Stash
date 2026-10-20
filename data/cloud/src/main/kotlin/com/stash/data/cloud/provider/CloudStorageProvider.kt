@@ -117,6 +117,10 @@ data class ScanPage(val entries: List<ScanEntry>, val cursor: String, val hasMor
  * [url] is the plain `files/{id}?alt=media` address and the bearer token rides in [headers]. The
  * token therefore never appears in a URL, a cache key (keys come from the `stash-cloud://` ref) or
  * a log: [toString] leaves [url] and every header value out.
+ *
+ * [expiresAtMs] is when a credential inside the link dies, if earlier than the provider's
+ * [CloudStorageProvider.linkTtlMs] would say (Google Drive: its bearer token's expiry). The link
+ * cache keeps the link until whichever comes first. Null = the ttl alone.
  */
 data class CloudLink(
     val url: String,
@@ -124,9 +128,10 @@ data class CloudLink(
     val version: String?,
     val fetchedAtMs: Long,
     val headers: Map<String, String> = emptyMap(),
+    val expiresAtMs: Long? = null,
 ) {
     override fun toString(): String =
-        "CloudLink(size=$size, version=$version, fetchedAtMs=$fetchedAtMs, headers=${headers.keys})"
+        "CloudLink(size=$size, version=$version, fetchedAtMs=$fetchedAtMs, expiresAtMs=$expiresAtMs, headers=${headers.keys})"
 }
 
 /** The provider refuses to serve this file's bytes (Google flagged it as abusive): retrying won't help. */

@@ -16,14 +16,16 @@ import java.util.concurrent.ConcurrentHashMap
  * Every seek makes ExoPlayer reopen its source, and a song is opened again by prefetch, Cast and
  * downloads; asking the provider each time would spend the rate limit on links we already have.
  * An entry lives for its provider's [CloudStorageProvider.linkTtlMs] (OneDrive ~5 min, Dropbox
- * 3.5 h of a 4 h link). [invalidate] drops one the content host just refused.
+ * 3.5 h of a 4 h link), or until [CloudLink.expiresAtMs] when that is sooner (Google Drive's
+ * token). [invalidate] drops one the content host just refused.
  */
 class CloudLinkCache(private val clock: () -> Long = System::currentTimeMillis) {
     private val entries = ConcurrentHashMap<String, CloudLink>()
 
     fun get(key: String, ttlMs: Long): CloudLink? {
         val link = entries[key] ?: return null
-        if (clock() - link.fetchedAtMs >= ttlMs) {
+        val now = clock()
+        if (now - link.fetchedAtMs >= ttlMs || link.expiresAtMs?.let { now >= it } == true) {
             entries.remove(key, link)
             return null
         }

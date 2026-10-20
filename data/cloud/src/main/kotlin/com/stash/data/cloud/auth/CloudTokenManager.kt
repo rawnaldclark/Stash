@@ -106,6 +106,16 @@ class CloudTokenManager @Inject constructor(
         _changes.value++
     }
 
+    /**
+     * When [accessToken] stops being handed out (its expiry minus [EXPIRY_MARGIN_SECONDS]), in
+     * epoch milliseconds, for a link that carries it. Null when it is no longer the stored token
+     * (refreshed or forgotten meanwhile): the caller must not cache it.
+     */
+    suspend fun usableUntilMs(provider: CloudProvider, accountId: Long, accessToken: String): Long? =
+        store.get(keyFor(provider, accountId))
+            ?.takeIf { it.accessToken == accessToken }
+            ?.let { (it.expiresAtEpoch - EXPIRY_MARGIN_SECONDS) * 1000 }
+
     suspend fun hasToken(provider: CloudProvider, accountId: Long): Boolean = store.get(keyFor(provider, accountId)) != null
 
     /**
