@@ -270,4 +270,13 @@ class NowPlayingActionsTest {
         // A library song keeps them all.
         assertTrue(SCANNED_HIDDEN.all { isActionAvailable(it, ctx.copy(isScannedSong = false)) })
     }
+
+    @Test fun `a cloud song can't be flagged as a wrong match but keeps download and share`() {
+        val ctx = ActionContext(isCloudSong = true, communityAvailable = true)
+        assertTrue(!isActionAvailable(NowPlayingAction.FLAG_WRONG_MATCH, ctx))
+        assertEquals("Not for songs from your cloud storage", hiddenReason(NowPlayingAction.FLAG_WRONG_MATCH, ctx))
+        assertTrue(isActionAvailable(NowPlayingAction.DOWNLOAD, ctx))
+        assertTrue(isActionAvailable(NowPlayingAction.SHARE, ctx))
+        assertTrue(isActionAvailable(NowPlayingAction.SAVE_TO_PLAYLIST, ctx))
+    }
 }
