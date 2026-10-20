@@ -11,6 +11,9 @@ coil = "3.4.0"
 haze = "1.6.10"
 media3 = "1.9.2"
 playServicesCast = "22.1.0"
+# Google Drive picker (AuthorizationClient + PICKER_* resource parameters). 22.0.0 is the first with
+# PICKER_ALLOW_FOLDER_SELECTION and setPrompt (checked in the AARs 2026-10-20).
+playServicesAuth = "22.0.0"
 mediarouter = "1.8.1"
 room = "2.7.1"
 datastore = "1.1.4"
@@ -107,6 +110,7 @@ work-testing = { group = "androidx.work", name = "work-testing", version.ref = "
 
 # Auth & Security
 appauth = { group = "net.openid", name = "appauth", version.ref = "appauth" }
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 
 # yt-dlp

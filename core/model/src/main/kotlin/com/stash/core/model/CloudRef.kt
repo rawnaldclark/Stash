@@ -9,7 +9,13 @@ const val STASH_CLOUD_SCHEME = "stash-cloud"
 /** Cloud storage providers Stash can read from. */
 enum class CloudProvider(val id: String, val displayName: String) {
     ONEDRIVE("onedrive", "OneDrive"),
-    DROPBOX("dropbox", "Dropbox");
+    DROPBOX("dropbox", "Dropbox"),
+
+    /**
+     * Google Drive under the non-sensitive `drive.file` scope: the user picks songs (not a
+     * folder) in Google's picker and Stash can read exactly those files.
+     */
+    GOOGLE_DRIVE("gdrive", "Google Drive");
 
     companion object {
         fun fromId(id: String?): CloudProvider? = entries.firstOrNull { it.id == id }
@@ -22,7 +28,7 @@ enum class CloudProvider(val id: String, val displayName: String) {
  *
  * [accountId] is Stash's own `cloud_accounts` row id (not the provider's user id), [itemId] the
  * provider's file id (OneDrive item id, Dropbox `id:…`), and [version] the file's content version
- * (OneDrive cTag, Dropbox rev), so a stream cache key
+ * (OneDrive cTag, Dropbox rev, Drive md5Checksum), so a stream cache key
  * built from it ([cacheKey]) changes when the file's bytes do. Pure Kotlin (no android.net.Uri) so
  * the scanner, the player and their unit tests share one parser.
  */

@@ -14,9 +14,17 @@ import com.stash.data.cloud.playback.CloudLinkResolver
 import com.stash.data.cloud.provider.CloudStorageProvider
 import com.stash.data.cloud.provider.dropbox.DropboxAuth
 import com.stash.data.cloud.provider.dropbox.DropboxProvider
+import com.stash.data.cloud.provider.gdrive.GoogleAuthorizer
+import com.stash.data.cloud.provider.gdrive.GoogleDriveAuth
+import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
+import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
+import com.stash.data.cloud.provider.gdrive.GooglePickStore
+import com.stash.data.cloud.provider.gdrive.PlayServicesGoogleAuthorizer
+import com.stash.data.cloud.provider.gdrive.PrefsGooglePickStore
 import com.stash.data.cloud.provider.onedrive.OneDriveAuth
 import com.stash.data.cloud.provider.onedrive.OneDriveProvider
 import com.stash.data.cloud.scan.CloudArtStore
+import com.stash.data.cloud.scan.CloudScanScheduler
 import com.stash.data.cloud.scan.CloudScanner
 import dagger.Binds
 import dagger.Module
@@ -32,8 +40,9 @@ import javax.inject.Singleton
  * Wires the cloud providers. [CloudConfig] comes from the app module (BuildConfig keys).
  *
  * Two HTTP clients: API calls use the shared client (its debug logging redacts the
- * Authorization header); reads of file bytes through pre-authenticated links use a copy with
- * every interceptor removed, so those links (which are credentials) never reach a log.
+ * Authorization header); reads of file bytes use a copy with every interceptor removed, so
+ * pre-authenticated links (which are credentials) and Google Drive's bearer header never reach a
+ * log.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -60,13 +69,24 @@ object CloudModule {
     fun provideOneDriveAuth(config: CloudConfig, client: OkHttpClient): OneDriveAuth =
         OneDriveAuth(config.oneDriveClientId, config.applicationId, client)
 
+    @Provides
+    @Singleton
+    fun provideGoogleDriveAuth(authorizer: GoogleAuthorizer, client: OkHttpClient): GoogleDriveAuth =
+        GoogleDriveAuth(authorizer, client)
+
     /** Only providers this build has credentials for: an unconfigured one can't even start a sign-in. */
     @Provides
     @Singleton
-    fun provideAuths(config: CloudConfig, dropbox: DropboxAuth, oneDrive: OneDriveAuth): Map<CloudProvider, ProviderAuth> =
+    fun provideAuths(
+        config: CloudConfig,
+        dropbox: DropboxAuth,
+        oneDrive: OneDriveAuth,
+        googleDrive: GoogleDriveAuth,
+    ): Map<CloudProvider, ProviderAuth> =
         buildMap {
             if (config.isEnabled(CloudProvider.DROPBOX)) put(CloudProvider.DROPBOX, dropbox)
             if (config.isEnabled(CloudProvider.ONEDRIVE)) put(CloudProvider.ONEDRIVE, oneDrive)
+            if (config.isEnabled(CloudProvider.GOOGLE_DRIVE)) put(CloudProvider.GOOGLE_DRIVE, googleDrive)
         }
 
     @Provides
@@ -76,12 +96,31 @@ object CloudModule {
         client: OkHttpClient,
         dropboxAuth: DropboxAuth,
         oneDriveAuth: OneDriveAuth,
+        googleDriveAuth: GoogleDriveAuth,
         tokens: CloudTokenManager,
+        dao: CloudDao,
+        picks: GooglePickStore,
     ): Map<CloudProvider, CloudStorageProvider> = mapOf(
         // One gate per provider: each has its own rate limits.
         CloudProvider.DROPBOX to DropboxProvider(config.dropboxAppKey, dropboxAuth, CloudHttp(client, RequestGate()), tokens),
         CloudProvider.ONEDRIVE to OneDriveProvider(config.oneDriveClientId, oneDriveAuth, CloudHttp(client, RequestGate()), tokens),
+        CloudProvider.GOOGLE_DRIVE to GoogleDriveProvider(
+            config.isEnabled(CloudProvider.GOOGLE_DRIVE), googleDriveAuth, CloudHttp(client, RequestGate()), tokens, dao, picks,
+        ),
     )
+
+    @Provides
+    @Singleton
+    fun provideGoogleDrivePicks(
+        dao: CloudDao,
+        tokens: CloudTokenManager,
+        auth: GoogleDriveAuth,
+        store: GooglePickStore,
+        scheduler: CloudScanScheduler,
+    ): GoogleDrivePicks = GoogleDrivePicks(dao, tokens, auth, store, scanNow = { folderId ->
+        scheduler.scanNow(folderId)
+        scheduler.ensurePeriodic()
+    })
 
     @Provides
     @Singleton
@@ -96,7 +135,7 @@ object CloudModule {
         links: CloudLinkResolver,
         ranges: RangeFetcher,
         art: CloudArtStore,
-    ): CloudScanner = CloudScanner(dao, providers, links, { url, offset, length -> ranges.fetch(url, offset, length) }, art::save)
+    ): CloudScanner = CloudScanner(dao, providers, links, { link, offset, length -> ranges.fetch(link.url, offset, length, link.headers) }, art::save)
 
     const val CONTENT_CLIENT = "cloud_content"
 }
@@ -106,4 +145,10 @@ object CloudModule {
 interface CloudBindings {
     @Binds
     fun tokenStore(impl: EncryptedCloudTokenStore): CloudTokenStore
+
+    @Binds
+    fun googleAuthorizer(impl: PlayServicesGoogleAuthorizer): GoogleAuthorizer
+
+    @Binds
+    fun googlePickStore(impl: PrefsGooglePickStore): GooglePickStore
 }

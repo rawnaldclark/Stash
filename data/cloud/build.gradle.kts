@@ -6,7 +6,7 @@ plugins {
 }
 
 // Cloud storage libraries (spec docs/superpowers/specs/2026-10-19-cloud-storage-design.md).
-// Dropbox and OneDrive: sign-in (PKCE), folder browse, the resumable library scan,
+// Dropbox and OneDrive: sign-in (PKCE); Google Drive: the Play services picker (drive.file), folder browse, the resumable library scan,
 // ranged tag reading and the playback/download link resolver. The user's own files go
 // straight from their cloud to the phone; nothing here talks to a Stash server.
 android {
@@ -43,6 +43,8 @@ dependencies {
     testImplementation(libs.room.ktx)
     // Custom Tabs for the sign-in browser (small; AppAuth is not used: one PKCE path serves both providers).
     implementation("androidx.browser:browser:1.8.0")
+    // Google Drive: the Android Picker through Google Identity Services' AuthorizationClient.
+    implementation(libs.play.services.auth)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.truth)

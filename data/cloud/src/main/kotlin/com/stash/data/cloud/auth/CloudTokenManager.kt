@@ -35,7 +35,11 @@ class EncryptedCloudTokenStore @Inject constructor(private val store: EncryptedT
  * the token it used as `rejected`; the refresh only runs if the stored token is still that one
  * (someone else may have refreshed meanwhile).
  *
- * Both providers rotate refresh tokens on some refreshes, so every refresh saves the whole
+ * Google Drive has no refresh token on Android: its [ServiceToken.refreshToken] slot holds the
+ * Google account name, and "refresh" is a silent re-authorization through Play services
+ * ([com.stash.data.cloud.provider.gdrive.GoogleDriveAuth]).
+ *
+ * Dropbox and OneDrive rotate refresh tokens on some refreshes, so every refresh saves the whole
  * result. A refresh the provider refuses ([RefreshRejectedException]) surfaces as
  * [CloudAuthRequiredException]: the account shows "Reconnect" and nothing retries in a loop.
  */
@@ -68,7 +72,7 @@ class CloudTokenManager @Inject constructor(
             }
             val auth = auths[provider] ?: throw CloudAuthRequiredException(accountId, "provider unavailable")
             val result = try {
-                auth.refresh(current.refreshToken)
+                auth.refresh(current.refreshToken, current.accessToken)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RefreshRejectedException) {

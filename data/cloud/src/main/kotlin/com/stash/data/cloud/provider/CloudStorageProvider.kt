@@ -6,14 +6,15 @@ import com.stash.data.cloud.net.RequestPriority
 import java.io.IOException
 
 /**
- * One cloud storage service (Dropbox, OneDrive) as the rest of Stash sees it: sign-in, folder
+ * One cloud storage service (Dropbox, OneDrive, Google Drive) as the rest of Stash sees it: sign-in, folder
  * browsing, a paged change feed for the library scan, and short-lived links to a file's bytes.
  *
  * Everything above this interface (scanner, tag reader, link cache, the player's resolving
  * DataSource, downloads, Settings) is provider-agnostic. A provider maps its own API onto these
  * shapes and nothing else: Dropbox's `list_folder` + cursor and OneDrive's `delta` + deltaLink
  * both become [scanPage]; `get_temporary_link` and `@microsoft.graph.downloadUrl` both become
- * [link].
+ * [link]. Google Drive has no folder feed under `drive.file`: its [scanPage] walks the files the
+ * user picked, and [browse] is empty ([pickedFiles] true).
  *
  * Read-only: no implementation ever writes to the user's storage.
  */
@@ -24,6 +25,12 @@ interface CloudStorageProvider {
     val isConfigured: Boolean
 
     val auth: ProviderAuth
+
+    /**
+     * True for a provider whose music is files the user picked one by one (Google Drive) rather
+     * than folders browsed in Stash: Settings opens the provider's own picker instead of [browse].
+     */
+    val pickedFiles: Boolean get() = false
 
     /** How long a [link] stays usable; the link cache keeps one a little less than this. */
     val linkTtlMs: Long
@@ -44,7 +51,10 @@ interface CloudStorageProvider {
     /** Name and path of a folder, for files whose page didn't say where they sit (OneDrive). */
     suspend fun describeFolder(accountId: Long, folderId: String): CloudEntry?
 
-    /** A link to [itemId]'s bytes that takes HTTP Range and needs no auth header. */
+    /**
+     * A link to [itemId]'s bytes that takes HTTP Range. Pre-authenticated (no headers) for
+     * Dropbox and OneDrive; Google Drive's carries the bearer token in [CloudLink.headers].
+     */
     suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink
 }
 
@@ -98,8 +108,29 @@ sealed interface ScanEntry {
  */
 data class ScanPage(val entries: List<ScanEntry>, val cursor: String, val hasMore: Boolean)
 
-/** A file's bytes, for [CloudStorageProvider.linkTtlMs]. [size] and [version] come from the provider's metadata. */
-data class CloudLink(val url: String, val size: Long, val version: String?, val fetchedAtMs: Long)
+/**
+ * A file's bytes, for [CloudStorageProvider.linkTtlMs]. [size] and [version] come from the
+ * provider's metadata.
+ *
+ * [headers] are request headers the content host needs. Dropbox and OneDrive links are
+ * pre-authenticated (the URL is the credential, no headers); Google Drive has no such link, so its
+ * [url] is the plain `files/{id}?alt=media` address and the bearer token rides in [headers]. The
+ * token therefore never appears in a URL, a cache key (keys come from the `stash-cloud://` ref) or
+ * a log: [toString] leaves [url] and every header value out.
+ */
+data class CloudLink(
+    val url: String,
+    val size: Long,
+    val version: String?,
+    val fetchedAtMs: Long,
+    val headers: Map<String, String> = emptyMap(),
+) {
+    override fun toString(): String =
+        "CloudLink(size=$size, version=$version, fetchedAtMs=$fetchedAtMs, headers=${headers.keys})"
+}
+
+/** The provider refuses to serve this file's bytes (Google flagged it as abusive): retrying won't help. */
+class CloudFileBlockedException(message: String) : IOException(message)
 
 /** The provider no longer accepts a saved cursor; start a full listing. */
 class CursorExpiredException(message: String) : IOException(message)

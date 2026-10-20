@@ -1,0 +1,136 @@
+package com.stash.data.cloud.provider.gdrive
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * Drive API v3 shapes and the pure decisions made on them, kept apart from HTTP so the tests can
+ * feed recorded answers straight in.
+ */
+internal object GoogleDriveJson {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /** `files.get?fields=` [FILE_FIELDS]. Drive sends int64 values (size) as JSON strings. */
+    @Serializable
+    data class FileJson(
+        val id: String,
+        val name: String? = null,
+        val mimeType: String? = null,
+        val size: String? = null,
+        val md5Checksum: String? = null,
+        val headRevisionId: String? = null,
+        val modifiedTime: String? = null,
+        val parents: List<String>? = null,
+        val trashed: Boolean? = null,
+    ) {
+        val sizeBytes: Long get() = size?.toLongOrNull()?.coerceAtLeast(0) ?: 0
+
+        /**
+         * The file's content version, which becomes the `?v=` of its `stash-cloud://` ref and so
+         * the stream-cache key. md5Checksum changes exactly when the bytes do (a rename doesn't
+         * touch it); headRevisionId and modifiedTime are fallbacks for files Drive sends no md5
+         * for.
+         */
+        val version: String? get() = md5Checksum ?: headRevisionId ?: modifiedTime
+    }
+
+    @Serializable
+    data class AboutJson(val user: UserJson? = null)
+
+    @Serializable
+    data class UserJson(
+        val displayName: String? = null,
+        val emailAddress: String? = null,
+        /** Stable per Google account; the `cloud_accounts.remote_id`. */
+        val permissionId: String? = null,
+    )
+
+    @Serializable
+    private data class ErrorEnvelope(val error: ErrorJson? = null)
+
+    @Serializable
+    private data class ErrorJson(val code: Int? = null, val errors: List<ErrorItem>? = null)
+
+    @Serializable
+    private data class ErrorItem(val reason: String? = null)
+
+    /** Fields the scan and the link need: no more (each one costs response bytes on every song). */
+    const val FILE_FIELDS = "id,name,mimeType,size,md5Checksum,headRevisionId,modifiedTime,parents,trashed"
+
+    fun file(body: String): FileJson = json.decodeFromString(FileJson.serializer(), body)
+
+    fun about(body: String): AboutJson = json.decodeFromString(AboutJson.serializer(), body)
+
+    /** The `error.errors[].reason` values of a Drive error body; empty for anything unreadable. */
+    fun errorReasons(body: String): Set<String> = runCatching {
+        json.decodeFromString(ErrorEnvelope.serializer(), body).error?.errors.orEmpty().mapNotNull { it.reason }.toSet()
+    }.getOrDefault(emptySet())
+
+    /** What a `files.get` answer means for one picked file. */
+    sealed interface Lookup {
+        /** Readable and not in the trash. */
+        data class Present(val file: FileJson) : Lookup
+
+        /** In the trash, deleted, or Stash lost access to it: the song leaves the library. */
+        data object Gone : Lookup
+
+        /** Drive asked us to slow down: retry later, decide nothing about the file. */
+        data object Throttled : Lookup
+
+        /** Anything else: the scan stops here (and removes nothing) rather than guess. */
+        data class Failed(val status: Int) : Lookup
+    }
+
+    /**
+     * Classifies a `files.get` answer. A drive.file app gets 404 for a file it has no grant for
+     * (the user removed Stash's access, or the file was deleted for good); 403 is either a lost
+     * grant (`appNotAuthorizedToFile`, `insufficientFilePermissions`) or Drive's rate limiting,
+     * which it reports as 403 too and must never be read as "gone".
+     */
+    fun classify(code: Int, body: String): Lookup = when {
+        code in 200..299 -> {
+            val f = file(body)
+            if (f.trashed == true) Lookup.Gone else Lookup.Present(f)
+        }
+        code == 404 -> Lookup.Gone
+        code == 403 -> {
+            val reasons = errorReasons(body)
+            when {
+                reasons.any { it in LOST_ACCESS_REASONS } -> Lookup.Gone
+                reasons.any { it in RATE_LIMIT_REASONS } -> Lookup.Throttled
+                else -> Lookup.Failed(code)
+            }
+        }
+        code == 429 || code >= 500 -> Lookup.Throttled
+        else -> Lookup.Failed(code)
+    }
+
+    /** True when a 403 on `alt=media` is Google refusing to serve a file it flagged as abusive. */
+    fun isAbusiveFileRefusal(code: Int, body: String?): Boolean =
+        code == 403 && body != null && ABUSE_REASON in body
+
+    /**
+     * The `picked_file_ids` value the Android picker returns in the authorization result's token
+     * response params: a comma-separated string per the docs (an array is accepted too). Ids are
+     * trimmed, de-duplicated (first order kept) and anything that isn't a Drive id dropped, so a
+     * malformed answer can never put a path or URL piece into a request.
+     */
+    fun pickedIds(raw: Any?): List<String> {
+        val parts: List<String> = when (raw) {
+            null -> emptyList()
+            is String -> raw.split(',')
+            is Array<*> -> raw.map { it.toString() }
+            is Iterable<*> -> raw.map { it.toString() }
+            else -> raw.toString().split(',')
+        }
+        return parts.map { it.trim() }.filter { DRIVE_ID.matches(it) }.distinct()
+    }
+
+    const val ABUSE_REASON = "cannotDownloadAbusiveFile"
+    private val LOST_ACCESS_REASONS = setOf("appNotAuthorizedToFile", "insufficientFilePermissions", "notFound")
+    private val RATE_LIMIT_REASONS = setOf("rateLimitExceeded", "userRateLimitExceeded", "sharingRateLimitExceeded")
+
+    /** Drive file ids are URL-safe base64-ish; bounded so a hostile value can't be huge. */
+    private val DRIVE_ID = Regex("[A-Za-z0-9_-]{8,256}")
+}

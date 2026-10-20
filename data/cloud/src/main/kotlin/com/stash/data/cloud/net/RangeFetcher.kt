@@ -10,8 +10,10 @@ class LinkExpiredException(val status: Int) : IOException("link answered $status
 
 /**
  * Reads `[offset, offset + length)` of a file through a provider's pre-authenticated link
- * (OneDrive `downloadUrl`, Dropbox temporary link). No Authorization header ever goes to these
- * hosts: the link itself is the credential.
+ * (OneDrive `downloadUrl`, Dropbox temporary link; no Authorization header goes to those hosts,
+ * the link itself is the credential) or Google Drive's `alt=media` address with the link's
+ * [headers] (its bearer token). This client has no logging interceptors, and OkHttp drops
+ * `Authorization` if a server redirects to another host.
  *
  * A server may ignore `Range` and answer 200 with the whole file. Then the bytes before
  * [offset] are read and dropped, but only up to [maxSkipBytes]: a tail read (an MP4 `moov` at
@@ -22,10 +24,11 @@ class RangeFetcher(
     private val client: OkHttpClient,
     private val maxSkipBytes: Long = 4L * 1024 * 1024,
 ) {
-    suspend fun fetch(url: String, offset: Long, length: Int): ByteArray {
+    suspend fun fetch(url: String, offset: Long, length: Int, headers: Map<String, String> = emptyMap()): ByteArray {
         require(offset >= 0 && length > 0)
         val request = Request.Builder()
             .url(url)
+            .apply { headers.forEach { (k, v) -> header(k, v) } }
             .header("Range", "bytes=$offset-${offset + length - 1}")
             // Identity: a gzip-transcoded body would make byte offsets meaningless.
             .header("Accept-Encoding", "identity")

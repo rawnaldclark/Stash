@@ -66,6 +66,12 @@ interface ProviderAuth {
     /** @throws RefreshRejectedException when the user must sign in again. */
     suspend fun refresh(refreshToken: String): TokenResult
 
+    /**
+     * Refresh, told which access token is being replaced. Google Drive needs it: Play services
+     * caches the token, so the stale one must be cleared before asking again. Others ignore it.
+     */
+    suspend fun refresh(refreshToken: String, staleAccessToken: String?): TokenResult = refresh(refreshToken)
+
     suspend fun identity(accessToken: String): CloudIdentity
 }
 

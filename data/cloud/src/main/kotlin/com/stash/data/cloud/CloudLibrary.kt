@@ -3,6 +3,8 @@ package com.stash.data.cloud
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
+import android.util.Log
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.stash.core.data.db.dao.CloudDao
@@ -16,6 +18,11 @@ import com.stash.data.cloud.auth.CloudAuthEvent
 import com.stash.data.cloud.auth.CloudTokenManager
 import com.stash.data.cloud.provider.CloudEntry
 import com.stash.data.cloud.provider.CloudStorageProvider
+import com.stash.data.cloud.provider.gdrive.GoogleAuthorizer
+import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
+import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
+import com.stash.data.cloud.provider.gdrive.GooglePickStore
+import kotlinx.coroutines.CancellationException
 import com.stash.data.cloud.scan.CloudScanScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +55,9 @@ class CloudLibrary @Inject constructor(
     private val tokens: CloudTokenManager,
     private val scheduler: CloudScanScheduler,
     private val scanner: com.stash.data.cloud.scan.CloudScanner,
+    private val googleAuthorizer: GoogleAuthorizer,
+    private val googlePicks: GoogleDrivePicks,
+    private val googlePickStore: GooglePickStore,
 ) {
     /** Providers this build can connect (empty = the whole feature stays hidden). */
     val enabledProviders: List<CloudProvider> get() = config.enabledProviders
@@ -65,9 +75,41 @@ class CloudLibrary @Inject constructor(
 
     val authEvents: SharedFlow<CloudAuthEvent> get() = coordinator.events
 
+    /**
+     * True when [provider]'s music is picked file by file in the provider's own picker (Google
+     * Drive) rather than as folders browsed in Stash: Settings shows "Add songs" instead of
+     * "Add a folder", and connecting IS the first pick ([googlePickerIntent]).
+     */
+    fun usesPicker(provider: CloudProvider): Boolean = providers[provider]?.pickedFiles == true
+
+    /**
+     * Google's picker for [accountId] (null = a new account: Google asks which one), to launch
+     * with an IntentSender request. The result goes to [completeGooglePick].
+     */
+    suspend fun googlePickerIntent(accountId: Long?): IntentSender {
+        check(config.isEnabled(CloudProvider.GOOGLE_DRIVE)) { "Google Drive isn't available in this build" }
+        val email = accountId?.let { dao.getAccount(it)?.email }
+        return googleAuthorizer.pickerIntent(email)
+    }
+
+    /**
+     * Files what the picker returned: connects the account on its first pick, queues the new
+     * songs and starts their scan.
+     */
+    suspend fun completeGooglePick(data: Intent?): GooglePickOutcome = try {
+        googlePicks.accept(googleAuthorizer.pickerResult(data))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        // Never the message: it may echo an API response.
+        Log.w("CloudLibrary", "Google Drive pick failed: ${e.javaClass.simpleName}")
+        GooglePickOutcome.Failed("Couldn't add songs from Google Drive. Check your connection and try again.")
+    }
+
     /** Opens [provider]'s sign-in page in a Custom Tab (a plain browser when none is installed). */
     fun connect(activityContext: Context, provider: CloudProvider) {
         check(config.isEnabled(provider)) { "${provider.displayName} isn't available in this build" }
+        check(!usesPicker(provider)) { "${provider.displayName} connects through its picker" }
         val url = Uri.parse(coordinator.begin(provider))
         try {
             CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(activityContext, url)
@@ -96,8 +138,10 @@ class CloudLibrary @Inject constructor(
         // Stop scans first, and wait out any still inside one of this account's folders, so no
         // scan writes rows for a removed account or refreshes (and re-saves) its token after.
         scheduler.cancelRunning()
-        val removal = withFolderLocks(dao.getFolders(accountId).map { it.id }) {
+        val folderIds = dao.getFolders(accountId).map { it.id }
+        val removal = withFolderLocks(folderIds) {
             CloudProvider.fromId(account.provider)?.let { tokens.forget(it, accountId) }
+            folderIds.forEach(googlePickStore::clear)
             dao.removeAccount(accountId)
         }
         resumeScans()
@@ -134,7 +178,10 @@ class CloudLibrary @Inject constructor(
     /** Unpicks a folder; its songs go, downloaded ones stay as local files. */
     suspend fun removeFolder(folderId: Long): CloudRemoval {
         scheduler.cancelRunning()
-        val removal = scanner.withFolderLock(folderId) { dao.removeFolder(folderId) }
+        val removal = scanner.withFolderLock(folderId) {
+            googlePickStore.clear(folderId)
+            dao.removeFolder(folderId)
+        }
         resumeScans()
         return removal
     }

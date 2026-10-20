@@ -1,0 +1,198 @@
+package com.stash.data.cloud.provider.gdrive
+
+import com.stash.core.data.db.dao.CloudDao
+import com.stash.core.model.CloudProvider
+import com.stash.data.cloud.auth.CloudTokenManager
+import com.stash.data.cloud.net.ApiResponse
+import com.stash.data.cloud.net.CloudHttp
+import com.stash.data.cloud.net.RequestPriority
+import com.stash.data.cloud.provider.CloudApiException
+import com.stash.data.cloud.provider.CloudEntry
+import com.stash.data.cloud.provider.CloudItemNotFoundException
+import com.stash.data.cloud.provider.CloudLink
+import com.stash.data.cloud.provider.CloudStorageProvider
+import com.stash.data.cloud.provider.CursorExpiredException
+import com.stash.data.cloud.provider.ScanEntry
+import com.stash.data.cloud.provider.ScanPage
+import com.stash.data.cloud.provider.ScanRoot
+import com.stash.data.cloud.scan.CloudFiles
+import okhttp3.Request
+import java.io.IOException
+
+/**
+ * Google Drive under `drive.file` (owner decision 2026-10-20): Stash sees only files the user
+ * picked in Google's picker. A picked folder grants none of its files (tested 2026-10-20), so
+ * there is no folder to list and no change feed. Instead each account has one "picks" folder row
+ * ([PICKS_ITEM_ID]) and its scan walks the picked ids with `files.get`:
+ *
+ *  - **New picks** ([GooglePickStore]) are scanned as soon as they're picked, and only they
+ *    (cursor `new:<lastId>`): adding five songs doesn't re-check five hundred.
+ *  - **Every other run** (periodic, Rescan now) is a full pass over every picked id (cursor
+ *    `full:<lastId>`), so the scanner's generation sweep removes songs that were trashed, deleted
+ *    or whose access was withdrawn, and an edited file (new md5) has its tags read again. After a
+ *    completed pass the cursor is `done`; a later run with nothing new pending answers
+ *    [CursorExpiredException], which is how the scanner is told to start a full pass.
+ *
+ * Paging walks ids in sorted order after the last id done, so a pass cut short resumes where it
+ * stopped and a pick added mid-pass can't shift an existing song out of it.
+ *
+ * Streaming has no pre-signed link: [link] is `files/{id}?alt=media` plus the bearer token in
+ * [CloudLink.headers], with the size from metadata (Drive may send no Content-Length).
+ *
+ * Quota: Drive allows about 1 TB of downloads a day per Cloud project, shared by every user of
+ * the app. Nothing enforces it here.
+ */
+class GoogleDriveProvider(
+    enabled: Boolean,
+    override val auth: GoogleDriveAuth,
+    private val http: CloudHttp,
+    private val tokens: CloudTokenManager,
+    private val dao: CloudDao,
+    private val picks: GooglePickStore,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val pageSize: Int = PAGE_SIZE,
+) : CloudStorageProvider {
+
+    override val provider = CloudProvider.GOOGLE_DRIVE
+    override val isConfigured: Boolean = enabled
+    override val pickedFiles: Boolean get() = true
+
+    /** The link carries a token good for ~55 min; keep it well inside that. A 401 resolves anew anyway. */
+    override val linkTtlMs: Long = 30 * 60_000L
+
+    /** No folder browsing under drive.file: the picker is the browser. */
+    override suspend fun browse(accountId: Long, folderId: String?): List<CloudEntry> = emptyList()
+
+    /** Parent folders aren't granted under drive.file; songs fall back to their own tags. */
+    override suspend fun describeFolder(accountId: Long, folderId: String): CloudEntry? = null
+
+    override suspend fun scanPage(accountId: Long, root: ScanRoot, cursor: String?): ScanPage {
+        val folderId = dao.getFolders(accountId).firstOrNull { it.itemId == root.itemId }?.id
+            ?: throw CloudItemNotFoundException("Google Drive picks are gone")
+        val position = Cursor.parse(cursor)
+        val scanned = dao.folderItemIds(folderId).toSet()
+        if (position.after == null) {
+            // Start of a pass: picks the scan has filed are now cloud_items rows; stop tracking them.
+            picks.pending(folderId).filter { it in scanned }.takeIf { it.isNotEmpty() }?.let { picks.remove(folderId, it) }
+        }
+        val pending = picks.pending(folderId)
+        val mode = when (position.mode) {
+            Mode.DONE -> if (pending.isEmpty()) throw CursorExpiredException("Google Drive: time for a full re-check") else Mode.NEW
+            else -> position.mode
+        }
+        val all = (if (mode == Mode.FULL) pending + scanned else pending).sorted()
+        val remaining = position.after?.let { after -> all.filter { it > after } } ?: all
+        val batch = remaining.take(pageSize)
+
+        val entries = mutableListOf<ScanEntry>()
+        val prune = mutableListOf<String>()
+        for (id in batch) {
+            when (val lookup = lookup(accountId, id, RequestPriority.BACKGROUND)) {
+                is GoogleDriveJson.Lookup.Present -> {
+                    val f = lookup.file
+                    val name = f.name.orEmpty()
+                    if (!CloudFiles.isAudio(name, f.mimeType)) {
+                        prune += id // a folder or some other file picked by mistake: nothing to play
+                        continue
+                    }
+                    entries += ScanEntry.File(
+                        id = f.id, name = name, size = f.sizeBytes, version = f.version,
+                        eTag = f.headRevisionId, mimeType = f.mimeType, parentId = f.parents?.firstOrNull(),
+                        // Never null: a null would make the scanner ask describeFolder for a
+                        // parent drive.file can't see. Names come from the tags or the file name.
+                        folders = emptyList(), remotePath = null,
+                    )
+                }
+                GoogleDriveJson.Lookup.Gone -> {
+                    prune += id
+                    entries += ScanEntry.Removed(id, null)
+                }
+                GoogleDriveJson.Lookup.Throttled -> throw IOException("Google Drive asked us to slow down")
+                is GoogleDriveJson.Lookup.Failed -> throw CloudApiException(lookup.status, "Google Drive answered ${lookup.status}")
+            }
+        }
+        if (prune.isNotEmpty()) picks.remove(folderId, prune)
+        val hasMore = remaining.size > batch.size
+        val next = if (hasMore) Cursor(mode, batch.last()).encode() else Cursor.DONE
+        return ScanPage(entries, next, hasMore)
+    }
+
+    override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink {
+        var usedToken: String? = null
+        val r = http.execute(priority, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
+            usedToken = token
+            metadataRequest(itemId, token)
+        }
+        val file = when (val lookup = GoogleDriveJson.classify(r.code, r.body)) {
+            is GoogleDriveJson.Lookup.Present -> lookup.file
+            GoogleDriveJson.Lookup.Gone -> throw CloudItemNotFoundException("Google Drive file is gone or no longer shared with Stash")
+            GoogleDriveJson.Lookup.Throttled -> throw IOException("Google Drive asked us to slow down")
+            is GoogleDriveJson.Lookup.Failed -> throw CloudApiException(lookup.status, "Google Drive answered ${lookup.status}")
+        }
+        // The token that just worked (after any 401 refresh) is the one the content request uses.
+        val token = usedToken ?: throw CloudApiException(0, "no Google Drive token")
+        return CloudLink(mediaUrl(itemId), file.sizeBytes, file.version, clock(), mapOf("Authorization" to "Bearer $token"))
+    }
+
+    private suspend fun lookup(accountId: Long, id: String, priority: RequestPriority): GoogleDriveJson.Lookup {
+        val r: ApiResponse = http.execute(priority, { rejected -> tokens.accessToken(provider, accountId, rejected) }) { token ->
+            metadataRequest(id, token)
+        }
+        return GoogleDriveJson.classify(r.code, r.body)
+    }
+
+    private fun metadataRequest(id: String, token: String?): Request =
+        Request.Builder()
+            .url("$API/files/${seg(id)}?fields=${GoogleDriveJson.FILE_FIELDS}&supportsAllDrives=true")
+            .header("Authorization", "Bearer $token")
+            .build()
+
+    internal enum class Mode { FULL, NEW, DONE }
+
+    /** Where a pass stands: its kind and the last id it finished (ids are walked in sorted order). */
+    internal data class Cursor(val mode: Mode, val after: String?) {
+        fun encode(): String = "${mode.name.lowercase()}:${after.orEmpty()}"
+
+        companion object {
+            const val DONE = "done"
+
+            /** null (no cursor) = a full pass from the start; anything unreadable is treated the same. */
+            fun parse(raw: String?): Cursor {
+                if (raw == null) return Cursor(Mode.FULL, null)
+                if (raw == DONE) return Cursor(Mode.DONE, null)
+                val mode = when (raw.substringBefore(':')) {
+                    "full" -> Mode.FULL
+                    "new" -> Mode.NEW
+                    else -> return Cursor(Mode.FULL, null)
+                }
+                return Cursor(mode, raw.substringAfter(':', "").ifEmpty { null })
+            }
+        }
+    }
+
+    companion object {
+        const val API = "https://www.googleapis.com/drive/v3"
+
+        /** The one folder row per account that holds its picked songs. */
+        const val PICKS_ITEM_ID = "picked"
+        const val PICKS_NAME = "Picked songs"
+
+        /** One `files.get` per id; at the gate's ~5/s a page is a few seconds of work, saved after. */
+        const val PAGE_SIZE = 25
+
+        /** The file's bytes. No token in the URL: it goes in the Authorization header. */
+        fun mediaUrl(itemId: String): String = "$API/files/${seg(itemId)}?alt=media&supportsAllDrives=true"
+
+        /**
+         * True when a content request's 403 [body] says Google refuses to serve the file because
+         * it flagged it as malware/abuse (`cannotDownloadAbusiveFile`). Stash doesn't send
+         * `acknowledgeAbuse`; the user sees "Google blocked this file" instead.
+         */
+        fun isAbusiveFileRefusal(code: Int, body: ByteArray?): Boolean =
+            GoogleDriveJson.isAbusiveFileRefusal(code, body?.let { String(it, Charsets.UTF_8) })
+
+        const val BLOCKED_MESSAGE = "Google blocked this file"
+
+        private fun seg(id: String) = java.net.URLEncoder.encode(id, "UTF-8").replace("+", "%20")
+    }
+}

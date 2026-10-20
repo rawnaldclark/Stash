@@ -71,7 +71,8 @@ class CloudScannerTest {
         dao = dao,
         providers = mapOf(CloudProvider.DROPBOX to provider),
         links = CloudLinkResolver(mapOf(CloudProvider.DROPBOX to provider)),
-        ranges = { url, offset, length ->
+        ranges = { link, offset, length ->
+            val url = link.url
             reads[url] = (reads[url] ?: 0) + 1
             val b = files.getValue(url)
             b.copyOfRange(offset.toInt(), minOf(b.size.toLong(), offset + length).toInt())

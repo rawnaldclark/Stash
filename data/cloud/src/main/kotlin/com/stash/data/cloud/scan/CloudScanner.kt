@@ -34,9 +34,9 @@ fun interface ArtSaver {
     fun save(bytes: ByteArray, mimeType: String?): String?
 }
 
-/** Reads a byte range of a file through a pre-authenticated link. */
+/** Reads a byte range of a file through a link (with the link's headers, Google Drive's token). */
 fun interface RangeSource {
-    suspend fun fetch(url: String, offset: Long, length: Int): ByteArray
+    suspend fun fetch(link: CloudLink, offset: Long, length: Int): ByteArray
 }
 
 /** What one folder's scan did. */
@@ -289,7 +289,7 @@ class CloudScanner(
         private suspend fun downloadCover(cover: ScanEntry.File): String? {
             if (cover.size <= 0 || cover.size > MAX_COVER_BYTES) return null
             return try {
-                val bytes = withLink(cover) { url -> ranges.fetch(url, 0, cover.size.toInt()) }
+                val bytes = withLink(cover) { link -> ranges.fetch(link, 0, cover.size.toInt()) }
                 art.save(bytes, null)
             } catch (e: CancellationException) {
                 throw e
@@ -306,7 +306,7 @@ class CloudScanner(
          */
         private suspend fun readTags(f: ScanEntry.File): AudioTags? {
             if (f.size <= 0) return AudioTags.EMPTY
-            val reader = CachingRangeReader(f.size) { offset, length -> withLink(f) { url -> ranges.fetch(url, offset, length) } }
+            val reader = CachingRangeReader(f.size) { offset, length -> withLink(f) { link -> ranges.fetch(link, offset, length) } }
             return try {
                 TagReader.read(reader)
             } catch (e: CancellationException) {
@@ -323,18 +323,18 @@ class CloudScanner(
         private var lastLink: Pair<String, CloudLink>? = null
 
         /** Runs [block] with a link to [f], resolving once more if the content host refuses it. */
-        private suspend fun <T> withLink(f: ScanEntry.File, block: suspend (String) -> T): T {
+        private suspend fun <T> withLink(f: ScanEntry.File, block: suspend (CloudLink) -> T): T {
             val ref = CloudRef(kind, folder.accountId, f.id, f.version)
             val cached = lastLink?.takeIf { it.first == f.id }?.second
             val link = cached ?: f.downloadUrl?.let { CloudLink(it, f.size, f.version, clock()) }
                 ?: links.resolve(ref, RequestPriority.BACKGROUND)
             lastLink = f.id to link
             return try {
-                block(link.url)
+                block(link)
             } catch (e: LinkExpiredException) {
                 val fresh = links.resolve(ref, RequestPriority.BACKGROUND, fresh = true)
                 lastLink = f.id to fresh
-                block(fresh.url)
+                block(fresh)
             }
         }
 

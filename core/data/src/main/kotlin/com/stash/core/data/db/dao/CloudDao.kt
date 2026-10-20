@@ -226,6 +226,10 @@ interface CloudDao {
     @Query("SELECT track_id FROM cloud_items WHERE folder_id = :folderId")
     suspend fun folderTrackIds(folderId: Long): List<Long>
 
+    /** The provider ids of a folder's files (Google Drive: the picked songs already scanned). */
+    @Query("SELECT item_id FROM cloud_items WHERE folder_id = :folderId")
+    suspend fun folderItemIds(folderId: Long): List<String>
+
     /**
      * The songs in [folderId] at [path] or under it (a deleted Dropbox entry may be a whole
      * folder). [path] is lower-cased like `remote_path`. `substr` instead of LIKE, so a path
