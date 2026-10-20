@@ -25,6 +25,8 @@ internal data class ActionContext(
      * downloaded, flagged, shared or sent to a room (see [SCANNED_HIDDEN]).
      */
     val isScannedSong: Boolean = false,
+    /** The current track is from the user's own cloud storage (see [CLOUD_HIDDEN]). */
+    val isCloudSong: Boolean = false,
 )
 
 /** What an All Songs file can't do: each needs a library row, an online identity, or both. */
@@ -38,6 +40,12 @@ internal val SCANNED_HIDDEN: Set<NowPlayingAction> = setOf(
 )
 
 /**
+ * What a cloud song (the user's own Dropbox / OneDrive file) can't do: it is the file itself,
+ * so there is no "wrong match" to flag and nothing to swap it for.
+ */
+internal val CLOUD_HIDDEN: Set<NowPlayingAction> = setOf(NowPlayingAction.FLAG_WRONG_MATCH)
+
+/**
  * Whether [action] can show right now, pinned or not. These are the rules the row and the
  * menu had before pins: no Radio, Queue or Speed in a room; no Speed while casting; Post to
  * Community only while Community is on; Cast exactly where its automatic button showed (a
@@ -45,6 +53,7 @@ internal val SCANNED_HIDDEN: Set<NowPlayingAction> = setOf(
  */
 internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when {
     ctx.isScannedSong && action in SCANNED_HIDDEN -> false
+    ctx.isCloudSong && action in CLOUD_HIDDEN -> false
     else -> isActionAvailableForAnySong(action, ctx)
 }
 
@@ -165,6 +174,7 @@ internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String?
     isActionAvailable(action, ctx) -> null
     ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
     ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
+    ctx.isCloudSong && action in CLOUD_HIDDEN -> "Not for songs from your cloud storage"
     action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
     ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
     else -> "Not available right now"

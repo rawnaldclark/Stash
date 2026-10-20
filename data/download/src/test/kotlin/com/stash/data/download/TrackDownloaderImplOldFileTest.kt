@@ -40,6 +40,7 @@ class TrackDownloaderImplOldFileTest {
             downloadQueueDao = downloadQueueDao,
             localFileOps = localFileOps,
             fileReplacement = TrackFileReplacement(trackDao, localFileOps),
+            cloudDownloader = mockk(relaxed = true),
         )
     }
 

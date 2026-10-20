@@ -61,6 +61,10 @@ class LosslessUpgraderImpl @Inject constructor(
         losslessPrefs.downloadModeNow() == com.stash.core.model.DownloadMode.LOSSLESS
 
     override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult = runCatching {
+        // A cloud song is the user's own file (Dropbox / OneDrive): never looked up on the
+        // lossless relays or replaced. The sweep's SQL and the Library's Non-FLAC list already
+        // leave it out; this holds for any other caller.
+        if (track.source == com.stash.core.model.MusicSource.CLOUD) return@runCatching UpgradeResult.NoMatch
         // Capture old path BEFORE the download — the row's current file_path
         // gets overwritten by markAsDownloaded, so reading post-persist would
         // give us the new path and we'd skip the delete. May be null for stub

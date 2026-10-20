@@ -829,6 +829,8 @@ private fun LibraryContent(
                 // The source filter narrows Songs only; offered elsewhere it looked broken.
                 showSourceFilter = state.activeTab == LibraryTab.TRACKS,
                 showAvailabilityFilter = state.streamingMode,
+                // Kept while it is the active filter, so it can be seen and cleared.
+                showCloudFilter = state.hasCloudSongs || state.sourceFilter == SourceFilter.CLOUD,
                 // Download lists only downloaded songs, all in the library already.
                 showLibraryOnly = state.streamingMode && artistsOrAlbums,
                 libraryOnly = state.libraryOnly,

@@ -46,6 +46,8 @@ fun LibrarySortFilterSheet(
     showAvailabilityFilter: Boolean = false,
     /** The SHOW section: Artists and Albums in Stream only, Everything or In your library. */
     showLibraryOnly: Boolean = false,
+    /** Offer "Cloud" (songs from the user's Dropbox / OneDrive); only when the library has some. */
+    showCloudFilter: Boolean = false,
     libraryOnly: Boolean = false,
     onLibraryOnlySelected: (Boolean) -> Unit = {},
     onSortSelected: (SortOrder) -> Unit,
@@ -65,6 +67,7 @@ fun LibrarySortFilterSheet(
         add("Spotify" to SourceFilter.SPOTIFY)
         add("FLAC" to SourceFilter.FLAC)
         add("Non-FLAC" to SourceFilter.NON_FLAC)
+        if (showCloudFilter) add("Cloud" to SourceFilter.CLOUD)
         if (showAvailabilityFilter) {
             add("Downloaded" to SourceFilter.DOWNLOADED)
             add("Online" to SourceFilter.ONLINE)

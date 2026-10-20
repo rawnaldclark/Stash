@@ -32,7 +32,9 @@ object HandoffDocsBuilder {
         // file, or a download that carries none of those ids (sync-v1 §2.1).
         val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
         // An All Songs file is always phone-only: the web has nothing to play it from.
-        val phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.isScannedSong
+        // A cloud song streams from the user's own cloud account, which the web player can't reach.
+        val phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.isScannedSong ||
+            t.source == MusicSource.CLOUD
         return WireSong.of(song, phoneOnly)
     }
 

@@ -237,7 +237,12 @@ class RoomMirrorLibrary internal constructor(
             val t = row.toTrack()
             val song = WebLibraryFile.song(t, addedAt = null) ?: return null
             val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
-            return WireSong.of(song, phoneOnly = noIds && (t.source == MusicSource.LOCAL || t.isDownloaded))
+            // A cloud song plays from the user's own cloud account, which the web can't reach: phone-only,
+            // so the web never looks it up by its words.
+            return WireSong.of(
+                song,
+                phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.source == MusicSource.CLOUD,
+            )
         }
     }
 }

@@ -435,7 +435,8 @@ fun NowPlayingScreen(
     // Services, outside a Listen Together room (the two exclude each other, cast spec §3).
     val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
     val isScannedSong = track?.isScannedSong == true
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong) {
+    val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
@@ -443,6 +444,7 @@ fun NowPlayingScreen(
             isDownloaded = isDownloaded,
             castSupported = castSupported,
             isScannedSong = isScannedSong,
+            isCloudSong = isCloudSong,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName

@@ -35,6 +35,8 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:auth"))
     implementation(project(":data:download"))
+    // Cloud storage (Dropbox / OneDrive): stash-cloud:// items resolve through data:cloud.
+    implementation(project(":data:cloud"))
     // YT Music client for the streaming-fallback search-by-metadata path
     // (YouTubeStreamResolver.searchYouTubeForVideoId).
     implementation(project(":data:ytmusic"))

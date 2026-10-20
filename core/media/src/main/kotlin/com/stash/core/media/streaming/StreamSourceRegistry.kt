@@ -127,6 +127,9 @@ class StreamSourceRegistry internal constructor(
          */
         speculative: Boolean = false,
     ): StreamUrl? {
+        // Last line of defence: a cloud song (the user's own file) is never looked up on the
+        // lossless relays, JioSaavn or YouTube. Its player item streams from stash-cloud://.
+        if (track.source == com.stash.core.model.MusicSource.CLOUD) return null
         // Single-flight. A foreground tap and the next-up prefetch landing on the
         // same track within a few hundred ms each ran their OWN full resolver
         // chain: doubled calls to every source (including rate-limited search

@@ -12,6 +12,7 @@ internal fun sourceFilterLabel(filter: SourceFilter): String? = when (filter) {
     SourceFilter.NON_FLAC -> "Non-FLAC"
     SourceFilter.DOWNLOADED -> "Downloaded"
     SourceFilter.ONLINE -> "Online"
+    SourceFilter.CLOUD -> "Cloud"
 }
 
 /**

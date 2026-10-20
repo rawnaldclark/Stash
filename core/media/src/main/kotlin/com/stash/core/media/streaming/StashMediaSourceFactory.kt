@@ -51,6 +51,14 @@ class StashMediaSourceFactory(
      * Tidal may answer with a DASH MPD. False keeps the lazy path exactly as it was.
      */
     private val resolveBeforeSourcePick: () -> Boolean = { false },
+    /**
+     * `stash-cloud://` items (the user's own Dropbox / OneDrive files): the stream cache over
+     * [CloudResolvingDataSource]. Null in tests and builds without cloud wiring; such an item
+     * then fails to open (and is skipped), it is never routed to the online resolvers.
+     */
+    cloudDataSourceFactory: DataSource.Factory? = null,
+    /** The same without the cache, for Cast. */
+    private val cloudUncachedDataSourceFactory: DataSource.Factory? = null,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -96,12 +104,17 @@ class StashMediaSourceFactory(
         }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
 
+    private val cloudSourceFactory: DataSource.Factory =
+        cloudDataSourceFactory ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
+    private val cloudFactory = DefaultMediaSourceFactory(cloudSourceFactory)
+
     override fun setDrmSessionManagerProvider(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
+        cloudFactory.setDrmSessionManagerProvider(provider)
         return this
     }
 
@@ -111,6 +124,7 @@ class StashMediaSourceFactory(
         localFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
+        cloudFactory.setLoadErrorHandlingPolicy(policy)
         return this
     }
 
@@ -125,6 +139,9 @@ class StashMediaSourceFactory(
      */
     fun dataSourceFactoryFor(mediaItem: MediaItem): DataSource.Factory {
         if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) return lazyDataSourceFactory
+        if (mediaItem.localConfiguration?.uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) {
+            return cloudUncachedDataSourceFactory ?: cloudSourceFactory
+        }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
         return localDataSourceFactory
@@ -135,6 +152,8 @@ class StashMediaSourceFactory(
         // layer — checked first because they carry no http(s) scheme for the
         // predicates below to match.
         val uri = mediaItem.localConfiguration?.uri
+        // The user's own cloud file: its own resolver and cache, never the online chain below.
+        if (uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) return cloudFactory.createMediaSource(mediaItem)
         if (uri?.scheme == STASH_RESOLVE_SCHEME) {
             val trackId = uri.lastPathSegment?.toLongOrNull()
             if (trackId != null && !isRowOverride(uri) && resolveBeforeSourcePick()) {

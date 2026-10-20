@@ -23,10 +23,18 @@ class TrackDownloaderImpl @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val localFileOps: LocalFileOps,
     private val fileReplacement: TrackFileReplacement,
+    private val cloudDownloader: com.stash.data.download.cloud.CloudTrackDownloader,
 ) : TrackDownloader {
 
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
-        return when (val result = downloadManager.downloadTrack(track, preResolvedUrl)) {
+        // A cloud song (the user's own Dropbox / OneDrive file) is copied from their cloud as is;
+        // it never enters DownloadManager's search / lossless / YouTube pipeline.
+        val result = if (track.source == com.stash.core.model.MusicSource.CLOUD) {
+            cloudDownloader.download(track)
+        } else {
+            downloadManager.downloadTrack(track, preResolvedUrl)
+        }
+        return when (result) {
             is TrackDownloadResult.Success -> {
                 // Validate the committed file before it can be marked downloaded.
                 // A "successful" download can still be junk — e.g. yt-dlp writing

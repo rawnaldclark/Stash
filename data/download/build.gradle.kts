@@ -70,6 +70,8 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":data:ytmusic"))
     implementation(project(":data:spotify"))
+    // Cloud songs (Dropbox / OneDrive) download from the user's own cloud: CloudTrackDownloader.
+    implementation(project(":data:cloud"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)

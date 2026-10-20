@@ -297,6 +297,11 @@ class DownloadManager @Inject constructor(
      * Executes the download pipeline for a single track.
      */
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
+        // Never search, match or look up a cloud song online: TrackDownloaderImpl copies it from
+        // the user's cloud instead. Refused here too, whoever calls.
+        if (track.source == com.stash.core.model.MusicSource.CLOUD) {
+            return TrackDownloadResult.Failed("Cloud songs download from their cloud storage")
+        }
         emitProgress(track.id, 0f, DownloadStatus.MATCHING)
 
         // The user's Download quality (Settings › Audio & Quality): what this download may save.

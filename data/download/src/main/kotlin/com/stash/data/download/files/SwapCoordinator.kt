@@ -332,6 +332,10 @@ class SwapCoordinator @Inject constructor(
         val track = trackDao.getById(trackId)
             ?: return SwapOutcome.DownloadFailed(trackId, newVideoId, title = "")
         val title = track.title
+        // A cloud song is the user's own file: never swapped for a YouTube video.
+        if (track.source == com.stash.core.model.MusicSource.CLOUD) {
+            return SwapOutcome.DownloadFailed(trackId, newVideoId, title)
+        }
 
         // The replacement id names the temp file and the yt-dlp URL below and is
         // written to the track. It came from a search answer, so one without the

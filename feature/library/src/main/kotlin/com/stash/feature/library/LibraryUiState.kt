@@ -39,6 +39,9 @@ data class LibraryUiState(
     /** Total downloaded songs in the library (unfiltered) — drives the Shuffle hero count. */
     val librarySongCount: Int = 0,
 
+    /** The library holds cloud storage songs: the Cloud filter is offered (hidden otherwise). */
+    val hasCloudSongs: Boolean = false,
+
     /** Stream-only mode: Songs shows online rows too, and the Downloaded/Online filter is offered. */
     val streamingMode: Boolean = false,
 
@@ -68,7 +71,12 @@ enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED, DURATION }
  * [DOWNLOADED] and [ONLINE] split by whether the file is on this phone;
  * they're offered only in Stream-only mode.
  */
-enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC, NON_FLAC, DOWNLOADED, ONLINE }
+enum class SourceFilter {
+    ALL, YOUTUBE, SPOTIFY, FLAC, NON_FLAC, DOWNLOADED, ONLINE,
+
+    /** Songs from the user's own cloud storage (Dropbox / OneDrive); offered only when there are some. */
+    CLOUD,
+}
 
 /**
  * @property name           Display name of the artist.

@@ -72,6 +72,10 @@ internal fun TrackEntity.autoPlaybackUri(): Uri {
     if (isDownloaded && !path.isNullOrBlank()) {
         return if (path.startsWith("/")) "file://$path".toUri() else path.toUri()
     }
+    // The user's own cloud file streams from their cloud, never from an online match.
+    if (source == com.stash.core.model.MusicSource.CLOUD) {
+        return com.stash.core.media.streaming.cloudPlaybackUri(cloudUri)
+    }
     return stashResolveUri(
         trackId = id,
         youtubeId = youtubeId,
@@ -123,6 +127,10 @@ internal fun TrackEntity.toAutoMediaItem(
                     // "Will stream" — drives the offline silent-skip for
                     // car-queued items exactly like in-app queue items.
                     putBoolean(EXTRA_TRACK_IS_STREAMABLE, !isDownloaded || filePath.isNullOrBlank())
+                    if (source == com.stash.core.model.MusicSource.CLOUD) {
+                        putString(com.stash.core.media.EXTRA_TRACK_SOURCE, source.name)
+                        putString(com.stash.core.media.EXTRA_CLOUD_FILE_FORMAT, fileFormat)
+                    }
                 })
                 .build(),
         )

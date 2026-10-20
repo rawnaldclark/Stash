@@ -92,6 +92,8 @@ class PrefetchOrchestrator @Inject constructor(
 
                 val track = trackDao.getById(nextTrackId) ?: return@launch
                 if (track.isDownloaded) return@launch
+                // Cloud songs resolve their own link when opened; never the online chain.
+                if (track.source == com.stash.core.model.MusicSource.CLOUD) return@launch
                 // Skip only rows CONFIRMED unstreamable (checked and false).
                 // Synced-library rows sit at isStreamable=false with
                 // isStreamableCheckedAt=null ("never checked" — the

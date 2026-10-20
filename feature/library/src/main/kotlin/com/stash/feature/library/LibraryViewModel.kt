@@ -420,9 +420,11 @@ class LibraryViewModel @Inject constructor(
             // Worth duplicating — short list, short reach across modules.
             SourceFilter.FLAC -> allTracks.filter { it.isDownloaded && it.fileFormat.lowercase() in LOSSLESS_CODECS }
             // The batch-upgrade worklist: downloaded but still lossy.
+            // A cloud song is the user's own file, never sent to the lossless lookup.
             SourceFilter.NON_FLAC -> allTracks.filter {
-                it.isDownloaded && it.fileFormat.lowercase() !in LOSSLESS_CODECS
+                it.isDownloaded && it.fileFormat.lowercase() !in LOSSLESS_CODECS && it.source != MusicSource.CLOUD
             }
+            SourceFilter.CLOUD -> allTracks.filter { it.source == MusicSource.CLOUD }
             SourceFilter.DOWNLOADED -> allTracks.filter { it.isDownloaded }
             SourceFilter.ONLINE -> allTracks.filter { !it.isDownloaded }
         }
@@ -505,6 +507,7 @@ class LibraryViewModel @Inject constructor(
             // Unfiltered library size for the Shuffle hero (independent of the
             // active source/search filter, which only narrows the visible list).
             librarySongCount = allTracks.size,
+            hasCloudSongs = allTracks.any { it.source == MusicSource.CLOUD },
         )
     }.combine(playerRepository.playerState) { libraryState, playerState ->
         // Overlay the currently-playing track ID so the UI can highlight it.
