@@ -362,6 +362,7 @@ interface PlaylistDao {
                     AND pt.removed_at IS NULL
                     AND (
                         t.is_downloaded = 1
+                        OR t.source = 'CLOUD'
                         OR (:includeStreamable AND (t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL))
                     )
               )
@@ -1004,7 +1005,7 @@ interface PlaylistDao {
                   JOIN tracks t ON pt.track_id = t.id
                   WHERE pt.playlist_id = playlists.id
                     AND pt.removed_at IS NULL
-                    AND t.is_downloaded = 1
+                    AND (t.is_downloaded = 1 OR t.source = 'CLOUD')
               )
           )
         ORDER BY

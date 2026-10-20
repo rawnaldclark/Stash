@@ -44,6 +44,7 @@ fun LibraryTrackRow.toDomain(): Track = Track(
     isStreamableCheckedAt = isStreamableCheckedAt,
     metadataEmbeddedAt = metadataEmbeddedAt,
     lyricsFetchedAt = lyricsFetchedAt,
+    cloudUri = cloudUri,
 )
 
 /**
@@ -88,6 +89,7 @@ fun TrackEntity.toDomain(): Track = Track(
     metadataEmbeddedAt = metadataEmbeddedAt,
     lyricsFetchedAt = lyricsFetchedAt,
     musicVideoType = musicVideoType,
+    cloudUri = cloudUri,
 )
 
 /**
@@ -131,4 +133,5 @@ fun Track.toEntity(): TrackEntity = TrackEntity(
     metadataEmbeddedAt = metadataEmbeddedAt,
     lyricsFetchedAt = lyricsFetchedAt,
     musicVideoType = musicVideoType,
+    cloudUri = cloudUri,
 )

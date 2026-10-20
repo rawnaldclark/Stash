@@ -77,6 +77,17 @@ fun SourceIndicator(
                 )
             }
         }
+        // A song from the user's own cloud storage (OneDrive), streamed until downloaded.
+        if (source == MusicSource.CLOUD) {
+            Box(Modifier.size(size).clip(CircleShape).background(extendedColors.cyan))
+            if (showLabel) {
+                Text(
+                    text = "Cloud",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extendedColors.textTertiary,
+                )
+            }
+        }
     }
 }
 
@@ -93,4 +104,5 @@ internal fun sourceIndicatorLabels(source: MusicSource): List<String> = when (so
     MusicSource.YOUTUBE -> listOf("YouTube")
     MusicSource.BOTH -> listOf("Spotify", "YouTube")
     MusicSource.LOCAL -> listOf("Local")
+    MusicSource.CLOUD -> listOf("Cloud")
 }

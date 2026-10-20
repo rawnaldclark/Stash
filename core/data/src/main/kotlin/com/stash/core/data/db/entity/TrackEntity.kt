@@ -381,4 +381,15 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "flac_no_match_at")
     val flacNoMatchAt: Long? = null,
+
+    /**
+     * v61: a [MusicSource.CLOUD] song's stream address,
+     * `stash-cloud://onedrive/<accountId>/<itemId>?v=<cTag>` (see
+     * `com.stash.core.model.CloudRef`). The scan rewrites it when the file's
+     * cTag changes, so the stream cache key moves with the content. Null for
+     * every other source, and cleared when a downloaded cloud song outlives
+     * its account (it becomes a LOCAL file).
+     */
+    @ColumnInfo(name = "cloud_uri")
+    val cloudUri: String? = null,
 )

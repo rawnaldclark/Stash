@@ -116,6 +116,7 @@ data class LibraryTrackRow(
     @androidx.room.ColumnInfo(name = "is_streamable_checked_at") val isStreamableCheckedAt: Long?,
     @androidx.room.ColumnInfo(name = "metadata_embedded_at") val metadataEmbeddedAt: Long?,
     @androidx.room.ColumnInfo(name = "lyrics_fetched_at") val lyricsFetchedAt: Long?,
+    @androidx.room.ColumnInfo(name = "cloud_uri") val cloudUri: String?,
 )
 
 /**
@@ -302,7 +303,7 @@ private const val LIBRARY_ROW_COLUMNS = """
     t.explicit, t.bits_per_sample, t.sample_rate_hz,
     t.spotify_saved_at, t.ytmusic_saved_at, t.lastfm_loved_at,
     t.stash_liked_at, t.is_streamable, t.is_streamable_checked_at,
-    t.metadata_embedded_at, t.lyrics_fetched_at
+    t.metadata_embedded_at, t.lyrics_fetched_at, t.cloud_uri
 """
 
 /**
@@ -324,7 +325,7 @@ internal const val IN_LIBRARY = """
            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
     )
     AND (
-        (t.is_downloaded = 1 OR t.file_path IS NOT NULL)
+        (t.is_downloaded = 1 OR t.file_path IS NOT NULL OR t.source = 'CLOUD')
         OR (
             t.match_dismissed = 0
             AND EXISTS (
@@ -405,6 +406,8 @@ interface TrackDao {
         AND t.file_path IS NOT NULL
         AND LOWER(t.file_format) != 'flac'
         AND t.match_picked_at IS NULL
+        -- A cloud song's audio is the user's own file: never looked up or replaced online.
+        AND t.source != 'CLOUD'
         AND bl.canonical_key IS NULL
         AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
         ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
@@ -639,7 +642,8 @@ interface TrackDao {
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE bl.canonical_key IS NULL
-          AND t.is_downloaded = 1
+          -- A cloud song is the user's own library even before it's downloaded (spec 2026-10-19).
+          AND (t.is_downloaded = 1 OR t.source = 'CLOUD')
         ORDER BY t.date_added DESC
         """
     )
@@ -684,7 +688,7 @@ interface TrackDao {
     @Query(
         """
         SELECT * FROM tracks t
-        WHERE (is_downloaded = 1 OR :includeNotDownloaded)
+        WHERE (is_downloaded = 1 OR source = 'CLOUD' OR :includeNotDownloaded)
           AND (:libraryOnly = 0 OR (""" + IN_LIBRARY + """))
           AND (artist = :artist
            OR album_artist = :artist
@@ -712,7 +716,7 @@ interface TrackDao {
         SELECT * FROM tracks t
         WHERE album = :album COLLATE NOCASE
           AND album != ''
-          AND (is_downloaded = 1 OR :includeNotDownloaded)
+          AND (is_downloaded = 1 OR source = 'CLOUD' OR :includeNotDownloaded)
           AND (:libraryOnly = 0 OR (""" + IN_LIBRARY + """))
         ORDER BY date_added DESC, id DESC
         """,
@@ -766,6 +770,7 @@ interface TrackDao {
           AND bl.canonical_key IS NULL
           AND (
               t.is_downloaded = 1
+              OR t.source = 'CLOUD'
               OR :includeStreamable
               OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
           )
@@ -803,6 +808,7 @@ interface TrackDao {
           AND bl.canonical_key IS NULL
           AND (
               t.is_downloaded = 1
+              OR t.source = 'CLOUD'
               OR :includeStreamable
               OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
           )
@@ -1896,7 +1902,7 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source NOT IN ('BOTH', 'LOCAL')
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD')
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
@@ -2139,7 +2145,7 @@ interface TrackDao {
                SUM(duration_ms) AS totalDurationMs,
                MAX(album_art_url) AS artUrl
         FROM tracks t
-        WHERE (is_downloaded = 1 OR :includeNotDownloaded)
+        WHERE (is_downloaded = 1 OR source = 'CLOUD' OR :includeNotDownloaded)
           AND (:libraryOnly = 0 OR (""" + IN_LIBRARY + """))
         GROUP BY artist, album_artist
         ORDER BY COUNT(*) DESC, artist ASC, album_artist ASC
@@ -2186,7 +2192,7 @@ interface TrackDao {
                            SELECT artist FROM tracks
                            WHERE album = t.album AND artist != ''
                              AND COALESCE(album_artist, '') = COALESCE(t.album_artist, '')
-                             AND (is_downloaded = 1 OR :includeNotDownloaded)
+                             AND (is_downloaded = 1 OR source = 'CLOUD' OR :includeNotDownloaded)
                              AND (:libraryOnly = 0 OR id IN (""" + IN_LIBRARY_IDS + """))
                            GROUP BY artist
                            ORDER BY COUNT(*) DESC
@@ -2200,7 +2206,7 @@ interface TrackDao {
                MAX(t.album_art_url) AS artUrl
         FROM tracks t
         WHERE t.album != ''
-          AND (t.is_downloaded = 1 OR :includeNotDownloaded)
+          AND (t.is_downloaded = 1 OR t.source = 'CLOUD' OR :includeNotDownloaded)
           AND (:libraryOnly = 0 OR (""" + IN_LIBRARY + """))
         GROUP BY t.album, t.album_artist
         ORDER BY COUNT(*) DESC, t.album ASC

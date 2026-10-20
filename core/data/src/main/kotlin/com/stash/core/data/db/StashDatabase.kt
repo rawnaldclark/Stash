@@ -107,14 +107,19 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ScanFolderEntity::class,
         ScannedSongEntity::class,
         ArtistGenreEntity::class,
+        com.stash.core.data.db.entity.CloudAccountEntity::class,
+        com.stash.core.data.db.entity.CloudFolderEntity::class,
+        com.stash.core.data.db.entity.CloudItemEntity::class,
     ],
-    version = 60,
+    version = 61,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class StashDatabase : RoomDatabase() {
 
     abstract fun trackDao(): TrackDao
+
+    abstract fun cloudDao(): com.stash.core.data.db.dao.CloudDao
 
     abstract fun playlistDao(): PlaylistDao
 
@@ -1605,6 +1610,64 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v60 -> v61: cloud storage libraries (spec 2026-10-19-cloud-storage-design.md, OneDrive
+         * first).
+         *  - `tracks.cloud_uri`: a CLOUD song's `stash-cloud://` stream address. Plain column add;
+         *    every existing row gets NULL (no existing song is a cloud song).
+         *  - `cloud_accounts`, `cloud_folders`, `cloud_items`: new, empty tables. Tokens are not
+         *    here; they live in the encrypted token store.
+         * The `source` column is TEXT, so the new `MusicSource.CLOUD` value needs nothing.
+         */
+        val MIGRATION_60_61 = object : Migration(60, 61) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tracks` ADD COLUMN `cloud_uri` TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_accounts` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `provider` TEXT NOT NULL, " +
+                        "`remote_id` TEXT NOT NULL, `display_name` TEXT NOT NULL, `email` TEXT, " +
+                        "`connected_at` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_cloud_accounts_provider_remote_id` " +
+                        "ON `cloud_accounts` (`provider`, `remote_id`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_folders` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `account_id` INTEGER NOT NULL, " +
+                        "`item_id` TEXT NOT NULL, `name` TEXT NOT NULL, `path` TEXT NOT NULL, " +
+                        "`added_at` INTEGER NOT NULL, `scan_cursor` TEXT, " +
+                        "`cursor_is_delta` INTEGER NOT NULL DEFAULT 0, `full_scan` INTEGER NOT NULL DEFAULT 1, " +
+                        "`scan_generation` INTEGER NOT NULL DEFAULT 0, `last_scan_at` INTEGER, " +
+                        "`last_scan_status` TEXT, `last_scan_error` TEXT, " +
+                        "FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_cloud_folders_account_id_item_id` " +
+                        "ON `cloud_folders` (`account_id`, `item_id`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_items` (" +
+                        "`track_id` INTEGER NOT NULL, `account_id` INTEGER NOT NULL, `folder_id` INTEGER NOT NULL, " +
+                        "`item_id` TEXT NOT NULL, `name` TEXT NOT NULL, `relative_path` TEXT NOT NULL, " +
+                        "`parent_item_id` TEXT, `c_tag` TEXT, `e_tag` TEXT, `size` INTEGER NOT NULL, " +
+                        "`mime_type` TEXT, `seen_generation` INTEGER NOT NULL, `scanned_at` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`track_id`), " +
+                        "FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`account_id`) REFERENCES `cloud_accounts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`folder_id`) REFERENCES `cloud_folders`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_cloud_items_account_id_item_id` " +
+                        "ON `cloud_items` (`account_id`, `item_id`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_cloud_items_folder_id_seen_generation` " +
+                        "ON `cloud_items` (`folder_id`, `seen_generation`)",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1701,6 +1764,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_57_58,
                 MIGRATION_58_59,
                 MIGRATION_59_60,
+                MIGRATION_60_61,
             )
         }
     }

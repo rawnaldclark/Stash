@@ -33,7 +33,9 @@ internal class Converters {
 
     @TypeConverter
     fun stringToMusicSource(value: String?): MusicSource? =
-        value?.let { MusicSource.valueOf(it) }
+        // A value this build doesn't know (a backup from a newer Stash) reads as LOCAL: a song
+        // that only plays what it has, never one sent off to be matched or resolved online.
+        value?.let { v -> MusicSource.entries.firstOrNull { it.name == v } ?: MusicSource.LOCAL }
 
     // ── PlaylistType ─────────────────────────────────────────────────────
 

@@ -122,4 +122,9 @@ data class Track(
      * official audio upload (whose length is the song's) from a music video.
      */
     val musicVideoType: String? = null,
+    /**
+     * Where a [MusicSource.CLOUD] song streams from:
+     * `stash-cloud://onedrive/<accountId>/<itemId>?v=<cTag>`. Null for every other source.
+     */
+    val cloudUri: String? = null,
 )

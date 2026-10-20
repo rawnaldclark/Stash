@@ -259,6 +259,6 @@ class SyncPreferencesManager @Inject constructor(
     fun syncModeFor(source: MusicSource): Flow<SyncMode> = when (source) {
         MusicSource.SPOTIFY -> spotifySyncMode
         MusicSource.YOUTUBE -> youtubeSyncMode
-        MusicSource.LOCAL, MusicSource.BOTH -> spotifySyncMode
+        MusicSource.LOCAL, MusicSource.BOTH, MusicSource.CLOUD -> spotifySyncMode
     }
 }

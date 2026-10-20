@@ -53,7 +53,7 @@ interface ArtistImageDao {
     @Query(
         """
         SELECT DISTINCT artist FROM tracks t
-        WHERE artist != '' AND (is_downloaded = 1 OR :includeNotDownloaded)
+        WHERE artist != '' AND (is_downloaded = 1 OR source = 'CLOUD' OR :includeNotDownloaded)
           AND (:libraryOnly = 0 OR (""" + IN_LIBRARY + """))
         """,
     )

@@ -618,7 +618,7 @@ class SyncViewModel @Inject constructor(
             when (source) {
                 MusicSource.YOUTUBE -> syncPreferencesManager.setYoutubeSyncMode(SyncMode.REFRESH)
                 MusicSource.SPOTIFY -> syncPreferencesManager.setSpotifySyncMode(SyncMode.REFRESH)
-                MusicSource.LOCAL, MusicSource.BOTH -> Unit
+                MusicSource.LOCAL, MusicSource.BOTH, MusicSource.CLOUD -> Unit
             }
         }
         _uiState.update { it.copy(pendingRefreshSource = null) }
