@@ -24,6 +24,9 @@ import com.stash.data.cloud.tags.TagReader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import java.io.IOException
 
 /** Saves cover art bytes and returns where they landed (null when they aren't an image). */
@@ -59,8 +62,21 @@ data class CloudScanResult(val added: Int, val updated: Int, val removed: Int, v
  * a sibling cover/folder/front/album image in the same folder, which may be listed on a later page
  * than the songs, so songs without art wait for it until the pass ends.
  *
- * Network failures propagate (the worker retries the scan later, from the saved cursor); a file
- * whose bytes can't be parsed or that would blow the read budget is filed by its path instead.
+ * Connectivity failures propagate (the worker retries the scan later, from the saved cursor).
+ * Any other trouble with ONE file (bytes that can't be parsed, a read past the budget, a link the
+ * provider won't give or the host keeps refusing) files that song by its path and moves on, with
+ * no content version stored so the next full pass reads it again: one bad file never stalls the
+ * folder.
+ *
+ * **Moves and renames.** A moved or renamed file keeps its id and content version: it is
+ * "unchanged", but its path and parent are refreshed so a later deletion of its old folder can't
+ * reach it. Deletions are applied at the end of the pass, and never to a file the pass listed as
+ * live, whatever order the provider sent them in (Dropbox reports a folder rename as `deleted`
+ * for the old path plus the files at the new one; OneDrive a move, then the old folder's delete).
+ *
+ * **One scan per folder.** The scanner is a singleton and holds a per-folder lock for the whole
+ * scan, so the one-off and periodic workers never scan one folder at once; removing a folder or
+ * account takes the same lock ([withFolderLock]) and so waits for a running scan to stop.
  */
 class CloudScanner(
     private val dao: CloudDao,
@@ -70,8 +86,17 @@ class CloudScanner(
     private val art: ArtSaver,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val folderLocks = ConcurrentHashMap<Long, Mutex>()
+
+    /** Runs [block] while no scan of [folderId] runs (and none starts). */
+    suspend fun <T> withFolderLock(folderId: Long, block: suspend () -> T): T =
+        folderLocks.getOrPut(folderId) { Mutex() }.withLock { block() }
+
     /** Scans folder row [folderId]; returns null when it no longer exists. */
-    suspend fun scan(folderId: Long, onProgress: (processed: Int) -> Unit = {}): CloudScanResult? {
+    suspend fun scan(folderId: Long, onProgress: (processed: Int) -> Unit = {}): CloudScanResult? =
+        withFolderLock(folderId) { scanLocked(folderId, onProgress) }
+
+    private suspend fun scanLocked(folderId: Long, onProgress: (processed: Int) -> Unit): CloudScanResult? {
         var folder = dao.getFolder(folderId) ?: return null
         val account = dao.getAccount(folder.accountId) ?: return null
         val providerKind = CloudProvider.fromId(account.provider) ?: return null
@@ -95,12 +120,14 @@ class CloudScanner(
                 cursor = null
                 continue
             }
+            // Unpicked or disconnected meanwhile: stop before writing rows that point at it.
+            if (dao.getFolder(folder.id) == null) return null
             page.entries.forEach { if (it is ScanEntry.Folder) pass.knownFolders[it.id] = it }
             for (entry in page.entries) {
                 currentCoroutineContext().ensureActive()
                 when (entry) {
                     is ScanEntry.File -> pass.file(entry)
-                    is ScanEntry.Removed -> pass.removed(entry)
+                    is ScanEntry.Removed -> pass.pendingRemovals += entry
                     is ScanEntry.Folder -> Unit
                 }
                 onProgress(pass.processed)
@@ -112,6 +139,7 @@ class CloudScanner(
             cursor = page.cursor
         }
 
+        pass.applyRemovals()
         if (folder.fullScan) {
             pass.removed += dao.removeStale(folder.id, folder.scanGeneration).let { it.deletedTracks + it.keptAsLocal }
             folder = folder.copy(fullScan = false)
@@ -142,6 +170,10 @@ class CloudScanner(
         /** A folder's fetched cover (null = tried and failed), reused for its songs on later pages. */
         private val coverPaths = HashMap<String, String?>()
 
+        /** Audio files this pass listed as present: no deletion may take them. */
+        private val liveIds = HashSet<String>()
+        val pendingRemovals = mutableListOf<ScanEntry.Removed>()
+
         var added = 0
         var updated = 0
         var removed = 0
@@ -157,15 +189,22 @@ class CloudScanner(
                 return
             }
             if (!CloudFiles.isAudio(f.name, f.mimeType)) return
+            liveIds += f.id
 
             val existing = dao.getItem(folder.accountId, f.id)
             if (existing != null && f.version != null && existing.cTag == f.version && dao.getTrack(existing.trackId) != null) {
-                dao.markSeen(existing.trackId, folder.scanGeneration, clock())
+                // Same bytes, maybe a new place (rename / move): the location follows the file.
+                dao.refreshLocation(
+                    trackId = existing.trackId, folderId = folder.id, name = f.name,
+                    relativePath = folders.joinToString("/"), parentItemId = f.parentId,
+                    remotePath = f.remotePath, generation = folder.scanGeneration, now = clock(),
+                )
                 unchanged++
                 return
             }
 
-            val tags = readTags(f)
+            val read = readTags(f)
+            val tags = read ?: AudioTags.EMPTY
             val names = CloudMetadataFallbacks.resolve(tags, f.name, folders)
             val artPath = tags.picture?.let { art.save(it.bytes, it.mimeType) }
             val ref = CloudRef(kind, folder.accountId, f.id, f.version)
@@ -173,7 +212,9 @@ class CloudScanner(
             val kbps = tags.bitrateKbps ?: tags.durationMs?.takeIf { it > 0 }?.let { (f.size * 8 / it).toInt() } ?: 0
             val item = CloudItemEntity(
                 trackId = existing?.trackId ?: 0, accountId = folder.accountId, folderId = folder.id, itemId = f.id,
-                name = f.name, relativePath = folders.joinToString("/"), parentItemId = f.parentId, cTag = f.version,
+                name = f.name, relativePath = folders.joinToString("/"), parentItemId = f.parentId,
+                // No version when the tags couldn't be read: the next full pass tries this file again.
+                cTag = if (read == null) null else f.version,
                 eTag = f.eTag, size = f.size, mimeType = f.mimeType, seenGeneration = folder.scanGeneration,
                 scannedAt = clock(), remotePath = f.remotePath,
             )
@@ -184,7 +225,7 @@ class CloudScanner(
                     qualityKbps = kbps, bitsPerSample = tags.bitsPerSample, sampleRateHz = tags.sampleRateHz,
                     albumArtPath = artPath, cloudUri = ref.toUri(), sizeBytes = f.size,
                 )
-                dao.upsertItem(item)
+                dao.updateItem(item)
                 updated++
                 existing.trackId
             } else {
@@ -206,15 +247,27 @@ class CloudScanner(
             if (artPath == null) needArt.getOrPut(key) { mutableListOf() } += trackId
         }
 
-        suspend fun removed(r: ScanEntry.Removed) {
-            val ids = buildList {
+        /**
+         * Applies this pass's deletions, sparing every file the pass listed as live: a folder
+         * rename or move reports the old location gone while the same files (same ids) appear at
+         * the new one, in either order and on any page.
+         */
+        suspend fun applyRemovals() {
+            if (pendingRemovals.isEmpty()) return
+            val doomed = LinkedHashMap<Long, String>()
+            for (r in pendingRemovals) {
                 r.id?.let { id ->
-                    dao.getItem(folder.accountId, id)?.let { add(it.trackId) }
-                    addAll(dao.trackIdsInParent(folder.accountId, id)) // a deleted folder reports only itself
+                    dao.getItem(folder.accountId, id)?.let { doomed[it.trackId] = it.itemId }
+                    // A deleted OneDrive folder reports only itself, not its files.
+                    dao.itemsInParent(folder.accountId, id).forEach { doomed[it.trackId] = it.itemId }
                 }
-                r.remotePath?.let { addAll(dao.trackIdsUnderPath(folder.id, it.lowercase())) }
-            }.distinct()
+                r.remotePath?.let { path ->
+                    dao.itemsUnderPath(folder.id, path.lowercase()).forEach { doomed[it.trackId] = it.itemId }
+                }
+            }
+            val ids = doomed.filterValues { it !in liveIds }.keys.toList()
             if (ids.isNotEmpty()) dao.removeItems(ids).let { removed += it.deletedTracks + it.keptAsLocal }
+            pendingRemovals.clear()
         }
 
         /** Gives waiting songs the best sibling cover their folder has shown so far. */
@@ -241,18 +294,24 @@ class CloudScanner(
             }
         }
 
-        private suspend fun readTags(f: ScanEntry.File): AudioTags {
+        /**
+         * The file's tags; [AudioTags.EMPTY] when it has none; null when they couldn't be read for
+         * a reason specific to this file (the song is then filed by its path and retried on the
+         * next full pass). Only connectivity and sign-in failures escape: those stop the page.
+         */
+        private suspend fun readTags(f: ScanEntry.File): AudioTags? {
             if (f.size <= 0) return AudioTags.EMPTY
             val reader = CachingRangeReader(f.size) { offset, length -> withLink(f) { url -> ranges.fetch(url, offset, length) } }
             return try {
                 TagReader.read(reader)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: TagReadBudgetExceeded) {
                 AudioTags.EMPTY
-            } catch (e: com.stash.data.cloud.provider.CloudItemNotFoundException) {
-                AudioTags.EMPTY
-            } catch (e: IOException) {
-                // A server that ignores Range for a tail read: file it by its path rather than download it.
-                if (e.message?.startsWith("server ignored Range") == true) AudioTags.EMPTY else throw e
+            } catch (e: Exception) {
+                if (isConnectivityFailure(e)) throw e
+                Log.w(TAG, "tags not read for one file: ${e.javaClass.simpleName}")
+                null
             }
         }
 
@@ -301,6 +360,19 @@ class CloudScanner(
 
     companion object {
         private const val TAG = "CloudScanner"
+
+        /**
+         * Failures that are about the connection or the sign-in, not about one file: the page
+         * stops and the worker retries later from the saved cursor.
+         */
+        internal fun isConnectivityFailure(e: Throwable): Boolean =
+            e is com.stash.data.cloud.provider.CloudAuthRequiredException ||
+                e is java.net.UnknownHostException ||
+                e is java.net.ConnectException ||
+                e is java.net.NoRouteToHostException ||
+                e is java.io.InterruptedIOException || // includes SocketTimeoutException
+                e is javax.net.ssl.SSLException ||
+                e is java.net.SocketException
         private const val MAX_DEPTH = 64
         private const val MAX_COVER_BYTES = 8L * 1024 * 1024
 

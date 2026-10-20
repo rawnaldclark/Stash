@@ -27,6 +27,7 @@ import com.stash.data.cloud.tags.Fixtures.ascii
 import com.stash.data.cloud.tags.Fixtures.flacBlock
 import com.stash.data.cloud.tags.Fixtures.streamInfo
 import com.stash.data.cloud.tags.Fixtures.vorbisComments
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -160,7 +161,7 @@ class CloudScannerTest {
         val bChanged = file("id:b", "b.flac", "r2", flac("B (Remaster)", "X", "Y"), listOf("X", "Y"))
         provider.pages = mutableListOf(
             ScanPage(
-                listOf(a, bChanged, ScanEntry.Removed(null, "/music/x/y/c.flac"), ScanEntry.Removed(null, "/music/x/y/a.flac")),
+                listOf(bChanged, ScanEntry.Removed(null, "/music/x/y/c.flac"), ScanEntry.Removed(null, "/music/x/y/a.flac")),
                 "d2", hasMore = false,
             ),
         )
@@ -168,6 +169,7 @@ class CloudScannerTest {
 
         assertThat(provider.cursorsAsked.last()).isEqualTo("d1")
         assertThat(reads.keys).containsExactly("https://dl/id:b")
+        assertThat(result.unchanged).isEqualTo(0)
         assertThat(result.updated).isEqualTo(1)
         assertThat(result.removed).isEqualTo(2)
         val bRow = db.trackDao().getById(dao.getItem(accountId, "id:b")!!.trackId)!!
@@ -227,9 +229,166 @@ class CloudScannerTest {
         assertThat(tracks()).isEmpty()
     }
 
+    // ── Renames and moves keep the song (and its likes) ──────────────────
+
+    /** One liked song at /Music/Old/a.flac (Dropbox style: paths, no parent ids). */
+    private suspend fun likedSongInOld(): Long {
+        provider.pages = mutableListOf(ScanPage(listOf(file("id:a", "a.flac", "r1", flac("A", "X", "Y"), listOf("Old"))), "d1", false))
+        scanner().scan(folderId)
+        val id = dao.getItem(accountId, "id:a")!!.trackId
+        db.trackDao().getById(id)!!.let { db.trackDao().update(it.copy(stashLikedAt = 42)) }
+        return id
+    }
+
+    private fun movedToNew() = file("id:a", "a.flac", "r1", flac("A", "X", "Y"), listOf("New"))
+
+    private suspend fun assertKeptAt(id: Long, folder: String) {
+        val item = dao.getItem(accountId, "id:a")!!
+        assertThat(item.trackId).isEqualTo(id)
+        assertThat(item.remotePath).isEqualTo("/music/${folder.lowercase()}/a.flac")
+        assertThat(item.relativePath).isEqualTo(folder)
+        assertThat(db.trackDao().getById(id)!!.stashLikedAt).isEqualTo(42L)
+        assertThat(tracks()).hasSize(1)
+    }
+
+    @Test
+    fun `dropbox folder rename, deletion listed first`() = runTest {
+        val id = likedSongInOld()
+        provider.pages = mutableListOf(ScanPage(listOf(ScanEntry.Removed(null, "/music/old"), movedToNew()), "d2", false))
+        assertThat(scanner().scan(folderId)!!.removed).isEqualTo(0)
+        assertKeptAt(id, "New")
+    }
+
+    @Test
+    fun `dropbox folder rename, files listed first`() = runTest {
+        val id = likedSongInOld()
+        provider.pages = mutableListOf(ScanPage(listOf(movedToNew(), ScanEntry.Removed(null, "/music/old")), "d2", false))
+        scanner().scan(folderId)
+        assertKeptAt(id, "New")
+    }
+
+    @Test
+    fun `dropbox folder rename split across pages`() = runTest {
+        val id = likedSongInOld()
+        provider.pages = mutableListOf(
+            ScanPage(listOf(ScanEntry.Removed(null, "/music/old")), "p1", true),
+            ScanPage(listOf(movedToNew()), "d2", false),
+        )
+        scanner().scan(folderId)
+        assertKeptAt(id, "New")
+    }
+
+    @Test
+    fun `dropbox rename in one scan, an unrelated later delete of the old path takes nothing`() = runTest {
+        val id = likedSongInOld()
+        provider.pages = mutableListOf(ScanPage(listOf(movedToNew()), "d2", false))
+        scanner().scan(folderId)
+        provider.pages = mutableListOf(ScanPage(listOf(ScanEntry.Removed(null, "/music/old")), "d3", false))
+        assertThat(scanner().scan(folderId)!!.removed).isEqualTo(0)
+        assertKeptAt(id, "New")
+    }
+
+    private fun oneDriveFile(parent: String, version: String = "c1") =
+        ScanEntry.File("f:1", "x.mp3", 400, version, null, null, parent, listOf(parent.removePrefix("p:")), null)
+            .also { files["https://dl/f:1"] = ByteArray(400) }
+
+    @Test
+    fun `onedrive move then delete of the old folder in a later scan keeps the song`() = runTest {
+        provider.pages = mutableListOf(ScanPage(listOf(oneDriveFile("p:old")), "d1", false))
+        scanner().scan(folderId)
+        val id = dao.getItem(accountId, "f:1")!!.trackId
+
+        provider.pages = mutableListOf(ScanPage(listOf(oneDriveFile("p:new")), "d2", false))
+        scanner().scan(folderId)
+        assertThat(dao.getItem(accountId, "f:1")!!.parentItemId).isEqualTo("p:new")
+
+        provider.pages = mutableListOf(ScanPage(listOf(ScanEntry.Removed("p:old", null)), "d3", false))
+        assertThat(scanner().scan(folderId)!!.removed).isEqualTo(0)
+        assertThat(dao.getItem(accountId, "f:1")!!.trackId).isEqualTo(id)
+    }
+
+    @Test
+    fun `onedrive move and old-folder delete in one page, either order, keep the song`() = runTest {
+        provider.pages = mutableListOf(ScanPage(listOf(oneDriveFile("p:old")), "d1", false))
+        scanner().scan(folderId)
+        val id = dao.getItem(accountId, "f:1")!!.trackId
+
+        provider.pages = mutableListOf(ScanPage(listOf(ScanEntry.Removed("p:old", null), oneDriveFile("p:new")), "d2", false))
+        scanner().scan(folderId)
+        provider.pages = mutableListOf(ScanPage(listOf(oneDriveFile("p:old2"), ScanEntry.Removed("p:new", null)), "d3", false))
+        scanner().scan(folderId)
+
+        assertThat(dao.getItem(accountId, "f:1")!!.trackId).isEqualTo(id)
+        assertThat(dao.getItem(accountId, "f:1")!!.parentItemId).isEqualTo("p:old2")
+    }
+
+    // ── One bad file never stalls the folder ─────────────────────────────
+
+    @Test
+    fun `a file whose link can't be had is filed by its path and the cursor moves on`() = runTest {
+        val good = file("id:g", "01 Good.flac", "r1", flac("Good", "X", "Y"), listOf("Band", "Album"))
+        val bad = ScanEntry.File("id:bad", "02 Broken.mp3", 500, "r1", null, null, null, listOf("Band", "Album"), "/music/band/album/02 broken.mp3")
+        provider.failLinkFor += "id:bad"
+        provider.pages = mutableListOf(ScanPage(listOf(bad, good), "d1", false))
+
+        val result = scanner().scan(folderId)!!
+
+        assertThat(result.added).isEqualTo(2)
+        assertThat(tracks().map { it.title }).containsExactly("Good", "Broken")
+        assertThat(dao.getItem(accountId, "id:bad")!!.cTag).isNull() // read again on the next full pass
+        assertThat(dao.getFolder(folderId)!!.scanCursor).isEqualTo("d1")
+        assertThat(dao.getFolder(folderId)!!.lastScanStatus).isEqualTo(CloudScanStatus.OK.name)
+    }
+
+    @Test
+    fun `a connection failure stops the page without moving the cursor`() = runTest {
+        val f = file("id:n", "n.flac", "r1", flac("N", "X", "Y"), emptyList())
+        provider.pages = mutableListOf(ScanPage(listOf(f), "d1", false))
+        val failing = CloudScanner(
+            dao, mapOf(CloudProvider.DROPBOX to provider), CloudLinkResolver(mapOf(CloudProvider.DROPBOX to provider)),
+            ranges = { _, _, _ -> throw java.net.UnknownHostException("offline") },
+            art = { _, _ -> null },
+        )
+        val thrown = runCatching { failing.scan(folderId) }.exceptionOrNull()
+        assertThat(thrown).isInstanceOf(java.net.UnknownHostException::class.java)
+        assertThat(dao.getFolder(folderId)!!.scanCursor).isNull()
+        assertThat(tracks()).isEmpty()
+    }
+
+    // ── Two scans of one folder never run at once ────────────────────────
+
+    @Test
+    fun `concurrent scans of one folder make one song per file`() = runTest {
+        val a = file("id:a", "a.flac", "r1", flac("A", "X", "Y"), emptyList())
+        val b = file("id:b", "b.flac", "r1", flac("B", "X", "Y"), emptyList())
+        provider.alwaysPage = ScanPage(listOf(a, b), "d1", false)
+        provider.pageDelayMs = 50
+        val s = scanner()
+
+        val one = async { s.scan(folderId) }
+        val two = async { s.scan(folderId) }
+        one.await(); two.await()
+
+        assertThat(tracks()).hasSize(2)
+        assertThat(dao.accountTrackIds(accountId)).hasSize(2)
+        assertThat(db.trackDao().getAllForIntegrityScan().count { it.source == MusicSource.CLOUD }).isEqualTo(2)
+    }
+
+    @Test
+    fun `a scan stops when its folder was removed meanwhile`() = runTest {
+        provider.pages = mutableListOf(ScanPage(listOf(file("id:a", "a.flac", "r1", flac("A", "X", "Y"), emptyList())), "p1", true))
+        provider.onPage = { dao.removeFolder(folderId) }
+        assertThat(scanner().scan(folderId)).isNull()
+        assertThat(tracks()).isEmpty()
+    }
+
     /** Hands out [pages] in order; throws [CursorExpiredException] once when [expireNext]. */
     private inner class ScriptedProvider : CloudStorageProvider {
         var pages = mutableListOf<ScanPage>()
+        var alwaysPage: ScanPage? = null
+        var pageDelayMs = 0L
+        var onPage: suspend () -> Unit = {}
+        val failLinkFor = mutableSetOf<String>()
         var expireNext = false
         val cursorsAsked = mutableListOf<String?>()
         val described = mutableMapOf<String, CloudEntry>()
@@ -244,10 +403,15 @@ class CloudScannerTest {
                 expireNext = false
                 throw CursorExpiredException("reset")
             }
-            return pages.removeAt(0)
+            if (pageDelayMs > 0) kotlinx.coroutines.delay(pageDelayMs)
+            val page = alwaysPage ?: pages.removeAt(0)
+            onPage()
+            return page
         }
         override suspend fun describeFolder(accountId: Long, folderId: String) = described[folderId]
-        override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority) =
-            CloudLink("https://dl/$itemId", files["https://dl/$itemId"]?.size?.toLong() ?: 0, null, 0)
+        override suspend fun link(accountId: Long, itemId: String, priority: RequestPriority): CloudLink {
+            if (itemId in failLinkFor) throw com.stash.data.cloud.provider.CloudApiException(200, "no download link")
+            return CloudLink("https://dl/$itemId", files["https://dl/$itemId"]?.size?.toLong() ?: 0, null, 0)
+        }
     }
 }

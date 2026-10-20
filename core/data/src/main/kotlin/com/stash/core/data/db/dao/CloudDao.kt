@@ -103,8 +103,39 @@ interface CloudDao {
     @Query("SELECT * FROM cloud_items WHERE track_id = :trackId")
     suspend fun getItemForTrack(trackId: Long): CloudItemEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertItem(item: CloudItemEntity)
+    /**
+     * ABORT, never REPLACE: a REPLACE on the (account_id, item_id) index would silently drop
+     * another row for the same file and orphan its track (nothing could remove it after).
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertItem(item: CloudItemEntity)
+
+    @Update
+    suspend fun updateItem(item: CloudItemEntity)
+
+    /**
+     * Where an unchanged file sits now. A rename or move keeps the file's id and content
+     * version, so the scan sees it as unchanged; its path and parent must still follow it, or a
+     * later deletion of its OLD folder (by path or by parent id) would take it along.
+     */
+    @Query(
+        """
+        UPDATE cloud_items SET folder_id = :folderId, name = :name, relative_path = :relativePath,
+            parent_item_id = :parentItemId, remote_path = :remotePath,
+            seen_generation = :generation, scanned_at = :now
+        WHERE track_id = :trackId
+        """,
+    )
+    suspend fun refreshLocation(
+        trackId: Long,
+        folderId: Long,
+        name: String,
+        relativePath: String,
+        parentItemId: String?,
+        remotePath: String?,
+        generation: Long,
+        now: Long,
+    )
 
     /** Marks an unchanged item as seen by this pass, so the pass's stale sweep keeps it. */
     @Query("UPDATE cloud_items SET seen_generation = :generation, scanned_at = :now WHERE track_id = :trackId")
@@ -157,11 +188,16 @@ interface CloudDao {
         sizeBytes: Long,
     )
 
-    /** A new cloud song: its track row and its item row, together or not at all. */
+    /**
+     * A new cloud song: its track row and its item row, together or not at all. If the file
+     * already has a row (another scan of the same folder got there first), nothing is inserted
+     * and that row's track id comes back: one file is never two library songs.
+     */
     @Transaction
     suspend fun insertScanned(track: TrackEntity, item: CloudItemEntity): Long {
+        getItem(item.accountId, item.itemId)?.let { return it.trackId }
         val id = insertTrack(track)
-        upsertItem(item.copy(trackId = id))
+        insertItem(item.copy(trackId = id))
         return id
     }
 
@@ -170,8 +206,8 @@ interface CloudDao {
     suspend fun setArtIfMissing(trackIds: List<Long>, path: String)
 
     /** The songs directly in the cloud folder [parentItemId] (a deleted OneDrive folder reports only itself). */
-    @Query("SELECT track_id FROM cloud_items WHERE account_id = :accountId AND parent_item_id = :parentItemId")
-    suspend fun trackIdsInParent(accountId: Long, parentItemId: String): List<Long>
+    @Query("SELECT * FROM cloud_items WHERE account_id = :accountId AND parent_item_id = :parentItemId")
+    suspend fun itemsInParent(accountId: Long, parentItemId: String): List<CloudItemEntity>
 
     // ── Removal (see the class KDoc) ─────────────────────────────────────
 
@@ -197,12 +233,12 @@ interface CloudDao {
      */
     @Query(
         """
-        SELECT track_id FROM cloud_items
+        SELECT * FROM cloud_items
         WHERE folder_id = :folderId
           AND (remote_path = :path OR substr(remote_path, 1, length(:path) + 1) = :path || '/')
         """,
     )
-    suspend fun trackIdsUnderPath(folderId: Long, path: String): List<Long>
+    suspend fun itemsUnderPath(folderId: Long, path: String): List<CloudItemEntity>
 
     @Query("SELECT track_id FROM cloud_items WHERE account_id = :accountId")
     suspend fun accountTrackIds(accountId: Long): List<Long>

@@ -55,7 +55,7 @@ class CloudDaoTest {
                 cloudUri = "stash-cloud://onedrive/$accountId/$itemId?v=c1",
             ),
         )
-        dao.upsertItem(
+        dao.insertItem(
             CloudItemEntity(
                 trackId = id, accountId = accountId, folderId = folderId, itemId = itemId, name = "$itemId.$format",
                 relativePath = "Artist/Album", parentItemId = "p", cTag = "c1", eTag = "e1", size = 1000,
@@ -100,6 +100,28 @@ class CloudDaoTest {
         assertTrue(dao.getAllFolders().isEmpty())
         assertEquals(0, dao.countItems(accountId))
         assertTrue(dao.accountTrackIds(accountId).isEmpty())
+    }
+
+    @Test fun `inserting a file twice keeps one song (a second scan lost the race)`() = runTest {
+        val item = CloudItemEntity(
+            trackId = 0, accountId = accountId, folderId = folderId, itemId = "dup", name = "d.mp3",
+            relativePath = "", parentItemId = null, cTag = "c", eTag = null, size = 1, mimeType = null,
+            seenGeneration = 1, scannedAt = 1,
+        )
+        val track = TrackEntity(title = "D", artist = "A", source = MusicSource.CLOUD, cloudUri = "stash-cloud://onedrive/$accountId/dup")
+        val first = dao.insertScanned(track, item)
+        val second = dao.insertScanned(track, item)
+        assertEquals(first, second)
+        assertEquals(listOf(first), dao.accountTrackIds(accountId))
+        assertEquals(1, db.trackDao().getAllForIntegrityScan().count { it.source == MusicSource.CLOUD })
+    }
+
+    @Test(expected = android.database.sqlite.SQLiteConstraintException::class)
+    fun `a second row for the same file is refused, never replaced`() = runTest {
+        val id = cloudSong("x")
+        val otherTrack = dao.insertTrack(TrackEntity(title = "Other", artist = "A", source = MusicSource.CLOUD))
+        dao.insertItem(dao.getItem(accountId, "x")!!.copy(trackId = otherTrack))
+        assertEquals(id, dao.getItem(accountId, "x")!!.trackId)
     }
 
     @Test fun `a re-picked folder is ignored, not duplicated`() = runTest {
