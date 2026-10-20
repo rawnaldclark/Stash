@@ -37,6 +37,7 @@ include(":data:spotify")
 include(":data:ytmusic")
 include(":data:download")
 include(":data:lyrics")
+include(":data:cloud")
 
 include(":feature:home")
 include(":feature:library")
