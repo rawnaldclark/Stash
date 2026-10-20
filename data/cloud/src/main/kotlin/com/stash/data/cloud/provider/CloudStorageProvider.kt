@@ -16,7 +16,8 @@ import java.io.IOException
  * [link]. Google Drive has no folder feed under `drive.file`: its [scanPage] walks the files the
  * user picked, and [browse] is empty ([pickedFiles] true).
  *
- * Read-only: no implementation ever writes to the user's storage.
+ * Read-only: no implementation ever writes to the user's storage. (Saving downloads to Google
+ * Drive is separate: [com.stash.data.cloud.upload.DriveUploader], files Stash creates only.)
  */
 interface CloudStorageProvider {
     val provider: CloudProvider
