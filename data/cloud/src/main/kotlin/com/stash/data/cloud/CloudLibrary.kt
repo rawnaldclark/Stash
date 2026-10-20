@@ -141,7 +141,7 @@ class CloudLibrary @Inject constructor(
         val folderIds = dao.getFolders(accountId).map { it.id }
         val removal = withFolderLocks(folderIds) {
             CloudProvider.fromId(account.provider)?.let { tokens.forget(it, accountId) }
-            folderIds.forEach(googlePickStore::clear)
+            for (id in folderIds) googlePickStore.clear(id)
             dao.removeAccount(accountId)
         }
         resumeScans()

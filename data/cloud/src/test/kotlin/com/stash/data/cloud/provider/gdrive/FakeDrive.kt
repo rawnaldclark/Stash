@@ -121,8 +121,8 @@ class MemoryTokenStore : CloudTokenStore {
 
 class InMemoryGooglePickStore : GooglePickStore {
     private val map = HashMap<Long, MutableSet<String>>()
-    @Synchronized override fun pending(folderId: Long): Set<String> = map[folderId]?.toSet().orEmpty()
-    @Synchronized override fun add(folderId: Long, ids: Collection<String>) { map.getOrPut(folderId) { LinkedHashSet() } += ids }
-    @Synchronized override fun remove(folderId: Long, ids: Collection<String>) { map[folderId]?.removeAll(ids.toSet()) }
-    @Synchronized override fun clear(folderId: Long) { map.remove(folderId) }
+    override suspend fun pending(folderId: Long): Set<String> = synchronized(this) { map[folderId]?.toSet().orEmpty() }
+    override suspend fun add(folderId: Long, ids: Collection<String>) = synchronized(this) { map.getOrPut(folderId) { LinkedHashSet() } += ids }
+    override suspend fun remove(folderId: Long, ids: Collection<String>) = synchronized(this) { map[folderId]?.removeAll(ids.toSet()); Unit }
+    override suspend fun clear(folderId: Long) = synchronized(this) { map.remove(folderId); Unit }
 }
