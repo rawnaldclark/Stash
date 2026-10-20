@@ -131,7 +131,7 @@ class ArtistGenreWorkerTest {
         val result = worker().doWork()
 
         assertTrue(result is ListenableWorker.Result.Success)
-        coVerify(exactly = 1) { cacheDao.prune(now - LastFmApiClient.CACHE_TTL_MS) }
+        coVerify(exactly = 1) { cacheDao.prune(now - LastFmApiClient.CACHE_RETENTION_MS) }
     }
 
     // ── Answers ─────────────────────────────────────────────────────

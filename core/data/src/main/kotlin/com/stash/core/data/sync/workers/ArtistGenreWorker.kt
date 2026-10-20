@@ -213,8 +213,9 @@ class ArtistGenreWorker @AssistedInject constructor(
         if (result.isLastFmRateLimited()) return Outcome.RateLimited // also rethrows cancellation
         val error = result.exceptionOrNull()
         if (error is LastFmApiException && error.code in FINAL_NO_DATA_ERRORS) {
-            // Last.fm itself answered that it has nothing: a network answer.
-            return Outcome.Answer(emptyList(), fromNetwork = true)
+            // Last.fm itself answered that it has nothing: a network answer,
+            // unless it is a "not found" the client remembered (LastFmCachedMiss).
+            return Outcome.Answer(emptyList(), fromNetwork = !error.fromCache)
         }
         if (error is IOException) return Outcome.NetworkDown
         return Outcome.ArtistFailure(error)
@@ -277,7 +278,7 @@ class ArtistGenreWorker @AssistedInject constructor(
     /** Best effort, never fails the run (same rules as SyncFinalizeWorker). */
     private suspend fun pruneResponseCache() {
         try {
-            lastFmCacheDao.prune(clock() - LastFmApiClient.CACHE_TTL_MS)
+            lastFmCacheDao.prune(clock() - LastFmApiClient.CACHE_RETENTION_MS)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -88,7 +88,7 @@ class SyncFinalizeWorker @AssistedInject constructor(
             // every backup. Same rules: best effort, never fails the sync.
             try {
                 lastFmCacheDao.prune(
-                    System.currentTimeMillis() - com.stash.core.data.lastfm.LastFmApiClient.CACHE_TTL_MS,
+                    System.currentTimeMillis() - com.stash.core.data.lastfm.LastFmApiClient.CACHE_RETENTION_MS,
                 )
             } catch (e: CancellationException) {
                 throw e

@@ -34,5 +34,7 @@ object LastFmCredentialsModule {
             .filter { it.isNotBlank() },
         // Optional Worker proxy base URL; blank = direct to Last.fm.
         proxyUrl = BuildConfig.LASTFM_PROXY_URL.trim().ifBlank { null },
+        // Sent to the proxy as X-Stash-Version so its traffic can be told apart per build.
+        appVersion = BuildConfig.VERSION_NAME,
     )
 }

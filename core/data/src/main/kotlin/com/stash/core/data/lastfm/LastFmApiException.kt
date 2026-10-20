@@ -14,10 +14,15 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * Extends [IllegalStateException] because that is what `error(...)` threw here
  * before, so any existing catch keeps matching.
+ *
+ * [fromCache] is true when the answer is a "not found" the client remembered
+ * ([LastFmCachedMiss]) rather than one Last.fm just sent: it says nothing
+ * about whether Last.fm is reachable right now.
  */
 class LastFmApiException(
     val code: String,
     message: String,
+    val fromCache: Boolean = false,
 ) : IllegalStateException(message) {
     constructor(errorCode: Int, message: String) : this(errorCode.toString(), message)
 

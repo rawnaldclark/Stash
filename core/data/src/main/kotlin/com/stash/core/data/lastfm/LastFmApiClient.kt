@@ -1,7 +1,10 @@
 package com.stash.core.data.lastfm
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -15,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.math.BigInteger
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -47,6 +51,14 @@ class LastFmApiClient @Inject constructor(
 ) {
     /** Round-robin cursor for spreading reads across [LastFmCredentials.readApiKeys]. */
     private val readKeyCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /**
+     * Network reads in flight, by [lastFmCacheKey]. Two callers asking the
+     * same thing at once (a mix refresh and the art backfill, or two workers
+     * over the same track) share one request instead of sending two: the
+     * proxy log showed identical requests 0.2 s apart.
+     */
+    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<JsonObject>>()
 
     /** Step 1 of web-auth: request a token. User then authorises in browser. */
     suspend fun getAuthToken(): Result<String> = runCatching {
@@ -379,6 +391,8 @@ suspend fun updateNowPlaying(
         artist: String,
         title: String,
         username: String? = null,
+        /** Called when the answer (a success or a remembered miss) came from the local cache. */
+        onCacheHit: () -> Unit = {},
     ): Result<LastFmTrackInfo> = runCatching {
         val params = sortedMapOf(
             "method" to "track.getInfo",
@@ -390,7 +404,7 @@ suspend fun updateNowPlaying(
         if (!username.isNullOrBlank()) params["username"] = username
         // Cacheable only without a username — with one, the response carries
         // that user's personal playcount/loved flags and must stay per-user.
-        val response = unsignedGet(params, cacheable = username.isNullOrBlank())
+        val response = unsignedGet(params, cacheable = username.isNullOrBlank(), onCacheHit = onCacheHit)
         LastFmTrackInfo.parse(response)
     }
 
@@ -617,16 +631,79 @@ suspend fun updateNowPlaying(
 
             // Cache hit comes BEFORE the breaker on purpose: cached generic
             // lookups keep custom mixes working even while the shared key is
-            // throttled. Only fresh (within-TTL) entries are served.
+            // throttled. Only fresh (within-TTL) entries are served. A cached
+            // miss (LastFmCachedMiss) answers "not found" again, with no request.
             if (cacheKey != null) {
                 val cached = cacheDao.get(cacheKey)
-                if (cached != null &&
-                    System.currentTimeMillis() - cached.fetchedAt < CACHE_TTL_MS
+                val root = cached?.let { runCatching { json.parseToJsonElement(it.json).jsonObject }.getOrNull() }
+                if (cached != null && root != null &&
+                    System.currentTimeMillis() - cached.fetchedAt < LastFmCachedMiss.ttlFor(root, CACHE_TTL_MS)
                 ) {
                     onCacheHit()
-                    return@withContext json.parseToJsonElement(cached.json).jsonObject
+                    return@withContext if (LastFmCachedMiss.isMiss(root)) LastFmCachedMiss.replay(root) else root
                 }
             }
+
+            // The network part is shared by identical concurrent reads.
+            if (cacheKey == null) return@withContext fetchUnsigned(params, null, keys)
+            coalesced(cacheKey) { fetchUnsigned(params, cacheKey, keys) }
+        }
+
+    /**
+     * Runs [fetch] once for every concurrent caller with the same [key]: the
+     * first caller sends the request; the rest await its answer (or its
+     * error). A caller whose leader was cancelled (its worker stopped) sends
+     * its own request rather than inheriting the cancellation.
+     */
+    private suspend fun coalesced(key: String, fetch: suspend () -> JsonObject): JsonObject {
+        while (true) {
+            val mine = CompletableDeferred<JsonObject>()
+            val leader = inFlight.putIfAbsent(key, mine)
+            if (leader == null) {
+                try {
+                    return fetch().also { mine.complete(it) }
+                } catch (e: Throwable) {
+                    mine.completeExceptionally(e)
+                    throw e
+                } finally {
+                    inFlight.remove(key, mine)
+                }
+            }
+            try {
+                return leader.await()
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive() // we were cancelled: stop
+                // The leader was cancelled, not us: go again (likely as the leader).
+            }
+        }
+    }
+
+    /** Remembers Last.fm's final "nothing here" for [cacheKey] (see [LastFmCachedMiss]). Best effort. */
+    private suspend fun rememberMiss(cacheKey: String?, body: String) {
+        if (cacheKey == null) return
+        try {
+            cacheDao.upsert(
+                com.stash.core.data.db.entity.LastFmCacheEntity(
+                    cacheKey = cacheKey,
+                    json = body,
+                    fetchedAt = System.currentTimeMillis(),
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A lost miss costs one more request later, never an answer.
+        }
+    }
+
+    /** The network half of [unsignedGet]: proxy first for cacheable reads, then a direct key. */
+    private suspend fun fetchUnsigned(
+        params: Map<String, String>,
+        cacheKey: String?,
+        keys: List<String>,
+    ): JsonObject =
+        withContext(Dispatchers.IO) {
+            val cacheable = cacheKey != null
 
             val now = System.currentTimeMillis()
             val proxyUrl = credentials.proxyUrl
@@ -644,7 +721,13 @@ suspend fun updateNowPlaying(
                 val url = targetBase.toHttpUrl().newBuilder().apply {
                     outgoing.forEach { (k, v) -> addQueryParameter(k, v) }
                 }.build()
-                val request = Request.Builder().url(url).get().build()
+                val request = Request.Builder().url(url).get().apply {
+                    // Lets the proxy's logs attribute traffic to a build. Only the
+                    // owner's proxy sees it; Last.fm direct gets nothing extra.
+                    if (breakerKey == PROXY_BREAKER_KEY) {
+                        credentials.appVersion?.takeIf { it.isNotBlank() }?.let { header(VERSION_HEADER, it) }
+                    }
+                }.build()
                 val (code, body) = okHttpClient.newCall(request).execute().use {
                     it.code to it.body?.string()
                 }
@@ -663,7 +746,11 @@ suspend fun updateNowPlaying(
                         }.getOrNull()
                     }
                     if (apiError != null) {
-                        throw LastFmApiException(apiError, "Last.fm GET failed: HTTP $code (API error $apiError)")
+                        val message = "Last.fm GET failed: HTTP $code (API error $apiError)"
+                        if (LastFmCachedMiss.isFinalError(apiError.toIntOrNull() ?: -1)) {
+                            rememberMiss(cacheKey, LastFmCachedMiss.encodeError(apiError, message))
+                        }
+                        throw LastFmApiException(apiError, message)
                     }
                     throw LastFmHttpException(code, "Last.fm GET failed: HTTP $code")
                 }
@@ -677,12 +764,21 @@ suspend fun updateNowPlaying(
                     val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
                     // error 29 == "Rate Limit Exceeded" → trip this source's breaker.
                     if (err == "29") rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
+                    // A final "not found" is Last.fm's real answer: asking again
+                    // within the miss TTL would only spend another request.
+                    if (LastFmCachedMiss.isFinalError(err.toIntOrNull() ?: -1)) {
+                        rememberMiss(cacheKey, LastFmCachedMiss.encodeError(err, msg))
+                    }
                     throw LastFmApiException(err, "Last.fm API error $err: $msg")
                 }
 
                 // A clean response means this source isn't throttled — close its breaker.
                 rateLimitGate.recordSuccess(breakerKey)
-                if (cacheKey != null) {
+                if (cacheKey != null && LastFmCachedMiss.isEmptyTrackInfo(params, root)) {
+                    // A track.getInfo that names no track: remembered as a miss
+                    // (the longer TTL; it means "nothing to fill" just the same).
+                    rememberMiss(cacheKey, LastFmCachedMiss.encodeEmpty())
+                } else if (cacheKey != null) {
                     cacheDao.upsert(
                         com.stash.core.data.db.entity.LastFmCacheEntity(
                             cacheKey = cacheKey,
@@ -827,6 +923,18 @@ suspend fun updateNowPlaying(
          */
         internal const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
+        /**
+         * How long a cached row is kept before pruning: the longer of the
+         * success TTL and the miss TTL ([LastFmCachedMiss.TTL_MS]). Pruning at
+         * [CACHE_TTL_MS] would delete remembered misses after a week. A success
+         * older than [CACHE_TTL_MS] is still never served; it waits here to be
+         * overwritten or pruned.
+         */
+        internal val CACHE_RETENTION_MS: Long = maxOf(CACHE_TTL_MS, LastFmCachedMiss.TTL_MS)
+
+        /** Request header naming the app build, sent to the Stash proxy only. */
+        internal const val VERSION_HEADER = "X-Stash-Version"
+
         /** Synthetic breaker key for the Worker proxy source (vs. real api keys). */
         private const val PROXY_BREAKER_KEY = "__proxy__"
     }
@@ -876,6 +984,11 @@ data class LastFmCredentials(
      * scrobble and per-user reads always go direct. Blank/null = direct.
      */
     val proxyUrl: String? = null,
+    /**
+     * The app's versionName, sent to the proxy as `X-Stash-Version` so its
+     * traffic can be attributed per build. Null/blank = no header.
+     */
+    val appVersion: String? = null,
 ) {
     val isConfigured: Boolean get() = apiKey.isNotBlank() && apiSecret.isNotBlank()
 
