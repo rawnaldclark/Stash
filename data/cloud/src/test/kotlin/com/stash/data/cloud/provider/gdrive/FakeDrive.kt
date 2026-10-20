@@ -91,11 +91,16 @@ class FakeDrive : Interceptor {
             .body(body.toResponseBody("application/json".toMediaType())).build()
 }
 
-/** Silent re-authorization on demand: hands out [next] (null = Google wants the user). */
+/**
+ * Silent re-authorization on demand: hands out [next] (null = Google wants the user), or throws
+ * [failure] (Play services busy, no network) when set.
+ */
 class FakeAuthorizer(var next: String? = "tok2") : GoogleAuthorizer {
     val silentCalls = mutableListOf<Pair<String?, String?>>()
+    var failure: Exception? = null
     override suspend fun silentToken(accountName: String?, stale: String?): String? {
         silentCalls += accountName to stale
+        failure?.let { throw it }
         return next
     }
     override suspend fun pickerIntent(accountName: String?): IntentSender = error("not in unit tests")

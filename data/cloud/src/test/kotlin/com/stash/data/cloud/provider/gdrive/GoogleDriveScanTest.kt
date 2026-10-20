@@ -18,6 +18,7 @@ import com.stash.data.cloud.net.RequestPriority
 import com.stash.data.cloud.playback.CloudLinkResolver
 import com.stash.data.cloud.provider.CloudAuthRequiredException
 import com.stash.data.cloud.provider.CloudItemNotFoundException
+import com.stash.data.cloud.provider.CloudUnavailableException
 import com.stash.data.cloud.scan.CloudScanner
 import com.stash.data.cloud.tags.Fixtures
 import com.stash.data.cloud.tags.Fixtures.ascii
@@ -221,6 +222,31 @@ class GoogleDriveScanTest {
         assertThrows(CloudAuthRequiredException::class.java) {
             kotlinx.coroutines.runBlocking { provider.link(accountId, "1AAAAAAAAA", RequestPriority.INTERACTIVE) }
         }
+        // The dead sign-in is forgotten, so the account card offers "Reconnect".
+        assertThat(tokens.hasToken(CloudProvider.GOOGLE_DRIVE, accountId)).isFalse()
+    }
+
+    @Test
+    fun `Play services busy or offline is a retry later, never a reconnect`() = runTest {
+        drive.validTokens.clear()
+        authorizer.failure = CloudUnavailableException("Google authorization unavailable (8)")
+
+        assertThrows(CloudUnavailableException::class.java) {
+            kotlinx.coroutines.runBlocking { provider.link(accountId, "1AAAAAAAAA", RequestPriority.INTERACTIVE) }
+        }
+        assertThat(tokens.hasToken(CloudProvider.GOOGLE_DRIVE, accountId)).isTrue()
+    }
+
+    @Test
+    fun `a sign-in hiccup mid-scan pauses the scan instead of filing songs without tags`() = runTest {
+        picks.add(folderId, listOf("1AAAAAAAAA", "1BBBBBBBBB", "1CCCCCCCCC"))
+        drive.validTokens.clear()
+        authorizer.failure = CloudUnavailableException("Google authorization unavailable (15)")
+
+        assertThrows(CloudUnavailableException::class.java) { kotlinx.coroutines.runBlocking { scanner().scan(folderId) } }
+
+        assertThat(dao.folderItemIds(folderId)).isEmpty()
+        assertThat(picks.pending(folderId)).hasSize(3)
     }
 
     @Test

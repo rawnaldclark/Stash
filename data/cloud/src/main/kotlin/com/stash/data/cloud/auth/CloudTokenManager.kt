@@ -40,8 +40,10 @@ class EncryptedCloudTokenStore @Inject constructor(private val store: EncryptedT
  * ([com.stash.data.cloud.provider.gdrive.GoogleDriveAuth]).
  *
  * Dropbox and OneDrive rotate refresh tokens on some refreshes, so every refresh saves the whole
- * result. A refresh the provider refuses ([RefreshRejectedException]) surfaces as
- * [CloudAuthRequiredException]: the account shows "Reconnect" and nothing retries in a loop.
+ * result. A refresh the provider refuses ([RefreshRejectedException]) forgets the dead sign-in
+ * and surfaces as [CloudAuthRequiredException]: the account shows "Reconnect" (Settings reads
+ * [hasToken]) and nothing retries in a loop. A refresh that merely failed (no network, provider
+ * busy) throws its IOException and keeps the sign-in.
  */
 @Singleton
 class CloudTokenManager @Inject constructor(
@@ -76,6 +78,10 @@ class CloudTokenManager @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: RefreshRejectedException) {
+                // Dead for good (revoked, expired, Google wants the user): forget it so the account
+                // card offers "Reconnect" instead of looking signed in while every request fails.
+                store.clear(key)
+                _changes.value++
                 throw CloudAuthRequiredException(accountId, e.message ?: "sign-in expired")
             }
             val token = ServiceToken(

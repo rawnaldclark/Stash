@@ -372,6 +372,7 @@ class CloudScanner(
          */
         internal fun isConnectivityFailure(e: Throwable): Boolean =
             e is com.stash.data.cloud.provider.CloudAuthRequiredException ||
+                e is com.stash.data.cloud.provider.CloudUnavailableException ||
                 e is java.net.UnknownHostException ||
                 e is java.net.ConnectException ||
                 e is java.net.NoRouteToHostException ||

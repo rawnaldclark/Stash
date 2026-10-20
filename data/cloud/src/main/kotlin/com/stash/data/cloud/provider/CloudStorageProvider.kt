@@ -138,6 +138,14 @@ class CursorExpiredException(message: String) : IOException(message)
 /** The account's sign-in is gone (revoked, expired refresh token, never restored): reconnect. */
 class CloudAuthRequiredException(val accountId: Long, message: String) : IOException(message)
 
+/**
+ * The provider (or Google Play services, for Drive's sign-in) can't answer right now: it asked us
+ * to slow down, or failed in a way that clears up by itself. Like a dropped connection, it stops
+ * the scan page (the worker retries later from the saved cursor) and is never read as a problem
+ * with one file or as a sign-in that needs the user.
+ */
+class CloudUnavailableException(message: String) : IOException(message)
+
 /** A provider API error that retrying won't fix ([status] is the HTTP code). */
 class CloudApiException(val status: Int, message: String) : IOException(message)
 

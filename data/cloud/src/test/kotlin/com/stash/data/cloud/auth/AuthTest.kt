@@ -152,6 +152,40 @@ class AuthTest {
         tm.accessToken(CloudProvider.DROPBOX, 3)
     }
 
+    @Test
+    fun `a refused refresh forgets the sign-in so the account card offers Reconnect`() = runTest {
+        val store = MemoryStore()
+        val auth = FakeAuth().apply { reject = true }
+        val tm = CloudTokenManager(store, mapOf(CloudProvider.DROPBOX to auth))
+        tm.nowSeconds = { 1_000_000 }
+        store.map["dropbox_5"] = ServiceToken("t", "r", expiresAtEpoch = 0)
+        val before = tm.changes.value
+
+        runCatching { tm.accessToken(CloudProvider.DROPBOX, 5) }
+
+        assertThat(tm.hasToken(CloudProvider.DROPBOX, 5)).isFalse()
+        assertThat(tm.changes.value).isEqualTo(before + 1)
+    }
+
+    @Test
+    fun `a refresh that merely failed keeps the sign-in`() = runTest {
+        val store = MemoryStore()
+        val failing = object : ProviderAuth by FakeAuth() {
+            override suspend fun refresh(refreshToken: String): TokenResult = throw java.io.IOException("offline")
+            // `by` would hand the two-argument refresh to FakeAuth's own one-argument refresh.
+            override suspend fun refresh(refreshToken: String, staleAccessToken: String?): TokenResult = refresh(refreshToken)
+        }
+        val tm = CloudTokenManager(store, mapOf(CloudProvider.DROPBOX to failing))
+        tm.nowSeconds = { 1_000_000 }
+        store.map["dropbox_6"] = ServiceToken("t", "r", expiresAtEpoch = 0)
+
+        val e = runCatching { tm.accessToken(CloudProvider.DROPBOX, 6) }.exceptionOrNull()
+
+        assertThat(e).isInstanceOf(java.io.IOException::class.java)
+        assertThat(e).isNotInstanceOf(CloudAuthRequiredException::class.java)
+        assertThat(tm.hasToken(CloudProvider.DROPBOX, 6)).isTrue()
+    }
+
     @Test(expected = CloudAuthRequiredException::class)
     fun `no token means not signed in`() = runTest {
         CloudTokenManager(MemoryStore(), emptyMap()).accessToken(CloudProvider.DROPBOX, 9)

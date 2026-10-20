@@ -13,6 +13,8 @@ import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.stash.data.cloud.provider.CloudUnavailableException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.IOException
 import javax.inject.Inject
@@ -37,10 +39,11 @@ sealed interface GooglePickerResult {
 interface GoogleAuthorizer {
     /**
      * A fresh access token for [accountName] without any UI, after clearing [stale] from Play
-     * services' token cache (otherwise the same expired token comes back). Null when Google needs
-     * the user (consent withdrawn, account removed from the phone).
+     * services' token cache (otherwise the same expired token comes back). Null only when Google
+     * needs the user (consent withdrawn, account removed from the phone): see [silentFailureNeedsUser].
      *
-     * @throws IOException for a network failure (retry later, don't ask to reconnect).
+     * @throws CloudUnavailableException for anything else (no network, Play services busy, updating
+     *   or timing out): retry later, don't ask to reconnect.
      */
     suspend fun silentToken(accountName: String?, stale: String?): String?
 
@@ -70,7 +73,15 @@ class PlayServicesGoogleAuthorizer @Inject constructor(
     private val client get() = Identity.getAuthorizationClient(context)
 
     override suspend fun silentToken(accountName: String?, stale: String?): String? {
-        if (stale != null) runCatching { client.clearToken(ClearTokenRequest.builder().setToken(stale).build()).await() }
+        if (stale != null) {
+            try {
+                client.clearToken(ClearTokenRequest.builder().setToken(stale).build()).await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Best effort: at worst the same token comes back and its next 401 asks again.
+            }
+        }
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_FILE_SCOPE)))
             .apply { accountName?.let { setAccount(Account(it, GOOGLE_ACCOUNT_TYPE)) } }
@@ -78,8 +89,9 @@ class PlayServicesGoogleAuthorizer @Inject constructor(
         val result = try {
             client.authorize(request).await()
         } catch (e: ApiException) {
-            if (e.statusCode == CommonStatusCodes.NETWORK_ERROR) throw IOException("Google authorization: network error")
-            return null
+            if (silentFailureNeedsUser(e.statusCode, e.status.hasResolution())) return null
+            // Never the message: only the status code, which says nothing about the account.
+            throw CloudUnavailableException("Google authorization unavailable (${e.statusCode})")
         }
         // A resolution means Google wants to show UI: that's a reconnect, not something to do silently.
         if (result.hasResolution()) return null
@@ -136,6 +148,22 @@ class PlayServicesGoogleAuthorizer @Inject constructor(
                 "application/vnd.google-apps.folder"
     }
 }
+
+/**
+ * True when a silent authorization failed because Google needs the user (the account shows
+ * "Reconnect"): Google offers a resolution (a consent or account screen), says sign-in or a
+ * resolution is required, or the account is no longer on the phone. Every other status
+ * (NETWORK_ERROR, INTERNAL_ERROR, INTERRUPTED, TIMEOUT, API_NOT_CONNECTED, Play services updating
+ * or unavailable, ...) is transient and must not cost the user a sign-in.
+ */
+internal fun silentFailureNeedsUser(statusCode: Int, hasResolution: Boolean): Boolean =
+    hasResolution || statusCode in NEEDS_USER_CODES
+
+private val NEEDS_USER_CODES = setOf(
+    CommonStatusCodes.SIGN_IN_REQUIRED,
+    CommonStatusCodes.RESOLUTION_REQUIRED,
+    CommonStatusCodes.INVALID_ACCOUNT,
+)
 
 /** Awaits a Play services [Task] without blocking (kotlinx-coroutines-play-services isn't a dependency here). */
 internal suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { cont ->
