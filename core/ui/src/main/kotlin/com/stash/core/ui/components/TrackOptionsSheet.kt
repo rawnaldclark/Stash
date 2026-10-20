@@ -229,6 +229,9 @@ fun TrackOptionsSheet(
             )
         }
 
+        // -- Save to Google Drive (only while Drive is connected, only for downloads) --
+        SaveToCloudOption(track, onDismiss)
+
         // -- View Album option --
         if (onViewAlbum != null) {
             SheetOptionRow(

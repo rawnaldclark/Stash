@@ -13,6 +13,12 @@ import com.stash.data.cloud.auth.CloudAuthEvent
 import com.stash.data.cloud.provider.CloudEntry
 import com.stash.data.cloud.provider.gdrive.GoogleDrivePicks
 import com.stash.data.cloud.provider.gdrive.GooglePickOutcome
+import com.stash.data.cloud.upload.CloudUploads
+import com.stash.data.cloud.upload.UploadStatus
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -69,6 +75,7 @@ data class PendingCloudDisconnect(val accountId: Long, val provider: CloudProvid
 @HiltViewModel
 class CloudStorageViewModel @Inject constructor(
     private val cloud: CloudLibrary,
+    private val uploads: CloudUploads,
 ) : ViewModel() {
 
     val available: Boolean = cloud.isAvailable
@@ -82,6 +89,17 @@ class CloudStorageViewModel @Inject constructor(
 
     val folders: StateFlow<List<CloudFolderWithCount>> = cloud.folders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Save to Google Drive: the connected Drive account's backup switch and status line (null
+     * while no Drive account is connected, or in a build without Google Drive).
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val driveUploads: StateFlow<UploadStatus?> = cloud.accounts
+        .map { list -> list.firstOrNull { it.provider == CloudProvider.GOOGLE_DRIVE }?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { id -> if (id == null || !uploads.available) flowOf(null) else uploads.status(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages.asSharedFlow()
@@ -167,6 +185,32 @@ class CloudStorageViewModel @Inject constructor(
                 },
             )
         }
+    }
+
+    // ── Save to Google Drive ─────────────────────────────────────────────
+
+    /** "Back up my downloads to Google Drive" on or off. */
+    fun setDriveBackup(accountId: Long, on: Boolean) {
+        viewModelScope.launch {
+            uploads.setBackup(accountId, on)
+            _messages.tryEmit(
+                if (on) "New downloads will be saved to the Stash folder in your Google Drive."
+                else "Backup is off. Songs already in your Drive stay there.",
+            )
+        }
+    }
+
+    /** "Back up N existing downloads". */
+    fun backUpExistingDownloads() {
+        viewModelScope.launch {
+            val n = uploads.backUpExisting()
+            _messages.tryEmit(if (n == 1) "Saving 1 song to Google Drive." else "Saving $n songs to Google Drive.")
+        }
+    }
+
+    /** "Try again" after Google Drive was full. */
+    fun retryDriveUploads() {
+        viewModelScope.launch { uploads.resume() }
     }
 
     // ── Folder picker ────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import com.stash.core.ui.components.LocalChromeBlurEnabled
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.feature.community.CommunityPostingHost
+import com.stash.feature.settings.cloud.CloudSaveHost
 import com.stash.feature.community.rememberCommunityPosting
 import com.stash.feature.nowplaying.PlayerMessagesToaster
 import com.stash.feature.nowplaying.sheet.CollapseOnNavigation
@@ -292,6 +293,8 @@ fun StashScaffold(
             navController.navigate(CommunityRoute(mine = true)) { if (onSeeAll) popUpTo<CommunityRoute> { inclusive = true } }
         },
     ) {
+    // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
+    CloudSaveHost {
     ProvideAlbumChrome(albumColors) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
@@ -483,6 +486,7 @@ fun StashScaffold(
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
         PlayerQueueSheet(onDismiss = { showQueue = false })
+    }
     }
     }
     }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryAdd
@@ -56,6 +57,9 @@ import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsSectionLabel
+import com.stash.feature.settings.components.SettingsToggleRow
+import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
+import com.stash.data.cloud.upload.UploadStatus
 
 /** Brand accents, as the Discord card does inline. */
 private fun accentOf(provider: CloudProvider): Color = when (provider) {
@@ -98,6 +102,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val pending by viewModel.pendingDisconnect.collectAsStateWithLifecycle()
     val browse by viewModel.browse.collectAsStateWithLifecycle()
+    val driveUploads by viewModel.driveUploads.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val openGooglePicker = rememberGooglePicker(viewModel)
     CloudMessages(viewModel)
@@ -124,10 +129,11 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                     if (viewModel.usesPicker(provider)) {
                         SettingsNavRow(
                             title = "Add songs from Google Drive",
-                            subtitle = "Pick the songs Stash may play and download. It sees only the files you pick, read-only.",
+                            subtitle = "Pick the songs Stash may play and download. It sees only the files you pick and the ones it saves.",
                             leadingIcon = Icons.Rounded.LibraryAdd,
                             onClick = { openGooglePicker(r.account.id) },
                         )
+                        driveUploads?.let { DriveBackupRows(it, r.account.id, viewModel) }
                     } else {
                         SettingsNavRow(
                             title = "Add a music folder",
@@ -156,6 +162,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                             else "",
                         )
                         if (p.kept > 0) append("${p.kept} downloaded songs stay on this phone. ")
+                        if (p.provider == CloudProvider.GOOGLE_DRIVE) append("Songs waiting to be saved to it won't be. ")
                         append("Your files in ${p.provider.displayName} are not touched.")
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -193,7 +200,9 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
     val rows = mutableListOf<@Composable () -> Unit>()
     folders.forEach { folder ->
         val provider = accounts.firstOrNull { it.account.id == folder.accountId }?.account?.provider
-        rows += { CloudFolderRow(folder, provider, onRemove = { confirmRemove = folder.id }) }
+        // "Saved from Stash" isn't a folder the user picked: it can't be removed (it would come back).
+        val removable = folder.itemId != GoogleDriveProvider.UPLOADS_ITEM_ID
+        rows += { CloudFolderRow(folder, provider, onRemove = if (removable) ({ confirmRemove = folder.id }) else null) }
     }
     accounts.filter { it.signedIn }.forEach { row ->
         rows += {
@@ -255,7 +264,7 @@ fun CloudFoldersSection(viewModel: CloudStorageViewModel) {
 }
 
 @Composable
-private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider?, onRemove: () -> Unit) {
+private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider?, onRemove: (() -> Unit)?) {
     val status = when (folder.lastScanStatus) {
         CloudScanStatus.RUNNING.name -> "Scanning… ${folder.trackCount} songs so far"
         CloudScanStatus.ERROR.name, CloudScanStatus.WAITING.name -> folder.lastScanError ?: "The last scan didn't finish"
@@ -282,9 +291,41 @@ private fun CloudFolderRow(folder: CloudFolderWithCount, provider: CloudProvider
                 color = if (folder.lastScanStatus == CloudScanStatus.ERROR.name) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Rounded.RemoveCircleOutline, contentDescription = "Remove folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onRemove != null) {
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Rounded.RemoveCircleOutline, contentDescription = "Remove folder", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+}
+
+/**
+ * The Google Drive card's Save to Drive rows: the backup switch with the upload status under it,
+ * then "Back up N existing downloads" (while backup is on and some are waiting) or "Try again"
+ * (after Drive was full).
+ */
+@Composable
+private fun DriveBackupRows(status: UploadStatus, accountId: Long, viewModel: CloudStorageViewModel) {
+    SettingsToggleRow(
+        title = "Back up my downloads to Google Drive",
+        subtitle = status.line
+            ?: "New downloads are saved to a Stash folder in your Drive, on the network your download setting allows.",
+        checked = status.backupOn,
+        onCheckedChange = { viewModel.setDriveBackup(accountId, it) },
+    )
+    when {
+        status.driveFull -> SettingsNavRow(
+            title = "Try again",
+            subtitle = "Once there's space in your Google Drive.",
+            leadingIcon = Icons.Rounded.Refresh,
+            onClick = viewModel::retryDriveUploads,
+        )
+        status.backupOn && status.existing > 0 -> SettingsNavRow(
+            title = if (status.existing == 1) "Back up 1 existing download" else "Back up ${status.existing} existing downloads",
+            subtitle = "Songs you downloaded before backup was on.",
+            leadingIcon = Icons.Rounded.CloudUpload,
+            onClick = viewModel::backUpExistingDownloads,
+        )
     }
 }
 
