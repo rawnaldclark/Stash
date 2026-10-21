@@ -356,6 +356,8 @@
     <string name="settings_stream_via_youtube_desc">Skip Qobuz and stream everything via YouTube. Turn this on if lossless playback is down or only playing short clips.</string>
     <string name="settings_force_qobuz_debug_title">Force Qobuz only (debug)</string>
     <string name="settings_force_qobuz_debug_desc">Debug builds only. Routes streaming and downloads through Qobuz with no YouTube fallback.</string>
+    <string name="settings_skip_qobuz_debug_title" translatable="false">Test: skip Qobuz (Tidal first)</string>
+    <string name="settings_skip_qobuz_debug_desc" translatable="false">Debug builds only. Streams and downloads try Tidal before anything else.</string>
     <string name="settings_streaming_unavailable">Streaming is unavailable in this build.</string>
     <string name="settings_autoplay_section">Autoplay</string>
     <string name="settings_autoplay_radio_title">Autoplay radio</string>

@@ -65,6 +65,8 @@ import javax.inject.Singleton
  *  - [StreamingPreference.isForceYouTubeFallback]: [resolve] skips Kennyy
  *    and Squid entirely and routes every track through the YouTube resolver
  *    only — reproduces the lossless-down fallback path on demand.
+ *  - [StreamingPreference.isSkipQobuz] (debug builds only): the qbdlx rung is
+ *    left out, so Tidal is asked first — Tidal can be seen serving at all.
  */
 @Singleton
 class StreamSourceRegistry internal constructor(
@@ -242,6 +244,11 @@ class StreamSourceRegistry internal constructor(
         // through the policy on every resolve, so a flip also drops the cached URLs of the
         // other kind. Off: the chain below is exactly what it was before the setting existed.
         val preferTidalAac = qualityPolicy?.preferTidalAac() == true
+        // "Test: skip Qobuz (Tidal first)" — debug builds only ([StreamingPreference.isSkipQobuz]
+        // returns false on a release build whatever is stored). Drops the qbdlx rung so Tidal
+        // gets asked first; everything else in the normal chain is unchanged. The force-qbdlx
+        // toggle outranks it (both on is contradictory; the older instrument wins).
+        val skipQobuz = streamingPreference.isSkipQobuz()
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
             if (streamingPreference.isForceQbdlxOnly()) {
                 // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
@@ -296,7 +303,7 @@ class StreamSourceRegistry internal constructor(
                 // never the speculative background fill.
                 // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
                 // / relay); no build gate.
-                if (allowYtDlp && lossless) {
+                if (allowYtDlp && lossless && !skipQobuz) {
                     add("qbdlx" to qbdlx::resolve)
                 }
                 // Tidal via the user's own BitChord server — the second lossless
@@ -332,6 +339,10 @@ class StreamSourceRegistry internal constructor(
         // gates that can drop a source here are invisible from the outside:
         // `allowYtDlp` (false for speculative background fill) and the Lossless
         // switch. Info level so a release build says so.
+        // Only when it actually shaped the chain (force-qbdlx outranks it).
+        if (skipQobuz && resolvers.none { it.first == "qbdlx" }) {
+            Log.i(TAG, "TEST skip-qobuz on → chain [${resolvers.joinToString(",") { it.first }}]")
+        }
         Log.i(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +

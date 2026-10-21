@@ -54,6 +54,7 @@ fun SettingsPlaybackScreen(
     val streamOnCellular by viewModel.streamOnCellular.collectAsStateWithLifecycle()
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
     val forceQbdlxOnly by viewModel.forceQbdlxOnly.collectAsStateWithLifecycle()
+    val skipQobuz by viewModel.skipQobuz.collectAsStateWithLifecycle()
     // Gates developer instruments out of release builds. Read from the installed
     // app's own flags rather than a module BuildConfig: it is the actual property we
     // care about ("is this a debuggable install"), and it needs no build-file change.
@@ -108,6 +109,16 @@ fun SettingsPlaybackScreen(
                                 subtitle = stringResource(R.string.settings_force_qobuz_debug_desc),
                                 checked = forceQbdlxOnly,
                                 onCheckedChange = viewModel::setForceQbdlxOnly,
+                            )
+                        }
+                        // Same debug-only gate: Qobuz answers almost every track, so this
+                        // is the only way to watch Tidal serve a stream or a download.
+                        add {
+                            SettingsToggleRow(
+                                title = stringResource(R.string.settings_skip_qobuz_debug_title),
+                                subtitle = stringResource(R.string.settings_skip_qobuz_debug_desc),
+                                checked = skipQobuz,
+                                onCheckedChange = viewModel::setSkipQobuz,
                             )
                         }
                     }

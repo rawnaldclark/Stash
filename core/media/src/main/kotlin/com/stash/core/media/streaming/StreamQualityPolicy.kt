@@ -1,5 +1,6 @@
 package com.stash.core.media.streaming
 
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.prefs.StreamingQualityPreferences
@@ -27,6 +28,8 @@ class StreamQualityPolicy @Inject constructor(
     private val prefs: StreamingQualityPreferences,
     private val urlCache: StreamUrlCache,
     private val losslessPrefs: LosslessSourcePreferences,
+    /** For the debug-only "skip Qobuz" test toggle, so flipping it drops cached URLs too. */
+    private val streamingPreference: StreamingPreference,
 ) {
     /** Everything a resolve's quality depends on. A change between resolves means every cached URL is for the wrong quality. */
     private data class Decision(
@@ -34,6 +37,8 @@ class StreamQualityPolicy @Inject constructor(
         val saveData: Boolean,
         val tier: LosslessQualityTier,
         val preferTidalAac: Boolean = false,
+        /** Debug-only "Test: skip Qobuz" — always false on a release build. */
+        val skipQobuz: Boolean = false,
     )
 
     @Volatile private var lastDecision: Decision? = null
@@ -80,6 +85,7 @@ class StreamQualityPolicy @Inject constructor(
             saveData = saveData,
             tier = tier,
             preferTidalAac = prefs.preferTidalAacNow(),
+            skipQobuz = streamingPreference.isSkipQobuz(),
         )
         val previous = lastDecision
         lastDecision = decision

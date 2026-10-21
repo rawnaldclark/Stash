@@ -51,6 +51,7 @@ class StreamingPreference @Inject constructor(
     private val qualityKey = stringPreferencesKey("streaming_quality_tier")
     private val forceYouTubeFallbackKey = booleanPreferencesKey("force_youtube_fallback")
     private val forceQbdlxOnlyKey = booleanPreferencesKey("force_qbdlx_only")
+    private val skipQobuzKey = booleanPreferencesKey("test_skip_qobuz")
     // Retained only so [purgeRetiredKeys] can delete them from existing
     // installs; the sources were removed (antra: fix/remove-antra; amz:
     // Plan C; arcod: chore/remove-arcod). The literal names must stay until
@@ -96,7 +97,20 @@ class StreamingPreference @Inject constructor(
     }
 
     /**
-     * Whether DEVELOPER force toggles (qbdlx) are honored. Defaults to
+     * Test-only toggle ("Test: skip Qobuz (Tidal first)", debug builds only). When `true`,
+     * the streaming chain ([StreamSourceRegistry]) drops the qbdlx rung and the download
+     * chain ([LosslessSourceRegistry]) drops the `qbdlx_qobuz` source, so Tidal is asked
+     * first — Qobuz answers almost every track, so without this nobody can see Tidal serve.
+     * Unlike [forceQbdlxOnly] nothing else is removed: Tidal → JioSaavn → YouTube stays
+     * intact. Raw stored value; consumers read [isSkipQobuz], which is debug-gated.
+     * Default `false`.
+     */
+    val skipQobuz: Flow<Boolean> = context.streamingDataStore.data.map { prefs ->
+        prefs[skipQobuzKey] ?: false
+    }
+
+    /**
+     * Whether DEVELOPER force toggles (force-qbdlx, skip-Qobuz) are honored. Defaults to
      * the installed app's debuggable flag — the same source of truth the Settings
      * screen uses to decide whether to SHOW those rows, so visibility and effect
      * can never disagree again.
@@ -140,6 +154,9 @@ class StreamingPreference @Inject constructor(
 
     suspend fun isForceQbdlxOnly(): Boolean = devForceToggle(forceQbdlxOnly, "force_qbdlx_only")
 
+    /** [skipQobuz], honored only on debuggable builds (see [devInstrumentsEnabled]). */
+    suspend fun isSkipQobuz(): Boolean = devForceToggle(skipQobuz, "test_skip_qobuz")
+
     suspend fun setEnabled(value: Boolean) {
         context.streamingDataStore.edit { it[enabledKey] = value }
     }
@@ -154,6 +171,10 @@ class StreamingPreference @Inject constructor(
 
     suspend fun setForceQbdlxOnly(value: Boolean) {
         context.streamingDataStore.edit { it[forceQbdlxOnlyKey] = value }
+    }
+
+    suspend fun setSkipQobuz(value: Boolean) {
+        context.streamingDataStore.edit { it[skipQobuzKey] = value }
     }
 
     suspend fun setStreamQuality(tier: StreamQualityTier) {

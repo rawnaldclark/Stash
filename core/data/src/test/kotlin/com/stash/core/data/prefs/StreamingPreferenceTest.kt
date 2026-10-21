@@ -122,6 +122,26 @@ class StreamingPreferenceTest {
         assertFalse(prefs.isForceQbdlxOnly())
     }
 
+    @Test fun skipQobuz_defaultsOff_andIsIgnoredOnNonDebuggableBuilds() = runTest {
+        prefs.devInstrumentsEnabled = true
+        assertFalse(prefs.isSkipQobuz())             // default OFF
+
+        prefs.devInstrumentsEnabled = false          // a release install
+        prefs.setSkipQobuz(true)
+        assertFalse(prefs.isSkipQobuz())
+        assertTrue(prefs.skipQobuz.first())          // stored, just not honored
+
+        prefs.setSkipQobuz(false)
+    }
+
+    @Test fun skipQobuz_honoredOnDebuggableBuilds() = runTest {
+        prefs.devInstrumentsEnabled = true
+        prefs.setSkipQobuz(true)
+        assertTrue(prefs.isSkipQobuz())
+        prefs.setSkipQobuz(false)
+        assertFalse(prefs.isSkipQobuz())
+    }
+
     @Test fun forceYouTubeFallback_staysHonoredRegardlessOfBuildType() = runTest {
         // "Stream via YouTube" is a visible user setting, not a dev instrument:
         // the user can always see and clear it, and its failure mode is safe.

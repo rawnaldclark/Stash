@@ -37,6 +37,7 @@ class StreamSourceRegistryTest {
     private val streamingPreference: StreamingPreference = mockk {
         // Default: no test toggle on. Individual tests override as needed.
         coEvery { isForceQbdlxOnly() } returns false
+        coEvery { isSkipQobuz() } returns false
     }
 
     private val losslessPrefs: LosslessSourcePreferences = mockk {
@@ -669,5 +670,78 @@ class StreamSourceRegistryTest {
         assertThat(outcome.exceptionOrNull()).isNull()
         assertThat(outcome.getOrNull()).isNull()
         assertThat(log.recentResolves().single().servedBy).isEqualTo("none (timed out)")
+    }
+
+    // -- Debug-only "Test: skip Qobuz (Tidal first)" --
+    // The debug gate itself lives in StreamingPreference.isSkipQobuz (StreamingPreferenceTest);
+    // here the registry sees the gated answer.
+
+    @Test
+    fun `skip-Qobuz on drops qbdlx and Tidal serves first`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { streamingPreference.isSkipQobuz() } returns true
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryWithTidal(tidal).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `skip-Qobuz on keeps the lossy fallbacks after a Tidal miss`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { streamingPreference.isSkipQobuz() } returns true
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolve(any()) } returns null
+        }
+
+        val result = registryWithTidal(tidal).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("youtube")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify { tidal.resolve(any()) }
+        coVerify { jiosaavn.resolve(any()) }
+    }
+
+    @Test
+    fun `skip-Qobuz on keeps prefer Tidal AAC ahead of Tidal FLAC`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { streamingPreference.isSkipQobuz() } returns true
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveAacOnly(any()) } returns null
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryPreferringAac(tidal, prefer = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        coVerifyOrder {
+            tidal.resolveAacOnly(any())
+            tidal.resolve(any())
+        }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `skip-Qobuz off (or a release build, where it reads false) keeps Qobuz first`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { streamingPreference.isSkipQobuz() } returns false
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryWithTidal(tidal).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("qbdlx")
+        coVerify(exactly = 0) { tidal.resolve(any()) }
     }
 }

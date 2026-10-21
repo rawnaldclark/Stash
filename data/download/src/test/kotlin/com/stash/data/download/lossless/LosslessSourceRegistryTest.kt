@@ -21,6 +21,7 @@ class LosslessSourceRegistryTest {
         mockk {
             // Normal use: all force-only toggles off so the full chain is consulted.
             coEvery { isForceQbdlxOnly() } returns false
+            coEvery { isSkipQobuz() } returns false
         }
 
     private val query = TrackQuery(artist = "A", title = "B")
@@ -196,5 +197,39 @@ class LosslessSourceRegistryTest {
 
         assertThat(thrown).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
         coVerify(exactly = 0) { next.resolve(any(), any()) } // the chain stops; no lossy fallthrough
+    }
+
+    @Test
+    fun `debug skip-Qobuz sends a download to Tidal and never asks Qobuz`() = runTest {
+        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+        coEvery { streamingPreference.isSkipQobuz() } returns true
+
+        val tidalResult = flacResult("tidal_bitchord")
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val tidal = fakeSource("tidal_bitchord", tidalResult)
+
+        val result = registry(linkedSetOf(qbdlx, tidal)).resolve(query)
+
+        assertThat(result).isEqualTo(tidalResult)
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify(exactly = 1) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `skip-Qobuz off keeps Qobuz ahead of Tidal for downloads`() = runTest {
+        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+
+        val qbdlxResult = flacResult("qbdlx_qobuz")
+        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+
+        val result = registry(linkedSetOf(tidal, qbdlx)).resolve(query)
+
+        assertThat(result).isEqualTo(qbdlxResult)
+        coVerify(exactly = 0) { tidal.resolve(any()) }
     }
 }

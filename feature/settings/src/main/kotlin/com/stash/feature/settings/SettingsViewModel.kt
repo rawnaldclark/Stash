@@ -371,6 +371,19 @@ class SettingsViewModel @Inject constructor(
         streamingPreference.setForceQbdlxOnly(v)
     }
 
+    /** Debug-only "Test: skip Qobuz (Tidal first)" — raw stored value for the debug row. */
+    val skipQobuz: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        streamingPreference.skipQobuz.stateIn(
+            scope = viewModelScope,
+            started = kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            initialValue = false,
+        )
+
+    /** Persist the skip-Qobuz test toggle flip (honored only on debuggable builds). */
+    fun setSkipQobuz(v: Boolean) = viewModelScope.launch {
+        streamingPreference.setSkipQobuz(v)
+    }
+
     /** Crossfade on/off — drives the Playback section toggle. Off by default. */
     /** Autoplay radio: seed a song radio when the last queued track starts. Off by default. */
     val autoplayRadioEnabled: kotlinx.coroutines.flow.StateFlow<Boolean> =

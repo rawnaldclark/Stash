@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.prefs.StreamingQualityPreferences
@@ -16,7 +17,10 @@ class StreamQualityPolicyTest {
     private val prefs = mockk<StreamingQualityPreferences>()
     private val cache = StreamUrlCache()
     private val losslessPrefs = mockk<LosslessSourcePreferences>()
-    private val policy = StreamQualityPolicy(connectivity, prefs, cache, losslessPrefs)
+    private val streamingPreference = mockk<StreamingPreference> {
+        coEvery { isSkipQobuz() } returns false
+    }
+    private val policy = StreamQualityPolicy(connectivity, prefs, cache, losslessPrefs, streamingPreference)
 
     private fun setup(
         cellular: Boolean,
@@ -125,6 +129,17 @@ class StreamQualityPolicyTest {
         cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
 
         coEvery { prefs.preferTidalAacNow() } returns true
+        policy.preferTidalAac()                      // what the registry asks at each resolve
+        assertThat(cache.get(1L)).isNull()
+    }
+
+    /** The debug "skip Qobuz" toggle changes which rung serves, so a flip must drop cached Qobuz URLs. */
+    @Test fun `flipping the debug skip-Qobuz toggle drops the cached URLs`() = runTest {
+        setup(cellular = false)
+        policy.preferTidalAac()
+        cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
+
+        coEvery { streamingPreference.isSkipQobuz() } returns true
         policy.preferTidalAac()                      // what the registry asks at each resolve
         assertThat(cache.get(1L)).isNull()
     }

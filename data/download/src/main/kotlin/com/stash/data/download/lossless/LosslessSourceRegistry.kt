@@ -101,13 +101,23 @@ class LosslessSourceRegistry @Inject constructor(
         // healthy. A miss falls through to a normal null return (no quota to
         // protect).
         if (streamingPreference.isForceQbdlxOnly()) {
-            orderedSources().filter { it.id == "qbdlx_qobuz" }
+            orderedSources().filter { it.id == QBDLX_SOURCE_ID }
         } else {
             // Normal chain skips parked (host-down) sources. qbdlx self-gates on
             // LosslessAvailability. The force toggle above bypasses the filter so
             // a manual test can still reach a source on demand, and
             // orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
+            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }.let { normal ->
+                // "Test: skip Qobuz (Tidal first)" — debug builds only (the accessor is
+                // gated). Leaves out the Qobuz source so a download goes to Tidal.
+                if (streamingPreference.isSkipQobuz()) {
+                    normal.filterNot { it.id == QBDLX_SOURCE_ID }.also { chain ->
+                        Log.i(TAG, "TEST skip-qobuz on → chain [${chain.joinToString(",") { it.id }}]")
+                    }
+                } else {
+                    normal
+                }
+            }
         }
 
     /**
@@ -154,6 +164,9 @@ class LosslessSourceRegistry @Inject constructor(
 
     companion object {
         private const val TAG = "LosslessRegistry"
+
+        /** [com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource.SOURCE_ID]. */
+        private const val QBDLX_SOURCE_ID = "qbdlx_qobuz"
 
         /**
          * Lossless sources parked out of the NORMAL resolve chain because their
