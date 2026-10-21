@@ -43,7 +43,7 @@ import com.stash.core.ui.components.bottomChromePadding
  * "spoke" screens (built in later tasks) via the `onOpen*` callbacks.
  *
  * Pure host: it owns no navigation itself — the caller wires every `onOpen*`,
- * [onDonate], [onDonatePayPal], [onDonateCoDev], and [onStar]. It shares the existing [SettingsViewModel] so the
+ * [onOpenUrl] and [onStar]. It shares the existing [SettingsViewModel] so the
  * subtitles reflect live playback/quality/account/library/appearance/version
  * state.
  */
@@ -55,9 +55,7 @@ fun SettingsHubScreen(
     onOpenLibraryStorage: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
-    onDonate: () -> Unit,
-    onDonatePayPal: () -> Unit,
-    onDonateCoDev: () -> Unit,
+    onOpenUrl: (String) -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -161,7 +159,7 @@ fun SettingsHubScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // No "Settings" title: the tab bar already says where you are.
-        SupportBanner(onDonate = onDonate, onDonatePayPal = onDonatePayPal, onDonateCoDev = onDonateCoDev, onStar = onStar)
+        SupportBanner(onOpenUrl = onOpenUrl, onStar = onStar)
         SettingsSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },

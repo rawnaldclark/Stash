@@ -332,9 +332,7 @@ private fun StashNavGraph(
                 onOpenLibraryStorage = { navController.navigate(SettingsLibraryStorageRoute) },
                 onOpenAppearance = { navController.navigate(SettingsAppearanceRoute) },
                 onOpenAbout = { navController.navigate(SettingsAboutRoute) },
-                onDonate = { runCatching { uriHandler.openUri("https://ko-fi.com/rawnald") } },
-                onDonatePayPal = { runCatching { uriHandler.openUri("https://www.paypal.me/rawnaldclark") } },
-                onDonateCoDev = { runCatching { uriHandler.openUri("https://www.paypal.com/paypalme/Paraliyzedevo") } },
+                onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
                 onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }

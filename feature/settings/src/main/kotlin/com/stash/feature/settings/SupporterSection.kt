@@ -45,7 +45,7 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
 
 /** The Ko-fi page the supporter copy points at (the same one Home and About open). */
-private const val KOFI_URL = "https://ko-fi.com/rawnald"
+private const val KOFI_URL = com.stash.feature.settings.components.DonateLinks.KOFI
 
 /**
  * Under the "Lossless today" line: "Unlimited lossless for supporters" (opens the claim sheet)
