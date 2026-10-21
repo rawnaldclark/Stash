@@ -50,6 +50,7 @@ fun SettingsPlaybackScreen(
     lyricsViewModel: LyricsSettingsViewModel = hiltViewModel(),
 ) {
     val lyricsSourcePreference by lyricsViewModel.sourcePreference.collectAsStateWithLifecycle()
+    val lyricsRecheckState by lyricsViewModel.recheckState.collectAsStateWithLifecycle()
     val streamingEnabled by viewModel.streamingEnabled.collectAsStateWithLifecycle()
     val streamOnCellular by viewModel.streamOnCellular.collectAsStateWithLifecycle()
     val forceYouTubeFallback by viewModel.forceYouTubeFallback.collectAsStateWithLifecycle()
@@ -191,6 +192,19 @@ fun SettingsPlaybackScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = 8.dp),
         )
+        // The one way to walk the whole library for word-synced lyrics: user-started, never
+        // automatic. Hidden under LRC-only, where there is nothing word-synced to look for.
+        if (lyricsSourcePreference != LyricsSourcePreference.LRC_ONLY) {
+            SettingsGroupCard(
+                rows = listOf {
+                    LyricsRecheckRow(
+                        state = lyricsRecheckState,
+                        onStart = lyricsViewModel::startRecheck,
+                        onCancel = lyricsViewModel::cancelRecheck,
+                    )
+                },
+            )
+        }
     }
 }
 

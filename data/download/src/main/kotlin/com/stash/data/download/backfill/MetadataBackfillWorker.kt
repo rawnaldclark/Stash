@@ -10,7 +10,6 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.MetadataEmbedder
-import com.stash.data.download.lyrics.LyricsUpgradeTrigger
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -80,7 +79,6 @@ class MetadataBackfillWorker @AssistedInject constructor(
     private val metadataEmbedder: MetadataEmbedder,
     private val albumArtCache: AlbumArtCache,
     private val backfillState: MetadataBackfillState,
-    private val lyricsUpgradeTrigger: LyricsUpgradeTrigger,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -102,9 +100,8 @@ class MetadataBackfillWorker @AssistedInject constructor(
         }
 
         backfillState.markFinished()
-        // Retag is the natural "library maintenance" moment: chain the word-synced lyrics upgrade
-        // (separate worker, unmetered + battery-not-low, own pacing, idempotent).
-        lyricsUpgradeTrigger.enqueueTtmlUpgrade()
+        // No lyrics upgrade is chained here any more: that walked the whole library unasked. The
+        // user starts one from Settings → Playback → Lyrics → "Re-check library" when they want it.
         return Result.success()
     }
 

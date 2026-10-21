@@ -7,11 +7,8 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.MetadataEmbedder
-import com.stash.data.download.lyrics.LyricsUpgradeTrigger
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.coVerifyOrder
-import io.mockk.verify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
@@ -49,7 +46,6 @@ class MetadataBackfillWorkerTest {
     private val metadataEmbedder: MetadataEmbedder = mockk(relaxed = true)
     private val albumArtCache: AlbumArtCache = mockk(relaxed = true)
     private val backfillState: MetadataBackfillState = mockk(relaxUnitFun = true)
-    private val lyricsUpgradeTrigger: LyricsUpgradeTrigger = mockk(relaxUnitFun = true)
 
     private val tempFiles = mutableListOf<File>()
 
@@ -66,7 +62,6 @@ class MetadataBackfillWorkerTest {
         metadataEmbedder = metadataEmbedder,
         albumArtCache = albumArtCache,
         backfillState = backfillState,
-        lyricsUpgradeTrigger = lyricsUpgradeTrigger,
     )
 
     private fun newTempAudio(): File =
@@ -96,35 +91,6 @@ class MetadataBackfillWorkerTest {
         coVerify { backfillState.markFinished() }
         coVerify(exactly = 0) { trackDao.setMetadataEmbeddedAt(any(), any()) }
         coVerify(exactly = 0) { metadataEmbedder.embedMetadata(any(), any(), any()) }
-    }
-
-    @Test
-    fun `chains into the lyrics upgrade once the pass has finished`() = runTest {
-        every { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(0)
-        coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returns emptyList()
-
-        buildSubject().doWork()
-
-        coVerifyOrder {
-            backfillState.markFinished()
-            lyricsUpgradeTrigger.enqueueTtmlUpgrade()
-        }
-    }
-
-    @Test
-    fun `lyrics upgrade is kicked exactly once per pass, not per row`() = runTest {
-        val rows = listOf(
-            stubEntity(id = 1, filePath = newTempAudio().absolutePath),
-            stubEntity(id = 2, filePath = newTempAudio().absolutePath),
-        )
-        every { trackDao.observeTracksNeedingEmbedCount() } returns flowOf(2)
-        coEvery { trackDao.getTracksNeedingEmbed(any(), any()) } returnsMany listOf(rows, emptyList())
-        coEvery { albumArtCache.resolveArt(any()) } returns null
-        coEvery { metadataEmbedder.embedMetadata(any(), any(), any()) } answers { firstArg() }
-
-        buildSubject().doWork()
-
-        verify(exactly = 1) { lyricsUpgradeTrigger.enqueueTtmlUpgrade() }
     }
 
     @Test

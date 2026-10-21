@@ -43,14 +43,22 @@ enum class TtmlUpgradeResult { UPGRADED, NO_TTML, FAILED, RATE_LIMITED, SKIPPED,
 
 /**
  * Which word-synced sources [LyricsRepository.upgradeToTtml] asks.
- * - [APPLE]: Apple only. The library-wide upgrade pass: it never fans out to the on-demand sources.
+ * - [APPLE]: Apple only. Library Health's "Fetch lyrics" upgrade pass: it never fans out to the
+ *   on-demand sources.
  * - [APPLE_THEN_ON_DEMAND]: Apple, then the [LyricsSource.onDemandOnly] sources. The Now Playing
- *   "word-synced lyrics" action for the playing track.
+ *   "word-synced lyrics" action for the playing track, and the user's "Re-check library" sweep
+ *   ([LyricsRepository.recheckTrack]) for a track Apple never answered.
  * - [ON_DEMAND]: only the on-demand sources. The one follow-up after a played/downloaded track's
- *   lyrics were first stored without word timing; a miss stamps nothing (Apple's own check stays
- *   the library pass's business).
+ *   lyrics were first stored without word timing, and the re-check sweep for a track Apple already
+ *   cleanly missed; a miss stamps nothing (Apple's own check stays the Apple passes' business).
  */
 enum class TtmlUpgradeSources { APPLE, APPLE_THEN_ON_DEMAND, ON_DEMAND }
+
+/**
+ * One "Re-check library" sweep, as [LyricsRepository.recheckPlan] sees it: the tracks still to ask,
+ * newest first, and how many the whole sweep covers (so progress counts on across a resume).
+ */
+class RecheckPlan(val remaining: List<Long>, val total: Int)
 
 /** Outcome of [LyricsRepository.fetchLyricsNow] (manual "fetch lyrics" run). */
 enum class ManualFetchResult { FETCHED, NOT_FOUND, FAILED, SKIPPED }
@@ -335,6 +343,41 @@ class LyricsRepository @Inject constructor(
         // ponytail: one resume point, not per-track state. Stable sort keeps id order in each half.
         return lyricsDao.trackIdsPendingTtml().sortedDescending().sortedBy { it >= after }
     }
+
+    /**
+     * The user's "Re-check library" sweep (Settings → Playback → Lyrics): every stored row still
+     * without word timing, newest first, below the track the sweep last finished. Unlike
+     * [trackIdsPendingTtml] it keeps rows Apple already checked, because the on-demand sources
+     * (lrc.red, Binimum) were never asked for them. Empty under LRC-only.
+     */
+    suspend fun recheckPlan(): RecheckPlan {
+        if (lyricsPreference.sourcePreference.first() == LyricsSourcePreference.LRC_ONLY) return RecheckPlan(emptyList(), 0)
+        val all = lyricsDao.trackIdsWithoutTtml()   // newest first
+        val below = lyricsPreference.recheckCursor.first().takeIf { it > 0L } ?: Long.MAX_VALUE
+        return RecheckPlan(remaining = all.filter { it < below }, total = all.size)
+    }
+
+    /**
+     * One track of the re-check sweep. Apple is asked only if it never answered for this track (a
+     * clean miss there is kept by `ttml_checked_at`); the on-demand sources are asked either way,
+     * under their shared skip window. The cursor moves past the track once it was really asked: a
+     * 429 or an open skip window (RATE_LIMITED / PAUSED) leaves it first in line for the next run.
+     */
+    suspend fun recheckTrack(trackId: Long): TtmlUpgradeResult {
+        val appleChecked = lyricsDao.get(trackId)?.ttmlCheckedAt != null
+        val result = upgradeToTtml(
+            trackId,
+            moveCursor = false,
+            sources = if (appleChecked) TtmlUpgradeSources.ON_DEMAND else TtmlUpgradeSources.APPLE_THEN_ON_DEMAND,
+        )
+        if (result != TtmlUpgradeResult.RATE_LIMITED && result != TtmlUpgradeResult.PAUSED) {
+            lyricsPreference.setRecheckCursor(trackId)
+        }
+        return result
+    }
+
+    /** The sweep reached the end: stamp "last checked" and start the next one from the top. */
+    suspend fun finishRecheck() = lyricsPreference.finishRecheck(clock.now())
 
     /**
      * Downloaded tracks that have no lyrics (never tried, or an earlier all-source miss), starting

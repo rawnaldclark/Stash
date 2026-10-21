@@ -43,6 +43,13 @@ interface LyricsDao {
     @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 AND ttml_checked_at IS NULL ORDER BY track_id")
     suspend fun trackIdsPendingTtml(): List<Long>
 
+    /**
+     * Every row still without word timing (real lyrics, no TTML), checked or not, newest first: the
+     * user's "Re-check library" sweep, which also asks the sources added since Apple last said no.
+     */
+    @Query("SELECT track_id FROM lyrics WHERE ttml IS NULL AND instrumental = 0 ORDER BY track_id DESC")
+    suspend fun trackIdsWithoutTtml(): List<Long>
+
     @Query("UPDATE lyrics SET ttml_checked_at = :at WHERE track_id = :trackId")
     suspend fun markTtmlChecked(trackId: Long, at: Long)
 

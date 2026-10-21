@@ -55,6 +55,8 @@ class LyricsPreference @Inject constructor(
     private val sourceKey = stringPreferencesKey("lyrics_source_preference")
     private val bulkFetchCursorKey = longPreferencesKey("bulk_fetch_cursor")
     private val ttmlUpgradeCursorKey = longPreferencesKey("ttml_upgrade_cursor")
+    private val recheckCursorKey = longPreferencesKey("library_recheck_cursor")
+    private val recheckFinishedAtKey = longPreferencesKey("library_recheck_finished_at")
 
     val liveBarEnabled: Flow<Boolean> = context.lyricsDataStore.data.map { prefs ->
         prefs[liveBarKey] ?: false
@@ -110,5 +112,26 @@ class LyricsPreference @Inject constructor(
 
     suspend fun setTtmlUpgradeCursor(trackId: Long) {
         context.lyricsDataStore.edit { it[ttmlUpgradeCursorKey] = trackId }
+    }
+
+    /**
+     * The "Re-check library" sweep's resume point: the last track id it finished. The sweep runs
+     * newest (highest id) first, so the next run carries on below it. 0 = no sweep under way.
+     */
+    val recheckCursor: Flow<Long> = context.lyricsDataStore.data.map { it[recheckCursorKey] ?: 0L }
+
+    suspend fun setRecheckCursor(trackId: Long) {
+        context.lyricsDataStore.edit { it[recheckCursorKey] = trackId }
+    }
+
+    /** When the last "Re-check library" sweep reached the end (epoch ms), null if none ever has. */
+    val recheckFinishedAt: Flow<Long?> = context.lyricsDataStore.data.map { it[recheckFinishedAtKey] }
+
+    /** Ends a sweep: the next one starts again from the newest track. */
+    suspend fun finishRecheck(atMs: Long) {
+        context.lyricsDataStore.edit {
+            it.remove(recheckCursorKey)
+            it[recheckFinishedAtKey] = atMs
+        }
     }
 }

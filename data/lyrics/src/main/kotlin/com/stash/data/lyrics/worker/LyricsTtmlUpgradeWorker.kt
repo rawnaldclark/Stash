@@ -22,11 +22,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
- * Lyrics catch-up worker, two entry points sharing one unique-work name:
- *  - auto (once per version / after retag): only upgrades stored lyrics to word-synced TTML. Quiet.
- *  - manual ([KEY_MANUAL], Library Health button): the same upgrade PLUS a fetch for downloaded
- *    tracks that have no lyrics yet. Runs as a FOREGROUND service with a cancellable progress
- *    notification (no ~10 min background-job cap), and posts a summary notification when done.
+ * Lyrics catch-up worker, two user-started entry points sharing one unique-work name. Nothing
+ * enqueues it automatically any more (owner decision 2026-10-21: no automatic library walks for
+ * lyrics); a run with neither flag is one the retired automatic pass queued before an update, and
+ * it ends at once without asking anything.
+ *  - recheck ([KEY_RECHECK], Settings → Playback → Lyrics → "Re-check library"): upgrades stored
+ *    lyrics to word-synced TTML, asking every word-synced source (Apple, lrc.red, Binimum; see
+ *    [LyricsRepository.recheckTrack]), newest first, from a resumable cursor. A quiet background
+ *    job: when the OS stops it (the ~10 min job cap), WorkManager reruns it and it carries on
+ *    below the cursor. Reaching the end stamps "last checked" ([LyricsRepository.finishRecheck]).
+ *  - manual ([KEY_MANUAL], Library Health button): the Apple-only upgrade PLUS a fetch for
+ *    downloaded tracks that have no lyrics yet. Runs as a FOREGROUND service with a cancellable
+ *    progress notification (no ~10 min background-job cap), and posts a summary notification.
  *
  * Only ever adds: a hit replaces the row + sidecars, a miss/failure leaves everything as it was.
  * Idempotent and resumable: each run recomputes what's pending. Paced at ~1 track / 3s (the iTunes
@@ -35,9 +42,11 @@ import kotlinx.coroutines.delay
  * run STOPS (success, [OUT_BAILED] = true) on an HTTP 429 from the Apple path or after
  * [MAX_CONSECUTIVE_FAILURES] upgrade failures in a row — hammering a rate-limiting or unreachable
  * free service for the rest of the library only makes things worse. What's left stays pending.
- * A bail stops only the Apple upgrade loop: the manual fetch for tracks with no lyrics still runs,
+ * A bail stops only the upgrade loop: the manual fetch for tracks with no lyrics still runs,
  * and the Apple source's own skip window (opened by a 429 or repeated timeouts) keeps Apple out of
- * it, so LRCLIB/KuGou can still fill those tracks.
+ * it, so LRCLIB/KuGou can still fill those tracks. The re-check counts lrc.red/Binimum's shared
+ * skip window (PAUSED) and their 429s (RATE_LIMITED) the same way, and a bailed sweep keeps its
+ * cursor, so the next tap carries on instead of starting over.
  */
 @HiltWorker
 class LyricsTtmlUpgradeWorker @AssistedInject constructor(
@@ -53,13 +62,21 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val manual = inputData.getBoolean(KEY_MANUAL, false)
-        val toUpgrade = lyricsRepository.trackIdsPendingTtml()
+        val recheck = !manual && inputData.getBoolean(KEY_RECHECK, false)
+        if (!manual && !recheck) {
+            Log.i(TAG, "Skipping a lyrics upgrade queued by the retired automatic pass")
+            return Result.success()
+        }
+        // The re-check resumes a sweep, so its count starts at what earlier runs already covered.
+        val plan = if (recheck) lyricsRepository.recheckPlan() else null
+        val toUpgrade = plan?.remaining ?: lyricsRepository.trackIdsPendingTtml()
         val toFetch = if (manual) lyricsRepository.trackIdsMissingLyrics() else emptyList()
-        val total = toUpgrade.size + toFetch.size
+        val total = if (plan != null) plan.total else toUpgrade.size + toFetch.size
 
         if (manual) promoteToForeground(0, total)
+        if (recheck) Log.i(TAG, "Library re-check: ${toUpgrade.size} of $total track(s) left")
 
-        var done = 0
+        var done = if (plan != null) plan.total - plan.remaining.size else 0
         var upgraded = 0
         var fetched = 0
         var notFound = 0
@@ -84,7 +101,8 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
         var consecutiveFailures = 0
         for (trackId in toUpgrade) {
             done++
-            val result = lyricsRepository.upgradeToTtml(trackId)
+            val result = if (recheck) lyricsRepository.recheckTrack(trackId) else lyricsRepository.upgradeToTtml(trackId)
+            if (recheck) Log.d(TAG, "Re-check trackId=$trackId: $result ($done / $total)")
             // NOT_READY (a timeout) and PAUSED (the skip window) were FAILED before the single-track
             // upgrade told them apart, so the bulk pass still counts them as failures.
             val softFailure = result == TtmlUpgradeResult.FAILED ||
@@ -121,7 +139,9 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
             delay(REQUEST_SPACING_MS)
         }
 
-        Log.i(TAG, "Lyrics run finished: upgraded=$upgraded fetched=$fetched notFound=$notFound failed=$failed of $total bailed=$bailed")
+        // A bailed sweep keeps its cursor; one that got to the end starts from the top next time.
+        if (recheck && !bailed) lyricsRepository.finishRecheck()
+        Log.i(TAG, "Lyrics run finished (${if (recheck) "re-check" else "manual"}): upgraded=$upgraded fetched=$fetched notFound=$notFound failed=$failed of $total bailed=$bailed")
         if (manual) notifyDone(upgraded + fetched, notFound, bailed)
         return Result.success(summary())
     }
@@ -193,6 +213,13 @@ class LyricsTtmlUpgradeWorker @AssistedInject constructor(
 
         /** Input: true for the Library Health button (also fetches missing lyrics, runs foreground). */
         const val KEY_MANUAL = "manual"
+
+        /** Input: true for Settings' "Re-check library" sweep (every word-synced source, resumable). */
+        const val KEY_RECHECK = "recheck"
+
+        /** Request tags, so the two entry points can be told apart (and from the retired auto pass). */
+        const val TAG_MANUAL = "lyrics_manual"
+        const val TAG_RECHECK = "lyrics_recheck"
 
         /** Progress keys. */
         const val KEY_DONE = "done"
