@@ -51,6 +51,8 @@ export const LINKS = {
   githubRawn: 'https://github.com/rawnaldclark',
   githubEvo: 'https://github.com/ParaliyzedEvo',
   sponsors: 'https://github.com/sponsors/rawnaldclark',
+  /** rawn's Stripe Payment Link in INR with UPI on, for supporters in India whose cards get declined. */
+  upi: 'https://buy.stripe.com/bJe4gz5uP8GP7z454D1gs00',
   crowdin: 'https://crowdin.com/project/stash-music-player',
   obtainium: 'https://obtainium.imranr.dev/',
   dontKillMyApp: 'https://dontkillmyapp.com/',
