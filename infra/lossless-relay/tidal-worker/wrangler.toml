@@ -10,8 +10,8 @@ TIDAL_PKCE_CLIENT_ID = "6BDSRdpK9hqEBTgU" # python-tidal's PKCE client: web seat
 TIDAL_MSE_CDN_HOSTS = "sp-ad-cf.audio.tidal.com" # ?web=mse: the only CDN hosts handed to browsers (CloudFront, Access-Control-Allow-Origin: *)
 TIDAL_RELAY_PAUSED = "0"
 TIDAL_COUNTRY_CODE = "US"
-TIDAL_ACCOUNT_HOURLY_CAP = "251" # 200→218 (+21%) then →251 (+15%) on 2026-10-20; the binding limit (gap allows 257/h)
-TIDAL_ACCOUNT_DAILY_CAP = "6400"
+TIDAL_ACCOUNT_HOURLY_CAP = "450" # 200→218→251 on 10-20; →450 on 10-21 with the 7 s gap (gap allows ~514/h; 429s are burst-driven)
+TIDAL_ACCOUNT_DAILY_CAP = "9600"
 TIDAL_SEAT_MIN_GAP_SECONDS = "7" # every upstream call; Tidal 429s are burst limits
 TIDAL_429_COOLDOWN_SECONDS = "120" # doubles per strike while hot, max TIDAL_429_COOLDOWN_MAX_SECONDS
 TIDAL_429_COOLDOWN_MAX_SECONDS = "960"
