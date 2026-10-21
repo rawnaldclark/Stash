@@ -74,7 +74,7 @@
     <string name="settings_support_donate">Donate</string>
     <string name="settings_donate_sheet_title">Support Stash</string>
     <string name="settings_donate_sheet_thanks">Stash is free. Thank you for helping keep it going.</string>
-    <string name="settings_donate_role_owner">Makes Stash</string>
+    <string name="settings_donate_role_owner">Stash creator, main dev</string>
     <string name="settings_donate_role_codev">Co-develops Stash</string>
     <string name="settings_donate_kofi">Ko-fi</string>
     <string name="settings_donate_paypal">PayPal</string>
