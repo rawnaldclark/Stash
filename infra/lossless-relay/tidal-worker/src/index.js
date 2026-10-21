@@ -428,7 +428,9 @@ async function v2Stream(trackId, request, env, seat, account, allowAac, budget, 
     if (!formats.includes("FLAC") && !formats.includes("FLAC_HIRES")) return fallback("no_flac");
     const xml = await v2Mpd(a.uri);
     if (!xml) return fallback("manifest");
-    if (/<(?:\w+:)?ContentProtection\b|\bcenc:|pssh/i.test(xml)) return fallback("drm");
+    // Every Tidal MPD declares xmlns:cenc="urn:mpeg:cenc:2013", clear or not: only a ContentProtection or pssh
+    // element, or a cenc:default_KID, means the stream is encrypted.
+    if (/<(?:\w+:)?ContentProtection\b|<(?:\w+:)?pssh\b|cenc:default_KID/i.test(xml)) return fallback("drm");
     if (!/codecs="[^"]*flac/i.test(xml)) return fallback("not_flac");
     // Representation id "FLAC,44100,16" / "FLAC_HIRES,48000,24"; audioSamplingRate and the format as fallbacks.
     const rep = /<(?:\w+:)?Representation\b[^>]*\bid="(FLAC(?:_HIRES)?),(\d+),(\d+)"/i.exec(xml);
