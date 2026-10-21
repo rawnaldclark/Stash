@@ -29,7 +29,7 @@ FREE_LOSSLESS_DAILY = "300" # 500→400→300 on 2026-10-20 (frees capacity for 
 ENTITLEMENT_PUBLIC_KEY = "IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ="
 SUPPORTER_DAILY_CAP = "5000"
 REQUIRE_INSTALL = "0" # "1": /stream without X-Stash-Install/-Ts/-Auth is a 401 (flip once every app signs)
-TIDAL_V2_MANIFESTS = "1" # "1": lossless streams try openapi v2 trackManifests (CD FLAC as DASH) before v1 playbackinfo; ?aac=only stays v1
+TIDAL_V2_MANIFESTS = "0" # "1": lossless streams try openapi v2 trackManifests (CD FLAC as DASH) before v1 playbackinfo; ?aac=only stays v1
 
 [[d1_databases]]
 binding = "DB"
