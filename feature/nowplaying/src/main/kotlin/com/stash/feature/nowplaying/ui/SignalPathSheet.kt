@@ -48,10 +48,15 @@ class SignalPathViewModel @Inject constructor(
 }
 
 object SignalPathBadge {
-    /** Short badge for the quality line: "Bit-perfect", "Hi-Res", or null when there's nothing to boast or warn. */
+    /**
+     * Short badge for the quality line: "Bit-perfect", "Hi-Res", or null when there's nothing to boast.
+     *
+     * Resampling is told only inside this sheet (headline "Resampled to 48 kHz by Android", and the
+     * Android row), never on the quality line.
+     */
     fun SignalVerdict.badge(): String? = when (quality) {
         SignalQuality.BIT_PERFECT -> "Bit-perfect"
-        SignalQuality.RESAMPLED -> "Resampled"
+        SignalQuality.RESAMPLED -> null
         SignalQuality.LOSSLESS -> if (headline.startsWith("Hi-Res")) "Hi-Res" else null
         SignalQuality.ENHANCED, SignalQuality.LOSSY -> null
     }

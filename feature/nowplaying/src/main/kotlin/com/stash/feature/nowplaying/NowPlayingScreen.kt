@@ -1017,8 +1017,9 @@ fun NowPlayingScreen(
                                     val qualityText = trackQualityText(track)
                                     if (qualityText != null) {
                                         Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
-                                        // The live verdict ("Bit-perfect", "Hi-Res", "Resampled")
-                                        // rides on the end; tapping opens the full signal path.
+                                        // The live verdict ("Bit-perfect", "Hi-Res") rides on the end;
+                                        // tapping opens the full signal path, the only place that
+                                        // says when Android resampled the song.
                                         val badge = signalVerdict?.let { with(com.stash.feature.nowplaying.ui.SignalPathBadge) { it.badge() } }
                                         QualityLine(
                                             qualityText = if (badge != null) "$qualityText \u00B7 $badge" else qualityText,

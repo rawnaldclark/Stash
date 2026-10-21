@@ -42,6 +42,8 @@ class SignalPathExplainerTest {
         assertThat(v.headline).isEqualTo("Resampled to 48 kHz by Android")
         val android = v.stages.first { it.title == "Android" }
         assertThat(android.ok).isFalse()
+        // The sheet is the only place resampling is told (the quality line carries no badge for it).
+        assertThat(android.detail).startsWith("Resampled to 48 kHz")
         assertThat(android.detail).contains("turn on Hi-Res USB output")
     }
 
