@@ -130,8 +130,6 @@ import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
-import com.stash.core.ui.components.RankedAlbumList
-import com.stash.core.ui.components.RankedAlbumUi
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -233,6 +231,29 @@ fun HomeScreen(
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
         contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
     ) {
+        // ── Supporter pill (full row) ─────────────────────────────────
+        // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
+        item {
+            val tipJar = uiState.tipJar
+            val pillSupporters = remember(tipJar) {
+                val live = tipJar.supporters.map {
+                    Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
+                }
+                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
+                // in the Worker's KV — they always ride the tape (deduped in
+                // case they ever re-donate through the live pipeline).
+                val liveNames = live.map { it.name.lowercase() }.toSet()
+                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
+            }
+            // Edge-to-edge: the ticker runs the full screen width, no card
+            // chrome — maximum runway for the scrolling messages.
+            SupporterTicker(
+                supporters = pillSupporters,
+                // Above the wordmark (owner, 2026-10-22): the title row's own padding spaces it.
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
         // ── App title row: wordmark + social icons ────────────────────
         // v0.9.13: empty space to the right of the wordmark holds quick
         // links to the project (GitHub, X). Supporter pill moves back
@@ -384,30 +405,6 @@ fun HomeScreen(
                     }
                 }
             }
-        }
-
-        // ── Supporter pill (full row) ─────────────────────────────────
-        // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
-        item {
-            val tipJar = uiState.tipJar
-            val pillSupporters = remember(tipJar) {
-                val live = tipJar.supporters.map {
-                    Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
-                }
-                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
-                // in the Worker's KV — they always ride the tape (deduped in
-                // case they ever re-donate through the live pipeline).
-                val liveNames = live.map { it.name.lowercase() }.toSet()
-                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
-            }
-            // Edge-to-edge: the ticker runs the full screen width, no card
-            // chrome — maximum runway for the scrolling messages.
-            SupporterTicker(
-                supporters = pillSupporters,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-            )
         }
 
         // ── Lossless connect nudge ───────────────────────────────────
@@ -639,36 +636,14 @@ fun HomeScreen(
                 }
                 HomeSection.TOP_ALBUMS -> if (uiState.topAlbums.isNotEmpty()) {
                     item(key = "section_top_albums") {
-                        // Collapsed to the top 5 by default; "Show all N" expands the
-                        // full best-sellers chart in place. Saveable so the choice
-                        // survives the item scrolling out of composition.
-                        var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
-                        val visibleTop =
-                            if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
-                        Column {
-                            Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
-                            SectionHeader(
-                                title = "Top Albums",
-                                actionText = when {
-                                    uiState.topAlbums.size <= 5 -> null
-                                    topAlbumsExpanded -> "Show less"
-                                    else -> "Show all ${uiState.topAlbums.size}"
-                                },
-                                onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
-                            )
-                            RankedAlbumList(
-                                items = visibleTop.mapIndexed { i, a ->
-                                    RankedAlbumUi(
-                                        rank = i + 1,
-                                        title = a.title,
-                                        artist = a.artist,
-                                        artUrl = a.thumbnailUrl,
-                                        movement = null,   // Qobuz best-sellers carries no chart delta
-                                    )
-                                },
-                                onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
-                            )
-                        }
+                        // The same cover rail as New Releases (owner, 2026-10-22): the ranked
+                        // list showed no covers.
+                        DiscoveryAlbumRow(
+                            title = "Top Albums",
+                            albums = uiState.topAlbums,
+                            onOpen = onNavigateToAlbum,
+                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                        )
                     }
                 }
                 HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
@@ -1242,7 +1217,8 @@ private fun SupporterTicker(
             withFrameMillis { nowMs = System.currentTimeMillis() }
         }
     }
-    val velocityPxPerSec = with(LocalDensity.current) { 31.dp.toPx() }
+    // 15% quicker than the original 31 dp/s (owner, 2026-10-22).
+    val velocityPxPerSec = with(LocalDensity.current) { (31.dp * 1.15f).toPx() }
     var tapeWidthPx by remember { mutableIntStateOf(0) }
 
     // Full-bleed strip: no card, no border, no leading icon — every pixel
@@ -1335,7 +1311,8 @@ private fun DiscoveryPlaylistRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        SectionHeader(title = title, actionText = "See all", onActionClick = onSeeAll)
+        // "Search" (owner, 2026-10-22): the browse it opens leads with a catalog-wide search field.
+        SectionHeader(title = title, actionText = "Search", onActionClick = onSeeAll)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
