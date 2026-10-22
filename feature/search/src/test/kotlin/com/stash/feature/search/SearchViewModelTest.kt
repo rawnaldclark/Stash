@@ -495,9 +495,32 @@ class SearchViewModelTest {
                     text = "Hit Song",
                     subtitle = "Hit Artist",
                     thumbnailUrl = "https://img/t.jpg",
+                    videoId = "vid123",
+                    durationSeconds = 200.0,
                 ),
             )
         }
+    }
+
+    @Test
+    fun `tapping a recent track with a video id plays it in one tap`() = runTest {
+        val player = mock<PlayerRepository> {
+            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
+                androidx.media3.common.MediaItem.fromUri("https://example/song"),
+            )
+        }
+        val vm = newVm(playerRepository = player)
+
+        vm.onRecentSearchTapped(
+            RecentSearch(
+                type = RecentSearch.Type.TRACK, text = "Hit Song", subtitle = "Hit Artist",
+                videoId = "vid123", durationSeconds = 200.0,
+            ),
+        )
+        advanceUntilIdle()
+
+        verifyBlocking(player) { playFromStream(sampleTrack()) }
+        assertEquals("", vm.uiState.value.query)
     }
 
     @Test
