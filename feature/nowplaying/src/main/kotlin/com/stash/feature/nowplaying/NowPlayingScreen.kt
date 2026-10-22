@@ -1980,4 +1980,8 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
  */
 @Composable
 private fun Modifier.marqueeWhileShown(): Modifier =
-    if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current) basicMarquee(iterations = Int.MAX_VALUE) else this
+    if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current) basicMarquee(
+        iterations = Int.MAX_VALUE,
+        // Compose's default 1.2 s pause between loops plus 2 s (owner, 2026-10-22).
+        repeatDelayMillis = 3_200,
+    ) else this

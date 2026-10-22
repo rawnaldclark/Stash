@@ -108,7 +108,7 @@ internal fun rememberNpReducedMotion(): Boolean {
 }
 
 /** A beat to read the start before it moves, and again before each repeat. */
-private const val MARQUEE_DELAY_MS = 1_800
+private const val MARQUEE_DELAY_MS = 3_800
 
 /** Slower than the default 30dp/s: a title should be read, not chased. */
 private val MARQUEE_VELOCITY = 26.dp
