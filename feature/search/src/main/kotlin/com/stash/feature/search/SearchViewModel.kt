@@ -209,13 +209,33 @@ class SearchViewModel @Inject constructor(
                     text = item.title,
                     subtitle = item.artist,
                     thumbnailUrl = item.thumbnailUrl,
+                    videoId = item.videoId,
+                    durationSeconds = item.durationSeconds,
                 ),
             )
         }
     }
 
-    /** Re-run a tapped recent search (ARTIST entries navigate in the screen). */
+    /**
+     * Act on a tapped recent search: a TRACK that knows its video id plays at once, exactly as a
+     * tap on a result does (one tap, not search-then-tap); ARTIST entries navigate in the screen;
+     * everything else (queries, older track rows without an id) re-runs the search.
+     */
     fun onRecentSearchTapped(entry: RecentSearch) {
+        val videoId = entry.videoId
+        if (entry.type == RecentSearch.Type.TRACK && videoId != null) {
+            // onResultTap records it again, which moves it back to the front.
+            onResultTap(
+                TrackItem(
+                    videoId = videoId,
+                    title = entry.text,
+                    artist = entry.subtitle.orEmpty(),
+                    durationSeconds = entry.durationSeconds ?: 0.0,
+                    thumbnailUrl = entry.thumbnailUrl,
+                ),
+            )
+            return
+        }
         // Move it back to the front regardless of type.
         viewModelScope.launch { recentSearchesStore.record(entry) }
         if (entry.type != RecentSearch.Type.ARTIST) {

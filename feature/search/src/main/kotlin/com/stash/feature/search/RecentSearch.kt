@@ -6,7 +6,9 @@ package com.stash.feature.search
  *  - [Type.ARTIST] — the user opened an artist profile from results; carries
  *    the avatar and the artist browse id so a tap navigates straight back.
  *  - [Type.TRACK]  — the user engaged a track row (tap/preview/download/
- *    queue/playlist); carries the track thumbnail; [subtitle] is the artist.
+ *    queue/playlist); carries the track thumbnail; [subtitle] is the artist,
+ *    and [videoId] + [durationSeconds] so a tap plays it straight away
+ *    (rows saved before 2026-10-22 lack them and re-run the search instead).
  *
  * Kept free of Android (unlike [RecentSearchesStore]) so the dedupe rules
  * below are plain JVM-testable.
@@ -17,6 +19,8 @@ data class RecentSearch(
     val subtitle: String? = null,
     val thumbnailUrl: String? = null,
     val artistId: String? = null,
+    val videoId: String? = null,
+    val durationSeconds: Double? = null,
 ) {
     enum class Type { QUERY, ARTIST, TRACK }
 

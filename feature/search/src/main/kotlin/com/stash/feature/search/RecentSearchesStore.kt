@@ -54,6 +54,7 @@ class RecentSearchesStore @Inject constructor(
             subtitle = entry.subtitle?.clean()?.takeIf { it.isNotEmpty() },
             thumbnailUrl = entry.thumbnailUrl?.clean()?.takeIf { it.isNotEmpty() },
             artistId = entry.artistId?.clean()?.takeIf { it.isNotEmpty() },
+            videoId = entry.videoId?.clean()?.takeIf { it.isNotEmpty() },
         )
         context.recentSearchesDataStore.edit { prefs ->
             val deduped = prefs[key].toEntries()
@@ -86,6 +87,7 @@ class RecentSearchesStore @Inject constructor(
 
     private fun RecentSearch.encode(): String = listOf(
         type.name, text, subtitle.orEmpty(), thumbnailUrl.orEmpty(), artistId.orEmpty(),
+        videoId.orEmpty(), durationSeconds?.toString().orEmpty(),
     ).joinToString(SEP.toString())
 
     private fun String?.toEntries(): List<RecentSearch> =
@@ -102,6 +104,9 @@ class RecentSearchesStore @Inject constructor(
                     subtitle = f.getOrNull(2)?.takeIf { it.isNotEmpty() },
                     thumbnailUrl = f.getOrNull(3)?.takeIf { it.isNotEmpty() },
                     artistId = f.getOrNull(4)?.takeIf { it.isNotEmpty() },
+                    // Fields 5-6 arrived 2026-10-22; older rows simply lack them.
+                    videoId = f.getOrNull(5)?.takeIf { it.isNotEmpty() },
+                    durationSeconds = f.getOrNull(6)?.toDoubleOrNull(),
                 )
             }
         } ?: emptyList()
