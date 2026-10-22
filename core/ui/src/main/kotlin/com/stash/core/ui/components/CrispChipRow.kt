@@ -35,6 +35,8 @@ import com.stash.core.ui.theme.StashTheme
  *   contentPadding), so the first chip starts on the 20dp header gutter while
  *   scrolled chips still bleed edge-to-edge. Sheets pass 0 — their container
  *   already pads.
+ * @param scale    Grows each chip's padding, corner, gap and text together (Library's tab chips
+ *   use 1.15); 1 keeps the standard size.
  */
 @Composable
 fun CrispChipRow(
@@ -43,6 +45,7 @@ fun CrispChipRow(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp),
+    scale: Float = 1f,
 ) {
     val extendedColors = StashTheme.extendedColors
     val chrome = LocalAlbumChrome.current
@@ -51,7 +54,7 @@ fun CrispChipRow(
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
             .padding(contentPadding),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp * scale),
     ) {
         chips.forEach { chip ->
             val isActive = chip == selected
@@ -60,22 +63,27 @@ fun CrispChipRow(
                 // The active chip was shown by colour alone: TalkBack read every chip as just
                 // "Songs, button". Exposing selected makes it say which one is on.
                 modifier = Modifier.semantics { this.selected = isActive },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(16.dp * scale),
                 color = if (isActive) {
                     chrome.accent
                 } else {
                     extendedColors.elevatedSurface
                 },
             ) {
+                val labelStyle = MaterialTheme.typography.labelSmall
                 Text(
                     text = chip,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    style = labelStyle.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = labelStyle.fontSize * scale,
+                        lineHeight = labelStyle.lineHeight * scale,
+                    ),
                     color = if (isActive) {
                         chrome.onAccent
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 13.dp * scale, vertical = 6.dp * scale),
                 )
             }
         }

@@ -817,6 +817,8 @@ private fun LibraryContent(
             selected = chipTabs.firstOrNull { it.second == state.activeTab }?.first.orEmpty(),
             onSelect = { label -> onTabSelected(chipTabs.first { it.first == label }.second) },
             modifier = Modifier.padding(vertical = 4.dp),
+            // 15% larger than the standard chip (owner, 2026-10-22): the library's main switch.
+            scale = 1.15f,
         )
 
         Spacer(modifier = Modifier.height(4.dp))
