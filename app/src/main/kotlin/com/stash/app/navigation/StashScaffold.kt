@@ -277,9 +277,11 @@ fun StashScaffold(
                     duration = SnackbarDuration.Long,
                 )
                 if (result == SnackbarResult.ActionPerformed) {
-                    // Audio & Quality reads its view model from Settings' entry: Settings first.
+                    // The supporter unlock is on Lossless sources, which reads its view model
+                    // from Settings' entry: Settings first, then Audio & Quality so Back lands there.
                     navigateToTab(TopLevelDestination.SETTINGS)
                     navController.navigate(SettingsAudioQualityRoute) { launchSingleTop = true }
+                    navController.navigate(SettingsLosslessSourcesRoute) { launchSingleTop = true }
                 }
             }
         }

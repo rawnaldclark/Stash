@@ -353,7 +353,16 @@ private fun StashNavGraph(
             com.stash.feature.settings.SettingsAudioQualityScreen(
                 onBack = { navController.popBackStack() },
                 onNavigateToEqualizer = { navController.navigate(EqualizerRoute) },
-                onNavigateToSquidWtfCaptcha = { navController.navigate(SquidWtfCaptchaRoute) },
+                onNavigateToLosslessSources = { navController.navigate(SettingsLosslessSourcesRoute) },
+                viewModel = viewModel,
+            )
+        }
+        composable<SettingsLosslessSourcesRoute> { backStackEntry ->
+            val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
+            val viewModel: com.stash.feature.settings.SettingsViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            com.stash.feature.settings.SettingsLosslessSourcesScreen(
+                onBack = { navController.popBackStack() },
                 viewModel = viewModel,
             )
         }

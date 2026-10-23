@@ -73,7 +73,14 @@ fun SettingsHubScreen(
         }.getOrNull() ?: "0.3.5-beta.1"
     }
 
-    val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
+    val listenBrainz by viewModel.listenBrainzState.collectAsStateWithLifecycle()
+    val cloud: com.stash.feature.settings.cloud.CloudStorageViewModel = hiltViewModel()
+    val cloudAccounts by cloud.accounts.collectAsStateWithLifecycle()
+    val otherAccounts = buildList {
+        if (listenBrainz is com.stash.feature.settings.components.ListenBrainzState.Connected) add("ListenBrainz")
+        cloudAccounts.map { it.account.provider.displayName }.distinct().forEach(::add)
+    }
+    val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts)
 
     var searchQuery by remember { mutableStateOf("") }
     val searchIndex = remember(

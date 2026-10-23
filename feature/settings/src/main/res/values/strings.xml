@@ -209,24 +209,22 @@
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>
 
     <!-- Settings > Audio & Quality -->
-    <string name="settings_audio_quality_section">Audio Quality</string>
     <string name="settings_download_quality_title">Download quality</string>
     <string name="settings_download_mode_lossless">Lossless (FLAC)</string>
     <string name="settings_download_mode_lossless_desc">Best quality, largest files.</string>
     <string name="settings_download_mode_aac">AAC 320</string>
-    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps AAC. Never FLAC. Uses your daily allowance.</string>
+    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps. Uses your daily allowance.</string>
     <string name="settings_download_mode_opus">Opus (smallest)</string>
-    <string name="settings_download_mode_opus_desc">From YouTube. Smallest files.</string>
+    <string name="settings_download_mode_opus_desc">From YouTube.</string>
     <string name="settings_flac_quality_title">FLAC quality</string>
     <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
     <string name="settings_save_data_title">Save Data</string>
-    <string name="settings_save_data_subtitle">Streams YouTube at its lowest audio quality — about 2 MB per track instead of 5 — and JioSaavn at 96 kbps instead of 320. Downloads are unaffected.</string>
-    <string name="settings_lossless_section">Lossless</string>
+    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
     <string name="settings_lossless_title">Lossless</string>
-    <string name="settings_lossless_subtitle_off">Stream studio-quality FLAC. Off, songs play via JioSaavn or YouTube. Downloads follow Download quality.</string>
-    <string name="settings_lossless_subtitle_no_source">No lossless source configured — see below. Files ~10× larger than MP3.</string>
-    <string name="settings_lossless_subtitle_active">FLAC for streaming. Downloads follow Download quality.</string>
+    <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
+    <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
+    <string name="settings_lossless_subtitle_active">Streams in FLAC</string>
     <string name="settings_qobuz_no_source_warning">No lossless source configured — connect your Qobuz account below</string>
     <string name="settings_qobuz_account_title">Your Qobuz account</string>
     <string name="settings_connected_as">Connected as %1$s</string>
@@ -237,23 +235,34 @@
     <string name="settings_password_label">Password</string>
     <string name="settings_connecting">Connecting…</string>
     <string name="settings_connect">Connect</string>
-    <string name="settings_auto_flac_upgrade_title">Auto-upgrade to FLAC after sync</string>
-    <string name="settings_auto_flac_upgrade_subtitle">After every sync, look for lossless versions of your downloads that aren\'t FLAC yet. You can also check by hand in Library Health.</string>
+    <string name="settings_auto_flac_upgrade_title">Upgrade to FLAC after sync</string>
+    <string name="settings_auto_flac_upgrade_subtitle">Finds lossless versions of older downloads</string>
     <string name="settings_tidal_aac_fallback_title">Tidal AAC when no FLAC</string>
-    <string name="settings_tidal_aac_fallback_subtitle">Plays and downloads Tidal\'s 320 kbps AAC when a song has no lossless version. Off = Tidal is used for FLAC only.</string>
+    <string name="settings_tidal_aac_fallback_subtitle">Tidal\'s 320 kbps AAC when there\'s no FLAC</string>
+    <string name="settings_lossless_sources_title">Lossless sources</string>
+    <string name="settings_lossless_sources_needs_setup">Not set up yet</string>
+    <string name="settings_output_section">Output</string>
+    <string name="settings_hires_output_title">Hi-Res output</string>
+    <string name="settings_hires_value_match_rate">Match DAC</string>
+    <string name="settings_hires_value_bit_perfect">Bit-perfect</string>
+    <string name="settings_lossless_tier_max_short">Max</string>
+    <string name="settings_lossless_tier_hires_short">Hi-Res</string>
+    <string name="settings_lossless_tier_cd_short">CD</string>
+    <string name="settings_streaming_on_wifi_title">Streaming on Wi-Fi</string>
+    <string name="settings_streaming_on_cellular_title">Streaming on cellular</string>
     <string name="settings_streaming_section">Streaming</string>
     <string name="settings_on_wifi">On Wi-Fi</string>
     <string name="settings_on_cellular">On cellular</string>
-    <string name="settings_save_data_lossless_subtitle">Streams CD quality instead of Hi-Res or Max on every network — about 28 MB per track instead of 70 or 140. Tracks that fall to JioSaavn or YouTube use their lowest audio quality. Downloads are unaffected.</string>
+    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
-    <string name="settings_prefer_tidal_aac_streaming_subtitle">Streams Tidal’s 320 kbps AAC instead of FLAC when Tidal has the song — about 10 MB per track instead of 28 or more. Songs Tidal doesn’t have play as usual. Downloads are unaffected.</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Smaller streams when Tidal has the song</string>
     <string name="settings_state_expanded">expanded</string>
     <string name="settings_state_collapsed">collapsed</string>
     <string name="settings_lossy_fallback_title">Lossy fallback</string>
     <string name="settings_state_on">on</string>
     <string name="settings_state_off">off</string>
-    <string name="settings_lossy_fallback_switch_label">Use JioSaavn, then YouTube when a download has no lossless match</string>
-    <string name="settings_lossy_fallback_switch_label_aac">Use JioSaavn, then YouTube when Tidal has no AAC of a song</string>
+    <string name="settings_lossy_fallback_switch_label">JioSaavn, then YouTube, when there\'s no lossless match</string>
+    <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, then YouTube, when Tidal has no AAC</string>
     <string name="settings_advanced">Advanced</string>
     <string name="settings_custom_relay_desc">Point Stash at your own lossless relay. It takes priority over Stash\'s.</string>
     <string name="settings_custom_endpoint_label">Custom lossless endpoint</string>
@@ -271,7 +280,6 @@
     <string name="settings_squid_captcha_label">captcha_verified_at value</string>
     <string name="settings_squid_captcha_placeholder">e.g. 1777687404951</string>
     <string name="settings_reset_lossless_attempts">Reset lossless attempts</string>
-    <string name="settings_effects_section">Effects</string>
     <string name="settings_equalizer_title">Equalizer</string>
 
     <!-- Settings > Audio & Quality > Lossless tiers -->
@@ -283,18 +291,17 @@
     <string name="settings_lossless_tier_cd_hint">~28 MB / 4 min</string>
 
     <!-- Settings > Audio & Quality > HiResOutputSection -->
-    <string name="settings_hires_output_section">Hi-Res Output</string>
     <string name="settings_hires_verdict_idle">Play a song to see what it goes through on the way to your ears.</string>
     <string name="settings_hires_verdict_now">Now: %1$s</string>
     <string name="settings_hires_verdict_now_with_device">Now: %1$s · %2$s</string>
     <string name="settings_hires_mode_standard">Standard</string>
-    <string name="settings_hires_mode_standard_desc">Android\'s shared mixer, like every app. It resamples songs that don\'t match its own rate (usually 48 kHz).</string>
+    <string name="settings_hires_mode_standard_desc">Android\'s mixer, usually 48 kHz. What every app gets.</string>
     <string name="settings_hires_mode_match_rate">Match USB DAC to each song</string>
-    <string name="settings_hires_mode_match_rate_desc">Your DAC runs at the song\'s own sample rate — 44.1, 96, 192 kHz — so nothing is resampled. EQ, crossfade and notifications still work.</string>
+    <string name="settings_hires_mode_match_rate_desc">Your DAC follows each song\'s sample rate, so nothing is resampled.</string>
     <string name="settings_hires_needs_android_14">Needs Android 14 or newer.</string>
     <string name="settings_hires_mode_bit_perfect">Bit-perfect USB</string>
-    <string name="settings_hires_mode_bit_perfect_desc">Every sample reaches your DAC unaltered. EQ, normalization and crossfade are bypassed, and volume is set on your DAC. Falls back to matching the sample rate where your phone doesn\'t offer it.</string>
-    <string name="settings_hires_footer_note">These apply to USB DACs and USB-C dongles. The phone\'s own headphone jack, speaker and Bluetooth always go through Android\'s mixer. Bluetooth also re-encodes the audio.</string>
+    <string name="settings_hires_mode_bit_perfect_desc">Untouched audio. EQ, normalization and crossfade turn off; your DAC sets the volume.</string>
+    <string name="settings_hires_footer_note">For USB DACs and USB-C dongles. Bluetooth, the speaker and the headphone jack always go through Android\'s mixer.</string>
     <string name="settings_hires_bit_perfect_dialog_title">Turn your DAC down first</string>
     <string name="settings_hires_bit_perfect_dialog_body">In bit-perfect mode Android doesn\'t touch the volume: your DAC sets it. If your DAC has no volume control of its own, the phone\'s volume keys may stop working and music can play at full level.\n\nTurn the volume down before you press play. EQ, normalization and crossfade are bypassed while bit-perfect is active.</string>
     <string name="settings_hires_bit_perfect_confirm">Use bit-perfect</string>

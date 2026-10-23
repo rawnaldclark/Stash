@@ -124,6 +124,31 @@ class SettingsHubSummariesTest {
         assertEquals("Spotify · YouTube · Last.fm", s.accounts)
     }
 
+    @Test fun `accounts cloud storage alone counts as connected`() {
+        val s = settingsHubSummaries(
+            state = SettingsUiState(),
+            versionName = "0.9.51",
+            streamingEnabled = true,
+            streamOnCellular = false,
+            otherAccounts = listOf("Dropbox"),
+        )
+        assertEquals("Dropbox", s.accounts)
+    }
+
+    @Test fun `accounts past three become a count`() {
+        val s = settingsHubSummaries(
+            state = SettingsUiState(
+                spotifyAuthState = connected("spotify"),
+                youTubeAuthState = connected("yt"),
+            ),
+            versionName = "0.9.51",
+            streamingEnabled = true,
+            streamOnCellular = false,
+            otherAccounts = listOf("ListenBrainz", "OneDrive"),
+        )
+        assertEquals("4 connected", s.accounts)
+    }
+
     @Test fun `accounts none connected → Not connected`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(),

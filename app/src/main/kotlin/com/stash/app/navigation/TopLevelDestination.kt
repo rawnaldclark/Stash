@@ -32,6 +32,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object DiagnosticsPreviewRoute
 @Serializable data object SettingsPlaybackRoute
 @Serializable data object SettingsAudioQualityRoute
+@Serializable data object SettingsLosslessSourcesRoute
 @Serializable data object SettingsAccountsRoute
 @Serializable data object SettingsLibraryStorageRoute
 @Serializable data object SettingsAppearanceRoute

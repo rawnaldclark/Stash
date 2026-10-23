@@ -29,6 +29,8 @@ fun settingsHubSummaries(
     versionName: String,
     streamingEnabled: Boolean,
     streamOnCellular: Boolean,
+    /** Connected accounts that live outside [SettingsUiState] (ListenBrainz, cloud storage). */
+    otherAccounts: List<String> = emptyList(),
 ): HubSummaries {
     val mode = if (streamingEnabled) "Stream only" else "Download"
     val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
@@ -47,12 +49,15 @@ fun settingsHubSummaries(
     val connectedServices = buildList {
         if (state.spotifyAuthState is AuthState.Connected) add("Spotify")
         if (state.youTubeAuthState is AuthState.Connected) add("YouTube")
+        if (state.discordAuthState is AuthState.Connected) add("Discord")
         if (state.lastFmState is LastFmAuthState.Connected) add("Last.fm")
+        addAll(otherAccounts)
     }
-    val accounts = if (connectedServices.isEmpty()) {
-        "Not connected"
-    } else {
-        connectedServices.joinToString(" · ")
+    // Names while they fit on the row's one line; a count past that.
+    val accounts = when {
+        connectedServices.isEmpty() -> "Not connected"
+        connectedServices.size <= 3 -> connectedServices.joinToString(" · ")
+        else -> "${connectedServices.size} connected"
     }
 
     val tracks = "${state.totalTracks} ${if (state.totalTracks == 1) "track" else "tracks"}"
