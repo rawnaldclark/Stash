@@ -34,6 +34,7 @@ class StreamQualityPolicyTest {
         coEvery { prefs.cellularTierNow() } returns cell
         coEvery { prefs.saveDataNow() } returns saveData
         coEvery { prefs.preferTidalAacNow() } returns preferTidalAac
+        coEvery { prefs.preferCloudCopiesNow() } returns false
         coEvery { losslessPrefs.enabledNow() } returns true
     }
 
@@ -141,6 +142,17 @@ class StreamQualityPolicyTest {
 
         coEvery { streamingPreference.isSkipQobuz() } returns true
         policy.preferTidalAac()                      // what the registry asks at each resolve
+        assertThat(cache.get(1L)).isNull()
+    }
+
+    /** A Qobuz link cached before "Play my cloud copies first" was turned on must not keep winning (#679). */
+    @Test fun `flipping prefer cloud copies drops the cached URLs`() = runTest {
+        setup(cellular = false)
+        assertThat(policy.preferCloudCopies()).isFalse()
+        cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
+
+        coEvery { prefs.preferCloudCopiesNow() } returns true
+        assertThat(policy.preferCloudCopies()).isTrue()   // what the registry asks at each resolve
         assertThat(cache.get(1L)).isNull()
     }
 }
