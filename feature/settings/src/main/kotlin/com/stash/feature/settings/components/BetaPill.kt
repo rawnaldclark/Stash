@@ -15,8 +15,8 @@ import com.stash.feature.settings.R
 
 /**
  * Small "Beta" pill shared by Settings sections that surface brand-new,
- * still-being-evaluated behaviour (auto-save, like-mirroring). Extracted
- * from SpotifyAutoSaveSection in v0.9.52 so LikeMirrorSection can reuse it.
+ * still-being-evaluated behaviour (like-mirroring). Extracted
+ * from the old Spotify auto-save section in v0.9.52 so LikeMirrorSection can reuse it.
  */
 @Composable
 internal fun BetaPill() {

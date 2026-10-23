@@ -527,7 +527,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     startedAt = session.sessionStart,
                     scrobbled = false,
                     // v0.9.13: insert IS the completion event — recorder only fires
-                    // after threshold delay. AutoSaveScrobbler reads completed_at.
+                    // after threshold delay.
                     completedAt = completedAt,
                     localDay = stamp.day,
                     localMinute = stamp.minute,

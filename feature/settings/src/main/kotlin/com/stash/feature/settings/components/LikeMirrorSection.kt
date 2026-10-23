@@ -27,7 +27,7 @@ import com.stash.feature.settings.R
  * past the [LikeMirrorWarningDialog] ack, which the caller owns.
  *
  * Each row gates on its own account connection, same as
- * [SpotifyAutoSaveSection] — visible but greyed with a "Connect …
+ * the other account sub-settings — visible but greyed with a "Connect …
  * first" hint when disconnected.
  *
  * Pure presentation; caller owns all state.

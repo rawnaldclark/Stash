@@ -140,50 +140,6 @@ interface ListeningEventDao {
     suspend fun markCompleted(eventId: Long, ts: Long)
 
     /**
-     * v0.9.13: Count how many DISTINCT calendar days (UTC) within the
-     * window have a completed listen for this track. Used by the
-     * AutoSaveScrobbler threshold check. SQLite-native — no app-side
-     * aggregation. Typical execution time: 1-2ms.
-     *
-     * `date(.., 'unixepoch')` converts epoch-millis to YYYY-MM-DD.
-     * COUNT(DISTINCT date) gives unique-day count.
-     */
-    @Query(
-        """
-        SELECT COUNT(DISTINCT date(completed_at / 1000, 'unixepoch'))
-        FROM listening_events
-        WHERE track_id = :trackId
-          AND completed_at IS NOT NULL
-          AND completed_at > :sinceMs
-          AND origin_device IS NULL
-        """
-    )
-    suspend fun distinctDaysCompletedFor(trackId: Long, sinceMs: Long): Int
-
-    /**
-     * v0.9.13: Reactive most-recent completion. Used by the
-     * AutoSaveScrobbler to wake up when new completions land — same
-     * trigger pattern as LastFmScrobbler's `pendingScrobbleCount()`
-     * Flow. Returns null if no completion ever recorded.
-     */
-    @Query("SELECT MAX(completed_at) FROM listening_events WHERE completed_at IS NOT NULL AND origin_device IS NULL")
-    fun observeMostRecentCompletion(): Flow<Long?>
-
-    /**
-     * v0.9.13: Lookup helper for AutoSaveScrobbler. The
-     * observeMostRecentCompletion Flow emits a timestamp, not a row
-     * id; we resolve to the row to read `track_id`. Returns null if
-     * the matching row was deleted between Flow emit and this query
-     * (rare — orphan-cleanup running concurrently).
-     */
-    @Query("""
-        SELECT * FROM listening_events
-        WHERE completed_at = :completedAtMs AND origin_device IS NULL
-        ORDER BY id DESC LIMIT 1
-    """)
-    suspend fun findByCompletedAt(completedAtMs: Long): ListeningEventEntity?
-
-    /**
      * Count of unscrobbled-to-YT events since the opt-in instant [sinceMs] (see
      * [pendingYtScrobbles]). Drives the Settings health badge.
      */

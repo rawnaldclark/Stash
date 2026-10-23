@@ -36,7 +36,7 @@ import kotlin.random.Random
  *
  * Seeded rows are marked `origin_device = 'debug-seed'` ([ORIGIN]). That makes them plays "from
  * another device", which is exactly what keeps them harmless: they never change play_count, mixes,
- * auto-save, the mirror or any scrobble destination (`RemotePlaysDaoTest`), while History, Top,
+ * the mirror or any scrobble destination (`RemotePlaysDaoTest`), while History, Top,
  * Stats and Your Year show them. CLEAR deletes `origin_device = 'debug-seed'` and nothing else, so
  * the phone's real history is left exactly as it was. Logcat tag: [TAG].
  *

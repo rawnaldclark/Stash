@@ -202,17 +202,6 @@ fun SettingsAccountsScreen(
             expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
             onDisconnect = { confirmSpotifyDisconnect = true },
-            extraContent = {
-                com.stash.feature.settings.components.SpotifyAutoSaveSection(
-                    enabled = uiState.autoSaveEnabled,
-                    threshold = uiState.autoSaveThreshold,
-                    autoSavedCountLast7Days = uiState.autoSavedCountLast7Days,
-                    spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = viewModel::onAutoSaveEnabledChanged,
-                    onThresholdChanged = viewModel::onAutoSaveThresholdChanged,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            },
         )
 
         AccountConnectionCard(

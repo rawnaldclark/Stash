@@ -1846,13 +1846,6 @@ interface TrackDao {
     fun observeByYoutubeId(youtubeId: String): Flow<TrackEntity?>
 
     /**
-     * v0.9.13: Count of tracks marked as auto-saved to Spotify since
-     * `sinceMs`. Drives the Settings diagnostics line.
-     */
-    @Query("SELECT COUNT(*) FROM tracks WHERE spotify_saved_at > :sinceMs")
-    fun autoSavedSinceCount(sinceMs: Long): Flow<Int>
-
-    /**
      * Backfill: set date_added to now for all downloaded Spotify tracks.
      * These tracks had date_added set at sync time (when discovered), not
      * download time. This one-time fix makes them appear in Recently Added.

@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,7 +17,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Plays from another device (`origin_device` set: a Stash on the web file or send, later the mirror) never feed Stash Mixes,
- * play statistics, auto-save or a scrobble destination (link-sync spec §7.2, owner's decision 4). One local and one remote
+ * play statistics or a scrobble destination (link-sync spec §7.2, owner's decision 4). One local and one remote
  * play of the same track: every query below must see only the local one.
  *
  * **The checklist.** A query added later that ranks taste, counts plays for a mix, or submits listens belongs in this test.
@@ -64,15 +63,12 @@ class RemotePlaysDaoTest {
         assertEquals(listOf("Tame Impala"), events.getTopArtistsSince(0).map { it.artist })
         assertEquals(listOf(1L), events.getPlayedTrackIdsAmong(listOf(1L, 2L)))
         assertEquals(listOf("Borderline"), events.getTopTracksByLocalPlays(0, 10).map { it.title })
-        assertEquals(0, events.distinctDaysCompletedFor(2, 0))
         val skips = db.trackSkipEventDao().getSkipStatsSince(listOf(1L, 2L), 0).associate { it.trackId to it.plays }
         assertEquals(mapOf(1L to 1, 2L to 0), skips)
     }
 
-    @Test fun `auto-save and scrobble destinations never see them`() = runTest {
+    @Test fun `scrobble destinations never see them`() = runTest {
         fill()
-        assertEquals(T + 30_000, events.observeMostRecentCompletion().first())
-        assertNull(events.findByCompletedAt(T + 95_000))
         assertEquals(listOf(1L), events.pendingScrobbles().map { it.trackId })
         assertEquals(1, events.pendingScrobbleCount().first())
         assertEquals(listOf(1L), events.pendingYtScrobbles(sinceMs = 0).map { it.trackId })

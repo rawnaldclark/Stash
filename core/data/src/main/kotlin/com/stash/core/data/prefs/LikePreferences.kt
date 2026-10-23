@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -43,22 +42,12 @@ private val Context.likeDataStore: DataStore<Preferences> by preferencesDataStor
 class LikePreferences @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    private val autoSaveEnabledKey = booleanPreferencesKey("auto_save_enabled")
-    private val autoSaveThresholdKey = intPreferencesKey("auto_save_threshold")
     private val heartDefaultStashKey = booleanPreferencesKey("heart_default_stash")
     private val heartDefaultSpotifyKey = booleanPreferencesKey("heart_default_spotify")
     private val heartDefaultYtMusicKey = booleanPreferencesKey("heart_default_ytmusic")
     private val mirrorLikesSpotifyKey = booleanPreferencesKey("mirror_likes_spotify")
     private val mirrorLikesYtMusicKey = booleanPreferencesKey("mirror_likes_youtube")
     private val mirrorLikesLastFmKey = booleanPreferencesKey("mirror_likes_lastfm")
-
-    val autoSaveEnabled: Flow<Boolean> =
-        context.likeDataStore.data.map { it[autoSaveEnabledKey] ?: false }
-
-    val autoSaveThreshold: Flow<Int> =
-        context.likeDataStore.data.map {
-            (it[autoSaveThresholdKey] ?: 3).coerceIn(1, 10)
-        }
 
     val heartDefaultStash: Flow<Boolean> =
         context.likeDataStore.data.map { it[heartDefaultStashKey] ?: true }
@@ -101,22 +90,12 @@ class LikePreferences @Inject constructor(
     val mirrorLikesLastFm: Flow<Boolean> =
         context.likeDataStore.data.map { it[mirrorLikesLastFmKey] ?: false }
 
-    suspend fun autoSaveEnabledNow(): Boolean = autoSaveEnabled.first()
-    suspend fun autoSaveThresholdNow(): Int = autoSaveThreshold.first()
     suspend fun heartDefaultStashNow(): Boolean = heartDefaultStash.first()
     suspend fun heartDefaultSpotifyNow(): Boolean = heartDefaultSpotify.first()
     suspend fun heartDefaultYtMusicNow(): Boolean = heartDefaultYtMusic.first()
     suspend fun mirrorLikesSpotifyNow(): Boolean = mirrorLikesSpotify.first()
     suspend fun mirrorLikesYtMusicNow(): Boolean = mirrorLikesYtMusic.first()
     suspend fun mirrorLikesLastFmNow(): Boolean = mirrorLikesLastFm.first()
-
-    suspend fun setAutoSaveEnabled(value: Boolean) {
-        context.likeDataStore.edit { it[autoSaveEnabledKey] = value }
-    }
-
-    suspend fun setAutoSaveThreshold(value: Int) {
-        context.likeDataStore.edit { it[autoSaveThresholdKey] = value.coerceIn(1, 10) }
-    }
 
     suspend fun setHeartDefaultStash(value: Boolean) {
         context.likeDataStore.edit { it[heartDefaultStashKey] = value }

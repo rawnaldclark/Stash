@@ -180,13 +180,9 @@ data class SettingsUiState(
      * triggers a snackbar; the UI clears it via onClearScrobbleDrainResult.
      */
     val scrobbleDrainResult: com.stash.core.data.lastfm.LastFmScrobbler.DrainResult? = null,
-    val autoSaveEnabled: Boolean = false,
-    val autoSaveThreshold: Int = 3,
     val heartDefaultStash: Boolean = true,
     val heartDefaultSpotify: Boolean = true,
     val heartDefaultYtMusic: Boolean = false,
-    /** v0.9.13: count of tracks auto-saved in the last 7 days, for the diagnostics line. */
-    val autoSavedCountLast7Days: Int = 0,
     /** v0.9.52 like-mirroring: per-service opt-in (default off), gated behind the warning dialog. */
     val mirrorLikesSpotify: Boolean = false,
     val mirrorLikesYtMusic: Boolean = false,

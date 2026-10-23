@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
  *     op left them, and a mid-queue toggle-off drops remaining ops.
  *  4. Failures are best-effort: log + leave dedup column untouched →
  *     organic retry on the next heart of that track (same recovery as
- *     AutoSaveScrobbler). At most ONE [mirrorFailures] emission per
+ *     the old auto-save path). At most ONE [mirrorFailures] emission per
  *     process lifetime — no nagging.
  *
  * Forward-only by design (no backfill of pre-existing likes — bulk
@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
  * backfill can reuse this queue by enqueueing (trackId, liked=true)
  * ops; the seam is already here.
  *
- * App-lifetime scope is instantiated inline like AutoSaveScrobbler /
+ * App-lifetime scope is instantiated inline like
  * LosslessUrlPrefetcher — no Hilt ApplicationScope qualifier exists in
  * this codebase. The internal constructor is the test seam (TestScope +
  * virtual-time minGap).

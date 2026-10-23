@@ -30,7 +30,6 @@ import com.stash.data.download.lyrics.LyricsUpgradeTrigger
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.core.data.sync.workers.ArtBackfillWorker
 import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
-import com.stash.core.data.sync.workers.AutoSaveScrobbler
 import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
@@ -100,9 +99,6 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var youTubeHistoryScrobbler: YouTubeHistoryScrobbler
-
-    @Inject
-    lateinit var autoSaveScrobbler: AutoSaveScrobbler
 
     @Inject
     lateinit var listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator
@@ -627,7 +623,6 @@ class StashApplication : Application(), Configuration.Provider {
         listeningRecorder.start()
         lastFmScrobbler.start()
         youTubeHistoryScrobbler.start()
-        autoSaveScrobbler.start()
         discordRpcCoordinator.start()
         cloudUploads.start()
         // Generic listen sinks (ListenBrainz). No-ops until connected.

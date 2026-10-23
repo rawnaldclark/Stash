@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 /**
  * A settings row with a title, optional subtitle, and a trailing purple [Switch].
  * Tapping anywhere on the row toggles the switch. Mirrors the row shape used by
- * [SpotifyAutoSaveSection] for visual consistency. Pure presentation — the caller
+ * the other account sub-settings for visual consistency. Pure presentation — the caller
  * owns all state.
  */
 @Composable

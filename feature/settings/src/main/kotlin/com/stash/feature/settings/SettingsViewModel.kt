@@ -616,20 +616,6 @@ class SettingsViewModel @Inject constructor(
     // out of Settings into the Sync tab's Library section.
 
     /**
-     * v0.9.13: count of tracks auto-saved to Spotify in the last 7 days.
-     * Re-anchors on every `autoSaveEnabled` flip so the `sinceMs` boundary
-     * is fresh whenever the user revisits Settings — no need to reschedule
-     * a cron-style refresh just for a diagnostics line.
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val autoSavedCountLast7Days: kotlinx.coroutines.flow.Flow<Int> =
-        likePreferences.autoSaveEnabled.flatMapLatest {
-            trackDao.autoSavedSinceCount(
-                System.currentTimeMillis() - 7L * 24 * 3600 * 1000,
-            )
-        }
-
-    /**
      * The main UI state, combining reactive auth states from [TokenManager],
      * the persisted quality tier, and local UI state.
      */
@@ -655,12 +641,9 @@ class SettingsViewModel @Inject constructor(
         losslessPrefs.captchaCookieValue,
         losslessPrefs.qualityTier,
         qobuzSource.lastKnownBadCookie,
-        likePreferences.autoSaveEnabled,
-        likePreferences.autoSaveThreshold,
         likePreferences.heartDefaultStash,
         likePreferences.heartDefaultSpotify,
         likePreferences.heartDefaultYtMusic,
-        autoSavedCountLast7Days,
         losslessPrefs.youtubeFallbackEnabled,
         stashMixPreference.enabled,
         likePreferences.mirrorLikesSpotify,
@@ -705,12 +688,9 @@ class SettingsViewModel @Inject constructor(
         val squidWtfCaptchaCookie = (v.next<String?>()).orEmpty()
         val losslessQualityTier = v.next<LosslessQualityTier>()
         val lastKnownBadCookie = v.next<String?>()
-        val autoSaveEnabled = v.next<Boolean>()
-        val autoSaveThreshold = v.next<Int>()
         val heartDefaultStash = v.next<Boolean>()
         val heartDefaultSpotify = v.next<Boolean>()
         val heartDefaultYtMusic = v.next<Boolean>()
-        val autoSavedCount7d = v.next<Int>()
         val youtubeFallbackEnabled = v.next<Boolean>()
         val stashMixesEnabled = v.next<Boolean>()
         val mirrorLikesSpotify = v.next<Boolean>()
@@ -791,12 +771,9 @@ class SettingsViewModel @Inject constructor(
             streamingWifiTier = streamingWifiTier,
             streamingCellularTier = streamingCellularTier,
             streamingSaveData = streamingSaveData,
-            autoSaveEnabled = autoSaveEnabled,
-            autoSaveThreshold = autoSaveThreshold,
             heartDefaultStash = heartDefaultStash,
             heartDefaultSpotify = heartDefaultSpotify,
             heartDefaultYtMusic = heartDefaultYtMusic,
-            autoSavedCountLast7Days = autoSavedCount7d,
             mirrorLikesSpotify = mirrorLikesSpotify,
             mirrorLikesYtMusic = mirrorLikesYtMusic,
             pendingMirrorWarning = local.pendingMirrorWarning,
@@ -1887,22 +1864,6 @@ class SettingsViewModel @Inject constructor(
 
     // -- Library & Likes (v0.9.13) ------------------------------------------
 
-    /**
-     * Master toggle for the auto-save scrobbler. When true,
-     * AutoSaveScrobbler observes plays and pushes tracks crossing the
-     * day-distinct-plays threshold into Spotify Liked Songs.
-     */
-    fun onAutoSaveEnabledChanged(value: Boolean) {
-        viewModelScope.launch { likePreferences.setAutoSaveEnabled(value) }
-    }
-
-    /**
-     * Persist the day-distinct-plays threshold (1..10). Values outside
-     * the range are coerced inside [LikePreferences.setAutoSaveThreshold].
-     */
-    fun onAutoSaveThresholdChanged(value: Int) {
-        viewModelScope.launch { likePreferences.setAutoSaveThreshold(value) }
-    }
 
     /** Whether tapping the heart adds to the local Stash Liked Songs playlist. */
     fun onHeartDefaultStashChanged(value: Boolean) {

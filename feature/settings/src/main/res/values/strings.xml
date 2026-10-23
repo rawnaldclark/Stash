@@ -111,17 +111,6 @@
     <string name="settings_like_mirror_warning_body">Hearting a track in Stash will also Like it on %1$s, and removing a heart will remove the Like there too. Only likes you add from now on are mirrored.\n\nThis uses the same private endpoint the %1$s web player uses — not an official API. It can stop working at any time and, rarely, unofficial access can get an account flagged. Consider enabling this only on a secondary or backup account.</string>
     <string name="settings_like_mirror_warning_confirm">I understand</string>
 
-    <!-- Settings > Accounts > SpotifyAutoSaveSection -->
-    <string name="settings_spotify_autosave_title">Like songs you keep replaying</string>
-    <string name="settings_spotify_autosave_connect_first">Connect Spotify first</string>
-    <string name="settings_spotify_autosave_subtitle">Play a song to the end on enough different days and Stash adds it to your Spotify Liked Songs, so Spotify\'s mixes learn what you love. Only adds, never removes.</string>
-    <plurals name="settings_spotify_autosave_threshold_days">
-        <item quantity="one">%d day</item>
-        <item quantity="other">%d days</item>
-    </plurals>
-    <string name="settings_spotify_autosave_threshold">Add after %1$s of plays in the last 30 days</string>
-    <string name="settings_spotify_autosave_last_7_days">Last 7 days: %1$d tracks auto-saved</string>
-
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <string name="settings_yt_sync_title">Send plays to YouTube Music</string>
     <string name="settings_yt_sync_connect_first">Connect YouTube Music first</string>
