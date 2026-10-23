@@ -110,6 +110,8 @@ fun StashScaffold(
     val currentRoute = navBackStackEntry?.destination?.route
     // The Recap story is full screen: no mini player, no tab bar, drawn under the status bar.
     val immersive = navBackStackEntry?.destination?.hasRoute<RecapRoute>() == true
+    // The artist page draws its header photo under the status bar; it keeps the bottom chrome.
+    val bleedTop = immersive || navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
 
     // The player: mini player <-> Now Playing as one finger-driven sheet.
     val playerSheet = rememberPlayerSheetState()
@@ -395,7 +397,7 @@ fun StashScaffold(
         SideEffect { bottomChromeHeight = bottomChrome }
         val contentPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
-            top = if (immersive) 0.dp else innerPadding.calculateTopPadding(),
+            top = if (bleedTop) 0.dp else innerPadding.calculateTopPadding(),
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )

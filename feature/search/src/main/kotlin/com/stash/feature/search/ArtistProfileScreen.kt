@@ -1,12 +1,22 @@
 package com.stash.feature.search
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
+import androidx.core.view.WindowCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
@@ -137,10 +147,17 @@ fun ArtistProfileScreen(
         { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset else Int.MAX_VALUE }
     }
     val density = LocalDensity.current
-    val collapseAtPx = with(density) { (ArtistHeroPhotoHeight - 24.dp).roundToPx() }
+    // The bar takes over before the name (set low on the photo, under the controls) can
+    // scroll up into the pinned Back: about 240 dp of the hero sits below the name's top.
+    val collapseAtPx = with(density) { (ArtistHeroPhotoHeight - 240.dp).roundToPx() }
     val collapsed by remember(listState, collapseAtPx) {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > collapseAtPx }
     }
+
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // Light status-bar icons while the photo is behind them; the theme's own once the bar is.
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    StatusBarIcons(light = !collapsed || darkTheme)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -229,7 +246,7 @@ fun ArtistProfileScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            ArtistCollapsedBar(name = state.hero.name)
+            ArtistCollapsedBar(name = state.hero.name, statusBarTop = statusBarTop)
         }
         // Back stays put the whole way down (glass coin, legible on the photo and the bar).
         Surface(
@@ -238,8 +255,7 @@ fun ArtistProfileScreen(
             color = Color.Black.copy(alpha = 0.35f),
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(start = 12.dp, top = 8.dp)
+                .padding(start = 12.dp, top = statusBarTop + 8.dp)
                 .size(40.dp),
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -361,7 +377,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
 
 /** The bar that replaces the hero once it has scrolled off: the artist's name beside the pinned Back. */
 @Composable
-private fun ArtistCollapsedBar(name: String) {
+private fun ArtistCollapsedBar(name: String, statusBarTop: Dp) {
     Surface(
         color = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxWidth(),
@@ -374,11 +390,33 @@ private fun ArtistCollapsedBar(name: String) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .statusBarsPadding()
                 // Clears the pinned 40 dp Back coin at 12 dp, and matches its height.
-                .padding(start = 64.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+                .padding(start = 64.dp, end = 16.dp, top = statusBarTop + 8.dp, bottom = 8.dp)
                 .height(40.dp)
                 .wrapContentHeight(Alignment.CenterVertically),
         )
     }
+}
+
+/**
+ * Sets the status-bar icons light ([light]) or dark while this page shows, and
+ * puts back what was there when it leaves.
+ */
+@Composable
+private fun StatusBarIcons(light: Boolean) {
+    val view = LocalView.current
+    val controller = remember(view) {
+        view.context.findActivity()?.window?.let { WindowCompat.getInsetsController(it, view) }
+    }
+    DisposableEffect(controller) {
+        val before = controller?.isAppearanceLightStatusBars
+        onDispose { if (before != null) controller.isAppearanceLightStatusBars = before }
+    }
+    SideEffect { controller?.isAppearanceLightStatusBars = !light }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
