@@ -1886,8 +1886,10 @@ class SettingsViewModel @Inject constructor(
      * [onMirrorWarningConfirmed]); disabling is immediate, no dialog.
      */
     fun onMirrorToggleRequested(destination: Destination, enable: Boolean) {
-        if (!enable) {
-            viewModelScope.launch { setMirrorPref(destination, false) }
+        // Last.fm loves go through Last.fm's official API: none of the
+        // unofficial-endpoint risk the warning is about, so no ack.
+        if (!enable || destination == Destination.LAST_FM) {
+            viewModelScope.launch { setMirrorPref(destination, enable) }
             return
         }
         _localState.update { it.copy(pendingMirrorWarning = destination) }

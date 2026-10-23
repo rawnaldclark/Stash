@@ -52,6 +52,8 @@ class SettingsViewModelTest {
     private val homeSectionsPreference = mockk<HomeSectionsPreference>(relaxed = true)
     private val storagePreference = mockk<com.stash.core.data.prefs.StoragePreference>(relaxed = true)
 
+    private val likePreferences = mockk<com.stash.core.data.prefs.LikePreferences>(relaxed = true)
+
     private var themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true)
 
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
@@ -85,7 +87,7 @@ class SettingsViewModelTest {
             every { routingRows } returns flowOf(emptyList())
         },
         qobuzAccountConnector = mockk(relaxed = true),
-        likePreferences = mockk(relaxed = true),
+        likePreferences = likePreferences,
         trackDao = mockk(relaxed = true),
         settingsDeepLinkController = mockk(relaxed = true),
         crashFileStore = mockk(relaxed = true),
@@ -352,5 +354,24 @@ class SettingsViewModelTest {
 
         assertThat(restarts).isEqualTo(1)
         coVerify(exactly = 0) { storagePreference.setExternalTreeUri(any()) }
+    }
+
+    @Test fun `turning on Last_fm loves needs no unofficial-endpoint warning`() = runTest {
+        val vm = newVm()
+
+        vm.onMirrorToggleRequested(com.stash.core.data.social.Destination.LAST_FM, true)
+        advanceUntilIdle()
+
+        coVerify { likePreferences.setMirrorLikesLastFm(true) }
+        assertThat(vm.uiState.value.pendingMirrorWarning).isNull()
+    }
+
+    @Test fun `turning on Spotify likes waits for the warning`() = runTest {
+        val vm = newVm()
+
+        vm.onMirrorToggleRequested(com.stash.core.data.social.Destination.SPOTIFY, true)
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { likePreferences.setMirrorLikesSpotify(any()) }
     }
 }

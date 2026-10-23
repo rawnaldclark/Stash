@@ -99,7 +99,10 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = context.getString(R.string.settings_accounts_sync_title),
                 subtitle = context.getString(R.string.settings_accounts_sync_search_subtitle),
-                keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble"),
+                keywords = listOf(
+                    "spotify", "youtube", "lastfm", "last.fm", "listenbrainz", "discord", "login", "account",
+                    "sync", "scrobble", "likes", "love", "history", "dropbox", "onedrive", "google drive", "cloud",
+                ),
                 icon = Icons.Rounded.Person,
                 onSelect = onOpenAccounts,
             ),

@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
@@ -30,6 +32,7 @@ fun SettingsToggleRow(
     subtitle: String? = null,
     enabled: Boolean = true,
     titleTrailing: (@Composable () -> Unit)? = null,
+    subtitleColor: Color = Color.Unspecified,
 ) {
     Row(
         modifier = modifier
@@ -55,7 +58,7 @@ fun SettingsToggleRow(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = subtitleColor.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant },
                 )
             }
         }

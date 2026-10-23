@@ -3,7 +3,7 @@ package com.stash.feature.settings.components
 import com.stash.core.auth.model.AuthState
 
 /** How an [AccountConnectionCard]'s status line is coloured. */
-internal enum class AccountStatusTone { CONNECTED, EXPIRED, ERROR, NEUTRAL }
+enum class AccountStatusTone { CONNECTED, EXPIRED, ERROR, NEUTRAL }
 
 /** The status line under an account's name, and which action leads. */
 internal data class AccountStatus(

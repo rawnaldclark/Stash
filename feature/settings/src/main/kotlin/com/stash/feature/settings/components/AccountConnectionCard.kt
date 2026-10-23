@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -20,7 +19,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.stash.core.auth.model.AuthState
 import com.stash.core.ui.theme.StashTheme
@@ -55,11 +54,8 @@ import com.stash.feature.settings.R
  *   (the same sign-in as [onConnect]), keeping Disconnect as a secondary text
  *   button. Ignored unless [authState] is Connected; see [accountStatus].
  * @param extraContent  Optional per-service sub-settings rendered inside the
- *   same card, below a subtle divider. Used by e.g. YouTube Music to nest the
- *   "Send plays to YouTube Music" toggle directly under its connect row so
- *   the sync feature visually reads as a property of the connection rather
- *   than a separate settings row living in an unrelated card.
- *   Null ( = no extras) is the default; most services pass nothing.
+ *   same card, below a subtle divider (e.g. YouTube Music's likes and history
+ *   switches), so they read as properties of the connection. Null = none.
  */
 @Composable
 fun AccountConnectionCard(
@@ -76,9 +72,60 @@ fun AccountConnectionCard(
     expired: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
-    val extendedColors = StashTheme.extendedColors
     val status = accountStatus(authState, expired)
+    AccountCard(
+        serviceName = serviceName,
+        icon = icon,
+        accentColor = accentColor,
+        statusText = status.text,
+        statusTone = status.tone,
+        modifier = modifier,
+        busy = authState is AuthState.Connecting,
+        extraContent = extraContent,
+    ) {
+        when {
+            authState !is AuthState.Connected -> AccountConnectButton(accentColor, onConnect)
+            status.offerReconnect -> {
+                // Expired session: signing in again is the next step, so it
+                // leads; Disconnect stays reachable underneath for someone
+                // done with it.
+                Column(horizontalAlignment = Alignment.End) {
+                    AccountConnectButton(
+                        accentColor,
+                        onConnect,
+                        label = stringResource(R.string.settings_account_reconnect),
+                    )
+                    AccountDisconnectButton(onDisconnect)
+                }
+            }
+            needsAction && onNeedsAction != null ->
+                AccountConnectButton(accentColor, onNeedsAction, label = needsActionLabel)
+            else -> AccountDisconnectButton(onDisconnect)
+        }
+    }
+}
 
+/**
+ * The shell every account on Accounts & Sync shares: brand icon, name, one
+ * status line, a trailing action, and optional sub-settings under a hairline.
+ * [AccountConnectionCard] fills it from an [AuthState]; accounts with their own
+ * sign-in flow (Last.fm, ListenBrainz) fill it directly so they look the same.
+ *
+ * @param busy  Shows a spinner in place of [action] (a sign-in in flight).
+ */
+@Composable
+fun AccountCard(
+    serviceName: String,
+    icon: ImageVector,
+    accentColor: Color,
+    statusText: String,
+    statusTone: AccountStatusTone,
+    modifier: Modifier = Modifier,
+    busy: Boolean = false,
+    extraContent: (@Composable ColumnScope.() -> Unit)? = null,
+    action: @Composable () -> Unit,
+) {
+    val extendedColors = StashTheme.extendedColors
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = extendedColors.glassBackground,
@@ -92,122 +139,78 @@ fun AccountConnectionCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            // Service icon with accent colour
-            Icon(
-                imageVector = icon,
-                contentDescription = serviceName,
-                tint = accentColor,
-                modifier = Modifier.size(32.dp),
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Service name and connection status
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = serviceName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                Icon(
+                    imageVector = icon,
+                    contentDescription = serviceName,
+                    tint = accentColor,
+                    modifier = Modifier.size(32.dp),
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = status.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when (status.tone) {
-                        AccountStatusTone.CONNECTED -> extendedColors.success
-                        AccountStatusTone.EXPIRED -> extendedColors.warning
-                        AccountStatusTone.ERROR -> MaterialTheme.colorScheme.error
-                        AccountStatusTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-
-            // Action button or loading indicator
-            AnimatedVisibility(
-                visible = authState is AuthState.Connecting,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = accentColor,
-                    strokeWidth = 2.dp,
-                )
-            }
-
-            AnimatedVisibility(
-                visible = authState !is AuthState.Connecting,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                when (authState) {
-                    is AuthState.Connected -> {
-                        if (status.offerReconnect) {
-                            // Expired session: signing in again is the next
-                            // step, so it leads; Disconnect stays reachable
-                            // underneath, quieter, for someone done with it.
-                            Column(horizontalAlignment = Alignment.End) {
-                                Button(
-                                    onClick = onConnect,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = accentColor,
-                                        contentColor = Color.White,
-                                    ),
-                                ) {
-                                    Text(stringResource(R.string.settings_account_reconnect))
-                                }
-                                TextButton(
-                                    onClick = onDisconnect,
-                                    colors = ButtonDefaults.textButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.error,
-                                    ),
-                                ) {
-                                    Text(stringResource(R.string.settings_account_disconnect))
-                                }
-                            }
-                        } else if (needsAction && onNeedsAction != null) {
-                            Button(
-                                onClick = onNeedsAction,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = accentColor,
-                                    contentColor = Color.White,
-                                ),
-                            ) {
-                                Text(needsActionLabel)
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = onDisconnect,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error,
-                                ),
-                            ) {
-                                Text(stringResource(R.string.settings_account_disconnect))
-                            }
-                        }
-                    }
-                    else -> {
-                        Button(
-                            onClick = onConnect,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = accentColor,
-                                contentColor = Color.White,
-                            ),
-                        ) {
-                            Text(stringResource(R.string.settings_account_connect))
-                        }
-                    }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = serviceName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = when (statusTone) {
+                            AccountStatusTone.CONNECTED -> extendedColors.success
+                            AccountStatusTone.EXPIRED -> extendedColors.warning
+                            AccountStatusTone.ERROR -> MaterialTheme.colorScheme.error
+                            AccountStatusTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                AnimatedVisibility(visible = busy, enter = fadeIn(), exit = fadeOut()) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = accentColor,
+                        strokeWidth = 2.dp,
+                    )
+                }
+                AnimatedVisibility(visible = !busy, enter = fadeIn(), exit = fadeOut()) {
+                    action()
                 }
             }
-            } // close Row
             if (extraContent != null) {
-                HorizontalDivider(
-                    color = extendedColors.glassBorder,
-                    thickness = 1.dp,
-                )
+                HorizontalDivider(color = extendedColors.glassBorder, thickness = 1.dp)
                 extraContent()
             }
-        } // close Column
+        }
+    }
+}
+
+/** The filled, brand-coloured Connect (or Reconnect / Finish) button. */
+@Composable
+fun AccountConnectButton(
+    accentColor: Color,
+    onClick: () -> Unit,
+    label: String = stringResource(R.string.settings_account_connect),
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = accentColor, contentColor = Color.White),
+    ) {
+        Text(label)
+    }
+}
+
+/**
+ * Disconnect, kept quiet: a connected card's status is what matters, and a row
+ * of red outlined buttons down the screen read as alarms.
+ */
+@Composable
+fun AccountDisconnectButton(onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+    ) {
+        Text(stringResource(R.string.settings_account_disconnect))
     }
 }

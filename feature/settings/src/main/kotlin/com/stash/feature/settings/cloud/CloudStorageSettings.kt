@@ -129,7 +129,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                     if (viewModel.usesPicker(provider)) {
                         SettingsNavRow(
                             title = "Add songs from Google Drive",
-                            subtitle = "Pick the songs Stash may play and download. It sees only the files you pick and the ones it saves.",
+                            subtitle = "Stash sees only the songs you pick.",
                             leadingIcon = Icons.Rounded.LibraryAdd,
                             onClick = { openGooglePicker(r.account.id) },
                         )
@@ -137,7 +137,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
                     } else {
                         SettingsNavRow(
                             title = "Add a music folder",
-                            subtitle = "Stash plays and downloads what's in it. Read-only: nothing is changed in your ${provider.displayName}.",
+                            subtitle = "Read-only. Your files stay as they are.",
                             leadingIcon = Icons.Rounded.CreateNewFolder,
                             onClick = { viewModel.openBrowser(r.account.id, r.account.displayName) },
                         )
@@ -322,7 +322,7 @@ private fun DriveBackupRows(status: UploadStatus, accountId: Long, viewModel: Cl
         )
         status.backupOn && status.existing > 0 -> SettingsNavRow(
             title = if (status.existing == 1) "Back up 1 existing download" else "Back up ${status.existing} existing downloads",
-            subtitle = "Songs you downloaded before backup was on.",
+            subtitle = "Downloaded before backup was on.",
             leadingIcon = Icons.Rounded.CloudUpload,
             onClick = viewModel::backUpExistingDownloads,
         )

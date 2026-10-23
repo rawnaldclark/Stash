@@ -58,7 +58,7 @@
     <string name="settings_audio_quality_title">Audio &amp; Quality</string>
     <string name="settings_audio_quality_search_subtitle">Streaming quality, lossless, download quality</string>
     <string name="settings_accounts_sync_title">Accounts &amp; Sync</string>
-    <string name="settings_accounts_sync_search_subtitle">Spotify, YouTube Music, Last.fm</string>
+    <string name="settings_accounts_sync_search_subtitle">Spotify, YouTube Music, Last.fm, cloud storage</string>
     <string name="settings_library_storage_title">Library &amp; Storage</string>
     <string name="settings_library_storage_search_subtitle">Storage location, backups, downloads</string>
     <string name="settings_appearance_title">Appearance</string>
@@ -85,7 +85,6 @@
 
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Connections</string>
-    <string name="settings_accounts_sync_likes_section">Sync your likes</string>
     <string name="settings_yt_music_error_title">YouTube Music</string>
     <string name="settings_ok">OK</string>
     <string name="settings_cancel">Cancel</string>
@@ -106,6 +105,16 @@
     <!-- Settings > Accounts > AccountConnectionCard -->
     <string name="settings_account_reconnect">Reconnect</string>
     <string name="settings_account_disconnect">Disconnect</string>
+    <string name="settings_account_not_connected">Not connected</string>
+    <string name="settings_like_mirror_row_title">Like on %1$s too</string>
+    <string name="settings_like_mirror_lastfm_title">Love on Last.fm too</string>
+    <string name="settings_like_mirror_row_subtitle">Songs you heart in Stash from now on</string>
+    <string name="settings_listenbrainz_dialog_title">Connect ListenBrainz</string>
+    <string name="settings_scrobbles_send_now">Send now</string>
+    <plurals name="settings_scrobbles_waiting">
+        <item quantity="one">%d play waiting to send</item>
+        <item quantity="other">%d plays waiting to send</item>
+    </plurals>
     <string name="settings_account_connect">Connect</string>
 
     <!-- Settings > Accounts > DisconnectAccountDialog -->
@@ -118,8 +127,7 @@
     <string name="settings_like_mirror_warning_confirm">I understand</string>
 
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
-    <string name="settings_yt_sync_title">Send plays to YouTube Music</string>
-    <string name="settings_yt_sync_connect_first">Connect YouTube Music first</string>
+    <string name="settings_yt_sync_title">Add plays to your YouTube Music history</string>
     <string name="settings_yt_sync_retry">Retry YouTube sync</string>
     <string name="settings_yt_status_up_to_date">Up to date</string>
     <string name="settings_yt_status_pending">%1$d pending</string>
@@ -127,49 +135,27 @@
     <string name="settings_yt_status_auth_failed">YT Music connection lost — reconnect</string>
     <string name="settings_yt_status_protocol_broken">Disabled due to errors — will re-enable in next update</string>
     <string name="settings_yt_status_disabled">Off</string>
-    <string name="settings_yt_sync_dialog_title">Send your Stash plays to YouTube Music?</string>
-    <string name="settings_yt_sync_dialog_body">Every track you finish listening to in Stash will be added to your YouTube Music Watch History. Your Daily Mix and other YouTube Music recommendations will learn from your Stash listening.</string>
-    <string name="settings_yt_sync_dialog_how_it_works_title">How it works</string>
-    <string name="settings_yt_sync_dialog_how_it_works_body">Stash uses an unofficial YouTube endpoint (the same one the YouTube Music app uses). Google tolerates this pattern for personal-use apps but could change the rules without notice. If that happens, Stash will automatically stop sending plays until a new update fixes the integration.</string>
-    <string name="settings_yt_sync_dialog_risk_title">Risk</string>
-    <string name="settings_yt_sync_dialog_risk_body">Rare but not zero chance of YouTube rate-limiting your account. Stash monitors for errors and pauses itself if it sees problems.</string>
+    <string name="settings_yt_sync_dialog_title">Add your plays to YouTube Music history?</string>
+    <string name="settings_yt_sync_dialog_body">Songs you finish in Stash show up in your YouTube Music history, so its recommendations learn from them.</string>
+    <string name="settings_yt_sync_dialog_risk_body">This uses an unofficial YouTube endpoint. It could stop working, and there\'s a small chance YouTube rate-limits your account. Stash pauses itself if it sees errors.</string>
 
     <!-- Settings > Accounts > LikeMirrorSection -->
-    <string name="settings_like_mirror_title">Sync your likes</string>
-    <string name="settings_like_mirror_subtitle">Mirror hearts to your accounts. Applies to new likes only.</string>
-    <string name="settings_like_mirror_connect_first">Connect %1$s first</string>
 
     <!-- Settings > Accounts > LastFmSection -->
-    <string name="settings_lastfm_not_configured_title">Not configured</string>
-    <string name="settings_lastfm_not_configured_body">This build of Stash doesn\'t include a Last.fm API key. A developer rebuilding with a key in local.properties unlocks this feature.</string>
-    <string name="settings_lastfm_scrobble_plays">Scrobble your plays</string>
-    <string name="settings_lastfm_connect">Connect Last.fm</string>
-    <string name="settings_lastfm_waiting_approval_title">Waiting for approval</string>
-    <string name="settings_lastfm_waiting_approval_body">Your browser should be open on Last.fm. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.</string>
-    <string name="settings_lastfm_finish_connecting">Finish connecting</string>
+    <string name="settings_lastfm_waiting_approval_body">Approve Stash on last.fm, then tap Finish.</string>
+    <string name="settings_lastfm_finish_connecting">Finish</string>
     <string name="settings_lastfm_connected_as">Connected as %1$s</string>
-    <string name="settings_lastfm_queued_scrobbles">Scrobbling your plays. %1$d queued to submit.</string>
-    <string name="settings_lastfm_up_to_date">Scrobbling your plays. Everything up to date.</string>
     <string name="settings_lastfm_first_artist_only_title">Only scrobble the first artist</string>
-    <string name="settings_lastfm_first_artist_only_desc">Submits \"Artist A\" instead of \"Artist A, Artist B\" so collabs don\'t split your Last.fm stats. Artist names that contain a comma may be shortened.</string>
+    <string name="settings_lastfm_first_artist_only_desc">Collabs count toward the main artist.</string>
     <string name="settings_lastfm_syncing">Syncing…</string>
-    <string name="settings_lastfm_nothing_to_sync">Nothing to sync</string>
-    <string name="settings_lastfm_sync_now">Sync scrobbles now</string>
-    <string name="settings_lastfm_couldnt_connect">Couldn\'t connect</string>
-    <string name="settings_lastfm_dismiss">Dismiss</string>
 
     <!-- Settings > Accounts > ListenBrainzSection -->
     <string name="settings_listenbrainz_title">ListenBrainz</string>
-    <string name="settings_listenbrainz_subtitle">Open scrobbling from MetaBrainz. Your listening data stays yours and exportable.</string>
-    <string name="settings_listenbrainz_paste_token">Paste your user token from listenbrainz.org/profile.</string>
+    <string name="settings_listenbrainz_paste_token">Paste your user token from listenbrainz.org/profile. Plays are sent from now on.</string>
     <string name="settings_listenbrainz_user_token_label">User token</string>
     <string name="settings_listenbrainz_validating">Checking your token…</string>
-    <string name="settings_listenbrainz_connected">Connected.</string>
-    <string name="settings_listenbrainz_queued">Scrobbling plays from now on. %1$d queued to submit.</string>
-    <string name="settings_listenbrainz_up_to_date">Scrobbling plays from now on. Everything up to date.</string>
-    <string name="settings_listenbrainz_now_playing_title">Send now playing</string>
-    <string name="settings_listenbrainz_now_playing_subtitle">Show what you\'re listening to in real time.</string>
-    <string name="settings_listenbrainz_sync_now">Sync listens now</string>
+    <string name="settings_listenbrainz_connected">Connected</string>
+    <string name="settings_listenbrainz_now_playing_title">Show what you\'re playing now</string>
 
     <!-- Settings > Common / Reusable components -->
     <string name="settings_back">Back</string>

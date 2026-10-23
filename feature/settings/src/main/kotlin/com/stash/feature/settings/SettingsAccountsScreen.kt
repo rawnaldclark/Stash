@@ -1,8 +1,5 @@
 package com.stash.feature.settings
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -19,24 +16,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.ui.components.GlassCard
+import com.stash.core.data.social.Destination
 import com.stash.feature.settings.components.AccountConnectionCard
+import com.stash.feature.settings.components.LastFmAccountCard
+import com.stash.feature.settings.components.LikeMirrorToggleRow
+import com.stash.feature.settings.components.ListenBrainzAccountCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 
 /**
- * The Accounts & Sync spoke of the hub-and-spoke Settings redesign.
- *
- * Behavior-preserving relocation of the original "Accounts" section from the
- * monolithic [SettingsScreen]: the Spotify and YouTube Music connection cards
- * (each with their inline auto-save / history-sync extras), the Last.fm card,
- * and the like-mirroring opt-ins (plus the mirror-warning ack dialog). Every
- * control calls the SAME [SettingsViewModel] method the old screen used; no
- * logic is changed. The `bringIntoViewRequester` on the Last.fm card (a
- * deep-link affordance) is intentionally dropped here.
+ * Settings > Accounts & Sync. One card per account, each carrying its own
+ * switches once connected: Spotify (likes), YouTube Music (likes, play
+ * history), Discord, Last.fm (love, first artist, scrobble queue) and
+ * ListenBrainz (now playing, queue), then cloud storage. The like-mirroring
+ * opt-in ack dialog is owned here.
  */
 @Composable
 fun SettingsAccountsScreen(
@@ -156,13 +151,18 @@ fun SettingsAccountsScreen(
         // mirroring off (no writes without this ack).
         uiState.pendingMirrorWarning?.let { dest ->
             com.stash.feature.settings.components.LikeMirrorWarningDialog(
-                serviceName = if (dest == com.stash.core.data.social.Destination.SPOTIFY) "Spotify" else "YouTube Music",
+                serviceName = if (dest == Destination.SPOTIFY) "Spotify" else "YouTube Music",
                 onConfirm = viewModel::onMirrorWarningConfirmed,
                 onDismiss = viewModel::onMirrorWarningDismissed,
             )
         }
 
         SettingsSectionLabel(stringResource(R.string.settings_accounts_connections_section))
+
+        // Each account's own switches (likes, history) show only while it is
+        // connected: a disconnected card is one line and a Connect button.
+        val spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected
+        val ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected
 
         // Disconnecting a source also drops its queued downloads, so each asks
         // first (as Discord's connect does). Saveable, like showDiscordRisk, so
@@ -202,6 +202,17 @@ fun SettingsAccountsScreen(
             expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
             onDisconnect = { confirmSpotifyDisconnect = true },
+            extraContent = if (spotifyConnected) {
+                {
+                    LikeMirrorToggleRow(
+                        title = stringResource(R.string.settings_like_mirror_row_title, "Spotify"),
+                        checked = uiState.mirrorLikesSpotify,
+                        onToggle = { viewModel.onMirrorToggleRequested(Destination.SPOTIFY, it) },
+                    )
+                }
+            } else {
+                null
+            },
         )
 
         AccountConnectionCard(
@@ -212,16 +223,23 @@ fun SettingsAccountsScreen(
             expired = authExpiry.youtubeExpired,
             onConnect = viewModel::onConnectYouTube,
             onDisconnect = { confirmYouTubeDisconnect = true },
-            extraContent = {
-                com.stash.feature.settings.components.YouTubeHistorySyncSection(
-                    enabled = uiState.ytHistoryEnabled,
-                    health = uiState.ytHistoryHealth,
-                    pendingCount = uiState.ytPendingCount,
-                    ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = viewModel::onYouTubeHistoryEnabledChanged,
-                    onRetry = viewModel::onRetryYouTubeHistory,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
+            extraContent = if (ytConnected) {
+                {
+                    LikeMirrorToggleRow(
+                        title = stringResource(R.string.settings_like_mirror_row_title, "YouTube Music"),
+                        checked = uiState.mirrorLikesYtMusic,
+                        onToggle = { viewModel.onMirrorToggleRequested(Destination.YT_MUSIC, it) },
+                    )
+                    com.stash.feature.settings.components.YouTubeHistorySyncSection(
+                        enabled = uiState.ytHistoryEnabled,
+                        health = uiState.ytHistoryHealth,
+                        pendingCount = uiState.ytPendingCount,
+                        onToggle = viewModel::onYouTubeHistoryEnabledChanged,
+                        onRetry = viewModel::onRetryYouTubeHistory,
+                    )
+                }
+            } else {
+                null
             },
         )
 
@@ -281,85 +299,58 @@ fun SettingsAccountsScreen(
             },
         )
 
-        // Dropbox / OneDrive: the user's own music in their cloud storage. Hidden in a build
-        // without provider keys.
-        com.stash.feature.settings.cloud.CloudAccountsSection(
-            viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
-        )
-
-        // Last.fm renders via its own composable (web-auth / cookie / OAuth UX
-        // differs enough from AccountConnectionCard). The deep-link
-        // bringIntoViewRequester from the monolith is dropped here.
+        // Last.fm and ListenBrainz sit with the other accounts, above cloud
+        // storage: same job, and users commonly run both.
         val scrobbleFirstArtistOnly by viewModel.scrobbleFirstArtistOnly.collectAsStateWithLifecycle()
+        val mirrorLastFm by viewModel.mirrorLikesLastFm.collectAsStateWithLifecycle()
         val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-        GlassCard {
-            com.stash.feature.settings.components.LastFmSection(
-                state = uiState.lastFmState,
-                onConnect = {
-                    viewModel.onConnectLastFm { url -> runCatching { lastFmUriHandler.openUri(url) } }
-                },
-                onFinish = viewModel::onFinishLastFmAuth,
-                onDisconnect = viewModel::onDisconnectLastFm,
-                onDismissError = viewModel::onDismissLastFmError,
-                onSyncScrobblesNow = viewModel::onSyncScrobblesNow,
-                isScrobbleDraining = uiState.isScrobbleDraining,
-                firstArtistOnly = scrobbleFirstArtistOnly,
-                onFirstArtistOnlyChange = viewModel::onScrobbleFirstArtistOnlyChanged,
-            )
-            uiState.scrobbleDrainResult?.let { result ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = when {
-                        !result.sessionPresent -> stringResource(R.string.settings_lastfm_connect_first)
-                        result.held && result.submitted == 0 ->
-                            stringResource(R.string.settings_lastfm_reach_error)
-                        result.submitted == 0 -> stringResource(R.string.settings_lastfm_no_new_scrobbles)
-                        else -> pluralStringResource(R.plurals.settings_lastfm_scrobbles_sent, result.submitted, result.submitted)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                androidx.compose.runtime.LaunchedEffect(result) {
-                    kotlinx.coroutines.delay(3000)
-                    viewModel.onClearScrobbleDrainResult()
-                }
+        val drainMessage = uiState.scrobbleDrainResult?.let { result ->
+            androidx.compose.runtime.LaunchedEffect(result) {
+                kotlinx.coroutines.delay(3000)
+                viewModel.onClearScrobbleDrainResult()
+            }
+            when {
+                !result.sessionPresent -> stringResource(R.string.settings_lastfm_connect_first)
+                result.held && result.submitted == 0 -> stringResource(R.string.settings_lastfm_reach_error)
+                result.submitted == 0 -> stringResource(R.string.settings_lastfm_no_new_scrobbles)
+                else -> pluralStringResource(R.plurals.settings_lastfm_scrobbles_sent, result.submitted, result.submitted)
             }
         }
+        LastFmAccountCard(
+            state = uiState.lastFmState,
+            onConnect = {
+                viewModel.onConnectLastFm { url -> runCatching { lastFmUriHandler.openUri(url) } }
+            },
+            onFinish = viewModel::onFinishLastFmAuth,
+            onDisconnect = viewModel::onDisconnectLastFm,
+            onCancel = viewModel::onDismissLastFmError,
+            onSyncScrobblesNow = viewModel::onSyncScrobblesNow,
+            isScrobbleDraining = uiState.isScrobbleDraining,
+            drainMessage = drainMessage,
+            firstArtistOnly = scrobbleFirstArtistOnly,
+            onFirstArtistOnlyChange = viewModel::onScrobbleFirstArtistOnlyChanged,
+            loveEnabled = mirrorLastFm,
+            onLoveToggle = { viewModel.onMirrorToggleRequested(Destination.LAST_FM, it) },
+        )
 
-        // ListenBrainz sits beside Last.fm: same job, and users commonly run both
-        // rather than choosing between them.
         val listenBrainzState by viewModel.listenBrainzState.collectAsStateWithLifecycle()
         val listenBrainzToken by viewModel.listenBrainzTokenInput.collectAsStateWithLifecycle()
         val listenBrainzDraining by viewModel.isListenBrainzDraining.collectAsStateWithLifecycle()
-        GlassCard {
-            com.stash.feature.settings.components.ListenBrainzSection(
-                state = listenBrainzState,
-                tokenInput = listenBrainzToken,
-                onTokenInputChange = viewModel::onListenBrainzTokenChange,
-                onConnect = viewModel::onConnectListenBrainz,
-                onDisconnect = viewModel::onDisconnectListenBrainz,
-                onNowPlayingToggle = viewModel::onListenBrainzNowPlayingToggle,
-                onSyncNow = viewModel::onSyncListenBrainzNow,
-                isDraining = listenBrainzDraining,
-            )
-        }
+        ListenBrainzAccountCard(
+            state = listenBrainzState,
+            tokenInput = listenBrainzToken,
+            onTokenInputChange = viewModel::onListenBrainzTokenChange,
+            onConnect = viewModel::onConnectListenBrainz,
+            onDisconnect = viewModel::onDisconnectListenBrainz,
+            onNowPlayingToggle = viewModel::onListenBrainzNowPlayingToggle,
+            onSyncNow = viewModel::onSyncListenBrainzNow,
+            isDraining = listenBrainzDraining,
+        )
 
-        SettingsSectionLabel(stringResource(R.string.settings_accounts_sync_likes_section), beta = true)
-
-        GlassCard {
-            val mirrorLastFm by viewModel.mirrorLikesLastFm.collectAsStateWithLifecycle()
-            com.stash.feature.settings.components.LikeMirrorSection(
-                spotifyEnabled = uiState.mirrorLikesSpotify,
-                ytMusicEnabled = uiState.mirrorLikesYtMusic,
-                lastFmEnabled = mirrorLastFm,
-                spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
-                ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                lastFmConnected = uiState.lastFmState is LastFmAuthState.Connected,
-                onSpotifyToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.SPOTIFY, it) },
-                onYtMusicToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.YT_MUSIC, it) },
-                onLastFmToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.LAST_FM, it) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
-        }
+        // Dropbox / OneDrive / Google Drive: the user's own music in their cloud
+        // storage. Hidden in a build without provider keys.
+        com.stash.feature.settings.cloud.CloudAccountsSection(
+            viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+        )
     }
 }
