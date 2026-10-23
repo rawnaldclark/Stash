@@ -14,6 +14,7 @@ android {
 dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:media"))
+    implementation(project(":data:ytmusic"))
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
 

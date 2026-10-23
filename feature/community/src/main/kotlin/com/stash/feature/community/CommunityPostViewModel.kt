@@ -48,6 +48,7 @@ class CommunityPostViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val likeCoordinator: LikeCoordinator,
+    private val ytMusicApiClient: com.stash.data.ytmusic.YTMusicApiClient,
 ) : ViewModel() {
     private val postId: String = checkNotNull(savedStateHandle.get<String>("postId"))
 
@@ -62,6 +63,14 @@ class CommunityPostViewModel @Inject constructor(
 
     private val _state = MutableStateFlow<UiState>(UiState.Loading)
     val state: StateFlow<UiState> = _state.asStateFlow()
+
+    /** A song post's "More from Community": the top posts other than this one (empty until loaded, or for a playlist). */
+    private val _related = MutableStateFlow<List<CommunityPost>>(emptyList())
+    val related: StateFlow<List<CommunityPost>> = _related.asStateFlow()
+
+    /** True while the song's artist is being looked up for its artist page. */
+    private val _openingArtist = MutableStateFlow(false)
+    val openingArtist: StateFlow<Boolean> = _openingArtist.asStateFlow()
     /** The vote last asked for while a request is out, or null (main thread only). */
     private var pending: Int? = null
 
@@ -71,24 +80,74 @@ class CommunityPostViewModel @Inject constructor(
         _state.value = UiState.Loading
         viewModelScope.launch {
             _state.value = when (val r = repository.open(postId)) {
-                is CommunityResult.Ok -> UiState.Loaded(r.value, liked = likedAlready(r.value))
+                is CommunityResult.Ok -> UiState.Loaded(r.value, liked = likedAlready(r.value)).also { loadRelated(it.post) }
                 is CommunityResult.Rejected -> if (r.code == "gone") UiState.Gone else UiState.Failed(communityMessage(r))
                 is CommunityResult.Failed -> UiState.Failed(communityMessage(r))
             }
         }
     }
 
-    /** Plays the frozen songs, as a shared mix's Play does: each is kept as a hidden stream-only row first. */
+    /**
+     * Plays the frozen songs, as a shared mix's Play does: each is kept as a hidden stream-only row first.
+     * A song plays and then a radio grows from it (the song keeps playing while the station fills in).
+     */
     fun play() = withPost("play this") { post ->
         if (post.kind == "song") {
             songRow(post)?.let { row ->
                 // As SharedTrackViewModel.play: the row says whether the song is liked here.
                 update { it.copy(liked = row.stashLikedAt != null) }
                 playerRepository.setQueue(listOf(row), 0)
+                // Best effort: offline or with streaming off, the song still plays on its own.
+                playerRepository.startRadio(
+                    com.stash.core.data.radio.RadioSeed.Song(title = row.title, artist = row.artist, ytVideoId = row.youtubeId),
+                    keepCurrent = true,
+                )
             }
         } else {
             val tracks = sharedMixRepository.tracksFor(post.toDocument())
             if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, 0)
+        }
+    }
+
+    /** A playlist or mix post's songs in a random order. */
+    fun shuffle() = withPost("shuffle this") { post ->
+        val tracks = sharedMixRepository.tracksFor(post.toDocument()).shuffled()
+        if (tracks.isNotEmpty()) playerRepository.setQueue(tracks, 0)
+    }
+
+    /**
+     * The song's artist page. A post stores the artist's name only, so it's looked up first (as Now
+     * Playing's tap-to-artist does); [onResolved] gets the artist, or a message says it wasn't found.
+     */
+    fun openArtist(onResolved: (id: String, name: String, avatarUrl: String?) -> Unit) {
+        val post = (_state.value as? UiState.Loaded)?.post ?: return
+        val name = (post.track?.artist ?: post.artist)?.split(",")?.firstOrNull()?.trim().orEmpty()
+        if (name.isBlank() || _openingArtist.value) return
+        _openingArtist.value = true
+        viewModelScope.launch {
+            try {
+                val artist = ytMusicApiClient.resolveArtist(name)
+                if (artist != null) onResolved(artist.id, artist.name, artist.avatarUrl)
+                else update { it.copy(message = "Couldn't find $name") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "artist lookup failed", e)
+                update { it.copy(message = "Couldn't open $name. Try again.") }
+            } finally {
+                _openingArtist.value = false
+            }
+        }
+    }
+
+    /** A song post's "More from Community": Home's list when it's loaded, else one small feed read. */
+    private fun loadRelated(post: CommunityPost) {
+        if (post.kind != "song") return
+        viewModelScope.launch {
+            val posts = repository.lastHome
+                ?: (repository.feed(CommunityRepository.HOME_SIZE + 1) as? CommunityResult.Ok)?.value
+                ?: return@launch
+            _related.value = posts.filter { it.id != post.id }.take(RELATED_POSTS)
         }
     }
 
@@ -178,5 +237,6 @@ class CommunityPostViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "CommunityPostVM"
+        const val RELATED_POSTS = 5
     }
 }

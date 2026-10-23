@@ -1,6 +1,14 @@
 package com.stash.feature.community
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -68,6 +76,40 @@ fun CommunityScreen(
         Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = tab == Tab.ALL, onClick = { tab = Tab.ALL }, label = { Text("All") })
             FilterChip(selected = tab == Tab.MINE, onClick = { tab = Tab.MINE }, label = { Text("Mine") })
+        }
+        // A taste of the chart: the top posts' songs (see CommunityChartPlayer). All only: Mine is your own.
+        if (state.tab == Tab.ALL && !state.posts.isNullOrEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(
+                    onClick = { viewModel.playChart(shuffle = false) },
+                    enabled = !state.startingChart,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Play all")
+                }
+                OutlinedButton(
+                    onClick = { viewModel.playChart(shuffle = true) },
+                    enabled = !state.startingChart,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Shuffle")
+                }
+            }
+            // Opening the first posts takes a moment; its space is kept so the list doesn't jump.
+            Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(3.dp)) {
+                if (state.startingChart) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
         }
         // The list's own tab, not the chip's: until show() runs, the list on screen is still the last tab's.
         val posts = state.posts

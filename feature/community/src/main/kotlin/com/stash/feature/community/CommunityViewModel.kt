@@ -29,7 +29,10 @@ internal fun CommunityPost.nextVote(tapped: Int): Int = if (myVote == tapped) 0 
 
 /** A list of posts with optimistic votes: Home's section (HOME) and See all (ALL, MINE). */
 @HiltViewModel
-class CommunityViewModel @Inject constructor(private val repository: CommunityRepository) : ViewModel() {
+class CommunityViewModel @Inject constructor(
+    private val repository: CommunityRepository,
+    private val chartPlayer: CommunityChartPlayer,
+) : ViewModel() {
     enum class Tab { HOME, ALL, MINE }
 
     /** [posts] is null until something loads; [failed] means nothing loaded and the last try failed (Retry). */
@@ -38,11 +41,14 @@ class CommunityViewModel @Inject constructor(private val repository: CommunityRe
         val posts: List<CommunityPost>? = null,
         val failed: Boolean = false,
         val message: String? = null,
+        /** Play all / Shuffle is opening the first posts; cleared once music starts. */
+        val startingChart: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState(posts = repository.lastHome))
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var loading: Job? = null
+    private var chart: Job? = null
     private var loadedAt = 0L
 
     /** Post id → the vote last asked for, while a request for that post is out (main thread only). */
@@ -121,6 +127,25 @@ class CommunityViewModel @Inject constructor(private val repository: CommunityRe
                 }
             } finally {
                 voting.remove(post.id)
+            }
+        }
+    }
+
+    /** Play all / Shuffle on the All list: a taste of the top posts (see [CommunityChartPlayer]). */
+    fun playChart(shuffle: Boolean) {
+        val posts = _state.value.posts?.takeIf { it.isNotEmpty() } ?: return
+        if (chart?.isActive == true) return
+        _state.update { it.copy(startingChart = true) }
+        chart = viewModelScope.launch {
+            val started = try {
+                chartPlayer.play(posts, shuffle) { _state.update { it.copy(startingChart = false) } }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            _state.update {
+                it.copy(startingChart = false, message = if (started) it.message else "Couldn't play Community right now. Try again.")
             }
         }
     }

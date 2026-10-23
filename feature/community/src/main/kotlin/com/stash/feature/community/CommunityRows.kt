@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -193,6 +194,8 @@ internal fun PostRow(
     now: Long,
     onOpen: () -> Unit,
     onVote: (Int) -> Unit,
+    /** False drops the vote column (a list where voting happens elsewhere, e.g. a post's "More from Community"). */
+    showVotes: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
@@ -235,7 +238,7 @@ internal fun PostRow(
                 Text("Hidden by votes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
-        VoteControl(post, onVote)
+        if (showVotes) VoteControl(post, onVote) else Spacer(Modifier.width(12.dp))
     }
 }
 

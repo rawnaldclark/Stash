@@ -61,7 +61,7 @@ class CommunityPostViewModelTest {
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes)
+    private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes, mockk(relaxed = true))
 
     @Test fun `the post screen reads each kind`() {
         assertThat(playlistPost().headline()).isEqualTo("Playlist · 2 songs · 1 h 5 min")

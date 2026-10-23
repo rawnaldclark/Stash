@@ -510,6 +510,8 @@ private fun StashNavGraph(
             CommunityPostScreen(
                 onBack = { if (onTop()) navController.popBackStack() },
                 onOpenPlaylist = { id -> if (onTop()) navController.navigate(PlaylistDetailRoute(id)) },
+                onOpenPost = { id -> if (onTop()) navController.navigate(CommunityPostRoute(id)) },
+                onOpenArtist = { id, name, avatar -> if (onTop()) navController.navigate(SearchArtistRoute(id, name, avatar)) },
             )
         }
 
