@@ -203,8 +203,26 @@ class PreviewUrlExtractor @Inject constructor(
          * Every entry must be tail-probed before use — "no PO token required" is
          * a claim about YouTube's current policy, not a guarantee, and this
          * outage is what an untested claim costs.
+         *
+         * ⚠️ 2026-10-23: `web_embedded` went SABR-only (its https formats come back
+         * without a URL, signed in or not) and `android_vr` still wants a PO token,
+         * so BOTH fast attempts failed on every song and each download paid for
+         * them — ~25–35 s and ~5 s of yt-dlp runs under sync load — before the
+         * default set, which took ~20–30 s itself solving `tv_samsung`'s JS
+         * challenge in QuickJS. About a minute a song; a reported 31 downloads in
+         * 7 minutes. `visionos` is the client yt-dlp itself now uses when it has no
+         * JS runtime (`_DEFAULT_JSLESS_CLIENTS`): no player JS, no challenge, Opus
+         * 251 served (3.6–6 s on a PC). It takes no cookies (see
+         * [COOKIE_INCOMPATIBLE_CLIENTS]), so an age-gated video falls to the
+         * default set, which keeps them. The dead two are gone rather than kept as
+         * "backstops": with cookies, yt-dlp's default set already tries
+         * web_embedded, and [FastClientBench] now sidelines a client that keeps
+         * failing, so the next rotation costs a few attempts, not every song.
          */
-        internal val FAST_PLAYER_CLIENTS = listOf("web_embedded", "android_vr")
+        internal val FAST_PLAYER_CLIENTS = listOf("visionos")
+
+        /** [FAST_PLAYER_CLIENTS] minus any [FastClientBench] has sidelined: the order to try now. */
+        internal fun fastClientsNow(): List<String> = FAST_PLAYER_CLIENTS.filter { FastClientBench.usable(it) }
 
         /** `pot=` (proof of origin) on a googlevideo URL; a URL that already carries one is left alone. */
         internal fun withPoToken(url: String, pot: String): String =
@@ -302,7 +320,7 @@ class PreviewUrlExtractor @Inject constructor(
          * fallback. These clients are unauthenticated by design — that is why
          * they return PO-token-free URLs — so they lose nothing without cookies.
          */
-        private val COOKIE_INCOMPATIBLE_CLIENTS = setOf("android_vr")
+        private val COOKIE_INCOMPATIBLE_CLIENTS = setOf("android_vr", "visionos")
 
         internal fun supportsCookies(playerClient: String?): Boolean =
             playerClient == null || playerClient !in COOKIE_INCOMPATIBLE_CLIENTS
@@ -707,7 +725,10 @@ class PreviewUrlExtractor @Inject constructor(
                 // through to ExoPlayer and 403'd there as a skipped track. A URL
                 // that cannot serve its last byte is not a stream, and finding
                 // that out here costs one range request instead of a dead track.
-                for (client in FAST_PLAYER_CLIENTS) {
+                // Strikes for FastClientBench, counted only if the default set then
+                // answers (a video nothing can serve says nothing about the client).
+                val failedFast = mutableListOf<String>()
+                for (client in fastClientsNow()) {
                     val stream = try {
                         runYtDlp(videoId, playerClient = client, lowestQuality = lowestQuality)
                     } catch (ce: CancellationException) {
@@ -715,7 +736,11 @@ class PreviewUrlExtractor @Inject constructor(
                     } catch (e: Exception) {
                         Log.d(TAG, "yt-dlp $client attempt failed for $videoId: ${e.message}")
                         null
-                    } ?: continue
+                    }
+                    if (stream == null) {
+                        failedFast += client
+                        continue
+                    }
 
                     // Cheap offline filter BEFORE the probe (credit: ParaliyzedEvo,
                     // PR #450). A combined audio+video answer is the selector's
@@ -732,6 +757,7 @@ class PreviewUrlExtractor @Inject constructor(
                     // for every itag. Null fails OPEN, matching the probe's bias.
                     if (stream.vcodec != null && stream.vcodec != "none") {
                         Log.i(TAG, "yt-dlp: $client returned combined vcodec=${stream.vcodec} for $videoId — next client")
+                        failedFast += client
                         continue
                     }
 
@@ -741,16 +767,20 @@ class PreviewUrlExtractor @Inject constructor(
                     // arrives the next time YouTube rotates the gate.
                     if (tailProbe.servesFullFile(stream.url, stream.sizeBytes)) {
                         Log.i(TAG, "yt-dlp: $client served a full-file URL for $videoId")
+                        FastClientBench.succeeded(client)
                         return@withContext stream.url
                     }
                     Log.i(TAG, "yt-dlp: $client URL failed the tail probe for $videoId — next client")
+                    failedFast += client
                 }
 
                 // Last resort: yt-dlp's own default client set. Deliberately NOT
                 // probed — nothing follows it, so a false rejection would turn a
                 // playable track into a skip. Let ExoPlayer have its try.
-                (runYtDlp(videoId, playerClient = null, lowestQuality = lowestQuality)
-                    ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId")).url
+                val fallback = runYtDlp(videoId, playerClient = null, lowestQuality = lowestQuality)
+                    ?: throw IllegalStateException("yt-dlp returned no stream URL for videoId=$videoId")
+                failedFast.forEach(FastClientBench::failed)
+                fallback.url
             }
         }
     }

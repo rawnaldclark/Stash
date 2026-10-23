@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.data.download.files.WebmAudioRemuxer
+import com.stash.data.download.preview.FastClientBench
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.yausername.youtubedl_android.YoutubeDL
@@ -193,12 +194,23 @@ class DownloadExecutor @Inject constructor(
             // non-empty file or it doesn't, and that check IS the verification.
             // Default client set stays the last resort so broad-catalog coverage
             // — the whole reason the YouTube download path exists — never regresses.
-            PreviewUrlExtractor.FAST_PLAYER_CLIENTS
+            //
+            // 2026-10-23: a fast client YouTube has gated fails on every song, so it
+            // is benched after a few failures in a row (FastClientBench) instead of
+            // costing every download a doomed yt-dlp run.
+            // A strike counts only when the default set then lands the same song: a
+            // song with no stream the quality allows (an Opus-only download of an
+            // AAC-only video) fails everywhere and says nothing about the client.
+            val failedFast = mutableListOf<String>()
+            PreviewUrlExtractor.fastClientsNow()
                 .firstNotNullOfOrNull { client ->
                     runYtDlp(url, outputDir, outputTemplate, filename, qualityArgs, cookiePath, client, onProgress)
                         .takeIf { it is DownloadResult.Success }
+                        ?.also { FastClientBench.succeeded(client) }
+                        ?: run { failedFast += client; null }
                 }
                 ?: runYtDlp(url, outputDir, outputTemplate, filename, qualityArgs, cookiePath, null, onProgress)
+                    .also { if (it is DownloadResult.Success) failedFast.forEach(FastClientBench::failed) }
         } finally {
             if (cookieFile.exists()) cookieFile.delete()
         }
