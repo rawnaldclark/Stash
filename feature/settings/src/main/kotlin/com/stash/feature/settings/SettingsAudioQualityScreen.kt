@@ -49,6 +49,10 @@ fun SettingsAudioQualityScreen(
     val qbdlxExpired by viewModel.qbdlxExpired.collectAsStateWithLifecycle()
     val tidalAacFallback by viewModel.tidalAacFallback.collectAsStateWithLifecycle()
     val preferTidalAacStreaming by viewModel.preferTidalAacStreaming.collectAsStateWithLifecycle()
+    val preferCloudCopies by viewModel.preferCloudCopies.collectAsStateWithLifecycle()
+    // Only offered once there's a cloud account to have copies in.
+    val cloud: com.stash.feature.settings.cloud.CloudStorageViewModel = hiltViewModel()
+    val cloudAccounts by cloud.accounts.collectAsStateWithLifecycle()
     val flacViewModel: FlacUpgradeViewModel = hiltViewModel()
     val autoFlacUpgrade by flacViewModel.autoEnabled.collectAsStateWithLifecycle()
     val quotaViewModel: LosslessQuotaViewModel = hiltViewModel()
@@ -133,6 +137,17 @@ fun SettingsAudioQualityScreen(
                     checked = preferTidalAacStreaming,
                     onCheckedChange = viewModel::onPreferTidalAacStreamingChanged,
                 )
+            }
+            // Your own lossless files in cloud storage, before Qobuz or Tidal (#679).
+            if (cloud.available && cloudAccounts.isNotEmpty()) {
+                streaming += {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_prefer_cloud_copies_title),
+                        subtitle = stringResource(R.string.settings_prefer_cloud_copies_subtitle),
+                        checked = preferCloudCopies,
+                        onCheckedChange = viewModel::onPreferCloudCopiesChanged,
+                    )
+                }
             }
             // One switch for streaming and downloads. With Lossless downloads it
             // sits with them below; otherwise it is here, for streaming.

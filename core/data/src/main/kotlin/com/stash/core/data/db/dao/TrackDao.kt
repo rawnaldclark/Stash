@@ -350,6 +350,22 @@ internal const val IN_LIBRARY = """
 internal const val IN_LIBRARY_IDS = "SELECT t.id FROM tracks t WHERE " + IN_LIBRARY
 
 /**
+ * A cloud song as "Play my cloud copies first" matches a streamed song against it: its words
+ * as tagged (cloud rows keep blank canonical words, so they're compared here, not in SQL),
+ * length, address and format.
+ */
+data class CloudCopyCandidate(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val cloudUri: String,
+    val fileFormat: String,
+    val bitsPerSample: Int?,
+    val sampleRateHz: Int?,
+)
+
+/**
  * Data-access object for [TrackEntity].
  *
  * Provides CRUD operations, various sorted/filtered queries, full-text
@@ -357,6 +373,30 @@ internal const val IN_LIBRARY_IDS = "SELECT t.id FROM tracks t WHERE " + IN_LIBR
  */
 @Dao
 interface TrackDao {
+
+    /** Every playable cloud song, for CloudCopyFinder's index. */
+    @Query(
+        """
+        SELECT id, title, artist, duration_ms AS durationMs, cloud_uri AS cloudUri, file_format AS fileFormat,
+               bits_per_sample AS bitsPerSample, sample_rate_hz AS sampleRateHz
+        FROM tracks WHERE source = 'CLOUD' AND cloud_uri IS NOT NULL
+        """
+    )
+    suspend fun cloudCopyCandidates(): List<CloudCopyCandidate>
+
+    /**
+     * A cheap fingerprint of the cloud songs (how many, the newest id, their total length, and
+     * the addresses' total length, which moves when a file is re-filed): CloudCopyFinder rebuilds
+     * its index only when it changes.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) || ':' || IFNULL(MAX(id), 0) || ':' || IFNULL(SUM(duration_ms), 0) || ':' ||
+               IFNULL(SUM(LENGTH(cloud_uri)), 0)
+        FROM tracks WHERE source = 'CLOUD' AND cloud_uri IS NOT NULL
+        """
+    )
+    suspend fun cloudCopySignature(): String
 
     // ── Inserts ─────────────────────────────────────────────────────────
 

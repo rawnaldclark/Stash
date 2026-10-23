@@ -49,6 +49,7 @@ class StreamingQualityPreferences @Inject constructor(
     private val cellularKey = stringPreferencesKey("streaming_cellular_tier")
     private val saveDataKey = booleanPreferencesKey("streaming_save_data")
     private val preferTidalAacKey = booleanPreferencesKey("prefer_tidal_aac_streaming")
+    private val preferCloudCopiesKey = booleanPreferencesKey("prefer_cloud_copies")
 
     val wifiTier: Flow<LosslessQualityTier> = context.streamingQualityDataStore.data.map { prefs ->
         prefs[wifiKey]?.let { runCatching { LosslessQualityTier.valueOf(it) }.getOrNull() }
@@ -71,8 +72,17 @@ class StreamingQualityPreferences @Inject constructor(
         prefs[preferTidalAacKey] ?: false
     }
 
+    /**
+     * "Play my cloud copies first" (#679): a song about to stream plays from the user's own lossless
+     * file in their cloud storage when one matches, before Qobuz or Tidal. Off unless turned on.
+     */
+    val preferCloudCopies: Flow<Boolean> = context.streamingQualityDataStore.data.map { prefs ->
+        prefs[preferCloudCopiesKey] ?: false
+    }
+
     suspend fun saveDataNow(): Boolean = saveData.first()
     suspend fun preferTidalAacNow(): Boolean = preferTidalAac.first()
+    suspend fun preferCloudCopiesNow(): Boolean = preferCloudCopies.first()
 
     suspend fun setWifiTier(tier: LosslessQualityTier) {
         context.streamingQualityDataStore.edit { it[wifiKey] = tier.name }
@@ -88,6 +98,10 @@ class StreamingQualityPreferences @Inject constructor(
 
     suspend fun setPreferTidalAac(value: Boolean) {
         context.streamingQualityDataStore.edit { it[preferTidalAacKey] = value }
+    }
+
+    suspend fun setPreferCloudCopies(value: Boolean) {
+        context.streamingQualityDataStore.edit { it[preferCloudCopiesKey] = value }
     }
 
     /**

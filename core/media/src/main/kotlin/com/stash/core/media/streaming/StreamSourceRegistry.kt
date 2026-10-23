@@ -88,6 +88,8 @@ class StreamSourceRegistry internal constructor(
     private val losslessQuota: LosslessQuota? = null,
     /** Streaming quality settings ("Prefer Tidal AAC"); null in hand-built tests (setting off). */
     private val qualityPolicy: StreamQualityPolicy? = null,
+    /** "Play my cloud copies first" (#679); null in hand-built tests (no cloud copies). */
+    private val cloudCopies: CloudCopyFinder? = null,
 ) {
     @Inject
     constructor(
@@ -103,11 +105,33 @@ class StreamSourceRegistry internal constructor(
         tidal: TidalStreamResolver,
         losslessQuota: LosslessQuota,
         qualityPolicy: StreamQualityPolicy,
+        cloudCopies: CloudCopyFinder,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
-        qualityPolicy,
+        qualityPolicy, cloudCopies,
     )
+    /**
+     * The user's own lossless copy of [track] in their cloud storage, as a [StreamUrl] whose url is
+     * its `stash-cloud://` address ([CloudCopyFinder.ORIGIN]); [LazyResolvingDataSource] opens it,
+     * and falls back to this chain when it can't. Only with the setting and Lossless on: with
+     * Lossless off nothing is spent that a cloud copy would save.
+     */
+    private suspend fun cloudCopy(track: TrackEntity): StreamUrl? {
+        val finder = cloudCopies ?: return null
+        if (qualityPolicy?.preferCloudCopies() != true || !losslessPrefs.enabledNow()) return null
+        val copy = finder.find(track.title, track.artist, track.durationMs) ?: return null
+        return StreamUrl(
+            url = copy.cloudUri,
+            // The address doesn't lapse; its link is fetched (and cached) when it's opened.
+            expiresAtMs = System.currentTimeMillis() + CLOUD_COPY_TTL_MS,
+            codec = copy.fileFormat,
+            bitsPerSample = copy.bitsPerSample,
+            sampleRateHz = copy.sampleRateHz,
+            origin = CloudCopyFinder.ORIGIN,
+        )
+    }
+
     /**
      * Try each resolver in priority order; return the first non-null
      * [StreamUrl]. Returns null when no source produced a match — caller
@@ -139,6 +163,9 @@ class StreamSourceRegistry internal constructor(
         // Last line of defence: a cloud song (the user's own file) is never looked up on the
         // lossless relays, JioSaavn or YouTube. Its player item streams from stash-cloud://.
         if (track.source == com.stash.core.model.MusicSource.CLOUD) return null
+        // "Play my cloud copies first": the user's own lossless file, before any relay is asked.
+        // A local lookup (no network), so it runs ahead of the single-flight and for look-aheads too.
+        cloudCopy(track)?.let { return it }
         // Single-flight. A foreground tap and the next-up prefetch landing on the
         // same track within a few hundred ms each ran their OWN full resolver
         // chain: doubled calls to every source (including rate-limited search
@@ -460,5 +487,7 @@ class StreamSourceRegistry internal constructor(
         private const val TAG = "StreamSourceRegistry"
         private const val TIDAL_DEFERRED = "tidal-deferred"
         private const val TIDAL_AAC = "tidal-aac"
+        /** A cloud copy's StreamUrl lifetime: its address is stable, so a long one. */
+        private const val CLOUD_COPY_TTL_MS = 6 * 60 * 60 * 1000L
     }
 }

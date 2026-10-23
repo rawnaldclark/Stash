@@ -1850,6 +1850,14 @@ class SettingsViewModel @Inject constructor(
     fun onPreferTidalAacStreamingChanged(value: Boolean) =
         viewModelScope.launch { streamingQualityPrefs.setPreferTidalAac(value) }
 
+    /** "Play my cloud copies first" (#679). */
+    val preferCloudCopies: StateFlow<Boolean> =
+        streamingQualityPrefs.preferCloudCopies
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun onPreferCloudCopiesChanged(value: Boolean) =
+        viewModelScope.launch { streamingQualityPrefs.setPreferCloudCopies(value) }
+
     /**
      * Clear the rate-limiter's circuit breaker for the squid.wtf
      * source. Useful when the breaker tripped on a transient outage

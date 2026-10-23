@@ -110,6 +110,7 @@ class StashPlaybackService : MediaLibraryService() {
      */
     @Inject lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var cloudLinkResolver: com.stash.data.cloud.playback.CloudLinkResolver
+    @Inject lateinit var cloudCopyFinder: com.stash.core.media.streaming.CloudCopyFinder
     @Inject @field:com.stash.core.media.streaming.StreamCache
     lateinit var streamCache: androidx.media3.datasource.cache.SimpleCache
     @Inject lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
@@ -598,6 +599,7 @@ class StashPlaybackService : MediaLibraryService() {
             cloudUncachedDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.uncachedFactory(
                 cloudLinkResolver, ::cloudHttpDataSource, ::cloudAuthorizedHttpDataSource,
             ),
+            cloudCopies = cloudCopyFinder,
         )
         this.mediaSourceFactory = mediaSourceFactory
 

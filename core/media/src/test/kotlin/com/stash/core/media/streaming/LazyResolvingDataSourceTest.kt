@@ -236,4 +236,40 @@ class LazyResolvingDataSourceTest {
         verify { httpSource.read(any(), 0, 4) }
         verify { httpSource.close() }
     }
+
+    @Test
+    fun `a cloud copy opens through the cloud delegate`() {
+        every { urlCache.get(5L) } returns stream("stash-cloud://dropbox/1/abc?v=1", CloudCopyFinder.ORIGIN)
+        val cloud: DataSource = mockk(relaxed = true)
+        every { cloud.open(any()) } returns 100L
+
+        LazyResolvingDataSource(
+            resolver, urlCache, trackDao, { httpSource }, { jioSaavnSource }, cloudDelegate = { cloud },
+        ).open(placeholderSpec(5L))
+
+        verify(exactly = 1) { cloud.open(any()) }
+        verify(exactly = 0) { httpSource.open(any()) }
+    }
+
+    @Test
+    fun `a cloud copy that won't open falls back to the stream chain in the same open`() {
+        every { urlCache.get(5L) } returns stream("stash-cloud://dropbox/1/abc?v=1", CloudCopyFinder.ORIGIN)
+        val cloud: DataSource = mockk(relaxed = true)
+        every { cloud.open(any()) } throws java.io.IOException("404")
+        val finder: CloudCopyFinder = mockk(relaxUnitFun = true)
+        coEvery { trackDao.getById(5L) } returns TrackEntity(id = 5L, title = "t", artist = "a")
+        coEvery { resolver.resolve(any(), any(), any()) } returns stream("https://cdn/q.flac", "qbdlx")
+        val spec = slot<DataSpec>()
+        every { httpSource.open(capture(spec)) } returns 100L
+
+        val length = LazyResolvingDataSource(
+            resolver, urlCache, trackDao, { httpSource }, { jioSaavnSource },
+            cloudDelegate = { cloud }, cloudCopies = finder,
+        ).open(placeholderSpec(5L))
+
+        assertThat(length).isEqualTo(100L)
+        assertThat(spec.captured.uri.toString()).isEqualTo("https://cdn/q.flac")
+        verify { finder.markFailed("stash-cloud://dropbox/1/abc?v=1") }
+        verify { urlCache.invalidate(5L) }
+    }
 }

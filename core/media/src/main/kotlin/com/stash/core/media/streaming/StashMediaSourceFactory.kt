@@ -59,6 +59,8 @@ class StashMediaSourceFactory(
     cloudDataSourceFactory: DataSource.Factory? = null,
     /** The same without the cache, for Cast. */
     private val cloudUncachedDataSourceFactory: DataSource.Factory? = null,
+    /** "Play my cloud copies first": told when a cloud copy won't open. Null in tests. */
+    private val cloudCopies: CloudCopyFinder? = null,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -100,6 +102,9 @@ class StashMediaSourceFactory(
                     androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
                         .createDataSource()
                 },
+                // "Play my cloud copies first": a stream answered by the user's own cloud file.
+                cloudDelegate = cloudDataSourceFactory?.let { cloud -> { cloud.createDataSource() } },
+                cloudCopies = cloudCopies,
             )
         }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)

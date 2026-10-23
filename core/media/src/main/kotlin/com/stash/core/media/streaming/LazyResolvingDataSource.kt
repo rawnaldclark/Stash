@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -108,6 +109,13 @@ class LazyResolvingDataSource(
     private val httpDelegate: () -> DataSource,
     private val jioSaavnDelegate: () -> DataSource,
     private val resolveDeadlineMs: Long = RESOLVE_DEADLINE_MS,
+    /**
+     * Opens a cloud copy's `stash-cloud://` address ("Play my cloud copies first", #679). Null in
+     * tests and builds without cloud wiring: a cloud copy then counts as failed and falls back.
+     */
+    private val cloudDelegate: (() -> DataSource)? = null,
+    /** Told when a cloud copy won't open, so it isn't offered again this session. */
+    private val cloudCopies: CloudCopyFinder? = null,
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -173,12 +181,25 @@ class LazyResolvingDataSource(
             next
         }
 
-        val realSpec = dataSpec.buildUpon().setUri(Uri.parse(fresh.url)).build()
-        val delegate = when (fresh.origin) {
-            JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
-            else -> httpDelegate()
+        var stream = fresh
+        val length = try {
+            openStream(stream, dataSpec)
+        } catch (e: IOException) {
+            // A cloud copy that won't open (moved, deleted, signed out, offline) falls back to the
+            // normal chain, once, on a first open. Mid-song a switch of file is the pin's to refuse.
+            if (stream.origin != CloudCopyFinder.ORIGIN || pin != null) throw e
+            Log.w(TAG, "cloud copy of track $trackId didn't open (${e.message}); streaming it instead")
+            cloudCopies?.markFailed(stream.url)
+            runCatching { active?.close() }
+            active = null
+            urlCache.invalidate(trackId)
+            stream = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
+                ?: throw IOException("stream resolve failed for track $trackId after its cloud copy failed", e)
+            if (stream.isDash) {
+                throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source", e)
+            }
+            openStream(stream, dataSpec)
         }
-        val length = delegateTo(delegate, realSpec)
         if (dataSpec.length == C.LENGTH_UNSET.toLong() && length != C.LENGTH_UNSET.toLong()) {
             // The bytes from the server's position to its end, so position + length is
             // the file's size: the one identity check that catches a same-format file
@@ -190,8 +211,18 @@ class LazyResolvingDataSource(
             }
             pinnedTotalLength = total
         }
-        if (fresh !== pin) pinStream(fresh)
+        if (stream !== pin) pinStream(stream)
         return length
+    }
+
+    /** Opens [stream] at [dataSpec]'s position with the delegate its origin needs. */
+    private fun openStream(stream: StreamUrl, dataSpec: DataSpec): Long {
+        val delegate = when (stream.origin) {
+            JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
+            CloudCopyFinder.ORIGIN -> cloudDelegate?.invoke() ?: throw IOException("cloud playback isn't wired")
+            else -> httpDelegate()
+        }
+        return delegateTo(delegate, dataSpec.buildUpon().setUri(Uri.parse(stream.url)).build())
     }
 
     private fun pinStream(stream: StreamUrl) {
@@ -245,6 +276,7 @@ class LazyResolvingDataSource(
          * while guaranteeing playback can never hang indefinitely.
          */
         const val RESOLVE_DEADLINE_MS = 45_000L
+        private const val TAG = "LazyResolve"
     }
 }
 

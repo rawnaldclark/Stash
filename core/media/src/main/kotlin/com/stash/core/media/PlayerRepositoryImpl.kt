@@ -1164,7 +1164,8 @@ class PlayerRepositoryImpl @Inject constructor(
             persistArtUpgradeAsync(next.id, art)
         }
         val refreshed = item.buildUpon()
-            .setUri(resolved.url)
+            // A cloud copy keeps the placeholder (its source has the fallback); see buildMediaItemForTrack.
+            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) setUri(resolved.url) }
             .setMediaMetadata(refreshedMeta.build())
             .build()
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
@@ -2451,7 +2452,17 @@ class PlayerRepositoryImpl @Inject constructor(
         return StreamRoutingResult.Item(
             MediaItem.Builder()
                 .setMediaId(track.id.toString())
-                .setUri(Uri.parse(stream.url))
+                // A cloud copy plays through the placeholder, whose source falls back to the stream
+                // chain when the copy won't open; the stash-cloud:// address itself has no fallback.
+                .setUri(
+                    if (stream.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) {
+                        com.stash.core.media.streaming.stashResolveUri(
+                            track.id, track.youtubeId, track.title, track.artist, track.album, track.durationMs, track.isrc,
+                        )
+                    } else {
+                        Uri.parse(stream.url)
+                    },
+                )
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(track.title)

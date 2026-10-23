@@ -37,6 +37,7 @@ class StreamQualityPolicy @Inject constructor(
         val saveData: Boolean,
         val tier: LosslessQualityTier,
         val preferTidalAac: Boolean = false,
+        val preferCloudCopies: Boolean = false,
         /** Debug-only "Test: skip Qobuz" — always false on a release build. */
         val skipQobuz: Boolean = false,
     )
@@ -68,6 +69,12 @@ class StreamQualityPolicy @Inject constructor(
      */
     suspend fun preferTidalAac(): Boolean = snapshot().preferTidalAac
 
+    /**
+     * "Play my cloud copies first": [StreamSourceRegistry] plays a matching lossless cloud file
+     * before the lossless relays. In the snapshot, so flipping it drops cached URLs of the other kind.
+     */
+    suspend fun preferCloudCopies(): Boolean = snapshot().preferCloudCopies
+
     // ponytail: cleared at the next RESOLVE after a change, not at the change itself — a
     // track whose URL was prefetched just before can still play once at the old quality.
     // Stamping entries with their quality and checking at read time closes that; not yet earned.
@@ -85,6 +92,7 @@ class StreamQualityPolicy @Inject constructor(
             saveData = saveData,
             tier = tier,
             preferTidalAac = prefs.preferTidalAacNow(),
+            preferCloudCopies = prefs.preferCloudCopiesNow(),
             skipQobuz = streamingPreference.isSkipQobuz(),
         )
         val previous = lastDecision

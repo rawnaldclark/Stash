@@ -245,6 +245,8 @@
     <string name="settings_on_wifi">On Wi-Fi</string>
     <string name="settings_on_cellular">On cellular</string>
     <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
+    <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
+    <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
     <string name="settings_prefer_tidal_aac_streaming_subtitle">Smaller streams when Tidal has the song</string>
     <string name="settings_state_expanded">expanded</string>
