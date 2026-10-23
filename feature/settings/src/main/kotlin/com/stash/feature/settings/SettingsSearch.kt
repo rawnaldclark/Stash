@@ -109,7 +109,7 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_stash_mixes_title), SettingsPage.LIBRARY, listOf("daily discover", "deep cuts", "first listen")),
         SettingsSearchEntry(s(R.string.settings_qobuz_discovery_title), SettingsPage.LIBRARY, listOf("new releases", "qobuz playlists", "top albums")),
         SettingsSearchEntry(s(R.string.settings_library_health_title), SettingsPage.LIBRARY, listOf("duplicates", "missing", "flac upgrade")),
-        SettingsSearchEntry("Re-check library for word-synced lyrics", SettingsPage.LIBRARY, listOf("lyrics", "synced")),
+        SettingsSearchEntry(s(R.string.settings_lyrics_recheck_title), SettingsPage.PLAYBACK, listOf("lyrics", "synced")),
         SettingsSearchEntry(s(R.string.settings_listening_history_title), SettingsPage.LIBRARY, listOf("plays", "stats", "import", "recap")),
         SettingsSearchEntry(s(R.string.settings_web_link_nav_title), SettingsPage.LIBRARY, listOf("web player", "browser", "qr", "pair", "mirror", "computer")),
         SettingsSearchEntry("Cloud folders", SettingsPage.LIBRARY, listOf("rescan", "dropbox", "onedrive")),

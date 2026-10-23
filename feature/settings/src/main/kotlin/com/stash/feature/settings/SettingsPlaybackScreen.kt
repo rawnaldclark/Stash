@@ -1,7 +1,7 @@
 package com.stash.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,19 +69,21 @@ fun SettingsPlaybackScreen(
 
     SettingsScaffold(title = stringResource(R.string.settings_playback_title), onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
-            SettingsSectionLabel(stringResource(R.string.settings_mode_section))
-            SettingsSegmented(
-                options = listOf(
-                    stringResource(R.string.settings_mode_stream_only),
-                    stringResource(R.string.settings_mode_download),
-                ),
-                selectedIndex = if (streamingEnabled) 0 else 1,
-                onSelect = { viewModel.onStreamingToggle(it == 0) },
-            )
-
             SettingsSectionLabel(stringResource(R.string.settings_streaming_section))
             SettingsGroupCard(
                 rows = buildList {
+                    add {
+                        Box(modifier = Modifier.padding(10.dp)) {
+                            SettingsSegmented(
+                                options = listOf(
+                                    stringResource(R.string.settings_mode_stream_only),
+                                    stringResource(R.string.settings_mode_download),
+                                ),
+                                selectedIndex = if (streamingEnabled) 0 else 1,
+                                onSelect = { viewModel.onStreamingToggle(it == 0) },
+                            )
+                        }
+                    }
                     add {
                         SettingsToggleRow(
                             title = stringResource(R.string.settings_stream_on_cellular_title),
@@ -133,23 +135,20 @@ fun SettingsPlaybackScreen(
             )
         }
 
-        // Autoplay: the queue's end seeds a song radio (streams, so it needs a connection).
-        SettingsSectionLabel(stringResource(R.string.settings_autoplay_section))
-        SettingsGroupCard(
-            rows = listOf {
-                SettingsToggleRow(
-                    title = stringResource(R.string.settings_autoplay_radio_title),
-                    subtitle = stringResource(R.string.settings_autoplay_radio_desc),
-                    checked = autoplayRadioEnabled,
-                    onCheckedChange = viewModel::onAutoplayRadioToggle,
-                )
-            },
-        )
-        // Crossfade applies to both streamed and downloaded tracks, so it sits
-        // outside the streaming-engine gate.
-        SettingsSectionLabel(stringResource(R.string.settings_crossfade_section))
+        // Autoplay and crossfade apply to streamed and downloaded tracks alike, so
+        // they sit outside the streaming-engine gate.
+        SettingsSectionLabel(stringResource(R.string.settings_playing_section))
         SettingsGroupCard(
             rows = buildList {
+                // The queue's end seeds a song radio (streams, so it needs a connection).
+                add {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_autoplay_radio_title),
+                        subtitle = stringResource(R.string.settings_autoplay_radio_desc),
+                        checked = autoplayRadioEnabled,
+                        onCheckedChange = viewModel::onAutoplayRadioToggle,
+                    )
+                }
                 add {
                     SettingsToggleRow(
                         title = stringResource(R.string.settings_crossfade_title),
@@ -170,60 +169,47 @@ fun SettingsPlaybackScreen(
         )
 
         SettingsSectionLabel(stringResource(R.string.settings_lyrics_section))
-        SettingsSegmented(
-            options = listOf(
-                stringResource(R.string.settings_lyrics_apple_music),
-                stringResource(R.string.settings_lyrics_lrc_only),
-            ),
-            selectedIndex = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) 1 else 0,
-            onSelect = {
-                lyricsViewModel.setSourcePreference(
-                    if (it == 1) LyricsSourcePreference.LRC_ONLY else LyricsSourcePreference.APPLE_MUSIC,
-                )
+        val lrcOnly = lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY
+        SettingsGroupCard(
+            rows = buildList {
+                add {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        SettingsSegmented(
+                            options = listOf(
+                                stringResource(R.string.settings_lyrics_apple_music),
+                                stringResource(R.string.settings_lyrics_lrc_only),
+                            ),
+                            selectedIndex = if (lrcOnly) 1 else 0,
+                            onSelect = {
+                                lyricsViewModel.setSourcePreference(
+                                    if (it == 1) LyricsSourcePreference.LRC_ONLY else LyricsSourcePreference.APPLE_MUSIC,
+                                )
+                            },
+                        )
+                        Text(
+                            text = stringResource(
+                                if (lrcOnly) R.string.settings_lyrics_lrc_only_desc else R.string.settings_lyrics_apple_music_desc,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 5.dp, end = 5.dp, top = 8.dp),
+                        )
+                    }
+                }
+                // The one way to walk the whole library for word-synced lyrics: user-started,
+                // never automatic. Hidden under LRC-only, where there is nothing word-synced to find.
+                if (!lrcOnly) {
+                    add {
+                        LyricsRecheckRow(
+                            state = lyricsRecheckState,
+                            onStart = lyricsViewModel::startRecheck,
+                            onCancel = lyricsViewModel::cancelRecheck,
+                        )
+                    }
+                }
             },
         )
-        Text(
-            text = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) {
-                stringResource(R.string.settings_lyrics_lrc_only_desc)
-            } else {
-                stringResource(R.string.settings_lyrics_apple_music_desc)
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = 8.dp),
-        )
-        // The one way to walk the whole library for word-synced lyrics: user-started, never
-        // automatic. Hidden under LRC-only, where there is nothing word-synced to look for.
-        if (lyricsSourcePreference != LyricsSourcePreference.LRC_ONLY) {
-            SettingsGroupCard(
-                rows = listOf {
-                    LyricsRecheckRow(
-                        state = lyricsRecheckState,
-                        onStart = lyricsViewModel::startRecheck,
-                        onCancel = lyricsViewModel::cancelRecheck,
-                    )
-                },
-            )
-        }
     }
-}
-
-/** One tappable sleep-timer choice row. */
-@Composable
-private fun SleepTimerChoiceRow(
-    label: String,
-    onClick: () -> Unit,
-    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.bodyLarge,
-        color = tint,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
-    )
 }
 
 /**
