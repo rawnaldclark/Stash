@@ -191,4 +191,19 @@ class ArtUrlUpgraderTest {
         )
         assertNull(ArtUrlUpgrader.artFallback("https://is1-ssl.mzstatic.com/image/thumb/x/600x600bb.jpg"))
     }
+
+    @Test
+    fun `banner keeps a header photo's own shape, 1440 wide`() {
+        val square = "https://yt3.googleusercontent.com/AbC_d-e=w1024-h1024-p-l90-rj"
+        assertEquals("https://yt3.googleusercontent.com/AbC_d-e=w1440-l90-rj", ArtUrlUpgrader.banner(square))
+        val bare = "https://lh3.googleusercontent.com/XyZ"
+        assertEquals("https://lh3.googleusercontent.com/XyZ=w1440-l90-rj", ArtUrlUpgrader.banner(bare))
+    }
+
+    @Test
+    fun `banner leaves other hosts to upgrade`() {
+        val spotify = "https://i.scdn.co/image/ab67616d00004851abc"
+        assertEquals(ArtUrlUpgrader.upgrade(spotify), ArtUrlUpgrader.banner(spotify))
+        assertEquals(null, ArtUrlUpgrader.banner(null))
+    }
 }

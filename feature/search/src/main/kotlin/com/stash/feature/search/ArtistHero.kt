@@ -4,6 +4,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,13 +27,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,7 +39,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -57,92 +64,141 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
     }?.url
         ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
 
+/** The photo's height below the status bar. */
+internal val ArtistHeroPhotoHeight = 300.dp
+
 /**
- * Artist Profile hero — editorial split (the hub redesign).
+ * Artist Profile hero, Spotify-style: the artist's header photo full width and
+ * edge to edge (under the status bar), fading into the page, with the name set
+ * large over its bottom edge and the listener count under it. Below the photo,
+ * the app's own action vocabulary: a solid plum play coin + a hairline radio
+ * ring, the gold "♥ Support" chip on the right (Bandcamp → website, see
+ * [supportUrl]), then one glass coin per social link.
  *
- * Circular avatar LEFT with the name + listener count beside it (a magazine
- * byline), then the app's own action vocabulary in place of the old stock
- * buttons: a solid plum play coin + a hairline radio ring (the Daily-Discover
- * FAB+ring language), with the gold "♥ Support" chip on the right
- * (Bandcamp → website, see [supportUrl]). Below, the artist's doors — one
- * glass coin per social link (brand icons via [socialIconFor], globe
- * fallback). Every element is optional-data-safe: no socials → no coins,
- * no support link → no chip, no listener count → hidden.
+ * YouTube's header photos are wide (about 16:9), so [ArtUrlUpgrader.banner]
+ * asks for the photo's own shape; the crop sits a little above centre, where
+ * faces are. No photo → the old plum gradient, same layout.
  *
- * Paints on the first frame from nav args (see [ArtistProfileViewModel]
- * init) so the < 50 ms hero-paint target is met before the cache emits.
+ * [scrollOffsetPx] is how far the hero has scrolled up: the photo moves at
+ * half speed under the page (parallax) and fades as it goes. Read in the draw
+ * phase only, so scrolling doesn't recompose.
+ *
+ * Back is not part of the hero: [ArtistProfileScreen] pins it over the page.
+ *
+ * Paints on the first frame from nav args (see [ArtistProfileViewModel] init);
+ * the header photo crossfades in when the profile arrives.
  */
 @Composable
 fun ArtistHero(
     hero: HeroState,
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
-    onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
     streamingEnabled: Boolean,
     onStreamingClick: () -> Unit,
     modifier: Modifier = Modifier,
+    scrollOffsetPx: () -> Int = { 0 },
 ) {
     val primary = MaterialTheme.colorScheme.primary
+    val background = MaterialTheme.colorScheme.background
     val uriHandler = LocalUriHandler.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val dark = background.luminance() < 0.5f
     val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
     val cream = Color(0xFFF2ECE2)
     val gold = Color(0xFFFFC947)
     val goldInk = if (dark) gold else Color(0xFF7A5A00)
     val support = remember(socials) { supportUrl(socials) }
+    val photo = remember(hero.avatarUrl) { ArtUrlUpgrader.banner(hero.avatarUrl) }
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        primary.copy(alpha = 0.35f),
-                        primary.copy(alpha = 0.05f),
-                    ),
-                ),
-            ),
-    ) {
-        Column(
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                // Top padding clears the overlaid back arrow / streaming chip.
-                .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 16.dp),
+                .height(ArtistHeroPhotoHeight + statusBarTop)
+                .clipToBounds(),
         ) {
-            // -- Byline: avatar left, name + listeners beside ------------------
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                AsyncImage(
-                    model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
-                    contentDescription = hero.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(84.dp).clip(CircleShape),
-                )
-                Column {
-                    Text(
-                        text = hero.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (hero.subscribersText != null) {
-                        Text(
-                            text = hero.subscribersText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            // -- The photo (or the gradient without one), parallax + fade ------
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        val offset = scrollOffsetPx().toFloat()
+                        translationY = offset * 0.5f
+                        alpha = (1f - offset / size.height).coerceIn(0f, 1f)
                     }
+                    .background(
+                        Brush.verticalGradient(listOf(primary.copy(alpha = 0.45f), primary.copy(alpha = 0.08f))),
+                    ),
+            ) {
+                if (photo != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalPlatformContext.current)
+                            .data(photo)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = hero.name,
+                        contentScale = ContentScale.Crop,
+                        alignment = BiasAlignment(0f, -0.35f),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                // Top scrim: the back button and status bar stay legible on a bright photo.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(statusBarTop + 72.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))),
+                )
+            }
+
+            // Bottom fade into the page, under the name. Outside the parallax layer so it
+            // stays put: the photo slides down under it and its cut edge never shows.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.6f)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, background.copy(alpha = 0.75f), background))),
+            )
+
+            // -- Name + listeners over the photo's bottom edge -----------------
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+            ) {
+                Text(
+                    text = hero.name,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (hero.subscribersText != null) {
+                    Text(
+                        text = hero.subscribersText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            // -- Streaming chip (Back is pinned by the screen, over everything) --
+            if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
+                com.stash.core.ui.components.streaming.StreamingModeChip(
+                    streamingEnabled = streamingEnabled,
+                    onClick = onStreamingClick,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 8.dp, top = statusBarTop + 8.dp),
+                )
+            }
+        }
 
+        Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp)) {
             // -- Actions: play coin + radio ring · gold Support right ----------
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -249,31 +305,6 @@ fun ArtistHero(
                     }
                 }
             }
-        }
-
-        // Top-left back arrow (Scaffold already applies status-bar padding).
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(8.dp),
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-
-        // Top-right Online/Offline chip — flip playback mode from the profile.
-        if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
-            com.stash.core.ui.components.streaming.StreamingModeChip(
-                streamingEnabled = streamingEnabled,
-                onClick = onStreamingClick,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-            )
         }
     }
 }

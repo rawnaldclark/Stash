@@ -211,6 +211,22 @@ object ArtUrlUpgrader {
         return LASTFM_PATH_REGEX.replace(url) { next }
     }
 
+    /**
+     * A full-width banner of [url]: YouTube's artist header photos are wide (about 16:9,
+     * 5120 px at full size), and [upgrade]'s square `=w1024-h1024-p` crops them to a
+     * square. Asking for the width alone keeps the photo's own shape, 1440 px wide.
+     * Other hosts get [upgrade].
+     */
+    fun banner(url: String?): String? {
+        if (url == null) return null
+        if ("lh3.googleusercontent.com" in url || "yt3.googleusercontent.com" in url) {
+            return url.substringBefore("=") + BANNER_SIZE
+        }
+        return upgrade(url)
+    }
+
+    private const val BANNER_SIZE = "=w1440-l90-rj"
+
     fun upgrade(url: String?): String? {
         if (url == null) return null
 
