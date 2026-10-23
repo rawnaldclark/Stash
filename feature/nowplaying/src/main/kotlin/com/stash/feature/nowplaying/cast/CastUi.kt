@@ -1,5 +1,7 @@
 package com.stash.feature.nowplaying.cast
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -97,9 +99,11 @@ internal fun CastSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = extendedColors.elevatedSurface,
     ) {
+        // Scrolls, so a long speaker list (30+ Cast devices on one network) can be reached (#367).
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 36.dp),
         ) {
