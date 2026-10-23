@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +69,8 @@ fun MixRailCard(
     onLongPress: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     size: Dp = HomeRailCardSize,
+    /** A favorite (Home pin): a small heart on the cover's top-right. */
+    favorite: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Column(
@@ -101,6 +104,24 @@ fun MixRailCard(
                 size = 8.dp,
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
             )
+            if (favorite) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(22.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)),
+                ) {
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.Favorite,
+                        contentDescription = "Favorite",
+                        tint = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
         Text(

@@ -121,6 +121,8 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_ambient_motion_title), SettingsPage.APPEARANCE, listOf("now playing", "animation", "background", "battery", "ambient style")),
         SettingsSearchEntry("Home layout", SettingsPage.HOME_LAYOUT, listOf("sections", "order", "made for you", "radios", "community", "moods", "decades", "your listening")),
         SettingsSearchEntry(s(R.string.settings_home_show_liked_title), SettingsPage.HOME_LAYOUT),
+        SettingsSearchEntry(s(R.string.settings_mix_rotation_title), SettingsPage.HOME_LAYOUT, listOf("rotate", "rotation", "shuffle", "made for you", "mood", "decades", "mixes")),
+        SettingsSearchEntry(s(R.string.settings_unplayed_mixes_first_title), SettingsPage.HOME_LAYOUT, listOf("discover", "new", "rotation")),
         SettingsSearchEntry("Open Stash on", SettingsPage.APPEARANCE, listOf("start tab", "launch", "startup")),
         // About & Help
         SettingsSearchEntry("Check for updates", SettingsPage.ABOUT, listOf("update", "version", "new version")),

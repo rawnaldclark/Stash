@@ -23,6 +23,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.HomeSection
 import com.stash.feature.settings.components.SettingsGroupCard
+import com.stash.feature.settings.components.SettingsValueRow
+import com.stash.feature.settings.components.SettingsSectionLabel
+import com.stash.feature.settings.components.SettingsChoiceSheet
+import com.stash.feature.settings.components.SettingsChoice
+import com.stash.core.data.prefs.MixRotation
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import com.stash.feature.settings.components.SettingsRowPadH
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsToggleRow
@@ -42,8 +50,12 @@ fun SettingsHomeLayoutScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
+    rotationViewModel: HomeMixRotationViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val rotation by rotationViewModel.rotation.collectAsStateWithLifecycle()
+    val unplayedFirst by rotationViewModel.unplayedFirst.collectAsStateWithLifecycle()
+    var showRotationSheet by rememberSaveable { mutableStateOf(false) }
     SettingsScaffold(title = stringResource(R.string.settings_home_layout_section), onBack = onBack, modifier = modifier) {
         Text(
             text = stringResource(R.string.settings_home_layout_desc),
@@ -91,6 +103,45 @@ fun SettingsHomeLayoutScreen(
                 },
             ),
         )
+
+        // Made for you and Mood & decades: how often they reshuffle, and whether the
+        // mixes you've barely played lead. Favorites (long-press a mix) always lead.
+        SettingsSectionLabel(stringResource(R.string.settings_home_mixes_section))
+        SettingsGroupCard(
+            rows = listOf(
+                {
+                    SettingsValueRow(
+                        title = stringResource(R.string.settings_mix_rotation_title),
+                        value = rotation.label(),
+                        onClick = { showRotationSheet = true },
+                    )
+                },
+                {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_unplayed_mixes_first_title),
+                        subtitle = stringResource(R.string.settings_unplayed_mixes_first_subtitle),
+                        checked = unplayedFirst,
+                        onCheckedChange = rotationViewModel::setUnplayedFirst,
+                    )
+                },
+            ),
+        )
+        Text(
+            text = stringResource(R.string.settings_home_mixes_favorite_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        if (showRotationSheet) {
+            SettingsChoiceSheet(
+                title = stringResource(R.string.settings_mix_rotation_title),
+                choices = MixRotation.entries.map { SettingsChoice(it, it.label()) },
+                selected = rotation,
+                onSelect = rotationViewModel::setRotation,
+                onDismiss = { showRotationSheet = false },
+                footer = stringResource(R.string.settings_mix_rotation_footer),
+            )
+        }
     }
 }
 
@@ -170,3 +221,13 @@ private fun HomeSectionRow(
         )
     }
 }
+
+@Composable
+private fun MixRotation.label(): String = stringResource(
+    when (this) {
+        MixRotation.OFF -> R.string.settings_mix_rotation_off
+        MixRotation.DAILY -> R.string.settings_mix_rotation_daily
+        MixRotation.EVERY_3_DAYS -> R.string.settings_mix_rotation_3_days
+        MixRotation.WEEKLY -> R.string.settings_mix_rotation_weekly
+    },
+)

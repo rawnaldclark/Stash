@@ -161,6 +161,16 @@
     <!-- Settings > Appearance -->
     <string name="settings_theme_system">System</string>
     <string name="settings_home_section">Home</string>
+    <string name="settings_home_mixes_section">Mixes</string>
+    <string name="settings_mix_rotation_title">Reshuffle mixes</string>
+    <string name="settings_mix_rotation_off">Off</string>
+    <string name="settings_mix_rotation_daily">Daily</string>
+    <string name="settings_mix_rotation_3_days">Every 3 days</string>
+    <string name="settings_mix_rotation_weekly">Weekly</string>
+    <string name="settings_mix_rotation_footer">Made for you and Mood &amp; decades bring different mixes to the front at midnight. Off: the newest first.</string>
+    <string name="settings_unplayed_mixes_first_title">Unplayed mixes first</string>
+    <string name="settings_unplayed_mixes_first_subtitle">Mixes you\'ve barely played lead</string>
+    <string name="settings_home_mixes_favorite_hint">Long-press a mix on Home to favorite it: favorites always come first.</string>
     <string name="settings_home_layout_summary">%1$d of %2$d sections shown</string>
     <string name="settings_theme_section">Theme</string>
     <string name="settings_theme_dark">Dark</string>

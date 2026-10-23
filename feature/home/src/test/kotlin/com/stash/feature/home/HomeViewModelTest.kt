@@ -458,6 +458,11 @@ class HomeViewModelTest {
             homeDiscoveryPreference = mock {
                 on { enabled } doReturn flowOf(true)
             },
+            // Rotation off: the existing rail tests assert the freshest-first order.
+            mixRotationPreference = mock {
+                on { rotation } doReturn flowOf(com.stash.core.data.prefs.MixRotation.OFF)
+                on { unplayedFirst } doReturn flowOf(false)
+            },
             homeSectionsPreference = mock {
                 on { visibleSections } doReturn flowOf(com.stash.core.data.prefs.HomeSection.entries.toList())
                 // Feeds likedCardFlow — an unstubbed (null) flow NPEs the

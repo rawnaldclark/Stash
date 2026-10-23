@@ -39,6 +39,16 @@ data class PlaylistRecency(
 )
 
 /**
+ * How much of a mix the listener has played: [playedTracks] of its [liveTracks]
+ * have been played at least once. See [PlaylistDao.observeMixPlayedShare].
+ */
+data class PlaylistPlayedShare(
+    val playlistId: Long,
+    val liveTracks: Int,
+    val playedTracks: Int,
+)
+
+/**
  * One row of the diagnostics bundle's Library section: active playlists of one
  * source + type. See [PlaylistDao.diagnosticsCounts].
  *
@@ -401,6 +411,26 @@ interface PlaylistDao {
         """
     )
     fun observeLatestAdditionPerPlaylist(): Flow<List<PlaylistRecency>>
+
+    /**
+     * Per service mix (DAILY_MIX), how many of its live tracks have ever been
+     * played. Home's "unplayed mixes first" reads it: Stash records plays per
+     * track, not per mix, so "a mix you've barely played" is a mix whose songs
+     * you've barely played. Live memberships only, like the recency query.
+     */
+    @Query(
+        """
+        SELECT pt.playlist_id AS playlistId,
+               COUNT(*) AS liveTracks,
+               SUM(CASE WHEN t.play_count > 0 THEN 1 ELSE 0 END) AS playedTracks
+        FROM playlist_tracks pt
+        JOIN tracks t ON t.id = pt.track_id
+        JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.removed_at IS NULL AND p.type = 'DAILY_MIX'
+        GROUP BY pt.playlist_id
+        """
+    )
+    fun observeMixPlayedShare(): Flow<List<PlaylistPlayedShare>>
 
     /** All playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source ORDER BY name ASC")

@@ -84,6 +84,7 @@ fun MixBrowseScreen(
                         buildState = m.buildState,
                         onClick = { onOpenMix(m.id) },
                         size = MixGridCardSize,
+                        favorite = m.pinnedToHomeAt != null,
                     )
                 }
             }

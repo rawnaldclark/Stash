@@ -658,6 +658,7 @@ fun HomeScreen(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
+                                    favorite = m.pinnedToHomeAt != null,
                                 )
                             }
                         }
@@ -675,6 +676,7 @@ fun HomeScreen(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
+                                    favorite = m.pinnedToHomeAt != null,
                                 )
                             }
                         }
@@ -692,6 +694,7 @@ fun HomeScreen(
                                     title = m.title, artUrl = m.artUrl, source = m.source,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
+                                    favorite = m.pinnedToHomeAt != null,
                                 )
                             }
                         }
@@ -765,6 +768,19 @@ fun HomeScreen(
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                // Favorite = the Home pin: leads its rail, never rotated out. Stash's
+                // own mixes live in the hero pager, which has no pin order.
+                if (!isStashMix) {
+                    val favorite = mix.pinnedToHomeAt != null
+                    MixActionRow(
+                        icon = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        label = if (favorite) "Remove from favorites" else "Favorite",
+                        onClick = {
+                            viewModel.setFavorite(id, !favorite)
+                            actionSheetMixId = null
+                        },
+                    )
+                }
                 if (isStashMix) {
                     MixActionRow(
                         icon = Icons.Default.Refresh,

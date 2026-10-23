@@ -59,6 +59,49 @@ internal fun List<HomeMix>.pinnedThenFreshest(recency: Map<Long, Long>): List<Ho
     return pinned.sortedBy { it.pinnedToHomeAt } + rest.freshestFirst(recency)
 }
 
+/** A mix counts as barely played below this share of its songs played. */
+internal const val UNPLAYED_MIX_SHARE = 0.25f
+
+/**
+ * Which mixes are barely played: fewer than [UNPLAYED_MIX_SHARE] of their live
+ * songs played even once. A mix with no live songs isn't counted either way.
+ */
+internal fun barelyPlayedMixIds(shares: List<com.stash.core.data.db.dao.PlaylistPlayedShare>): Set<Long> =
+    shares
+        .filter { it.liveTracks > 0 && it.playedTracks.toFloat() / it.liveTracks < UNPLAYED_MIX_SHARE }
+        .map { it.playlistId }
+        .toSet()
+
+/**
+ * A service rail's order with rotation: favorites (pinned) first, first pinned
+ * first, never rotated; then, when [unplayed] is given, the barely played mixes
+ * ahead of the rest; and within each group either [freshestFirst] ([rotation]
+ * OFF) or a shuffle that holds for one rotation period.
+ *
+ * The shuffle is seeded by the period number ([epochDay] / days) and [salt] (one
+ * per rail, so two rails don't move in step), and starts from an id-sorted list:
+ * the same mixes give the same order all period, whatever order they arrive in,
+ * so the rail doesn't jump while it's being used. The next period, it reshuffles.
+ */
+internal fun List<HomeMix>.rotated(
+    recency: Map<Long, Long>,
+    rotation: com.stash.core.data.prefs.MixRotation,
+    epochDay: Long,
+    salt: Int,
+    unplayed: Set<Long>? = null,
+): List<HomeMix> {
+    val (pinned, rest) = partition { it.pinnedToHomeAt != null }
+    val groups = if (unplayed == null) listOf(rest) else rest.partition { it.id in unplayed }.toList()
+    fun order(group: List<HomeMix>): List<HomeMix> =
+        if (rotation == com.stash.core.data.prefs.MixRotation.OFF) {
+            group.freshestFirst(recency)
+        } else {
+            val period = epochDay / rotation.days
+            group.sortedBy { it.id }.shuffled(kotlin.random.Random(period * 1_000_003L + salt))
+        }
+    return pinned.sortedBy { it.pinnedToHomeAt } + groups.flatMap(::order)
+}
+
 /**
  * The rail's visible head: every pinned mix, then fresh ones up to [limit] cards
  * in total. Expects [pinnedThenFreshest] order, so the pinned ones are the head.

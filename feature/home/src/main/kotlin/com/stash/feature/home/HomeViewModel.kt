@@ -85,6 +85,7 @@ class HomeViewModel @Inject constructor(
     private val streamingPreference: StreamingPreference,
     private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
     private val homeSectionsPreference: com.stash.core.data.prefs.HomeSectionsPreference,
+    private val mixRotationPreference: com.stash.core.data.prefs.HomeMixRotationPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
@@ -202,13 +203,34 @@ class HomeViewModel @Inject constructor(
         val yourPlaylists: List<HomeMix>,
     )
 
+    /** What the service rails' order depends on besides the playlists: see [rotated]. */
+    private data class RotationInputs(
+        val rotation: com.stash.core.data.prefs.MixRotation,
+        /** Barely played mix ids, or null with "Unplayed mixes first" off. */
+        val unplayed: Set<Long>?,
+    )
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val rotationInputs: Flow<RotationInputs> = combine(
+        mixRotationPreference.rotation,
+        mixRotationPreference.unplayedFirst.flatMapLatest { on ->
+            // The play-share scan re-runs on every play, so it only runs while it's used.
+            if (on) {
+                playlistDao.observeMixPlayedShare().map { barelyPlayedMixIds(it) }.distinctUntilChanged()
+            } else {
+                flowOf(null)
+            }
+        },
+    ) { rotation, unplayed -> RotationInputs(rotation, unplayed) }
+
     private val homePlaylistFlow: Flow<HomePlaylistData> = combine(
         musicRepository.getAllPlaylists(),
         recipeDao.observeAll(),
         discoveryQueueDao.observeNonFailedCountsByRecipe(),
         // Orders the rails by what actually changed — see freshestFirst.
         playlistDao.observeLatestAdditionPerPlaylist(),
-    ) { playlists, recipes, discoveryCounts, recency ->
+        rotationInputs,
+    ) { playlists, recipes, discoveryCounts, recency, rotationIn ->
         // Builtin ids come from the OBSERVED recipes. They used to be a one-shot
         // read, which on a fresh install ran before the first mix refresh wrote
         // Daily Discover's playlist_id: the read returned nothing and never
@@ -293,9 +315,15 @@ class HomeViewModel @Inject constructor(
         HomePlaylistData(
             hero = hero,
             heroBuilding = heroBuilding,
-            madeForYou = madeForYou.pinnedThenFreshest(recencyById),
+            // Made for you and Mood & decades rotate on the user's schedule (Home
+            // layout settings); radios keep freshest-first.
+            madeForYou = madeForYou.rotated(
+                recencyById, rotationIn.rotation, today(), salt = MixRail.MADE_FOR_YOU.ordinal, rotationIn.unplayed,
+            ),
             radios = radios.pinnedThenFreshest(recencyById),
-            moodDecades = moodDecades.pinnedThenFreshest(recencyById),
+            moodDecades = moodDecades.rotated(
+                recencyById, rotationIn.rotation, today(), salt = MixRail.MOOD_DECADES.ordinal, rotationIn.unplayed,
+            ),
             yourMixes = yourMixes,
             customMixPlaylistIds = customMixPlaylistIds,
             // Reads the raw `playlists` param, not the !hideFromHome loop
@@ -710,6 +738,19 @@ class HomeViewModel @Inject constructor(
      * Hide (or unhide) a mix's playlist from the Home rails. Hiding unpins it;
      * showing pins it, so it leads its rail (see MixRail.pinnedThenFreshest).
      */
+    /** Today in the phone's time zone: a rotation flips at local midnight. */
+    private fun today(): Long = java.time.LocalDate.now().toEpochDay()
+
+    /**
+     * Favorite a mix: it leads its rail and is never rotated out (the Home pin,
+     * `pinned_to_home_at`). Unfavoriting drops the pin and leaves it shown.
+     */
+    fun setFavorite(playlistId: Long, favorite: Boolean) {
+        viewModelScope.launch {
+            playlistDao.setHomeVisibility(playlistId, hidden = false, pinnedAt = if (favorite) System.currentTimeMillis() else null)
+        }
+    }
+
     fun setHideFromHome(playlistId: Long, hidden: Boolean) {
         viewModelScope.launch {
             playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
