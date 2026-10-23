@@ -338,6 +338,10 @@ private fun StashNavGraph(
                     navController.navigate(SettingsAudioQualityRoute)
                     navController.navigate(SettingsLosslessSourcesRoute)
                 },
+                onOpenHomeLayout = {
+                    navController.navigate(SettingsAppearanceRoute)
+                    navController.navigate(SettingsHomeLayoutRoute)
+                },
                 onOpenEqualizer = {
                     navController.navigate(SettingsAudioQualityRoute)
                     navController.navigate(EqualizerRoute)
@@ -414,6 +418,16 @@ private fun StashNavGraph(
             val viewModel: com.stash.feature.settings.SettingsViewModel =
                 androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
             com.stash.feature.settings.SettingsAppearanceScreen(
+                onBack = { navController.popBackStack() },
+                onOpenHomeLayout = { navController.navigate(SettingsHomeLayoutRoute) },
+                viewModel = viewModel,
+            )
+        }
+        composable<SettingsHomeLayoutRoute> { backStackEntry ->
+            val settingsEntry = remember(backStackEntry) { navController.getBackStackEntry(SettingsRoute) }
+            val viewModel: com.stash.feature.settings.SettingsViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel(settingsEntry)
+            com.stash.feature.settings.SettingsHomeLayoutScreen(
                 onBack = { navController.popBackStack() },
                 viewModel = viewModel,
             )

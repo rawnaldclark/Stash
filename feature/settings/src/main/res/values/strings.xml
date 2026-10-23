@@ -158,30 +158,26 @@
     <string name="settings_dismiss">Dismiss</string>
 
     <!-- Settings > Appearance -->
+    <string name="settings_theme_system">System</string>
+    <string name="settings_home_section">Home</string>
+    <string name="settings_home_layout_summary">%1$d of %2$d sections shown</string>
     <string name="settings_theme_section">Theme</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>
-    <string name="settings_theme_follow_system">Follow system</string>
-    <string name="settings_theme_follow_system_desc">Follow system matches your device\'s day/night setting.</string>
     <string name="settings_display_size_section">Display size</string>
     <string name="settings_ui_scale_title">UI scale</string>
-    <string name="settings_ui_scale_subtitle">Resizes text and layout across the whole app. Applies when you let go.</string>
-    <string name="settings_dark_theme_section">Dark theme</string>
+    <string name="settings_ui_scale_subtitle">Text and layout size across the app</string>
     <string name="settings_amoled_title">Pure black (AMOLED)</string>
-    <string name="settings_amoled_subtitle">True-black backgrounds whenever dark theme is active — OLED pixels switch off</string>
+    <string name="settings_amoled_subtitle">Black backgrounds in dark theme</string>
     <string name="settings_now_playing_section">Now Playing</string>
     <string name="settings_ambient_motion_title">Ambient motion</string>
-    <string name="settings_ambient_motion_subtitle">Animated color wash behind Now Playing — switch off for a still backdrop that saves battery</string>
-    <string name="settings_ambient_style_title">Ambient style</string>
+    <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
     <string name="settings_ambient_style_soft_glow">Soft glow</string>
     <string name="settings_ambient_style_classic">Classic</string>
-    <string name="settings_ambient_style_desc">Soft glow drifts gently, like the web player. Classic is the original look.</string>
-    <string name="settings_ambient_style_disabled_desc">Turn on Ambient motion to choose a style.</string>
     <string name="settings_open_stash_on_section">Open Stash on</string>
     <string name="settings_start_tab_home">Home</string>
     <string name="settings_start_tab_library">Library</string>
     <string name="settings_start_tab_search">Search</string>
-    <string name="settings_start_tab_desc">The tab Stash opens on when you start it.</string>
     <string name="settings_home_layout_section">Home layout</string>
     <string name="settings_home_layout_desc">Arrange Home\'s sections or hide the ones you don\'t use. The Discover hero stays on top.</string>
     <string name="settings_home_section_community_desc">Playlists and songs other Stash listeners are into. Your posts show your name.</string>

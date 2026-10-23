@@ -3,7 +3,7 @@ package com.stash.feature.settings
 import android.content.Context
 
 /** Where a search result lives; the hub opens that page. */
-enum class SettingsPage { PLAYBACK, AUDIO, LOSSLESS_SOURCES, EQUALIZER, ACCOUNTS, LIBRARY, APPEARANCE, ABOUT }
+enum class SettingsPage { PLAYBACK, AUDIO, LOSSLESS_SOURCES, EQUALIZER, ACCOUNTS, LIBRARY, APPEARANCE, HOME_LAYOUT, ABOUT }
 
 /**
  * One searchable setting: its name as the screen shows it, the page it is on,
@@ -119,8 +119,8 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_amoled_title), SettingsPage.APPEARANCE, listOf("oled", "black", "dark")),
         SettingsSearchEntry(s(R.string.settings_ui_scale_title), SettingsPage.APPEARANCE, listOf("display size", "text size", "font", "zoom", "bigger", "smaller")),
         SettingsSearchEntry(s(R.string.settings_ambient_motion_title), SettingsPage.APPEARANCE, listOf("now playing", "animation", "background", "battery", "ambient style")),
-        SettingsSearchEntry("Home layout", SettingsPage.APPEARANCE, listOf("sections", "order", "made for you", "radios", "community", "moods", "decades", "your listening")),
-        SettingsSearchEntry(s(R.string.settings_home_show_liked_title), SettingsPage.APPEARANCE),
+        SettingsSearchEntry("Home layout", SettingsPage.HOME_LAYOUT, listOf("sections", "order", "made for you", "radios", "community", "moods", "decades", "your listening")),
+        SettingsSearchEntry(s(R.string.settings_home_show_liked_title), SettingsPage.HOME_LAYOUT),
         SettingsSearchEntry("Open Stash on", SettingsPage.APPEARANCE, listOf("start tab", "launch", "startup")),
         // About & Help
         SettingsSearchEntry("Check for updates", SettingsPage.ABOUT, listOf("update", "version", "new version")),

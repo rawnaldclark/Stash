@@ -57,6 +57,7 @@ fun SettingsHubScreen(
     onOpenUrl: (String) -> Unit,
     onOpenLosslessSources: () -> Unit,
     onOpenEqualizer: () -> Unit,
+    onOpenHomeLayout: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -96,6 +97,8 @@ fun SettingsHubScreen(
             SettingsPage.ACCOUNTS to context.getString(R.string.settings_accounts_sync_title),
             SettingsPage.LIBRARY to context.getString(R.string.settings_library_storage_title),
             SettingsPage.APPEARANCE to context.getString(R.string.settings_appearance_title),
+            SettingsPage.HOME_LAYOUT to context.getString(R.string.settings_appearance_title) +
+                " › " + context.getString(R.string.settings_home_layout_section),
             SettingsPage.ABOUT to context.getString(R.string.settings_about_title),
         )
     }
@@ -110,6 +113,7 @@ fun SettingsHubScreen(
         SettingsPage.ACCOUNTS -> onOpenAccounts()
         SettingsPage.LIBRARY -> onOpenLibraryStorage()
         SettingsPage.APPEARANCE -> onOpenAppearance()
+        SettingsPage.HOME_LAYOUT -> onOpenHomeLayout()
         SettingsPage.ABOUT -> onOpenAbout()
     }
     fun iconOf(page: SettingsPage) = when (page) {
@@ -117,7 +121,7 @@ fun SettingsHubScreen(
         SettingsPage.AUDIO, SettingsPage.LOSSLESS_SOURCES, SettingsPage.EQUALIZER -> Icons.Rounded.GraphicEq
         SettingsPage.ACCOUNTS -> Icons.Rounded.Person
         SettingsPage.LIBRARY -> Icons.Rounded.FolderOpen
-        SettingsPage.APPEARANCE -> Icons.Rounded.Palette
+        SettingsPage.APPEARANCE, SettingsPage.HOME_LAYOUT -> Icons.Rounded.Palette
         SettingsPage.ABOUT -> Icons.Rounded.Info
     }
 
