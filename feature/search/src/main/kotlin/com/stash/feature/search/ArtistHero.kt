@@ -72,9 +72,9 @@ internal val ArtistHeroPhotoHeight = 340.dp
  * Artist Profile hero, Spotify-style: the artist's header photo full width and
  * edge to edge (under the status bar), and everything else set on it. Over the
  * photo's bottom edge, where it fades into the page: the name large and full
- * width; under it the listener count and the gold "♥ Support" chip (Bandcamp →
- * website, see [supportUrl]), with the radio ring and the plum play coin level
- * with them on the right; then one row of the artist's links, a glass coin each.
+ * width; under it the plum play coin and the radio ring on the left, the
+ * listener count and the gold "♥ Support" chip (Bandcamp → website, see
+ * [supportUrl]) on the right; then one row of the artist's links, a glass coin each.
  *
  * YouTube's header photos are wide (about 16:9), so [ArtUrlUpgrader.banner]
  * asks for the photo's own shape; the crop sits a little above centre, where
@@ -189,49 +189,25 @@ fun ArtistHero(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Play and radio on the left; listeners and Support on the right.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Listeners, then Support beside them.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f),
+                Surface(
+                    onClick = onPlayArtist,
+                    shape = CircleShape,
+                    color = plum,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.size(56.dp),
                 ) {
-                    if (hero.subscribersText != null) {
-                        Text(
-                            text = hero.subscribersText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play ${hero.name}",
+                            tint = cream,
+                            modifier = Modifier.size(30.dp),
                         )
                     }
-                    if (support != null) {
-                        Surface(
-                            onClick = { runCatching { uriHandler.openUri(support) } },
-                            shape = RoundedCornerShape(99.dp),
-                            color = gold.copy(alpha = 0.28f),
-                            border = BorderStroke(1.dp, gold.copy(alpha = 0.55f)),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Favorite,
-                                    contentDescription = null,
-                                    tint = goldInk,
-                                    modifier = Modifier.size(12.dp),
-                                )
-                                Text(
-                                    text = "Support",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = goldInk,
-                                )
-                            }
-                        }
-                    }
                 }
+                Spacer(Modifier.width(10.dp))
                 Surface(
                     onClick = onStartRadio,
                     shape = CircleShape,
@@ -248,21 +224,41 @@ fun ArtistHero(
                         )
                     }
                 }
-                Spacer(Modifier.width(10.dp))
-                Surface(
-                    onClick = onPlayArtist,
-                    shape = CircleShape,
-                    color = plum,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.size(56.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Play ${hero.name}",
-                            tint = cream,
-                            modifier = Modifier.size(30.dp),
-                        )
+                Spacer(Modifier.weight(1f))
+                if (hero.subscribersText != null) {
+                    Text(
+                        text = hero.subscribersText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                if (hero.subscribersText != null && support != null) Spacer(Modifier.width(10.dp))
+                if (support != null) {
+                    Surface(
+                        onClick = { runCatching { uriHandler.openUri(support) } },
+                        shape = RoundedCornerShape(99.dp),
+                        color = gold.copy(alpha = 0.28f),
+                        border = BorderStroke(1.dp, gold.copy(alpha = 0.55f)),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = null,
+                                tint = goldInk,
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Text(
+                                text = "Support",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = goldInk,
+                            )
+                        }
                     }
                 }
             }
