@@ -20,7 +20,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -56,6 +55,8 @@ fun SettingsHubScreen(
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUrl: (String) -> Unit,
+    onOpenLosslessSources: () -> Unit,
+    onOpenEqualizer: () -> Unit,
     onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -83,68 +84,41 @@ fun SettingsHubScreen(
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts)
 
     var searchQuery by remember { mutableStateOf("") }
-    val searchIndex = remember(
-        context,
-        onOpenPlayback, onOpenAudioQuality, onOpenAccounts,
-        onOpenLibraryStorage, onOpenAppearance, onOpenAbout,
-    ) {
-        listOf(
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_playback_title),
-                subtitle = context.getString(R.string.settings_playback_search_subtitle),
-                keywords = listOf("sleep timer", "autoplay", "radio", "crossfade", "gapless", "playback"),
-                icon = Icons.Rounded.PlayArrow,
-                onSelect = onOpenPlayback,
-            ),
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_audio_quality_title),
-                subtitle = context.getString(R.string.settings_audio_quality_search_subtitle),
-                keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular"),
-                icon = Icons.Rounded.GraphicEq,
-                onSelect = onOpenAudioQuality,
-            ),
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_accounts_sync_title),
-                subtitle = context.getString(R.string.settings_accounts_sync_search_subtitle),
-                keywords = listOf(
-                    "spotify", "youtube", "lastfm", "last.fm", "listenbrainz", "discord", "login", "account",
-                    "sync", "scrobble", "likes", "love", "history", "dropbox", "onedrive", "google drive", "cloud",
-                ),
-                icon = Icons.Rounded.Person,
-                onSelect = onOpenAccounts,
-            ),
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_library_storage_title),
-                subtitle = context.getString(R.string.settings_library_storage_search_subtitle),
-                keywords = listOf("storage", "backup", "export", "import", "download", "move library", "web", "browser", "link", "pair"),
-                icon = Icons.Rounded.FolderOpen,
-                onSelect = onOpenLibraryStorage,
-            ),
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_appearance_title),
-                subtitle = context.getString(R.string.settings_appearance_search_subtitle),
-                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open stash on", "start tab", "launch"),
-                icon = Icons.Rounded.Palette,
-                onSelect = onOpenAppearance,
-            ),
-            SettingsSearchItem(
-                title = context.getString(R.string.settings_about_title),
-                subtitle = context.getString(R.string.settings_about_search_subtitle),
-                keywords = listOf("about", "version", "diagnostics", "crash", "help"),
-                icon = Icons.Rounded.Info,
-                onSelect = onOpenAbout,
-            ),
+    val searchIndex = remember(context) { settingsSearchIndex(context) }
+    val pageTitles = remember(context) {
+        mapOf(
+            SettingsPage.PLAYBACK to context.getString(R.string.settings_playback_title),
+            SettingsPage.AUDIO to context.getString(R.string.settings_audio_quality_title),
+            SettingsPage.LOSSLESS_SOURCES to context.getString(R.string.settings_audio_quality_title) +
+                " › " + context.getString(R.string.settings_lossless_sources_title),
+            SettingsPage.EQUALIZER to context.getString(R.string.settings_audio_quality_title) +
+                " › " + context.getString(R.string.settings_equalizer_title),
+            SettingsPage.ACCOUNTS to context.getString(R.string.settings_accounts_sync_title),
+            SettingsPage.LIBRARY to context.getString(R.string.settings_library_storage_title),
+            SettingsPage.APPEARANCE to context.getString(R.string.settings_appearance_title),
+            SettingsPage.ABOUT to context.getString(R.string.settings_about_title),
         )
     }
     val searchResults = remember(searchQuery, searchIndex) {
-        if (searchQuery.isBlank()) {
-            emptyList()
-        } else {
-            searchIndex.filter { item ->
-                item.title.contains(searchQuery, ignoreCase = true) ||
-                    item.keywords.any { it.contains(searchQuery, ignoreCase = true) }
-            }
-        }
+        searchSettings(searchQuery, searchIndex) { pageTitles.getValue(it) }
+    }
+    fun open(page: SettingsPage) = when (page) {
+        SettingsPage.PLAYBACK -> onOpenPlayback()
+        SettingsPage.AUDIO -> onOpenAudioQuality()
+        SettingsPage.LOSSLESS_SOURCES -> onOpenLosslessSources()
+        SettingsPage.EQUALIZER -> onOpenEqualizer()
+        SettingsPage.ACCOUNTS -> onOpenAccounts()
+        SettingsPage.LIBRARY -> onOpenLibraryStorage()
+        SettingsPage.APPEARANCE -> onOpenAppearance()
+        SettingsPage.ABOUT -> onOpenAbout()
+    }
+    fun iconOf(page: SettingsPage) = when (page) {
+        SettingsPage.PLAYBACK -> Icons.Rounded.PlayArrow
+        SettingsPage.AUDIO, SettingsPage.LOSSLESS_SOURCES, SettingsPage.EQUALIZER -> Icons.Rounded.GraphicEq
+        SettingsPage.ACCOUNTS -> Icons.Rounded.Person
+        SettingsPage.LIBRARY -> Icons.Rounded.FolderOpen
+        SettingsPage.APPEARANCE -> Icons.Rounded.Palette
+        SettingsPage.ABOUT -> Icons.Rounded.Info
     }
 
     // Consume any pending deep-link focus from Home banners ("fix lossless" /
@@ -188,11 +162,11 @@ fun SettingsHubScreen(
                         {
                             SettingsNavRow(
                                 title = result.title,
-                                subtitle = result.subtitle,
-                                leadingIcon = result.icon,
+                                subtitle = pageTitles.getValue(result.page),
+                                leadingIcon = iconOf(result.page),
                                 onClick = {
                                     searchQuery = ""
-                                    result.onSelect()
+                                    open(result.page)
                                 },
                             )
                         }
@@ -255,12 +229,3 @@ fun SettingsHubScreen(
         )
     }
 }
-
-/** One entry in the Settings search index — a category the query can match. */
-private data class SettingsSearchItem(
-    val title: String,
-    val subtitle: String,
-    val keywords: List<String>,
-    val icon: ImageVector,
-    val onSelect: () -> Unit,
-)

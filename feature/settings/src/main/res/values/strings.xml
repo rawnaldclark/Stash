@@ -54,16 +54,10 @@
 
     <!-- Settings > Hub -->
     <string name="settings_playback_title">Playback</string>
-    <string name="settings_playback_search_subtitle">Sleep timer, autoplay radio, crossfade, gapless</string>
     <string name="settings_audio_quality_title">Audio &amp; Quality</string>
-    <string name="settings_audio_quality_search_subtitle">Streaming quality, lossless, download quality</string>
     <string name="settings_accounts_sync_title">Accounts &amp; Sync</string>
-    <string name="settings_accounts_sync_search_subtitle">Spotify, YouTube Music, Last.fm, cloud storage</string>
     <string name="settings_library_storage_title">Library &amp; Storage</string>
-    <string name="settings_library_storage_search_subtitle">Storage location, backups, downloads</string>
     <string name="settings_appearance_title">Appearance</string>
-    <string name="settings_appearance_search_subtitle">Theme, AMOLED, Home layout</string>
-    <string name="settings_about_search_subtitle">Version, diagnostics, crash reports</string>
     <string name="settings_search_no_results">No settings found for \"%1$s\"</string>
     <string name="settings_search_placeholder">Search settings</string>
     <string name="settings_search_clear">Clear search</string>

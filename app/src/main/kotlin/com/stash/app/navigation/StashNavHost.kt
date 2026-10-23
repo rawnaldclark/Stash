@@ -333,6 +333,15 @@ private fun StashNavGraph(
                 onOpenAppearance = { navController.navigate(SettingsAppearanceRoute) },
                 onOpenAbout = { navController.navigate(SettingsAboutRoute) },
                 onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
+                // Through Audio & Quality, so Back from a search hit lands where it lives.
+                onOpenLosslessSources = {
+                    navController.navigate(SettingsAudioQualityRoute)
+                    navController.navigate(SettingsLosslessSourcesRoute)
+                },
+                onOpenEqualizer = {
+                    navController.navigate(SettingsAudioQualityRoute)
+                    navController.navigate(EqualizerRoute)
+                },
                 onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }
