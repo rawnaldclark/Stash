@@ -271,6 +271,8 @@ class InnerTubeClient @Inject constructor(
     @Volatile private var cachedCookie: String? = null
     @Volatile private var cachedSapiSid: String? = null
     @Volatile private var cachedAuthHeader: String? = null
+    /** The YouTube profile a sync session acts as (#664), read once per session like the cookie. */
+    @Volatile private var cachedIdentity: com.stash.core.auth.model.YouTubeIdentity? = null
 
     /**
      * Marks the start of a sync run. The first authenticated request inside the
@@ -286,6 +288,7 @@ class InnerTubeClient @Inject constructor(
         cachedCookie = null
         cachedSapiSid = null
         cachedAuthHeader = null
+        cachedIdentity = null
     }
 
     /** Ends the sync session and clears the auth cache. Idempotent. */
@@ -294,6 +297,7 @@ class InnerTubeClient @Inject constructor(
         cachedCookie = null
         cachedSapiSid = null
         cachedAuthHeader = null
+        cachedIdentity = null
     }
 
     /** Internal: invalidate cached auth on receipt of a 401. */
@@ -301,6 +305,7 @@ class InnerTubeClient @Inject constructor(
         cachedCookie = null
         cachedSapiSid = null
         cachedAuthHeader = null
+        cachedIdentity = null
     }
 
     /**
@@ -856,8 +861,17 @@ class InnerTubeClient @Inject constructor(
         body: JsonObject,
         cookie: String?,
         variant: InnerTubeVariant,
+        /** False sends the request as the Google account itself, not a picked Brand profile (accounts_list). */
+        asProfile: Boolean = true,
     ): RequestOutcome = withContext(Dispatchers.IO) {
         val (effectiveCookie, sapiSid, authHeader) = resolveAuth(cookie, variant)
+        val authed = variant == InnerTubeVariant.WEB_REMIX && sapiSid != null && effectiveCookie != null && authHeader != null
+        // A Brand Account profile (#664): its id on the request (header AND context, as the web
+        // client does) and its owner's session index. Never on /player: a brand id there earns a
+        // 401 (playback doesn't depend on the profile anyway).
+        val identity = if (authed && asProfile) resolveIdentity() else com.stash.core.auth.model.YouTubeIdentity()
+        val pageId = identity.pageId?.takeIf { !url.contains("/player") }
+        val requestBody = if (pageId != null) withOnBehalfOf(body, pageId) else body
 
         val separator = if (url.contains('?')) '&' else '?'
         val fullUrl = when {
@@ -870,7 +884,7 @@ class InnerTubeClient @Inject constructor(
 
         val requestBuilder = Request.Builder()
             .url(fullUrl)
-            .post(body.toString().toRequestBody(jsonMediaType))
+            .post(requestBody.toString().toRequestBody(jsonMediaType))
             .header("Content-Type", "application/json")
             .header("User-Agent", variant.userAgent)
             .header("X-YouTube-Client-Name", variant.clientNameId.ifBlank { variant.clientName })
@@ -881,13 +895,14 @@ class InnerTubeClient @Inject constructor(
         // Cookies + SAPISIDHASH auth only make sense against the WEB family;
         // sending them to IOS / ANDROID_VR clients either no-ops or in some
         // cases earns the request a server-side reject. Skip for non-WEB.
-        if (variant == InnerTubeVariant.WEB_REMIX && sapiSid != null && effectiveCookie != null && authHeader != null) {
+        if (authed) {
             requestBuilder
-                .header("Cookie", effectiveCookie)
-                .header("Authorization", authHeader)
+                .header("Cookie", effectiveCookie!!)
+                .header("Authorization", authHeader!!)
                 .header("Origin", "https://music.youtube.com")
                 .header("Referer", "https://music.youtube.com/")
-                .header("X-Goog-AuthUser", "0")
+                .header("X-Goog-AuthUser", identity.authUser.toString())
+            pageId?.let { requestBuilder.header("X-Goog-PageId", it) }
         }
 
         try {
@@ -948,6 +963,32 @@ class InnerTubeClient @Inject constructor(
         return Triple(c, s, a)
     }
 
+    /** The picked YouTube profile; cached for a sync session, read per call otherwise. */
+    private suspend fun resolveIdentity(): com.stash.core.auth.model.YouTubeIdentity {
+        if (sessionActive) cachedIdentity?.let { return it }
+        // Nullable on purpose: a mocked TokenManager hands back null despite the type.
+        val stored: com.stash.core.auth.model.YouTubeIdentity? = runCatching { tokenManager.getYouTubeIdentity() }.getOrNull()
+        val identity = stored ?: com.stash.core.auth.model.YouTubeIdentity()
+        if (sessionActive) cachedIdentity = identity
+        return identity
+    }
+
+    /**
+     * The profiles of the signed-in Google account (the account's own and its Brand Accounts), as
+     * `account/accounts_list` returns them, asked as the account itself. Null when not signed in or
+     * on failure; parse with YouTubeProfiles.
+     */
+    suspend fun accountsList(): JsonObject? {
+        val body = buildJsonObject { put("context", buildContext(InnerTubeVariant.WEB_REMIX)) }
+        return executeRequestWithStatus(
+            "${InnerTubeVariant.WEB_REMIX.apiBase}/account/accounts_list",
+            body,
+            cookie = null,
+            variant = InnerTubeVariant.WEB_REMIX,
+            asProfile = false,
+        ).body
+    }
+
     /** Backwards-compatible wrapper for callers that don't need the status code. */
     private suspend fun executeRequest(
         url: String,
@@ -981,4 +1022,11 @@ class InnerTubeClient @Inject constructor(
                 variant = variant,
             ).body
         }
+}
+
+/** [body] with `context.user.onBehalfOfUser` = [pageId]: the request acts as that Brand Account profile. */
+internal fun withOnBehalfOf(body: JsonObject, pageId: String): JsonObject {
+    val context = body["context"] as? JsonObject ?: return body
+    val user = (context["user"] as? JsonObject).orEmpty() + ("onBehalfOfUser" to kotlinx.serialization.json.JsonPrimitive(pageId))
+    return JsonObject(body + ("context" to JsonObject(context + ("user" to JsonObject(user)))))
 }

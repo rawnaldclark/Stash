@@ -205,6 +205,23 @@ class TokenManagerImpl @Inject constructor(
         return true
     }
 
+    override suspend fun getYouTubeIdentity(): com.stash.core.auth.model.YouTubeIdentity {
+        val token = tokenStore.youTubeToken.first() ?: return com.stash.core.auth.model.YouTubeIdentity()
+        return com.stash.core.auth.model.YouTubeIdentity.decode(token.scope)
+    }
+
+    override suspend fun setYouTubeProfile(
+        identity: com.stash.core.auth.model.YouTubeIdentity,
+        displayName: String,
+        imageUrl: String?,
+    ) {
+        val token = tokenStore.youTubeToken.first() ?: return
+        tokenStore.saveYouTubeToken(
+            token.copy(scope = identity.encode()),
+            UserInfo(id = identity.pageId ?: "youtube_user", displayName = displayName, imageUrl = imageUrl),
+        )
+    }
+
     override suspend fun clearAuth(service: AuthService) {
         when (service) {
             AuthService.SPOTIFY -> tokenStore.clearSpotify()

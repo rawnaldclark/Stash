@@ -169,6 +169,32 @@ fun SettingsAccountsScreen(
         // a rotation keeps the question up.
         var confirmSpotifyDisconnect by rememberSaveable { mutableStateOf(false) }
         var confirmYouTubeDisconnect by rememberSaveable { mutableStateOf(false) }
+
+        // YouTube Music profile (#664): a Google account's Brand Account profiles each have their
+        // own library. Right after connecting, ask which one when there's more than one.
+        val profileViewModel: com.stash.feature.settings.components.YouTubeProfileViewModel = hiltViewModel()
+        val profileState by profileViewModel.state.collectAsStateWithLifecycle()
+        var showYouTubeProfiles by rememberSaveable { mutableStateOf(false) }
+        var ytWasConnected by rememberSaveable { mutableStateOf(ytConnected) }
+        androidx.compose.runtime.LaunchedEffect(ytConnected) {
+            if (ytConnected && !ytWasConnected) profileViewModel.onConnected()
+            ytWasConnected = ytConnected
+        }
+        androidx.compose.runtime.LaunchedEffect(profileState.askAfterConnect) {
+            if (profileState.askAfterConnect) {
+                showYouTubeProfiles = true
+                profileViewModel.askHandled()
+            }
+        }
+        if (showYouTubeProfiles) {
+            com.stash.feature.settings.components.YouTubeProfileSheet(
+                state = profileState,
+                onLoad = profileViewModel::load,
+                onChoose = profileViewModel::choose,
+                onChooseById = profileViewModel::chooseById,
+                onDismiss = { showYouTubeProfiles = false },
+            )
+        }
         if (confirmSpotifyDisconnect) {
             com.stash.feature.settings.components.DisconnectAccountDialog(
                 serviceName = "Spotify",
@@ -225,6 +251,13 @@ fun SettingsAccountsScreen(
             onDisconnect = { confirmYouTubeDisconnect = true },
             extraContent = if (ytConnected) {
                 {
+                    val ytUser = (uiState.youTubeAuthState as? com.stash.core.auth.model.AuthState.Connected)?.user
+                    com.stash.feature.settings.components.SettingsValueRow(
+                        title = "Profile",
+                        value = ytUser?.displayName?.takeIf { ytUser.id != "youtube_user" } ?: "Your account",
+                        subtitle = "The profile Stash syncs your library from",
+                        onClick = { showYouTubeProfiles = true },
+                    )
                     LikeMirrorToggleRow(
                         title = stringResource(R.string.settings_like_mirror_row_title, "YouTube Music"),
                         checked = uiState.mirrorLikesYtMusic,

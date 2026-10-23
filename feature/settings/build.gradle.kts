@@ -21,6 +21,9 @@ dependencies {
     implementation(project(":data:download"))
     // Cloud storage libraries (Dropbox / OneDrive): accounts and cloud folders settings.
     implementation(project(":data:cloud"))
+    // YouTube Music profiles (#664): the profile list's model and the profile photos.
+    implementation(project(":data:ytmusic"))
+    implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)
     // For the "Fix wrong-version downloads" backfill trigger in Settings,
     // which enqueues YtLibraryBackfillWorker via WorkManager.

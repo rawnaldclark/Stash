@@ -76,6 +76,8 @@ fun interface PingSubmitter {
 class OkHttpPingSubmitter @Inject constructor(
     okHttpClient: OkHttpClient,
     private val cookieHelper: YouTubeCookieHelper,
+    /** The picked YouTube profile (#664), for its session index and Brand page id. Null in tests. */
+    private val tokenManager: com.stash.core.auth.TokenManager? = null,
 ) : PingSubmitter {
 
     /** The shared client, without redirects (see the class doc). */
@@ -96,8 +98,14 @@ class OkHttpPingSubmitter @Inject constructor(
             .header("Cookie", cookies)
             .header("Origin", "https://music.youtube.com")
             .header("X-Origin", "https://music.youtube.com")
-            .header("X-Goog-AuthUser", "0")
             .header("User-Agent", USER_AGENT)
+            .apply {
+                // The play lands in the picked profile's history: its owner's session index, and a
+                // Brand Account's page id (#664).
+                val identity = runCatching { tokenManager?.getYouTubeIdentity() }.getOrNull()
+                header("X-Goog-AuthUser", (identity?.authUser ?: 0).toString())
+                identity?.pageId?.let { header("X-Goog-PageId", it) }
+            }
             .build()
         return client.newCall(request).execute().use { it.code }
     }

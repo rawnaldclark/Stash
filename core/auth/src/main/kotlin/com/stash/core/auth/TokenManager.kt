@@ -104,6 +104,20 @@ interface TokenManager {
      */
     suspend fun connectYouTubeWithCookie(cookie: String): Boolean
 
+    /** The YouTube profile requests act as (#664); the account's own when none was picked. */
+    suspend fun getYouTubeIdentity(): com.stash.core.auth.model.YouTubeIdentity =
+        com.stash.core.auth.model.YouTubeIdentity()
+
+    /**
+     * Records which profile of the signed-in Google account YouTube Music uses, with its name and
+     * photo for "Connected as". No-op when YouTube Music isn't connected.
+     */
+    suspend fun setYouTubeProfile(
+        identity: com.stash.core.auth.model.YouTubeIdentity,
+        displayName: String,
+        imageUrl: String?,
+    ) = Unit
+
     /** Removes all stored credentials for the given [service]. */
     suspend fun clearAuth(service: AuthService)
 

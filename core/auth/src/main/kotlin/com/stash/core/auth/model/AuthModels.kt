@@ -65,3 +65,28 @@ data class DeviceCodeState(
     val expiresAtEpoch: Long,
     val intervalSeconds: Int,
 )
+
+/**
+ * Which profile of the signed-in Google account YouTube Music requests act as (#664). A Google
+ * account can own Brand Account profiles, each its own library; [pageId] is a brand profile's
+ * 21-digit id (null = the account's own profile) and [authUser] the index of the Google account in
+ * the browser session that owns it (`X-Goog-AuthUser`: a page id is only valid with its owner's).
+ *
+ * Kept in the YouTube token's scope field ([encode] / [decode]), so a new sign-in starts over and
+ * a disconnect forgets it, like the rest of the sign-in.
+ */
+data class YouTubeIdentity(val pageId: String? = null, val authUser: Int = 0) {
+    fun encode(): String = listOfNotNull(pageId?.let { "pageId=$it" }, "authuser=$authUser").joinToString(";")
+
+    companion object {
+        fun decode(scope: String): YouTubeIdentity {
+            val fields = scope.split(';').mapNotNull { part ->
+                part.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0].trim() to it[1].trim() }
+            }.toMap()
+            return YouTubeIdentity(
+                pageId = fields["pageId"]?.takeIf { id -> id.isNotEmpty() && id.all(Char::isDigit) },
+                authUser = fields["authuser"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+            )
+        }
+    }
+}
