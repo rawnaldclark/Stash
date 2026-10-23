@@ -199,8 +199,8 @@ class DownloadExecutor @Inject constructor(
             // is benched after a few failures in a row (FastClientBench) instead of
             // costing every download a doomed yt-dlp run.
             // A strike counts only when the default set then lands the same song: a
-            // song with no stream the quality allows (an Opus-only download of an
-            // AAC-only video) fails everywhere and says nothing about the client.
+            // video YouTube won't serve at all (removed, blocked here, no stream the
+            // quality allows) fails everywhere and says nothing about the client.
             val failedFast = mutableListOf<String>()
             PreviewUrlExtractor.fastClientsNow()
                 .firstNotNullOfOrNull { client ->

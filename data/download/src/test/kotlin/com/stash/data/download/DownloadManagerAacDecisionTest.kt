@@ -457,13 +457,13 @@ class DownloadManagerAacDecisionTest {
     }
 
     @Test
-    fun `Opus mode asks yt-dlp for Opus only, even on Best`() = runTest {
+    fun `Opus mode asks yt-dlp for Opus first, even on Best, and AAC only when there is none`() = runTest {
         arrange(fallbackOn = false, tidalHasAac = true, allowanceSpent = false, mode = DownloadMode.OPUS)
         val best = mockk<QualityPreferencesManager>(relaxed = true) { every { qualityTier } returns flowOf(QualityTier.BEST) }
 
         newSubject(qualityPrefs = best).downloadTrack(Row.YOUTUBE_MUSIC_VIDEO.track, preResolvedUrl = "https://music.youtube.com/watch?v=$VIDEO_ID")
 
-        coVerify { downloadExecutor.download(any(), any(), any(), listOf("-f", "251/250/249/bestaudio[acodec=opus]", "--embed-metadata"), any()) }
+        coVerify { downloadExecutor.download(any(), any(), any(), listOf("-f", "251/250/249/bestaudio[acodec=opus]/140/bestaudio", "--embed-metadata"), any()) }
     }
 
     @Test

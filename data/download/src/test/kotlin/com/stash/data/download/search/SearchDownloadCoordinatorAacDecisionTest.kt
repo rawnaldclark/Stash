@@ -417,10 +417,10 @@ class SearchDownloadCoordinatorAacDecisionTest {
     }
 
     @Test
-    fun `Opus mode asks yt-dlp for Opus only`() = runTest {
+    fun `Opus mode asks yt-dlp for Opus first, AAC only when there is none`() = runTest {
         arrange(Tapped.SONG_WITH_ALBUM, fallbackOn = false, tidalHasAac = true, allowanceSpent = false, mode = DownloadMode.OPUS)
         download(Tapped.SONG_WITH_ALBUM)
-        coVerify { downloadExecutor.download(any(), any(), any(), listOf("-f", "251/250/249/bestaudio[acodec=opus]", "--embed-metadata"), any()) }
+        coVerify { downloadExecutor.download(any(), any(), any(), listOf("-f", "251/250/249/bestaudio[acodec=opus]/140/bestaudio", "--embed-metadata"), any()) }
     }
 
     private val tidalAac = SourceResult(

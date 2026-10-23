@@ -135,16 +135,20 @@ fun QualityTier.toYtDlpArgs(): List<String> = when (this) {
 }
 
 /**
- * yt-dlp args for Download quality "Opus": Opus only, whatever the tier. The tier picks the Opus
- * bitrate (251 ~160 kbps, 250 ~70, 249 ~50); [toYtDlpArgs] would let Max and Best take YouTube's
- * AAC (141 / 140) first. No m4a fallback: a video with no Opus stream fails rather than saving AAC.
+ * yt-dlp args for Download quality "Opus": Opus whenever YouTube has it, whatever the tier. The tier
+ * picks the Opus bitrate (251 ~160 kbps, 250 ~70, 249 ~50); [toYtDlpArgs] would let Max and Best
+ * take YouTube's AAC (141 / 140) first.
+ *
+ * A video with no Opus stream at all falls back to AAC (140 ~128 kbps; 139 ~48 first on Low)
+ * (owner, 2026-10-23). It used to fail instead, and since a failed song stays queued, every sync
+ * retried it through every client, about a minute and a half each time, and it never arrived.
  */
 fun QualityTier.toOpusYtDlpArgs(): List<String> = listOf(
     "-f",
     when (this) {
-        QualityTier.MAX, QualityTier.BEST, QualityTier.HIGH -> "251/250/249/bestaudio[acodec=opus]"
-        QualityTier.NORMAL -> "250/251/249/bestaudio[acodec=opus]"
-        QualityTier.LOW -> "249/250/251/bestaudio[acodec=opus]"
+        QualityTier.MAX, QualityTier.BEST, QualityTier.HIGH -> "251/250/249/bestaudio[acodec=opus]/140/bestaudio"
+        QualityTier.NORMAL -> "250/251/249/bestaudio[acodec=opus]/140/bestaudio"
+        QualityTier.LOW -> "249/250/251/bestaudio[acodec=opus]/139/140/bestaudio"
     },
     "--embed-metadata",
 )
