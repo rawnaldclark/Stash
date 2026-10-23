@@ -46,11 +46,15 @@ import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsGroupCard
+import com.stash.feature.settings.components.SettingsValueRow
+import com.stash.feature.settings.components.SettingsRowPadV
+import com.stash.feature.settings.components.SettingsRowPadH
+import com.stash.feature.settings.components.SettingsChoiceSheet
+import com.stash.feature.settings.components.SettingsChoice
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsToggleRow
-import com.stash.feature.settings.components.SettingsValueRow
 
 /**
  * One radio choice of the import dialog (issue #235).
@@ -277,60 +281,9 @@ fun SettingsLibraryStorageScreen(
             ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) viewModel.onImportDatabase(uri) }
 
-        // -- Downloads --------------------------------------------------------
-        SettingsSectionLabel(stringResource(R.string.settings_downloads_section))
-
-        GlassCard {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .selectableGroup(),
-            ) {
-                Text(
-                    text = stringResource(R.string.settings_download_recommendations_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                DownloadNetworkMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = uiState.downloadNetworkMode == mode,
-                                onClick = { viewModel.onDownloadNetworkModeChanged(mode) },
-                                role = Role.RadioButton,
-                            )
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = uiState.downloadNetworkMode == mode,
-                            onClick = null, // handled by Row's selectable
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary,
-                                unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                        Column(modifier = Modifier.padding(start = 8.dp)) {
-                            Text(
-                                text = mode.displayLabel(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Text(
-                                text = mode.displayDescription(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // -- Stash Mixes (beta) toggle ----------------------------------------
+        // -- Discovery: Stash Mixes, when its background work may run, Qobuz on Home --
+        var showNetworkSheet by rememberSaveable { mutableStateOf(false) }
+        SettingsSectionLabel(stringResource(R.string.settings_discovery_section))
         SettingsGroupCard(
             rows = listOf(
                 {
@@ -343,6 +296,14 @@ fun SettingsLibraryStorageScreen(
                         },
                         checked = uiState.stashMixesEnabled,
                         onCheckedChange = viewModel::onStashMixesEnabledChanged,
+                    )
+                },
+                {
+                    // Gates the background discovery + tag-enrichment workers (constraintsFor).
+                    SettingsValueRow(
+                        title = stringResource(R.string.settings_download_recommendations_title),
+                        value = uiState.downloadNetworkMode.displayLabel(),
+                        onClick = { showNetworkSheet = true },
                     )
                 },
                 {
@@ -359,6 +320,15 @@ fun SettingsLibraryStorageScreen(
                 },
             ),
         )
+        if (showNetworkSheet) {
+            SettingsChoiceSheet(
+                title = stringResource(R.string.settings_download_recommendations_title),
+                choices = DownloadNetworkMode.entries.map { SettingsChoice(it, it.displayLabel(), it.displayDescription()) },
+                selected = uiState.downloadNetworkMode,
+                onSelect = viewModel::onDownloadNetworkModeChanged,
+                onDismiss = { showNetworkSheet = false },
+            )
+        }
 
         // -- Library Health ---------------------------------------------------
         SettingsSectionLabel(stringResource(R.string.settings_library_section))
@@ -661,287 +631,186 @@ fun SettingsLibraryStorageScreen(
             )
         }
 
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Database Backup -----------------------------------------
-                Text(
-                    text = stringResource(R.string.settings_storage_backup_title),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+        // -- Storage: where downloads go and how they are filed ---------------------------
+        var showLayoutSheet by rememberSaveable { mutableStateOf(false) }
+        val storageRows = mutableListOf<@Composable () -> Unit>()
+        storageRows += {
+            StorageInfoRow(
+                title = stringResource(R.string.settings_storage_used_label),
+                value = pluralStringResource(R.plurals.settings_storage_tracks, uiState.totalTracks, uiState.totalTracks) +
+                    " · " + libStorageFormatBytes(uiState.totalStorageBytes),
+            )
+        }
+        storageRows += {
+            SettingsValueRow(
+                title = stringResource(R.string.settings_storage_download_location_label),
+                value = when {
+                    externalTree == null -> stringResource(R.string.settings_storage_location_internal)
+                    externalFolderName.isBlank() -> stringResource(R.string.settings_storage_location_external_unknown)
+                    else -> externalFolderName
+                },
+                subtitle = if (externalTree != null) {
+                    stringResource(R.string.settings_storage_location_external_desc)
+                } else {
+                    stringResource(R.string.settings_storage_new_downloads_location_note)
+                },
+                onClick = {
+                    pendingLibStoragePickerIntent = LibStoragePickerIntent.SetOnly
+                    treePicker.launch(null)
+                },
+            )
+        }
+        if (externalTree != null) {
+            storageRows += {
+                SettingsNavRow(
+                    title = stringResource(R.string.settings_storage_use_internal_button),
+                    onClick = { viewModel.setExternalStorageUri(null) },
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.settings_storage_backup_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { showExportScopeDialog = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text(stringResource(R.string.settings_storage_export_backup_button))
-                    }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text(stringResource(R.string.settings_storage_import_backup_button))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = extendedColors.glassBorder)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Stash on the web --------------------------------------------
-                Text(
-                    text = stringResource(R.string.web_library_export_title),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = stringResource(R.string.web_library_export_subtitle),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = webExport::openPicker,
-                    enabled = webExportState !is WebLibraryExportState.Working,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text(stringResource(R.string.web_library_export_button))
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { webImportLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text(stringResource(R.string.web_library_import_button))
-                }
+            }
+        }
+        // Applies to new downloads immediately; existing files move only when the
+        // user runs Reorganize below.
+        storageRows += {
+            SettingsValueRow(
+                title = stringResource(R.string.settings_storage_folder_structure_label),
+                value = uiState.libraryLayout.displayLabel(),
+                onClick = { showLayoutSheet = true },
+            )
+        }
+        // Move library — rendered only when there's work to do. We
+        // refresh the count reactively after each move (state
+        // transition to Idle) and when the user picks a new folder.
+        // If everything is already in the external target the
+        // section simply disappears so the button isn't a dead-end.
+        var movableCount by remember { mutableStateOf<Int?>(null) }
+        LaunchedEffect(uiState.moveLibraryState, externalTree) {
+            if (uiState.moveLibraryState !is com.stash.data.download.files.MoveLibraryState.Running) {
+                movableCount = runCatching { viewModel.countMovableTracks() }.getOrNull()
             }
         }
 
-        GlassCard {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsValueRow(label = stringResource(R.string.settings_storage_total_tracks_label), value = "${uiState.totalTracks}")
-                Spacer(modifier = Modifier.height(8.dp))
-                SettingsValueRow(label = stringResource(R.string.settings_storage_used_label), value = libStorageFormatBytes(uiState.totalStorageBytes))
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(
-                    color = extendedColors.glassBorder,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+        val showMoveSection = when (uiState.moveLibraryState) {
+            com.stash.data.download.files.MoveLibraryState.Idle ->
+                (movableCount ?: 0) > 0
+            else -> true  // show progress/done/error regardless of count
+        }
 
-                // Current location ----------------------------------------
-                Text(
-                    text = stringResource(R.string.settings_storage_download_location_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = when {
-                        externalTree == null -> stringResource(R.string.settings_storage_location_internal)
-                        externalFolderName.isBlank() -> stringResource(R.string.settings_storage_location_external_unknown)
-                        else -> externalFolderName
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (externalTree != null) {
-                        stringResource(R.string.settings_storage_location_external_desc)
-                    } else {
-                        internalPath
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Actions -------------------------------------------------
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            pendingLibStoragePickerIntent = LibStoragePickerIntent.SetOnly
-                            treePicker.launch(null)
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                    ) {
-                        Text(
-                            text = if (externalTree != null) {
-                                stringResource(R.string.settings_storage_change_folder_button)
-                            } else {
-                                stringResource(R.string.settings_storage_pick_folder_button)
-                            },
-                        )
-                    }
+        if (showMoveSection) storageRows += {
+            Column(modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV)) { LibStorageMoveLibrarySection(
+                state = uiState.moveLibraryState,
+                hasExternalFolder = externalTree != null,
+                movableCount = movableCount ?: 0,
+                onStart = {
                     if (externalTree != null) {
-                        OutlinedButton(
-                            onClick = { viewModel.setExternalStorageUri(null) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        ) {
-                            Text(stringResource(R.string.settings_storage_use_internal_button))
-                        }
+                        viewModel.startMoveLibrary(externalTree)
+                    } else {
+                        pendingLibStoragePickerIntent = LibStoragePickerIntent.SetAndMove
+                        treePicker.launch(null)
                     }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.settings_storage_new_downloads_location_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                },
+                onCancel = viewModel::cancelMoveLibrary,
+                onDismiss = viewModel::dismissMoveLibrary,
+            ) }
+        }
 
-                // Folder structure (#198 / #104) ---------------------------
-                // Applies to new downloads immediately; existing files move
-                // only when the user runs the Reorganize action below.
-                Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider(color = extendedColors.glassBorder)
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.settings_storage_folder_structure_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Column(modifier = Modifier.selectableGroup()) {
-                    com.stash.core.data.prefs.LibraryLayout.entries.forEach { layout ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = uiState.libraryLayout == layout,
-                                    role = Role.RadioButton,
-                                    onClick = { viewModel.setLibraryLayout(layout) },
-                                )
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = uiState.libraryLayout == layout,
-                                onClick = null,
-                            )
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(
-                                    text = layout.displayLabel(),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                Text(
-                                    text = layout.displayDescription(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Move library — rendered only when there's work to do. We
-                // refresh the count reactively after each move (state
-                // transition to Idle) and when the user picks a new folder.
-                // If everything is already in the external target the
-                // section simply disappears so the button isn't a dead-end.
-                var movableCount by remember { mutableStateOf<Int?>(null) }
-                LaunchedEffect(uiState.moveLibraryState, externalTree) {
-                    if (uiState.moveLibraryState !is com.stash.data.download.files.MoveLibraryState.Running) {
-                        movableCount = runCatching { viewModel.countMovableTracks() }.getOrNull()
-                    }
-                }
-
-                val showMoveSection = when (uiState.moveLibraryState) {
-                    com.stash.data.download.files.MoveLibraryState.Idle ->
-                        (movableCount ?: 0) > 0
-                    else -> true  // show progress/done/error regardless of count
-                }
-
-                if (showMoveSection) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(
-                        color = extendedColors.glassBorder,
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LibStorageMoveLibrarySection(
-                        state = uiState.moveLibraryState,
-                        hasExternalFolder = externalTree != null,
-                        movableCount = movableCount ?: 0,
-                        onStart = {
-                            if (externalTree != null) {
-                                viewModel.startMoveLibrary(externalTree)
-                            } else {
-                                pendingLibStoragePickerIntent = LibStoragePickerIntent.SetAndMove
-                                treePicker.launch(null)
-                            }
-                        },
-                        onCancel = viewModel::cancelMoveLibrary,
-                        onDismiss = viewModel::dismissMoveLibrary,
-                    )
-                }
-
-                // Reorganize library (#198/#104) — relocate already-downloaded
-                // tracks into the chosen Folder structure, within whichever
-                // destination they're in. Hidden when everything already
-                // matches and no pass is running.
-                var misplacedCount by remember { mutableStateOf<Int?>(null) }
-                LaunchedEffect(uiState.libraryLayout, uiState.reorganizeLibraryState) {
-                    if (uiState.reorganizeLibraryState !is com.stash.data.download.files.ReorganizeLibraryState.Running) {
-                        misplacedCount = runCatching { viewModel.countMisplacedTracks() }.getOrNull()
-                    }
-                }
-
-                val showReorganizeSection = when (uiState.reorganizeLibraryState) {
-                    com.stash.data.download.files.ReorganizeLibraryState.Idle ->
-                        (misplacedCount ?: 0) > 0
-                    is com.stash.data.download.files.ReorganizeLibraryState.Done -> true
-                    is com.stash.data.download.files.ReorganizeLibraryState.Error -> true
-                    is com.stash.data.download.files.ReorganizeLibraryState.Running -> true
-                }
-
-                if (showReorganizeSection) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = extendedColors.glassBorder)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LibStorageReorganizeSection(
-                        state = uiState.reorganizeLibraryState,
-                        misplacedCount = misplacedCount ?: 0,
-                        layoutLabel = uiState.libraryLayout.displayLabel(),
-                        onStart = viewModel::startReorganize,
-                        onCancel = viewModel::cancelReorganize,
-                        onDismiss = viewModel::dismissReorganize,
-                    )
-                }
+        // Reorganize library (#198/#104) — relocate already-downloaded
+        // tracks into the chosen Folder structure, within whichever
+        // destination they're in. Hidden when everything already
+        // matches and no pass is running.
+        var misplacedCount by remember { mutableStateOf<Int?>(null) }
+        LaunchedEffect(uiState.libraryLayout, uiState.reorganizeLibraryState) {
+            if (uiState.reorganizeLibraryState !is com.stash.data.download.files.ReorganizeLibraryState.Running) {
+                misplacedCount = runCatching { viewModel.countMisplacedTracks() }.getOrNull()
             }
         }
+
+        val showReorganizeSection = when (uiState.reorganizeLibraryState) {
+            com.stash.data.download.files.ReorganizeLibraryState.Idle ->
+                (misplacedCount ?: 0) > 0
+            is com.stash.data.download.files.ReorganizeLibraryState.Done -> true
+            is com.stash.data.download.files.ReorganizeLibraryState.Error -> true
+            is com.stash.data.download.files.ReorganizeLibraryState.Running -> true
+        }
+
+        if (showReorganizeSection) storageRows += {
+            Column(modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV)) { LibStorageReorganizeSection(
+                state = uiState.reorganizeLibraryState,
+                misplacedCount = misplacedCount ?: 0,
+                layoutLabel = uiState.libraryLayout.displayLabel(),
+                onStart = viewModel::startReorganize,
+                onCancel = viewModel::cancelReorganize,
+                onDismiss = viewModel::dismissReorganize,
+            ) }
+        }
+
+        SettingsGroupCard(rows = storageRows)
+        if (showLayoutSheet) {
+            SettingsChoiceSheet(
+                title = stringResource(R.string.settings_storage_folder_structure_label),
+                choices = com.stash.core.data.prefs.LibraryLayout.entries.map {
+                    SettingsChoice(it, it.displayLabel(), it.displayDescription())
+                },
+                selected = uiState.libraryLayout,
+                onSelect = viewModel::setLibraryLayout,
+                onDismiss = { showLayoutSheet = false },
+            )
+        }
+
+        // -- Backup & transfer ---------------------------------------------------------
+        SettingsSectionLabel(stringResource(R.string.settings_backup_section))
+        SettingsGroupCard(
+            rows = listOf(
+                {
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_storage_export_backup_button),
+                        subtitle = stringResource(R.string.settings_storage_backup_subtitle),
+                        onClick = { showExportScopeDialog = true },
+                    )
+                },
+                {
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_storage_import_backup_button),
+                        onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                    )
+                },
+                {
+                    SettingsNavRow(
+                        title = stringResource(R.string.web_library_export_button),
+                        subtitle = stringResource(R.string.web_library_export_subtitle),
+                        onClick = { if (webExportState !is WebLibraryExportState.Working) webExport.openPicker() },
+                    )
+                },
+                {
+                    SettingsNavRow(
+                        title = stringResource(R.string.web_library_import_button),
+                        onClick = { webImportLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream", "*/*")) },
+                    )
+                },
+            ),
+        )
+    }
+}
+
+/** A read-only line in a settings card: a label and its value. */
+@Composable
+private fun StorageInfoRow(title: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

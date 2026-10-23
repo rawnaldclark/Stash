@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
  * can be shared by both Library & Storage and About category screens.
  */
 @Composable
-fun SettingsValueRow(label: String, value: String) {
+fun SettingsInfoRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,

@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
     <string name="web_library_export_title">Stash on the web</string>
-    <string name="web_library_export_subtitle">Take your likes, your playlists and what you played lately to Stash on the web. Then, in the web player: Settings › Your library › Import from the Stash app.</string>
+    <string name="web_library_export_subtitle">Then in the web player: Settings › Your library › Import</string>
     <string name="web_library_export_button">Export for Stash on the web</string>
     <string name="web_library_export_working_title">Exporting your library</string>
     <string name="web_library_export_done_title">Ready for the web</string>
@@ -368,20 +368,22 @@
     <string name="settings_downloads_section">Downloads</string>
     <string name="settings_library_section">Library</string>
 
-    <string name="settings_download_recommendations_title">Run recommendations when</string>
+    <string name="settings_discovery_section">Discovery</string>
+    <string name="settings_backup_section">Backup &amp; transfer</string>
+    <string name="settings_download_recommendations_title">Background refresh</string>
     <string name="settings_download_mode_wifi_charging_label">Wi-Fi + charging</string>
-    <string name="settings_download_mode_wifi_charging_desc">Most conservative. Downloads only when on Wi-Fi and plugged in.</string>
+    <string name="settings_download_mode_wifi_charging_desc">On Wi-Fi while charging. Easiest on battery and data.</string>
     <string name="settings_download_mode_wifi_any_label">Wi-Fi any time</string>
-    <string name="settings_download_mode_wifi_any_desc">Downloads over Wi-Fi even without a charger.</string>
+    <string name="settings_download_mode_wifi_any_desc">On Wi-Fi, charging or not.</string>
     <string name="settings_download_mode_any_network_label">Any network</string>
-    <string name="settings_download_mode_any_network_desc">Downloads over cellular too. Uses mobile data.</string>
+    <string name="settings_download_mode_any_network_desc">Mobile data too.</string>
 
     <string name="settings_stash_mixes_title">Stash Mixes (beta)</string>
-    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background.</string>
-    <string name="settings_stash_mixes_subtitle_disabled">Auto-generated mix playlists are hidden. Background discovery downloads are off.</string>
+    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts and First Listen refresh on their own</string>
+    <string name="settings_stash_mixes_subtitle_disabled">Mixes hidden; no background discovery</string>
     <string name="settings_qobuz_discovery_title">Qobuz discovery on Home</string>
-    <string name="settings_qobuz_discovery_subtitle_enabled">New Releases, Qobuz Playlists, and Top Albums show on Home.</string>
-    <string name="settings_qobuz_discovery_subtitle_disabled">Home keeps only your mixes and imported music.</string>
+    <string name="settings_qobuz_discovery_subtitle_enabled">New Releases, Qobuz Playlists and Top Albums on Home</string>
+    <string name="settings_qobuz_discovery_subtitle_disabled">Home shows only your mixes and music</string>
 
     <string name="settings_library_health_title">Library Health</string>
     <string name="settings_listening_history_title">Listening history</string>
@@ -427,20 +429,24 @@
     <string name="settings_backup_import_destructive_warning">This cannot be undone.</string>
 
     <string name="settings_storage_backup_title">Backup</string>
-    <string name="settings_storage_backup_subtitle">Export settings and database or import from a previous backup.</string>
-    <string name="settings_storage_export_backup_button">Export Backup</string>
-    <string name="settings_storage_import_backup_button">Import Backup</string>
+    <string name="settings_storage_backup_subtitle">Settings and library in one file</string>
+    <string name="settings_storage_export_backup_button">Export backup</string>
+    <string name="settings_storage_import_backup_button">Import backup</string>
 
     <string name="settings_storage_total_tracks_label">Total tracks</string>
+    <plurals name="settings_storage_tracks">
+        <item quantity="one">%d track</item>
+        <item quantity="other">%d tracks</item>
+    </plurals>
     <string name="settings_storage_used_label">Storage used</string>
     <string name="settings_storage_download_location_label">Download location</string>
-    <string name="settings_storage_location_internal">Internal (app-private)</string>
+    <string name="settings_storage_location_internal">Internal</string>
     <string name="settings_storage_location_external_unknown">External folder (SD card / USB)</string>
-    <string name="settings_storage_location_external_desc">Tracks are stored in this folder and survive uninstall. Visible to other apps and over USB.</string>
+    <string name="settings_storage_location_external_desc">Survives uninstall. Visible over USB.</string>
     <string name="settings_storage_change_folder_button">Change folder</string>
     <string name="settings_storage_pick_folder_button">Pick SD / folder</string>
-    <string name="settings_storage_use_internal_button">Use internal</string>
-    <string name="settings_storage_new_downloads_location_note">New downloads go to the selected location.</string>
+    <string name="settings_storage_use_internal_button">Use internal storage</string>
+    <string name="settings_storage_new_downloads_location_note">New downloads go here</string>
 
     <string name="settings_storage_folder_structure_label">Folder structure</string>
     <string name="settings_storage_layout_artist_album_label">Artist / Album</string>

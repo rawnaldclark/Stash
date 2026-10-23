@@ -26,7 +26,7 @@ import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.ui.components.GlassCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
-import com.stash.feature.settings.components.SettingsValueRow
+import com.stash.feature.settings.components.SettingsInfoRow
 
 /**
  * The About & Help spoke of the hub-and-spoke Settings redesign.
@@ -36,7 +36,7 @@ import com.stash.feature.settings.components.SettingsValueRow
  * license value rows + check-for-updates) from the monolithic
  * [SettingsScreen]. Every callback and intent-building branch is copied
  * verbatim; only the group headers and value rows are restyled onto the
- * shared component kit ([SettingsSectionLabel], [SettingsValueRow]).
+ * shared component kit ([SettingsSectionLabel], [SettingsInfoRow]).
  */
 @Composable
 fun SettingsAboutScreen(
@@ -169,9 +169,9 @@ fun SettingsAboutScreen(
 
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
-                SettingsValueRow(label = stringResource(R.string.settings_version_label), value = installedVersion)
+                SettingsInfoRow(label = stringResource(R.string.settings_version_label), value = installedVersion)
                 Spacer(modifier = Modifier.height(8.dp))
-                SettingsValueRow(label = stringResource(R.string.settings_license_label), value = "GPL-3.0")
+                SettingsInfoRow(label = stringResource(R.string.settings_license_label), value = "GPL-3.0")
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = {
