@@ -1,8 +1,7 @@
 package com.stash.core.data.backcover
 
+import com.stash.core.data.share.await
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -54,20 +53,25 @@ class CoverArtArchiveClientImpl @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** Test seam: the server. */
+    internal var base: String = BASE
+
     override suspend fun release(mbid: String): CaaListing? = listing("release/$mbid")
 
     override suspend fun releaseGroup(mbid: String): CaaListing? = listing("release-group/$mbid")
 
-    /** A listing, [CaaListing.NONE] on a 404, null on any other failure. A cancellation is rethrown. */
+    /**
+     * A listing, [CaaListing.NONE] on a 404, null on any other failure. The call cancels with its
+     * caller ([await]), so a lookup that has its answer stops waiting on slower listings; a
+     * cancellation is rethrown.
+     */
     private suspend fun listing(path: String): CaaListing? = try {
-        val req = Request.Builder().url("$BASE$path").header("User-Agent", USER_AGENT).build()
-        withContext(Dispatchers.IO) {
-            http.newCall(req).execute().use { resp ->
-                when {
-                    resp.code == 404 -> CaaListing.NONE
-                    !resp.isSuccessful -> null
-                    else -> resp.body?.string()?.let { parseCaaListing(json.parseToJsonElement(it).jsonObject) }
-                }
+        val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
+        http.newCall(req).await { code, body ->
+            when {
+                code == 404 -> CaaListing.NONE
+                code !in 200..299 -> null
+                else -> parseCaaListing(json.parseToJsonElement(body).jsonObject)
             }
         }
     } catch (e: CancellationException) {

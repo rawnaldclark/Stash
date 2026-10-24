@@ -84,6 +84,50 @@ class BackCoverMatchingTest {
         assertThat(taylors).isNotEqualTo(original)
     }
 
+    /** A release group search's body: (id, title, releases, secondary types), all by The Beatles, scored 100. */
+    private fun groups(vararg g: Triple<String, String, Pair<Int, List<String>>>): JsonObject = Json.parseToJsonElement(
+        g.joinToString(",", """{"release-groups":[""", "]}") { (id, title, rest) ->
+            val types = rest.second.joinToString(",") { "\"$it\"" }
+            """{"id":"$id","score":100,"title":"$title","count":${rest.first},"secondary-types":[$types],""" +
+                """"artist-credit":[{"name":"The Beatles","joinphrase":""}]}"""
+        },
+    ).jsonObject
+
+    @Test fun `the album with the most releases wins over a stray of the same name`() {
+        // Measured 2026-10-24: "Help!" is a Soundtrack with 95 releases beside "Help! (Deluxe)" with 1.
+        val help = groups(
+            Triple("stray", "Help! (Deluxe)", 1 to emptyList()),
+            Triple("help", "Help!", 95 to listOf("Soundtrack")),
+        )
+        assertThat(releaseGroupFromSearch(help, "Help! (Remastered 2009)", "The Beatles")).isEqualTo("help")
+    }
+
+    @Test fun `a soundtrack is still the album`() {
+        // Magical Mystery Tour is typed Soundtrack (34 releases); two untyped strays share its name.
+        val mmt = groups(
+            Triple("one", "Magical Mystery Tour", 1 to emptyList()),
+            Triple("six", "Magical Mystery Tour", 6 to emptyList()),
+            Triple("mmt", "Magical Mystery Tour", 34 to listOf("Soundtrack")),
+        )
+        assertThat(releaseGroupFromSearch(mmt, "Magical Mystery Tour (Remastered 2009)", "The Beatles")).isEqualTo("mmt")
+    }
+
+    @Test fun `an album named like its artist is the one with the most releases`() {
+        val white = groups(
+            *Array(12) { Triple("comp$it", "The Beatles", (1 + it % 3) to listOf("Compilation")) },
+            Triple("white", "The Beatles", 58 to emptyList()),
+        )
+        assertThat(releaseGroupFromSearch(white, "The Beatles (Remastered)", "The Beatles")).isEqualTo("white")
+    }
+
+    @Test fun `a concert of the same name loses to the album, however many releases it has`() {
+        val body = groups(
+            Triple("live", "Abbey Road", 80 to listOf("Live")),
+            Triple("studio", "Abbey Road", 5 to emptyList()),
+        )
+        assertThat(releaseGroupFromSearch(body, "Abbey Road", "The Beatles")).isEqualTo("studio")
+    }
+
     @Test fun `a title search for another artist's album finds nothing`() {
         assertThat(releaseGroupFromSearch(fixture("rg_search_1989.json"), "1989", "Ryan Adams")).isNull()
     }

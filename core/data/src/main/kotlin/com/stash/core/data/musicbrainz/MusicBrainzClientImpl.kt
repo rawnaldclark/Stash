@@ -1,5 +1,6 @@
 package com.stash.core.data.musicbrainz
 
+import com.stash.core.data.share.await
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -33,9 +34,19 @@ class MusicBrainzClientImpl @Inject constructor(
         .callTimeout(CALL_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
+    // The back cover lookup's calls: a search measured up to 8 s (2026-10-24), past [http]'s bound.
+    private val lookupHttp: OkHttpClient = okHttpClient.newBuilder()
+        .callTimeout(LOOKUP_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
     private val json = Json { ignoreUnknownKeys = true }
     private val rateGate = Mutex()
     @Volatile private var lastCallMs = 0L
+
+    /** Test seams: the server, the gap between calls, and the wait before retrying a 503. */
+    internal var base: String = BASE
+    internal var minIntervalMs: Long = MIN_INTERVAL_MS
+    internal var busyRetryMs: Long = BUSY_RETRY_MS
 
     override suspend fun lookupUrlRels(mbid: String): JsonObject? = runCatching {
         get("artist/$mbid?inc=url-rels&fmt=json")
@@ -64,23 +75,39 @@ class MusicBrainzClientImpl @Inject constructor(
         getOrNull("release?release-group=$releaseGroupId&status=official&inc=media&limit=100&fmt=json")
 
     /**
-     * [get], with any failure as null. A cancellation is rethrown, not a failure: the back cover
-     * lookup is cancelled on every skip, and reading that as "MusicBrainz failed" would hold the
-     * album back from a retry.
+     * GET [path] for the back cover lookup, null on failure.
+     *
+     * - A 503 is MusicBrainz over its per-IP rate limit, or busy: retried after [busyRetryMs], up to
+     *   [BUSY_RETRIES] times, instead of failing the whole lookup.
+     * - The call cancels with its caller ([await]): the lookup is cancelled on every skip to another
+     *   album, and a blocking call would hold a thread until it timed out.
+     * - A cancellation is rethrown, never read as a failure, which would hold the album back.
      */
-    private suspend fun getOrNull(path: String): JsonObject? = try {
-        get(path)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
+    private suspend fun getOrNull(path: String): JsonObject? {
+        repeat(BUSY_RETRIES + 1) { attempt ->
+            throttle()
+            val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
+            val (code, body) = try {
+                lookupHttp.newCall(req).await { code, body -> code to body }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return null
+            }
+            when {
+                code == 503 -> if (attempt < BUSY_RETRIES) delay(busyRetryMs)
+                code !in 200..299 -> return null
+                else -> return runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+            }
+        }
+        return null
     }
 
     /** GET [path] under the MB base with our UA + rate gate; null on non-2xx. */
     private suspend fun get(path: String): JsonObject? {
         throttle()
         val req = Request.Builder()
-            .url("$BASE$path")
+            .url("$base$path")
             .header("User-Agent", USER_AGENT)
             .build()
         return withContext(Dispatchers.IO) {
@@ -93,7 +120,7 @@ class MusicBrainzClientImpl @Inject constructor(
 
     /** Serialize + space calls ≥ MIN_INTERVAL_MS apart. */
     private suspend fun throttle() = rateGate.withLock {
-        val wait = MIN_INTERVAL_MS - (System.currentTimeMillis() - lastCallMs)
+        val wait = minIntervalMs - (System.currentTimeMillis() - lastCallMs)
         if (wait > 0) delay(wait)
         lastCallMs = System.currentTimeMillis()
     }
@@ -101,9 +128,16 @@ class MusicBrainzClientImpl @Inject constructor(
     private companion object {
         const val BASE = "https://musicbrainz.org/ws/2/"
         private const val CALL_TIMEOUT_SECONDS = 5L
+        private const val LOOKUP_TIMEOUT_SECONDS = 15L
+        /** 503s retried before a back cover lookup call gives up, and the wait before each. */
+        const val BUSY_RETRIES = 2
+        const val BUSY_RETRY_MS = 2_000L
         const val USER_AGENT = "Stash/1.0 ( https://github.com/rawnaldclark/Stash )"
         const val MIN_INTERVAL_MS = 1000L
-        /** Results per search: enough for an album's main release groups, small enough to parse. */
-        const val SEARCH_LIMIT = 25
+        /**
+         * Results per search. An album named like its artist is crowded: "The Beatles" by The Beatles
+         * ranks the White Album 14th, behind a dozen one-release compilations all scored 100.
+         */
+        const val SEARCH_LIMIT = 50
     }
 }

@@ -86,15 +86,27 @@ private fun JsonObject.creditLine(): String =
     }
 
 /**
+ * Secondary types that make a release group another take of the album (a concert, demos, remixes)
+ * or not an album at all: its back isn't the album's. Compilation and Soundtrack are not here: the
+ * album played can be either (Magical Mystery Tour is a Soundtrack on MusicBrainz).
+ */
+private val OTHER_TAKES = setOf(
+    "Live", "Demo", "Remix", "DJ-mix", "Mixtape/Street", "Interview", "Spokenword", "Audiobook",
+    "Audio drama", "Field recording",
+)
+
+private fun JsonObject.isOtherTake(): Boolean = strings("secondary-types").any { it in OTHER_TAKES }
+
+/**
  * The release group of [album] among the releases of an ISRC's recordings
  * ([com.stash.core.data.musicbrainz.MusicBrainzClient.searchRecordingsByIsrc]): one whose title, or
  * whose release's title, is the album's. A song is on many release groups (its album, singles,
- * compilations); the plain album beats one with secondary types (Compilation, Live, Demo...), then
- * the one the most releases are on. Null when none is titled like the album.
+ * compilations); one that isn't another take ([OTHER_TAKES]) wins, then the one the most releases
+ * are on. Null when none is titled like the album.
  */
 internal fun releaseGroupFromIsrcSearch(body: JsonObject, album: String): String? {
     val want = albumTitleKey(album)
-    data class Seen(val id: String, val plain: Boolean, var releases: Int)
+    data class Seen(val id: String, val otherTake: Boolean, var releases: Int)
     val groups = LinkedHashMap<String, Seen>()
     for (rec in body["recordings"]?.jsonArray.orEmpty()) {
         for (rel in rec.jsonObject["releases"]?.jsonArray.orEmpty()) {
@@ -103,23 +115,25 @@ internal fun releaseGroupFromIsrcSearch(body: JsonObject, album: String): String
             val id = group.string("id") ?: continue
             val titled = listOfNotNull(group.string("title"), release.string("title")).any { albumTitleKey(it) == want }
             if (!titled) continue
-            groups.getOrPut(id) { Seen(id, group.strings("secondary-types").isEmpty(), 0) }.releases++
+            groups.getOrPut(id) { Seen(id, group.isOtherTake(), 0) }.releases++
         }
     }
-    return groups.values.sortedWith(compareByDescending<Seen> { it.plain }.thenByDescending { it.releases })
+    return groups.values.sortedWith(compareBy<Seen> { it.otherTake }.thenByDescending { it.releases })
         .firstOrNull()?.id
 }
 
 /**
  * The release group of [album] by [artist] in a release group search
  * ([com.stash.core.data.musicbrainz.MusicBrainzClient.searchReleaseGroups]): titled like the
- * album, credited to the artist and scored at least [MIN_SEARCH_SCORE]. The plain album beats one
- * with secondary types (a search for "My Beautiful Dark Twisted Fantasy" also finds a Demo), then
- * the higher score, then the one with more releases. Null when none fits.
+ * album, credited to the artist and scored at least [MIN_SEARCH_SCORE]. Of those, one that isn't
+ * another take ([OTHER_TAKES]: "My Beautiful Dark Twisted Fantasy" also finds a Demo) wins, then
+ * the one with the most releases, then the higher score. The album itself has by far the most
+ * releases: "Help!" 95 beside a stray "Help! (Deluxe)" with 1, the White Album 58 beside a dozen
+ * one-release compilations titled "The Beatles", all scored 100. Null when none fits.
  */
 internal fun releaseGroupFromSearch(body: JsonObject, album: String, artist: String): String? {
     val want = albumTitleKey(album)
-    data class Hit(val id: String, val plain: Boolean, val score: Int, val releases: Int)
+    data class Hit(val id: String, val otherTake: Boolean, val score: Int, val releases: Int)
     val hits = body["release-groups"]?.jsonArray.orEmpty().mapNotNull { el ->
         val group = el.jsonObject
         val id = group.string("id") ?: return@mapNotNull null
@@ -127,10 +141,10 @@ internal fun releaseGroupFromSearch(body: JsonObject, album: String, artist: Str
         val title = group.string("title") ?: return@mapNotNull null
         if (score < MIN_SEARCH_SCORE || albumTitleKey(title) != want) return@mapNotNull null
         if (!artistMatches(artist, group.creditLine())) return@mapNotNull null
-        Hit(id, group.strings("secondary-types").isEmpty(), score, group["count"]?.jsonPrimitive?.intOrNull ?: 0)
+        Hit(id, group.isOtherTake(), score, group["count"]?.jsonPrimitive?.intOrNull ?: 0)
     }
     return hits.sortedWith(
-        compareByDescending<Hit> { it.plain }.thenByDescending { it.score }.thenByDescending { it.releases },
+        compareBy<Hit> { it.otherTake }.thenByDescending { it.releases }.thenByDescending { it.score },
     ).firstOrNull()?.id
 }
 

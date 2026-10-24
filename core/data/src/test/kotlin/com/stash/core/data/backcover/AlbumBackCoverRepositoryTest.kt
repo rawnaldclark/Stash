@@ -6,6 +6,7 @@ import com.stash.core.data.db.entity.AlbumBackCoverEntity
 import com.stash.core.data.musicbrainz.MusicBrainzClient
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +39,7 @@ class AlbumBackCoverRepositoryTest {
         val releases: List<Pair<String, String>> = listOf("cd-1" to "CD", "vinyl-1" to "12\" Vinyl"),
     ) : MusicBrainzClient {
         var calls = 0
+        var browses = 0
         var failing = false
         var gate: CompletableDeferred<Unit>? = null
 
@@ -69,6 +71,7 @@ class AlbumBackCoverRepositoryTest {
 
         override suspend fun browseReleases(releaseGroupId: String): JsonObject? {
             calls++
+            browses++
             if (failing) return null
             val items = releases.joinToString(",") { (id, format) -> """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}]}""" }
             return json("""{"releases":[$items]}""")
@@ -79,12 +82,15 @@ class AlbumBackCoverRepositoryTest {
     private class FakeCoverArt(
         val canonical: String? = "cd-1",
         val listings: Map<String, CaaListing?> = emptyMap(),
+        /** Releases whose listing never comes: only a cancellation ends the wait. */
+        val hanging: Set<String> = emptySet(),
     ) : CoverArtArchiveClient {
         val asked = mutableListOf<String>()
         var failing = false
 
         override suspend fun release(mbid: String): CaaListing? {
             asked += mbid
+            if (mbid in hanging) awaitCancellation()
             return if (failing) null else listings[mbid] ?: CaaListing.NONE
         }
 
@@ -245,5 +251,51 @@ class AlbumBackCoverRepositoryTest {
 
         assertThat(listOf(first, second).awaitAll()).containsExactly("https://caa/b.jpg", "https://caa/b.jpg")
         assertThat(caa.asked.count { it.startsWith("group:") }).isEqualTo(1)
+    }
+
+    @Test fun `when the main edition has a back, its releases aren't even listed`() = runTest {
+        val mb = FakeMusicBrainz()
+        val caa = FakeCoverArt(canonical = "cd-1", listings = mapOf("cd-1" to listing(back("https://caa/main.jpg"))))
+        assertThat(repo(mb = mb, caa = caa).resolve(NEVERMIND)).isEqualTo("https://caa/main.jpg")
+        assertThat(mb.browses).isEqualTo(0)
+        assertThat(caa.asked).containsExactly("group:rg-1", "cd-1").inOrder()
+    }
+
+    @Test fun `the first back in rank order ends the lookup without waiting on slower listings`() = runTest {
+        val caa = FakeCoverArt(
+            canonical = "other",
+            listings = mapOf("vinyl-1" to listing(back("https://caa/vinyl.jpg"))),
+            hanging = setOf("cd-1"),
+        )
+        // Hangs (and the test times out) unless the CD's listing is cancelled once the vinyl's back is in.
+        assertThat(repo(caa = caa).resolve(NEVERMIND)).isEqualTo("https://caa/vinyl.jpg")
+    }
+
+    @Test fun `a reply that can't be read is a failed lookup, not a crash`() = runTest {
+        val dao = FakeDao()
+        val garbled = object : MusicBrainzClient by FakeMusicBrainz() {
+            override suspend fun searchRecordingsByIsrc(isrc: String): JsonObject? =
+                Json.parseToJsonElement("""{"recordings":"not a list"}""").jsonObject
+        }
+        val repo = AlbumBackCoverRepository(dao, garbled, FakeCoverArt()).also { it.now = { clock } }
+        assertThat(repo.resolve(NEVERMIND)).isNull()
+        assertThat(dao.get(NEVERMIND.key)).isNull()
+    }
+
+    @Test fun `the plain title is searched first`() = runTest {
+        val searched = mutableListOf<String>()
+        val mb = object : MusicBrainzClient by FakeMusicBrainz() {
+            override suspend fun searchReleaseGroups(artist: String, album: String): JsonObject? {
+                searched += album
+                return Json.parseToJsonElement(
+                    """{"release-groups":[{"id":"rg-1","score":100,"title":"Abbey Road","count":73,
+                    "artist-credit":[{"name":"The Beatles","joinphrase":""}]}]}""",
+                ).jsonObject
+            }
+        }
+        val caa = FakeCoverArt(canonical = "cd-1", listings = mapOf("cd-1" to listing(back("https://caa/ar.jpg"))))
+        val repo = AlbumBackCoverRepository(FakeDao(), mb, caa).also { it.now = { clock } }
+        assertThat(repo.resolve(BackCoverAlbum("The Beatles", "Abbey Road (Remastered)", isrc = null))).isEqualTo("https://caa/ar.jpg")
+        assertThat(searched).containsExactly("Abbey Road")
     }
 }
