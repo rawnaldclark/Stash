@@ -1,0 +1,60 @@
+{
+ "id": "416bb5e5-c7d1-3977-8fd7-7c9daf6c2be6",
+ "title": "Rumours",
+ "relations": [
+  {
+   "url": {
+    "id": "2bdc2f8c-dfe3-4ef5-96eb-38bb12c6547e",
+    "resource": "https://www.allmusic.com/album/mw0000193833"
+   },
+   "type-id": "a50a1d20-2b20-4d2c-9a29-eb771dd78386",
+   "attribute-values": {},
+   "target-type": "url",
+   "attribute-ids": {},
+   "target-credit": "",
+   "end": null,
+   "attributes": [],
+   "type": "allmusic",
+   "ended": false,
+   "begin": null,
+   "direction": "forward",
+   "source-credit": ""
+  },
+  {
+   "url": {
+    "resource": "https://www.discogs.com/master/38722",
+    "id": "abcfa0e9-b13e-466e-8239-02b62a062ecc"
+   },
+   "attribute-values": {},
+   "type-id": "99e550f3-5ab4-3110-b5b9-fe01d970b126",
+   "attribute-ids": {},
+   "target-type": "url",
+   "attributes": [],
+   "end": null,
+   "target-credit": "",
+   "type": "discogs",
+   "begin": null,
+   "ended": false,
+   "source-credit": "",
+   "direction": "forward"
+  },
+  {
+   "type": "wikidata",
+   "attributes": [],
+   "end": null,
+   "target-credit": "",
+   "source-credit": "",
+   "direction": "forward",
+   "begin": null,
+   "ended": false,
+   "url": {
+    "resource": "https://www.wikidata.org/wiki/Q695405",
+    "id": "6e14fc14-7cdf-4fee-829e-7f1bfaf24dd3"
+   },
+   "attribute-ids": {},
+   "target-type": "url",
+   "attribute-values": {},
+   "type-id": "b988d08c-5d86-4a57-9557-c83b399e3580"
+  }
+ ]
+}

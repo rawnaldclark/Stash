@@ -24,6 +24,12 @@ interface MusicBrainzClient {
 
     /** A release group's official releases with their media (formats); null on failure. */
     suspend fun browseReleases(releaseGroupId: String): JsonObject?
+
+    /** A release group with its URL relationships (its Discogs master among them); null on failure. */
+    suspend fun releaseGroupUrlRels(releaseGroupId: String): JsonObject?
+
+    /** A release with its URL relationships (its Discogs release among them); null on failure. */
+    suspend fun releaseUrlRels(releaseId: String): JsonObject?
 }
 
 private val HOST_KIND = linkedMapOf(
