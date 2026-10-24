@@ -1,0 +1,88 @@
+{
+ "release-groups": [
+  {
+   "id": "4d9ec1c2-58ec-48a4-aa0a-916718adead0",
+   "score": 100,
+   "title": "1989",
+   "primary-type": "Album",
+   "count": 97,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  },
+  {
+   "id": "148bfc79-6dc7-4d06-8108-c686398a8c94",
+   "score": 94,
+   "title": "1989 [nightcore]",
+   "primary-type": "Album",
+   "secondary-types": [
+    "Remix"
+   ],
+   "count": 1,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  },
+  {
+   "id": "1c4770b3-b7a3-4d44-a7a9-8e2dbb74b85a",
+   "score": 89,
+   "title": "1989 (Taylor’s version)",
+   "primary-type": "Album",
+   "count": 31,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  },
+  {
+   "id": "c24c86ef-868f-44d9-bede-20cdaf976776",
+   "score": 86,
+   "title": "Taylor Swift Karaoke: 1989",
+   "primary-type": "Album",
+   "secondary-types": [
+    "Remix"
+   ],
+   "count": 15,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  },
+  {
+   "id": "071a315c-f5c8-4235-bff6-80b35a5d0c78",
+   "score": 86,
+   "title": "The 1989 World Tour",
+   "primary-type": "Broadcast",
+   "secondary-types": [
+    "Live"
+   ],
+   "count": 3,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  },
+  {
+   "id": "093aaa72-14c3-44dc-815e-37678de6e5df",
+   "score": 79,
+   "title": "1989 World Tour, Toyko, Japan, Night 2",
+   "primary-type": "Album",
+   "secondary-types": [
+    "Live"
+   ],
+   "count": 1,
+   "artist-credit": [
+    {
+     "name": "Taylor Swift"
+    }
+   ]
+  }
+ ]
+}

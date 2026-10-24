@@ -1,0 +1,1670 @@
+{
+ "recordings": [
+  {
+   "id": "5fb524f1-8cc8-4c04-a921-e34c0a911ea7",
+   "title": "Smells Like Teen Spirit",
+   "releases": [
+    {
+     "id": "9cb6b683-13b2-4931-8a68-1c187e8c5a0a",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "c771f7fc-9e62-4349-a2e3-ceaf7122bf5b",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "b3cb9b1c-fe5c-43be-aba8-49609a8df2ac",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "2a64e03f-6120-4efd-9d19-251b3ac9664c",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "839ffa52-dda8-4cd0-b082-1294037d8717",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "0123cebb-df5f-490b-9d8d-a40a493079b2",
+     "title": "Greatest Hits",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "f1850470-8a75-4a69-a2ce-1a3827db5ec5",
+     "title": "Greatest Hits",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "05a4ab32-16a6-4492-bbf2-6625c21919b3",
+     "title": "Smells Like Teen Spirit / In Bloom / On a Plain / Lithium / Breed",
+     "release-group": {
+      "id": "96767f75-f68a-4300-9aec-539b89e8dd3b",
+      "title": "Smells Like Teen Spirit / In Bloom / On a Plain / Lithium / Breed",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "f5d68b4a-0b81-4f4a-85f8-eea660242a7d",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "ac15e3b4-676a-4b15-a1fc-cf105671355f",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "0436a889-bd7f-49ce-a899-6df9d61d3ca0",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "a2b9938c-3f99-41dd-ba7b-80e2ef420aba",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3f7ef106-bf75-488c-9e2b-edb28aa2cab5",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "923db1c4-40f7-4d4e-bb4d-f35b3ebcad29",
+     "title": "Nirvana the Band the Show Webseries OST",
+     "release-group": {
+      "id": "88be8c18-1598-42c1-a99d-cf8cd263f95a",
+      "title": "Nirvana the Band the Show Webseries OST",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "id": "c4682a8e-0213-4173-a604-81b882f074e3",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "0c9e9d42-80c1-4d7b-bdb6-aeb70d3501c5",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "df1bd96a-419f-4832-9410-c4a78fbc879a",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "84aed658-3a84-42d0-97f6-1eb3594a2175",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "201d5e28-2de4-4e6f-830a-d55c98e57641",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "4c552ce6-3799-45d4-9591-e56ad451cdb6",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "e4379cac-551f-4f9f-9f28-9f42c9ab4e94",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "12503819-f645-4591-8d21-b1587a6c1d5b",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "3abd7100-c035-4acf-a70b-bc94d69d6ea1",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "2aec556a-2c17-4d87-a5eb-dcec913ac309",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "c235d00e-bfef-4a53-8d18-ae6dbc270f5a",
+     "title": "Rare Studio Tracks 1991",
+     "release-group": {
+      "id": "e407b199-fd47-428c-9d7c-c306b01b4906",
+      "title": "Rare Studio Tracks 1991",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "1f7ac867-fd88-4e6f-8a54-6025f779472c",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "804f3d0d-038f-49e0-980f-724a7919b62f",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "15df9d9e-cd02-447d-99b6-c25abfce1b81",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "188ba8c6-bfbf-42e5-8100-4aac89fb0977",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "50fd8098-b33e-46b4-8419-df0845cae368",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "fbf808f6-559e-4ff0-80a0-cec74b9d6c54",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "aeff7181-52ae-4d55-a1af-232f8e265e9a",
+     "title": "Alternative / Grunge Ballads",
+     "release-group": {
+      "id": "e57d13a8-b7fa-49af-ad3d-6f506c5a5881",
+      "title": "Alternative / Grunge Ballads",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "90ee3dda-176e-4666-807f-db6602531961",
+     "title": "Best 200 Hits of the 90’s",
+     "release-group": {
+      "id": "4208e8cc-2b72-4f65-b1b4-7af18c874082",
+      "title": "Best 200 Hits of the 90’s",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "3e5f4653-ed50-405a-a51a-b403698c62a0",
+     "title": "Mastermix Classic Cuts 3: Alternative",
+     "release-group": {
+      "id": "71ac327a-dbac-3923-95ba-5ea49e411f17",
+      "title": "Mastermix Classic Cuts 3: Alternative",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "4270a3bc-62a3-4939-a250-70c9dbf9bb8f",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "c31c0754-3f52-427f-8708-5a84c485ec32",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5cd425e8-d449-40d2-8e51-2bd3097d0cd9",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "474c4801-3b48-47dd-aee6-3163176b5f64",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "10bfa756-9237-4616-ac21-5f323a492327",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "8e061dc4-790e-4587-ba53-011e7852f88d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "24aff809-5d48-4b6e-8ac5-9bd738c95fb7",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "813b5197-1b76-4241-b3e8-a49db532841e",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "b03ae882-7616-485a-a4c6-2da96cf7932c",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "28379cd4-8ded-4d98-847b-53acdb4dedc8",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "237b8564-c726-4cb0-b804-348c30697325",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d87a9a3b-a95a-4782-9e01-21fd5b8ef586",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "af67f638-b9ff-4b76-9135-f9588ccdd281",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "50bb97bf-8bb1-4574-8c70-76c86d1daf5b",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5565020e-80a9-4a45-8869-e4b7338422d4",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "82625e0d-5a5d-4baf-9ab7-09a042663b25",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "380a1953-31fd-4603-b156-31b220f0049e",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "006cb56d-6eff-4b7d-853f-ecd2db97f3b2",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "91be7d15-f79d-4187-9df3-a90ff613814b",
+     "title": "Smells Best...",
+     "release-group": {
+      "id": "28b809e6-6f3e-3588-9301-c1aa4207c18a",
+      "title": "Smells Best...",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "5660b052-ad42-40ad-b817-9c5a4e8cd5d4",
+     "title": "Alternativ: Best Grunge Mode",
+     "release-group": {
+      "id": "0b4ffa03-a8d5-4862-a20e-959209888541",
+      "title": "Alternativ: Best Grunge Mode",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "e6e22400-c23a-4303-9b3d-36ffcecd3e54",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "2036410a-4334-47ed-b473-7d9e4caaf14f",
+     "title": "Nevermind (deluxe edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5388f561-891a-4ed0-bede-829aeeebab55",
+     "title": "Nevermind (deluxe edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "08283094-dd62-4bd7-8884-0d072d19c8e6",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "4af1d879-1c33-4977-8e6a-8173b2d6286d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "a868b3ab-3911-405c-a707-28651a1fe328",
+     "title": "Nevermind (super deluxe)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "0173cdb7-d43c-4497-8a2e-f0b0d27ac474",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "818c1369-bc98-49cb-bd85-49958fc1a4ab",
+     "title": "Nevermind (Deluxe Edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d0cf85f9-9db5-4bd6-80d4-c9abb9926fc9",
+     "title": "Nevermind (super deluxe edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3cec910f-3885-41c4-9c3f-d7918cdf5663",
+     "title": "Nevermind (super deluxe)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "46543cd1-7281-4ffa-ab29-78b84a61dc31",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "38df051c-a539-4c5a-877c-f5a8192c4251",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "1530ebe8-3fc9-4b2b-b0e5-2b1448cdbe0a",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "2d25f457-ac4c-4886-a96e-51b71daaceca",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "9546f873-a3d1-4d37-8d32-5e6b6623fa26",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "56a92998-6dcc-36a9-9efc-5b7096ee0e41",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "5da1a276-6d5f-46f2-9975-b11bd34c8135",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "ac3a41f8-bc30-4d86-b46e-5a8c4e1338d1",
+     "title": "Chinese Box Set",
+     "release-group": {
+      "id": "6c074165-136e-447a-8221-56a7243c9920",
+      "title": "Chinese Box Set",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "78bd9f99-f9db-4cd7-962d-ceeaa946c4c0",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "43d27d70-3e4f-46f0-b40e-ef4467145b0c",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3c8553d5-7ecc-4175-b475-93ec780ea0c6",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "eea965ac-4a58-4e16-87b4-6a0f5001bbda",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "e8228687-12b8-406e-b4f6-b9fbcc9fcf8d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "482991a2-0982-419a-9154-ed8739e763aa",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "d2dbe2a7-9e7a-461f-98c5-3e31b3502c87",
+     "title": "The Best of",
+     "release-group": {
+      "id": "ff5abf7c-dc07-46bc-8ea3-a57e64c01376",
+      "title": "The Best of",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "0fb1bdd3-1443-4569-943f-fc69c6424f99",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3bec6659-98d7-493c-9c1e-1b4d8b58acdd",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "45ee6323-6b11-4487-a66c-4e5d3c453eac",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "f922ec87-4758-421d-a839-3193455345ff",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "b9be05ca-05c4-4d1f-93f2-a1c31ea2cb50",
+     "title": "Nevermind / All Apologies",
+     "release-group": {
+      "id": "fbf5ad0f-4da4-3529-8bb4-03a66b01b863",
+      "title": "Nevermind / All Apologies",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "9765126b-f93d-4f03-8f39-46a37379d311",
+     "title": "Sylvesterparty 2015",
+     "release-group": {
+      "id": "b6e3fd54-0489-4712-9cda-17197be960bd",
+      "title": "Sylvesterparty 2015",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "9dce399d-3ec7-34a4-97d0-b4bac54e5f08",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "b52a8f31-b5ab-34e9-92f4-f5b7110220f0",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "4cbf7629-4695-3885-9aca-a639e62ba4ab",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "a146429a-cedc-3ab0-9e41-1aaf5f6cdc2d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "1f94237a-c9aa-43a7-a9e9-e181577e8eec",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "14da9257-d8aa-374b-9d9a-59435947afb5",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "947348c2-7802-3030-a1ba-85bbac99bfe0",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "557393d4-74ae-4833-8c72-822ed1a10175",
+     "title": "The Very Best",
+     "release-group": {
+      "id": "5bcaeba6-a532-3fa0-b540-75c09f70f759",
+      "title": "The Very Best",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "c12262e2-7185-4942-87ee-da27ddd45ddf",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3723c24b-a5a7-3295-b8ab-409a0650efac",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d8f9547d-5e46-45f0-b694-0d9af9e2de63",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "6ade25a7-c0b5-4ce2-b63b-47a2ea2498d0",
+     "title": "The Legends of the XXth Century",
+     "release-group": {
+      "id": "ca66dc2d-d2d9-37c8-8a3d-bde46b01ffc7",
+      "title": "The Legends of the XXth Century",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "729ea319-c077-4220-9a90-7798d36850e6",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3bf3b8f8-0b27-4950-8832-70adf39fab6e",
+     "title": "Nevermind (deluxe edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "2feb350a-41c3-4358-addd-5b66ce2c34ba",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "95509fa6-3ea9-40bc-acd1-f463b5ce460d",
+     "title": "ICON",
+     "release-group": {
+      "id": "5cc5dc44-8860-462e-8aa5-2cf9b71af237",
+      "title": "ICON",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "da615699-5fcc-4505-bc39-060f6e6e004c",
+     "title": "Greatest Hits of Modern Rock",
+     "release-group": {
+      "id": "5d6a204b-c7aa-4170-aa0b-8615eb2ee82e",
+      "title": "Greatest Hits of Modern Rock",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "b8ccb9bf-9d3a-4adb-99c3-79ffe9812fb8",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "22ce2000-9f71-4816-b681-58352178a313",
+     "title": "The Best of Nirvana",
+     "release-group": {
+      "id": "25da03a6-158b-38f2-a8e0-8225b66910f6",
+      "title": "The Best of Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "e4520f1b-80fc-4bb8-9f45-0d98ac3c152f",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "80d84b5b-62a0-42fb-bc97-10702e166b3b",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "bcc627eb-1fc6-4b4c-a9d7-40161d3da800",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "1cf8a7f1-735a-4416-88ae-da9360b2871f",
+     "title": "Earphoria",
+     "release-group": {
+      "id": "bf073d2a-65c8-4949-b439-8583a58798b6",
+      "title": "Earphoria",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "dcb97919-7e3b-4e94-880f-b38ac2e8bec3",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "88b363cb-86b2-431f-84b4-525d4aa7aa62",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "704a8006-4ec5-424c-afe2-f4561c4dd79c",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "9bc03b4b-cbf5-499c-8cfb-b24d3c01098f",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "e9f0d840-b778-48a6-86f5-189fe66f1945",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "89979af3-95a5-472b-886d-d1329ac1fd3f",
+     "title": "Best of the Best",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "eccae410-7577-4daa-b602-92d305828331",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "9cf44e55-9e71-4128-9ff8-029cde9843ad",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d0634387-179a-4360-8e94-0810fede6d8d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "f7930de3-081a-452a-bafe-f7285a2abb6d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "6a836116-174e-4b04-b7fe-7a65772fd114",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "c172330e-0840-46f6-92c4-5fce8fd54ef2",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "feddebe6-e9c5-4661-8d52-ed6b8bf331f7",
+     "title": "DMC Complete Rock",
+     "release-group": {
+      "id": "d904b55d-1ec3-41dd-ad02-3edd0ea64309",
+      "title": "DMC Complete Rock",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "347666eb-86f7-488a-a427-895f6f7ac203",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "876abe23-656e-4d65-8bc2-2e6513030be2",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "4c12e0aa-ea26-47a1-b853-b1a65bc37281",
+     "title": "Nevermind (deluxe edition)",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "588c069f-ac7b-44ad-9b0b-b4f9d9248680",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "9e1045e5-91d0-4fba-8385-a81e4debb10f",
+     "title": "Icon",
+     "release-group": {
+      "id": "5cc5dc44-8860-462e-8aa5-2cf9b71af237",
+      "title": "ICON",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "f8cf1736-f25b-4fdc-bd6c-96ead7eb2f1d",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "7fb7f5b1-1b4a-4179-a14a-27af0ad53ca7",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "350a8190-2c4b-4010-9bd2-437857325ac5",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "1afdb0ff-25d1-4966-90ee-b1133f8243fb",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d9ba11f1-e5db-4e60-b0f1-996d143ea64b",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "81743145-a2a3-4159-b6a1-f89243248f13",
+     "title": "ICON",
+     "release-group": {
+      "id": "5cc5dc44-8860-462e-8aa5-2cf9b71af237",
+      "title": "ICON",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "653988c5-c79f-4b24-840a-6b1d21144405",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "33079157-b21b-40a8-8b97-b9f848c22c0e",
+     "title": "Music of the Millennium",
+     "release-group": {
+      "id": "9600a50f-b3b0-4b44-8bec-4d80df007695",
+      "title": "Music of the Millenium",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "02c001e4-42ad-48b5-8e50-cfd58a15005f",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5421ee03-e017-4393-b721-abc1ad16857b",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "3c19711b-b9df-495b-a610-634b1fc48763",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "15d8c591-0967-495e-a05d-2e738dd8e734",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "d140b93b-fb5d-4e84-b5bd-9bbe59a9324c",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "573ecb03-6848-4430-8c4c-509cf9c6767e",
+     "title": "Guitar Hero 5",
+     "release-group": {
+      "id": "52c14ee3-f7a1-4afe-a3f0-fef8bf1437fb",
+      "title": "Guitar Hero 5",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation",
+       "Soundtrack"
+      ]
+     }
+    },
+    {
+     "id": "b35c70b3-15f1-4792-a3d1-31645bde4db8",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "7fcef9db-4772-4960-8bd3-cbad0d5432ca",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "c104d3e1-20dc-4d5a-a484-6f67c94c4d1e",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5da1a276-6d5f-46f2-9975-b11bd34c8135",
+     "title": "Nevermind",
+     "release-group": {
+      "id": "1b022e01-4da6-387b-8658-8678046e4cef",
+      "title": "Nevermind",
+      "primary-type": "Album"
+     }
+    },
+    {
+     "id": "5fb4d724-ea56-4972-a9e3-204affb56dc1",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "145a7252-f251-4217-a7fd-85247f3ae54b",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "3ed9032e-18cb-4374-bfe9-0091c7651b97",
+     "title": "Nirvana",
+     "release-group": {
+      "id": "5ab32af4-c62e-3cbf-aa8c-c761581d3b94",
+      "title": "Nirvana",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "d62dfed0-38dd-4d2a-b12e-0cb593100791",
+     "title": "Greatest Hits",
+     "release-group": {
+      "id": "fcd47631-90a2-46cf-918e-15b244bf056d",
+      "title": "Greatest Hits",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "aee62a07-7610-447d-8e22-8192dc87aff6",
+     "title": "Greatest Hits",
+     "release-group": {
+      "id": "7d91485e-5881-4c9b-8d2a-c359218d8ee9",
+      "title": "Greatest Hits",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "67682cb3-d448-4a05-93d7-6fe79a98b82b",
+     "title": "DMC DJ’s Guide to… Student Anthems",
+     "release-group": {
+      "id": "14674513-5d40-4a50-93f6-f9f8a2a9a7af",
+      "title": "DMC DJ’s Guide to… Student Anthems",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "24a40bce-fd1a-4278-8c34-d0f673a4c7e2",
+     "title": "Promo Only: Platinum Series",
+     "release-group": {
+      "id": "6b927270-bada-336b-8c63-01643a83e647",
+      "title": "Promo Only: Platinum Series",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "8dd25c57-2900-49af-8373-7a0db51adb52",
+     "title": "20 Years on MTV: 1992",
+     "release-group": {
+      "id": "7afc12c3-d823-3d0c-b605-7acbef4f1087",
+      "title": "20 Years on MTV: 1992",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "75a5b34f-4f29-4b29-9424-7e9ab7e2057a",
+     "title": "Triple J: Hottest 100 of All Time",
+     "release-group": {
+      "id": "b7f2b485-3a8f-4573-b23d-9873cbbb2f1a",
+      "title": "Triple J: Hottest 100 of All Time",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "57239c02-096e-48fd-950d-61441529a8f7",
+     "title": "Les Inrockuptibles: 10 ans/100 chansons",
+     "release-group": {
+      "id": "5b096681-7995-30f6-92a6-25fe4e5d93ea",
+      "title": "Les Inrockuptibles : 10 ans/100 chansons",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "69047671-33b2-4798-88cd-deab9a099589",
+     "title": "Forever Gold",
+     "release-group": {
+      "id": "2be7befa-da33-34e9-b317-cf5f4b1a1ebd",
+      "title": "Forever Gold",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "cc7041b8-383f-3b4c-86df-7f27dda2778b",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "321cf134-6053-444a-82a1-9bc182c56df1",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "e1c5d5fa-b1cb-388b-9027-055aa29a382b",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "e4f0cf4a-ea75-34b0-864d-40484f8a5d20",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "4ed24e88-99b2-3e78-a418-6dda81cf83db",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "3a5b8ac3-a20b-3e73-8eb6-de1bf97ef35e",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "52129eb2-0f6e-4cc2-b082-83da3a34cf82",
+     "title": "Smells Like Teen Spirit",
+     "release-group": {
+      "id": "03345972-d2f8-36bb-b49a-03a9ceccb7a7",
+      "title": "Smells Like Teen Spirit",
+      "primary-type": "Single"
+     }
+    },
+    {
+     "id": "1272e40b-bede-4d4b-baa2-e0ed8416895c",
+     "title": "Singles Old, Volume 1",
+     "release-group": {
+      "id": "0c6d6c4c-7280-3c26-acd4-bdac78484dce",
+      "title": "Singles Old, Volume 1",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "6548b889-8f54-4334-8268-6e9b97e6b3ef",
+     "title": "Gold",
+     "release-group": {
+      "id": "9a7663c2-d451-3d74-a418-4b11f83aaf29",
+      "title": "Gold",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    },
+    {
+     "id": "6411d4d3-490d-4d7a-9ba0-dff9a0f1829b",
+     "title": "Golden Collection 2000",
+     "release-group": {
+      "id": "5a892c0d-977f-3b93-8145-e937921d59ee",
+      "title": "Golden Collection 2000",
+      "primary-type": "Album",
+      "secondary-types": [
+       "Compilation"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

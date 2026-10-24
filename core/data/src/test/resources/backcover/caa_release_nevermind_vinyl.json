@@ -1,0 +1,97 @@
+{
+ "images": [
+  {
+   "types": [
+    "Front"
+   ],
+   "front": true,
+   "back": false,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428898855-250.jpg"
+   },
+   "approved": true
+  },
+  {
+   "types": [
+    "Back"
+   ],
+   "front": false,
+   "back": true,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428899733-250.jpg"
+   },
+   "approved": true
+  },
+  {
+   "types": [
+    "Medium"
+   ],
+   "front": false,
+   "back": false,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428900589-250.jpg"
+   },
+   "approved": true
+  },
+  {
+   "types": [
+    "Medium"
+   ],
+   "front": false,
+   "back": false,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428901803-250.jpg"
+   },
+   "approved": true
+  },
+  {
+   "types": [],
+   "front": false,
+   "back": false,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902306-250.jpg"
+   },
+   "approved": true
+  },
+  {
+   "types": [],
+   "front": false,
+   "back": false,
+   "image": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863.jpg",
+   "thumbnails": {
+    "1200": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863-1200.jpg",
+    "250": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863-250.jpg",
+    "500": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863-500.jpg",
+    "large": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863-500.jpg",
+    "small": "http://coverartarchive.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2/31428902863-250.jpg"
+   },
+   "approved": true
+  }
+ ],
+ "release": "https://musicbrainz.org/release/006cb56d-6eff-4b7d-853f-ecd2db97f3b2"
+}

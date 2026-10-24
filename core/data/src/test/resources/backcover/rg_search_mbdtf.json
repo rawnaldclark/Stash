@@ -1,0 +1,31 @@
+{
+ "release-groups": [
+  {
+   "id": "3c2d6ffe-61b9-46e5-b935-3b8df01f900d",
+   "score": 100,
+   "title": "My Beautiful Dark Twisted Fantasy",
+   "primary-type": "Album",
+   "secondary-types": [
+    "Demo"
+   ],
+   "count": 1,
+   "artist-credit": [
+    {
+     "name": "Kanye West"
+    }
+   ]
+  },
+  {
+   "id": "5d6e21e1-deb5-428e-bb42-c2a567f3619b",
+   "score": 100,
+   "title": "My Beautiful Dark Twisted Fantasy",
+   "primary-type": "Album",
+   "count": 19,
+   "artist-credit": [
+    {
+     "name": "Kanye West"
+    }
+   ]
+  }
+ ]
+}

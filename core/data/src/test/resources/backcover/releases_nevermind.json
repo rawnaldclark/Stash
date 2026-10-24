@@ -1,0 +1,1219 @@
+{
+ "releases": [
+  {
+   "id": "006cb56d-6eff-4b7d-853f-ecd2db97f3b2",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "US",
+   "media": [
+    {
+     "format": "Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "0173cdb7-d43c-4497-8a2e-f0b0d27ac474",
+   "title": "Nevermind",
+   "date": "2011-10-11",
+   "country": "DZ",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "02c001e4-42ad-48b5-8e50-cfd58a15005f",
+   "title": "Nevermind",
+   "date": "",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "0436a889-bd7f-49ce-a899-6df9d61d3ca0",
+   "title": "Nevermind",
+   "date": "1996",
+   "country": "JP",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "08283094-dd62-4bd7-8884-0d072d19c8e6",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "0c9e9d42-80c1-4d7b-bdb6-aeb70d3501c5",
+   "title": "Nevermind",
+   "date": "2011-09-22",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "0fb1bdd3-1443-4569-943f-fc69c6424f99",
+   "title": "Nevermind",
+   "date": "2009-11-03",
+   "country": "US",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "1530ebe8-3fc9-4b2b-b0e5-2b1448cdbe0a",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "15d8c591-0967-495e-a05d-2e738dd8e734",
+   "title": "Nevermind",
+   "date": "2015-06-04",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "188ba8c6-bfbf-42e5-8100-4aac89fb0977",
+   "title": "Nevermind",
+   "date": "",
+   "country": "ZA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "1afdb0ff-25d1-4966-90ee-b1133f8243fb",
+   "title": "Nevermind",
+   "date": "2002",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "1f7ac867-fd88-4e6f-8a54-6025f779472c",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "201d5e28-2de4-4e6f-830a-d55c98e57641",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "SA",
+   "media": [
+    {
+     "format": "Cassette"
+    }
+   ]
+  },
+  {
+   "id": "2036410a-4334-47ed-b473-7d9e4caaf14f",
+   "title": "Nevermind (deluxe edition)",
+   "date": "",
+   "country": "CA",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "237b8564-c726-4cb0-b804-348c30697325",
+   "title": "Nevermind",
+   "date": "2011-09-23",
+   "country": "AU",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "24aff809-5d48-4b6e-8ac5-9bd738c95fb7",
+   "title": "Nevermind",
+   "date": "",
+   "country": "AU",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "28379cd4-8ded-4d98-847b-53acdb4dedc8",
+   "title": "Nevermind",
+   "date": "",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "2aec556a-2c17-4d87-a5eb-dcec913ac309",
+   "title": "Nevermind",
+   "date": "2011-10-12",
+   "country": "JP",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "DVD"
+    }
+   ]
+  },
+  {
+   "id": "2feb350a-41c3-4358-addd-5b66ce2c34ba",
+   "title": "Nevermind",
+   "date": "2011-09-23",
+   "country": "DE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "347666eb-86f7-488a-a427-895f6f7ac203",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "350a8190-2c4b-4010-9bd2-437857325ac5",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "CA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "3723c24b-a5a7-3295-b8ab-409a0650efac",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "GB",
+   "media": [
+    {
+     "format": "Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "380a1953-31fd-4603-b156-31b220f0049e",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "AO",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "38df051c-a539-4c5a-877c-f5a8192c4251",
+   "title": "Nevermind",
+   "date": "",
+   "country": "XE",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "3abd7100-c035-4acf-a70b-bc94d69d6ea1",
+   "title": "Nevermind",
+   "date": "2020",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "3bec6659-98d7-493c-9c1e-1b4d8b58acdd",
+   "title": "Nevermind",
+   "date": "2008-12-03",
+   "country": "JP",
+   "media": [
+    {
+     "format": "SHM-CD"
+    }
+   ]
+  },
+  {
+   "id": "3bf3b8f8-0b27-4950-8832-70adf39fab6e",
+   "title": "Nevermind (deluxe edition)",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "3c19711b-b9df-495b-a610-634b1fc48763",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "3cec910f-3885-41c4-9c3f-d7918cdf5663",
+   "title": "Nevermind (super deluxe)",
+   "date": "2011-09-23",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "43d27d70-3e4f-46f0-b40e-ef4467145b0c",
+   "title": "Nevermind",
+   "date": "",
+   "country": "AR",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "45ee6323-6b11-4487-a66c-4e5d3c453eac",
+   "title": "Nevermind",
+   "date": "2007",
+   "country": "JP",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "474c4801-3b48-47dd-aee6-3163176b5f64",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "4af1d879-1c33-4977-8e6a-8173b2d6286d",
+   "title": "Nevermind",
+   "date": "2011-09-23",
+   "country": "AF",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "4c12e0aa-ea26-47a1-b853-b1a65bc37281",
+   "title": "Nevermind (deluxe edition)",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "4cbf7629-4695-3885-9aca-a639e62ba4ab",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "CA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "50bb97bf-8bb1-4574-8c70-76c86d1daf5b",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": "XW",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "5388f561-891a-4ed0-bede-829aeeebab55",
+   "title": "Nevermind (deluxe edition)",
+   "date": "2011-09-26",
+   "country": "AF",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "5421ee03-e017-4393-b721-abc1ad16857b",
+   "title": "Nevermind",
+   "date": "",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "5565020e-80a9-4a45-8869-e4b7338422d4",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": "AF",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "588c069f-ac7b-44ad-9b0b-b4f9d9248680",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "DVD"
+    }
+   ]
+  },
+  {
+   "id": "5cd425e8-d449-40d2-8e51-2bd3097d0cd9",
+   "title": "Nevermind",
+   "date": "",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "5da1a276-6d5f-46f2-9975-b11bd34c8135",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "GB",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "6a836116-174e-4b04-b7fe-7a65772fd114",
+   "title": "Nevermind",
+   "date": "2011-09-23",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "704a8006-4ec5-424c-afe2-f4561c4dd79c",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "729ea319-c077-4220-9a90-7798d36850e6",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "78bd9f99-f9db-4cd7-962d-ceeaa946c4c0",
+   "title": "Nevermind",
+   "date": "",
+   "country": "CA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "7fb7f5b1-1b4a-4179-a14a-27af0ad53ca7",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "CA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "7fcef9db-4772-4960-8bd3-cbad0d5432ca",
+   "title": "Nevermind",
+   "date": "1996-04",
+   "country": "US",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "80d84b5b-62a0-42fb-bc97-10702e166b3b",
+   "title": "Nevermind",
+   "date": "2001",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "813b5197-1b76-4241-b3e8-a49db532841e",
+   "title": "Nevermind",
+   "date": "2021-12-11",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "Blu-ray"
+    }
+   ]
+  },
+  {
+   "id": "818c1369-bc98-49cb-bd85-49958fc1a4ab",
+   "title": "Nevermind (Deluxe Edition)",
+   "date": "2011-10-11",
+   "country": "DZ",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "82625e0d-5a5d-4baf-9ab7-09a042663b25",
+   "title": "Nevermind",
+   "date": "2017",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "839ffa52-dda8-4cd0-b082-1294037d8717",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": null,
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "7\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "84aed658-3a84-42d0-97f6-1eb3594a2175",
+   "title": "Nevermind",
+   "date": "1997",
+   "country": "SA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "876abe23-656e-4d65-8bc2-2e6513030be2",
+   "title": "Nevermind",
+   "date": "2011-10-12",
+   "country": "JP",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "DVD"
+    }
+   ]
+  },
+  {
+   "id": "88b363cb-86b2-431f-84b4-525d4aa7aa62",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "DE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "8e061dc4-790e-4587-ba53-011e7852f88d",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "9546f873-a3d1-4d37-8d32-5e6b6623fa26",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "US",
+   "media": [
+    {
+     "format": "Cassette"
+    }
+   ]
+  },
+  {
+   "id": "9bc03b4b-cbf5-499c-8cfb-b24d3c01098f",
+   "title": "Nevermind",
+   "date": "2013",
+   "country": "DE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "9cb6b683-13b2-4931-8a68-1c187e8c5a0a",
+   "title": "Nevermind",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "9cf44e55-9e71-4128-9ff8-029cde9843ad",
+   "title": "Nevermind",
+   "date": "2009-03-30",
+   "country": "FR",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "9dce399d-3ec7-34a4-97d0-b4bac54e5f08",
+   "title": "Nevermind",
+   "date": "1996-03-12",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "a146429a-cedc-3ab0-9e41-1aaf5f6cdc2d",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "a2b9938c-3f99-41dd-ba7b-80e2ef420aba",
+   "title": "Nevermind",
+   "date": "2025",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "a868b3ab-3911-405c-a707-28651a1fe328",
+   "title": "Nevermind (super deluxe)",
+   "date": "2011-09-26",
+   "country": "AF",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "ac15e3b4-676a-4b15-a1fc-cf105671355f",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "af67f638-b9ff-4b76-9135-f9588ccdd281",
+   "title": "Nevermind",
+   "date": "2021",
+   "country": "XW",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "b03ae882-7616-485a-a4c6-2da96cf7932c",
+   "title": "Nevermind",
+   "date": "1992",
+   "country": "ES",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "b35c70b3-15f1-4792-a3d1-31645bde4db8",
+   "title": "Nevermind",
+   "date": "2011-10-04",
+   "country": "US",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    },
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "b3cb9b1c-fe5c-43be-aba8-49609a8df2ac",
+   "title": "Nevermind",
+   "date": "2021-11-11",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    },
+    {
+     "format": "Blu-ray"
+    }
+   ]
+  },
+  {
+   "id": "b52a8f31-b5ab-34e9-92f4-f5b7110220f0",
+   "title": "Nevermind",
+   "date": "",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "b8ccb9bf-9d3a-4adb-99c3-79ffe9812fb8",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "baaf212a-6733-448c-b96a-3952d195a466",
+   "title": "Nevermind (Super Deluxe Edition)",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "bcc627eb-1fc6-4b4c-a9d7-40161d3da800",
+   "title": "Nevermind",
+   "date": "2013",
+   "country": "US",
+   "media": [
+    {
+     "format": "Blu-ray"
+    }
+   ]
+  },
+  {
+   "id": "c104d3e1-20dc-4d5a-a484-6f67c94c4d1e",
+   "title": "Nevermind",
+   "date": "2013",
+   "country": "XE",
+   "media": [
+    {
+     "format": "Blu-ray"
+    }
+   ]
+  },
+  {
+   "id": "c12262e2-7185-4942-87ee-da27ddd45ddf",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "c172330e-0840-46f6-92c4-5fce8fd54ef2",
+   "title": "Nevermind",
+   "date": "2007",
+   "country": "JP",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "c31c0754-3f52-427f-8708-5a84c485ec32",
+   "title": "Nevermind",
+   "date": "2009",
+   "country": "US",
+   "media": [
+    {
+     "format": "slotMusic"
+    }
+   ]
+  },
+  {
+   "id": "c4682a8e-0213-4173-a604-81b882f074e3",
+   "title": "Nevermind",
+   "date": "1991",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "c771f7fc-9e62-4349-a2e3-ceaf7122bf5b",
+   "title": "Nevermind",
+   "date": "2011-01-01",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "d0634387-179a-4360-8e94-0810fede6d8d",
+   "title": "Nevermind",
+   "date": "2009",
+   "country": "US",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "d0cf85f9-9db5-4bd6-80d4-c9abb9926fc9",
+   "title": "Nevermind (super deluxe edition)",
+   "date": "2011-10-24",
+   "country": "DZ",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "d140b93b-fb5d-4e84-b5bd-9bbe59a9324c",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "d87a9a3b-a95a-4782-9e01-21fd5b8ef586",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "XE",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "dcb97919-7e3b-4e94-880f-b38ac2e8bec3",
+   "title": "Nevermind",
+   "date": "2011-09-27",
+   "country": "CA",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "df1bd96a-419f-4832-9410-c4a78fbc879a",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": null,
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "e4379cac-551f-4f9f-9f28-9f42c9ab4e94",
+   "title": "Nevermind",
+   "date": "2021-11-12",
+   "country": "US",
+   "media": [
+    {
+     "format": "CD"
+    },
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "e4520f1b-80fc-4bb8-9f45-0d98ac3c152f",
+   "title": "Nevermind",
+   "date": "2008-10-20",
+   "country": "XE",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "e6e22400-c23a-4303-9b3d-36ffcecd3e54",
+   "title": "Nevermind",
+   "date": "",
+   "country": "CA",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "e8228687-12b8-406e-b4f6-b9fbcc9fcf8d",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    },
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "eccae410-7577-4daa-b602-92d305828331",
+   "title": "Nevermind",
+   "date": "1991-09-24",
+   "country": "AU",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "eea965ac-4a58-4e16-87b4-6a0f5001bbda",
+   "title": "Nevermind",
+   "date": "2011",
+   "country": "US",
+   "media": [
+    {
+     "format": "Digital Media"
+    }
+   ]
+  },
+  {
+   "id": "f7930de3-081a-452a-bafe-f7285a2abb6d",
+   "title": "Nevermind",
+   "date": "2009",
+   "country": "US",
+   "media": [
+    {
+     "format": "12\" Vinyl"
+    }
+   ]
+  },
+  {
+   "id": "f8cf1736-f25b-4fdc-bd6c-96ead7eb2f1d",
+   "title": "Nevermind",
+   "date": "1991-11-07",
+   "country": "JP",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  },
+  {
+   "id": "fbf808f6-559e-4ff0-80a0-cec74b9d6c54",
+   "title": "Nevermind",
+   "date": "1999",
+   "country": "ZA",
+   "media": [
+    {
+     "format": "CD"
+    }
+   ]
+  }
+ ]
+}

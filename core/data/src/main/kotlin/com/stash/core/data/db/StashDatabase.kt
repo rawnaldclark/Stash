@@ -111,8 +111,9 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudFolderEntity::class,
         com.stash.core.data.db.entity.CloudItemEntity::class,
         com.stash.core.data.db.entity.CloudUploadEntity::class,
+        com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
     ],
-    version = 62,
+    version = 63,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -137,6 +138,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun artistImageDao(): ArtistImageDao
 
     abstract fun artistGenreDao(): ArtistGenreDao
+
+    abstract fun albumBackCoverDao(): com.stash.core.data.db.dao.AlbumBackCoverDao
 
     abstract fun listeningEventDao(): ListeningEventDao
 
@@ -1693,6 +1696,21 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v62 -> v63: Now Playing's back cover flip. One new, empty cache table,
+         * `album_back_covers` (one row per album looked up on the Cover Art Archive). Nothing
+         * existing changes.
+         */
+        val MIGRATION_62_63 = object : Migration(62, 63) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `album_back_covers` (" +
+                        "`album_key` TEXT NOT NULL COLLATE NOCASE, `image_url` TEXT, `release_mbid` TEXT, " +
+                        "`attempted_at` INTEGER NOT NULL, PRIMARY KEY(`album_key`))",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1791,6 +1809,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_59_60,
                 MIGRATION_60_61,
                 MIGRATION_61_62,
+                MIGRATION_62_63,
             )
         }
     }

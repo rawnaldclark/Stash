@@ -1,5 +1,6 @@
 package com.stash.core.data.musicbrainz
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -51,6 +52,30 @@ class MusicBrainzClientImpl @Inject constructor(
         lookupUrlRels(mbid)
     }.getOrNull()
 
+    override suspend fun searchRecordingsByIsrc(isrc: String): JsonObject? =
+        getOrNull("recording?query=${URLEncoder.encode("isrc:${escapeLucene(isrc)}", "UTF-8")}&limit=$SEARCH_LIMIT&fmt=json")
+
+    override suspend fun searchReleaseGroups(artist: String, album: String): JsonObject? {
+        val query = "releasegroup:\"${escapeLucene(album)}\" AND artist:\"${escapeLucene(artist)}\""
+        return getOrNull("release-group?query=${URLEncoder.encode(query, "UTF-8")}&limit=$SEARCH_LIMIT&fmt=json")
+    }
+
+    override suspend fun browseReleases(releaseGroupId: String): JsonObject? =
+        getOrNull("release?release-group=$releaseGroupId&status=official&inc=media&limit=100&fmt=json")
+
+    /**
+     * [get], with any failure as null. A cancellation is rethrown, not a failure: the back cover
+     * lookup is cancelled on every skip, and reading that as "MusicBrainz failed" would hold the
+     * album back from a retry.
+     */
+    private suspend fun getOrNull(path: String): JsonObject? = try {
+        get(path)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
     /** GET [path] under the MB base with our UA + rate gate; null on non-2xx. */
     private suspend fun get(path: String): JsonObject? {
         throttle()
@@ -78,5 +103,7 @@ class MusicBrainzClientImpl @Inject constructor(
         private const val CALL_TIMEOUT_SECONDS = 5L
         const val USER_AGENT = "Stash/1.0 ( https://github.com/rawnaldclark/Stash )"
         const val MIN_INTERVAL_MS = 1000L
+        /** Results per search: enough for an album's main release groups, small enough to parse. */
+        const val SEARCH_LIMIT = 25
     }
 }
