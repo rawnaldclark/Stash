@@ -113,7 +113,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
     ],
-    version = 63,
+    version = 64,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1711,6 +1711,16 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v63 -> v64: the pages inside an album's cover, beside its back. One nullable column,
+         * `album_back_covers.inside_urls`; a v63 row reads as "inside not looked for yet".
+         */
+        val MIGRATION_63_64 = object : Migration(63, 64) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `album_back_covers` ADD COLUMN `inside_urls` TEXT")
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1810,6 +1820,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_60_61,
                 MIGRATION_61_62,
                 MIGRATION_62_63,
+                MIGRATION_63_64,
             )
         }
     }

@@ -22,6 +22,7 @@ import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.model.Track
 import coil3.SingletonImageLoader
 import com.stash.core.data.backcover.AlbumBackCovers
+import com.stash.core.data.backcover.AlbumCoverArt
 import com.stash.core.data.backcover.BackCoverAlbum
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
@@ -41,6 +42,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -635,7 +638,7 @@ class NowPlayingViewModel @Inject constructor(
         }
     }
 
-    // ── Back cover: a tap on the art turns it over to the album's back ──
+    // ── Back cover: a tap on the art turns it over to the album's back, and its pill opens the inside ──
 
     /**
      * The playing song's album as the back cover lookup knows it, one emission per album. Waits for
@@ -648,20 +651,23 @@ class NowPlayingViewModel @Inject constructor(
         .distinctUntilChanged { old, new -> old?.key == new?.key }
 
     /**
-     * The playing album's back cover (a Cover Art Archive scan's URL), or null when it has none or
-     * it isn't known yet. Now Playing loads the image and turns the art over to it on a tap.
+     * The playing album's back cover and inside pages (Cover Art Archive scans), or null while
+     * they aren't known. Now Playing loads the back and turns the art over to it on a tap; the
+     * inside opens from the back.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val backCoverUrl: StateFlow<String?> = backCoverAlbums
+    val coverArt: StateFlow<AlbumCoverArt?> = backCoverAlbums
         .flatMapLatest { album -> if (album == null) flowOf(null) else backCovers.observe(album) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Looks the playing album's back cover up, and fetches its image, while the app is in the
-     * foreground, after the lyrics prefetch's [PREFETCH_DWELL_MS]: so the flip is ready by the time
-     * Now Playing opens, a skip through a queue looks nothing up, and nothing runs with the screen
-     * off. Once per album: the answer is stored, the image disk-cached, and a skip to another album
-     * cancels the walk (a cancellation is not a failure, so the album isn't held back).
+     * Looks the playing album's back cover and inside pages up, and fetches the back's image, while
+     * the app is in the foreground, after the lyrics prefetch's [PREFETCH_DWELL_MS]: so the flip is
+     * ready by the time Now Playing opens, a skip through a queue looks nothing up, and nothing runs
+     * with the screen off. Once per album: the answer is stored, the image disk-cached, and a skip
+     * to another album cancels the walk (a cancellation is not a failure, so the album isn't held
+     * back). The back is stored as soon as it is found, before the walk for the inside ends, so its
+     * image is fetched then.
      */
     private fun prefetchBackCoverWhileForeground() {
         viewModelScope.launch {
@@ -670,10 +676,23 @@ class NowPlayingViewModel @Inject constructor(
                 .collectLatest { (album, foreground) ->
                     if (!foreground || album == null) return@collectLatest
                     delay(PREFETCH_DWELL_MS)
-                    val url = backCovers.resolve(album) ?: return@collectLatest
-                    SingletonImageLoader.get(appContext).enqueue(backCoverRequest(appContext, url))
+                    coroutineScope {
+                        val fetchBack = launch {
+                            fetchBackImage(backCovers.observe(album).mapNotNull { it?.back }.first())
+                        }
+                        val art = backCovers.resolve(album)
+                        // The watcher may not have seen a back stored at the walk's very end.
+                        if (fetchBack.isActive) {
+                            fetchBack.cancel()
+                            art?.back?.let(::fetchBackImage)
+                        }
+                    }
                 }
         }
+    }
+
+    private fun fetchBackImage(url: String) {
+        SingletonImageLoader.get(appContext).enqueue(backCoverRequest(appContext, url))
     }
 
     /** The source-chain query for [track]; [trackId] is the row to store under (0 for a stream). */

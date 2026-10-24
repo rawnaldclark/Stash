@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -161,11 +162,26 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
-    // The album's back, once its image is in hand: a tap on the art turns the cover over to it.
-    val backCoverUrl by viewModel.backCoverUrl.collectAsStateWithLifecycle()
-    val backCover = rememberLoadedBackCover(backCoverUrl)
-    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover) {
-        backCover?.let { loaded -> { faceModifier: Modifier -> AlbumBackSection(loaded, faceModifier) } }
+    // The album's back, once its image is in hand: a tap on the art turns the cover over to it, and
+    // its pill opens the pages inside.
+    val coverArt by viewModel.coverArt.collectAsStateWithLifecycle()
+    val backCover = rememberLoadedBackCover(coverArt?.back)
+    val insidePages = coverArt?.inside.orEmpty()
+    var showInside by remember(insidePages) { mutableStateOf(false) }
+    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages) {
+        backCover?.let { loaded ->
+            { faceModifier: Modifier ->
+                AlbumBackSection(
+                    back = loaded,
+                    insidePageCount = insidePages.size,
+                    onOpenInside = { showInside = true },
+                    modifier = faceModifier,
+                )
+            }
+        }
+    }
+    if (showInside && insidePages.isNotEmpty()) {
+        com.stash.feature.nowplaying.ui.AlbumInsideViewer(pages = insidePages, onDismiss = { showInside = false })
     }
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
@@ -1514,10 +1530,17 @@ private fun ArtGlow() {
 
 /**
  * The album's back cover, the art's other face: at its own shape (an LP's back is square, a CD's
- * tray card wider than tall), centred in the art's square, with the front's glow and corners.
+ * tray card wider than tall), centred in the art's square, with the front's glow and corners. When
+ * the album has pages inside, a pill at its foot ("Inside · 8") opens them; its tap is its own, not
+ * the art's flip.
  */
 @Composable
-private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifier) {
+private fun AlbumBackSection(
+    back: LoadedBackCover,
+    insidePageCount: Int,
+    onOpenInside: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // A sliver of a scan (a spine, a panorama of a gatefold) would read as broken: past these
         // shapes it is cropped to them instead.
@@ -1531,7 +1554,45 @@ private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifie
                     .fillMaxSize()
                     .clip(RoundedCornerShape(20.dp)),
             )
+            if (insidePageCount > 0) {
+                InsidePill(
+                    pageCount = insidePageCount,
+                    onClick = onOpenInside,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 14.dp),
+                )
+            }
         }
+    }
+}
+
+/**
+ * "Inside · 8": opens the pages inside the cover. A dark pill with white text, like the art's seek
+ * pill, so it reads on any scan in either theme.
+ */
+@Composable
+private fun InsidePill(pageCount: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClickLabel = "Open the pages inside", onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = "Inside · $pageCount",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+        )
     }
 }
 

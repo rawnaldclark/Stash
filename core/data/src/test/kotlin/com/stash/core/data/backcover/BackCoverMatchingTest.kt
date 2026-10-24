@@ -160,6 +160,32 @@ class BackCoverMatchingTest {
         assertThat(listing.releaseMbid).isEqualTo("006cb56d-6eff-4b7d-853f-ecd2db97f3b2")
     }
 
+    @Test fun `the inside is the booklet, panels, inner sleeve and tray, in the archive's order`() {
+        fun img(vararg types: String, front: Boolean = false, back: Boolean = false) =
+            CaaImage(types.toList(), front, back, url = types.joinToString("+") + front + back)
+        val listing = CaaListing(
+            listOf(
+                img("Front", front = true),
+                img("Booklet", "Front"), // the booklet's cover is the album's front
+                img("Booklet"),
+                img("Back", back = true),
+                img("Panel"),
+                img("Medium"),
+                img("Booklet", "Raw/Unedited"),
+                img("Liner"),
+                img("Tray"),
+                img("Obi"),
+            ),
+            null,
+        )
+        assertThat(insidePages(listing).map { it.types.single() })
+            .containsExactly("Booklet", "Panel", "Liner", "Tray").inOrder()
+    }
+
+    @Test fun `a listing with only a front has no inside`() {
+        assertThat(insidePages(parseCaaListing(fixture("caa_release_nevermind_canonical.json")))).isEmpty()
+    }
+
     @Test fun `a listing with only a front has no back`() {
         assertThat(backCoverImage(parseCaaListing(fixture("caa_release_nevermind_canonical.json")))).isNull()
     }

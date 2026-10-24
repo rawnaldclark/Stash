@@ -172,6 +172,23 @@ internal fun rankReleasesForBack(body: JsonObject): List<String> =
     }.sortedBy { it.second }.map { it.first }
 
 /**
+ * The scans of an album's inside, by the archive's types: a CD's booklet pages, a gatefold's or
+ * digipak's panels, a vinyl's inner sleeve (Liner), the tray under the disc.
+ */
+private val INSIDE_TYPES = setOf("Booklet", "Panel", "Liner", "Tray")
+
+/**
+ * The inside pages in a release's listing, in the archive's order (the order editors give the
+ * pages): images typed [INSIDE_TYPES] that aren't the front or back (a booklet's cover is the
+ * album's front) and aren't unedited scans.
+ */
+internal fun insidePages(listing: CaaListing): List<CaaImage> =
+    listing.images.filter { img ->
+        !img.front && !img.back && img.types.any { it in INSIDE_TYPES } &&
+            img.types.none { it == "Front" || it == "Back" || it == "Raw/Unedited" }
+    }
+
+/**
  * The back cover in a release's listing: the image marked as the main back, else one typed Back
  * that isn't an unedited scan (a scanner's lid, a crooked photo), else any typed Back.
  */

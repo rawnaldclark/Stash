@@ -16,39 +16,52 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** The back covers Now Playing flips to, one per album. */
+/**
+ * An album's art beyond its front, as image URLs: its [back] cover (null when it has none) and the
+ * pages [inside] it (booklet, gatefold panels, inner sleeve), in reading order.
+ */
+data class AlbumCoverArt(val back: String?, val inside: List<String>)
+
+/** The back covers Now Playing flips to and the pages inside them, one set per album. */
 interface AlbumBackCovers {
-    /** The album's back cover URL as stored: null until it is looked up, and when it has none. */
-    fun observe(album: BackCoverAlbum): Flow<String?>
+    /** The album's art as stored: null until it is first looked up. */
+    fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?>
 
-    /** Looks the album up unless its answer is stored. Returns its back cover URL, null when none. */
-    suspend fun resolve(album: BackCoverAlbum): String?
+    /**
+     * Looks the album up unless its answer is stored, and returns it: null when the lookup failed.
+     * The back is stored the moment it is found ([observe] sees it), before the walk ends.
+     */
+    suspend fun resolve(album: BackCoverAlbum): AlbumCoverArt?
 
-    /** No back covers: the default of a ViewModel under test. */
+    /** No art: the default of a ViewModel under test. */
     object None : AlbumBackCovers {
-        override fun observe(album: BackCoverAlbum): Flow<String?> = flowOf(null)
-        override suspend fun resolve(album: BackCoverAlbum): String? = null
+        override fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?> = flowOf(null)
+        override suspend fun resolve(album: BackCoverAlbum): AlbumCoverArt? = null
     }
 }
 
 /**
- * Finds an album's back cover on the Cover Art Archive and keeps the answer in `album_back_covers`.
+ * Finds an album's back cover and inside pages on the Cover Art Archive and keeps the answer in
+ * `album_back_covers`.
  *
  * The lookup (measured 2026-10-24: a back cover for 24 of 25 popular albums, and for the main
  * edition or the first vinyl of every Beatles album tried):
  * 1. The album's release group: from the song's ISRC when it has one (one search, and sure of the
  *    recording), else a title search by artist ([releaseGroupFromSearch]), the plain title first.
  * 2. The release group's cover, which names the album's main edition, and that edition's listing:
- *    its back is the likeliest to match the front on screen, and usually ends the lookup here, at
- *    three or four calls. A group with no art at all ends it sooner.
+ *    its back is the likeliest to match the front on screen. When it has both a back and inside
+ *    pages, the lookup ends here, at three or four calls. A group with no art at all ends it sooner.
  * 3. Else its other releases, vinyl first ([rankReleasesForBack]), [PARALLEL_CHECKS] at a time, up
- *    to [MAX_RELEASES_CHECKED], read in rank order and stopping at the first back.
+ *    to [MAX_RELEASES_CHECKED], read in rank order until it has both: the first back and the first
+ *    inside pages ([insidePages]), which may come from different releases.
  *
- * A miss is stored and retried after [MISS_TTL_MS] (scans are uploaded all the time); a found back
- * is kept. A failure (offline, MusicBrainz or the archive down, a reply that can't be read) stores
- * nothing and holds the album back for [FAILURE_BACKOFF_MS], so a flaky network doesn't repeat the
- * walk on every song. Concurrent calls for one album (the mini player's and Now Playing's
- * ViewModels) run it once.
+ * The back is stored as soon as it is found, with the inside "not looked for yet", so the flip is
+ * ready while the walk goes on; a walk cut short (a skip to another album) finishes the next time
+ * the album plays. A full answer is kept; a partial one (no back, or nothing inside) is looked up
+ * again after [MISS_TTL_MS] (scans are uploaded all the time). A failure (offline, MusicBrainz or
+ * the archive down, a reply that can't be read) stores nothing new and holds the album back for
+ * [FAILURE_BACKOFF_MS], so a flaky network doesn't repeat the walk on every song. Concurrent calls
+ * for one album (the mini player's and Now Playing's ViewModels) run it once.
  */
 @Singleton
 class AlbumBackCoverRepository @Inject constructor(
@@ -57,27 +70,29 @@ class AlbumBackCoverRepository @Inject constructor(
     private val coverArt: CoverArtArchiveClient,
 ) : AlbumBackCovers {
 
-    /** Test seam: the clock misses and failures are aged on. */
+    /** Test seam: the clock partial answers and failures are aged on. */
     internal var now: () -> Long = System::currentTimeMillis
 
     private val keyLocks = ConcurrentHashMap<String, Mutex>()
     private val failedAt = ConcurrentHashMap<String, Long>()
 
-    override fun observe(album: BackCoverAlbum): Flow<String?> =
-        dao.observe(album.key).map { it?.imageUrl }.distinctUntilChanged()
+    override fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?> =
+        dao.observe(album.key).map { it?.toArt() }.distinctUntilChanged()
 
-    override suspend fun resolve(album: BackCoverAlbum): String? {
+    override suspend fun resolve(album: BackCoverAlbum): AlbumCoverArt? {
         val key = album.key
-        stored(key)?.let { return it.imageUrl }
+        stored(key)?.let { return it.toArt() }
         val lock = keyLocks.computeIfAbsent(key) { Mutex() }
         try {
             return lock.withLock {
                 // Another caller may have finished the walk while this one waited.
-                stored(key)?.let { return@withLock it.imageUrl }
+                stored(key)?.let { return@withLock it.toArt() }
                 val failed = failedAt[key]
                 if (failed != null && now() - failed < FAILURE_BACKOFF_MS) return@withLock null
                 val found = try {
-                    lookUp(album)
+                    lookUp(album) { back ->
+                        dao.upsert(AlbumBackCoverEntity(key, back.url, back.releaseMbid, now(), insideUrls = null))
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -86,54 +101,96 @@ class AlbumBackCoverRepository @Inject constructor(
                     return@withLock null
                 }
                 failedAt.remove(key)
-                dao.upsert(AlbumBackCoverEntity(key, found?.url, found?.releaseMbid, now()))
-                found?.url
+                val row = AlbumBackCoverEntity(
+                    albumKey = key,
+                    imageUrl = found.back?.url,
+                    releaseMbid = found.back?.releaseMbid,
+                    attemptedAt = now(),
+                    insideUrls = found.inside.joinToString("\n"),
+                )
+                dao.upsert(row)
+                row.toArt()
             }
         } finally {
             if (!lock.isLocked) keyLocks.remove(key, lock)
         }
     }
 
-    /** The stored answer when it still stands: a back cover, or a miss younger than [MISS_TTL_MS]. */
+    /**
+     * The stored answer when it still stands: a full one (a back and inside pages), or a partial
+     * one younger than [MISS_TTL_MS]. Not one whose inside was never looked for.
+     */
     private suspend fun stored(key: String): AlbumBackCoverEntity? =
-        dao.get(key)?.takeIf { it.imageUrl != null || now() - it.attemptedAt < MISS_TTL_MS }
+        dao.get(key)?.takeIf { row ->
+            val inside = row.insideUrls ?: return@takeIf false
+            (row.imageUrl != null && inside.isNotEmpty()) || now() - row.attemptedAt < MISS_TTL_MS
+        }
+
+    private fun AlbumBackCoverEntity.toArt() = AlbumCoverArt(
+        back = imageUrl,
+        inside = insideUrls?.split('\n')?.filter { it.isNotBlank() }.orEmpty(),
+    )
 
     private data class Found(val url: String, val releaseMbid: String)
+
+    private class Walk(val back: Found?, val inside: List<String>)
 
     /** A call failed: nothing can be concluded about the album. */
     private class LookupFailed : Exception()
 
-    /** The album's back cover, null when it has none. Throws [LookupFailed]. */
-    private suspend fun lookUp(album: BackCoverAlbum): Found? {
-        val group = releaseGroupOf(album) ?: return null
+    /**
+     * The album's back and inside pages, empty when it has neither. [onBack] gets the back the
+     * moment it is found, while the walk goes on for the inside. Throws [LookupFailed].
+     */
+    private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
+        val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
         val cover = coverArt.releaseGroup(group) ?: throw LookupFailed()
-        if (cover.images.isEmpty() && cover.releaseMbid == null) return null // no art anywhere in it
+        if (cover.images.isEmpty() && cover.releaseMbid == null) return Walk(null, emptyList())
+
+        var back: Found? = null
+        var inside: List<String>? = null
+        var answered = false
+        suspend fun read(id: String, listing: CaaListing) {
+            answered = true
+            var foundBack = false
+            if (back == null) {
+                backCoverImage(listing)?.let {
+                    back = Found(it.url, id)
+                    foundBack = true
+                }
+            }
+            if (inside == null) {
+                insidePages(listing).takeIf { it.isNotEmpty() }?.let { pages ->
+                    inside = pages.take(MAX_INSIDE_PAGES).map { it.url }
+                }
+            }
+            // A back that ends the walk is stored once, with the inside, at its end.
+            if (foundBack && inside == null) back?.let { onBack(it) }
+        }
+        fun done() = back != null && inside != null
+
+        // The main edition alone first: when it has both, its releases needn't even be listed.
         val main = cover.releaseMbid
-        // The main edition alone first: when it has a back, its releases needn't even be listed.
-        val mainListing = main?.let { coverArt.release(it) }
-        mainListing?.let { listing -> backCoverImage(listing)?.let { return Found(it.url, main) } }
+        main?.let { id -> coverArt.release(id)?.let { read(id, it) } }
+        if (done()) return Walk(back, inside.orEmpty())
+
         val releases = musicBrainz.browseReleases(group) ?: throw LookupFailed()
         val candidates = rankReleasesForBack(releases).filter { it != main }.take(MAX_RELEASES_CHECKED)
-        var answered = mainListing != null
         for (batch in candidates.chunked(PARALLEL_CHECKS)) {
-            val hit = coroutineScope {
+            coroutineScope {
                 val pending = batch.map { id -> id to async { coverArt.release(id) } }
-                var found: Found? = null
-                // In rank order, so a better-ranked back wins over a faster reply; the first back
-                // cancels the slower listings still out.
+                // In rank order, so a better-ranked release wins over a faster reply; once both are
+                // in hand, the slower listings still out are cancelled.
                 for ((id, listing) in pending) {
-                    val answer = listing.await() ?: continue
-                    answered = true
-                    backCoverImage(answer)?.let { found = Found(it.url, id) }
-                    if (found != null) break
+                    listing.await()?.let { read(id, it) }
+                    if (done()) break
                 }
                 pending.forEach { it.second.cancel() }
-                found
             }
-            if (hit != null) return hit
+            if (done()) break
         }
         if (!answered && (main != null || candidates.isNotEmpty())) throw LookupFailed()
-        return null
+        return Walk(back, inside.orEmpty())
     }
 
     /** The album's MusicBrainz release group: by the song's ISRC first, then by title. Throws [LookupFailed]. */
@@ -154,7 +211,7 @@ class AlbumBackCoverRepository @Inject constructor(
     }
 
     companion object {
-        /** A miss is looked up again after this long: 30 days. */
+        /** A partial answer (no back, or nothing inside) is looked up again after this long: 30 days. */
         const val MISS_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
         /** After a failed lookup, the album waits this long before another: 2 minutes. */
@@ -163,7 +220,10 @@ class AlbumBackCoverRepository @Inject constructor(
         /** Releases whose listings are fetched at once. */
         const val PARALLEL_CHECKS = 4
 
-        /** Releases checked for a back at most (an album like Rumours has over a hundred). */
+        /** Releases checked at most (an album like Rumours has over a hundred). */
         const val MAX_RELEASES_CHECKED = 12
+
+        /** Inside pages kept at most: a box set's booklet can run past a hundred. */
+        const val MAX_INSIDE_PAGES = 40
     }
 }
