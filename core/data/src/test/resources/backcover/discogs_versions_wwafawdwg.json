@@ -1,0 +1,1120 @@
+{
+ "pagination": {
+  "page": 1,
+  "pages": 1,
+  "per_page": 100,
+  "items": 74
+ },
+ "versions": [
+  {
+   "id": 13432224,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 349,
+     "in_collection": 269
+    }
+   }
+  },
+  {
+   "id": 13460270,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 250,
+     "in_collection": 656
+    }
+   }
+  },
+  {
+   "id": 13418801,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1797,
+     "in_collection": 6443
+    }
+   }
+  },
+  {
+   "id": 13421436,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 506,
+     "in_collection": 1120
+    }
+   }
+  },
+  {
+   "id": 13418967,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition, Picture Disc",
+   "stats": {
+    "community": {
+     "in_wantlist": 1472,
+     "in_collection": 746
+    }
+   }
+  },
+  {
+   "id": 13442199,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 316,
+     "in_collection": 205
+    }
+   }
+  },
+  {
+   "id": 13423994,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 292,
+     "in_collection": 252
+    }
+   }
+  },
+  {
+   "id": 13422938,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 775,
+     "in_collection": 2477
+    }
+   }
+  },
+  {
+   "id": 14552503,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 357,
+     "in_collection": 4087
+    }
+   }
+  },
+  {
+   "id": 13609729,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 206,
+     "in_collection": 232
+    }
+   }
+  },
+  {
+   "id": 13534577,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1619,
+     "in_collection": 4457
+    }
+   }
+  },
+  {
+   "id": 21495592,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 674,
+     "in_collection": 154
+    }
+   }
+  },
+  {
+   "id": 13418796,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 354,
+     "in_collection": 157
+    }
+   }
+  },
+  {
+   "id": 14574261,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 199,
+     "in_collection": 265
+    }
+   }
+  },
+  {
+   "id": 13433868,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 215,
+     "in_collection": 149
+    }
+   }
+  },
+  {
+   "id": 14198724,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1297,
+     "in_collection": 7816
+    }
+   }
+  },
+  {
+   "id": 19394173,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 863,
+     "in_collection": 6560
+    }
+   }
+  },
+  {
+   "id": 13516950,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Box Set"
+   ],
+   "format": "Album, Deluxe Edition, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 484,
+     "in_collection": 223
+    }
+   }
+  },
+  {
+   "id": 13414611,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 4106,
+     "in_collection": 34131
+    }
+   }
+  },
+  {
+   "id": 13449953,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 305,
+     "in_collection": 69
+    }
+   }
+  },
+  {
+   "id": 13443944,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 368,
+     "in_collection": 1078
+    }
+   }
+  },
+  {
+   "id": 14475726,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition, Picture Disc",
+   "stats": {
+    "community": {
+     "in_wantlist": 1144,
+     "in_collection": 2409
+    }
+   }
+  },
+  {
+   "id": 13420079,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1726,
+     "in_collection": 2569
+    }
+   }
+  },
+  {
+   "id": 13418800,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 470,
+     "in_collection": 816
+    }
+   }
+  },
+  {
+   "id": 22377907,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 121,
+     "in_collection": 140
+    }
+   }
+  },
+  {
+   "id": 13444614,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 318,
+     "in_collection": 130
+    }
+   }
+  },
+  {
+   "id": 35728924,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 46,
+     "in_collection": 9
+    }
+   }
+  },
+  {
+   "id": 30103943,
+   "title": "When We All Fall Asleep, Where Do We Go? = 當我們睡了 怪事發生了",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 66,
+     "in_collection": 6
+    }
+   }
+  },
+  {
+   "id": 30376892,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 118,
+     "in_collection": 225
+    }
+   }
+  },
+  {
+   "id": 13550706,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1289,
+     "in_collection": 790
+    }
+   }
+  },
+  {
+   "id": 14716540,
+   "title": "When We All Fall Asleep, Where Do We Go? = 當我們睡了 怪事發生了",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 182,
+     "in_collection": 12
+    }
+   }
+  },
+  {
+   "id": 14048242,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 377,
+     "in_collection": 3861
+    }
+   }
+  },
+  {
+   "id": 13414071,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 1876,
+     "in_collection": 3260
+    }
+   }
+  },
+  {
+   "id": 13418804,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 295,
+     "in_collection": 90
+    }
+   }
+  },
+  {
+   "id": 22285420,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 79,
+     "in_collection": 15
+    }
+   }
+  },
+  {
+   "id": 13432156,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 1213,
+     "in_collection": 6814
+    }
+   }
+  },
+  {
+   "id": 14521716,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Box Set"
+   ],
+   "format": "",
+   "stats": {
+    "community": {
+     "in_wantlist": 1716,
+     "in_collection": 1661
+    }
+   }
+  },
+  {
+   "id": 17026890,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 168,
+     "in_collection": 976
+    }
+   }
+  },
+  {
+   "id": 14405981,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 1823,
+     "in_collection": 14742
+    }
+   }
+  },
+  {
+   "id": 14006412,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1021,
+     "in_collection": 1098
+    }
+   }
+  },
+  {
+   "id": 13420036,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Stereo",
+   "stats": {
+    "community": {
+     "in_wantlist": 379,
+     "in_collection": 748
+    }
+   }
+  },
+  {
+   "id": 19673320,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 671,
+     "in_collection": 6916
+    }
+   }
+  },
+  {
+   "id": 14639656,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Deluxe Edition, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 286,
+     "in_collection": 102
+    }
+   }
+  },
+  {
+   "id": 28158820,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "File"
+   ],
+   "format": "AAC, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 33,
+     "in_collection": 9
+    }
+   }
+  },
+  {
+   "id": 13421102,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 1607,
+     "in_collection": 10184
+    }
+   }
+  },
+  {
+   "id": 13414306,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "File"
+   ],
+   "format": "MP3, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 167,
+     "in_collection": 130
+    }
+   }
+  },
+  {
+   "id": 16724160,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "File"
+   ],
+   "format": "FLAC, Album, Stereo",
+   "stats": {
+    "community": {
+     "in_wantlist": 658,
+     "in_collection": 1050
+    }
+   }
+  },
+  {
+   "id": 13703519,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 217,
+     "in_collection": 266
+    }
+   }
+  },
+  {
+   "id": 15023274,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Promo",
+   "stats": {
+    "community": {
+     "in_wantlist": 272,
+     "in_collection": 28
+    }
+   }
+  },
+  {
+   "id": 16652052,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "File"
+   ],
+   "format": "AIFF, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 81,
+     "in_collection": 13
+    }
+   }
+  },
+  {
+   "id": 13846489,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 820,
+     "in_collection": 2382
+    }
+   }
+  },
+  {
+   "id": 14550984,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Limited Edition, Unofficial Release",
+   "stats": {
+    "community": {
+     "in_wantlist": 181,
+     "in_collection": 35
+    }
+   }
+  },
+  {
+   "id": 22637540,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 89,
+     "in_collection": 65
+    }
+   }
+  },
+  {
+   "id": 38109228,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 12,
+     "in_collection": 35
+    }
+   }
+  },
+  {
+   "id": 13500376,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 201,
+     "in_collection": 80
+    }
+   }
+  },
+  {
+   "id": 13817632,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Unofficial Release",
+   "stats": {
+    "community": {
+     "in_wantlist": 174,
+     "in_collection": 72
+    }
+   }
+  },
+  {
+   "id": 25416418,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Promo",
+   "stats": {
+    "community": {
+     "in_wantlist": 80,
+     "in_collection": 18
+    }
+   }
+  },
+  {
+   "id": 13766953,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 1582,
+     "in_collection": 906
+    }
+   }
+  },
+  {
+   "id": 16598367,
+   "title": "When We All Fall Asleep, Where Do We Go? - Japan Complete Edition = ホエン・ウィ・オール・フォール・アスリープ、ホエア・ドゥ・ウィ・ゴー? コンプリート・エディション",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Reissue, Stereo",
+   "stats": {
+    "community": {
+     "in_wantlist": 322,
+     "in_collection": 165
+    }
+   }
+  },
+  {
+   "id": 18730630,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 143,
+     "in_collection": 85
+    }
+   }
+  },
+  {
+   "id": 14670139,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 355,
+     "in_collection": 749
+    }
+   }
+  },
+  {
+   "id": 16331187,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 145,
+     "in_collection": 110
+    }
+   }
+  },
+  {
+   "id": 14852627,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 194,
+     "in_collection": 296
+    }
+   }
+  },
+  {
+   "id": 15952672,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album, Limited Edition",
+   "stats": {
+    "community": {
+     "in_wantlist": 286,
+     "in_collection": 563
+    }
+   }
+  },
+  {
+   "id": 29979685,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Club Edition, Limited Edition, Numbered, Reissue, Repress",
+   "stats": {
+    "community": {
+     "in_wantlist": 1377,
+     "in_collection": 1672
+    }
+   }
+  },
+  {
+   "id": 33577065,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Cassette"
+   ],
+   "format": "Album, Unofficial Release",
+   "stats": {
+    "community": {
+     "in_wantlist": 59,
+     "in_collection": 15
+    }
+   }
+  },
+  {
+   "id": 34371841,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Limited Edition, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 504,
+     "in_collection": 3913
+    }
+   }
+  },
+  {
+   "id": 35972626,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 149,
+     "in_collection": 489
+    }
+   }
+  },
+  {
+   "id": 36110938,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Bioplastic, Limited Edition, Test Pressing, Stereo",
+   "stats": {
+    "community": {
+     "in_wantlist": 91,
+     "in_collection": 9
+    }
+   }
+  },
+  {
+   "id": 35080319,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP",
+   "stats": {
+    "community": {
+     "in_wantlist": 105,
+     "in_collection": 81
+    }
+   }
+  },
+  {
+   "id": 37222290,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 278,
+     "in_collection": 1973
+    }
+   }
+  },
+  {
+   "id": 26675006,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album",
+   "stats": {
+    "community": {
+     "in_wantlist": 177,
+     "in_collection": 217
+    }
+   }
+  },
+  {
+   "id": 37982220,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "CD"
+   ],
+   "format": "Album, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 11,
+     "in_collection": 4
+    }
+   }
+  },
+  {
+   "id": 29322373,
+   "title": "When We All Fall Asleep, Where Do We Go?",
+   "status": "Accepted",
+   "major_formats": [
+    "Vinyl"
+   ],
+   "format": "LP, Album, Reissue",
+   "stats": {
+    "community": {
+     "in_wantlist": 419,
+     "in_collection": 15555
+    }
+   }
+  }
+ ]
+}
