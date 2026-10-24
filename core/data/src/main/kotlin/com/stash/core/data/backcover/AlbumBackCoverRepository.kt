@@ -61,7 +61,7 @@ interface AlbumBackCovers {
  *    recording), else a title search by artist ([releaseGroupFromSearch]), the plain title first.
  * 2. The release group's cover, which names the album's main edition, and that edition's listing:
  *    its back is the likeliest to match the front on screen. When it has both a back and inside
- *    pages, the lookup ends here, at three or four calls. A group with no art at all ends it sooner.
+ *    pages, the lookup ends here, at three or four calls. A group with no art at all goes to step 4.
  * 3. Else its other releases, vinyl first ([rankReleasesForBack]), [PARALLEL_CHECKS] at a time, up
  *    to [MAX_RELEASES_CHECKED], read in rank order until it has both: the first back and the first
  *    inside pages ([insidePages]), which may come from different releases.
