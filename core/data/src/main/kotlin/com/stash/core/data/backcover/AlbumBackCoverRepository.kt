@@ -19,8 +19,19 @@ import javax.inject.Singleton
 /**
  * An album's art beyond its front, as image URLs: its [back] cover (null when it has none) and the
  * pages [inside] it (booklet, gatefold panels, inner sleeve), in reading order.
+ *
+ * Both come from the Cover Art Archive (scans, 1200px) when it has them, else from Discogs (photos
+ * and scans by its users, 600px at most): [backFromDiscogs] and [insideFromDiscogs] say which.
+ * Discogs' API terms ask for "Data provided by Discogs", linked to [discogsPage] (the release the
+ * images come from), next to its images; null when none are shown.
  */
-data class AlbumCoverArt(val back: String?, val inside: List<String>)
+data class AlbumCoverArt(
+    val back: String?,
+    val inside: List<String>,
+    val backFromDiscogs: Boolean = false,
+    val insideFromDiscogs: Boolean = false,
+    val discogsPage: String? = null,
+)
 
 /** The back covers Now Playing flips to and the pages inside them, one set per album. */
 interface AlbumBackCovers {
@@ -41,8 +52,8 @@ interface AlbumBackCovers {
 }
 
 /**
- * Finds an album's back cover and inside pages on the Cover Art Archive and keeps the answer in
- * `album_back_covers`.
+ * Finds an album's back cover and inside pages on the Cover Art Archive, and on Discogs for what the
+ * archive lacks, and keeps the answer in `album_back_covers`.
  *
  * The lookup (measured 2026-10-24: a back cover for 24 of 25 popular albums, and for the main
  * edition or the first vinyl of every Beatles album tried):
@@ -54,11 +65,16 @@ interface AlbumBackCovers {
  * 3. Else its other releases, vinyl first ([rankReleasesForBack]), [PARALLEL_CHECKS] at a time, up
  *    to [MAX_RELEASES_CHECKED], read in rank order until it has both: the first back and the first
  *    inside pages ([insidePages]), which may come from different releases.
+ * 4. When the archive has no back, or nothing inside: Discogs ([discogsArt]), reached through the
+ *    release group's link to its Discogs master (30 of 30 sampled albums had one, 2026-10-24). Its
+ *    most-collected vinyl (else CD) release gives what the archive lacked: the back by
+ *    [discogsBackIndex] (right for 83% of releases measured), the inside by [discogsInside].
  *
  * The back is stored as soon as it is found, with the inside "not looked for yet", so the flip is
  * ready while the walk goes on; a walk cut short (a skip to another album) finishes the next time
- * the album plays. A full answer is kept; a partial one (no back, or nothing inside) is looked up
- * again after [MISS_TTL_MS] (scans are uploaded all the time). A failure (offline, MusicBrainz or
+ * the album plays. A full answer from the archive is kept; a partial one (no back, or nothing
+ * inside), or one that took anything from Discogs, is looked up again after [MISS_TTL_MS]: scans are
+ * uploaded all the time, and Discogs' terms ask that its data be kept no longer than needed. A failure (offline, MusicBrainz or
  * the archive down, a reply that can't be read) stores nothing new and holds the album back for
  * [FAILURE_BACKOFF_MS], so a flaky network doesn't repeat the walk on every song. Concurrent calls
  * for one album (the mini player's and Now Playing's ViewModels) run it once.
@@ -68,6 +84,7 @@ class AlbumBackCoverRepository @Inject constructor(
     private val dao: AlbumBackCoverDao,
     private val musicBrainz: MusicBrainzClient,
     private val coverArt: CoverArtArchiveClient,
+    private val discogs: DiscogsClient,
 ) : AlbumBackCovers {
 
     /** Test seam: the clock partial answers and failures are aged on. */
@@ -107,6 +124,9 @@ class AlbumBackCoverRepository @Inject constructor(
                     releaseMbid = found.back?.releaseMbid,
                     attemptedAt = now(),
                     insideUrls = found.inside.joinToString("\n"),
+                    backFromDiscogs = found.backFromDiscogs,
+                    insideFromDiscogs = found.insideFromDiscogs,
+                    discogsPage = found.discogsPage,
                 )
                 dao.upsert(row)
                 row.toArt()
@@ -117,23 +137,37 @@ class AlbumBackCoverRepository @Inject constructor(
     }
 
     /**
-     * The stored answer when it still stands: a full one (a back and inside pages), or a partial
-     * one younger than [MISS_TTL_MS]. Not one whose inside was never looked for.
+     * The stored answer when it still stands: a full one from the archive (a back and inside
+     * pages), or any other younger than [MISS_TTL_MS]. Not one whose inside was never looked for.
      */
     private suspend fun stored(key: String): AlbumBackCoverEntity? =
         dao.get(key)?.takeIf { row ->
             val inside = row.insideUrls ?: return@takeIf false
-            (row.imageUrl != null && inside.isNotEmpty()) || now() - row.attemptedAt < MISS_TTL_MS
+            val full = row.imageUrl != null && inside.isNotEmpty() && !row.backFromDiscogs && !row.insideFromDiscogs
+            full || now() - row.attemptedAt < MISS_TTL_MS
         }
 
     private fun AlbumBackCoverEntity.toArt() = AlbumCoverArt(
         back = imageUrl,
         inside = insideUrls?.split('\n')?.filter { it.isNotBlank() }.orEmpty(),
+        backFromDiscogs = backFromDiscogs && imageUrl != null,
+        insideFromDiscogs = insideFromDiscogs,
+        discogsPage = discogsPage,
     )
 
-    private data class Found(val url: String, val releaseMbid: String)
+    /** A back: its URL, and the MusicBrainz release it was scanned from (null for Discogs'). */
+    private data class Found(val url: String, val releaseMbid: String?)
 
-    private class Walk(val back: Found?, val inside: List<String>)
+    private class Walk(
+        val back: Found?,
+        val inside: List<String>,
+        val backFromDiscogs: Boolean = false,
+        val insideFromDiscogs: Boolean = false,
+        val discogsPage: String? = null,
+    )
+
+    /** What a Discogs release adds: a likely back, the rest of its images, and its page. */
+    private class DiscogsArt(val back: String?, val inside: List<String>, val page: String?)
 
     /** A call failed: nothing can be concluded about the album. */
     private class LookupFailed : Exception()
@@ -145,7 +179,8 @@ class AlbumBackCoverRepository @Inject constructor(
     private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
         val cover = coverArt.releaseGroup(group) ?: throw LookupFailed()
-        if (cover.images.isEmpty() && cover.releaseMbid == null) return Walk(null, emptyList())
+        // No art at all on the archive: Discogs alone.
+        if (cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null)
 
         var back: Found? = null
         var inside: List<String>? = null
@@ -190,7 +225,53 @@ class AlbumBackCoverRepository @Inject constructor(
             if (done()) break
         }
         if (!answered && (main != null || candidates.isNotEmpty())) throw LookupFailed()
-        return Walk(back, inside.orEmpty())
+        return withDiscogs(group, back, inside)
+    }
+
+    /**
+     * The archive's [back] and [inside] (null: none found), with Discogs' standing in for what's
+     * missing. Throws [LookupFailed] when MusicBrainz or Discogs fails: a back already found was
+     * stored by then ([lookUp]'s onBack), and the rest is tried again after the backoff.
+     */
+    private suspend fun withDiscogs(group: String, back: Found?, inside: List<String>?): Walk {
+        if (back != null && inside != null) return Walk(back, inside)
+        val found = discogsArt(group)
+        val discogsBack = found?.back?.takeIf { back == null }
+        val discogsInside = found?.inside?.takeIf { inside == null && it.isNotEmpty() }
+        return Walk(
+            back = back ?: discogsBack?.let { Found(it, releaseMbid = null) },
+            inside = inside ?: discogsInside.orEmpty(),
+            backFromDiscogs = discogsBack != null,
+            insideFromDiscogs = discogsInside != null,
+            discogsPage = found?.page?.takeIf { discogsBack != null || discogsInside != null },
+        )
+    }
+
+    /**
+     * The album on Discogs: the release group's Discogs master (from its MusicBrainz links), that
+     * master's most-collected vinyl, else CD ([mostCollected]), and from its images the back
+     * ([discogsBackIndex]) and the rest ([discogsInside]). Null when the group has no Discogs link
+     * or the master no physical release. One MusicBrainz call and two or three Discogs calls, plus
+     * two thumbnails when the back is in doubt ([needsSeamCheck]). Throws [LookupFailed].
+     */
+    private suspend fun discogsArt(group: String): DiscogsArt? {
+        val rels = musicBrainz.releaseGroupUrlRels(group) ?: throw LookupFailed()
+        val master = discogsMasterId(rels) ?: return null
+        val id = mostCollected(discogs.versions(master, "Vinyl") ?: throw LookupFailed())
+            ?: mostCollected(discogs.versions(master, "CD") ?: throw LookupFailed())
+            ?: return null
+        val release = discogs.release(id) ?: throw LookupFailed()
+        val halvesJoin = needsSeamCheck(release) && run {
+            val left = discogs.pixels(release.images[1].thumb!!) ?: throw LookupFailed()
+            val right = discogs.pixels(release.images[2].thumb!!) ?: throw LookupFailed()
+            seamGap(left, right) < HALVES_JOIN_BELOW
+        }
+        val backIndex = discogsBackIndex(release, halvesJoin)
+        return DiscogsArt(
+            back = backIndex?.let { release.images[it].url },
+            inside = discogsInside(release, backIndex).take(MAX_INSIDE_PAGES).map { it.url },
+            page = release.page,
+        )
     }
 
     /** The album's MusicBrainz release group: by the song's ISRC first, then by title. Throws [LookupFailed]. */
