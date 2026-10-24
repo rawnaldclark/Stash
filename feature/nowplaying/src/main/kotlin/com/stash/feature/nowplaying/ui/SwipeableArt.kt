@@ -57,7 +57,8 @@ private const val FLIP_CAMERA_DISTANCE = 12f
 /**
  * The Now Playing album art with its gestures: swipe sideways for the next / previous song,
  * double-tap the left or right third to seek back / forward 10 s, and tap to turn the cover over
- * to the album's back ([back]) and again to turn it back.
+ * to the album's back ([back]) and again to turn it back. While the back is up the swipe is the
+ * back's own (it pages through the inside), not a skip: the cover is in hand, being looked through.
  *
  * The swipe is [rememberSwipeToSkip] (shared with the mini player): the art follows the finger,
  * skips on a third of its width or a flick through the same [onNext] / [onPrevious] the transport
@@ -83,8 +84,9 @@ private const val FLIP_CAMERA_DISTANCE = 12f
  * @param canSeek Whether double-tap seeking applies (a known duration).
  * @param positionMs The player's position, read only when a double-tap or an action lands.
  * @param flipKey Identifies the playing album: a change shows the new album's front.
- * @param back The album's back cover, drawn with the [Modifier] it is handed; null when the album
- *   has none (or it hasn't loaded), and the art then doesn't flip.
+ * @param back The album's back (its cover and the pages inside), drawn with the [Modifier] it is
+ *   handed; null when the album has no back cover (or it hasn't loaded), and the art then doesn't
+ *   flip.
  * @param modifier The cover's shared-element modifier (it morphs into lyrics mode's header cover).
  * @param art The cover itself, drawn with the [Modifier] it is handed.
  */
@@ -106,14 +108,6 @@ internal fun SwipeableArt(
     art: @Composable (Modifier) -> Unit,
 ) {
     val reducedMotion = rememberNpReducedMotion()
-    val swipe = rememberSwipeToSkip(
-        trackKey = trackKey,
-        enabled = gesturesEnabled,
-        canNext = canNext,
-        canPrevious = canPrevious,
-        onNext = onNext,
-        onPrevious = onPrevious,
-    )
 
     // The double-tap handler outlives recompositions (pointerInput keeps its lambda), so what it
     // reads that can change goes through updated state.
@@ -133,6 +127,16 @@ internal fun SwipeableArt(
     fun flip() {
         backUpFor = if (backUpFor == currentFlipKey) null else currentFlipKey
     }
+
+    // No skipping while the back is up: its own swipe turns its pages.
+    val swipe = rememberSwipeToSkip(
+        trackKey = trackKey,
+        enabled = gesturesEnabled && !showBack,
+        canNext = canNext,
+        canPrevious = canPrevious,
+        onNext = onNext,
+        onPrevious = onPrevious,
+    )
 
     // The turn, 0 (front) to 180 (back). A new album starts face up, without turning.
     val turn = remember(flipKey) { Animatable(0f) }

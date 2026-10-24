@@ -49,7 +49,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -163,25 +162,32 @@ fun NowPlayingScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
     // The album's back, once its image is in hand: a tap on the art turns the cover over to it, and
-    // its pill opens the pages inside.
+    // a swipe there turns through the pages inside.
     val coverArt by viewModel.coverArt.collectAsStateWithLifecycle()
     val backCover = rememberLoadedBackCover(coverArt?.back)
     val insidePages = coverArt?.inside.orEmpty()
-    var showInside by remember(insidePages) { mutableStateOf(false) }
     val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages) {
         backCover?.let { loaded ->
             { faceModifier: Modifier ->
-                AlbumBackSection(
-                    back = loaded,
-                    insidePageCount = insidePages.size,
-                    onOpenInside = { showInside = true },
-                    modifier = faceModifier,
-                )
+                if (insidePages.isEmpty()) {
+                    AlbumBackSection(loaded, faceModifier)
+                } else {
+                    com.stash.feature.nowplaying.ui.AlbumPackage(
+                        pageCount = 1 + insidePages.size,
+                        modifier = faceModifier,
+                    ) { index ->
+                        if (index == 0) {
+                            AlbumBackSection(loaded)
+                        } else {
+                            InsidePageSection(
+                                url = insidePages[index - 1],
+                                description = "Inside page $index of ${insidePages.size}",
+                            )
+                        }
+                    }
+                }
             }
         }
-    }
-    if (showInside && insidePages.isNotEmpty()) {
-        com.stash.feature.nowplaying.ui.AlbumInsideViewer(pages = insidePages, onDismiss = { showInside = false })
     }
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
@@ -1530,17 +1536,10 @@ private fun ArtGlow() {
 
 /**
  * The album's back cover, the art's other face: at its own shape (an LP's back is square, a CD's
- * tray card wider than tall), centred in the art's square, with the front's glow and corners. When
- * the album has pages inside, a pill at its foot ("Inside · 8") opens them; its tap is its own, not
- * the art's flip.
+ * tray card wider than tall), centred in the art's square, with the front's glow and corners.
  */
 @Composable
-private fun AlbumBackSection(
-    back: LoadedBackCover,
-    insidePageCount: Int,
-    onOpenInside: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // A sliver of a scan (a spine, a panorama of a gatefold) would read as broken: past these
         // shapes it is cropped to them instead.
@@ -1554,45 +1553,40 @@ private fun AlbumBackSection(
                     .fillMaxSize()
                     .clip(RoundedCornerShape(20.dp)),
             )
-            if (insidePageCount > 0) {
-                InsidePill(
-                    pageCount = insidePageCount,
-                    onClick = onOpenInside,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 14.dp),
-                )
-            }
         }
     }
 }
 
 /**
- * "Inside · 8": opens the pages inside the cover. A dark pill with white text, like the art's seek
- * pill, so it reads on any scan in either theme.
+ * One page inside the album (a booklet page, a gatefold panel, the inner sleeve), drawn like the
+ * back: at its own shape once loaded, centred, with the glow and corners. A quiet tile in the
+ * art's place while it loads or if it can't.
  */
 @Composable
-private fun InsidePill(pageCount: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.Black.copy(alpha = 0.6f))
-            .clickable(onClickLabel = "Open the pages inside", onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "Inside · $pageCount",
-            style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
-        )
+private fun InsidePageSection(url: String, description: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val request = remember(url) { com.stash.feature.nowplaying.ui.backCoverRequest(context, url) }
+    var aspect by remember(url) { mutableStateOf(1f) }
+    val tile = MaterialTheme.colorScheme.surfaceVariant
+    val tilePainter = remember(tile) { ColorPainter(tile) }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.aspectRatio(aspect.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT))) {
+            ArtGlow()
+            AsyncImage(
+                model = request,
+                contentDescription = description,
+                contentScale = ContentScale.Crop,
+                placeholder = tilePainter,
+                error = tilePainter,
+                onSuccess = { state ->
+                    val size = state.painter.intrinsicSize
+                    if (size.width > 0f && size.height > 0f) aspect = size.width / size.height
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(20.dp)),
+            )
+        }
     }
 }
 
