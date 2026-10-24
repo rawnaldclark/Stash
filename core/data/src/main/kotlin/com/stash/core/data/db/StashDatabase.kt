@@ -113,7 +113,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
     ],
-    version = 64,
+    version = 65,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1721,6 +1721,20 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v64 -> v65: Discogs as a second source of backs and inside pages. Two flags,
+         * `album_back_covers.back_from_discogs` and `inside_from_discogs` (0 for every v64 row: all
+         * of it came from the Cover Art Archive), and `discogs_page`, the discogs.com page the
+         * Discogs images come from, which the API terms want linked beside them.
+         */
+        val MIGRATION_64_65 = object : Migration(64, 65) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `album_back_covers` ADD COLUMN `back_from_discogs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `album_back_covers` ADD COLUMN `inside_from_discogs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `album_back_covers` ADD COLUMN `discogs_page` TEXT")
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1821,6 +1835,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_61_62,
                 MIGRATION_62_63,
                 MIGRATION_63_64,
+                MIGRATION_64_65,
             )
         }
     }
