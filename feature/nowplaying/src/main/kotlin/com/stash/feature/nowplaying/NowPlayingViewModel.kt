@@ -20,11 +20,15 @@ import com.stash.core.model.SCANNED_UNKNOWN_ARTIST
 import com.stash.core.model.isScannedSong
 import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.model.Track
+import coil3.SingletonImageLoader
+import com.stash.core.data.backcover.AlbumBackCovers
+import com.stash.core.data.backcover.BackCoverAlbum
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
 import com.stash.feature.nowplaying.ui.LyricsOutputOffset
 import com.stash.feature.nowplaying.ui.LyricsViewState
+import com.stash.feature.nowplaying.ui.backCoverRequest
 import com.stash.feature.nowplaying.ui.clampOutputOffsetMs
 import com.stash.feature.nowplaying.ui.effectiveLyricsOffsetMs
 import com.stash.feature.nowplaying.ui.lyricsPositionMs
@@ -108,6 +112,9 @@ class NowPlayingViewModel @Inject constructor(
     // The output lyrics are heard through and its own lyrics offset (Bluetooth latency). Hilt
     // binds the routed output; tests leave the default, which knows no output.
     private val lyricsOutputOffsets: LyricsOutputOffsets = LyricsOutputOffsets.None,
+    // The album back covers the art flips to. Hilt binds the Cover Art Archive lookup; tests leave
+    // the default, which knows none.
+    private val backCovers: AlbumBackCovers = AlbumBackCovers.None,
 ) : ViewModel() {
 
     /**
@@ -628,6 +635,47 @@ class NowPlayingViewModel @Inject constructor(
         }
     }
 
+    // ── Back cover: a tap on the art turns it over to the album's back ──
+
+    /**
+     * The playing song's album as the back cover lookup knows it, one emission per album. Waits for
+     * Room's answer, as [lyricsTargets] does: the player's own track comes first without the ISRC
+     * the library row holds, which finds the album more surely than its title.
+     */
+    private val backCoverAlbums: Flow<BackCoverAlbum?> = uiState
+        .filter { s -> s.currentTrack == null || s.currentTrackStored != null }
+        .map { s -> s.currentTrack?.let(BackCoverAlbum::of) }
+        .distinctUntilChanged { old, new -> old?.key == new?.key }
+
+    /**
+     * The playing album's back cover (a Cover Art Archive scan's URL), or null when it has none or
+     * it isn't known yet. Now Playing loads the image and turns the art over to it on a tap.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val backCoverUrl: StateFlow<String?> = backCoverAlbums
+        .flatMapLatest { album -> if (album == null) flowOf(null) else backCovers.observe(album) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
+    /**
+     * Looks the playing album's back cover up, and fetches its image, while the app is in the
+     * foreground, after the lyrics prefetch's [PREFETCH_DWELL_MS]: so the flip is ready by the time
+     * Now Playing opens, a skip through a queue looks nothing up, and nothing runs with the screen
+     * off. Once per album: the answer is stored, the image disk-cached, and a skip to another album
+     * cancels the walk (a cancellation is not a failure, so the album isn't held back).
+     */
+    private fun prefetchBackCoverWhileForeground() {
+        viewModelScope.launch {
+            combine(backCoverAlbums, appForeground.foreground) { album, foreground -> album to foreground }
+                .distinctUntilChanged { old, new -> old.first?.key == new.first?.key && old.second == new.second }
+                .collectLatest { (album, foreground) ->
+                    if (!foreground || album == null) return@collectLatest
+                    delay(PREFETCH_DWELL_MS)
+                    val url = backCovers.resolve(album) ?: return@collectLatest
+                    SingletonImageLoader.get(appContext).enqueue(backCoverRequest(appContext, url))
+                }
+        }
+    }
+
     /** The source-chain query for [track]; [trackId] is the row to store under (0 for a stream). */
     private fun lyricsQuery(track: Track, trackId: Long) = LyricsQuery(
         trackId = trackId,
@@ -737,6 +785,7 @@ class NowPlayingViewModel @Inject constructor(
     init {
         observePlayerStateLive()
         prefetchLyricsWhileForeground()
+        prefetchBackCoverWhileForeground()
         observeUserPlaylists()
     }
 

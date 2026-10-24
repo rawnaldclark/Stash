@@ -113,6 +113,23 @@ internal fun doubleTapSeekDirection(xPx: Float, widthPx: Float): Int = when {
 }
 
 /**
+ * True when a tap at [xPx] on an art [widthPx] wide flips the cover the moment it lifts: the album
+ * has a back ([canFlip]) and no double-tap seek can start there, off the seek thirds or with no
+ * seeking at all ([seeks]: a listener, an unknown duration). On a seek third the art must first
+ * wait out the double-tap window ([loneSeekTapFlips]).
+ */
+internal fun flipsOnFirstTap(canFlip: Boolean, seeks: Boolean, xPx: Float, widthPx: Float): Boolean =
+    canFlip && (!seeks || doubleTapSeekDirection(xPx, widthPx) == 0)
+
+/**
+ * True when a lone tap on a seek third, no second tap having come, flips the cover: unless it lands
+ * within [SEEK_BURST_WINDOW_MS] of a double-tap seek ([burst], at [nowMs] on the same clock), where
+ * it reads as one more tap of the run, not a flip.
+ */
+internal fun loneSeekTapFlips(canFlip: Boolean, burst: SeekBurst?, nowMs: Long): Boolean =
+    canFlip && (burst == null || nowMs - burst.atMs !in 0..SEEK_BURST_WINDOW_MS)
+
+/**
  * Double-taps landing within this long of the previous one, the same way, add up ("+20 s"), each
  * starting from the last one's target: the player's reported position lags a seek by a tick or
  * two, and seeking from it again would land the second tap on the first one's spot.

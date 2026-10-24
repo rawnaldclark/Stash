@@ -18,6 +18,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
+import com.stash.core.data.backcover.BackCoverAlbum
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.feature.nowplaying.ui.CompactCover
 import com.stash.feature.nowplaying.ui.LyricsMenuButton
@@ -29,6 +30,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -115,7 +117,9 @@ import com.stash.feature.nowplaying.ui.WithAlbumChrome
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.feature.nowplaying.ui.npInk
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
+import com.stash.feature.nowplaying.ui.LoadedBackCover
 import com.stash.feature.nowplaying.ui.SwipeableArt
+import com.stash.feature.nowplaying.ui.rememberLoadedBackCover
 import com.stash.feature.nowplaying.ui.hasNextInQueue
 import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.sheet.HeroArt
@@ -157,6 +161,12 @@ fun NowPlayingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
+    // The album's back, once its image is in hand: a tap on the art turns the cover over to it.
+    val backCoverUrl by viewModel.backCoverUrl.collectAsStateWithLifecycle()
+    val backCover = rememberLoadedBackCover(backCoverUrl)
+    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover) {
+        backCover?.let { loaded -> { faceModifier: Modifier -> AlbumBackSection(loaded, faceModifier) } }
+    }
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
     val exportingLyricsTrackId by viewModel.exportingLyricsTrackId.collectAsStateWithLifecycle()
@@ -964,7 +974,8 @@ fun NowPlayingScreen(
                                 ) {
                                     // Swipe for the next / previous song, double-tap a side to seek
                                     // 10 s: through the same ViewModel calls as the transport and the
-                                    // progress bar, and off for a listener, as those are.
+                                    // progress bar, and off for a listener, as those are. A tap turns
+                                    // the cover over when the album's back is known.
                                     SwipeableArt(
                                         trackKey = track?.let { it.id to uiState.currentIndex },
                                         gesturesEnabled = track != null && !isListener,
@@ -976,12 +987,14 @@ fun NowPlayingScreen(
                                         onNext = viewModel::onSkipNext,
                                         onPrevious = viewModel::onSwipePrevious,
                                         onSeekTo = viewModel::onSeekTo,
+                                        flipKey = track?.let { BackCoverAlbum.of(it)?.key },
+                                        back = backFace,
                                         modifier = artShared,
-                                    ) { swipeModifier ->
+                                    ) { faceModifier ->
                                         AlbumArtSection(
                                             albumArtUrl = track?.albumArtUrl,
                                             albumArtPath = track?.albumArtPath,
-                                            modifier = swipeModifier,
+                                            modifier = faceModifier,
                                         )
                                     }
                                     if (room != null) {
@@ -1442,18 +1455,13 @@ private fun TrackInfoBlock(
     }
 }
 
-/**
- * Album art with a glow in the album accent behind it (Coil 3 [AsyncImage]). The glow's colour is
- * read in the layer's draw block, so the album colour's crossfade redraws the shadow and never
- * recomposes the art.
- */
+/** Album art with a glow in the album accent behind it ([ArtGlow]; Coil 3 [AsyncImage]). */
 @Composable
 private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     modifier: Modifier = Modifier,
 ) {
-    val chrome = LocalAlbumChrome.current
     val artModel = albumArtPath ?: albumArtUrl
     // An image that cannot load (deleted upstream, a 404, a network failure) must
     // read as "no art" — a quiet tile in the surface tone, same shape as the art —
@@ -1465,22 +1473,7 @@ private fun AlbumArtSection(
     val artRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // Glow behind the artwork.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
-                // Modifier.shadow(40.dp, RoundedCornerShape(20.dp), ...) spelled out, so the
-                // shadow colours are read at draw time.
-                .graphicsLayer {
-                    shadowElevation = 40.dp.toPx()
-                    shape = ArtGlowShape
-                    clip = false
-                    val glow = chrome.accent.copy(alpha = 0.25f)
-                    ambientShadowColor = glow
-                    spotShadowColor = glow
-                },
-        )
+        ArtGlow()
 
         AsyncImage(
             model = artRequest,
@@ -1494,6 +1487,57 @@ private fun AlbumArtSection(
         )
     }
 }
+
+/**
+ * The glow in the album accent behind a face of the art, filling its box. The colour is read in
+ * the layer's draw block, so the album colour's crossfade redraws the shadow and never recomposes.
+ */
+@Composable
+private fun ArtGlow() {
+    val chrome = LocalAlbumChrome.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(10.dp)
+            // Modifier.shadow(40.dp, RoundedCornerShape(20.dp), ...) spelled out, so the
+            // shadow colours are read at draw time.
+            .graphicsLayer {
+                shadowElevation = 40.dp.toPx()
+                shape = ArtGlowShape
+                clip = false
+                val glow = chrome.accent.copy(alpha = 0.25f)
+                ambientShadowColor = glow
+                spotShadowColor = glow
+            },
+    )
+}
+
+/**
+ * The album's back cover, the art's other face: at its own shape (an LP's back is square, a CD's
+ * tray card wider than tall), centred in the art's square, with the front's glow and corners.
+ */
+@Composable
+private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // A sliver of a scan (a spine, a panorama of a gatefold) would read as broken: past these
+        // shapes it is cropped to them instead.
+        Box(modifier = Modifier.aspectRatio(back.aspectRatio.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT))) {
+            ArtGlow()
+            AsyncImage(
+                model = back.request,
+                contentDescription = "Back cover",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(20.dp)),
+            )
+        }
+    }
+}
+
+/** The narrowest and widest a back cover is drawn (width over height). */
+private const val BACK_MIN_ASPECT = 0.6f
+private const val BACK_MAX_ASPECT = 1.7f
 
 /** The album art glow's shape (the art's own corners). */
 private val ArtGlowShape = RoundedCornerShape(20.dp)

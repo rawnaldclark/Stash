@@ -112,4 +112,28 @@ class ArtGestureMathTest {
         val end = nextSeekBurst(null, direction = 1, nowMs = 0L, positionMs = 175_000L, durationMs = 180_000L)
         assertEquals(180_000L, end.targetMs)
     }
+
+    @Test fun `a tap off the seek thirds flips at once, on one waits for a double-tap`() {
+        assertTrue(flipsOnFirstTap(canFlip = true, seeks = true, xPx = 500f, widthPx = 900f))
+        assertFalse(flipsOnFirstTap(canFlip = true, seeks = true, xPx = 100f, widthPx = 900f))
+        assertFalse(flipsOnFirstTap(canFlip = true, seeks = true, xPx = 800f, widthPx = 900f))
+    }
+
+    @Test fun `with no seeking every tap flips at once`() {
+        assertTrue(flipsOnFirstTap(canFlip = true, seeks = false, xPx = 100f, widthPx = 900f))
+        assertTrue(flipsOnFirstTap(canFlip = true, seeks = false, xPx = 800f, widthPx = 900f))
+    }
+
+    @Test fun `an album with no back never flips`() {
+        assertFalse(flipsOnFirstTap(canFlip = false, seeks = false, xPx = 450f, widthPx = 900f))
+        assertFalse(flipsOnFirstTap(canFlip = false, seeks = true, xPx = 450f, widthPx = 900f))
+        assertFalse(loneSeekTapFlips(canFlip = false, burst = null, nowMs = 0L))
+    }
+
+    @Test fun `a lone tap on a seek third flips, unless it follows a seek run`() {
+        assertTrue(loneSeekTapFlips(canFlip = true, burst = null, nowMs = 5_000L))
+        val run = nextSeekBurst(null, direction = 1, nowMs = 5_000L, positionMs = 30_000L, durationMs = 180_000L)
+        assertFalse(loneSeekTapFlips(canFlip = true, burst = run, nowMs = 5_000L + SEEK_BURST_WINDOW_MS))
+        assertTrue(loneSeekTapFlips(canFlip = true, burst = run, nowMs = 5_000L + SEEK_BURST_WINDOW_MS + 1))
+    }
 }
