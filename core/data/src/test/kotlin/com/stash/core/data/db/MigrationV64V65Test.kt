@@ -40,12 +40,24 @@ class MigrationV64V65Test {
                 "INSERT INTO album_back_covers (album_key, image_url, release_mbid, attempted_at, inside_urls) " +
                     "VALUES ('nirvana\u001Fnevermind', 'https://caa/back.jpg', 'r', 1, 'https://caa/p1.jpg')",
             )
+            db.execSQL(
+                "INSERT INTO album_back_covers (album_key, image_url, release_mbid, attempted_at, inside_urls) " +
+                    "VALUES ('beatles\u001Fhelp', 'https://caa/help.jpg', 'r', 1, '')",
+            )
         }
 
         val db = helper.runMigrationsAndValidate(DB_NAME, 65, true, StashDatabase.MIGRATION_64_65)
 
+        db.query("SELECT album_key, attempted_at FROM album_back_covers ORDER BY album_key").use { c ->
+            // Nothing inside on the archive: due again, for Discogs. A full row keeps its time.
+            assertTrue(c.moveToFirst())
+            assertEquals(0L, c.getLong(1))
+            assertTrue(c.moveToNext())
+            assertEquals(1L, c.getLong(1))
+        }
         db.query(
-            "SELECT image_url, inside_urls, back_from_discogs, inside_from_discogs, discogs_page FROM album_back_covers",
+            "SELECT image_url, inside_urls, back_from_discogs, inside_from_discogs, discogs_page FROM album_back_covers " +
+                "WHERE album_key LIKE 'nirvana%'",
         ).use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("https://caa/back.jpg", c.getString(0))
