@@ -166,22 +166,25 @@ fun NowPlayingScreen(
     val coverArt by viewModel.coverArt.collectAsStateWithLifecycle()
     val backCover = rememberLoadedBackCover(coverArt?.back)
     val insidePages = coverArt?.inside.orEmpty()
-    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages) {
+    // A page pinched off the art, held up over the whole screen.
+    val pageZoom = com.stash.feature.nowplaying.ui.rememberPageZoom(track?.let { BackCoverAlbum.of(it)?.key })
+    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages, pageZoom) {
         backCover?.let { loaded ->
             { faceModifier: Modifier ->
                 if (insidePages.isEmpty()) {
-                    AlbumBackSection(loaded, faceModifier)
+                    AlbumBackSection(loaded, pageZoom, faceModifier)
                 } else {
                     com.stash.feature.nowplaying.ui.AlbumPackage(
                         pageCount = 1 + insidePages.size,
                         modifier = faceModifier,
                     ) { index ->
                         if (index == 0) {
-                            AlbumBackSection(loaded)
+                            AlbumBackSection(loaded, pageZoom)
                         } else {
                             InsidePageSection(
                                 url = insidePages[index - 1],
                                 description = "Inside page $index of ${insidePages.size}",
+                                zoom = pageZoom,
                             )
                         }
                     }
@@ -1205,6 +1208,7 @@ fun NowPlayingScreen(
             }
         }
         if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
+        com.stash.feature.nowplaying.ui.PageZoomLayer(pageZoom)
     }
 
     if (showOptionsSheet && track != null) WithAlbumChrome { sheetChrome ->
@@ -1539,11 +1543,22 @@ private fun ArtGlow() {
  * tray card wider than tall), centred in the art's square, with the front's glow and corners.
  */
 @Composable
-private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifier) {
+private fun AlbumBackSection(
+    back: LoadedBackCover,
+    zoom: com.stash.feature.nowplaying.ui.PageZoom,
+    modifier: Modifier = Modifier,
+) {
+    val lifted = remember(back) {
+        com.stash.feature.nowplaying.ui.LiftedPage(back.request.data.toString(), back.request, "Back cover")
+    }
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // A sliver of a scan (a spine, a panorama of a gatefold) would read as broken: past these
         // shapes it is cropped to them instead.
-        Box(modifier = Modifier.aspectRatio(back.aspectRatio.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT))) {
+        com.stash.feature.nowplaying.ui.LiftablePage(
+            zoom = zoom,
+            page = lifted,
+            modifier = Modifier.aspectRatio(back.aspectRatio.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT)),
+        ) {
             ArtGlow()
             AsyncImage(
                 model = back.request,
@@ -1563,14 +1578,19 @@ private fun AlbumBackSection(back: LoadedBackCover, modifier: Modifier = Modifie
  * art's place while it loads or if it can't.
  */
 @Composable
-private fun InsidePageSection(url: String, description: String) {
+private fun InsidePageSection(url: String, description: String, zoom: com.stash.feature.nowplaying.ui.PageZoom) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val request = remember(url) { com.stash.feature.nowplaying.ui.backCoverRequest(context, url) }
+    val lifted = remember(request, description) { com.stash.feature.nowplaying.ui.LiftedPage(url, request, description) }
     var aspect by remember(url) { mutableStateOf(1f) }
     val tile = MaterialTheme.colorScheme.surfaceVariant
     val tilePainter = remember(tile) { ColorPainter(tile) }
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Box(modifier = Modifier.aspectRatio(aspect.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT))) {
+        com.stash.feature.nowplaying.ui.LiftablePage(
+            zoom = zoom,
+            page = lifted,
+            modifier = Modifier.aspectRatio(aspect.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT)),
+        ) {
             ArtGlow()
             AsyncImage(
                 model = request,
