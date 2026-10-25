@@ -51,7 +51,7 @@ data class SettingsUiState(
     /** Ambient animated background on the Now Playing screen. */
     val ambientAnimationEnabled: Boolean = true,
     /** Settings > Appearance > Cycle album art. */
-    val cycleAlbumArt: Boolean = false,
+    val cycleAlbumArt: Boolean = true,
     /** How that background moves: Soft glow (default) or Classic. */
     val ambientStyle: com.stash.core.data.prefs.AmbientStyle = com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW,
     /** Full Home-section order (including hidden) + the hidden set —

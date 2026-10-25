@@ -40,9 +40,9 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     /**
      * Settings > Appearance > Cycle album art: Now Playing's art turns slowly through the album's
-     * back and inside pages, when it has them. Off unless turned on.
+     * back and inside pages, when it has them. On unless turned off.
      */
-    val cycleAlbumArt = context.nowPlayingDataStore.data.map { it[cycleAlbumArtKey] ?: false }
+    val cycleAlbumArt = context.nowPlayingDataStore.data.map { it[cycleAlbumArtKey] ?: true }
 
     suspend fun setCycleAlbumArt(enabled: Boolean) {
         context.nowPlayingDataStore.edit { it[cycleAlbumArtKey] = enabled }
