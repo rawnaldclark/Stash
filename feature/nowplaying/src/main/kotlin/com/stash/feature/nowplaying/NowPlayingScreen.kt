@@ -166,8 +166,9 @@ fun NowPlayingScreen(
     val coverArt by viewModel.coverArt.collectAsStateWithLifecycle()
     val backCover = rememberLoadedBackCover(coverArt?.back)
     val insidePages = coverArt?.inside.orEmpty()
-    // A page pinched off the art, held up over the whole screen.
-    val pageZoom = com.stash.feature.nowplaying.ui.rememberPageZoom(track?.let { BackCoverAlbum.of(it)?.key })
+    // A page (or the front) pinched off the art, held up over the whole screen: put back by a new
+    // album, or a new song when there is no album to go by.
+    val pageZoom = com.stash.feature.nowplaying.ui.rememberPageZoom(track?.let { BackCoverAlbum.of(it)?.key ?: it.id })
     val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages, pageZoom) {
         backCover?.let { loaded ->
             { faceModifier: Modifier ->
@@ -1019,6 +1020,7 @@ fun NowPlayingScreen(
                                         AlbumArtSection(
                                             albumArtUrl = track?.albumArtUrl,
                                             albumArtPath = track?.albumArtPath,
+                                            zoom = pageZoom,
                                             modifier = faceModifier,
                                         )
                                     }
@@ -1486,6 +1488,7 @@ private fun TrackInfoBlock(
 private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
+    zoom: com.stash.feature.nowplaying.ui.PageZoom,
     modifier: Modifier = Modifier,
 ) {
     val artModel = albumArtPath ?: albumArtUrl
@@ -1498,7 +1501,16 @@ private fun AlbumArtSection(
     // Shared with lyrics mode's compact cover: one fixed decode (see rememberNpArtRequest).
     val artRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
 
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    // Pinched, the front lifts off to the whole screen like the pages inside.
+    val lifted = remember(artRequest) {
+        artModel?.let { com.stash.feature.nowplaying.ui.LiftedPage("front:$it", artRequest, "Album art") }
+    }
+    com.stash.feature.nowplaying.ui.LiftablePage(
+        zoom = zoom,
+        page = lifted,
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
         ArtGlow()
 
         AsyncImage(

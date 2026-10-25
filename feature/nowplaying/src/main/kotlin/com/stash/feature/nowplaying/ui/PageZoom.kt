@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -187,23 +188,25 @@ internal fun rememberPageZoom(key: Any?): PageZoom {
 }
 
 /**
- * A page on the art that two fingers lift off it into [zoom]'s layer. While it is held up, its
- * place on the art is left empty. One finger is left alone, for the pages to turn and the art to
- * flip.
+ * A page on the art (or the front itself) that two fingers lift off it into [zoom]'s layer. While
+ * it is held up, its place on the art is left empty. One finger is left alone, for the pages to
+ * turn, the songs to skip and the art to flip. A null [page] (no image) stays put.
  */
 @Composable
 internal fun LiftablePage(
     zoom: PageZoom,
-    page: LiftedPage,
+    page: LiftedPage?,
     modifier: Modifier = Modifier,
+    contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val bounds = remember { arrayOf(Rect.Zero) }
     Box(
         modifier = modifier
             .onGloballyPositioned { bounds[0] = it.boundsInWindow() }
-            .graphicsLayer { alpha = if (zoom.page?.key == page.key) 0f else 1f }
-            .pointerInput(zoom, page.key) {
+            .graphicsLayer { alpha = if (page != null && zoom.page?.key == page.key) 0f else 1f }
+            .pointerInput(zoom, page?.key) {
+                if (page == null) return@pointerInput
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     var lifted = false
@@ -224,6 +227,7 @@ internal fun LiftablePage(
                     if (lifted) zoom.release(fromArt = true)
                 }
             },
+        contentAlignment = contentAlignment,
         content = content,
     )
 }
