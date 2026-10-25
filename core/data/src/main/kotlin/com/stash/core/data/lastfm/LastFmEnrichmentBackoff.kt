@@ -66,6 +66,12 @@ class LastFmEnrichmentBackoff internal constructor(
          * files and the batch is 500.
          */
         ART_BACKFILL(stringSetPreferencesKey("art_backfill"), LastFmCachedMiss.TTL_MS, 2_000),
+
+        /**
+         * ArtBackfillWorker's album pass: rows Last.fm names no album for. More entries: a
+         * library's songs without an album run to thousands.
+         */
+        ALBUM_BACKFILL(stringSetPreferencesKey("album_backfill"), LastFmCachedMiss.TTL_MS, 8_000),
     }
 
     /**

@@ -47,6 +47,12 @@ import kotlinx.coroutines.delay
  * ## Pass 3 — stream-only stubs
  * One `track.getInfo` per stub fills art and duration together.
  *
+ * ## Pass 4 — `album`
+ * Rows with no album (a Last.fm playlist's or a mix's songs arrive with only a
+ * title and an artist) get the album `track.getInfo` names, filled only where
+ * blank. Passes 1 and 3 fill it too from their own lookups; a row any pass
+ * already asked about this run is not asked again.
+ *
  * ## Keeping the Last.fm traffic to what can fill something
  * This worker was most of the Last.fm proxy's traffic: it re-asked about the
  * same unfillable rows (voice notes, "Unknown Artist" files, deep cuts) on
@@ -138,6 +144,7 @@ class ArtBackfillWorker @AssistedInject constructor(
             trackDao.findArtBackfillCandidates(1).firstOrNull()?.id,
             trackDao.findDurationBackfillCandidates(1).firstOrNull()?.id,
             trackDao.findStreamableMetadataBackfillCandidates(1).firstOrNull()?.id,
+            trackDao.findAlbumBackfillCandidates(1).firstOrNull()?.id,
         ).maxOrNull()
         val state = schedule.read()
         if (!ArtBackfillSchedule.shouldRun(state, newest, startedAt)) {
@@ -148,9 +155,11 @@ class ArtBackfillWorker @AssistedInject constructor(
         // next cold start redo it at once (its rows come back after the interval).
         schedule.recordRun(startedAt, newest ?: 0L)
         stats = Stats()
+        askedThisRun.clear()
         runArtPass(startedAt)
         runDurationPass()
         runStreamableMetadataPass(startedAt)
+        runAlbumPass(startedAt)
         Log.i(
             TAG,
             "run done: lastfm network=${stats.network} cached=${stats.cached} " +
@@ -168,6 +177,9 @@ class ArtBackfillWorker @AssistedInject constructor(
     }
 
     private var stats = Stats()
+
+    /** This run's lookups by (artist, title): a row two passes look at is asked about once. */
+    private val askedThisRun = mutableMapOf<Pair<String, String>, LookupResult>()
 
     /** What a `track.getInfo` lookup for one row came to. */
     private enum class Lookup {
@@ -190,6 +202,11 @@ class ArtBackfillWorker @AssistedInject constructor(
      * ([com.stash.core.data.lastfm.LastFmCachedMiss]).
      */
     private suspend fun lookUp(artist: String, title: String): LookupResult {
+        askedThisRun[artist to title]?.let { return LookupResult(it.info, it.kind, fromNetwork = false) }
+        return lookUpOnce(artist, title).also { askedThisRun[artist to title] = it }
+    }
+
+    private suspend fun lookUpOnce(artist: String, title: String): LookupResult {
         if (LastFmLookupRules.isUnlookable(artist, title)) {
             stats.unlookable++
             return LookupResult(null, Lookup.UNLOOKABLE, fromNetwork = false)
@@ -238,6 +255,7 @@ class ArtBackfillWorker @AssistedInject constructor(
         var transientInARow = 0
         for (row in candidates) {
             val lookup = if (lastFmUsable) lookUp(row.artist, row.title) else null
+            lookup?.info?.let { fillAlbum(row.id, it) }
             val artUrl = lookup?.info?.bestImageUrl?.takeIf { it.isNotBlank() } ?: youTubeArt(row.youtubeId)
             if (artUrl != null) {
                 runCatching { trackDao.fillMissingAlbumArtUrl(row.id, artUrl) }
@@ -347,6 +365,7 @@ class ArtBackfillWorker @AssistedInject constructor(
             }
             transientInARow = 0
             val info = lookup.info
+            info?.let { fillAlbum(row.id, it) }
             val art = info?.bestImageUrl?.takeIf { it.isNotBlank() }
             val ms = info?.durationMs?.takeIf { it > 0 }
             art?.let { artUrl ->
@@ -374,6 +393,53 @@ class ArtBackfillWorker @AssistedInject constructor(
             "stream-only backfill done: art=$artFilled duration=$durationFilled " +
                 "incomplete=${unfillable.size} (backed off)",
         )
+    }
+
+    /** Fills [trackId]'s album from [info] where it has none; true when there was one to fill. */
+    private suspend fun fillAlbum(trackId: Long, info: LastFmTrackInfo): Boolean {
+        val album = info.albumTitle ?: return false
+        runCatching { trackDao.fillMissingAlbum(trackId, album, info.albumArtist.orEmpty()) }
+            .onFailure { e ->
+                if (e is CancellationException) throw e
+                Log.w(TAG, "fillMissingAlbum failed for trackId=$trackId", e)
+            }
+        return true
+    }
+
+    /**
+     * Pass 4: rows with no album get the one Last.fm names. Rows passes 1 and 3
+     * asked about this run cost nothing here; the rest are rate-limited like
+     * [runArtPass]. A row Last.fm names no album for waits out
+     * [LastFmEnrichmentBackoff.Pass.ALBUM_BACKFILL]; five transient failures in
+     * a row end the pass.
+     */
+    private suspend fun runAlbumPass(startedAt: Long) {
+        if (!credentials.isConfigured) return
+        val candidates = backoff.candidateRows(
+            LastFmEnrichmentBackoff.Pass.ALBUM_BACKFILL, BATCH_SIZE, startedAt, { it.id },
+        ) { limit -> trackDao.findAlbumBackfillCandidates(limit) }
+        if (candidates.isEmpty()) {
+            Log.d(TAG, "no tracks need an album")
+            return
+        }
+        var filled = 0
+        val unfillable = mutableListOf<Long>()
+        var transientInARow = 0
+        for (row in candidates) {
+            val lookup = lookUp(row.artist, row.title)
+            if (lookup.fromNetwork) delay(REQUEST_INTERVAL_MS)
+            if (lookup.kind == Lookup.TRANSIENT) {
+                if (++transientInARow >= MAX_TRANSIENT_IN_A_ROW) {
+                    Log.w(TAG, "album pass: $transientInARow Last.fm failures in a row; stopping")
+                    break
+                }
+                continue
+            }
+            transientInARow = 0
+            if (lookup.info?.let { fillAlbum(row.id, it) } == true) filled++ else unfillable += row.id
+        }
+        backoff.recordFailures(LastFmEnrichmentBackoff.Pass.ALBUM_BACKFILL, unfillable, startedAt)
+        Log.i(TAG, "album backfill done: filled=$filled unknown=${unfillable.size} (backed off)")
     }
 
     /** The YouTube still for a row with a real video id, else null. */

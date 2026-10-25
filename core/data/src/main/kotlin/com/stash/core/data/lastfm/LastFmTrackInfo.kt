@@ -27,6 +27,9 @@ data class LastFmTrackInfo(
     val userLoved: Boolean?,
     val bestImageUrl: String?,
     val tags: List<TagCount>,
+    /** The album Last.fm puts the track on, and that album's artist; null when it names none. */
+    val albumTitle: String? = null,
+    val albumArtist: String? = null,
 ) {
     data class TagCount(val name: String, val count: Int)
 
@@ -42,8 +45,13 @@ data class LastFmTrackInfo(
             val userPlaycount = track["userplaycount"]?.jsonPrimitive?.intOrNull
             val userLovedRaw = track["userloved"]?.jsonPrimitive?.contentOrNull
             val userLoved = userLovedRaw?.let { it == "1" }
-            val image = parseBestImage(track["album"]?.jsonObject)
+            val album = track["album"] as? JsonObject
+            val image = parseBestImage(album)
             val tags = parseTopTags(track["toptags"]?.jsonObject)
+            val albumTitle = (album?.get("title") as? kotlinx.serialization.json.JsonPrimitive)
+                ?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            val albumArtist = (album?.get("artist") as? kotlinx.serialization.json.JsonPrimitive)
+                ?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
 
             return LastFmTrackInfo(
                 mbid = mbid,
@@ -54,6 +62,8 @@ data class LastFmTrackInfo(
                 userLoved = userLoved,
                 bestImageUrl = image,
                 tags = tags,
+                albumTitle = albumTitle,
+                albumArtist = albumArtist,
             )
         }
 

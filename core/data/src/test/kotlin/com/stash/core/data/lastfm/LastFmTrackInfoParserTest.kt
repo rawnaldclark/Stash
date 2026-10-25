@@ -44,6 +44,21 @@ class LastFmTrackInfoParserTest {
     }
 
     @Test
+    fun `the album a track is on is read, and none is null`() {
+        val police = """
+            {"track":{"name":"Police Truck","artist":{"name":"Dead Kennedys"},
+                "album":{"artist":"Dead Kennedys","title":"Give Me Convenience or Give Me Death","image":[]}}}
+        """.trimIndent()
+        val info = LastFmTrackInfo.parse(Json.parseToJsonElement(police))
+        assertEquals("Give Me Convenience or Give Me Death", info.albumTitle)
+        assertEquals("Dead Kennedys", info.albumArtist)
+
+        val noAlbum = LastFmTrackInfo.parse(Json.parseToJsonElement(sample))
+        assertNull(noAlbum.albumTitle)
+        assertNull(noAlbum.albumArtist)
+    }
+
+    @Test
     fun `parse handles missing user fields when no username supplied`() {
         val withoutUser = """
             {"track":{"name":"x","artist":{"name":"y"},

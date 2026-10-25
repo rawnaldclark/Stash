@@ -2561,6 +2561,38 @@ interface TrackDao {
     suspend fun findStreamableMetadataBackfillCandidates(limit: Int): List<StreamableBackfillRow>
 
     /**
+     * Rows with no album, newest first: a Last.fm playlist's or a mix's songs arrive with only a
+     * title and an artist. `ArtBackfillWorker` fills them from Last.fm ([fillMissingAlbum]).
+     */
+    @Query(
+        """
+        SELECT id, artist, title
+        FROM tracks
+        WHERE (album IS NULL OR album = '')
+          AND artist != ''
+          AND title != ''
+        ORDER BY id DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun findAlbumBackfillCandidates(limit: Int): List<StreamableBackfillRow>
+
+    /**
+     * A row's album (and album artist, if it has none) where it has no album: never over one a
+     * source or a file's tags gave.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET album = :album,
+            album_artist = CASE WHEN album_artist IS NULL OR album_artist = '' THEN :albumArtist ELSE album_artist END
+        WHERE id = :trackId
+          AND (album IS NULL OR album = '')
+        """
+    )
+    suspend fun fillMissingAlbum(trackId: Long, album: String, albumArtist: String)
+
+    /**
      * Atomically reverts a track to an undownloaded state so the download
      * pipeline will re-resolve + re-fetch it. Used by the YT-library
      * backfill worker to force canonicalization on tracks whose videoId

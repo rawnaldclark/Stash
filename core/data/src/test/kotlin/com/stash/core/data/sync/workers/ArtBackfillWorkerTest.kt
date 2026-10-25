@@ -96,9 +96,10 @@ class ArtBackfillWorkerTest {
         })
         .build()
 
-    private fun info(image: String?, durationMs: Long?) = LastFmTrackInfo(
+    private fun info(image: String?, durationMs: Long?, album: String? = null) = LastFmTrackInfo(
         mbid = null, durationMs = durationMs, listeners = 0, playcount = 0,
         userPlaycount = null, userLoved = null, bestImageUrl = image, tags = emptyList(),
+        albumTitle = album, albumArtist = album?.let { "Album Artist" },
     )
 
     private suspend fun downloaded(artist: String, title: String, youtubeId: String? = null): Long =
@@ -129,6 +130,37 @@ class ArtBackfillWorkerTest {
         assertThat(art(deepCut)).isEqualTo("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg")
         assertThat(art(voiceNote)).isNull()
         assertThat(backoff.backedOff(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, now)).containsExactly(voiceNote)
+    }
+
+    @Test fun `a song with no album gets Last fm's, asked about once, and an album it has is kept`() = runBlocking<Unit> {
+        // Already has art and a duration: only the album pass looks at it.
+        val bare = db.trackDao().insertAll(
+            listOf(
+                TrackEntity(
+                    title = "Roygbiv", artist = "Boards of Canada", isStreamable = true,
+                    albumArtUrl = "https://img/mhtrtc.png", durationMs = 139_000,
+                ),
+            ),
+        ).single()
+        // A stub the stream-only pass asks about: the album pass reuses that answer.
+        val stub = stub("Dead Kennedys", "Police Truck")
+        val tagged = db.trackDao().insertAll(
+            listOf(TrackEntity(title = "Kid A", artist = "Radiohead", album = "Kid A", isStreamable = true, albumArtUrl = "https://img/kida.png", durationMs = 1)),
+        ).single()
+        answers["Boards of Canada" to "Roygbiv"] = Result.success(info(null, null, album = "Music Has the Right to Children"))
+        answers["Dead Kennedys" to "Police Truck"] =
+            Result.success(info("https://img/gmc.png", 170_000, album = "Give Me Convenience or Give Me Death"))
+        answers["Radiohead" to "Kid A"] = Result.success(info(null, null, album = "Some Compilation"))
+
+        worker().doWork()
+
+        val dao = db.trackDao()
+        assertThat(dao.getById(bare)!!.album).isEqualTo("Music Has the Right to Children")
+        assertThat(dao.getById(bare)!!.albumArtist).isEqualTo("Album Artist")
+        assertThat(dao.getById(stub)!!.album).isEqualTo("Give Me Convenience or Give Me Death")
+        assertThat(dao.getById(tagged)!!.album).isEqualTo("Kid A")
+        assertThat(asked.count { it == ("Dead Kennedys" to "Police Truck") }).isEqualTo(1)
+        assertThat(asked).doesNotContain("Radiohead" to "Kid A")
     }
 
     @Test fun `a second run with nothing new asks nothing`() = runBlocking<Unit> {
