@@ -58,6 +58,8 @@ class AlbumBackCoverRepositoryTest {
         val releases: List<Pair<String, String>> = listOf("cd-1" to "CD", "vinyl-1" to "12\" Vinyl"),
         /** The Discogs master the release group links to; none by default. */
         val discogsMaster: Long? = null,
+        /** The Discogs releases the group's releases link to, by MusicBrainz release; none by default. */
+        val discogsReleases: Map<String, Long> = emptyMap(),
     ) : MusicBrainzClient {
         var calls = 0
         var browses = 0
@@ -94,7 +96,10 @@ class AlbumBackCoverRepositoryTest {
             calls++
             browses++
             if (failing) return null
-            val items = releases.joinToString(",") { (id, format) -> """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}]}""" }
+            val items = releases.joinToString(",") { (id, format) ->
+                val rel = discogsReleases[id]?.let { """{"type":"discogs","url":{"resource":"https://www.discogs.com/release/$it"}}""" }
+                """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}],"relations":[${rel.orEmpty()}]}"""
+            }
             return json("""{"releases":[$items]}""")
         }
 
@@ -455,6 +460,20 @@ class AlbumBackCoverRepositoryTest {
         val row = dao.get(NEVERMIND.key)!!
         assertThat(row.releaseMbid).isNull()
         assertThat(row.backFromDiscogs).isTrue()
+    }
+
+    @Test fun `with no Discogs link on the album, a release's link finds it`() = runTest {
+        // On Top (Four Tops): the group links no master; its vinyl links its Discogs release.
+        val mb = FakeMusicBrainz(discogsReleases = mapOf("vinyl-1" to 77L))
+        val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front())))
+        val discogs = FakeDiscogs(vinyl())
+
+        val art = repo(mb = mb, caa = caa, discogs = discogs).resolve(NEVERMIND)!!
+
+        assertThat(art.back).isEqualTo("https://i.discogs.com/1.jpeg")
+        assertThat(art.backFromDiscogs).isTrue()
+        assertThat(art.inside).isNotEmpty()
+        assertThat(art.discogsPage).isNotNull()
     }
 
     @Test fun `what came from Discogs is forgotten after six hours, the archive's part kept, and looked up again`() = runTest {

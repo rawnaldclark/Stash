@@ -44,6 +44,8 @@ data class DiscogsRelease(
     val formats: List<String>,
     val formatText: String,
     val page: String?,
+    /** The master it is a version of; null for a release on its own. */
+    val masterId: Long? = null,
 )
 
 /** One version (release) of a Discogs master, from its versions list. */
@@ -55,7 +57,8 @@ class Pixels(val width: Int, val height: Int, val argb: IntArray)
 /**
  * Discogs' database (api.discogs.com). A master's versions and a release's images need no key, nor
  * do the image URLs on i.discogs.com (measured 2026-10-24). Search does, so the lookup reaches
- * Discogs only through MusicBrainz's link from a release group to its Discogs master.
+ * Discogs only through MusicBrainz's links: a release group's to its Discogs master, else a
+ * release's to its Discogs release.
  */
 interface DiscogsClient {
     /** The first 100 versions of a master in [format] ("Vinyl", "CD"); empty when it has none, null on failure. */
@@ -180,6 +183,7 @@ internal fun parseDiscogsRelease(body: JsonObject): DiscogsRelease? {
         formats = formats.mapNotNull { it.string("name") },
         formatText = formats.mapNotNull { it.string("text") }.joinToString(", "),
         page = body.string("uri")?.takeIf { it.startsWith("https://www.discogs.com/") },
+        masterId = (body["master_id"] as? JsonPrimitive)?.longOrNull?.takeIf { it > 0 },
     )
 }
 

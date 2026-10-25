@@ -38,6 +38,26 @@ internal fun discogsMasterId(rels: JsonObject): Long? =
 private val DISCOGS_MASTER = Regex("""^https?://(?:www\.)?discogs\.com/master/(\d+)""")
 
 /**
+ * The Discogs releases a release group's releases link to, best for a back first (vinyl, then CD:
+ * [rankReleasesForBack]), from a browse with `inc=url-rels`. Many older albums link Discogs only
+ * from their releases, not from the group (On Top, Four Tops, 2026-10-25).
+ */
+internal fun discogsReleaseIds(releases: JsonObject): List<Long> {
+    val linked = (releases["releases"] as? JsonArray).orEmpty().mapNotNull { el ->
+        val release = el as? JsonObject ?: return@mapNotNull null
+        val mbid = (release["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+        val discogs = (release["relations"] as? JsonArray).orEmpty().firstNotNullOfOrNull { rel ->
+            val url = (((rel as? JsonObject)?.get("url") as? JsonObject)?.get("resource") as? JsonPrimitive)?.content
+            url?.let { DISCOGS_RELEASE.find(it)?.groupValues?.get(1)?.toLongOrNull() }
+        } ?: return@mapNotNull null
+        mbid to discogs
+    }.toMap()
+    return rankReleasesForBack(releases).mapNotNull { linked[it] }.distinct()
+}
+
+private val DISCOGS_RELEASE = Regex("""^https?://(?:www\.)?discogs\.com/release/(\d+)""")
+
+/**
  * The version of an album whose images are read: the Accepted one the most Discogs users own (the
  * best-photographed, and the pressing most people have), among [versions]. Null when none.
  */

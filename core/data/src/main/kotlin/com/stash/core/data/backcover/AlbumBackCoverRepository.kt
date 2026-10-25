@@ -3,6 +3,7 @@ package com.stash.core.data.backcover
 import com.stash.core.data.db.dao.AlbumBackCoverDao
 import com.stash.core.data.db.entity.AlbumBackCoverEntity
 import com.stash.core.data.musicbrainz.MusicBrainzClient
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -190,7 +191,7 @@ class AlbumBackCoverRepository @Inject constructor(
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
         val cover = coverArt.releaseGroup(group) ?: throw LookupFailed()
         // No art at all on the archive: Discogs alone.
-        if (cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null)
+        if (cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null, null)
 
         var back: Found? = null
         var inside: List<String>? = null
@@ -235,7 +236,7 @@ class AlbumBackCoverRepository @Inject constructor(
             if (done()) break
         }
         if (!answered && (main != null || candidates.isNotEmpty())) throw LookupFailed()
-        return withDiscogs(group, back, inside)
+        return withDiscogs(group, releases, back, inside)
     }
 
     /**
@@ -243,9 +244,9 @@ class AlbumBackCoverRepository @Inject constructor(
      * missing. Throws [LookupFailed] when MusicBrainz or Discogs fails: a back already found was
      * stored by then ([lookUp]'s onBack), and the rest is tried again after the backoff.
      */
-    private suspend fun withDiscogs(group: String, back: Found?, inside: List<String>?): Walk {
+    private suspend fun withDiscogs(group: String, releases: JsonObject?, back: Found?, inside: List<String>?): Walk {
         if (back != null && inside != null) return Walk(back, inside)
-        val found = discogsArt(group)
+        val found = discogsArt(group, releases)
         val discogsBack = found?.back?.takeIf { back == null }
         val discogsInside = found?.inside?.takeIf { inside == null && it.isNotEmpty() }
         return Walk(
@@ -258,19 +259,33 @@ class AlbumBackCoverRepository @Inject constructor(
     }
 
     /**
-     * The album on Discogs: the release group's Discogs master (from its MusicBrainz links), that
-     * master's most-collected vinyl, else CD ([mostCollected]), and from its images the back
-     * ([discogsBackIndex]) and the rest ([discogsInside]). Null when the group has no Discogs link
-     * or the master no physical release. One MusicBrainz call and two or three Discogs calls, plus
-     * two thumbnails when the back is in doubt ([needsSeamCheck]). Throws [LookupFailed].
+     * The album on Discogs: its Discogs master, that master's most-collected vinyl, else CD
+     * ([mostCollected]), and from its images the back ([discogsBackIndex]) and the rest
+     * ([discogsInside]). The master is the release group's MusicBrainz link, else the master of a
+     * Discogs release one of the group's [releases] links to ([discogsReleaseIds]; browsed here when
+     * the walk didn't), else that release alone. Null when nothing links to Discogs or the master
+     * has no physical release. Two MusicBrainz calls at most and two to four Discogs calls, plus two
+     * thumbnails when the back is in doubt ([needsSeamCheck]). Throws [LookupFailed].
      */
-    private suspend fun discogsArt(group: String): DiscogsArt? {
+    private suspend fun discogsArt(group: String, releases: JsonObject?): DiscogsArt? {
         val rels = musicBrainz.releaseGroupUrlRels(group) ?: throw LookupFailed()
-        val master = discogsMasterId(rels) ?: return null
+        var linked: DiscogsRelease? = null
+        val master = discogsMasterId(rels) ?: run {
+            val all = releases ?: musicBrainz.browseReleases(group) ?: throw LookupFailed()
+            val id = discogsReleaseIds(all).firstOrNull() ?: return null
+            val release = discogs.release(id) ?: throw LookupFailed()
+            linked = release
+            release.masterId ?: return artOf(release)
+        }
         val id = mostCollected(discogs.versions(master, "Vinyl") ?: throw LookupFailed())
             ?: mostCollected(discogs.versions(master, "CD") ?: throw LookupFailed())
-            ?: return null
-        val release = discogs.release(id) ?: throw LookupFailed()
+            ?: return linked?.let { artOf(it) }
+        val release = linked?.takeIf { it.id == id } ?: discogs.release(id) ?: throw LookupFailed()
+        return artOf(release)
+    }
+
+    /** A Discogs release's back and inside pages, and its page. Throws [LookupFailed]. */
+    private suspend fun artOf(release: DiscogsRelease): DiscogsArt {
         val halvesJoin = needsSeamCheck(release) && run {
             val left = discogs.pixels(release.images[1].thumb!!) ?: throw LookupFailed()
             val right = discogs.pixels(release.images[2].thumb!!) ?: throw LookupFailed()

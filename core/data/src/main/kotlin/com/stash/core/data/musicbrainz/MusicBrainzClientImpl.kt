@@ -72,7 +72,7 @@ class MusicBrainzClientImpl @Inject constructor(
     }
 
     override suspend fun browseReleases(releaseGroupId: String): JsonObject? =
-        getOrNull("release?release-group=$releaseGroupId&status=official&inc=media&limit=100&fmt=json")
+        getOrNull("release?release-group=$releaseGroupId&status=official&inc=media+url-rels&limit=100&fmt=json")
 
     override suspend fun releaseGroupUrlRels(releaseGroupId: String): JsonObject? =
         getOrNull("release-group/$releaseGroupId?inc=url-rels&fmt=json")
