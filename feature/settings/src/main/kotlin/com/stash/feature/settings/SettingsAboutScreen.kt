@@ -87,6 +87,17 @@ fun SettingsAboutScreen(
                 { SettingsInfoRow(label = stringResource(R.string.settings_version_label), value = installedVersion) },
                 { SettingsInfoRow(label = stringResource(R.string.settings_license_label), value = "GPL-3.0") },
                 {
+                    // Discogs' API terms ask for this notice wherever its data is used.
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_album_art_credit),
+                        subtitle = stringResource(R.string.settings_album_art_credit_detail),
+                        onClick = {
+                            val open = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.discogs.com"))
+                            runCatching { context.startActivity(open) }
+                        },
+                    )
+                },
+                {
                     SettingsNavRow(
                         title = if (checking) {
                             stringResource(R.string.settings_checking_updates)

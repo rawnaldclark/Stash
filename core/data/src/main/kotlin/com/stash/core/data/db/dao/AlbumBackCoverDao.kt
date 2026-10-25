@@ -20,4 +20,25 @@ interface AlbumBackCoverDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(row: AlbumBackCoverEntity)
+
+    /**
+     * Forgets what came from Discogs in rows looked up before [before] (Discogs' terms: its data
+     * kept no longer than six hours). The archive's part stays; the row is left to be looked up
+     * again (attempted at the epoch, older than any TTL; a Discogs inside back to "not looked
+     * for yet").
+     */
+    @Query(
+        """
+        UPDATE album_back_covers SET
+            image_url = CASE WHEN back_from_discogs THEN NULL ELSE image_url END,
+            release_mbid = CASE WHEN back_from_discogs THEN NULL ELSE release_mbid END,
+            inside_urls = CASE WHEN inside_from_discogs THEN NULL ELSE inside_urls END,
+            back_from_discogs = 0,
+            inside_from_discogs = 0,
+            discogs_page = NULL,
+            attempted_at = 0
+        WHERE (back_from_discogs OR inside_from_discogs) AND attempted_at < :before
+        """,
+    )
+    suspend fun forgetDiscogsBefore(before: Long)
 }

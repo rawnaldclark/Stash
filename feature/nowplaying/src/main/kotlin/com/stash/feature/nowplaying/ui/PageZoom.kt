@@ -11,6 +11,8 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -66,8 +68,16 @@ private const val MAX_FITS = 5f
 /** The scrim behind a page that fills the screen. */
 private const val SCRIM_ALPHA = 0.94f
 
-/** A page of the album that can be pinched off the art: its image and what it is. */
-internal class LiftedPage(val key: String, val request: ImageRequest, val description: String)
+/**
+ * A page of the album that can be pinched off the art: its image, what it is, and its Discogs page
+ * when the image comes from Discogs (for the credit its terms ask for).
+ */
+internal class LiftedPage(
+    val key: String,
+    val request: ImageRequest,
+    val description: String,
+    val discogsPage: String? = null,
+)
 
 /**
  * A page pinched off the art and held up to the screen. Two fingers on a page lift it out of the
@@ -276,6 +286,16 @@ internal fun PageZoomLayer(zoom: PageZoom, modifier: Modifier = Modifier) {
                     clip = true
                 },
         )
+        page.discogsPage?.let {
+            DiscogsCredit(
+                page = it,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 12.dp)
+                    .graphicsLayer { alpha = zoom.progress },
+            )
+        }
     }
 }
 
@@ -288,8 +308,11 @@ private fun Modifier.zoomedPageGestures(zoom: PageZoom, layerOrigin: () -> Offse
                 zoom.grab()
                 var moved = false
                 var travel = Offset.Zero
+                // The credit's tap opens Discogs: it doesn't also put the page back.
+                var taken = false
                 do {
                     val event = awaitPointerEvent()
+                    if (event.changes.any { it.isConsumed }) taken = true
                     if (!moved) {
                         travel += event.calculatePan()
                         moved = event.changes.count { it.pressed } > 1 || travel.getDistance() > viewConfiguration.touchSlop
@@ -302,6 +325,6 @@ private fun Modifier.zoomedPageGestures(zoom: PageZoom, layerOrigin: () -> Offse
                     }
                     event.changes.forEach { it.consume() }
                 } while (event.changes.any { it.pressed })
-                if (moved) zoom.release(fromArt = false) else zoom.close()
+                if (moved) zoom.release(fromArt = false) else if (!taken) zoom.close()
             }
         }

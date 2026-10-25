@@ -169,25 +169,30 @@ fun NowPlayingScreen(
     // A page (or the front) pinched off the art, held up over the whole screen: put back by a new
     // album, or a new song when there is no album to go by.
     val pageZoom = com.stash.feature.nowplaying.ui.rememberPageZoom(track?.let { BackCoverAlbum.of(it)?.key ?: it.id })
-    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages, pageZoom) {
+    // Page index's Discogs page when its image comes from Discogs (0 is the back), for the credit.
+    val discogsCredit: (Int) -> String? = remember(coverArt) {
+        { index ->
+            val art = coverArt
+            art?.discogsPage?.takeIf { if (index == 0) art.backFromDiscogs else art.insideFromDiscogs }
+        }
+    }
+    val backFace: (@Composable (Modifier) -> Unit)? = remember(backCover, insidePages, pageZoom, discogsCredit) {
         backCover?.let { loaded ->
             { faceModifier: Modifier ->
-                if (insidePages.isEmpty()) {
-                    AlbumBackSection(loaded, pageZoom, faceModifier)
-                } else {
-                    com.stash.feature.nowplaying.ui.AlbumPackage(
-                        pageCount = 1 + insidePages.size,
-                        modifier = faceModifier,
-                    ) { index ->
-                        if (index == 0) {
-                            AlbumBackSection(loaded, pageZoom)
-                        } else {
-                            InsidePageSection(
-                                url = insidePages[index - 1],
-                                description = "Inside page $index of ${insidePages.size}",
-                                zoom = pageZoom,
-                            )
-                        }
+                com.stash.feature.nowplaying.ui.AlbumPackage(
+                    pageCount = 1 + insidePages.size,
+                    modifier = faceModifier,
+                    credit = discogsCredit,
+                ) { index ->
+                    if (index == 0) {
+                        AlbumBackSection(loaded, pageZoom, discogsCredit(0))
+                    } else {
+                        InsidePageSection(
+                            url = insidePages[index - 1],
+                            description = "Inside page $index of ${insidePages.size}",
+                            zoom = pageZoom,
+                            discogsPage = discogsCredit(index),
+                        )
                     }
                 }
             }
@@ -1558,10 +1563,11 @@ private fun ArtGlow() {
 private fun AlbumBackSection(
     back: LoadedBackCover,
     zoom: com.stash.feature.nowplaying.ui.PageZoom,
+    discogsPage: String?,
     modifier: Modifier = Modifier,
 ) {
-    val lifted = remember(back) {
-        com.stash.feature.nowplaying.ui.LiftedPage(back.request.data.toString(), back.request, "Back cover")
+    val lifted = remember(back, discogsPage) {
+        com.stash.feature.nowplaying.ui.LiftedPage(back.request.data.toString(), back.request, "Back cover", discogsPage)
     }
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // A sliver of a scan (a spine, a panorama of a gatefold) would read as broken: past these
@@ -1590,10 +1596,17 @@ private fun AlbumBackSection(
  * art's place while it loads or if it can't.
  */
 @Composable
-private fun InsidePageSection(url: String, description: String, zoom: com.stash.feature.nowplaying.ui.PageZoom) {
+private fun InsidePageSection(
+    url: String,
+    description: String,
+    zoom: com.stash.feature.nowplaying.ui.PageZoom,
+    discogsPage: String?,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val request = remember(url) { com.stash.feature.nowplaying.ui.backCoverRequest(context, url) }
-    val lifted = remember(request, description) { com.stash.feature.nowplaying.ui.LiftedPage(url, request, description) }
+    val lifted = remember(request, description, discogsPage) {
+        com.stash.feature.nowplaying.ui.LiftedPage(url, request, description, discogsPage)
+    }
     var aspect by remember(url) { mutableStateOf(1f) }
     val tile = MaterialTheme.colorScheme.surfaceVariant
     val tilePainter = remember(tile) { ColorPainter(tile) }

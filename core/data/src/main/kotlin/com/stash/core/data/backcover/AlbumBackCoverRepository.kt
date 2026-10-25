@@ -8,6 +8,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -73,8 +75,9 @@ interface AlbumBackCovers {
  * The back is stored as soon as it is found, with the inside "not looked for yet", so the flip is
  * ready while the walk goes on; a walk cut short (a skip to another album) finishes the next time
  * the album plays. A full answer from the archive is kept; a partial one (no back, or nothing
- * inside), or one that took anything from Discogs, is looked up again after [MISS_TTL_MS]: scans are
- * uploaded all the time, and Discogs' terms ask that its data be kept no longer than needed. A failure (offline, MusicBrainz or
+ * inside) is looked up again after [MISS_TTL_MS], since scans are uploaded all the time. What came
+ * from Discogs is forgotten after [DISCOGS_TTL_MS] (its API terms: no Discogs data older than six
+ * hours), the album then looked up again when it next plays. A failure (offline, MusicBrainz or
  * the archive down, a reply that can't be read) stores nothing new and holds the album back for
  * [FAILURE_BACKOFF_MS], so a flaky network doesn't repeat the walk on every song. Concurrent calls
  * for one album (the mini player's and Now Playing's ViewModels) run it once.
@@ -93,11 +96,17 @@ class AlbumBackCoverRepository @Inject constructor(
     private val keyLocks = ConcurrentHashMap<String, Mutex>()
     private val failedAt = ConcurrentHashMap<String, Long>()
 
-    override fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?> =
-        dao.observe(album.key).map { it?.toArt() }.distinctUntilChanged()
+    override fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?> = flow {
+        // Never a stale Discogs image on screen: forgotten before the row is read.
+        forgetStaleDiscogs()
+        emitAll(dao.observe(album.key).map { it?.toArt() })
+    }.distinctUntilChanged()
+
+    private suspend fun forgetStaleDiscogs() = dao.forgetDiscogsBefore(now() - DISCOGS_TTL_MS)
 
     override suspend fun resolve(album: BackCoverAlbum): AlbumCoverArt? {
         val key = album.key
+        forgetStaleDiscogs()
         stored(key)?.let { return it.toArt() }
         val lock = keyLocks.computeIfAbsent(key) { Mutex() }
         try {
@@ -138,7 +147,8 @@ class AlbumBackCoverRepository @Inject constructor(
 
     /**
      * The stored answer when it still stands: a full one from the archive (a back and inside
-     * pages), or any other younger than [MISS_TTL_MS]. Not one whose inside was never looked for.
+     * pages), or any other younger than [MISS_TTL_MS] (one with Discogs in it is cleared at
+     * [DISCOGS_TTL_MS]: [forgetStaleDiscogs]). Not one whose inside was never looked for.
      */
     private suspend fun stored(key: String): AlbumBackCoverEntity? =
         dao.get(key)?.takeIf { row ->
@@ -294,6 +304,9 @@ class AlbumBackCoverRepository @Inject constructor(
     companion object {
         /** A partial answer (no back, or nothing inside) is looked up again after this long: 30 days. */
         const val MISS_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+        /** What came from Discogs is kept this long at most: 6 hours, its API terms' limit. */
+        const val DISCOGS_TTL_MS = 6L * 60 * 60 * 1000
 
         /** After a failed lookup, the album waits this long before another: 2 minutes. */
         const val FAILURE_BACKOFF_MS = 2L * 60 * 1000

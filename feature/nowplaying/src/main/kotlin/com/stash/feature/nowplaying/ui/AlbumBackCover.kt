@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import coil3.SingletonImageLoader
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.Precision
@@ -20,6 +21,8 @@ private const val BACK_COVER_MAX_DECODE_PX = 1200
  * The back cover's image request, one for the ViewModel's prefetch and the flip's draw, so the
  * draw finds the prefetched bitmap in memory. Decoded at the screen's short side, as the front is
  * ([rememberNpArtRequest]), read from the display so the ViewModel builds the same request.
+ * Discogs' images are kept in memory only: its terms allow no copy older than six hours, and the
+ * disk cache would keep one for as long as its headers say.
  */
 internal fun backCoverRequest(context: Context, url: String): ImageRequest {
     val metrics = context.resources.displayMetrics
@@ -28,7 +31,13 @@ internal fun backCoverRequest(context: Context, url: String): ImageRequest {
         .data(url)
         .size(px)
         .precision(Precision.INEXACT)
+        .apply { if (isDiscogsImage(url)) diskCachePolicy(CachePolicy.DISABLED) }
         .build()
+}
+
+private fun isDiscogsImage(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull().orEmpty()
+    return host == "discogs.com" || host.endsWith(".discogs.com")
 }
 
 /** A back cover in hand: its [request] (now cached) and its shape, width over height. */

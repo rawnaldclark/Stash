@@ -49,6 +49,8 @@
     <string name="settings_update_check_failed">Couldn\'t check for updates — try again later</string>
     <string name="settings_version_label">Version</string>
     <string name="settings_license_label">License</string>
+    <string name="settings_album_art_credit">Album art</string>
+    <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
     <string name="settings_checking_updates_toast">Checking for updates…</string>
     <string name="settings_checking_updates">Checking…</string>
     <string name="settings_check_updates">Check for updates</string>

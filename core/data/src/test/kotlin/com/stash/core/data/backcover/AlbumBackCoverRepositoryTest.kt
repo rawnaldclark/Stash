@@ -30,6 +30,23 @@ class AlbumBackCoverRepositoryTest {
         override suspend fun upsert(row: AlbumBackCoverEntity) {
             rows.value = rows.value + (row.albumKey.lowercase() to row)
         }
+        override suspend fun forgetDiscogsBefore(before: Long) {
+            rows.value = rows.value.mapValues { (_, r) ->
+                if (!(r.backFromDiscogs || r.insideFromDiscogs) || r.attemptedAt >= before) {
+                    r
+                } else {
+                    r.copy(
+                        imageUrl = r.imageUrl.takeUnless { r.backFromDiscogs },
+                        releaseMbid = r.releaseMbid.takeUnless { r.backFromDiscogs },
+                        insideUrls = r.insideUrls.takeUnless { r.insideFromDiscogs },
+                        backFromDiscogs = false,
+                        insideFromDiscogs = false,
+                        discogsPage = null,
+                        attemptedAt = 0,
+                    )
+                }
+            }
+        }
     }
 
     /** One album on MusicBrainz: a release group with [releases], found by ISRC [isrc] or by title. */
@@ -440,6 +457,30 @@ class AlbumBackCoverRepositoryTest {
         assertThat(row.backFromDiscogs).isTrue()
     }
 
+    @Test fun `what came from Discogs is forgotten after six hours, the archive's part kept, and looked up again`() = runTest {
+        val dao = FakeDao()
+        val mb = FakeMusicBrainz(discogsMaster = 13814)
+        val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front(), page("https://caa/p1.jpg"))))
+        val discogs = FakeDiscogs(vinyl())
+        val repo = repo(dao, mb, caa, discogs)
+        clock = AlbumBackCoverRepository.MISS_TTL_MS * 2 // a clock past the epoch's first month, as a real one is
+        repo.resolve(NEVERMIND)
+
+        clock += AlbumBackCoverRepository.DISCOGS_TTL_MS - 1
+        assertThat(repo.observe(NEVERMIND).first()!!.backFromDiscogs).isTrue()
+        val asked = discogs.asked.size
+        assertThat(repo.resolve(NEVERMIND)!!.back).isEqualTo("https://i.discogs.com/1.jpeg")
+        assertThat(discogs.asked).hasSize(asked)
+
+        clock += 2
+        val seen = repo.observe(NEVERMIND).first()!!
+        assertThat(seen.back).isNull()
+        assertThat(seen.discogsPage).isNull()
+        assertThat(seen.inside).containsExactly("https://caa/p1.jpg")
+        assertThat(repo.resolve(NEVERMIND)!!.backFromDiscogs).isTrue()
+        assertThat(discogs.asked.size).isGreaterThan(asked)
+    }
+
     @Test fun `with a back but nothing inside on the archive, Discogs gives the inside, its own back left out`() = runTest {
         val mb = FakeMusicBrainz(discogsMaster = 13814)
         val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front(), back("https://caa/back.jpg"))))
@@ -524,13 +565,13 @@ class AlbumBackCoverRepositoryTest {
         assertThat(repo.resolve(NEVERMIND)?.insideFromDiscogs).isTrue()
     }
 
-    @Test fun `an answer with Discogs' art is looked up again once it is old`() = runTest {
+    @Test fun `an answer with Discogs' art is looked up again after six hours`() = runTest {
         val mb = FakeMusicBrainz(discogsMaster = 1)
         val repo = repo(mb = mb, caa = FakeCoverArt(canonical = null), discogs = FakeDiscogs(vinyl()))
         repo.resolve(NEVERMIND)
         val calls = mb.calls
 
-        clock += AlbumBackCoverRepository.MISS_TTL_MS - 1
+        clock += AlbumBackCoverRepository.DISCOGS_TTL_MS - 1
         assertThat(repo.resolve(NEVERMIND)?.backFromDiscogs).isTrue()
         assertThat(mb.calls).isEqualTo(calls)
 
