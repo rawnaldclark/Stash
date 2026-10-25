@@ -55,8 +55,18 @@ private val EDITION_SUFFIX = Regex(
 
 private val EDITION_MARK = Regex("""\b(deluxe|expanded|remaster(ed)?|anniversary|edition|reissue)\b""", RegexOption.IGNORE_CASE)
 
-/** [title] without an edition at its end ([EDITION_SUFFIX]); unchanged when nothing would be left. */
+/**
+ * A span of years at a title's end, "1991–1992": MusicBrainz's "Songs to No One 1991–1992" is
+ * Spotify's "Songs To No One" (2026-10-25). A single year is left alone ("Rumours 1977" is rare,
+ * "1999" a title).
+ */
+private val YEAR_SPAN_SUFFIX = Regex("""\s+\d{4}\s*[-–—]\s*\d{2,4}$""")
+
+/** [title] without an edition at its end ([EDITION_SUFFIX], [YEAR_SPAN_SUFFIX]); unchanged when nothing would be left. */
 private fun withoutEditionSuffix(title: String): String {
+    YEAR_SPAN_SUFFIX.find(title)?.let { span ->
+        title.substring(0, span.range.first).takeIf { it.isNotBlank() }?.let { return withoutEditionSuffix(it) }
+    }
     val match = EDITION_SUFFIX.find(title) ?: return title
     if (!EDITION_MARK.containsMatchIn(match.value)) return title
     return title.substring(0, match.range.first).takeIf { it.isNotBlank() } ?: title

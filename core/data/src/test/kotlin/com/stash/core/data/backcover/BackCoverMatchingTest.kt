@@ -43,6 +43,9 @@ class BackCoverMatchingTest {
         assertThat(plainAlbumTitle("Blink-182: The Mark, Tom and Travis Show")).isEqualTo("Blink-182: The Mark, Tom and Travis Show")
         assertThat(plainAlbumTitle("Deluxe")).isEqualTo("Deluxe")
         assertThat(plainAlbumTitle("Use Your Illusion 2")).isEqualTo("Use Your Illusion 2")
+        // A span of years is the edition's too; a single year is the title's.
+        assertThat(albumTitleKey("Songs to No One 1991–1992")).isEqualTo(albumTitleKey("Songs To No One"))
+        assertThat(plainAlbumTitle("Rumours 1977")).isEqualTo("Rumours 1977")
     }
 
     @Test fun `a performance in the title is another album`() {

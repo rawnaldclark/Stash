@@ -361,12 +361,12 @@ class AlbumBackCoverRepository @Inject constructor(
         const val MISS_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
         /**
-         * When the lookup last learned to find more (2026-10-25: titles with an edition after a
-         * colon, editions titled apart from their album, the releases' Discogs links): a partial
+         * When the lookup last learned to find more (2026-10-25: titles with an edition or a span of
+         * years at the end, editions titled apart from their album, the releases' Discogs links): a partial
          * answer stored before it is looked up again, not held for [MISS_TTL_MS]. Moved forward
          * whenever the matching finds albums it used to miss.
          */
-        const val MATCHING_CHANGED_AT = 1_792_914_713_985L
+        const val MATCHING_CHANGED_AT = 1_792_915_108_672L
 
         /** What came from Discogs is kept this long at most: 6 hours, its API terms' limit. */
         const val DISCOGS_TTL_MS = 6L * 60 * 60 * 1000
