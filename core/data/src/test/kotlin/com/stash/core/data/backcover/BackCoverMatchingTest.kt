@@ -128,6 +128,24 @@ class BackCoverMatchingTest {
         assertThat(releaseGroupFromSearch(body, "Abbey Road", "The Beatles")).isEqualTo("studio")
     }
 
+    @Test fun `an edition titled apart from its album finds the album through its releases`() {
+        // Measured 2026-10-25: OKNOTOK is releases of "OK Computer", no release group of its own.
+        fun release(title: String, group: String, artist: String = "Radiohead", score: Int = 100) =
+            """{"id":"r","score":$score,"title":"$title","artist-credit":[{"name":"$artist","joinphrase":""}],""" +
+                """"release-group":{"id":"$group","title":"x","secondary-types":[]}}"""
+        val body = Json.parseToJsonElement(
+            """{"releases":[""" + listOf(
+                release("OK Computer: OKNOTOK 1997 2017", "okc"),
+                release("OK Computer OKNOTOK 1997 2017", "okc"),
+                release("OK Computer OKNOTOK 1997 2017", "stray"),
+                release("OK Computer OKNOTOK 1997 2017", "tribute", artist = "Some Band"),
+                release("OK Computer", "plain"),
+            ).joinToString(",") + "]}",
+        ).jsonObject
+        assertThat(releaseGroupFromReleaseSearch(body, "OK Computer OKNOTOK 1997 2017", "Radiohead")).isEqualTo("okc")
+        assertThat(releaseGroupFromReleaseSearch(body, "Kid A", "Radiohead")).isNull()
+    }
+
     @Test fun `a title search for another artist's album finds nothing`() {
         assertThat(releaseGroupFromSearch(fixture("rg_search_1989.json"), "1989", "Ryan Adams")).isNull()
     }

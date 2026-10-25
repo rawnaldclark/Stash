@@ -92,6 +92,12 @@ class AlbumBackCoverRepositoryTest {
             )
         }
 
+        override suspend fun searchReleases(artist: String, album: String): JsonObject? {
+            calls++
+            if (failing) return null
+            return json("""{"releases":[]}""")
+        }
+
         override suspend fun browseReleases(releaseGroupId: String): JsonObject? {
             calls++
             browses++

@@ -22,6 +22,12 @@ interface MusicBrainzClient {
     /** Release groups titled [album] by [artist] (Lucene search, scored); null on failure. */
     suspend fun searchReleaseGroups(artist: String, album: String): JsonObject?
 
+    /**
+     * Releases titled [album] by [artist] (Lucene search, scored), each with its release group; null
+     * on failure. For an edition titled apart from its album ("OK Computer OKNOTOK 1997 2017").
+     */
+    suspend fun searchReleases(artist: String, album: String): JsonObject? = null
+
     /** A release group's official releases with their media (formats); null on failure. */
     suspend fun browseReleases(releaseGroupId: String): JsonObject?
 

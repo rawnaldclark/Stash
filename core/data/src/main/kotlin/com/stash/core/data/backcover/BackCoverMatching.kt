@@ -148,6 +148,31 @@ internal fun releaseGroupFromSearch(body: JsonObject, album: String, artist: Str
     ).firstOrNull()?.id
 }
 
+/**
+ * The release group of the edition [album] by [artist] in a release search
+ * ([com.stash.core.data.musicbrainz.MusicBrainzClient.searchReleases]), for an edition titled apart
+ * from its album: "OK Computer OKNOTOK 1997 2017" is eight releases in the release group "OK
+ * Computer" (2026-10-25). Releases titled like it, credited to the artist and scored at least
+ * [MIN_SEARCH_SCORE]; the group most of them belong to, one that isn't another take first. Null
+ * when none fits.
+ */
+internal fun releaseGroupFromReleaseSearch(body: JsonObject, album: String, artist: String): String? {
+    val want = albumTitleKey(album)
+    val groups = body["releases"]?.jsonArray.orEmpty().mapNotNull { el ->
+        val release = el.jsonObject
+        val score = release["score"]?.jsonPrimitive?.intOrNull ?: 0
+        val title = release.string("title") ?: return@mapNotNull null
+        if (score < MIN_SEARCH_SCORE || albumTitleKey(title) != want) return@mapNotNull null
+        if (!artistMatches(artist, release.creditLine())) return@mapNotNull null
+        release["release-group"] as? JsonObject
+    }
+    return groups.groupBy { it.string("id") }
+        .filterKeys { it != null }
+        .entries
+        .sortedWith(compareBy<Map.Entry<String?, List<JsonObject>>> { it.value.first().isOtherTake() }.thenByDescending { it.value.size })
+        .firstOrNull()?.key
+}
+
 /** Below this a release group search hit is a guess (MusicBrainz scores 0-100). */
 internal const val MIN_SEARCH_SCORE = 80
 

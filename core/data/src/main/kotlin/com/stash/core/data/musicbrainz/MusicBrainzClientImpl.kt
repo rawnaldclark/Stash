@@ -71,6 +71,11 @@ class MusicBrainzClientImpl @Inject constructor(
         return getOrNull("release-group?query=${URLEncoder.encode(query, "UTF-8")}&limit=$SEARCH_LIMIT&fmt=json")
     }
 
+    override suspend fun searchReleases(artist: String, album: String): JsonObject? {
+        val query = "release:\"${escapeLucene(album)}\" AND artist:\"${escapeLucene(artist)}\""
+        return getOrNull("release?query=${URLEncoder.encode(query, "UTF-8")}&limit=$SEARCH_LIMIT&fmt=json")
+    }
+
     override suspend fun browseReleases(releaseGroupId: String): JsonObject? =
         getOrNull("release?release-group=$releaseGroupId&status=official&inc=media+url-rels&limit=100&fmt=json")
 

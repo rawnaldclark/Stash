@@ -326,9 +326,14 @@ class AlbumBackCoverRepository @Inject constructor(
         val plain = plainAlbumTitle(album.title)
         val hits = musicBrainz.searchReleaseGroups(album.artist, plain) ?: throw lookupFailed("MusicBrainz title search")
         releaseGroupFromSearch(hits, album.title, album.artist)?.let { return it }
-        if (plain == album.title) return null
-        val fullHits = musicBrainz.searchReleaseGroups(album.artist, album.title) ?: throw LookupFailed()
-        return releaseGroupFromSearch(fullHits, album.title, album.artist)
+        if (plain != album.title) {
+            val fullHits = musicBrainz.searchReleaseGroups(album.artist, album.title) ?: throw LookupFailed()
+            releaseGroupFromSearch(fullHits, album.title, album.artist)?.let { return it }
+        }
+        // An edition titled apart from its album ("OK Computer OKNOTOK 1997 2017") is no release
+        // group's title, but its releases' title: one more search, for the albums found no other way.
+        val releases = musicBrainz.searchReleases(album.artist, album.title) ?: throw lookupFailed("MusicBrainz release search")
+        return releaseGroupFromReleaseSearch(releases, album.title, album.artist)
     }
 
     companion object {
