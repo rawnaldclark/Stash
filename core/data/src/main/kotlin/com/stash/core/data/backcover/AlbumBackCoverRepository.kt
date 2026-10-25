@@ -5,6 +5,7 @@ import com.stash.core.data.db.entity.AlbumBackCoverEntity
 import com.stash.core.data.musicbrainz.MusicBrainzClient
 import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -116,6 +117,7 @@ class AlbumBackCoverRepository @Inject constructor(
                 stored(key)?.let { return@withLock it.toArt() }
                 val failed = failedAt[key]
                 if (failed != null && now() - failed < FAILURE_BACKOFF_MS) return@withLock null
+                val startedNs = System.nanoTime()
                 val found = try {
                     lookUp(album) { back ->
                         dao.upsert(AlbumBackCoverEntity(key, back.url, back.releaseMbid, now(), insideUrls = null))
@@ -132,7 +134,8 @@ class AlbumBackCoverRepository @Inject constructor(
                 android.util.Log.i(
                     LOG_TAG,
                     "${album.artist} - ${album.title}: back=${found.back != null}${if (found.backFromDiscogs) " (Discogs)" else ""}, " +
-                        "inside=${found.inside.size}${if (found.insideFromDiscogs) " (Discogs)" else ""}",
+                        "inside=${found.inside.size}${if (found.insideFromDiscogs) " (Discogs)" else ""} " +
+                        "in ${(System.nanoTime() - startedNs) / 1_000_000} ms",
                 )
                 val row = AlbumBackCoverEntity(
                     albumKey = key,
@@ -200,13 +203,23 @@ class AlbumBackCoverRepository @Inject constructor(
      */
     private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
+        return coroutineScope { walkGroup(group, onBack) }
+    }
+
+    private suspend fun CoroutineScope.walkGroup(group: String, onBack: suspend (Found) -> Unit): Walk {
+        // The group's releases are listed while the archive is asked for its main edition (the
+        // archive is the slow one, 1-6 s through archive.org): cancelled if the main edition
+        // answers it all.
+        val browse = async { musicBrainz.browseReleases(group) }
         // The group's listing only names the main edition. archive.org fails it now and then (half
         // the calls for Four Tops' Reach Out, 2026-10-25, retries and all): then the releases are
         // checked without it.
         val cover = coverArt.releaseGroup(group)
         if (cover == null) android.util.Log.w(LOG_TAG, "archive release group $group failed: checking its releases")
         // No art at all on the archive: Discogs alone.
-        if (cover != null && cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null, null)
+        if (cover != null && cover.images.isEmpty() && cover.releaseMbid == null) {
+            return withDiscogs(group, browse.await(), null, null)
+        }
 
         var back: Found? = null
         var inside: List<String>? = null
@@ -233,10 +246,16 @@ class AlbumBackCoverRepository @Inject constructor(
         // The main edition alone first: when it has both, its releases needn't even be listed.
         val main = cover?.releaseMbid
         main?.let { id -> coverArt.release(id)?.let { read(id, it) } }
-        if (done()) return Walk(back, inside.orEmpty())
+        if (done()) {
+            browse.cancel()
+            return Walk(back, inside.orEmpty())
+        }
 
-        val releases = musicBrainz.browseReleases(group) ?: throw lookupFailed("MusicBrainz releases of $group")
-        val candidates = rankReleasesForBack(releases).filter { it != main }.take(MAX_RELEASES_CHECKED)
+        val releases = browse.await() ?: throw lookupFailed("MusicBrainz releases of $group")
+        // Releases MusicBrainz says hold no more than a front aren't asked about: on Reach Out,
+        // seven of its eight official releases are skipped this way (2026-10-25).
+        val bare = releasesWithoutMoreArt(releases)
+        val candidates = rankReleasesForBack(releases).filter { it != main && it !in bare }.take(MAX_RELEASES_CHECKED)
         for (batch in candidates.chunked(PARALLEL_CHECKS)) {
             coroutineScope {
                 val pending = batch.map { id -> id to async { coverArt.release(id) } }

@@ -214,7 +214,7 @@ class AlbumBackCoverRepositoryTest {
         assertThat(row.insideUrls).isEmpty() // looked for, none
     }
 
-    @Test fun `the main edition's back and pages end the lookup without listing its releases`() = runTest {
+    @Test fun `the main edition's back and pages end the lookup without asking about other releases`() = runTest {
         val mb = FakeMusicBrainz()
         val caa = FakeCoverArt(
             canonical = "cd-1",
@@ -226,7 +226,6 @@ class AlbumBackCoverRepositoryTest {
         val art = repo(mb = mb, caa = caa).resolve(NEVERMIND)!!
         assertThat(art.back).isEqualTo("https://caa/main-back.jpg")
         assertThat(art.inside).containsExactly("https://caa/p1.jpg", "https://caa/p2.jpg").inOrder()
-        assertThat(mb.browses).isEqualTo(0)
         assertThat(caa.asked).containsExactly("group:rg-1", "cd-1").inOrder()
     }
 

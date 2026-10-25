@@ -171,6 +171,10 @@ class NowPlayingViewModel @Inject constructor(
         .map<Boolean, Boolean?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Settings > Appearance > Cycle album art. */
+    val cycleAlbumArt: StateFlow<Boolean> = nowPlayingPreference.cycleAlbumArt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     /** Settings > Appearance > Ambient style. */
     val ambientStyle: StateFlow<com.stash.core.data.prefs.AmbientStyle?> = nowPlayingPreference.ambientStyle
         .map<com.stash.core.data.prefs.AmbientStyle, com.stash.core.data.prefs.AmbientStyle?> { it }
@@ -664,6 +668,14 @@ class NowPlayingViewModel @Inject constructor(
      * they aren't known. Now Playing loads the back and turns the art over to it on a tap; the
      * inside opens from the back.
      */
+    /**
+     * The playing album's key, the art's flip key: from the song's own album, or the one Last.fm
+     * names for a song without one (a stream never stored has no row for it to be filled into).
+     */
+    val backCoverKey: StateFlow<String?> = backCoverAlbums
+        .map { it?.key }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val coverArt: StateFlow<AlbumCoverArt?> = backCoverAlbums
         .flatMapLatest { album -> if (album == null) flowOf(null) else backCovers.observe(album) }
@@ -702,9 +714,20 @@ class NowPlayingViewModel @Inject constructor(
                             fetchBack.cancel()
                             art?.back?.let(::fetchBackImage)
                         }
+                        // The next song's album too, so its flip is ready the moment it starts.
+                        lookAhead(album)
                     }
                 }
         }
+    }
+
+    /** Looks up the album of the song after the playing one, when it is another album. */
+    private suspend fun lookAhead(current: BackCoverAlbum) {
+        val s = uiState.value
+        val next = s.queue.getOrNull(s.currentIndex + 1) ?: return
+        val album = BackCoverAlbum.of(next) ?: BackCoverAlbum.of(trackAlbums.withAlbum(next)) ?: return
+        if (album.key == current.key) return
+        backCovers.resolve(album)?.back?.let(::fetchBackImage)
     }
 
     private fun fetchBackImage(url: String) {

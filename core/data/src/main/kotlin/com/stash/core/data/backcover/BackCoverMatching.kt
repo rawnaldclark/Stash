@@ -5,6 +5,8 @@ import com.stash.core.common.primaryArtist
 import com.stash.core.model.Track
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -172,6 +174,22 @@ internal fun releaseGroupFromReleaseSearch(body: JsonObject, album: String, arti
         .sortedWith(compareBy<Map.Entry<String?, List<JsonObject>>> { it.value.first().isOtherTake() }.thenByDescending { it.value.size })
         .firstOrNull()?.key
 }
+
+/**
+ * The releases in a browse whose archive art is known to be a front at most: the browse's
+ * `cover-art-archive` summary says no artwork, or one image and that the front. Their listings
+ * can't hold a back or an inside page. A release without a summary isn't among them.
+ */
+internal fun releasesWithoutMoreArt(body: JsonObject): Set<String> =
+    body["releases"]?.jsonArray.orEmpty().mapNotNullTo(HashSet()) { el ->
+        val release = el as? JsonObject ?: return@mapNotNullTo null
+        val id = release.string("id") ?: return@mapNotNullTo null
+        val art = release["cover-art-archive"] as? JsonObject ?: return@mapNotNullTo null
+        fun flag(name: String) = (art[name] as? JsonPrimitive)?.booleanOrNull
+        val count = (art["count"] as? JsonPrimitive)?.intOrNull ?: return@mapNotNullTo null
+        val front = if (flag("front") == true) 1 else 0
+        id.takeIf { flag("artwork") == false || (flag("back") != true && count <= front) }
+    }
 
 /** Below this a release group search hit is a guess (MusicBrainz scores 0-100). */
 internal const val MIN_SEARCH_SCORE = 80

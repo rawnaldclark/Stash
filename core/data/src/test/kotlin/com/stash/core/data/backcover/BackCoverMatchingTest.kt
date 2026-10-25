@@ -150,6 +150,20 @@ class BackCoverMatchingTest {
         assertThat(releaseGroupFromSearch(fixture("rg_search_1989.json"), "1989", "Ryan Adams")).isNull()
     }
 
+    @Test fun `a release whose archive art is a front at most is skipped, one with more or unknown kept`() {
+        // Reach Out's releases, 2026-10-25: two with no art, five with a front alone, one with six images.
+        val body = Json.parseToJsonElement(
+            """{"releases":[
+                {"id":"none","cover-art-archive":{"artwork":false,"count":0,"front":false,"back":false}},
+                {"id":"front","cover-art-archive":{"artwork":true,"count":1,"front":true,"back":false}},
+                {"id":"six","cover-art-archive":{"artwork":true,"count":6,"front":true,"back":true}},
+                {"id":"pages","cover-art-archive":{"artwork":true,"count":3,"front":true,"back":false}},
+                {"id":"unknown"}
+            ]}""",
+        ).jsonObject
+        assertThat(releasesWithoutMoreArt(body)).containsExactly("none", "front")
+    }
+
     @Test fun `releases are checked vinyl first, digital last`() {
         val body = fixture("releases_nevermind.json")
         val formatsById = body["releases"]!!.jsonArray.associate { el ->
