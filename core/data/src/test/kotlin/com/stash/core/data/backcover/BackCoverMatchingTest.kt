@@ -31,6 +31,20 @@ class BackCoverMatchingTest {
         assertThat(albumTitleKey("N/O/I/S/E")).isEqualTo(albumTitleKey("N / O / I / S / E"))
     }
 
+    @Test fun `an edition named after a colon or at the end is the album`() {
+        assertThat(albumTitleKey("Bakesale: Deluxe Edition")).isEqualTo(albumTitleKey("Bakesale"))
+        assertThat(plainAlbumTitle("Bakesale: Deluxe Edition")).isEqualTo("Bakesale")
+        assertThat(plainAlbumTitle("Abbey Road: 50th Anniversary Super Deluxe Edition")).isEqualTo("Abbey Road")
+        assertThat(plainAlbumTitle("Rumours 35th Anniversary Edition")).isEqualTo("Rumours")
+        assertThat(plainAlbumTitle("Pet Sounds Remastered")).isEqualTo("Pet Sounds")
+        // A subtitle, a number or a lone edition word is the title's own.
+        assertThat(plainAlbumTitle("OK Computer: OKNOTOK 1997 2017")).isEqualTo("OK Computer: OKNOTOK 1997 2017")
+        assertThat(plainAlbumTitle("1999")).isEqualTo("1999")
+        assertThat(plainAlbumTitle("Blink-182: The Mark, Tom and Travis Show")).isEqualTo("Blink-182: The Mark, Tom and Travis Show")
+        assertThat(plainAlbumTitle("Deluxe")).isEqualTo("Deluxe")
+        assertThat(plainAlbumTitle("Use Your Illusion 2")).isEqualTo("Use Your Illusion 2")
+    }
+
     @Test fun `a performance in the title is another album`() {
         assertThat(albumTitleKey("1989 (Taylor's Version)")).isNotEqualTo(albumTitleKey("1989"))
         assertThat(albumTitleKey("1989 (Taylor's Version)")).isEqualTo(albumTitleKey("1989 (Taylor’s version)"))

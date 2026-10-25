@@ -164,7 +164,8 @@ class AlbumBackCoverRepository @Inject constructor(
         dao.get(key)?.takeIf { row ->
             val inside = row.insideUrls ?: return@takeIf false
             val full = row.imageUrl != null && inside.isNotEmpty() && !row.backFromDiscogs && !row.insideFromDiscogs
-            full || now() - row.attemptedAt < MISS_TTL_MS
+            // A partial answer from before the lookup last learned to find more is asked again.
+            full || (row.attemptedAt >= MATCHING_CHANGED_AT && now() - row.attemptedAt < MISS_TTL_MS)
         }
 
     private fun AlbumBackCoverEntity.toArt() = AlbumCoverArt(
@@ -358,6 +359,14 @@ class AlbumBackCoverRepository @Inject constructor(
     companion object {
         /** A partial answer (no back, or nothing inside) is looked up again after this long: 30 days. */
         const val MISS_TTL_MS = 30L * 24 * 60 * 60 * 1000
+
+        /**
+         * When the lookup last learned to find more (2026-10-25: titles with an edition after a
+         * colon, editions titled apart from their album, the releases' Discogs links): a partial
+         * answer stored before it is looked up again, not held for [MISS_TTL_MS]. Moved forward
+         * whenever the matching finds albums it used to miss.
+         */
+        const val MATCHING_CHANGED_AT = 1_792_914_713_985L
 
         /** What came from Discogs is kept this long at most: 6 hours, its API terms' limit. */
         const val DISCOGS_TTL_MS = 6L * 60 * 60 * 1000

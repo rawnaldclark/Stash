@@ -40,6 +40,28 @@ private val BRACKETS = Regex("""\([^)]*\)|\[[^]]*]""")
 private val NOT_WORD = Regex("""[^\p{L}\p{N}]+""")
 private val MARKS = Regex("""\p{M}+""")
 
+/**
+ * An edition named at a title's end, after a colon or with nothing between: ": Deluxe Edition",
+ * " 50th Anniversary Edition", " Remastered". Only edition words, at least one of them a sure one
+ * ([EDITION_MARK]), so a subtitle ("OK Computer: OKNOTOK") or a title that merely ends in a number
+ * keeps its words. Measured 2026-10-25: Spotify titles Sebadoh's reissue "Bakesale: Deluxe
+ * Edition", MusicBrainz "Bakesale".
+ */
+private val EDITION_SUFFIX = Regex(
+    """(?:\s*:\s*|\s+)(?:(?:deluxe|super|expanded|remaster(?:ed)?|anniversary|bonus|special|collector['’]?s|""" +
+        """legacy|reissue|edition|tracks?|\d{1,4}(?:st|nd|rd|th)?|year|years|the)\b\s*)+$""",
+    RegexOption.IGNORE_CASE,
+)
+
+private val EDITION_MARK = Regex("""\b(deluxe|expanded|remaster(ed)?|anniversary|edition|reissue)\b""", RegexOption.IGNORE_CASE)
+
+/** [title] without an edition at its end ([EDITION_SUFFIX]); unchanged when nothing would be left. */
+private fun withoutEditionSuffix(title: String): String {
+    val match = EDITION_SUFFIX.find(title) ?: return title
+    if (!EDITION_MARK.containsMatchIn(match.value)) return title
+    return title.substring(0, match.range.first).takeIf { it.isNotBlank() } ?: title
+}
+
 /** [text] lowercased, accents and punctuation gone, "&" read as "and": "Short n' Sweet" -> "short n sweet". */
 private fun fold(text: String): String =
     Normalizer.normalize(text.lowercase().replace("&", " and "), Normalizer.Form.NFD)
@@ -49,11 +71,12 @@ private fun fold(text: String): String =
 
 /**
  * An album title as a back cover lookup compares it: the title without its edition
- * ("Rumours (Super Deluxe)", "Nevermind - Remastered" are "rumours", "nevermind"), but with any
+ * ("Rumours (Super Deluxe)", "Nevermind - Remastered", "Bakesale: Deluxe Edition" are "rumours",
+ * "nevermind", "bakesale"), but with any
  * performance it names, so "1989 (Taylor's Version)" never takes the original's back.
  */
 internal fun albumTitleKey(title: String): String {
-    val base = fold(title.replace(BRACKETS, " ").replace(VersionWords.DASH_SUFFIX, ""))
+    val base = fold(withoutEditionSuffix(title.replace(BRACKETS, " ").replace(VersionWords.DASH_SUFFIX, "").trim()))
         .ifEmpty { fold(title) } // a title that is all brackets: "[Untitled]"
     val versions = VersionWords.of(title).sorted()
     return (listOf(base) + versions).joinToString("|")
@@ -64,7 +87,8 @@ internal fun albumTitleKey(title: String): String {
  * for "Rumours (Super Deluxe)" can find "Rumours" (a phrase search needs every word).
  */
 internal fun plainAlbumTitle(title: String): String =
-    title.replace(BRACKETS, " ").replace(VersionWords.DASH_SUFFIX, "").trim().replace(Regex("\\s+"), " ")
+    withoutEditionSuffix(title.replace(BRACKETS, " ").replace(VersionWords.DASH_SUFFIX, "").trim())
+        .trim().replace(Regex("\\s+"), " ")
         .ifEmpty { title.trim() }
 
 /** True when MusicBrainz's [credit] names [artist]: the whole name, or it as one of the acts. */

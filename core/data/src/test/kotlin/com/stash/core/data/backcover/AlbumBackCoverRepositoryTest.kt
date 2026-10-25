@@ -192,7 +192,8 @@ class AlbumBackCoverRepositoryTest {
         )
     }
 
-    private var clock = 1_000_000L
+    // After MATCHING_CHANGED_AT, as a real clock is: a partial answer from before it is asked again.
+    private var clock = AlbumBackCoverRepository.MATCHING_CHANGED_AT + 1_000_000L
 
     private fun repo(
         dao: FakeDao = FakeDao(),
@@ -368,6 +369,17 @@ class AlbumBackCoverRepositoryTest {
         assertThat(dao.get(NEVERMIND.key)).isNotNull()
     }
 
+    @Test fun `a miss stored before the matching last changed is looked up again`() = runTest {
+        val dao = FakeDao()
+        dao.upsert(
+            com.stash.core.data.db.entity.AlbumBackCoverEntity(
+                NEVERMIND.key, imageUrl = null, attemptedAt = AlbumBackCoverRepository.MATCHING_CHANGED_AT - 1, insideUrls = "",
+            ),
+        )
+        val caa = FakeCoverArt(listings = mapOf("vinyl-1" to listing(front(), back("https://caa/b.jpg"))))
+        assertThat(repo(dao, caa = caa).resolve(NEVERMIND)?.back).isEqualTo("https://caa/b.jpg")
+    }
+
     @Test fun `the group's listing failing still checks the releases`() = runTest {
         val caa = FakeCoverArt(listings = mapOf("vinyl-1" to listing(front(), back("https://caa/b.jpg")))).apply { groupFailing = true }
         assertThat(repo(caa = caa).resolve(NEVERMIND)?.back).isEqualTo("https://caa/b.jpg")
@@ -493,7 +505,6 @@ class AlbumBackCoverRepositoryTest {
         val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front(), page("https://caa/p1.jpg"))))
         val discogs = FakeDiscogs(vinyl())
         val repo = repo(dao, mb, caa, discogs)
-        clock = AlbumBackCoverRepository.MISS_TTL_MS * 2 // a clock past the epoch's first month, as a real one is
         repo.resolve(NEVERMIND)
 
         clock += AlbumBackCoverRepository.DISCOGS_TTL_MS - 1
