@@ -1,0 +1,33 @@
+{
+ "id": 25404283,
+ "title": "SOS",
+ "uri": "https://www.discogs.com/release/25404283-SZA-2-SOS",
+ "master_id": 2929684,
+ "formats": [
+  {
+   "name": "File",
+   "qty": "23",
+   "descriptions": [
+    "AAC",
+    "Album"
+   ],
+   "text": "256 kbps"
+  }
+ ],
+ "images": [
+  {
+   "type": "primary",
+   "uri": "https://i.discogs.com/7hutaiit_yV70u-gZbn5qQw6lx7PzWVixKYuk8FI15U/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI1NDA0/MjgzLTE2NzA1MDY1/MjctNTcwMS5wbmc.jpeg",
+   "uri150": "https://i.discogs.com/Q3mdNFaMWltMOeA_2GeWnUoZDM1hY72bjgnbrEB3mFE/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI1NDA0/MjgzLTE2NzA1MDY1/MjctNTcwMS5wbmc.jpeg",
+   "width": 600,
+   "height": 600
+  },
+  {
+   "type": "secondary",
+   "uri": "https://i.discogs.com/z6qrrimsptzE87e73k5xPns4POZNoWgpG7ZSC0fCybI/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI1NDA0/MjgzLTE3MzQ2NDc0/ODAtMjk3Ny5wbmc.jpeg",
+   "uri150": "https://i.discogs.com/wVRHpIR8L4vkogzwapmZGspRc0oqwHfUN5j5DKMt4IU/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTI1NDA0/MjgzLTE3MzQ2NDc0/ODAtMjk3Ny5wbmc.jpeg",
+   "width": 600,
+   "height": 600
+  }
+ ]
+}

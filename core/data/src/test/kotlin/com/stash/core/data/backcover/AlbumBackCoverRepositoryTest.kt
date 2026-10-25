@@ -39,6 +39,8 @@ class AlbumBackCoverRepositoryTest {
         val artist: String = "Nirvana",
         val isrc: String? = "USGF19942501",
         val releases: List<Pair<String, String>> = listOf("cd-1" to "CD", "vinyl-1" to "12\" Vinyl"),
+        /** The Discogs master the release group links to; none by default. */
+        val discogsMaster: Long? = null,
     ) : MusicBrainzClient {
         var calls = 0
         var browses = 0
@@ -78,6 +80,44 @@ class AlbumBackCoverRepositoryTest {
             val items = releases.joinToString(",") { (id, format) -> """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}]}""" }
             return json("""{"releases":[$items]}""")
         }
+
+        override suspend fun releaseGroupUrlRels(releaseGroupId: String): JsonObject? {
+            calls++
+            if (failing) return null
+            val rel = discogsMaster?.let { """{"type":"discogs","url":{"resource":"https://www.discogs.com/master/$it"}}""" }
+            return json("""{"id":"$releaseGroupId","relations":[${rel.orEmpty()}]}""")
+        }
+
+        override suspend fun releaseUrlRels(releaseId: String): JsonObject? = null
+    }
+
+    /** One Discogs master whose most-collected vinyl is [release]; [joins] is what its thumbnails' seam says. */
+    private class FakeDiscogs(
+        val release: DiscogsRelease? = null,
+        val joins: Boolean = false,
+    ) : DiscogsClient {
+        val asked = mutableListOf<String>()
+        var failing = false
+
+        override suspend fun versions(masterId: Long, format: String): List<DiscogsVersion>? {
+            asked += "versions:$masterId:$format"
+            if (failing) return null
+            val r = release ?: return emptyList()
+            return if (format == "Vinyl") listOf(DiscogsVersion(r.id, listOf("Vinyl"), accepted = true, inCollection = 9)) else emptyList()
+        }
+
+        override suspend fun release(id: Long): DiscogsRelease? {
+            asked += "release:$id"
+            return if (failing) null else release?.takeIf { it.id == id }
+        }
+
+        override suspend fun pixels(url: String): Pixels? {
+            asked += "pixels:$url"
+            if (failing) return null
+            // Two flat images: the same color joins, black beside white doesn't.
+            val color = if (joins || url.endsWith("1.jpeg")) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+            return Pixels(4, 4, IntArray(16) { color })
+        }
     }
 
     /** Listings by release id; the group's cover comes from [canonical]. */
@@ -109,12 +149,28 @@ class AlbumBackCoverRepositoryTest {
         fun page(url: String, type: String = "Booklet") = CaaImage(listOf(type), front = false, back = false, url = url)
         fun listing(vararg images: CaaImage) = CaaListing(images.toList(), null)
         val NEVERMIND = BackCoverAlbum("Nirvana", "Nevermind", "USGF19942501")
+
+        fun dimage(n: Int, w: Int = 600, h: Int = 600) =
+            DiscogsImage("https://i.discogs.com/$n.jpeg", "https://i.discogs.com/t$n.jpeg", w, h)
+
+        /** A vinyl on Discogs: front, back (or the inside's two halves), labels, inner sleeve. */
+        fun vinyl(images: Int = 6, gatefold: Boolean = false) = DiscogsRelease(
+            id = 77,
+            images = (0 until images).map { dimage(it) },
+            formats = listOf("Vinyl"),
+            formatText = if (gatefold) "Gatefold" else "",
+            page = "https://www.discogs.com/release/77-Nirvana-Nevermind",
+        )
     }
 
     private var clock = 1_000_000L
 
-    private fun repo(dao: FakeDao = FakeDao(), mb: FakeMusicBrainz = FakeMusicBrainz(), caa: FakeCoverArt) =
-        AlbumBackCoverRepository(dao, mb, caa).also { it.now = { clock } }
+    private fun repo(
+        dao: FakeDao = FakeDao(),
+        mb: FakeMusicBrainz = FakeMusicBrainz(),
+        caa: FakeCoverArt,
+        discogs: FakeDiscogs = FakeDiscogs(),
+    ) = AlbumBackCoverRepository(dao, mb, caa, discogs).also { it.now = { clock } }
 
     @Test fun `finds the back and stores it for every song on the album`() = runTest {
         val dao = FakeDao()
@@ -290,7 +346,7 @@ class AlbumBackCoverRepositoryTest {
             override suspend fun release(mbid: String): CaaListing? = null
             override suspend fun releaseGroup(mbid: String): CaaListing? = CaaListing(listOf(front()), "cd-1")
         }
-        assertThat(AlbumBackCoverRepository(dao, FakeMusicBrainz(), caa).also { it.now = { clock } }.resolve(NEVERMIND)).isNull()
+        assertThat(AlbumBackCoverRepository(dao, FakeMusicBrainz(), caa, FakeDiscogs()).also { it.now = { clock } }.resolve(NEVERMIND)).isNull()
         assertThat(dao.get(NEVERMIND.key)).isNull()
     }
 
@@ -343,7 +399,7 @@ class AlbumBackCoverRepositoryTest {
             override suspend fun searchRecordingsByIsrc(isrc: String): JsonObject? =
                 Json.parseToJsonElement("""{"recordings":"not a list"}""").jsonObject
         }
-        val repo = AlbumBackCoverRepository(dao, garbled, FakeCoverArt()).also { it.now = { clock } }
+        val repo = AlbumBackCoverRepository(dao, garbled, FakeCoverArt(), FakeDiscogs()).also { it.now = { clock } }
         assertThat(repo.resolve(NEVERMIND)).isNull()
         assertThat(dao.get(NEVERMIND.key)).isNull()
     }
@@ -360,8 +416,126 @@ class AlbumBackCoverRepositoryTest {
             }
         }
         val caa = FakeCoverArt(canonical = "cd-1", listings = mapOf("cd-1" to listing(back("https://caa/ar.jpg"), page("https://caa/p.jpg"))))
-        val repo = AlbumBackCoverRepository(FakeDao(), mb, caa).also { it.now = { clock } }
+        val repo = AlbumBackCoverRepository(FakeDao(), mb, caa, FakeDiscogs()).also { it.now = { clock } }
         assertThat(repo.resolve(BackCoverAlbum("The Beatles", "Abbey Road (Remastered)", isrc = null))?.back).isEqualTo("https://caa/ar.jpg")
         assertThat(searched).containsExactly("Abbey Road")
+    }
+
+    @Test fun `with no back on the archive, Discogs gives one, credited`() = runTest {
+        val dao = FakeDao()
+        val mb = FakeMusicBrainz(discogsMaster = 13814)
+        val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front(), page("https://caa/p1.jpg"))))
+        val discogs = FakeDiscogs(vinyl())
+
+        val art = repo(dao, mb, caa, discogs).resolve(NEVERMIND)!!
+
+        assertThat(art.back).isEqualTo("https://i.discogs.com/1.jpeg")
+        assertThat(art.backFromDiscogs).isTrue()
+        assertThat(art.inside).containsExactly("https://caa/p1.jpg") // the archive's, kept
+        assertThat(art.insideFromDiscogs).isFalse()
+        assertThat(art.discogsPage).isEqualTo("https://www.discogs.com/release/77-Nirvana-Nevermind")
+        assertThat(discogs.asked).containsAtLeast("versions:13814:Vinyl", "release:77").inOrder()
+        val row = dao.get(NEVERMIND.key)!!
+        assertThat(row.releaseMbid).isNull()
+        assertThat(row.backFromDiscogs).isTrue()
+    }
+
+    @Test fun `with a back but nothing inside on the archive, Discogs gives the inside, its own back left out`() = runTest {
+        val mb = FakeMusicBrainz(discogsMaster = 13814)
+        val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(front(), back("https://caa/back.jpg"))))
+        val art = repo(mb = mb, caa = caa, discogs = FakeDiscogs(vinyl(images = 4))).resolve(NEVERMIND)!!
+
+        assertThat(art.back).isEqualTo("https://caa/back.jpg")
+        assertThat(art.backFromDiscogs).isFalse()
+        assertThat(art.inside).containsExactly("https://i.discogs.com/2.jpeg", "https://i.discogs.com/3.jpeg").inOrder()
+        assertThat(art.insideFromDiscogs).isTrue()
+        assertThat(art.discogsPage).isNotNull()
+    }
+
+    @Test fun `halves that join put the Discogs back after them`() = runTest {
+        val mb = FakeMusicBrainz(discogsMaster = 1)
+        val discogs = FakeDiscogs(vinyl(), joins = true)
+        val art = repo(mb = mb, caa = FakeCoverArt(canonical = null), discogs = discogs).resolve(NEVERMIND)!!
+        assertThat(art.back).isEqualTo("https://i.discogs.com/3.jpeg")
+        assertThat(discogs.asked).containsAtLeast("pixels:https://i.discogs.com/t1.jpeg", "pixels:https://i.discogs.com/t2.jpeg")
+    }
+
+    @Test fun `a gatefold the format names needs no thumbnails`() = runTest {
+        val discogs = FakeDiscogs(vinyl(gatefold = true))
+        val art = repo(mb = FakeMusicBrainz(discogsMaster = 1), caa = FakeCoverArt(canonical = null), discogs = discogs)
+            .resolve(NEVERMIND)!!
+        assertThat(art.back).isEqualTo("https://i.discogs.com/3.jpeg")
+        assertThat(discogs.asked.none { it.startsWith("pixels:") }).isTrue()
+    }
+
+    @Test fun `an album with no art on the archive gets Discogs' back and inside`() = runTest {
+        val caa = FakeCoverArt(canonical = null)
+        val art = repo(mb = FakeMusicBrainz(discogsMaster = 1), caa = caa, discogs = FakeDiscogs(vinyl())).resolve(NEVERMIND)!!
+        assertThat(art.back).isEqualTo("https://i.discogs.com/1.jpeg")
+        assertThat(art.inside).hasSize(4)
+        assertThat(art.backFromDiscogs).isTrue()
+        assertThat(art.insideFromDiscogs).isTrue()
+        assertThat(caa.asked).containsExactly("group:rg-1")
+    }
+
+    @Test fun `a master with no vinyl is read from its most-collected CD`() = runTest {
+        val cd = vinyl().copy(formats = listOf("CD"))
+        val discogs = object : DiscogsClient by FakeDiscogs(cd) {
+            override suspend fun versions(masterId: Long, format: String): List<DiscogsVersion>? =
+                if (format == "CD") listOf(DiscogsVersion(77, listOf("CD"), accepted = true, inCollection = 3)) else emptyList()
+        }
+        val repo = AlbumBackCoverRepository(FakeDao(), FakeMusicBrainz(discogsMaster = 1), FakeCoverArt(canonical = null), discogs)
+            .also { it.now = { clock } }
+        assertThat(repo.resolve(NEVERMIND)?.back).isEqualTo("https://i.discogs.com/1.jpeg")
+    }
+
+    @Test fun `a full answer from the archive never asks Discogs`() = runTest {
+        val mb = FakeMusicBrainz(discogsMaster = 1)
+        val discogs = FakeDiscogs(vinyl())
+        val caa = FakeCoverArt(listings = mapOf("cd-1" to listing(back("https://caa/b.jpg"), page("https://caa/p.jpg"))))
+        val art = repo(mb = mb, caa = caa, discogs = discogs).resolve(NEVERMIND)!!
+        assertThat(art.backFromDiscogs || art.insideFromDiscogs).isFalse()
+        assertThat(art.discogsPage).isNull()
+        assertThat(discogs.asked).isEmpty()
+    }
+
+    @Test fun `no Discogs link leaves the archive's partial answer`() = runTest {
+        val discogs = FakeDiscogs(vinyl())
+        val caa = FakeCoverArt(listings = mapOf("vinyl-1" to listing(back("https://caa/b.jpg"))))
+        val art = repo(caa = caa, discogs = discogs).resolve(NEVERMIND)!!
+        assertThat(art).isEqualTo(AlbumCoverArt("https://caa/b.jpg", emptyList()))
+        assertThat(discogs.asked).isEmpty()
+    }
+
+    @Test fun `Discogs failing is a failed lookup, the archive's back kept meanwhile`() = runTest {
+        val dao = FakeDao()
+        val discogs = FakeDiscogs(vinyl()).apply { failing = true }
+        val caa = FakeCoverArt(listings = mapOf("vinyl-1" to listing(back("https://caa/b.jpg"))))
+        val repo = repo(dao, FakeMusicBrainz(discogsMaster = 1), caa, discogs)
+
+        assertThat(repo.resolve(NEVERMIND)).isNull()
+        val row = dao.get(NEVERMIND.key)!!
+        assertThat(row.imageUrl).isEqualTo("https://caa/b.jpg")
+        assertThat(row.insideUrls).isNull() // the inside is looked for again
+        assertThat(repo.observe(NEVERMIND).first()?.back).isEqualTo("https://caa/b.jpg")
+
+        clock += AlbumBackCoverRepository.FAILURE_BACKOFF_MS + 1
+        discogs.failing = false
+        assertThat(repo.resolve(NEVERMIND)?.insideFromDiscogs).isTrue()
+    }
+
+    @Test fun `an answer with Discogs' art is looked up again once it is old`() = runTest {
+        val mb = FakeMusicBrainz(discogsMaster = 1)
+        val repo = repo(mb = mb, caa = FakeCoverArt(canonical = null), discogs = FakeDiscogs(vinyl()))
+        repo.resolve(NEVERMIND)
+        val calls = mb.calls
+
+        clock += AlbumBackCoverRepository.MISS_TTL_MS - 1
+        assertThat(repo.resolve(NEVERMIND)?.backFromDiscogs).isTrue()
+        assertThat(mb.calls).isEqualTo(calls)
+
+        clock += 2
+        repo.resolve(NEVERMIND)
+        assertThat(mb.calls).isGreaterThan(calls)
     }
 }

@@ -74,6 +74,12 @@ class MusicBrainzClientImpl @Inject constructor(
     override suspend fun browseReleases(releaseGroupId: String): JsonObject? =
         getOrNull("release?release-group=$releaseGroupId&status=official&inc=media&limit=100&fmt=json")
 
+    override suspend fun releaseGroupUrlRels(releaseGroupId: String): JsonObject? =
+        getOrNull("release-group/$releaseGroupId?inc=url-rels&fmt=json")
+
+    override suspend fun releaseUrlRels(releaseId: String): JsonObject? =
+        getOrNull("release/$releaseId?inc=url-rels&fmt=json")
+
     /**
      * GET [path] for the back cover lookup, null on failure.
      *

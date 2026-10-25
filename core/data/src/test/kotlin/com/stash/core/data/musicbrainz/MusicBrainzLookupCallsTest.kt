@@ -55,6 +55,17 @@ class MusicBrainzLookupCallsTest {
         assertThat(client.searchRecordingsByIsrc("USGF19942501")).isNull()
     }
 
+    @Test fun `a release group's links are asked for with url-rels, and retried when busy`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setBody(java.io.File("src/test/resources/backcover/mb_rg_urlrels_rumours.json").readText()))
+
+        val rels = client.releaseGroupUrlRels("f6a4b0a1-5a0d-3a61-bb8b-57b8f1a2c7e6")
+
+        assertThat(rels.toString()).contains("discogs.com/master/38722")
+        server.takeRequest()
+        assertThat(server.takeRequest().path).isEqualTo("/release-group/f6a4b0a1-5a0d-3a61-bb8b-57b8f1a2c7e6?inc=url-rels&fmt=json")
+    }
+
     @Test fun `the search asks for the album and the artist by phrase`() = runTest {
         server.enqueue(MockResponse().setBody(groups))
         client.searchReleaseGroups("The Beatles", "Sgt. Pepper's Lonely Hearts Club Band")
