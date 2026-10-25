@@ -680,7 +680,14 @@ class NowPlayingViewModel @Inject constructor(
                         val fetchBack = launch {
                             fetchBackImage(backCovers.observe(album).mapNotNull { it?.back }.first())
                         }
-                        val art = backCovers.resolve(album)
+                        var art = backCovers.resolve(album)
+                        // A failed lookup (a server's bad moment) is tried again while the album
+                        // plays on: past the repository's backoff, a few times.
+                        var retries = 0
+                        while (art == null && retries++ < BACK_COVER_RETRIES) {
+                            delay(com.stash.core.data.backcover.AlbumBackCoverRepository.FAILURE_BACKOFF_MS + 1_000L)
+                            art = backCovers.resolve(album)
+                        }
                         // The watcher may not have seen a back stored at the walk's very end.
                         if (fetchBack.isActive) {
                             fetchBack.cancel()
@@ -1718,6 +1725,9 @@ private const val ROW_LAG_GRACE_MS = 400L
  * queue looks nothing up, short enough that lyrics are in hand well before most people open them.
  */
 private const val PREFETCH_DWELL_MS = 1_800L
+
+/** A failed back cover lookup is tried again this many times while its album plays. */
+private const val BACK_COVER_RETRIES = 3
 
 /**
  * The last resort for Now Playing's download ring: a download whose queue row never settles

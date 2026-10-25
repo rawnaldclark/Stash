@@ -124,10 +124,16 @@ class AlbumBackCoverRepository @Inject constructor(
                     throw e
                 } catch (e: Exception) {
                     // LookupFailed, or anything a malformed reply set off: never the app's crash.
+                    android.util.Log.w(LOG_TAG, "${album.artist} - ${album.title}: lookup failed (${e.javaClass.simpleName})")
                     failedAt[key] = now()
                     return@withLock null
                 }
                 failedAt.remove(key)
+                android.util.Log.i(
+                    LOG_TAG,
+                    "${album.artist} - ${album.title}: back=${found.back != null}${if (found.backFromDiscogs) " (Discogs)" else ""}, " +
+                        "inside=${found.inside.size}${if (found.insideFromDiscogs) " (Discogs)" else ""}",
+                )
                 val row = AlbumBackCoverEntity(
                     albumKey = key,
                     imageUrl = found.back?.url,
@@ -183,13 +189,18 @@ class AlbumBackCoverRepository @Inject constructor(
     /** A call failed: nothing can be concluded about the album. */
     private class LookupFailed : Exception()
 
+    private fun lookupFailed(step: String): LookupFailed {
+        android.util.Log.w(LOG_TAG, "$step failed")
+        return LookupFailed()
+    }
+
     /**
      * The album's back and inside pages, empty when it has neither. [onBack] gets the back the
      * moment it is found, while the walk goes on for the inside. Throws [LookupFailed].
      */
     private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
-        val cover = coverArt.releaseGroup(group) ?: throw LookupFailed()
+        val cover = coverArt.releaseGroup(group) ?: throw lookupFailed("archive release group $group")
         // No art at all on the archive: Discogs alone.
         if (cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null, null)
 
@@ -220,7 +231,7 @@ class AlbumBackCoverRepository @Inject constructor(
         main?.let { id -> coverArt.release(id)?.let { read(id, it) } }
         if (done()) return Walk(back, inside.orEmpty())
 
-        val releases = musicBrainz.browseReleases(group) ?: throw LookupFailed()
+        val releases = musicBrainz.browseReleases(group) ?: throw lookupFailed("MusicBrainz releases of $group")
         val candidates = rankReleasesForBack(releases).filter { it != main }.take(MAX_RELEASES_CHECKED)
         for (batch in candidates.chunked(PARALLEL_CHECKS)) {
             coroutineScope {
@@ -235,7 +246,7 @@ class AlbumBackCoverRepository @Inject constructor(
             }
             if (done()) break
         }
-        if (!answered && (main != null || candidates.isNotEmpty())) throw LookupFailed()
+        if (!answered && (main != null || candidates.isNotEmpty())) throw lookupFailed("every archive listing of $group")
         return withDiscogs(group, releases, back, inside)
     }
 
@@ -268,7 +279,7 @@ class AlbumBackCoverRepository @Inject constructor(
      * thumbnails when the back is in doubt ([needsSeamCheck]). Throws [LookupFailed].
      */
     private suspend fun discogsArt(group: String, releases: JsonObject?): DiscogsArt? {
-        val rels = musicBrainz.releaseGroupUrlRels(group) ?: throw LookupFailed()
+        val rels = musicBrainz.releaseGroupUrlRels(group) ?: throw lookupFailed("MusicBrainz links of $group")
         var linked: DiscogsRelease? = null
         val master = discogsMasterId(rels) ?: run {
             val all = releases ?: musicBrainz.browseReleases(group) ?: throw LookupFailed()
@@ -302,14 +313,14 @@ class AlbumBackCoverRepository @Inject constructor(
     /** The album's MusicBrainz release group: by the song's ISRC first, then by title. Throws [LookupFailed]. */
     private suspend fun releaseGroupOf(album: BackCoverAlbum): String? {
         if (album.isrc != null) {
-            val recordings = musicBrainz.searchRecordingsByIsrc(album.isrc) ?: throw LookupFailed()
+            val recordings = musicBrainz.searchRecordingsByIsrc(album.isrc) ?: throw lookupFailed("MusicBrainz ISRC search")
             releaseGroupFromIsrcSearch(recordings, album.title)?.let { return it }
         }
         // The plain title first, one search for most albums: a phrase search needs every word, so
         // "Abbey Road (Remastered)" finds nothing that "Abbey Road" doesn't. The full title only if
         // the plain one finds no album of that name.
         val plain = plainAlbumTitle(album.title)
-        val hits = musicBrainz.searchReleaseGroups(album.artist, plain) ?: throw LookupFailed()
+        val hits = musicBrainz.searchReleaseGroups(album.artist, plain) ?: throw lookupFailed("MusicBrainz title search")
         releaseGroupFromSearch(hits, album.title, album.artist)?.let { return it }
         if (plain == album.title) return null
         val fullHits = musicBrainz.searchReleaseGroups(album.artist, album.title) ?: throw LookupFailed()
@@ -334,5 +345,7 @@ class AlbumBackCoverRepository @Inject constructor(
 
         /** Inside pages kept at most: a box set's booklet can run past a hundred. */
         const val MAX_INSIDE_PAGES = 40
+
+        private const val LOG_TAG = "BackCover"
     }
 }

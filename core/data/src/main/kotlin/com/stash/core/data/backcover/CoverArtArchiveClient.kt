@@ -1,7 +1,9 @@
 package com.stash.core.data.backcover
 
+import android.util.Log
 import com.stash.core.data.share.await
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -56,33 +58,54 @@ class CoverArtArchiveClientImpl @Inject constructor(
     /** Test seam: the server. */
     internal var base: String = BASE
 
+    /** Test seam: the wait before another try. */
+    internal var retryMs: Long = RETRY_MS
+
     override suspend fun release(mbid: String): CaaListing? = listing("release/$mbid")
 
     override suspend fun releaseGroup(mbid: String): CaaListing? = listing("release-group/$mbid")
 
     /**
-     * A listing, [CaaListing.NONE] on a 404, null on any other failure. The call cancels with its
-     * caller ([await]), so a lookup that has its answer stops waiting on slower listings; a
-     * cancellation is rethrown.
+     * A listing, [CaaListing.NONE] on a 404, null on any other failure. A 5xx or a network failure
+     * (archive.org, where every listing is redirected, answers a 500 now and then and the same
+     * call a second later: measured 2026-10-25) is tried again after [retryMs], up to [RETRIES]
+     * times. The call cancels with its caller ([await]), so a lookup that has its answer stops
+     * waiting on slower listings; a cancellation is rethrown.
      */
-    private suspend fun listing(path: String): CaaListing? = try {
-        val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
-        http.newCall(req).await { code, body ->
-            when {
-                code == 404 -> CaaListing.NONE
-                code !in 200..299 -> null
-                else -> parseCaaListing(json.parseToJsonElement(body).jsonObject)
+    private suspend fun listing(path: String): CaaListing? {
+        repeat(RETRIES + 1) { attempt ->
+            val last = attempt == RETRIES
+            try {
+                val req = Request.Builder().url("$base$path").header("User-Agent", USER_AGENT).build()
+                val (code, body) = http.newCall(req).await { code, body -> code to body }
+                when {
+                    code == 404 -> return CaaListing.NONE
+                    // A body that can't be read is no better a second time.
+                    code in 200..299 -> return runCatching { parseCaaListing(json.parseToJsonElement(body).jsonObject) }.getOrNull()
+                    code < 500 || last -> {
+                        Log.w(TAG, "$path: HTTP $code")
+                        return null
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (last) {
+                    Log.w(TAG, "$path: ${e.javaClass.simpleName}")
+                    return null
+                }
             }
+            delay(retryMs)
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
+        return null
     }
 
     private companion object {
         const val BASE = "https://coverartarchive.org/"
         const val CALL_TIMEOUT_SECONDS = 10L
+        const val RETRIES = 2
+        const val RETRY_MS = 1_000L
+        const val TAG = "BackCover"
         const val USER_AGENT = "Stash/1.0 ( https://github.com/rawnaldclark/Stash )"
     }
 }

@@ -17,7 +17,10 @@ class CoverArtArchiveClientTest {
 
     @Before fun setUp() {
         server.start()
-        client = CoverArtArchiveClientImpl(OkHttpClient()).apply { base = server.url("/").toString() }
+        client = CoverArtArchiveClientImpl(OkHttpClient()).apply {
+            base = server.url("/").toString()
+            retryMs = 0
+        }
     }
 
     @After fun tearDown() = server.shutdown()
@@ -34,10 +37,22 @@ class CoverArtArchiveClientTest {
         assertThat(client.releaseGroup("rg")).isEqualTo(CaaListing.NONE)
     }
 
-    @Test fun `a server error or an unreadable body is a failure`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(502))
+    @Test fun `a server error is tried again`() = runTest {
+        // archive.org's 500 now and then: the next try answers (2026-10-25).
+        server.enqueue(MockResponse().setResponseCode(500))
+        server.enqueue(MockResponse().setResponseCode(404))
+        assertThat(client.releaseGroup("rg")).isEqualTo(CaaListing.NONE)
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `a server error every time, an unreadable body or a refusal is a failure`() = runTest {
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(502)) }
         assertThat(client.release("r")).isNull()
+        assertThat(server.requestCount).isEqualTo(3)
         server.enqueue(MockResponse().setBody("<html>"))
         assertThat(client.release("r")).isNull()
+        server.enqueue(MockResponse().setResponseCode(400))
+        assertThat(client.release("r")).isNull()
+        assertThat(server.requestCount).isEqualTo(5)
     }
 }
