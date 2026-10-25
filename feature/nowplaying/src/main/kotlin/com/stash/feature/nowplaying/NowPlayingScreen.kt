@@ -1037,18 +1037,17 @@ fun NowPlayingScreen(
                                         modifier = artShared,
                                         onShowBackChange = { up ->
                                             if (up && !backUp) packageStart = (cycleIndex - 1).coerceAtLeast(0)
-                                            backUp = up
-                                        },
-                                    ) { faceModifier ->
-                                        // Turned over by hand: once the front is out of sight (past
-                                        // the turn's middle), it is the front again, unfaded.
-                                        LaunchedEffect(backUp) {
-                                            if (backUp && cycleIndex != 0) {
-                                                kotlinx.coroutines.delay(CYCLE_RESET_AFTER_MS)
+                                            // Turned back by hand: the front comes up as the front,
+                                            // unfaded, whatever page the cycle had shown. Set here,
+                                            // not in the front face, which isn't composed while the
+                                            // back is up.
+                                            if (!up && backUp) {
                                                 cycleIndex = 0
                                                 cycleSnap++
                                             }
-                                        }
+                                            backUp = up
+                                        },
+                                    ) { faceModifier ->
                                         val front: @Composable (Modifier) -> Unit = { m ->
                                             AlbumArtSection(
                                                 albumArtUrl = track?.albumArtUrl,
@@ -1707,9 +1706,6 @@ private fun InsidePageSection(
         }
     }
 }
-
-/** A cycled page turned over by hand becomes the front after this: once the turn hides it. */
-private const val CYCLE_RESET_AFTER_MS = 300L
 
 /** The narrowest and widest a back cover is drawn (width over height). */
 private const val BACK_MIN_ASPECT = 0.6f
