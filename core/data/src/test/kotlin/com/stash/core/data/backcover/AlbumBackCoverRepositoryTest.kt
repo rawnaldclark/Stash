@@ -151,6 +151,7 @@ class AlbumBackCoverRepositoryTest {
     ) : CoverArtArchiveClient {
         val asked = mutableListOf<String>()
         var failing = false
+        var groupFailing = false
 
         override suspend fun release(mbid: String): CaaListing? {
             asked += mbid
@@ -160,7 +161,7 @@ class AlbumBackCoverRepositoryTest {
 
         override suspend fun releaseGroup(mbid: String): CaaListing? {
             asked += "group:$mbid"
-            if (failing) return null
+            if (failing || groupFailing) return null
             return if (canonical == null) CaaListing.NONE else CaaListing(listOf(front()), canonical)
         }
     }
@@ -360,6 +361,11 @@ class AlbumBackCoverRepositoryTest {
         repo.resolve(NEVERMIND)
         assertThat(mb.calls).isGreaterThan(calls)
         assertThat(dao.get(NEVERMIND.key)).isNotNull()
+    }
+
+    @Test fun `the group's listing failing still checks the releases`() = runTest {
+        val caa = FakeCoverArt(listings = mapOf("vinyl-1" to listing(front(), back("https://caa/b.jpg")))).apply { groupFailing = true }
+        assertThat(repo(caa = caa).resolve(NEVERMIND)?.back).isEqualTo("https://caa/b.jpg")
     }
 
     @Test fun `the archive failing on every release is a failure, not a miss`() = runTest {

@@ -200,9 +200,13 @@ class AlbumBackCoverRepository @Inject constructor(
      */
     private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
-        val cover = coverArt.releaseGroup(group) ?: throw lookupFailed("archive release group $group")
+        // The group's listing only names the main edition. archive.org fails it now and then (half
+        // the calls for Four Tops' Reach Out, 2026-10-25, retries and all): then the releases are
+        // checked without it.
+        val cover = coverArt.releaseGroup(group)
+        if (cover == null) android.util.Log.w(LOG_TAG, "archive release group $group failed: checking its releases")
         // No art at all on the archive: Discogs alone.
-        if (cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null, null)
+        if (cover != null && cover.images.isEmpty() && cover.releaseMbid == null) return withDiscogs(group, null, null, null)
 
         var back: Found? = null
         var inside: List<String>? = null
@@ -227,7 +231,7 @@ class AlbumBackCoverRepository @Inject constructor(
         fun done() = back != null && inside != null
 
         // The main edition alone first: when it has both, its releases needn't even be listed.
-        val main = cover.releaseMbid
+        val main = cover?.releaseMbid
         main?.let { id -> coverArt.release(id)?.let { read(id, it) } }
         if (done()) return Walk(back, inside.orEmpty())
 
