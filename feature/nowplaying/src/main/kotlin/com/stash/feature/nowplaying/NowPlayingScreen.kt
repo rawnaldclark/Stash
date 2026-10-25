@@ -1608,6 +1608,14 @@ private fun InsidePageSection(
         com.stash.feature.nowplaying.ui.LiftedPage(url, request, description, discogsPage)
     }
     var aspect by remember(url) { mutableStateOf(1f) }
+    // A failed load (archive.org's bad moments) is tried again: a new try redraws the image anew.
+    var attempt by remember(url) { mutableStateOf(1) }
+    var failedAttempt by remember(url) { mutableStateOf(0) }
+    LaunchedEffect(url, failedAttempt) {
+        if (failedAttempt == 0 || failedAttempt >= com.stash.feature.nowplaying.ui.IMAGE_TRIES) return@LaunchedEffect
+        kotlinx.coroutines.delay(com.stash.feature.nowplaying.ui.IMAGE_RETRY_MS * failedAttempt)
+        attempt = failedAttempt + 1
+    }
     val tile = MaterialTheme.colorScheme.surfaceVariant
     val tilePainter = remember(tile) { ColorPainter(tile) }
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1617,20 +1625,23 @@ private fun InsidePageSection(
             modifier = Modifier.aspectRatio(aspect.coerceIn(BACK_MIN_ASPECT, BACK_MAX_ASPECT)),
         ) {
             ArtGlow()
-            AsyncImage(
-                model = request,
-                contentDescription = description,
-                contentScale = ContentScale.Crop,
-                placeholder = tilePainter,
-                error = tilePainter,
-                onSuccess = { state ->
-                    val size = state.painter.intrinsicSize
-                    if (size.width > 0f && size.height > 0f) aspect = size.width / size.height
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(20.dp)),
-            )
+            androidx.compose.runtime.key(attempt) {
+                AsyncImage(
+                    model = request,
+                    contentDescription = description,
+                    contentScale = ContentScale.Crop,
+                    placeholder = tilePainter,
+                    error = tilePainter,
+                    onSuccess = { state ->
+                        val size = state.painter.intrinsicSize
+                        if (size.width > 0f && size.height > 0f) aspect = size.width / size.height
+                    },
+                    onError = { failedAttempt = attempt },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp)),
+                )
+            }
         }
     }
 }

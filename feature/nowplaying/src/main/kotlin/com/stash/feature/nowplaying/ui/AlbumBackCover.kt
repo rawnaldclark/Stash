@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -8,11 +9,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 import coil3.SingletonImageLoader
 import coil3.request.CachePolicy
+import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.Precision
+
+/**
+ * Tries at an image before it is given up on. archive.org, where the archive's images live, now and
+ * then answers a 500 or an empty body and the same image a moment later (2026-10-25).
+ */
+internal const val IMAGE_TRIES = 4
+
+/** The wait before try n+1: n times this. */
+internal const val IMAGE_RETRY_MS = 2_000L
 
 /** The archive's thumbnail is 1200px: no decode above it. */
 private const val BACK_COVER_MAX_DECODE_PX = 1200
@@ -45,7 +57,8 @@ internal class LoadedBackCover(val request: ImageRequest, val aspectRatio: Float
 
 /**
  * [url]'s back cover once its image has loaded, null until then and when it can't load. The art
- * flips only to a back that is ready: a tap never turns the cover over onto a blank.
+ * flips only to a back that is ready: a tap never turns the cover over onto a blank. A failed load
+ * is tried again, [IMAGE_TRIES] times in all (Coil keeps no failure, so each try asks anew).
  */
 @Composable
 internal fun rememberLoadedBackCover(url: String?): LoadedBackCover? {
@@ -54,10 +67,15 @@ internal fun rememberLoadedBackCover(url: String?): LoadedBackCover? {
     LaunchedEffect(url) {
         if (url == null) return@LaunchedEffect
         val request = backCoverRequest(context, url)
-        val image = (SingletonImageLoader.get(context).execute(request) as? SuccessResult)?.image
-            ?: return@LaunchedEffect
-        if (image.width > 0 && image.height > 0) {
-            loaded = LoadedBackCover(request, image.width.toFloat() / image.height)
+        for (attempt in 1..IMAGE_TRIES) {
+            val result = SingletonImageLoader.get(context).execute(request)
+            val image = (result as? SuccessResult)?.image
+            if (image != null && image.width > 0 && image.height > 0) {
+                loaded = LoadedBackCover(request, image.width.toFloat() / image.height)
+                return@LaunchedEffect
+            }
+            Log.w("BackCover", "back image, try $attempt: ${(result as? ErrorResult)?.throwable?.javaClass?.simpleName}")
+            if (attempt < IMAGE_TRIES) delay(IMAGE_RETRY_MS * attempt)
         }
     }
     return loaded
