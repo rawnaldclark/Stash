@@ -88,6 +88,7 @@ private const val FLIP_CAMERA_DISTANCE = 12f
  *   handed; null when the album has no back cover (or it hasn't loaded), and the art then doesn't
  *   flip.
  * @param modifier The cover's shared-element modifier (it morphs into lyrics mode's header cover).
+ * @param onShowBackChange Told when the back is turned up (true) and down.
  * @param art The cover itself, drawn with the [Modifier] it is handed.
  */
 @Composable
@@ -105,6 +106,7 @@ internal fun SwipeableArt(
     flipKey: Any?,
     back: (@Composable (Modifier) -> Unit)?,
     modifier: Modifier = Modifier,
+    onShowBackChange: (Boolean) -> Unit = {},
     art: @Composable (Modifier) -> Unit,
 ) {
     val reducedMotion = rememberNpReducedMotion()
@@ -124,6 +126,8 @@ internal fun SwipeableArt(
     var backUpFor by remember { mutableStateOf<Any?>(null) }
     LaunchedEffect(flipKey) { if (backUpFor != flipKey) backUpFor = null }
     val showBack = back != null && flipKey != null && backUpFor == flipKey
+    val currentOnShowBackChange by rememberUpdatedState(onShowBackChange)
+    LaunchedEffect(showBack) { currentOnShowBackChange(showBack) }
     fun flip() {
         backUpFor = if (backUpFor == currentFlipKey) null else currentFlipKey
     }

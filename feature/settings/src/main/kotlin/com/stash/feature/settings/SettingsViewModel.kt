@@ -655,6 +655,7 @@ class SettingsViewModel @Inject constructor(
         homeDiscoveryPreference.enabled,
         nowPlayingPreference.ambientAnimationEnabled,
         nowPlayingPreference.ambientStyle,
+        nowPlayingPreference.cycleAlbumArt,
         homeSectionsPreference.order,
         homeSectionsPreference.hidden,
         homeSectionsPreference.showLikedOnHome,
@@ -702,6 +703,7 @@ class SettingsViewModel @Inject constructor(
         val qobuzDiscoveryEnabled = v.next<Boolean>()
         val ambientAnimationEnabled = v.next<Boolean>()
         val ambientStyle = v.next<com.stash.core.data.prefs.AmbientStyle>()
+        val cycleAlbumArt = v.next<Boolean>()
         @Suppress("UNCHECKED_CAST")
         val homeSectionOrder = v.next<List<com.stash.core.data.prefs.HomeSection>>()
         @Suppress("UNCHECKED_CAST")
@@ -757,6 +759,7 @@ class SettingsViewModel @Inject constructor(
             qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
             ambientAnimationEnabled = ambientAnimationEnabled,
             ambientStyle = ambientStyle,
+            cycleAlbumArt = cycleAlbumArt,
             homeSectionOrder = homeSectionOrder,
             homeSectionsHidden = homeSectionsHidden,
             showLikedOnHome = showLikedOnHome,
@@ -1679,6 +1682,11 @@ class SettingsViewModel @Inject constructor(
     /** Ambient animated background on Now Playing (Settings > Appearance). */
     fun onAmbientAnimationEnabledChanged(enabled: Boolean) {
         viewModelScope.launch { nowPlayingPreference.setAmbientAnimationEnabled(enabled) }
+    }
+
+    /** Settings > Appearance > Cycle album art. */
+    fun onCycleAlbumArtChanged(enabled: Boolean) {
+        viewModelScope.launch { nowPlayingPreference.setCycleAlbumArt(enabled) }
     }
 
     /** How the Now Playing ambient moves (Settings > Appearance > Ambient style). */

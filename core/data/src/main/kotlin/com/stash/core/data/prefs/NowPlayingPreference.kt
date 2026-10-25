@@ -36,6 +36,18 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
         context.nowPlayingDataStore.edit { it[ambientAnimationKey] = enabled }
     }
 
+    private val cycleAlbumArtKey = booleanPreferencesKey("cycle_album_art")
+
+    /**
+     * Settings > Appearance > Cycle album art: Now Playing's art turns slowly through the album's
+     * back and inside pages, when it has them. Off unless turned on.
+     */
+    val cycleAlbumArt = context.nowPlayingDataStore.data.map { it[cycleAlbumArtKey] ?: false }
+
+    suspend fun setCycleAlbumArt(enabled: Boolean) {
+        context.nowPlayingDataStore.edit { it[cycleAlbumArtKey] = enabled }
+    }
+
     private val ambientStyleKey = stringPreferencesKey("ambient_style")
 
     /** Unset or unknown reads as [AmbientStyle.SOFT_GLOW], so existing installs get the default. */

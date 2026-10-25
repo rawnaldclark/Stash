@@ -185,6 +185,8 @@
     <string name="settings_now_playing_section">Now Playing</string>
     <string name="settings_ambient_motion_title">Ambient motion</string>
     <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
+    <string name="settings_cycle_album_art_title">Cycle album art</string>
+    <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
     <string name="settings_ambient_style_soft_glow">Soft glow</string>
     <string name="settings_ambient_style_classic">Classic</string>
     <string name="settings_open_stash_on_section">Open Stash on</string>

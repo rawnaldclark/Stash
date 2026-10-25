@@ -41,6 +41,7 @@ private const val MAX_DOTS = 10
  *
  * @param pageCount The back cover plus the pages inside (1: the back alone).
  * @param credit Page [index]'s Discogs page when its image comes from Discogs, else null.
+ * @param initialPage The page it opens on.
  * @param page Draws page [index]: 0 is the back cover.
  */
 @Composable
@@ -48,13 +49,20 @@ internal fun AlbumPackage(
     pageCount: Int,
     modifier: Modifier = Modifier,
     credit: (index: Int) -> String? = { null },
+    initialPage: Int = 0,
     page: @Composable (index: Int) -> Unit,
 ) {
-    val pagerState = rememberPagerState { pageCount }
+    val pagerState = rememberPagerState(initialPage = initialPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0))) { pageCount }
+    // Turned over on a page the cycle was showing: the back opens on it.
+    androidx.compose.runtime.LaunchedEffect(initialPage) {
+        pagerState.scrollToPage(initialPage.coerceIn(0, (pageCount - 1).coerceAtLeast(0)))
+    }
     Box(modifier = modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             pageSpacing = 24.dp,
+            // The neighbouring pages load before they are swiped to.
+            beyondViewportPageCount = 1,
             modifier = Modifier.fillMaxSize(),
         ) { index ->
             page(index)

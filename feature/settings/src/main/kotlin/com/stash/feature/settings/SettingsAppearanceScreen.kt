@@ -127,6 +127,14 @@ fun SettingsAppearanceScreen(
                 }
             }
         }
+        nowPlaying += {
+            SettingsToggleRow(
+                title = stringResource(R.string.settings_cycle_album_art_title),
+                subtitle = stringResource(R.string.settings_cycle_album_art_subtitle),
+                checked = uiState.cycleAlbumArt,
+                onCheckedChange = viewModel::onCycleAlbumArtChanged,
+            )
+        }
         SettingsGroupCard(rows = nowPlaying)
 
         SettingsSectionLabel(stringResource(R.string.settings_open_stash_on_section))

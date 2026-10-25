@@ -52,6 +52,16 @@ private fun isDiscogsImage(url: String): Boolean {
     return host == "discogs.com" || host.endsWith(".discogs.com")
 }
 
+/** Loads an inside page's image ahead of showing it, tried as [rememberLoadedBackCover] tries; false when it can't. */
+internal suspend fun loadPageImage(context: Context, url: String): Boolean {
+    val request = backCoverRequest(context, url)
+    for (attempt in 1..IMAGE_TRIES) {
+        if (SingletonImageLoader.get(context).execute(request) is SuccessResult) return true
+        if (attempt < IMAGE_TRIES) delay(IMAGE_RETRY_MS * attempt)
+    }
+    return false
+}
+
 /** A back cover in hand: its [request] (now cached) and its shape, width over height. */
 internal class LoadedBackCover(val request: ImageRequest, val aspectRatio: Float)
 
