@@ -87,3 +87,14 @@ test("real songs and artists are still looked up", () => {
         assert.ok(lookable(q), q);
     }
 });
+
+test("a crafted name of a digit and a long run of spaces is read quickly", () => {
+    const started = Date.now();
+    for (const artist of ["0" + " ".repeat(20000), "0" + " ".repeat(20000) + "x", "1 ".repeat(10000)]) {
+        isUnlookable(canonicalParams(new URLSearchParams({ method: "track.getinfo", artist, track: "t" })));
+    }
+    assert.ok(Date.now() - started < 200, `took ${Date.now() - started} ms`);
+    // Still a view count where there is one.
+    assert.ok(!lookable("method=track.getInfo&artist=Someone,%201.2%20k%20views&track=T"));
+    assert.ok(!lookable("method=track.getInfo&artist=Someone,%20922K%20views&track=T"));
+});

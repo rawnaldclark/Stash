@@ -232,8 +232,15 @@ export function canonicalParams(params) {
 /** Artist values a tagger or the media store writes when there is none (as the app's LastFmLookupRules). */
 const PLACEHOLDER_ARTISTS = new Set(["unknown artist", "<unknown>", "unknown"]);
 
-/** A YouTube channel credit carrying a view count ("wamp, yung sammy, 2.5m views"): not an artist. */
-const VIEW_COUNT = /\d[\d.,]*\s*[kmb]?\s+views?\b/i;
+/**
+ * A YouTube channel credit carrying a view count ("wamp, yung sammy, 2.5m views"): not an artist.
+ * The unit's spaces sit inside its group, so no two space runs can share the same spaces (a
+ * `\s*[kmb]?\s+` took quadratic time on a digit and a long run of spaces: CodeQL, 2026-10-26).
+ */
+const VIEW_COUNT = /\d[\d.,]*(?:\s*[kmb])?\s+views?\b/i;
+
+/** The most of a name or title the rules read: Last.fm's are far shorter, a crafted one isn't. */
+const MAX_RULE_INPUT = 256;
 
 /** Camera/messenger/recorder file names: `AUD-20240101-WA0001`, `PTT-…`, `REC_2024…`, `Recording_12`. */
 const FILE_NAME_TITLE = /^(?:aud|ptt|vid|img|rec|recording|voice)[-_ ]?\d/i;
@@ -256,10 +263,10 @@ const NUMERIC_TITLE = /^(?=(?:\D*\d){8})[\d\s._-]+$/;
  */
 export function isUnlookable(query) {
     if (!query.has("artist")) return false; // tag.* lookups name no artist
-    const artist = query.get("artist").trim();
+    const artist = query.get("artist").trim().slice(0, MAX_RULE_INPUT);
     if (!artist || PLACEHOLDER_ARTISTS.has(artist.toLowerCase()) || VIEW_COUNT.test(artist)) return true;
     if (!query.has("track")) return false;
-    const title = query.get("track").trim();
+    const title = query.get("track").trim().slice(0, MAX_RULE_INPUT);
     return !title ||
         FILE_NAME_TITLE.test(title) ||
         WHATSAPP_SUFFIX.test(title) ||
