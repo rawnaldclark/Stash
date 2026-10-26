@@ -23,9 +23,11 @@ import kotlin.math.abs
  *
  * Search songs by "title - artist", take the ones within a few seconds of
  * the track's duration, ask for their lyrics candidates by hash, download
- * the first as base64 LRC; fall back to a keyword lyrics search. Timed lines
- * only, with KuGou's credit lines (作词/作曲/Lyrics by…) cut from the head and
- * tail, so the sheet shows lyrics and not liner notes.
+ * the first as base64 LRC; fall back to a keyword lyrics search. Songs and
+ * candidates must name the track ([isSameSong]): KuGou answers any keyword
+ * with something, and a length alone is no proof. Timed lines only, with
+ * KuGou's credit lines (作词/作曲/Lyrics by…) cut from the head and tail, so
+ * the sheet shows lyrics and not liner notes.
  *
  * Returns null ONLY on a definitive miss (KuGou answered and had nothing).
  * Transport errors and non-2xx statuses THROW, so the repository never
@@ -46,9 +48,13 @@ class KugouLyricsSource(
         .build()
 
     override suspend fun resolve(query: LyricsQuery): LyricsResult? = withContext(Dispatchers.IO) {
+        // Nothing to match on: no answer could be checked against the track (as in IsrcResolver).
+        if (IsrcResolver.normalize(query.title).isEmpty() || IsrcResolver.normalize(query.artist).isEmpty()) {
+            return@withContext null
+        }
         val keyword = keywordFor(query.title, query.artist)
         val durationSec = query.durationMs?.let { (it / 1000).toInt() }?.takeIf { it > 0 } ?: NO_DURATION
-        val candidate = findCandidate(keyword, durationSec) ?: return@withContext null
+        val candidate = findCandidate(query, keyword, durationSec) ?: return@withContext null
         val lrc = normalizeLrc(downloadLyrics(candidate))
         if (lrc.isBlank()) return@withContext null // a file with no timed lines is a miss, not lyrics
         LyricsResult(
@@ -61,14 +67,20 @@ class KugouLyricsSource(
         )
     }
 
-    /** First lyrics candidate of the first song within the duration tolerance, else the keyword search's first. */
-    private fun findCandidate(keyword: Keyword, durationSec: Int): Candidate? {
+    /**
+     * First lyrics candidate naming the track, of the first song naming it within the duration
+     * tolerance, else of the keyword search. Both steps check names ([isSameSong]): a hash search
+     * also returns other songs' files, and the keyword search returns whatever is closest.
+     */
+    private fun findCandidate(query: LyricsQuery, keyword: Keyword, durationSec: Int): Candidate? {
         for (song in searchSongs(keyword)) {
+            if (!isSameSong(query, song.songname, song.singername)) continue
             if (durationSec == NO_DURATION || abs(song.duration - durationSec) <= DURATION_TOLERANCE_SEC) {
-                searchLyrics(hash = song.hash).firstOrNull()?.let { return it }
+                searchLyrics(hash = song.hash).firstOrNull { isSameSong(query, it.song, it.singer) }?.let { return it }
             }
         }
-        return searchLyrics(keyword = keyword, durationSec = durationSec).firstOrNull()
+        return searchLyrics(keyword = keyword, durationSec = durationSec)
+            .firstOrNull { isSameSong(query, it.song, it.singer) }
     }
 
     private fun searchSongs(keyword: Keyword): List<Song> {
@@ -130,7 +142,12 @@ class KugouLyricsSource(
     private data class SongSearchData(val info: List<Song> = emptyList())
 
     @Serializable
-    private data class Song(val hash: String, val duration: Int = 0)
+    private data class Song(
+        val hash: String,
+        val duration: Int = 0,
+        val songname: String = "",
+        val singername: String = "",
+    )
 
     @Serializable
     private data class LyricsSearchResponse(val candidates: List<Candidate> = emptyList())
@@ -140,6 +157,9 @@ class KugouLyricsSource(
         val id: Long,
         val accesskey: String = "",
         @kotlinx.serialization.SerialName("product_from") val productFrom: String = "",
+        /** The file's own title and artist: a hash search returns other songs' files too. */
+        val song: String = "",
+        val singer: String = "",
     ) {
         /** KuGou marks its curated file; the rest are user uploads of varying quality. */
         val isOfficial: Boolean get() = productFrom == OFFICIAL_PRODUCT
@@ -193,6 +213,36 @@ class KugouLyricsSource(
                 .replace(Regex("\\s+"), " ").trim()
             return Keyword(cleanTitle, cleanArtist)
         }
+
+        /**
+         * Whether KuGou's [title] and [artist] name the asked-for track: neither differs from ours
+         * and at least one is the same, by the ISRC search's rule ([IsrcResolver.normalize], one
+         * containing the other; the album artist counts too). A name KuGou writes in another script
+         * than ours (周杰伦 for "Jay Chou", 강남스타일 for "Gangnam Style") can't be compared, so it
+         * neither passes nor fails. Live KuGou, 2026-10-26: by length alone, "Shook Ones, Pt. II"
+         * at Last.fm's 241 s took the lyrics of Mobb Deep's "The Infamous" (245 s).
+         */
+        internal fun isSameSong(query: LyricsQuery, title: String, artist: String): Boolean {
+            val titleMatch = nameMatch(title, listOf(query.title))
+            val artistMatch = nameMatch(artist, listOfNotNull(query.artist, query.albumArtist))
+            if (titleMatch == NameMatch.DIFFERENT || artistMatch == NameMatch.DIFFERENT) return false
+            return titleMatch == NameMatch.SAME || artistMatch == NameMatch.SAME
+        }
+
+        /** How one of KuGou's names compares with ours. */
+        private enum class NameMatch { SAME, OTHER_SCRIPT, DIFFERENT }
+
+        private fun nameMatch(theirs: String, ours: List<String>): NameMatch {
+            val name = IsrcResolver.normalize(theirs)
+            val wanted = ours.map { IsrcResolver.normalize(it) }.filter { it.isNotEmpty() }
+            if (name.isEmpty() || wanted.isEmpty()) return NameMatch.DIFFERENT
+            if (wanted.any { name.contains(it) || it.contains(name) }) return NameMatch.SAME
+            // Two Latin names, or two non-Latin ones, can be told apart; a Latin one and a non-Latin one can't.
+            return if (wanted.any { isLatin(it) == isLatin(name) }) NameMatch.DIFFERENT else NameMatch.OTHER_SCRIPT
+        }
+
+        /** A normalized name with Latin letters ("jay chou", "hua满楼"), not only another script ("周杰伦"). */
+        private fun isLatin(name: String): Boolean = name.any { it in 'a'..'z' }
 
         /**
          * Timed lines only, with credit lines cut from the head region and the
