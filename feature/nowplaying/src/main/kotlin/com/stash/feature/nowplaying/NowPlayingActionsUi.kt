@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
+import androidx.compose.material.icons.filled.CloseFullscreen
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radio
@@ -188,6 +190,8 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
  *   connected accent; opens the speaker sheet), drawn in a pinned Cast's slot.
  * @param isDownloading A download is in flight: its spinner replaces the
  *   Download pin, or ⋮ when Download isn't in the row, so it isn't a silent job.
+ * @param fullArt Whether the full art layout is on, for its toggle left of ⋮; null for no toggle
+ *   (no art to show).
  */
 @Composable
 internal fun NowPlayingTopBar(
@@ -204,6 +208,8 @@ internal fun NowPlayingTopBar(
     onAction: (NowPlayingAction) -> Unit,
     castButton: @Composable () -> Unit,
     dismissModifier: Modifier = Modifier,
+    fullArt: Boolean? = null,
+    onToggleFullArt: () -> Unit = {},
 ) {
     val slot = fit.slotDp.dp
     val row = fit.row
@@ -230,6 +236,18 @@ internal fun NowPlayingTopBar(
         // not in the row, a thin ring turns around it so the job isn't silent. (A spinner used to
         // stand in for ⋮ itself, which hid every unpinned action — Save to Playlist, Share, Speed,
         // Flag… — until the file landed, or for the watchdog's 3 minutes when the job failed.)
+        // Full art, on and off: the same button in the same place in both layouts, left of ⋮.
+        if (fullArt != null) {
+            TopBarIcon(
+                if (fullArt) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                if (fullArt) "Standard art" else "Full art",
+                ink,
+                slot,
+                iconSize = 22.dp,
+                onClick = onToggleFullArt,
+            )
+        }
+
         val downloadingHere = isDownloading && NowPlayingAction.DOWNLOAD !in row.leading && NowPlayingAction.DOWNLOAD !in row.trailing
         Box(Modifier.size(slot), contentAlignment = Alignment.Center) {
             if (downloadingHere) {

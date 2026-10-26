@@ -133,10 +133,10 @@ internal data class TopRowFit(
  * canonical order; the rest overflow from the lowest priority (the end of the canonical order)
  * first. Slots then share the width up to [SLOT_PREFERRED_DP]. Nothing is ever unreachable: an
  * overflowed pin is a row in the ⋮ menu until the screen has room again (a wider window, a
- * smaller display size).
+ * smaller display size). [extraSlots] are other fixed buttons in the row (the full art toggle).
  */
-internal fun fitTopRow(row: TopRowActions, widthDp: Float): TopRowFit {
-    val fixedSlots = 2 + row.trailing.size // Dismiss, ⋮, and Queue when pinned
+internal fun fitTopRow(row: TopRowActions, widthDp: Float, extraSlots: Int = 0): TopRowFit {
+    val fixedSlots = 2 + row.trailing.size + extraSlots // Dismiss, ⋮, Queue when pinned, and the toggle
     fun castWidth(shown: List<NowPlayingAction>) = if (NowPlayingAction.CAST in shown) CAST_SLOT_DP else 0f
     fun shrinkingSlots(shown: List<NowPlayingAction>) = fixedSlots + shown.count { it != NowPlayingAction.CAST }
     var fits = row.leading.size

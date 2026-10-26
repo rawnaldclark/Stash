@@ -48,6 +48,19 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
         context.nowPlayingDataStore.edit { it[cycleAlbumArtKey] = enabled }
     }
 
+    private val fullArtKey = booleanPreferencesKey("full_art")
+
+    /**
+     * Now Playing's full art layout: the art across the whole width and down behind the controls,
+     * the album's pages taking turns as the song plays (the toggle in its top row). Kept, so Now
+     * Playing opens as it was left. Off until turned on.
+     */
+    val fullArt = context.nowPlayingDataStore.data.map { it[fullArtKey] ?: false }
+
+    suspend fun setFullArt(on: Boolean) {
+        context.nowPlayingDataStore.edit { it[fullArtKey] = on }
+    }
+
     private val ambientStyleKey = stringPreferencesKey("ambient_style")
 
     /** Unset or unknown reads as [AmbientStyle.SOFT_GLOW], so existing installs get the default. */
