@@ -33,15 +33,17 @@ class SpotifyTrackParserTest {
 
         val smoothCriminal = tracks[0].track!!
         assertEquals("Smooth Criminal - 2012 Remaster", smoothCriminal.name)
-        assertFalse(
+        assertEquals(
             "Smooth Criminal 2012 Remaster is not explicit",
+            false,
             smoothCriminal.explicit,
         )
         assertEquals("USSM11200115", smoothCriminal.isrc)
 
         val explicitTrack = tracks[1].track!!
-        assertTrue(
+        assertEquals(
             "Track flagged explicit:true in JSON must parse as explicit",
+            true,
             explicitTrack.explicit,
         )
         assertEquals("USUG11900001", explicitTrack.isrc)
@@ -58,6 +60,6 @@ class SpotifyTrackParserTest {
             "track JSON with no external_ids must yield null ISRC, not a blank string",
             legacy.isrc,
         )
-        assertFalse(legacy.explicit)
+        assertEquals(false, legacy.explicit)
     }
 }

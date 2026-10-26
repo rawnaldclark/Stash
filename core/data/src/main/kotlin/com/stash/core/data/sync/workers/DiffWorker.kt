@@ -765,6 +765,14 @@ class DiffWorker @AssistedInject constructor(
                 trackDao.updateAlbumArtUrl(existingTrack.id, snapshotArt)
                 batchTrack.entity = batchTrack.entity.copy(albumArtUrl = snapshotArt)
             }
+
+            // Spotify's parental advisory, kept current: songs synced before the web-player
+            // parsers read it were stored as clean (2026-10-26), and only a sync can say otherwise.
+            val snapshotExplicit = snapshot.explicit
+            if (snapshotExplicit != null && snapshotExplicit != batchTrack.entity.explicit) {
+                trackDao.updateExplicit(existingTrack.id, snapshotExplicit)
+                batchTrack.entity = batchTrack.entity.copy(explicit = snapshotExplicit)
+            }
         }
 
         val newTracks = mutableListOf<BatchTrack>()

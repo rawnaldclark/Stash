@@ -42,6 +42,20 @@ class SpotifyLibraryTracksShapeTest {
         parse(loadFixture("fetch_library_tracks_liked.json"))
 
     @Test
+    fun `reads the parental advisory off contentRating, unknown when it's missing`() {
+        // The web player labels each track: EXPLICIT, or NONE for a clean one. Before 2026-10-26
+        // nothing read it and every synced song was stored as clean.
+        val json = loadFixture("fetch_library_tracks_liked.json")
+            .replace("\"name\": \"Newest Like\",", "\"name\": \"Newest Like\", \"contentRating\": { \"label\": \"EXPLICIT\" },")
+            .replace("\"name\": \"Middle Like\",", "\"name\": \"Middle Like\", \"contentRating\": { \"label\": \"NONE\" },")
+        val byName = parse(json).associateBy { it.track!!.name }
+
+        assertEquals(true, byName["Newest Like"]?.track?.explicit)
+        assertEquals(false, byName["Middle Like"]?.track?.explicit)
+        assertNull(byName["Old Favourite"]?.track?.explicit)
+    }
+
+    @Test
     fun `walks the documented data me library tracks items path`() {
         assertEquals(3, parseLiked().size)
     }

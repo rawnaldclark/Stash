@@ -51,7 +51,7 @@ internal fun parseWebApiPlaylistPage(responseBody: String): Pair<List<SpotifyTra
                 val name = trackObj["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
                 val uri = trackObj["uri"]?.jsonPrimitive?.contentOrNull ?: "spotify:track:$id"
                 val durationMs = trackObj["duration_ms"]?.jsonPrimitive?.longOrNull ?: 0L
-                val explicit = trackObj["explicit"]?.jsonPrimitive?.booleanOrNull ?: false
+                val explicit = trackObj["explicit"]?.jsonPrimitive?.booleanOrNull
                 val isrc = trackObj["external_ids"]?.jsonObject
                     ?.get("isrc")?.jsonPrimitive?.contentOrNull
 
@@ -161,6 +161,13 @@ internal fun parseSearchTracks(responseBody: String): List<SpotifyTrackCandidate
         emptyList()
     }
 }
+
+/**
+ * Spotify's parental advisory on a web-player GraphQL track (`contentRating.label`): "EXPLICIT"
+ * is true, any other label ("NONE") false, no label at all null (not known).
+ */
+internal fun contentRatingExplicit(track: JsonObject): Boolean? =
+    track["contentRating"]?.jsonObject?.get("label")?.jsonPrimitive?.contentOrNull?.let { it == "EXPLICIT" }
 
 /**
  * Pulls the library add-date off a `fetchLibraryTracks` item wrapper.
@@ -346,6 +353,7 @@ internal fun parseLibraryTracksPage(responseJson: JsonObject): SpotifyLikedSongs
                         album = album,
                         duration_ms = durationMs,
                         uri = uri,
+                        explicit = contentRatingExplicit(trackData),
                     ),
                     addedAt = parseLibraryAddedAt(wrapper),
                 )

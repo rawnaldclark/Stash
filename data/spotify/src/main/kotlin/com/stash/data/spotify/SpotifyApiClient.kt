@@ -1572,6 +1572,7 @@ class SpotifyApiClient @Inject constructor(
                             album = album,
                             duration_ms = durationMs,
                             uri = uri,
+                            explicit = contentRatingExplicit(data),
                         ),
                     )
                 } catch (e: Exception) {

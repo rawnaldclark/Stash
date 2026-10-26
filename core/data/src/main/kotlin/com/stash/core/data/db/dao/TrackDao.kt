@@ -2587,6 +2587,10 @@ interface TrackDao {
     )
     suspend fun findAlbumBackfillCandidates(limit: Int): List<StreamableBackfillRow>
 
+    /** The track's parental advisory, as its source's sync reports it ([DiffWorker]). */
+    @Query("UPDATE tracks SET explicit = :explicit WHERE id = :trackId")
+    suspend fun updateExplicit(trackId: Long, explicit: Boolean)
+
     /**
      * A row's album (and album artist, if it has none) where it has no album: never over one a
      * source or a file's tags gave.
