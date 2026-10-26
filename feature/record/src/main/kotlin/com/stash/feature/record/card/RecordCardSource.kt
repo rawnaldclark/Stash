@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.CoroutineContext
 
 /** What Home's card is made from: the record's own numbers, and the albums played most (for the sleeve). */
 data class CardData(val summary: RecordSummary, val albums: List<OwnAlbumTotal>)
@@ -46,6 +47,8 @@ class RecordCardSource internal constructor(
     private val archive: RecordArchiveSource,
     private val albums: suspend () -> List<OwnAlbumTotal>,
     scope: CoroutineScope,
+    /** Where the history is read and summed: off the main thread. */
+    work: CoroutineContext = Dispatchers.Default,
 ) {
     @Inject
     constructor(dao: WebLibraryExportDao) : this(
@@ -73,7 +76,7 @@ class RecordCardSource internal constructor(
     }
         .mapLatest { stamp -> kept?.takeIf { it.first == stamp }?.second ?: read()?.also { kept = stamp to it } }
         .filterNotNull()
-        .flowOn(Dispatchers.Default)
+        .flowOn(work)
         .shareIn(scope, SharingStarted.WhileSubscribed(STOP_MS), replay = 1)
 
     private suspend fun read(): CardData? = try {

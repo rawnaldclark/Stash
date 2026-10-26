@@ -115,6 +115,35 @@ class RecordMessagesTest {
         assertThat(read("""{"type":"stash:art","asks":[{"id":"${"i".repeat(602)}","artist":"A"}]}""")).isNull()
     }
 
+    @Test fun `reads a file's chunk, never trusting it`() {
+        val ok = RecordAsk.Save("0b9a-4c", "Your record.png", "image/png", share = false, seq = 2, done = true, data = "AAEC")
+        fun save(extra: String) = read("""{"type":"stash:save","id":"0b9a-4c","name":"Your record.png","mime":"image/png","action":"save","seq":2,"done":true,"data":"AAEC"$extra}""")
+        assertThat(save("")).isEqualTo(ok)
+        assertThat(read("""{"type":"stash:save","id":"x","name":"race","mime":"video/mp4","action":"share","seq":0,"done":false,"data":""}"""))
+            .isEqualTo(RecordAsk.Save("x", "race", "video/mp4", share = true, seq = 0, done = false, data = ""))
+        // the page's fallback type for a file it couldn't type
+        assertThat((read("""{"type":"stash:save","id":"x","name":"f","mime":"application/octet-stream","action":"save","seq":0,"done":true,"data":""}""") as RecordAsk.Save).mime)
+            .isEqualTo("application/octet-stream")
+        for (bad in listOf(
+            """{"type":"stash:save","id":"","name":"n","mime":"image/png","action":"save","seq":0,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":" ","mime":"image/png","action":"save","seq":0,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"text/html","action":"save","seq":0,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"open","seq":0,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":-1,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":1.5,"done":true,"data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":0,"done":"true","data":""}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":0,"done":true,"data":3}""",
+            """{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":0,"done":true}""",
+        )) {
+            assertThat(read(bad)).isNull()
+        }
+        // a chunk is at most 524,286 bytes (the page's SAVE_CHUNK_BYTES): its base64, 699,048 characters, is taken
+        val full = "A".repeat(699_048)
+        assertThat(read("""{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":0,"done":false,"data":"$full"}""")).isNotNull()
+        val over = "A".repeat(699_056)
+        assertThat(read("""{"type":"stash:save","id":"x","name":"n","mime":"image/png","action":"save","seq":0,"done":false,"data":"$over"}""")).isNull()
+    }
+
     @Test fun `a message too big to be one of the record's is dropped unread`() {
         assertThat(read(" ".repeat(RecordMessages.MAX_MESSAGE + 1))).isNull()
     }

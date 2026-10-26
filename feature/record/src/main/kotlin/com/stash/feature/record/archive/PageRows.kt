@@ -60,8 +60,9 @@ class RecordSummaryBuilder {
     private var totalMs = 0L
     private var first = Long.MAX_VALUE
 
-    fun add(r: ArchivePlay) {
-        if (!PageRows.accepts(r) || !ids.add(r.id)) return
+    /** Takes [r] as the page does; false when the page leaves it out (not a play, or an id already kept). */
+    fun add(r: ArchivePlay): Boolean {
+        if (!PageRows.accepts(r) || !ids.add(r.id)) return false
         plays++
         if (r.ms >= STREAM_MS) streams++
         totalMs += r.ms
@@ -77,6 +78,7 @@ class RecordSummaryBuilder {
                 a.firstId = r.id
             }
         }
+        return true
     }
 
     fun build(top: Int = TOP_ARTISTS): RecordSummary = RecordSummary(

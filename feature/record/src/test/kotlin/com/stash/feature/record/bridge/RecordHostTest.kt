@@ -5,11 +5,14 @@ import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.art.ArtSong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
@@ -33,6 +36,20 @@ class RecordHostTest {
         fun archives() = messages.filter { it["type"]!!.jsonPrimitive.content == "stash:archive" }
     }
 
+    private class Saves : RecordSaveSink {
+        val taken = mutableListOf<RecordAsk.Save>()
+        var drops = 0
+        var note: RecordNote? = null
+        override suspend fun take(chunk: RecordAsk.Save): RecordNote? {
+            taken += chunk
+            return if (chunk.done) note else null
+        }
+
+        override suspend fun drop() {
+            drops++
+        }
+    }
+
     private fun row(i: Int) = ArchivePlay(id = "t$i|a|$i", t = "T$i", a = "A", s = i.toLong(), ms = 1000, f = 256)
 
     /** [n] rows, in chunks as [OwnArchive][com.stash.feature.record.archive.OwnArchive] hands them (the last marked). */
@@ -42,25 +59,43 @@ class RecordHostTest {
     }
 
     private class Harness(
-        val scope: TestScope,
+        val test: TestScope,
         archive: RecordArchiveSource,
         val covers: RecordCovers = RecordCovers { songs, _, _ -> songs.map { null } },
-        val player: RecordPlayer = RecordPlayer { _, _, _ -> null },
         chunk: Int = 2,
     ) {
         val events = mutableListOf<RecordEvent>()
-        val dispatcher = StandardTestDispatcher(scope.testScheduler)
-        val host = RecordHost(scope, archive, covers, player, { events += it }, main = dispatcher, background = dispatcher, chunkSize = chunk)
+        val played = mutableListOf<Triple<List<RecordSong>, Int, String>>()
+        val saves = Saves()
+        val dispatcher = StandardTestDispatcher(test.testScheduler)
+        val host = RecordHost(
+            scope = test.backgroundScope,
+            archive = archive,
+            covers = covers,
+            player = { songs, index, from -> played += Triple(songs, index, from) },
+            saves = saves,
+            events = { events += it },
+            main = dispatcher,
+            background = dispatcher,
+            chunkSize = chunk,
+            now = { test.testScheduler.currentTime },
+        )
+
+        /** Says [raw] and lets the host handle it (messages are queued). */
+        fun say(raw: String, page: RecordPort) {
+            host.onMessage(raw, page)
+            test.runCurrent()
+        }
     }
 
     private val hello = """{"type":"stash:hello","v":1}"""
 
-    @Test fun `hello, the theme, then the archive in chunks, seq from 0, the last done`() = runTest {
+    @Test fun `hello - the theme, then the archive in chunks, seq from 0, the last done`() = runTest {
         val h = Harness(this, rows(5))
         val page = Page()
         h.host.setTheme(light = true)
-        h.host.onMessage(hello, page)
-        advanceUntilIdle()
+        h.say(hello, page)
+        runCurrent()
         assertThat(page.types().first()).isEqualTo("stash:theme")
         assertThat(page.messages.first()["theme"]!!.jsonPrimitive.content).isEqualTo("light")
         val chunks = page.archives()
@@ -73,15 +108,15 @@ class RecordHostTest {
     @Test fun `an empty archive is one empty chunk, done`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
-        h.host.onMessage(hello, page)
-        advanceUntilIdle()
+        h.say(hello, page)
+        runCurrent()
         val c = page.archives().single()
         assertThat(c["seq"]!!.jsonPrimitive.int).isEqualTo(0)
         assertThat(c["done"]!!.jsonPrimitive.content).isEqualTo("true")
         assertThat(c["rows"]!!.jsonArray).isEmpty()
     }
 
-    @Test fun `a new hello stops the old stream, no chunk of the old one after it, the new one from seq 0`() = runTest {
+    @Test fun `a new hello stops the old stream - no chunk of the old one after it, the new one from seq 0`() = runTest {
         val gate = CompletableDeferred<Unit>()
         var streams = 0
         val archive = RecordArchiveSource { _, emit ->
@@ -92,45 +127,59 @@ class RecordHostTest {
         }
         val h = Harness(this, archive)
         val first = Page()
-        h.host.onMessage(hello, first)
-        runCurrent()
+        h.say(hello, first)
         assertThat(first.archives()).hasSize(1)
         // the page reloads (stash:reload) and says hello again
-        h.host.onMessage(hello, first)
+        h.say(hello, first)
         gate.complete(Unit)
-        advanceUntilIdle()
+        runCurrent()
         val chunks = first.archives()
         assertThat(chunks.map { it["seq"]!!.jsonPrimitive.int }).containsExactly(0, 0, 1).inOrder()
         val ts = chunks.map { c -> c["rows"]!!.jsonArray.single().jsonObject["t"]!!.jsonPrimitive.content }
         assertThat(ts).containsExactly("T10", "T20", "T21").inOrder()
     }
 
-    @Test fun `a chunk built for an old hello is never posted`() = runTest {
-        val built = CompletableDeferred<Unit>()
+    @Test fun `a chunk built for an old hello is never posted, even one a slow read finishes after its stream was stopped`() = runTest {
+        // A source that, once it has started a chunk, finishes it whatever happens (a Room read can't be stopped half-way):
+        // only the host's own check can keep that chunk from the page that has said hello since.
         val release = CompletableDeferred<Unit>()
         var calls = 0
         val archive = RecordArchiveSource { _, emit ->
             if (++calls == 1) {
-                built.complete(Unit)
-                release.await()
+                withContext(NonCancellable) {
+                    release.await()
+                    emit(listOf(row(1)), true)
+                }
+            } else {
+                emit(listOf(row(2)), true)
             }
-            emit(listOf(row(calls)), true)
         }
         val h = Harness(this, archive)
         val page = Page()
-        h.host.onMessage(hello, page)
-        runCurrent()
-        built.await()
-        h.host.detach()
+        h.say(hello, page)
+        h.say(hello, page)
         release.complete(Unit)
-        advanceUntilIdle()
-        assertThat(page.archives()).isEmpty()
+        runCurrent()
+        val ts = page.archives().map { c -> c["rows"]!!.jsonArray.single().jsonObject["t"]!!.jsonPrimitive.content }
+        assertThat(ts).containsExactly("T2")
+        // and after the page went, nothing at all
+        val again = CompletableDeferred<Unit>()
+        val h2 = Harness(
+            this,
+            RecordArchiveSource { _, emit -> withContext(NonCancellable) { again.await(); emit(listOf(row(3)), true) } },
+        )
+        val other = Page()
+        h2.say(hello, other)
+        h2.host.detach()
+        again.complete(Unit)
+        runCurrent()
+        assertThat(other.archives()).isEmpty()
     }
 
-    @Test fun `ready, the theme again, to the page that asked`() = runTest {
+    @Test fun `ready - the theme again, to the page that asked`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
-        h.host.onMessage("""{"type":"stash:ready","plays":3000}""", page)
+        h.say("""{"type":"stash:ready","plays":3000}""", page)
         assertThat(page.types()).containsExactly("stash:theme")
         assertThat(page.messages.single()["theme"]!!.jsonPrimitive.content).isEqualTo("dark")
     }
@@ -140,93 +189,108 @@ class RecordHostTest {
         val page = Page()
         h.host.setTheme(light = true)
         assertThat(page.sent).isEmpty()
-        h.host.onMessage(hello, page)
-        advanceUntilIdle()
+        h.say(hello, page)
+        runCurrent()
         page.sent.clear()
         h.host.setTheme(light = true) // no change: nothing
         h.host.setTheme(light = false)
         assertThat(page.messages.map { it["theme"]!!.jsonPrimitive.content }).containsExactly("dark")
     }
 
-    @Test fun `back asks the record, without a hello, or with the page stuck, it closes`() = runTest {
+    @Test fun `back asks the record, without a hello, or with the page stuck, it closes at once`() = runTest {
         val h = Harness(this, rows(0))
         h.host.back()
         assertThat(h.events).containsExactly(RecordEvent.Close)
         val page = Page()
-        h.host.onMessage(hello, page)
-        advanceUntilIdle()
+        h.say(hello, page)
+        runCurrent()
         page.sent.clear()
+        advanceTimeBy(5_000)
+        h.host.probe = { alive -> alive() }
         h.host.back()
         assertThat(page.sent).containsExactly("""{"type":"stash:back"}""")
         assertThat(h.events).hasSize(1)
+        advanceTimeBy(5_000)
         h.host.unresponsive = true
         h.host.back()
         assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Close)
         assertThat(page.sent).hasSize(1)
-        // and once the page is gone
-        h.host.unresponsive = false
-        h.host.detach()
+    }
+
+    @Test fun `back closes when the page shows no sign of life in time, and doesn't when it answers`() = runTest {
+        val h = Harness(this, rows(0))
+        val page = Page()
+        h.say(hello, page)
+        runCurrent()
+        // the page closed a sheet (it says nothing then) and its script answered the probe: the record stays
+        var answer: (() -> Unit)? = null
+        h.host.probe = { alive -> answer = alive }
         h.host.back()
-        assertThat(h.events).hasSize(3)
+        answer!!.invoke()
+        advanceTimeBy(RecordHost.BACK_WAIT_MS + 100)
+        assertThat(h.events).isEmpty()
+        // a word from the page counts as an answer too
+        advanceTimeBy(5_000)
+        h.host.back()
+        h.say("""{"type":"stash:counts","counts":{"spotify":0,"stash":1,"lastfm":0}}""", page)
+        advanceTimeBy(RecordHost.BACK_WAIT_MS + 100)
+        assertThat(h.events).isEmpty()
+        // silence: closed once the wait is over, not before
+        advanceTimeBy(5_000)
+        h.host.probe = { }
+        h.host.back()
+        advanceTimeBy(RecordHost.BACK_WAIT_MS - 100)
+        assertThat(h.events).isEmpty()
+        advanceTimeBy(200)
+        assertThat(h.events).containsExactly(RecordEvent.Close)
+    }
+
+    @Test fun `a second back within a second closes whatever the page is doing`() = runTest {
+        val h = Harness(this, rows(0))
+        val page = Page()
+        h.say(hello, page)
+        runCurrent()
+        h.host.probe = { alive -> alive() }
+        h.host.back()
+        advanceTimeBy(RecordHost.SECOND_BACK_MS - 200)
+        h.host.back()
+        assertThat(h.events).containsExactly(RecordEvent.Close)
+        assertThat(page.types().count { it == "stash:back" }).isEqualTo(1)
+        // a back well after the last one asks the page again
+        advanceTimeBy(5_000)
+        h.host.back()
+        assertThat(page.types().count { it == "stash:back" }).isEqualTo(2)
     }
 
     @Test fun `close closes, import says the Spotify import is coming, counts and junk do nothing`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
-        h.host.onMessage("""{"type":"stash:close"}""", page)
-        h.host.onMessage("""{"type":"stash:import"}""", page)
-        h.host.onMessage("""{"type":"stash:counts","counts":{"spotify":0,"stash":333,"lastfm":0}}""", page)
-        h.host.onMessage("""{"type":"stash:live","plays":[]}""", page)
-        h.host.onMessage("not json", page)
-        assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Say(RecordHost.IMPORT_COMING)).inOrder()
+        h.say("""{"type":"stash:close"}""", page)
+        h.say("""{"type":"stash:import"}""", page)
+        h.say("""{"type":"stash:counts","counts":{"spotify":0,"stash":333,"lastfm":0}}""", page)
+        h.say("""{"type":"stash:live","plays":[]}""", page)
+        h.say("not json", page)
+        assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Say(RecordNote.ImportComing)).inOrder()
         assertThat(page.sent).isEmpty()
     }
 
-    @Test fun `play hands the songs, the start and the label to the player, what it says is said`() = runTest {
-        val asked = mutableListOf<Triple<List<RecordSong>, Int, String>>()
-        var note: String? = null
-        val h = Harness(this, rows(0), player = RecordPlayer { songs, index, from -> asked += Triple(songs, index, from); note })
+    @Test fun `play says what starts at once and hands the songs, the start and the label on`() = runTest {
+        val h = Harness(this, rows(0))
         val page = Page()
-        val play = """{"type":"stash:play","songs":[{"title":"Ivy","artist":"Frank Ocean","album":"Blonde"},{"title":"Nights","artist":"Frank Ocean"}],"index":1,"from":"The Record · 3 March 2024"}"""
-        h.host.onMessage(play, page)
-        advanceUntilIdle()
-        assertThat(asked.single()).isEqualTo(
+        h.say(
+            """{"type":"stash:play","songs":[{"title":"Ivy","artist":"Frank Ocean","album":"Blonde"},{"title":"Nights","artist":"Frank Ocean"}],"index":1,"from":"The Record · 3 March 2024"}""",
+            page,
+        )
+        assertThat(h.played.single()).isEqualTo(
             Triple(listOf(RecordSong("Ivy", "Frank Ocean", "Blonde"), RecordSong("Nights", "Frank Ocean")), 1, "The Record · 3 March 2024"),
         )
-        assertThat(h.events).isEmpty()
-        note = NONE_FOUND
-        h.host.onMessage(play, page)
-        advanceUntilIdle()
-        assertThat(h.events).containsExactly(RecordEvent.Say(NONE_FOUND))
+        assertThat(h.events).containsExactly(RecordEvent.Say(RecordNote.PlayingSongs(2)))
+        h.say("""{"type":"stash:play","songs":[{"title":"Nude","artist":"Radiohead"}],"index":0}""", page)
+        assertThat(h.events.last()).isEqualTo(RecordEvent.Say(RecordNote.Playing("Nude")))
+        assertThat(h.played.last().third).isEqualTo(RecordMessages.FROM)
     }
 
-    @Test fun `a newer tap replaces one still matching, and a failure says so without crashing`() = runTest {
-        val slow = CompletableDeferred<Unit>()
-        val played = mutableListOf<String>()
-        val h = Harness(
-            this,
-            rows(0),
-            player = RecordPlayer { songs, _, _ ->
-                if (songs[0].title == "First") slow.await()
-                if (songs[0].title == "Boom") error("boom")
-                played += songs[0].title
-                null
-            },
-        )
-        val page = Page()
-        fun tap(title: String) = h.host.onMessage("""{"type":"stash:play","songs":[{"title":"$title","artist":"A"}],"index":0}""", page)
-        tap("First")
-        runCurrent()
-        tap("Second")
-        slow.complete(Unit)
-        advanceUntilIdle()
-        assertThat(played).containsExactly("Second")
-        tap("Boom")
-        advanceUntilIdle()
-        assertThat(h.events).containsExactly(RecordEvent.Say(RecordHost.PLAY_FAILED))
-    }
-
-    @Test fun `art, covers by the record's names as each batch lands, then the whole list with null for none`() = runTest {
+    @Test fun `art - covers by the record's names as each batch lands, then the whole list with null for none`() = runTest {
         val asked = mutableListOf<List<ArtSong>>()
         val covers = RecordCovers { songs, _, onBatch ->
             asked += songs
@@ -235,12 +299,12 @@ class RecordHostTest {
         }
         val h = Harness(this, rows(0), covers = covers)
         val page = Page()
-        h.host.onMessage(
+        h.say(
             """{"type":"stash:art","asks":[{"id":"Ivy|Frank Ocean","artist":"Frank Ocean","title":"Ivy","album":"Blonde"},""" +
                 """{"id":"Frank Ocean","artist":"Frank Ocean"},{"id":"Nights|Frank Ocean","artist":"Frank Ocean","title":"Nights"}]}""",
             page,
         )
-        advanceUntilIdle()
+        runCurrent()
         assertThat(asked.single()).containsExactly(
             ArtSong("Ivy", "Frank Ocean", "Blonde"),
             ArtSong("Frank Ocean", "Frank Ocean", isArtist = true),
@@ -256,6 +320,43 @@ class RecordHostTest {
         ).inOrder()
     }
 
+    @Test fun `what a page started stops when it goes - its covers, its wait on back, its file`() = runTest {
+        var coversStopped = false
+        val covers = RecordCovers { _, _, _ ->
+            try {
+                awaitCancellation()
+            } finally {
+                coversStopped = true
+            }
+        }
+        val h = Harness(this, rows(0), covers = covers)
+        val page = Page()
+        h.say(hello, page)
+        h.say("""{"type":"stash:art","asks":[{"id":"A","artist":"A"}]}""", page)
+        h.host.back() // waiting on the page's answer
+        h.host.detach()
+        runCurrent()
+        assertThat(coversStopped).isTrue()
+        advanceTimeBy(RecordHost.BACK_WAIT_MS * 2)
+        assertThat(h.events).isEmpty()
+        assertThat(h.saves.drops).isEqualTo(1)
+        assertThat(page.sent.none { it.contains("stash:covers") }).isTrue()
+    }
+
+    @Test fun `a file's chunks go to the saves in order, and what came of it is said`() = runTest {
+        val h = Harness(this, rows(0))
+        h.saves.note = RecordNote.Saved
+        val page = Page()
+        fun chunk(seq: Int, done: Boolean) =
+            """{"type":"stash:save","id":"u-1","name":"poster.png","mime":"image/png","action":"save","seq":$seq,"done":$done,"data":"AAAA"}"""
+        h.host.onMessage(chunk(0, false), page)
+        h.host.onMessage(chunk(1, false), page)
+        h.host.onMessage(chunk(2, true), page)
+        runCurrent()
+        assertThat(h.saves.taken.map { it.seq }).containsExactly(0, 1, 2).inOrder()
+        assertThat(h.events).containsExactly(RecordEvent.Say(RecordNote.Saved))
+    }
+
     @Test fun `an archive that fails mid-way ends with a done chunk, and the listener is told`() = runTest {
         val h = Harness(
             this,
@@ -265,10 +366,10 @@ class RecordHostTest {
             },
         )
         val page = Page()
-        h.host.onMessage(hello, page)
-        advanceUntilIdle()
+        h.say(hello, page)
+        runCurrent()
         val chunks = page.archives()
         assertThat(chunks.map { it["seq"]!!.jsonPrimitive.int to it["done"]!!.jsonPrimitive.content }).containsExactly(0 to "false", 1 to "true").inOrder()
-        assertThat(h.events).containsExactly(RecordEvent.Say(RecordHost.ARCHIVE_FAILED))
+        assertThat(h.events).containsExactly(RecordEvent.Say(RecordNote.ArchiveFailed))
     }
 }

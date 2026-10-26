@@ -1,6 +1,10 @@
 package com.stash.feature.record.art
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -41,7 +45,7 @@ class RecordArtTest {
     }
 
     private fun TestScope.art(l: Lookups, store: ArtStore = MemoryArtStore(), now: () -> Long = { testScheduler.currentTime }) =
-        RecordArt(lookUp = l::lookUp, store = store, now = now)
+        RecordArt(lookUp = l::lookUp, store = store, now = now, work = StandardTestDispatcher(testScheduler))
 
     private val songs = listOf(
         ArtSong("Nights", "Frank Ocean", "Blonde"),
@@ -54,19 +58,19 @@ class RecordArtTest {
         val l = Lookups(mapOf("Blonde" to "$dz/blonde.jpg", "Other" to "$dz/other.jpg"))
         val store = MemoryArtStore()
         var t = 1_000_000L
-        val art = RecordArt(lookUp = l::lookUp, store = store, now = { t })
+        val art = RecordArt(lookUp = l::lookUp, store = store, now = { t }, work = StandardTestDispatcher(testScheduler))
         assertThat(art.covers(songs)).containsExactly("$dz/blonde.jpg", "$dz/blonde.jpg", "$dz/other.jpg", null).inOrder()
         assertThat(l.asked).containsExactly("Blonde", "Other", "Unknown").inOrder()
         art.covers(songs)
         assertThat(l.asked).hasSize(3) // all known now, the miss too
         t += RecordArt.MISS_TTL_MS + 1
         // a new process (its memory empty) reads the kept miss, now stale, and asks for it again; the kept hits it doesn't
-        val fresh = RecordArt(lookUp = l::lookUp, store = store, now = { t })
+        val fresh = RecordArt(lookUp = l::lookUp, store = store, now = { t }, work = StandardTestDispatcher(testScheduler))
         fresh.covers(songs)
         assertThat(l.asked.drop(3)).containsExactly("Unknown")
         // a kept cover lasts its 180 days
         t += RecordArt.HIT_TTL_MS
-        RecordArt(lookUp = l::lookUp, store = store, now = { t }).covers(songs)
+        RecordArt(lookUp = l::lookUp, store = store, now = { t }, work = StandardTestDispatcher(testScheduler)).covers(songs)
         assertThat(l.asked.drop(4)).containsExactly("Blonde", "Other", "Unknown").inOrder()
     }
 
@@ -116,8 +120,43 @@ class RecordArtTest {
         assertThat(l.asked).containsExactly("Sepultura")
     }
 
+    @Test fun `an album two asks want at once is looked up once`() = runTest {
+        var lookups = 0
+        val art = RecordArt(
+            lookUp = { s ->
+                lookups++
+                delay(500) // still in flight when the second ask comes
+                Found.Cover("$dz/${s.album}.jpg")
+            },
+            store = MemoryArtStore(),
+            now = { testScheduler.currentTime },
+            work = StandardTestDispatcher(testScheduler),
+        )
+        val both = listOf(
+            async { art.covers(listOf(ArtSong("Ivy", "Frank Ocean", "Blonde"))) },
+            async { art.covers(listOf(ArtSong("Nights", "Frank Ocean", "Blonde"), ArtSong("X", "B", "Other"))) },
+        ).awaitAll()
+        assertThat(lookups).isEqualTo(2) // Blonde once, Other once
+        assertThat(both[0]).containsExactly("$dz/Blonde.jpg")
+        assertThat(both[1]).containsExactly("$dz/Blonde.jpg", "$dz/Other.jpg").inOrder()
+    }
+
+    @Test fun `each batch is told on the caller's thread, the work done off it`() = runTest {
+        val seen = mutableListOf<String>()
+        val art = RecordArt(
+            lookUp = { Found.Cover("$dz/x.jpg") },
+            store = MemoryArtStore(),
+            now = { testScheduler.currentTime },
+            work = kotlinx.coroutines.Dispatchers.Default,
+        )
+        val caller = Thread.currentThread().name
+        art.covers(listOf(ArtSong("T", "A", "B"))) { seen += Thread.currentThread().name }
+        assertThat(seen).isNotEmpty()
+        assertThat(seen.toSet()).containsExactly(caller)
+    }
+
     @Test fun `a lookup that throws is a refusal, never a crash`() = runTest {
-        val art = RecordArt(lookUp = { error("boom") }, store = MemoryArtStore(), now = { testScheduler.currentTime })
+        val art = RecordArt(lookUp = { error("boom") }, store = MemoryArtStore(), now = { testScheduler.currentTime }, work = StandardTestDispatcher(testScheduler))
         assertThat(art.covers(listOf(ArtSong("S", "A", "B")))).containsExactly(null)
     }
 }

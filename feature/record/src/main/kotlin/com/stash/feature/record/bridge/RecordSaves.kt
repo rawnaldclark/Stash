@@ -140,7 +140,7 @@ class RecordSaves(
             val ext = EXTENSIONS[mime] ?: "bin"
             val cleaned = buildString {
                 for (ch in name.trim()) append(if (ch.isLetterOrDigit() || ch in " .-_()") ch else '-')
-            }.trimStart('.', ' ').replace(Regex("-{2,}"), "-")
+            }.trimStart('.', ' ').replace(Regex("-{2,}"), "-").replace(Regex("\\.{2,}"), ".")
             // An extension the page gave (".png", ".mp4") goes: the one the type calls for is added
             val stem = EXTENSION.replace(cleaned.trim(), "").trim().take(MAX_NAME).trimEnd('.', ' ', '-')
             return (stem.ifEmpty { "stash-record" }) + "." + ext

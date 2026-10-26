@@ -43,11 +43,14 @@ class ArtLookupTest {
     /** No real waiting: the pauses asked for are kept. */
     private class Waits {
         val waits = mutableListOf<Long>()
-        fun pace(gapMs: Long = 0, maxWaitMs: Long = DeezerPace.MAX_WAIT_MS, now: () -> Long = { 0L }) =
-            DeezerPace(gapMs = gapMs, maxWaitMs = maxWaitMs, now = now, sleep = { waits += it })
+        fun pace(gapMs: Long = 0, maxWaitMs: Long = Pace.MAX_WAIT_MS, now: () -> Long = { 0L }) =
+            Pace(gapMs = gapMs, maxWaitMs = maxWaitMs, now = now, sleep = { waits += it })
     }
 
-    private fun lookup(http: ArtHttp, pace: DeezerPace = Waits().pace()) = ArtLookup(http, pace)
+    /** Apple's pace with no waiting: these tests aren't about it (the ones that are pass their own). */
+    private fun noWait() = Pace(gapMs = 0, now = { 0L }, sleep = {})
+
+    private fun lookup(http: ArtHttp, pace: Pace = Waits().pace(), apple: Pace = noWait()) = ArtLookup(http, pace, apple)
 
     private fun q(url: String): String? =
         URI(url).rawQuery.split('&').map { it.split('=', limit = 2) }.firstOrNull { it[0] == "q" || it[0] == "term" }?.get(1)?.let { URLDecoder.decode(it, "UTF-8") }
@@ -80,7 +83,8 @@ class ArtLookupTest {
             Found.Cover("https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/bb/45/68/bb4568f3-68cd-619d-fbcb-4e179916545d/BlondCover-Final.jpg/600x600bb.jpg"),
         )
         assertThat(up.asked).hasSize(2)
-        assertThat(q(up.asked[0])).isEqualTo("artist:\"Frank Ocean\" track:\"Self Control\"")
+        // free text: Deezer's track field filters answer nothing since 2026-10
+        assertThat(q(up.asked[0])).isEqualTo("Frank Ocean Self Control")
         assertThat(up.asked[1]).isEqualTo("https://itunes.apple.com/search?term=Frank+Ocean+Self+Control&media=music&entity=song&limit=10")
     }
 
@@ -136,6 +140,52 @@ class ArtLookupTest {
             .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/bb/500.jpg"))
     }
 
+    @Test fun `the song step searches the words as free text, and still holds the hits to the artist and the title`() = runTest {
+        val up = Upstream(
+            dzTrack = """{"data":[{"title":"Nude (Live)","artist":{"name":"Radiohead Tribute Band"},"album":{"cover_big":"$dz/tribute.jpg"}},""" +
+                """{"title":"Nude","artist":{"name":"Radiohead"},"album":{"cover_big":"$dz/in-rainbows.jpg"}}]}""",
+        )
+        assertThat(lookup(up).lookUp(ArtSong("Nude - 2007 Remaster", "Radiohead"))).isEqualTo(Found.Cover("$dz/in-rainbows.jpg"))
+        assertThat(q(up.asked.single())).isEqualTo("Radiohead Nude")
+    }
+
+    @Test fun `an artist's picture is the exact artist's among the ten, not the tribute band Deezer lists first`() = runTest {
+        val up = Upstream(
+            dzArtist = """{"data":[{"name":"Radiohead Tribute Band","picture_big":"https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"},""" +
+                """{"name":"Radiohead","picture_big":"https://cdn-images.dzcdn.net/images/artist/rh/500.jpg"}]}""",
+        )
+        assertThat(lookup(up).lookUp(ArtSong("Radiohead", "Radiohead", isArtist = true)))
+            .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/rh/500.jpg"))
+        // with no exact name, the near one is the fallback (the Worker's rule)
+        val near = Upstream(dzArtist = """{"data":[{"name":"Radiohead Tribute Band","picture_big":"https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"}]}""")
+        assertThat(lookup(near).lookUp(ArtSong("Radiohead", "Radiohead", isArtist = true)))
+            .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"))
+    }
+
+    @Test fun `Apple refusing, or not answering, is ask later, never none`() = runTest {
+        for (status in listOf(0, 403, 429, 500, 503)) {
+            val http = ArtHttp { url -> if (URI(url).host == "api.deezer.com") ArtReply(200, """{"data":[]}""") else ArtReply(status) }
+            assertThat(lookup(http).lookUp(ArtSong("Ivy", "Frank Ocean", "Blonde"))).isEqualTo(Found.Later)
+        }
+        // another error is an answer: none
+        val notFound = ArtHttp { url -> if (URI(url).host == "api.deezer.com") ArtReply(200, """{"data":[]}""") else ArtReply(404) }
+        assertThat(lookup(notFound).lookUp(ArtSong("Ivy", "Frank Ocean", "Blonde"))).isEqualTo(Found.Cover(null))
+    }
+
+    @Test fun `Apple's searches are paced to about twenty a minute, and one that can't have its turn soon is asked later`() = runTest {
+        val waits = mutableListOf<Long>()
+        val apple = Pace(gapMs = Pace.ITUNES_GAP_MS, maxWaitMs = Pace.ITUNES_MAX_WAIT_MS, now = { 0L }, sleep = { waits += it })
+        var asked = 0
+        val http = ArtHttp { url -> if (URI(url).host == "api.deezer.com") ArtReply(200, """{"data":[]}""") else ArtReply(200, """{"results":[]}""").also { asked++ } }
+        val look = ArtLookup(http, Waits().pace(), apple)
+        val found = (0 until 8).map { look.lookUp(ArtSong("T$it", "A$it")) }
+        // 3 s apart: the 1st now, then 3, 6, 9 and 12 s on; the rest would wait past 12 s
+        assertThat(waits).containsExactly(3_000L, 6_000L, 9_000L, 12_000L).inOrder()
+        assertThat(asked).isEqualTo(5)
+        assertThat(found.count { it == Found.Later }).isEqualTo(3)
+        assertThat(Pace.ITUNES_GAP_MS).isEqualTo(3_000L)
+    }
+
     // ── Deezer's limit, and refusals ────────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `asks again after a quota refusal, after a pause, and finds the cover`() = runTest {
@@ -171,7 +221,7 @@ class ArtLookupTest {
 
     @Test fun `later rather than queue a search behind too many others`() = runTest {
         var asked = 0
-        val pace = DeezerPace(gapMs = 1000, maxWaitMs = 8000, now = { 0L }, sleep = {})
+        val pace = Pace(gapMs = 1000, maxWaitMs = 8000, now = { 0L }, sleep = {})
         val http = ArtHttp { asked++; ArtReply(200, """{"data":[]}""") }
         val found = (0 until 12).map { i -> async { lookup(http, pace).lookUp(ArtSong("T", "Q$i", isArtist = true)) } }.awaitAll()
         assertThat(found.count { it == Found.Later }).isGreaterThan(0)
@@ -180,7 +230,7 @@ class ArtLookupTest {
 
     @Test fun `Deezer's searches are spaced the gap apart`() = runTest {
         val waits = mutableListOf<Long>()
-        val pace = DeezerPace(gapMs = 110, now = { 0L }, sleep = { waits += it })
+        val pace = Pace(gapMs = 110, now = { 0L }, sleep = { waits += it })
         val http = ArtHttp { ArtReply(200, """{"data":[]}""") }
         (1..3).map { i -> async { lookup(http, pace).lookUp(ArtSong("T", "A$i", isArtist = true)) } }.awaitAll()
         assertThat(waits).containsExactly(110L, 220L)
