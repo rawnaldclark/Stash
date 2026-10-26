@@ -12,7 +12,6 @@
     <string name="record_since">از %1$d · %2$s</string>
     <string name="record_most_played">بیشترین شنیده‌شده: %1$s</string>
     <string name="record_open">باز کردن صفحهٔ شما</string>
-    <string name="record_opens">صفحهٔ شما را باز می‌کند.</string>
     <string name="record_invite_title">صفحهٔ خود را بسازید</string>
     <string name="record_invite_body">همهٔ سال‌هایی که گوش داده‌اید، در یک جا: از Spotify، Last.fm یا Stash روی گوشی شما.</string>
     <string name="record_invite_start">شروع کنید</string>

@@ -16,7 +16,6 @@
     <string name="record_since">с %1$d · %2$s</string>
     <string name="record_most_played">Чаще всего: %1$s</string>
     <string name="record_open">Открыть пластинку</string>
-    <string name="record_opens">Открывает вашу пластинку.</string>
     <string name="record_invite_title">Отпечатайте свою пластинку</string>
     <string name="record_invite_body">Все годы прослушивания в одном месте: из Spotify, Last.fm или Stash на телефоне.</string>
     <string name="record_invite_start">Начать</string>

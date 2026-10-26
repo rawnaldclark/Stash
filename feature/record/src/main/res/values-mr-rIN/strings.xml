@@ -12,7 +12,6 @@
     <string name="record_since">%1$d पासून · %2$s</string>
     <string name="record_most_played">सर्वाधिक ऐकलेले: %1$s</string>
     <string name="record_open">तुमचा रेकॉर्ड उघडा</string>
-    <string name="record_opens">तुमचा रेकॉर्ड उघडते.</string>
     <string name="record_invite_title">तुमचा रेकॉर्ड तयार करा</string>
     <string name="record_invite_body">तुम्ही ऐकलेले प्रत्येक वर्ष, एकाच ठिकाणी: Spotify, Last.fm किंवा तुमच्या फोनवरील Stash मधून.</string>
     <string name="record_invite_start">सुरू करा</string>

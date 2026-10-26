@@ -12,7 +12,6 @@
     <string name="record_since">mula %1$d · %2$s</string>
     <string name="record_most_played">Pinakamadalas pakinggan: %1$s</string>
     <string name="record_open">Buksan ang record mo</string>
-    <string name="record_opens">Binubuksan ang record mo.</string>
     <string name="record_invite_title">I-press ang record mo</string>
     <string name="record_invite_body">Bawat taon ng pakikinig mo, nasa iisang lugar: mula sa Spotify, Last.fm, o Stash sa phone mo.</string>
     <string name="record_invite_start">Magsimula</string>

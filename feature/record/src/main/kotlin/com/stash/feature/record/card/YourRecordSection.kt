@@ -91,13 +91,22 @@ fun YourRecordSection(
     }
 }
 
-/** The card's frame: Daily Discover's family (the large shape, the hero's lift, a blurred cover under a scrim). */
+/**
+ * The card's frame: Daily Discover's family (the large shape, the hero's lift, a blurred cover under a scrim).
+ *
+ * With [spoken], the card is one thing to a screen reader: that announcement on the node TalkBack focuses (the clickable
+ * one), with its role and [onClickLabel], and nothing of what's inside. It is set inside the click, not around the card:
+ * Compose folds a node's semantics from the innermost modifier out, and a clearing one starts afresh, so outside it would
+ * clear the click too. A merge instead would have moved the announcement and the role into child nodes, and TalkBack read
+ * it, every line again, the faces' initials and "Button" (the rig's accessibility tree, 2026-10-26).
+ */
 @Composable
 private fun CardFrame(
     backdrop: String?,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
+    spoken: String? = null,
     overlay: @Composable () -> Unit = {},
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -107,7 +116,8 @@ private fun CardFrame(
             .fillMaxWidth()
             .shadow(StashElevation.Hero, shape, clip = false)
             .clip(shape)
-            .then(if (onClick != null) Modifier.clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick) else Modifier),
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick) else Modifier)
+            .then(if (spoken != null) Modifier.clearAndSetSemantics { contentDescription = spoken } else Modifier),
     ) {
         BlurredCoverBackdrop(model = backdrop, modifier = Modifier.matchParentSize())
         Row(
@@ -132,13 +142,18 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, mod
     val line = if (year != null) stringResource(R.string.record_since, year, plays) else plays
     val eyebrow = stringResource(R.string.record_eyebrow)
     val mostPlayed = view.topArtist?.let { stringResource(R.string.record_most_played, it) }
-    val opens = stringResource(R.string.record_opens)
-    val spoken = listOfNotNull("$eyebrow, ${RecordCard.count(hours, locale)} $hoursWord, $line.", mostPlayed?.let { "$it." }, opens).joinToString(" ")
+    // "Your record, 18 hours, since 2026, 333 plays. Most played: Radiohead.", then the role and "double-tap to open your
+    // record" from the click label (CardFrame)
+    val spoken = listOfNotNull(
+        "$eyebrow, ${RecordCard.count(hours, locale)} $hoursWord, ${line.replace(" · ", ", ")}.",
+        mostPlayed?.let { "$it." },
+    ).joinToString(" ")
     CardFrame(
         backdrop = label,
-        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
+        modifier = modifier,
         onClick = onOpen,
         onClickLabel = stringResource(R.string.record_open),
+        spoken = spoken,
     ) {
         RecordArtwork(
             sleeve = view.albums.mapIndexed { i, a -> SleeveTile(seed = a.album, cover = s.albumArt.getOrNull(i)) },

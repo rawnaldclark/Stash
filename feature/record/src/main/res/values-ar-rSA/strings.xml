@@ -20,7 +20,6 @@
     <string name="record_since">منذ %1$d · %2$s</string>
     <string name="record_most_played">الأكثر استماعًا: %1$s</string>
     <string name="record_open">افتح أسطوانتك</string>
-    <string name="record_opens">يفتح أسطوانتك.</string>
     <string name="record_invite_title">اطبع أسطوانتك</string>
     <string name="record_invite_body">كل عام استمعت فيه، في مكان واحد: من Spotify أو Last.fm أو Stash على هاتفك.</string>
     <string name="record_invite_start">ابدأ</string>

@@ -16,7 +16,6 @@
     <string name="record_since">since %1$d · %2$s</string>
     <string name="record_most_played">Most played: %1$s</string>
     <string name="record_open">Open your record</string>
-    <string name="record_opens">Opens your record.</string>
     <!-- The invitation before there is a record (shown once the Spotify import exists). -->
     <string name="record_invite_title">Press your record</string>
     <string name="record_invite_body">Every year you’ve listened, in one place: from Spotify, Last.fm or Stash on your phone.</string>

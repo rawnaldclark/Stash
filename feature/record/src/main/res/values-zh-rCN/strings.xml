@@ -10,7 +10,6 @@
     <string name="record_since">自 %1$d 年起 · %2$s</string>
     <string name="record_most_played">最常听：%1$s</string>
     <string name="record_open">打开你的唱片</string>
-    <string name="record_opens">打开你的唱片。</string>
     <string name="record_invite_title">压制你的唱片</string>
     <string name="record_invite_body">你听过的每一年，汇聚一处：来自 Spotify、Last.fm 或手机上的 Stash。</string>
     <string name="record_invite_start">开始</string>

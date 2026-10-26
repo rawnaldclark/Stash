@@ -16,7 +16,6 @@
     <string name="record_since">od %1$d · %2$s</string>
     <string name="record_most_played">Najczęściej słuchane: %1$s</string>
     <string name="record_open">Otwórz swoją płytę</string>
-    <string name="record_opens">Otwiera twoją płytę.</string>
     <string name="record_invite_title">Wytłocz swoją płytę</string>
     <string name="record_invite_body">Każdy rok słuchania w jednym miejscu: ze Spotify, Last.fm lub Stash na telefonie.</string>
     <string name="record_invite_start">Zaczynamy</string>

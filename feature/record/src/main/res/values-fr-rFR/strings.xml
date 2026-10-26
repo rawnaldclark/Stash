@@ -12,7 +12,6 @@
     <string name="record_since">depuis %1$d · %2$s</string>
     <string name="record_most_played">Le plus écouté : %1$s</string>
     <string name="record_open">Ouvrir votre disque</string>
-    <string name="record_opens">Ouvre votre disque.</string>
     <string name="record_invite_title">Pressez votre disque</string>
     <string name="record_invite_body">Chaque année d’écoute, au même endroit : depuis Spotify, Last.fm ou Stash sur votre téléphone.</string>
     <string name="record_invite_start">Commencer</string>
