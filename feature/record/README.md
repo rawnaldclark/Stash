@@ -11,8 +11,12 @@ the app feeds it this phone's plays, and a play tapped in it plays in Stash.
 | `https://appassets.androidplatform.net/record/embed.html?embed=stash-app` | `src/main/assets/record/` | the fork's `dist/embed.html` and `dist/assets/` |
 | `https://appassets.androidplatform.net/fonts/` | `src/main/assets/record-fonts/` | Inter and Space Grotesk (theme.css loads them from the site root), with their OFL licences |
 
-**Bundled build:** stash-on-record `dff3ac1` ("feat(stash): the app's back closes what's open over the record, then the
-record"), 1,515,637 bytes, plus 65,663 bytes of fonts.
+**Bundled build:** stash-on-record `9dff865` ("test(stash): a parity fixture for the app's Home card, made by the record's own
+code"), 1,517,255 bytes, plus 65,663 bytes of fonts. The page at this commit takes the app's rows up to 24 h, keeps the first
+row per id, sorts them by id, and sends `stash:save`.
+
+The Home card's parity fixture (`src/test/resources/parity/`, `card-parity.rows.json` and `card-parity.expect.json`) is the
+fork's `src/stash/fixtures/` at the same commit, byte for byte: refresh it with the build when the page's logic changes.
 
 Left out on purpose: the landing page and the site's files (`index.html`, `index-*`, `og.png`, icons, `robots.txt`,
 `sitemap.xml`, `_headers`), the demo's chunk (`load-*.js`, imported only with `?demo=1`), every `.woff` (the `.woff2` is used

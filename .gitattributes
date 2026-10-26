@@ -5,3 +5,5 @@ core/data/src/test/resources/sync/*.json -text
 core/data/src/test/resources/backcover/*.ppm binary
 # Your record's bundled page is the fork's build byte for byte (a template string in a chunk keeps its line breaks).
 feature/record/src/main/assets/** -text
+# Your record's card-parity fixture is the fork's file byte for byte (made by the record's own code).
+feature/record/src/test/resources/parity/*.json -text
