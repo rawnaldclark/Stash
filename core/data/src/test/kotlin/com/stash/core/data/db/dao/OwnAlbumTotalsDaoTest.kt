@@ -1,6 +1,7 @@
 package com.stash.core.data.db.dao
 
 import androidx.room.Room
+import app.cash.turbine.test
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
@@ -108,6 +109,22 @@ class OwnAlbumTotalsDaoTest {
         val before = dao.ownHistoryStamp().first()
         track(2, "Nights", "Frank Ocean", "Blonde")
         assertEquals(before, dao.ownHistoryStamp().first())
+    }
+
+    @Test fun `tracksWritten says so for every write to tracks, a rename too, and not for plays`() = runTest {
+        val dao = db.webLibraryExportDao()
+        track(1, "Ivy", "Frank Ocean", "Blonde")
+        dao.tracksWritten().test {
+            assertEquals(1L, awaitItem())
+            // a rename: the newest id doesn't move, but the card's words do
+            db.trackDao().update(db.trackDao().getById(1)!!.copy(title = "Ivy (Live)"))
+            assertEquals(1L, awaitItem())
+            track(2, "Nights", "Frank Ocean", "Blonde")
+            assertEquals(2L, awaitItem())
+            db.listeningEventDao().insert(ListeningEventEntity(trackId = 1, startedAt = T))
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     private companion object {

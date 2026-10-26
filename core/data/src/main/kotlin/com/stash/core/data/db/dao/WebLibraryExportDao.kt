@@ -382,6 +382,15 @@ interface WebLibraryExportDao {
     )
     fun ownHistoryStamp(): Flow<OwnHistoryStamp>
 
+    /**
+     * Emits each time Room sees `tracks` written (the newest id, which a rename doesn't move: read it as "tracks changed", not
+     * for its value). A song renamed, moved to another album or unblocked changes what Your record's card shows without
+     * touching [ownHistoryStamp]. Cheap: one index seek. A sync writes `tracks` many times a second: the card's reader settles
+     * and spaces these out.
+     */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM tracks")
+    fun tracksWritten(): Flow<Long>
+
     companion object {
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
         const val GUESS_MS = 210_000L
