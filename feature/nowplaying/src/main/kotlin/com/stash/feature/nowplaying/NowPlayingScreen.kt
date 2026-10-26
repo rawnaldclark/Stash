@@ -127,6 +127,7 @@ import com.stash.feature.nowplaying.sheet.PlayerSheetMath
 import com.stash.feature.nowplaying.sheet.PlayerSheetState
 import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.toSize
@@ -182,6 +183,16 @@ fun NowPlayingScreen(
     // A page (or the front) pinched off the art, held up over the whole screen: put back by a new
     // album, or a new song when there is no album to go by.
     val pageZoom = com.stash.feature.nowplaying.ui.rememberPageZoom(track?.let { BackCoverAlbum.of(it)?.key ?: it.id })
+    // The art over the whole screen (the top row's toggle): the album's pages, paced by the song.
+    // It grows out of the art square, so where that square sits is kept (window coordinates).
+    val fullscreenPref by viewModel.fullscreenArt.collectAsStateWithLifecycle()
+    var artBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // Now Playing settled at the top of the sheet (not mid-drag, not under the queue).
+    val npAtTop by remember(sheet) {
+        androidx.compose.runtime.derivedStateOf {
+            sheet == null || (sheet.settledAnchor == com.stash.feature.nowplaying.sheet.PlayerSheetAnchor.FULL && sheet.progress >= 1f)
+        }
+    }
     // Page index's Discogs page when its image comes from Discogs (0 is the back), for the credit.
     val discogsCredit: (Int) -> String? = remember(coverArt) {
         { index ->
@@ -477,6 +488,55 @@ fun NowPlayingScreen(
     // The album colours come from LocalAlbumChrome (the app-wide palette the mini player wears
     // too), not from the art this screen loads; both covers share one decode (rememberNpArtRequest).
     val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
+    // Fullscreen art's pages: the front (the same decode as the art square), then the back and the
+    // pages inside as far as they're known.
+    val frontRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
+    val npContext = androidx.compose.ui.platform.LocalContext.current
+    val fullscreenPages = remember(artModel, frontRequest, coverArt) {
+        if (artModel == null) {
+            emptyList()
+        } else {
+            buildList {
+                add(com.stash.feature.nowplaying.ui.FullscreenPage("front:$artModel", frontRequest, "Front", "Album art"))
+                val art = coverArt
+                art?.back?.let { url ->
+                    add(
+                        com.stash.feature.nowplaying.ui.FullscreenPage(
+                            "back:$url", com.stash.feature.nowplaying.ui.backCoverRequest(npContext, url), "Back", "Back cover",
+                            art.discogsPage?.takeIf { art.backFromDiscogs },
+                        ),
+                    )
+                }
+                art?.inside?.forEachIndexed { i, url ->
+                    val n = "${i + 1} of ${art.inside.size}"
+                    add(
+                        com.stash.feature.nowplaying.ui.FullscreenPage(
+                            "inside:$url", com.stash.feature.nowplaying.ui.backCoverRequest(npContext, url), "Inside $n", "Inside page $n",
+                            art.discogsPage?.takeIf { art.insideFromDiscogs },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+    val fullscreenOn = fullscreenPref == true && fullscreenPages.isNotEmpty()
+    // Back leaves fullscreen art first (Now Playing stays open, as it was under it).
+    if (sheet != null) {
+        val currentFullscreen by androidx.compose.runtime.rememberUpdatedState(fullscreenOn && npAtTop)
+        androidx.compose.runtime.DisposableEffect(sheet, viewModel) {
+            val unregister = sheet.registerBackConsumer {
+                if (currentFullscreen) {
+                    viewModel.onExitFullscreenArt()
+                    true
+                } else {
+                    false
+                }
+            }
+            onDispose { unregister() }
+        }
+    } else {
+        androidx.activity.compose.BackHandler(enabled = fullscreenOn) { viewModel.onExitFullscreenArt() }
+    }
     // The holder only (no colour read here): each reader takes its colour where it draws, so the
     // 800 ms crossfade on a song change never recomposes the whole screen.
     val chrome = LocalAlbumChrome.current
@@ -519,8 +579,9 @@ fun NowPlayingScreen(
     // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
     // go to the ⋮ menu for now (narrow phones, large display sizes); see fitTopRow.
     val rowWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 48f
-    val rowFit = remember(pins, actionCtx, rowWidthDp) {
-        fitTopRow(topRowActions(pins, actionCtx), rowWidthDp)
+    val hasArt = artModel != null
+    val rowFit = remember(pins, actionCtx, rowWidthDp, hasArt) {
+        fitTopRow(topRowActions(pins, actionCtx), rowWidthDp, extraSlots = if (hasArt) 1 else 0)
     }
     val onAction: (NowPlayingAction) -> Unit = remember(radioTuning, radioLabel, togetherState, track, postToCommunity) {
         { action ->
@@ -923,6 +984,39 @@ fun NowPlayingScreen(
             }
         }
 
+        // The top row, here and over fullscreen art (white there, on the art's shade).
+        @Composable
+        fun TopRow(inkOverride: androidx.compose.ui.graphics.Color?) {
+            WithAlbumChrome { topChrome ->
+                val ink = inkOverride ?: npInk()
+                NowPlayingTopBar(
+                    fit = rowFit,
+                    visualState = visualState,
+                    hasTrack = uiState.hasTrack,
+                    isDownloading = isDownloadingCurrent,
+                    radioLock = radioLock,
+                    ink = ink,
+                    accent = topChrome.accent,
+                    // In lyrics mode Dismiss goes back to the art, like back and the cover.
+                    dismissDescription = if (reading) "Back to the cover" else "Dismiss",
+                    onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
+                    onMoreClick = { showOptionsSheet = true },
+                    onAction = onPinnedAction,
+                    dismissModifier = if (inkOverride == null) Modifier.focusRequester(dismissFocus) else Modifier,
+                    castButton = {
+                        com.stash.feature.nowplaying.cast.CastButton(
+                            connection = castConnection,
+                            tint = ink,
+                            accentColor = topChrome.accent,
+                            onClick = { showCastSheet = true },
+                        )
+                    },
+                    fullscreenArt = if (hasArt) fullscreenOn else null,
+                    onToggleFullscreenArt = viewModel::onToggleFullscreenArt,
+                )
+            }
+        }
+
         Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
             // -- Top row: dismiss, then cast, the pinned actions, ⋮ and (pinned) queue. It stays
             // put while the art and the lyrics swap beneath it. --
@@ -934,31 +1028,7 @@ fun NowPlayingScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                WithAlbumChrome { topChrome ->
-                    NowPlayingTopBar(
-                        fit = rowFit,
-                        visualState = visualState,
-                        hasTrack = uiState.hasTrack,
-                        isDownloading = isDownloadingCurrent,
-                        radioLock = radioLock,
-                        ink = npInk(),
-                        accent = topChrome.accent,
-                        // In lyrics mode Dismiss goes back to the art, like back and the cover.
-                        dismissDescription = if (reading) "Back to the cover" else "Dismiss",
-                        onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
-                        onMoreClick = { showOptionsSheet = true },
-                        onAction = onPinnedAction,
-                        dismissModifier = Modifier.focusRequester(dismissFocus),
-                        castButton = {
-                            com.stash.feature.nowplaying.cast.CastButton(
-                                connection = castConnection,
-                                tint = npInk(),
-                                accentColor = topChrome.accent,
-                                onClick = { showCastSheet = true },
-                            )
-                        },
-                    )
-                }
+                TopRow(null)
                 if (room != null) {
                     com.stash.feature.nowplaying.listen.SessionBar(
                         room = room,
@@ -1014,6 +1084,7 @@ fun NowPlayingScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
+                                        .onGloballyPositioned { if (!reading && it.isAttached) artBounds = it.boundsInWindow() }
                                         .then(heroLayer(isCurrentMode = !reading, cornerDp = PlayerSheetMath.HERO_ART_CORNER_DP)),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -1065,7 +1136,7 @@ fun NowPlayingScreen(
                                                 pageCount = 1 + insidePages.size,
                                                 index = cycleIndex,
                                                 onIndexChange = { cycleIndex = it },
-                                                running = npInSight && !backUp && pageZoom.page == null,
+                                                running = npInSight && !backUp && pageZoom.page == null && !fullscreenOn,
                                                 snapKey = cycleSnap,
                                                 load = { n ->
                                                     n == 1 || insidePages.getOrNull(n - 2)
@@ -1276,6 +1347,26 @@ fun NowPlayingScreen(
             }
         }
         if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize().then(controlsLayer))
+        com.stash.feature.nowplaying.ui.FullscreenArtLayer(
+            open = fullscreenOn,
+            visible = npAtTop,
+            pages = fullscreenPages,
+            trackKey = track?.let { it.id to uiState.currentIndex },
+            title = track?.title.orEmpty(),
+            subtitle = listOfNotNull(track?.artist, track?.album).filter { it.isNotBlank() }.joinToString(" · "),
+            positionMs = { playerPosition.value },
+            durationMs = uiState.durationMs,
+            isPlaying = uiState.playWhenReady || uiState.isPlaying,
+            canSkip = !isListener,
+            origin = { artBounds },
+            originCornerPx = PlayerSheetMath.HERO_ART_CORNER_DP * screenDensity,
+            accent = { chrome.accent },
+            onAccent = { chrome.onAccent },
+            onPlayPause = viewModel::onPlayPauseClick,
+            onNext = viewModel::onSkipNext,
+            onPrevious = viewModel::onSkipPrevious,
+            topBar = { TopRow(androidx.compose.ui.graphics.Color.White) },
+        )
         com.stash.feature.nowplaying.ui.PageZoomLayer(pageZoom)
     }
 

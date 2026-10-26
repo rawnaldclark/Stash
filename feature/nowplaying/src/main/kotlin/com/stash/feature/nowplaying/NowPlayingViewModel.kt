@@ -175,6 +175,23 @@ class NowPlayingViewModel @Inject constructor(
     val cycleAlbumArt: StateFlow<Boolean> = nowPlayingPreference.cycleAlbumArt
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    /**
+     * The art over the whole screen (the top row's toggle), kept for next time. Null until DataStore
+     * answers, so a Now Playing left in fullscreen opens straight into it.
+     */
+    val fullscreenArt: StateFlow<Boolean?> = nowPlayingPreference.fullscreenArt
+        .map<Boolean, Boolean?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun onToggleFullscreenArt() {
+        val on = fullscreenArt.value != true
+        viewModelScope.launch { nowPlayingPreference.setFullscreenArt(on) }
+    }
+
+    fun onExitFullscreenArt() {
+        viewModelScope.launch { nowPlayingPreference.setFullscreenArt(false) }
+    }
+
     /** Settings > Appearance > Ambient style. */
     val ambientStyle: StateFlow<com.stash.core.data.prefs.AmbientStyle?> = nowPlayingPreference.ambientStyle
         .map<com.stash.core.data.prefs.AmbientStyle, com.stash.core.data.prefs.AmbientStyle?> { it }
