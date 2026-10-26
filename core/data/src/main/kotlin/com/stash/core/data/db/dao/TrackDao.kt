@@ -2561,8 +2561,12 @@ interface TrackDao {
     suspend fun findStreamableMetadataBackfillCandidates(limit: Int): List<StreamableBackfillRow>
 
     /**
-     * Rows with no album, newest first: a Last.fm playlist's or a mix's songs arrive with only a
-     * title and an artist. `ArtBackfillWorker` fills them from Last.fm ([fillMissingAlbum]).
+     * Rows with no album that the user has played or kept, newest first: a Last.fm playlist's or a
+     * mix's songs arrive with only a title and an artist. `ArtBackfillWorker` fills them from
+     * Last.fm ([fillMissingAlbum]). Only songs played, downloaded, liked, or saved / loved on a
+     * service: a mix's songs never played wait until they are (playing one fills its album then,
+     * through Now Playing), so the pass doesn't send every mix's songs through the Last.fm proxy
+     * (2026-10-26: one 0.9.120 phone swept its library at a lookup a second).
      */
     @Query(
         """
@@ -2571,6 +2575,12 @@ interface TrackDao {
         WHERE (album IS NULL OR album = '')
           AND artist != ''
           AND title != ''
+          AND (
+            play_count > 0 OR last_played IS NOT NULL
+            OR is_downloaded = 1 OR file_path IS NOT NULL
+            OR stash_liked_at IS NOT NULL OR spotify_saved_at IS NOT NULL
+            OR ytmusic_saved_at IS NOT NULL OR lastfm_loved_at IS NOT NULL
+          )
         ORDER BY id DESC
         LIMIT :limit
         """

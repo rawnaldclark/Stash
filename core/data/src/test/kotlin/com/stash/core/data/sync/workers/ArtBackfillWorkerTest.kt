@@ -133,12 +133,12 @@ class ArtBackfillWorkerTest {
     }
 
     @Test fun `a song with no album gets Last fm's, asked about once, and an album it has is kept`() = runBlocking<Unit> {
-        // Already has art and a duration: only the album pass looks at it.
+        // Already has art and a duration, and has been played: only the album pass looks at it.
         val bare = db.trackDao().insertAll(
             listOf(
                 TrackEntity(
                     title = "Roygbiv", artist = "Boards of Canada", isStreamable = true,
-                    albumArtUrl = "https://img/mhtrtc.png", durationMs = 139_000,
+                    albumArtUrl = "https://img/mhtrtc.png", durationMs = 139_000, playCount = 2,
                 ),
             ),
         ).single()
@@ -161,6 +161,24 @@ class ArtBackfillWorkerTest {
         assertThat(dao.getById(tagged)!!.album).isEqualTo("Kid A")
         assertThat(asked.count { it == ("Dead Kennedys" to "Police Truck") }).isEqualTo(1)
         assertThat(asked).doesNotContain("Radiohead" to "Kid A")
+    }
+
+    @Test fun `a mix's song with no album, never played or saved, waits until it is`() = runBlocking<Unit> {
+        // Art and a duration already: nothing but the album pass would ask about it.
+        val fromMix = db.trackDao().insertAll(
+            listOf(
+                TrackEntity(
+                    title = "Dayvan Cowboy", artist = "Boards of Canada", isStreamable = true,
+                    albumArtUrl = "https://img/tcn.png", durationMs = 300_000,
+                ),
+            ),
+        ).single()
+        answers["Boards of Canada" to "Dayvan Cowboy"] = Result.success(info(null, null, album = "The Campfire Headphase"))
+
+        worker().doWork()
+
+        assertThat(asked).doesNotContain("Boards of Canada" to "Dayvan Cowboy")
+        assertThat(db.trackDao().getById(fromMix)!!.album).isEmpty()
     }
 
     @Test fun `a second run with nothing new asks nothing`() = runBlocking<Unit> {

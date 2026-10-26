@@ -99,6 +99,12 @@ class ArtBackfillWorker @AssistedInject constructor(
         private const val RETIRED_MIX_REFRESH_WORK_NAME = "stash_art_backfill_mix_refresh"
 
         private const val BATCH_SIZE = 500
+
+        /**
+         * The album pass's batch: smaller than the others, since a library's songs without an album
+         * can run to thousands and each is a Last.fm lookup through the proxy.
+         */
+        private const val ALBUM_BATCH_SIZE = 150
         private const val REQUEST_INTERVAL_MS = 220L
 
         /** Transient Last.fm failures in a row that end a pass's lookups (an outage). */
@@ -416,7 +422,7 @@ class ArtBackfillWorker @AssistedInject constructor(
     private suspend fun runAlbumPass(startedAt: Long) {
         if (!credentials.isConfigured) return
         val candidates = backoff.candidateRows(
-            LastFmEnrichmentBackoff.Pass.ALBUM_BACKFILL, BATCH_SIZE, startedAt, { it.id },
+            LastFmEnrichmentBackoff.Pass.ALBUM_BACKFILL, ALBUM_BATCH_SIZE, startedAt, { it.id },
         ) { limit -> trackDao.findAlbumBackfillCandidates(limit) }
         if (candidates.isEmpty()) {
             Log.d(TAG, "no tracks need an album")
