@@ -1,0 +1,38 @@
+[
+ {
+  "ts": "2021-01-01T10:00:00Z",
+  "platform": "Android OS 14",
+  "ms_played": 200000,
+  "conn_country": "US",
+  "ip_addr": "198.51.100.23",
+  "master_metadata_track_name": "Old one",
+  "master_metadata_album_artist_name": "Artist",
+  "master_metadata_album_album_name": "Album",
+  "spotify_track_uri": "spotify:track:0123456789abcdefghijAB",
+  "episode_name": null,
+  "reason_start": "trackdone",
+  "reason_end": "trackdone",
+  "shuffle": false,
+  "skipped": false,
+  "offline": false,
+  "incognito_mode": false
+ },
+ {
+  "ts": "2021-01-02T10:00:00Z",
+  "platform": "Android OS 14",
+  "ms_played": 200000,
+  "conn_country": "US",
+  "ip_addr": "198.51.100.23",
+  "master_metadata_track_name": "Old two",
+  "master_metadata_album_artist_name": "Artist",
+  "master_metadata_album_album_name": "Album",
+  "spotify_track_uri": "spotify:track:0123456789abcdefghijAB",
+  "episode_name": null,
+  "reason_start": "trackdone",
+  "reason_end": "trackdone",
+  "shuffle": false,
+  "skipped": false,
+  "offline": false,
+  "incognito_mode": false
+ }
+]

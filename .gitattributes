@@ -8,4 +8,4 @@ feature/record/src/main/assets/** -text
 # Your record's card-parity fixture is the fork's file byte for byte (made by the record's own code).
 feature/record/src/test/resources/parity/*.json -text
 # The Spotify export fixture is stash-player's docs/spotify-export/fixture/ byte for byte (the golden test's truth).
-feature/record/src/test/resources/spotify-export/* -text
+feature/record/src/test/resources/spotify-export/** -text
