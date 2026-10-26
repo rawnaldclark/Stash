@@ -3,3 +3,5 @@ core/model/src/test/resources/sync/*.json -text
 core/data/src/test/resources/sync/*.json -text
 # Decoded thumbnails (PPM) for the Discogs seam tests: pixels, never line endings.
 core/data/src/test/resources/backcover/*.ppm binary
+# Your record's bundled page is the fork's build byte for byte (a template string in a chunk keeps its line breaks).
+feature/record/src/main/assets/** -text
