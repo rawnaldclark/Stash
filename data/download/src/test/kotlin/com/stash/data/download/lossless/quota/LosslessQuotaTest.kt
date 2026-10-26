@@ -143,7 +143,8 @@ class LosslessQuotaTest {
             first.awaitLoaded()
             first.onHeaders("500/500", "$RESET")
             first.liftSpent()
-            withTimeout(5_000) { store.data.first { it.asMap().size >= 6 } }
+            // A real file store on Dispatchers.IO: a busy CI machine took more than 5 s (2026-10-26).
+            withTimeout(20_000) { store.data.first { it.asMap().size >= 6 } }
 
             val second = LosslessQuota(store, { now }, scope)
             second.awaitLoaded()
