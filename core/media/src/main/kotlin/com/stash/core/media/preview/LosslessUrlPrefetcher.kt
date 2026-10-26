@@ -128,6 +128,8 @@ class LosslessUrlPrefetcher internal constructor(
         album = album?.takeIf { it.isNotBlank() },
         isrc = null,
         durationMs = durationSeconds.takeIf { it > 0 }?.let { (it * 1_000).toLong() },
+        // No explicit: a search-tab item carries no parental advisory, and unknown already
+        // prefers the explicit original (QobuzCandidateMatcher.pickBest).
     )
 
     private data class CachedDeferred(

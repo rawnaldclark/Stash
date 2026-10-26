@@ -53,6 +53,7 @@ class QobuzStreamResolver @Inject constructor(
             album = track.album.takeIf { it.isNotBlank() },
             isrc = track.isrc?.takeIf { it.isNotBlank() },
             durationMs = track.durationMs,
+            explicit = track.explicit,
         ).forLibrarySource(track.source, track.musicVideoType)
         val requestedQuality = qualityPolicy.streamingTier().qobuzCode
         val result = source.resolveImmediate(query, requestedQuality) ?: run {

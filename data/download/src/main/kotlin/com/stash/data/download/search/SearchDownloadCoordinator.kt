@@ -681,6 +681,7 @@ class SearchDownloadCoordinator @Inject constructor(
                 album = row.album.takeIf { it.isNotBlank() },
                 isrc = row.isrc?.takeIf { it.isNotBlank() },
                 durationMs = row.durationMs.takeIf { it > 0 },
+                explicit = row.explicit,
                 trackId = row.id,
             ).forLibrarySource(row.source, row.musicVideoType)
         } else {
@@ -967,6 +968,8 @@ class SearchDownloadCoordinator @Inject constructor(
         // duration only) — no Spotify URI exists, so search-tab downloads
         // correctly skip antra (which requires a spotify track URL).
         spotifyUri = null,
+        // No explicit either: TrackItem carries no parental advisory, and unknown already
+        // prefers the explicit original (QobuzCandidateMatcher.pickBest).
     )
 
     /**

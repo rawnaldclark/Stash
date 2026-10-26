@@ -151,7 +151,7 @@ class QobuzSource @Inject constructor(
 
             // Score and pick the best candidate that crosses the threshold.
             val scored = candidates.map { it to confidence(query, it) }
-            val match = QobuzCandidateMatcher.pickBest(query, scored) { it.duration }
+            val match = QobuzCandidateMatcher.pickBest(query, scored, explicit = { it.explicit }) { it.duration }
             if (match != null) {
                 found = match
                 break
