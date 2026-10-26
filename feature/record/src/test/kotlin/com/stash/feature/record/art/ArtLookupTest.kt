@@ -172,6 +172,38 @@ class ArtLookupTest {
         assertThat(lookup(notFound).lookUp(ArtSong("Ivy", "Frank Ocean", "Blonde"))).isEqualTo(Found.Cover(null))
     }
 
+    @Test fun `Apple refusing pauses Apple alone, for a minute - Deezer is still asked`() = runTest {
+        var clock = 0L
+        var status = 429
+        val asked = mutableListOf<String>()
+        val http = ArtHttp { url ->
+            asked += URI(url).host
+            if (URI(url).host == "api.deezer.com") ArtReply(200, """{"data":[]}""") else ArtReply(status, """{"results":[]}""")
+        }
+        val look = ArtLookup(http, Waits().pace(), noWait(), now = { clock })
+        assertThat(look.lookUp(ArtSong("Ivy", "Frank Ocean", "Blonde"))).isEqualTo(Found.Later)
+        assertThat(asked.count { it == "itunes.apple.com" }).isEqualTo(1)
+        // within the minute: Deezer asked (album, song), Apple not
+        status = 200
+        asked.clear()
+        clock = Pace.ITUNES_PAUSE_MS - 1
+        assertThat(look.lookUp(ArtSong("Nights", "Frank Ocean", "Blonde"))).isEqualTo(Found.Later)
+        assertThat(asked).containsExactly("api.deezer.com", "api.deezer.com")
+        // after it: Apple again
+        asked.clear()
+        clock = Pace.ITUNES_PAUSE_MS
+        assertThat(look.lookUp(ArtSong("Nights", "Frank Ocean", "Blonde"))).isEqualTo(Found.Cover(null))
+        assertThat(asked.last()).isEqualTo("itunes.apple.com")
+        // a 5xx is no answer: later, but no pause
+        status = 503
+        clock += 1
+        look.lookUp(ArtSong("Pink + White", "Frank Ocean", "Blonde"))
+        status = 200
+        asked.clear()
+        assertThat(look.lookUp(ArtSong("Solo", "Frank Ocean", "Blonde"))).isEqualTo(Found.Cover(null))
+        assertThat(asked.last()).isEqualTo("itunes.apple.com")
+    }
+
     @Test fun `Apple's searches are paced to about twenty a minute, and one that can't have its turn soon is asked later`() = runTest {
         val waits = mutableListOf<Long>()
         val apple = Pace(gapMs = Pace.ITUNES_GAP_MS, maxWaitMs = Pace.ITUNES_MAX_WAIT_MS, now = { 0L }, sleep = { waits += it })

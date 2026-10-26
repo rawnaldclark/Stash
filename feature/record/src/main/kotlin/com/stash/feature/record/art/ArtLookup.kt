@@ -69,6 +69,9 @@ class Pace(
 
         /** No more than a few of Apple's searches queued; the rest are asked later. */
         const val ITUNES_MAX_WAIT_MS = 12_000L
+
+        /** No asking Apple for this long after it refused (Deezer is asked as usual meanwhile). */
+        const val ITUNES_PAUSE_MS = 60_000L
     }
 }
 
@@ -87,12 +90,19 @@ class Pace(
  *
  * Only covers the record may show are taken ([isAllowedCover]): its page allows images from Deezer's CDNs and Apple's mzstatic
  * alone, so a hit elsewhere counts as no hit.
+ *
+ * Apple refusing (403, 429) stops the asking of Apple alone, for [Pace.ITUNES_PAUSE_MS]: Deezer, which finds most covers,
+ * goes on, and what only Apple could find is "later" meanwhile.
  */
 class ArtLookup(
     private val http: ArtHttp,
     private val pace: Pace = Pace(),
     private val applePace: Pace = Pace(gapMs = Pace.ITUNES_GAP_MS, maxWaitMs = Pace.ITUNES_MAX_WAIT_MS),
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
+    /** Apple refused: none of its searches until then. */
+    @Volatile private var appleUntil = 0L
+
     /** What Deezer said: its body, or why there is none. */
     private sealed interface Dz {
         data class Ok(val body: JsonObject) : Dz
@@ -124,9 +134,13 @@ class ArtLookup(
         val term = if (album != null) "$artist ${ArtText.bareAlbum(album)}" else "$artist ${ArtText.searchTitle(s.title)}"
         // Apple's limit is low: a search that can't have its turn soon, or that Apple refuses or doesn't answer, is "don't
         // know yet" (asked again later), never "none"
-        if (!applePace.turn()) return Found.Later
+        if (now() < appleUntil || !applePace.turn()) return Found.Later
         val r = http.get("$ITUNES/search?${form("term" to term, "media" to "music", "entity" to if (album != null) "album" else "song", "limit" to "10")}")
-        if (r.status == 0 || r.status == 403 || r.status == 429 || r.status >= 500) return Found.Later
+        if (r.status == 403 || r.status == 429) {
+            appleUntil = now() + Pace.ITUNES_PAUSE_MS
+            return Found.Later
+        }
+        if (r.status == 0 || r.status >= 500) return Found.Later
         if (r.status in 200..299) {
             val hits = parse(r.body)?.list("results").orEmpty()
             val sized: (JsonObject) -> String? = { h -> h.str("artworkUrl100")?.replace(ITUNES_SIZE, "/600x600bb.jpg") }
