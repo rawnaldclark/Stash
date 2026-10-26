@@ -11,10 +11,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * v65 -> v66 (data only): every stored "not explicit" becomes unknown, since Spotify syncs stored
- * it for every song whatever its rating; a true stays. A YouTube video a match found for a Spotify
- * song is forgotten unless the song is downloaded or its match was picked by hand; a YouTube
- * song's own video stays. Validated against the exported 66.json.
+ * v65 -> v66: every stored "not explicit" becomes unknown, since Spotify syncs stored it for every
+ * song whatever its rating; a true stays, and every stored video stays. Validated against the
+ * exported 66.json.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -51,7 +50,7 @@ class MigrationV65V66Test {
         )
     }
 
-    @Test fun `65 to 66 clears the false flags and the found videos of Spotify songs`() {
+    @Test fun `65 to 66 turns every false flag into unknown and keeps the videos`() {
         helper.createDatabase(DB_NAME, 65).use { db ->
             insertTrack(db, 1, "SPOTIFY", "found1", explicit = 0)
             insertTrack(db, 2, "SPOTIFY", "found2", explicit = 1)
@@ -69,11 +68,11 @@ class MigrationV65V66Test {
             }
             assertEquals(
                 listOf(
-                    Triple(1L, null, null), // false is unknown now; the found video is gone
-                    Triple(2L, 1, null), // explicit stays; its found video goes too
-                    Triple(3L, null, "kept3"), // downloaded: its video stays
-                    Triple(4L, null, "picked4"), // picked by hand: stays
-                    Triple(5L, null, "own5"), // a YouTube song's own video
+                    Triple(1L, null, "found1"), // false is unknown now
+                    Triple(2L, 1, "found2"), // explicit stays
+                    Triple(3L, null, "kept3"),
+                    Triple(4L, null, "picked4"),
+                    Triple(5L, null, "own5"), // unknown stays unknown
                 ),
                 rows,
             )

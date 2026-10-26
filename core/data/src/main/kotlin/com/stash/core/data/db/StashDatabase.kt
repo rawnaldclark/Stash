@@ -1743,18 +1743,13 @@ abstract class StashDatabase : RoomDatabase() {
          * advisory, and the model defaulted it to false, so every Spotify song read as clean and the
          * matcher picked clean versions (2026-10-26: 10,548 of 10,548 on the owner's phone). A false
          * can't be told from those, so every one becomes unknown (null), which prefers the explicit
-         * original; the next sync writes Spotify's real flag back. A YouTube video a match found for
-         * a Spotify song (a song never downloaded, its match not picked by hand) is forgotten too, so
-         * a clean one doesn't stay: the next play matches again under the new rules.
+         * original; the next sync writes Spotify's real flag back. A Spotify song's stored YouTube
+         * video stays: on the owner's phone 762 of 846 were the owner's own YouTube Music picks.
          */
         val MIGRATION_65_66 = object : Migration(65, 66) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("UPDATE `tracks` SET `explicit` = NULL WHERE `explicit` = 0")
                 db.execSQL("UPDATE `remote_track_snapshots` SET `explicit` = NULL WHERE `explicit` = 0")
-                db.execSQL(
-                    "UPDATE `tracks` SET `youtube_id` = NULL WHERE `source` = 'SPOTIFY' AND `youtube_id` IS NOT NULL " +
-                        "AND `is_downloaded` = 0 AND `file_path` IS NULL AND `match_picked_at` IS NULL",
-                )
             }
         }
 
