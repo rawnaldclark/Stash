@@ -71,7 +71,6 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import coil3.SingletonImageLoader
@@ -543,15 +542,15 @@ internal fun FullArtLayer(
                 ),
         )
 
-        // Discogs' terms: its images say where they're from while they're up.
+        // Discogs' API terms: "Data provided by Discogs." directly next to its data, linked to its
+        // page there (the exact words are theirs). Quiet, so it sits in the art.
         val discogs = topPage?.discogsPage
         if (discogs != null) {
             val uriHandler = LocalUriHandler.current
             Text(
                 text = "Data provided by Discogs",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.85f),
-                textDecoration = TextDecoration.Underline,
+                color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(start = 24.dp, top = 60.dp)

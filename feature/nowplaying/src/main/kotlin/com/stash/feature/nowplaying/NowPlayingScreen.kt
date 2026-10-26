@@ -1278,12 +1278,17 @@ fun NowPlayingScreen(
                                     LiveLyricsBar(
                                         state = lyricsState,
                                         currentPositionMs = { lyricsPosition.value },
-                                        accentColor = barChrome.ink,
+                                        // Over full art's dark blend the album's ink is used only when
+                                        // it's light enough to read there; white otherwise.
+                                        accentColor = barChrome.ink.let { ink ->
+                                            if (fullArtDark && ink.luminance() < 0.5f) androidx.compose.ui.graphics.Color.White else ink
+                                        },
                                         liveEnabled = liveLyricsEnabled,
                                         onTap = viewModel::onShowLyrics,
                                         modifier = controlsLayer,
                                         isPlaying = uiState.isPlaying && !uiState.isBuffering,
                                         playbackSpeed = playbackSpeed,
+                                        transparent = fullArtDark,
                                     )
                                 }
                             }

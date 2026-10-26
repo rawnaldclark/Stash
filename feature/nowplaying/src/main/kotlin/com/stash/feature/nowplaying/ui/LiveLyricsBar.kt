@@ -84,6 +84,8 @@ internal val BarNoteSpacing = 10.dp
  * through the bar; the vertical gradient only guarantees text contrast.
  *
  * @param accentColor The album's text colour (LocalAlbumChrome's ink), already crossfading.
+ * @param transparent No scrim at all: over full art, whose blend already darkens the bottom, a
+ *   scrim band only breaks the art.
  */
 @Composable
 fun LiveLyricsBar(
@@ -96,6 +98,7 @@ fun LiveLyricsBar(
     modifier: Modifier = Modifier,
     isPlaying: Boolean = true,
     playbackSpeed: Float = 1f,
+    transparent: Boolean = false,
 ) {
     // remember(state, liveEnabled): the 250ms position ticks recompose this
     // composable every tick; without the cache each tick would re-allocate
@@ -115,11 +118,17 @@ fun LiveLyricsBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClickLabel = "Open lyrics", onClick = onTap)
-                .background(
-                    Brush.verticalGradient(
-                        0f to scrimBase.copy(alpha = 0.30f),
-                        1f to scrimBase.copy(alpha = 0.65f),
-                    ),
+                .then(
+                    if (transparent) {
+                        Modifier
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                0f to scrimBase.copy(alpha = 0.30f),
+                                1f to scrimBase.copy(alpha = 0.65f),
+                            ),
+                        )
+                    },
                 )
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             contentAlignment = Alignment.Center,
