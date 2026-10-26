@@ -83,13 +83,19 @@ class RecordViewModel @Inject constructor(
             (w.parent as? ViewGroup)?.removeView(w)
             return w
         }
-        val holder = MutableContextWrapper(context)
+        // Built on the application, then shown in the Activity: Chromium keeps what it sees at construction for the WebView's
+        // life (its autofill keeps the context's AutofillManager), and the WebView outlives an Activity across a rotation or a
+        // theme change. Built on the first Activity, it kept that Activity after every recreation (seen on the rig: one
+        // Activity too many after night mode was toggled twice). A select's popup and the keyboard use the view's context
+        // when they open, so they get the Activity of the moment.
+        val holder = MutableContextWrapper(app)
         val w = RecordWebView(
             holder,
             onMessage = host::onMessage,
             onResponsive = { host.unresponsive = !it },
             onGone = ::rendererGone,
         )
+        holder.baseContext = context
         web = w
         wrapper = holder
         return w
