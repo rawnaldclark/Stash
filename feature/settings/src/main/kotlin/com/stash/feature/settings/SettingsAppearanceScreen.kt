@@ -61,6 +61,7 @@ fun SettingsAppearanceScreen(
     var draftScale by remember(uiScale, maxScale) { mutableFloatStateOf(minOf(uiScale, maxScale)) }
     val fullArtZoom by viewModel.fullArtZoom.collectAsStateWithLifecycle()
     val fullArtPan by viewModel.fullArtPan.collectAsStateWithLifecycle()
+    val discogsArt by viewModel.discogsArt.collectAsStateWithLifecycle()
     // As the display size: the slider moves a draft, stored once on release.
     var draftZoom by remember(fullArtZoom) { mutableFloatStateOf(fullArtZoom) }
 
@@ -147,6 +148,14 @@ fun SettingsAppearanceScreen(
                 subtitle = stringResource(R.string.settings_cycle_album_art_subtitle),
                 checked = uiState.cycleAlbumArt,
                 onCheckedChange = viewModel::onCycleAlbumArtChanged,
+            )
+        }
+        nowPlaying += {
+            SettingsToggleRow(
+                title = stringResource(R.string.settings_discogs_art_title),
+                subtitle = stringResource(R.string.settings_discogs_art_subtitle),
+                checked = discogsArt,
+                onCheckedChange = viewModel::onDiscogsArtChanged,
             )
         }
         // Full art (the toggle in Now Playing's top row): how close it shows the album, and how fast

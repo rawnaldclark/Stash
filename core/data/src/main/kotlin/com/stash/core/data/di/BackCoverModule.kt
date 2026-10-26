@@ -20,4 +20,5 @@ abstract class BackCoverModule {
     @Binds abstract fun bindDiscogsClient(impl: DiscogsClientImpl): DiscogsClient
     @Binds abstract fun bindAlbumBackCovers(impl: AlbumBackCoverRepository): AlbumBackCovers
     @Binds abstract fun bindTrackAlbums(impl: LastFmTrackAlbums): TrackAlbums
+    @Binds abstract fun bindBackCoverSources(impl: com.stash.core.data.backcover.PreferenceBackCoverSources): com.stash.core.data.backcover.BackCoverSources
 }

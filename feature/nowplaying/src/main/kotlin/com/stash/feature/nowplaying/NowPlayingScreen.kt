@@ -930,7 +930,9 @@ fun NowPlayingScreen(
             com.stash.feature.nowplaying.ui.FullArtLayer(
                 state = fullArt,
                 active = fullArtOn,
-                visible = npAtTop && !reading,
+                visible = npAtTop,
+                // Lyrics read over the blend: the art fades while the cover flies to the header.
+                artShown = !reading,
                 running = npInSight,
                 pages = fullArtPages,
                 startPage = if (cycleAlbumArt && pagesLineUp) cycleIndex else 0,

@@ -9,8 +9,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -90,6 +92,7 @@ class AlbumBackCoverRepository @Inject constructor(
     private val musicBrainz: MusicBrainzClient,
     private val coverArt: CoverArtArchiveClient,
     private val discogs: DiscogsClient,
+    private val sources: BackCoverSources = BackCoverSources.All,
 ) : AlbumBackCovers {
 
     /** Test seam: the clock partial answers and failures are aged on. */
@@ -99,9 +102,10 @@ class AlbumBackCoverRepository @Inject constructor(
     private val failedAt = ConcurrentHashMap<String, Long>()
 
     override fun observe(album: BackCoverAlbum): Flow<AlbumCoverArt?> = flow {
-        // Never a stale Discogs image on screen: forgotten before the row is read.
+        // Never a stale Discogs image on screen: forgotten before the row is read. With Discogs art
+        // turned off, what came from Discogs goes from the screen at once.
         forgetStaleDiscogs()
-        emitAll(dao.observe(album.key).map { it?.toArt() })
+        emitAll(combine(dao.observe(album.key), sources.discogs) { row, discogsOn -> row?.toArt()?.shown(discogsOn) })
     }.distinctUntilChanged()
 
     private suspend fun forgetStaleDiscogs() = dao.forgetDiscogsBefore(now() - DISCOGS_TTL_MS)
@@ -109,17 +113,19 @@ class AlbumBackCoverRepository @Inject constructor(
     override suspend fun resolve(album: BackCoverAlbum): AlbumCoverArt? {
         val key = album.key
         forgetStaleDiscogs()
-        stored(key)?.let { return it.toArt() }
+        val discogsOn = sources.discogs.first()
+        val askAgainBefore = maxOf(MATCHING_CHANGED_AT, sources.discogsOnSince())
+        stored(key, askAgainBefore)?.let { return it.toArt().shown(discogsOn) }
         val lock = keyLocks.computeIfAbsent(key) { Mutex() }
         try {
             return lock.withLock {
                 // Another caller may have finished the walk while this one waited.
-                stored(key)?.let { return@withLock it.toArt() }
+                stored(key, askAgainBefore)?.let { return@withLock it.toArt().shown(discogsOn) }
                 val failed = failedAt[key]
                 if (failed != null && now() - failed < FAILURE_BACKOFF_MS) return@withLock null
                 val startedNs = System.nanoTime()
                 val found = try {
-                    lookUp(album) { back ->
+                    lookUp(album, discogsOn) { back ->
                         dao.upsert(AlbumBackCoverEntity(key, back.url, back.releaseMbid, now(), insideUrls = null))
                     }
                 } catch (e: CancellationException) {
@@ -158,14 +164,26 @@ class AlbumBackCoverRepository @Inject constructor(
     /**
      * The stored answer when it still stands: a full one from the archive (a back and inside
      * pages), or any other younger than [MISS_TTL_MS] (one with Discogs in it is cleared at
-     * [DISCOGS_TTL_MS]: [forgetStaleDiscogs]). Not one whose inside was never looked for.
+     * [DISCOGS_TTL_MS]: [forgetStaleDiscogs]). Not one whose inside was never looked for, nor a
+     * partial one from before [askAgainBefore]: before the lookup last learned to find more
+     * ([MATCHING_CHANGED_AT]), or before Discogs art was turned back on.
      */
-    private suspend fun stored(key: String): AlbumBackCoverEntity? =
+    private suspend fun stored(key: String, askAgainBefore: Long): AlbumBackCoverEntity? =
         dao.get(key)?.takeIf { row ->
             val inside = row.insideUrls ?: return@takeIf false
             val full = row.imageUrl != null && inside.isNotEmpty() && !row.backFromDiscogs && !row.insideFromDiscogs
-            // A partial answer from before the lookup last learned to find more is asked again.
-            full || (row.attemptedAt >= MATCHING_CHANGED_AT && now() - row.attemptedAt < MISS_TTL_MS)
+            full || (row.attemptedAt >= askAgainBefore && now() - row.attemptedAt < MISS_TTL_MS)
+        }
+
+    /** This answer with what came from Discogs left out when [discogsOn] is false (Discogs art off). */
+    private fun AlbumCoverArt.shown(discogsOn: Boolean): AlbumCoverArt =
+        if (discogsOn || (!backFromDiscogs && !insideFromDiscogs)) {
+            this
+        } else {
+            AlbumCoverArt(
+                back = back.takeUnless { backFromDiscogs },
+                inside = if (insideFromDiscogs) emptyList() else inside,
+            )
         }
 
     private fun AlbumBackCoverEntity.toArt() = AlbumCoverArt(
@@ -202,12 +220,12 @@ class AlbumBackCoverRepository @Inject constructor(
      * The album's back and inside pages, empty when it has neither. [onBack] gets the back the
      * moment it is found, while the walk goes on for the inside. Throws [LookupFailed].
      */
-    private suspend fun lookUp(album: BackCoverAlbum, onBack: suspend (Found) -> Unit): Walk {
+    private suspend fun lookUp(album: BackCoverAlbum, discogsOn: Boolean, onBack: suspend (Found) -> Unit): Walk {
         val group = releaseGroupOf(album) ?: return Walk(null, emptyList())
-        return coroutineScope { walkGroup(group, onBack) }
+        return coroutineScope { walkGroup(group, discogsOn, onBack) }
     }
 
-    private suspend fun CoroutineScope.walkGroup(group: String, onBack: suspend (Found) -> Unit): Walk {
+    private suspend fun CoroutineScope.walkGroup(group: String, discogsOn: Boolean, onBack: suspend (Found) -> Unit): Walk {
         // The group's releases are listed while the archive is asked for its main edition (the
         // archive is the slow one, 1-6 s through archive.org): cancelled if the main edition
         // answers it all.
@@ -219,7 +237,7 @@ class AlbumBackCoverRepository @Inject constructor(
         if (cover == null) android.util.Log.w(LOG_TAG, "archive release group $group failed: checking its releases")
         // No art at all on the archive: Discogs alone.
         if (cover != null && cover.images.isEmpty() && cover.releaseMbid == null) {
-            return withDiscogs(group, browse.await(), null, null)
+            return withDiscogs(group, browse.await(), null, null, discogsOn)
         }
 
         var back: Found? = null
@@ -271,16 +289,17 @@ class AlbumBackCoverRepository @Inject constructor(
             if (done()) break
         }
         if (!answered && (main != null || candidates.isNotEmpty())) throw lookupFailed("every archive listing of $group")
-        return withDiscogs(group, releases, back, inside)
+        return withDiscogs(group, releases, back, inside, discogsOn)
     }
 
     /**
      * The archive's [back] and [inside] (null: none found), with Discogs' standing in for what's
-     * missing. Throws [LookupFailed] when MusicBrainz or Discogs fails: a back already found was
+     * missing, unless [discogsOn] is false (Discogs art turned off: the archive's alone, Discogs
+     * not asked). Throws [LookupFailed] when MusicBrainz or Discogs fails: a back already found was
      * stored by then ([lookUp]'s onBack), and the rest is tried again after the backoff.
      */
-    private suspend fun withDiscogs(group: String, releases: JsonObject?, back: Found?, inside: List<String>?): Walk {
-        if (back != null && inside != null) return Walk(back, inside)
+    private suspend fun withDiscogs(group: String, releases: JsonObject?, back: Found?, inside: List<String>?, discogsOn: Boolean): Walk {
+        if ((back != null && inside != null) || !discogsOn) return Walk(back, inside.orEmpty())
         val found = discogsArt(group, releases)
         val discogsBack = found?.back?.takeIf { back == null }
         val discogsInside = found?.inside?.takeIf { inside == null && it.isNotEmpty() }

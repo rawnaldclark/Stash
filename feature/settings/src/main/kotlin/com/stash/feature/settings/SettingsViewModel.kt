@@ -1689,6 +1689,17 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { nowPlayingPreference.setCycleAlbumArt(enabled) }
     }
 
+    /** Settings > Appearance > Discogs art. */
+    val discogsArt: StateFlow<Boolean> = nowPlayingPreference.discogsArt.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        true,
+    )
+
+    fun onDiscogsArtChanged(on: Boolean) {
+        viewModelScope.launch { nowPlayingPreference.setDiscogsArt(on) }
+    }
+
     /** Settings > Appearance > Full art zoom. */
     val fullArtZoom: StateFlow<Float> = nowPlayingPreference.fullArtZoom.stateIn(
         viewModelScope,

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -70,6 +71,26 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     suspend fun setFullArt(on: Boolean) {
         context.nowPlayingDataStore.edit { it[fullArtKey] = on }
+    }
+
+    private val discogsArtKey = booleanPreferencesKey("discogs_art")
+    private val discogsArtOnSinceKey = longPreferencesKey("discogs_art_on_since")
+
+    /**
+     * Settings > Appearance > Discogs art: Discogs fills in the back covers and inside pages the
+     * Cover Art Archive lacks. Its images are its users' photos and scans, some of them poor, so
+     * it can be turned off for the archive's alone. On unless turned off.
+     */
+    val discogsArt = context.nowPlayingDataStore.data.map { it[discogsArtKey] ?: true }
+
+    /** When Discogs art was last turned on (0: never turned off): answers from before are asked again. */
+    val discogsArtOnSince = context.nowPlayingDataStore.data.map { it[discogsArtOnSinceKey] ?: 0L }
+
+    suspend fun setDiscogsArt(on: Boolean) {
+        context.nowPlayingDataStore.edit {
+            it[discogsArtKey] = on
+            if (on) it[discogsArtOnSinceKey] = System.currentTimeMillis()
+        }
     }
 
     private val fullArtZoomKey = floatPreferencesKey("full_art_zoom")

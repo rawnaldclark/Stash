@@ -96,6 +96,13 @@ private const val PAGE_FADE_MS = 2_200L
 /** The art growing from its square to the full width, and back. */
 private const val GROW_MS = 650
 
+/**
+ * The art fading out as lyrics open (quickly, under the cover flying to the header) and back in as
+ * they close (a beat slower, as the cover lands).
+ */
+private const val ART_OUT_MS = 180
+private const val ART_IN_MS = 320
+
 /** Where the art starts melting into the blend under it, of its height. */
 private const val ART_FADE_FROM = 0.55f
 
@@ -295,8 +302,9 @@ internal fun FullArtTheme(on: Boolean, content: @Composable () -> Unit) {
  * Drawn behind Now Playing's controls, which stay as they are, in white.
  *
  * @param active Full art is on.
- * @param visible Now Playing is settled at the top of the sheet with its art (not lyrics) up:
- *   drawn only then.
+ * @param visible Now Playing is settled at the top of the sheet: drawn only then.
+ * @param artShown The art is up, not lyrics. With lyrics up only the blend stays, under them,
+ *   so opening and closing lyrics never snaps the screen back to the square art.
  * @param running Now Playing is in sight: the pan's frame loop runs only then.
  * @param pages The front, then the back and the pages inside, those that are known.
  * @param startPage The page the square art shows: full art opens on it.
@@ -312,6 +320,7 @@ internal fun FullArtLayer(
     state: FullArtState,
     active: Boolean,
     visible: Boolean,
+    artShown: Boolean,
     running: Boolean,
     pages: List<FullArtPage>,
     startPage: Int,
@@ -337,6 +346,11 @@ internal fun FullArtLayer(
             reducedMotion -> state.grow.snapTo(if (target) 1f else 0f)
             else -> state.grow.animateTo(if (target) 1f else 0f, tween(GROW_MS, easing = FastOutSlowInEasing))
         }
+    }
+    val artAlpha = remember { Animatable(if (artShown) 1f else 0f) }
+    LaunchedEffect(artShown, reducedMotion) {
+        val to = if (artShown) 1f else 0f
+        if (reducedMotion) artAlpha.snapTo(to) else artAlpha.animateTo(to, tween(if (artShown) ART_IN_MS else ART_OUT_MS))
     }
     if (!target && state.grow.value == 0f) return
 
@@ -442,7 +456,10 @@ internal fun FullArtLayer(
                         )
                     }
                 }
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    alpha = artAlpha.value
+                }
                 .drawBehind {
                     val t = state.grow.value
                     val (full, extraZoom) = fullArtBox(size.width, size.height, zoom)
@@ -521,8 +538,8 @@ internal fun FullArtLayer(
                 modifier = Modifier
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .padding(start = 24.dp, top = 60.dp)
-                    .graphicsLayer { alpha = state.grow.value }
-                    .clickable { runCatching { uriHandler.openUri(discogs) } },
+                    .graphicsLayer { alpha = state.grow.value * artAlpha.value }
+                    .clickable(enabled = artShown) { runCatching { uriHandler.openUri(discogs) } },
             )
         }
     }

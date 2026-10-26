@@ -187,6 +187,8 @@
     <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
     <string name="settings_cycle_album_art_title">Cycle album art</string>
     <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
+    <string name="settings_discogs_art_title">Discogs art</string>
+    <string name="settings_discogs_art_subtitle">Fill in back covers and inside pages the Cover Art Archive doesn\'t have from Discogs. Its images are uploaded by its users, and some are low quality.</string>
     <string name="settings_full_art_zoom_title">Full art zoom</string>
     <string name="settings_full_art_zoom_subtitle">How close full art shows the album. 1.0x fits the whole cover across the screen.</string>
     <string name="settings_full_art_pan_title">Full art pan</string>
