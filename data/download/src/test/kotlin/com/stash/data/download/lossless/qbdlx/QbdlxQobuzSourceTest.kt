@@ -167,6 +167,21 @@ class QbdlxQobuzSourceTest {
         assertThat(r?.sourceTrackId).isEqualTo("7")
     }
 
+    @Test fun `twins go to the explicit one unless the row is known clean`() = runTest {
+        // Same title, artist and length, so the same score; the clean one is listed first.
+        enabledAndAcquired()
+        val song = query.copy(isrc = null)
+        coEvery { apiClient.search(any()) } returns listOf(
+            candidate(1).copy(isrc = null, explicit = false),
+            candidate(2).copy(isrc = null, explicit = true),
+        )
+        coEvery { router.getFileUrl(any(), 27) } returns ok()
+
+        assertThat(source().resolve(song)?.sourceTrackId).isEqualTo("2")
+        assertThat(source().resolve(song.copy(explicit = true))?.sourceTrackId).isEqualTo("2")
+        assertThat(source().resolve(song.copy(explicit = false))?.sourceTrackId).isEqualTo("1")
+    }
+
     @Test fun `an ISRC hit costs one catalog search`() = runTest {
         enabledAndAcquired()
         coEvery { apiClient.search(any()) } returns listOf(candidate())

@@ -123,7 +123,7 @@ class QbdlxQobuzSource @Inject constructor(
         try {
             for (answer in answers) {
                 val candidates = answer.await().getOrThrow() ?: continue
-                val match = QobuzCandidateMatcher.pickBest(query, candidates.map { it to confidence(query, it) }) { it.duration }
+                val match = QobuzCandidateMatcher.pickBest(query, candidates.map { it to confidence(query, it) }, explicit = { it.explicit }) { it.duration }
                 if (match != null) return@supervisorScope match
             }
             null

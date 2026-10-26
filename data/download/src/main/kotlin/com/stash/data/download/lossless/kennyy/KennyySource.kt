@@ -119,7 +119,7 @@ class KennyySource @Inject constructor(
             if (candidates.isEmpty()) continue
 
             val scored = candidates.map { it to confidence(query, it) }
-            val match = QobuzCandidateMatcher.pickBest(query, scored) { it.duration }
+            val match = QobuzCandidateMatcher.pickBest(query, scored, explicit = { it.explicit }) { it.duration }
             if (match != null) {
                 found = match
                 break

@@ -12,10 +12,11 @@ import org.junit.Test
  */
 class CandidatePickTest {
 
-    private data class Cand(val name: String, val sec: Int)
+    /** [explicit]: the catalog's parental advisory, null when it doesn't say (every test before it). */
+    private data class Cand(val name: String, val sec: Int, val explicit: Boolean? = null)
 
     private fun pick(query: TrackQuery, vararg scored: Pair<Cand, Float>) =
-        QobuzCandidateMatcher.pickBest(query, scored.toList()) { it.sec }?.first?.name
+        QobuzCandidateMatcher.pickBest(query, scored.toList(), explicit = { it.explicit }) { it.sec }?.first?.name
 
     private val q210 = TrackQuery(artist = "A", title = "Song", durationMs = 210_000)
 
@@ -42,6 +43,59 @@ class CandidatePickTest {
     @Test fun `nothing under the threshold is picked`() {
         assertThat(pick(q210, Cand("weak", 210) to QobuzCandidateMatcher.MIN_CONFIDENCE - 0.01f)).isNull()
         assertThat(pick(q210)).isNull()
+    }
+
+    // A song's clean and explicit twins: same title, album and length, so the same score.
+    private val clean = Cand("clean", 210, explicit = false)
+    private val dirty = Cand("explicit", 210, explicit = true)
+    private val unmarked = Cand("unmarked", 210, explicit = null)
+
+    @Test fun `twins go to the explicit one for an explicit or unknown row, whichever is listed first`() {
+        for (row in listOf(q210.copy(explicit = true), q210.copy(explicit = null))) {
+            assertThat(pick(row, clean to 1.0f, dirty to 1.0f)).isEqualTo("explicit")
+            assertThat(pick(row, dirty to 1.0f, clean to 1.0f)).isEqualTo("explicit")
+        }
+    }
+
+    @Test fun `twins go to the clean one for a row known to be clean`() {
+        val row = q210.copy(explicit = false)
+        assertThat(pick(row, dirty to 1.0f, clean to 1.0f)).isEqualTo("clean")
+        assertThat(pick(row, clean to 1.0f, dirty to 1.0f)).isEqualTo("clean")
+    }
+
+    @Test fun `a candidate the catalog doesn't mark is never taken for explicit`() {
+        // A clean row takes it over the marked explicit twin; an explicit row takes the marked one.
+        assertThat(pick(q210.copy(explicit = false), dirty to 1.0f, unmarked to 1.0f)).isEqualTo("unmarked")
+        assertThat(pick(q210.copy(explicit = true), unmarked to 1.0f, dirty to 1.0f)).isEqualTo("explicit")
+        // Neither marked explicit: the length and then the order decide, as before.
+        assertThat(pick(q210.copy(explicit = true), unmarked to 1.0f, clean to 1.0f)).isEqualTo("unmarked")
+        assertThat(pick(q210.copy(explicit = true), clean to 1.0f, unmarked to 1.0f)).isEqualTo("clean")
+    }
+
+    @Test fun `a single candidate is picked whatever its explicitness`() {
+        for (wanted in listOf(true, false, null)) {
+            for (cand in listOf(clean, dirty, unmarked)) {
+                assertThat(pick(q210.copy(explicit = wanted), cand to 1.0f)).isEqualTo(cand.name)
+            }
+        }
+    }
+
+    @Test fun `explicitness never beats a higher score`() {
+        assertThat(pick(q210.copy(explicit = true), clean to 1.0f, dirty to 0.9f)).isEqualTo("clean")
+        assertThat(pick(q210.copy(explicit = true), dirty to 0.9f, clean to 1.0f)).isEqualTo("clean")
+        assertThat(pick(q210.copy(explicit = false), dirty to 1.0f, clean to 0.9f)).isEqualTo("explicit")
+        // Nor lifts a candidate over the threshold.
+        val under = QobuzCandidateMatcher.MIN_CONFIDENCE - 0.01f
+        assertThat(pick(q210.copy(explicit = true), dirty to under)).isNull()
+        assertThat(pick(q210.copy(explicit = true), dirty to under, clean to 0.6f)).isEqualTo("clean")
+    }
+
+    @Test fun `explicitness breaks a tie ahead of length, and float rounding is still a tie`() {
+        val row = q210.copy(explicit = true)
+        assertThat(pick(row, clean to 1.0f, Cand("explicit", 213, explicit = true) to 1.0f)).isEqualTo("explicit")
+        assertThat(pick(row, clean to 1.0f, dirty to 0.99995f)).isEqualTo("explicit")
+        // Twins tied on explicitness too: the closest length still wins.
+        assertThat(pick(row, Cand("far", 230, explicit = true) to 1.0f, Cand("near", 211, explicit = true) to 1.0f)).isEqualTo("near")
     }
 
     private fun yt(type: String? = null, album: String? = null, artist: String = "Some Channel", title: String = "Artist - Song (Official Video)") =

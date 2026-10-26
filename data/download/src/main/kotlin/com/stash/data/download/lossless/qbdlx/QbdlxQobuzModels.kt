@@ -23,6 +23,12 @@ data class QbdlxTrack(
     val album: QbdlxAlbum? = null,
     /** The recording's version, kept out of [title] by Qobuz (e.g. "Retro Mix", "Acoustic"). */
     val version: String? = null,
+    /**
+     * Qobuz's parental advisory: which of a song's clean and explicit twins (same title, album
+     * and length, so the same score) this is. The matcher breaks ties on it
+     * ([com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher.pickBest]). Null when absent.
+     */
+    @SerialName("parental_warning") val explicit: Boolean? = null,
 )
 
 @Serializable data class QbdlxPerformer(val name: String = "")
