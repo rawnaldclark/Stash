@@ -12,25 +12,40 @@ import java.io.IOException
 import java.util.Base64
 import java.util.UUID
 
+/** What became of a file the record asked to save. */
+enum class SaveOutcome {
+    /** In Downloads. */
+    SAVED,
+
+    /** Handed to the share sheet instead (Android 9 and older: Downloads would need storage permission). */
+    SHARED,
+    FAILED,
+}
+
 /** Where a finished file from the record goes. */
 interface RecordSaver {
-    /** Puts [file] in Downloads as [name]; true once it is there. [file] is the saver's to move or delete. */
-    suspend fun save(file: File, name: String, mime: String): Boolean
+    /** Puts [file] in Downloads as [name], or hands it to the share sheet where it can't. [file] is the saver's to move or delete. */
+    suspend fun save(file: File, name: String, mime: String): SaveOutcome
 
-    /** Opens the share sheet for [file] as [name]; true when it opened. [file] is the saver's to move or delete. */
+    /** Readies [file] for the share sheet as [name]; true when it is ready. [file] is the saver's to move or delete. */
     suspend fun share(file: File, name: String, mime: String): Boolean
 }
 
 /**
  * Puts the record's files back together (`stash:save`: base64 chunks, `seq` from 0, the last `done`) in a file under [dir],
  * never in memory: a race video can be tens of megabytes. One file at a time, its chunks strictly in order; a chunk of another
- * file, or one out of order, drops what was gathered (the page started a new file, or lost one), and so does [drop] (the page
- * went). At most [maxBytes] a file. Once whole it goes to [saver].
+ * file, or one out of order, drops what was gathered (the page started a new file, or lost one), and so do [abort] (the page
+ * gave up on it) and [drop] (the page went). At most [maxBytes] a file, and [maxFiles] files a visit. Once whole it goes to
+ * [saver].
+ *
+ * Flow control (`stash:save-ack`): [take] calls its `appended` once a chunk is in the file, so the page, which keeps only two
+ * chunks unacknowledged, sends the next only when this one is safe.
  */
 class RecordSaves(
     private val dir: File,
     private val saver: RecordSaver,
     private val maxBytes: Long = MAX_BYTES,
+    private val maxFiles: Int = MAX_FILES,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : RecordSaveSink {
     private class Partial(val id: String, val name: String, val mime: String, val share: Boolean, val file: File) {
@@ -40,15 +55,21 @@ class RecordSaves(
 
     private val lock = Mutex()
     private var current: Partial? = null
+    private var finished = 0
 
     /**
-     * Takes one chunk (in the order the page sent them). Returns what to tell the listener once a file is done or can't be:
-     * [RecordNote.Saved], [RecordNote.SaveFailed], or null (more to come, a share sheet opened, or an orphan chunk dropped).
+     * Takes one chunk (in the order the page sent them), calling [appended] once it is in the file. Returns what to tell the
+     * listener once a file is done or can't be: [RecordNote.Saved], [RecordNote.SaveFailed], [RecordNote.TooManySaves], or null
+     * (more to come, a share sheet readied, a file handed to the share sheet, or an orphan chunk dropped).
      */
-    override suspend fun take(chunk: RecordAsk.Save): RecordNote? = lock.withLock {
+    override suspend fun take(chunk: RecordAsk.Save, appended: suspend () -> Unit): RecordNote? = lock.withLock {
         withContext(io) {
             if (chunk.seq == 0) {
                 dropLocked()
+                if (finished >= maxFiles) {
+                    Log.w(TAG, "the record asked for more than $maxFiles files this visit; refused")
+                    return@withContext RecordNote.TooManySaves
+                }
                 current = start(chunk)
             }
             val c = current
@@ -76,14 +97,30 @@ class RecordSaves(
             }
             c.size += bytes.size
             c.next++
+            appended()
             if (!chunk.done) return@withContext null
             current = null
+            finished++
             deliver(c)
         }
     }
 
+    /** The page gave up on file [id]: what was gathered of it goes. */
+    override suspend fun abort(id: String) = lock.withLock {
+        withContext(io) { if (current?.id == id) dropLocked() }
+    }
+
     /** The page went: what was gathered of a file goes too. */
     override suspend fun drop() = lock.withLock { withContext(io) { dropLocked() } }
+
+    /**
+     * Clears the folder at once, without waiting for anything: for the screen's last moment (`onCleared`, when no coroutine
+     * of its own runs any more), so a file half made when the record closed doesn't stay in the cache.
+     */
+    fun clearNow() {
+        current = null
+        dir.listFiles()?.forEach { it.delete() }
+    }
 
     private fun start(chunk: RecordAsk.Save): Partial {
         dir.mkdirs()
@@ -97,7 +134,12 @@ class RecordSaves(
             return if (c.share) {
                 if (saver.share(c.file, c.name, c.mime)) null else RecordNote.SaveFailed
             } else {
-                if (saver.save(c.file, c.name, c.mime)) RecordNote.Saved else RecordNote.SaveFailed
+                when (saver.save(c.file, c.name, c.mime)) {
+                    SaveOutcome.SAVED -> RecordNote.Saved
+                    // The share sheet says what happens next; "saved" would be a promise it can't keep
+                    SaveOutcome.SHARED -> null
+                    SaveOutcome.FAILED -> RecordNote.SaveFailed
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -120,6 +162,9 @@ class RecordSaves(
 
         /** The biggest file the record may hand over (a long race video), in bytes. */
         const val MAX_BYTES = 100L * 1024 * 1024
+
+        /** Files one visit to the record may save or share; past that a page asking on and on is refused. */
+        const val MAX_FILES = 20
 
         private const val MAX_NAME = 96
         private val EXTENSION = Regex("\\.[A-Za-z0-9]{1,5}\\z")

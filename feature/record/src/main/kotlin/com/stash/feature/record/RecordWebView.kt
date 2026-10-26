@@ -105,11 +105,6 @@ internal class RecordWebView(
         loadUrl(RECORD_URL)
     }
 
-    /** Asks the page's script for a sign of life: [onAlive] runs (main thread) once it answers, never if it is stuck. */
-    fun probe(onAlive: () -> Unit) {
-        if (!rendererGone) evaluateJavascript("0") { onAlive() }
-    }
-
     /** Stops the page and frees the view, for good. */
     fun release() {
         if (!rendererGone) {

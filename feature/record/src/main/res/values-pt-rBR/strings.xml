@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">Nenhuma dessas músicas foi baixada. Conecte-se para ouvi-las.</string>
     <string name="record_note_saved">Salvo em Downloads</string>
     <string name="record_note_save_failed">Não foi possível salvar.</string>
+    <string name="record_note_too_many_saves">São muitos arquivos para uma visita. Feche o disco e abra de novo para salvar mais.</string>
+    <string name="record_note_share_dropped">O compartilhamento não abriu: o disco fechou antes.</string>
     <string name="record_share">Compartilhar</string>
 </resources>

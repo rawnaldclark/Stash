@@ -47,6 +47,12 @@ sealed interface RecordAsk {
         val done: Boolean,
         val data: String,
     ) : RecordAsk
+
+    /** The page gave up on file [id] (no ack in time, or it is going away mid-file): what was gathered goes. */
+    data class SaveAbort(val id: String) : RecordAsk
+
+    /** The record closed what it had open after `stash:back` (it says `stash:close` instead when nothing was). */
+    data object Backed : RecordAsk
 }
 
 /**
@@ -107,6 +113,8 @@ object RecordMessages {
             "stash:art" -> art(m)
             "stash:play" -> play(m)
             "stash:save" -> save(m)
+            "stash:save-abort" -> m.string("id")?.takeIf { it.isNotEmpty() && it.length <= MAX_SAVE_ID }?.let { RecordAsk.SaveAbort(it) }
+            "stash:backed" -> RecordAsk.Backed
             else -> null
         }
     }
@@ -206,8 +214,13 @@ object RecordMessages {
 
     fun theme(light: Boolean): String = "{\"type\":\"stash:theme\",\"theme\":\"${if (light) "light" else "dark"}\"}"
 
-    /** Back pressed: the record closes what it has open on top, and says `stash:close` when nothing was. */
+    /** Back pressed: the record closes what it has open on top and says `stash:backed`, or `stash:close` when nothing was. */
     const val BACK = "{\"type\":\"stash:back\"}"
+
+    /** `stash:save-ack {id, seq}`: chunk [seq] of file [id] is in the file; the page may send more (it keeps two in flight). */
+    fun saveAck(id: String, seq: Int): String = buildString(id.length + 48) {
+        append("{\"type\":\"stash:save-ack\",\"id\":").quote(id).append(",\"seq\":").append(seq).append('}')
+    }
 
     /** `stash:covers`: the covers asked for, by the record's own names; null for none known. */
     fun covers(list: List<Pair<String, String?>>): String = buildString(list.size * 120 + 40) {

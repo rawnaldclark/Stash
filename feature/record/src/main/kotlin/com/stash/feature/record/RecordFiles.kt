@@ -10,26 +10,57 @@ import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import com.stash.feature.record.bridge.RecordSaver
+import com.stash.feature.record.bridge.SaveOutcome
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
 
+/** A file ready for the share sheet: the chooser to start, and the file behind it (cleared if it never opens). */
+class ShareReady(val chooser: Intent, val file: File)
+
 /**
  * Where the record's posters and race videos go on the phone.
  *
- * - Save: Downloads, through MediaStore (Android 10 and up: no permission needed). Older Android would need storage permission
- *   for Downloads, so there the share sheet opens instead, where "Save to device" and every app are.
+ * - Save: Downloads, through MediaStore (Android 10 and up: no permission needed). Android 9 and older would need storage
+ *   permission for Downloads, which Stash doesn't ask for, so there the share sheet opens instead ("Save to device" and every
+ *   app are in it), and nothing claims the file was saved ([SaveOutcome.SHARED]).
  * - Share: the system share sheet, the file handed over from `cacheDir/share/` through the app's FileProvider (the only
  *   folder it exposes for this), under its own name; files there older than [MAX_AGE_MS] are cleared on the next share.
+ *
+ * The share sheet itself isn't opened here: Android doesn't let an app in the background start it, and a race video can
+ * finish while the listener is elsewhere. The file waits in [ready] for the record's screen, which opens it while it is
+ * started (at once, or when Stash comes back) and then calls [shown].
  */
 class RecordFiles @Inject constructor(@ApplicationContext private val context: Context) : RecordSaver {
 
-    override suspend fun save(file: File, name: String, mime: String): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return share(file, name, mime)
-        return withContext(Dispatchers.IO) { toDownloads(file, name, mime) }
+    private val _ready = MutableStateFlow<ShareReady?>(null)
+
+    /** A share waiting for the screen to open its sheet. */
+    val ready: StateFlow<ShareReady?> = _ready.asStateFlow()
+
+    /** The screen opened [share]'s sheet. */
+    fun shown(share: ShareReady) {
+        _ready.compareAndSet(share, null)
+    }
+
+    /** The screen is going for good: a share still waiting goes too. True when one was waiting. */
+    fun dropWaiting(): Boolean {
+        val waiting = _ready.getAndUpdate { null } ?: return false
+        waiting.file.delete()
+        return true
+    }
+
+    override suspend fun save(file: File, name: String, mime: String): SaveOutcome {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return if (share(file, name, mime)) SaveOutcome.SHARED else SaveOutcome.FAILED
+        return withContext(Dispatchers.IO) { if (toDownloads(file, name, mime)) SaveOutcome.SAVED else SaveOutcome.FAILED }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -42,16 +73,19 @@ class RecordFiles @Inject constructor(@ApplicationContext private val context: C
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
-        return try {
+        var done = false
+        try {
             resolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: throw IOException("no stream")
             resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-            true
-        } catch (e: IOException) {
-            resolver.delete(uri, null, null)
-            false
-        } catch (e: SecurityException) {
-            resolver.delete(uri, null, null)
-            false
+            done = true
+            return true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return false
+        } finally {
+            // Any failure (and a cancellation) leaves no half-written, pending row behind in Downloads
+            if (!done) resolver.delete(uri, null, null)
         }
     }
 
@@ -73,9 +107,11 @@ class RecordFiles @Inject constructor(@ApplicationContext private val context: C
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         val chooser = Intent.createChooser(send, context.getString(R.string.record_share)).apply {
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        withContext(Dispatchers.Main) { context.startActivity(chooser) }
+        // A newer share replaces one still waiting (its file goes)
+        _ready.value?.file?.takeIf { it != shared }?.delete()
+        _ready.value = ShareReady(chooser, shared)
         return true
     }
 

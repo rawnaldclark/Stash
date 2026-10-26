@@ -32,5 +32,7 @@
     <string name="record_note_none_downloaded">다운로드된 곡이 없습니다. 연결한 후 재생하세요.</string>
     <string name="record_note_saved">다운로드에 저장됨</string>
     <string name="record_note_save_failed">저장할 수 없습니다.</string>
+    <string name="record_note_too_many_saves">한 번에 저장하기엔 파일이 너무 많습니다. 레코드를 닫았다가 다시 열어 더 저장하세요.</string>
+    <string name="record_note_share_dropped">레코드가 먼저 닫혀 공유 창이 열리지 않았습니다.</string>
     <string name="record_share">공유</string>
 </resources>

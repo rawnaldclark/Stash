@@ -31,6 +31,12 @@ sealed interface RecordNote {
 
     /** It couldn't be saved (or shared). */
     data object SaveFailed : RecordNote
+
+    /** More files than one visit may save ([RecordSaves.MAX_FILES]): refused. */
+    data object TooManySaves : RecordNote
+
+    /** A file was ready to share while Stash was in the background, and the record closed before it came back. */
+    data object ShareDropped : RecordNote
 }
 
 /** [note] in the app's language. */
@@ -44,4 +50,6 @@ fun RecordNote.text(res: Resources): String = when (this) {
     RecordNote.PlayFailed -> res.getString(R.string.record_note_play_failed)
     RecordNote.Saved -> res.getString(R.string.record_note_saved)
     RecordNote.SaveFailed -> res.getString(R.string.record_note_save_failed)
+    RecordNote.TooManySaves -> res.getString(R.string.record_note_too_many_saves)
+    RecordNote.ShareDropped -> res.getString(R.string.record_note_share_dropped)
 }

@@ -5,8 +5,11 @@ import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.art.ArtSong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -38,17 +41,30 @@ class RecordHostTest {
 
     private class Saves : RecordSaveSink {
         val taken = mutableListOf<RecordAsk.Save>()
+        val aborted = mutableListOf<String>()
         var drops = 0
         var note: RecordNote? = null
-        override suspend fun take(chunk: RecordAsk.Save): RecordNote? {
+
+        /** When set, a chunk waits on it (a slow copy to Downloads). */
+        var gate: CompletableDeferred<Unit>? = null
+        override suspend fun take(chunk: RecordAsk.Save, appended: suspend () -> Unit): RecordNote? {
+            gate?.await()
             taken += chunk
+            appended()
             return if (chunk.done) note else null
+        }
+
+        override suspend fun abort(id: String) {
+            aborted += id
         }
 
         override suspend fun drop() {
             drops++
         }
     }
+
+    private fun chunk(seq: Int, done: Boolean, id: String = "u-1") =
+        """{"type":"stash:save","id":"$id","name":"poster.png","mime":"image/png","action":"save","seq":$seq,"done":$done,"data":"AAAA"}"""
 
     private fun row(i: Int) = ArchivePlay(id = "t$i|a|$i", t = "T$i", a = "A", s = i.toLong(), ms = 1000, f = 256)
 
@@ -63,13 +79,14 @@ class RecordHostTest {
         archive: RecordArchiveSource,
         val covers: RecordCovers = RecordCovers { songs, _, _ -> songs.map { null } },
         chunk: Int = 2,
+        scope: CoroutineScope = test.backgroundScope,
     ) {
         val events = mutableListOf<RecordEvent>()
         val played = mutableListOf<Triple<List<RecordSong>, Int, String>>()
         val saves = Saves()
         val dispatcher = StandardTestDispatcher(test.testScheduler)
         val host = RecordHost(
-            scope = test.backgroundScope,
+            scope = scope,
             archive = archive,
             covers = covers,
             player = { songs, index, from -> played += Triple(songs, index, from) },
@@ -197,7 +214,7 @@ class RecordHostTest {
         assertThat(page.messages.map { it["theme"]!!.jsonPrimitive.content }).containsExactly("dark")
     }
 
-    @Test fun `back asks the record, without a hello, or with the page stuck, it closes at once`() = runTest {
+    @Test fun `back asks the record, without a hello, or with the renderer stuck, it closes at once`() = runTest {
         val h = Harness(this, rows(0))
         h.host.back()
         assertThat(h.events).containsExactly(RecordEvent.Close)
@@ -205,61 +222,60 @@ class RecordHostTest {
         h.say(hello, page)
         runCurrent()
         page.sent.clear()
-        advanceTimeBy(5_000)
-        h.host.probe = { alive -> alive() }
         h.host.back()
         assertThat(page.sent).containsExactly("""{"type":"stash:back"}""")
         assertThat(h.events).hasSize(1)
-        advanceTimeBy(5_000)
+        h.say("""{"type":"stash:backed"}""", page)
         h.host.unresponsive = true
         h.host.back()
         assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Close)
         assertThat(page.sent).hasSize(1)
     }
 
-    @Test fun `back closes when the page shows no sign of life in time, and doesn't when it answers`() = runTest {
+    @Test fun `back stays when the page says backed, closes when it says close, and closes by itself after silence`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
         h.say(hello, page)
         runCurrent()
-        // the page closed a sheet (it says nothing then) and its script answered the probe: the record stays
-        var answer: (() -> Unit)? = null
-        h.host.probe = { alive -> answer = alive }
+        // the page closed a sheet: the record stays, then and later
         h.host.back()
-        answer!!.invoke()
-        advanceTimeBy(RecordHost.BACK_WAIT_MS + 100)
+        h.say("""{"type":"stash:backed"}""", page)
+        advanceTimeBy(RecordHost.BACK_WAIT_MS * 2)
         assertThat(h.events).isEmpty()
-        // a word from the page counts as an answer too
-        advanceTimeBy(5_000)
+        // any other word from the page is not an answer to back
         h.host.back()
         h.say("""{"type":"stash:counts","counts":{"spotify":0,"stash":1,"lastfm":0}}""", page)
-        advanceTimeBy(RecordHost.BACK_WAIT_MS + 100)
-        assertThat(h.events).isEmpty()
-        // silence: closed once the wait is over, not before
-        advanceTimeBy(5_000)
-        h.host.probe = { }
-        h.host.back()
         advanceTimeBy(RecordHost.BACK_WAIT_MS - 100)
         assertThat(h.events).isEmpty()
         advanceTimeBy(200)
         assertThat(h.events).containsExactly(RecordEvent.Close)
+        // nothing was open: the page says close, the record closes at once and only once
+        h.host.back()
+        h.say("""{"type":"stash:close"}""", page)
+        advanceTimeBy(RecordHost.BACK_WAIT_MS * 2)
+        assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Close)
     }
 
-    @Test fun `a second back within a second closes whatever the page is doing`() = runTest {
+    @Test fun `a second back closes only while the first is still unanswered`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
         h.say(hello, page)
         runCurrent()
-        h.host.probe = { alive -> alive() }
+        // two backs over a sheet, the page answering the first: only the sheet goes (the page hears both)
+        h.host.back()
+        h.say("""{"type":"stash:backed"}""", page)
+        advanceTimeBy(300)
+        h.host.back()
+        assertThat(h.events).isEmpty()
+        assertThat(page.types().count { it == "stash:back" }).isEqualTo(2)
+        h.say("""{"type":"stash:backed"}""", page)
+        // a page that hasn't answered: the second back within a second closes it
+        advanceTimeBy(5_000)
         h.host.back()
         advanceTimeBy(RecordHost.SECOND_BACK_MS - 200)
         h.host.back()
         assertThat(h.events).containsExactly(RecordEvent.Close)
-        assertThat(page.types().count { it == "stash:back" }).isEqualTo(1)
-        // a back well after the last one asks the page again
-        advanceTimeBy(5_000)
-        h.host.back()
-        assertThat(page.types().count { it == "stash:back" }).isEqualTo(2)
+        assertThat(page.types().count { it == "stash:back" }).isEqualTo(3)
     }
 
     @Test fun `close closes, import says the Spotify import is coming, counts and junk do nothing`() = runTest {
@@ -320,7 +336,7 @@ class RecordHostTest {
         ).inOrder()
     }
 
-    @Test fun `what a page started stops when it goes - its covers, its wait on back, its file`() = runTest {
+    @Test fun `what a page started stops when it goes (its renderer died, the screen stays) - its covers, its wait on back, its file`() = runTest {
         var coversStopped = false
         val covers = RecordCovers { _, _, _ ->
             try {
@@ -343,18 +359,91 @@ class RecordHostTest {
         assertThat(page.sent.none { it.contains("stash:covers") }).isTrue()
     }
 
-    @Test fun `a file's chunks go to the saves in order, and what came of it is said`() = runTest {
+    @Test fun `when the screen goes its scope is gone before detach, so the host can't clear the file - the screen does`() = runTest {
+        // ViewModel.clear() cancels viewModelScope before onCleared: nothing detach queues can run then. RecordViewModel's
+        // onCleared calls RecordSaves.clearNow() itself (RecordSavesTest: clearNow).
+        val screen = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val h = Harness(this, rows(0), scope = screen)
+        val page = Page()
+        h.say(chunk(0, false), page)
+        assertThat(h.saves.taken).hasSize(1)
+        screen.cancel()
+        h.host.detach()
+        runCurrent()
+        assertThat(h.saves.drops).isEqualTo(0)
+    }
+
+    @Test fun `a file's chunks go to the saves in order, each acknowledged once kept, and what came of it is said`() = runTest {
         val h = Harness(this, rows(0))
         h.saves.note = RecordNote.Saved
         val page = Page()
-        fun chunk(seq: Int, done: Boolean) =
-            """{"type":"stash:save","id":"u-1","name":"poster.png","mime":"image/png","action":"save","seq":$seq,"done":$done,"data":"AAAA"}"""
         h.host.onMessage(chunk(0, false), page)
         h.host.onMessage(chunk(1, false), page)
         h.host.onMessage(chunk(2, true), page)
         runCurrent()
         assertThat(h.saves.taken.map { it.seq }).containsExactly(0, 1, 2).inOrder()
+        assertThat(page.sent).containsExactly(
+            """{"type":"stash:save-ack","id":"u-1","seq":0}""",
+            """{"type":"stash:save-ack","id":"u-1","seq":1}""",
+            """{"type":"stash:save-ack","id":"u-1","seq":2}""",
+        ).inOrder()
         assertThat(h.events).containsExactly(RecordEvent.Say(RecordNote.Saved))
+    }
+
+    @Test fun `a tap, a cover's ask or the x never waits behind a file being kept`() = runTest {
+        val h = Harness(this, rows(0))
+        val page = Page()
+        val slow = CompletableDeferred<Unit>()
+        h.saves.gate = slow
+        h.say(chunk(0, false), page)
+        h.say("""{"type":"stash:play","songs":[{"title":"Nude","artist":"Radiohead"}],"index":0}""", page)
+        h.say("""{"type":"stash:close"}""", page)
+        assertThat(h.played).hasSize(1)
+        assertThat(h.events).containsExactly(RecordEvent.Say(RecordNote.Playing("Nude")), RecordEvent.Close).inOrder()
+        assertThat(page.sent).isEmpty()
+        slow.complete(Unit)
+        runCurrent()
+        assertThat(page.sent).containsExactly("""{"type":"stash:save-ack","id":"u-1","seq":0}""")
+    }
+
+    @Test fun `save-abort - the page gave up on a file, what was gathered goes`() = runTest {
+        val h = Harness(this, rows(0))
+        val page = Page()
+        h.say(chunk(0, false), page)
+        h.say("""{"type":"stash:save-abort","id":"u-1"}""", page)
+        h.say("""{"type":"stash:save-abort","id":""}""", page) // no id: junk
+        assertThat(h.saves.aborted).containsExactly("u-1")
+    }
+
+    @Test fun `what a page that went still had queued is dropped - its tap, its hello, its chunk, an ack for it`() = runTest {
+        val h = Harness(this, rows(3))
+        val page = Page()
+        h.say(hello, page)
+        runCurrent()
+        // a file mid-way when the page goes: its chunk is kept, but no ack goes to a page that is gone
+        val slow = CompletableDeferred<Unit>()
+        h.saves.gate = slow
+        h.say(chunk(0, false), page)
+        page.sent.clear()
+        // the renderer dies with these still queued
+        h.host.onMessage("""{"type":"stash:play","songs":[{"title":"Nude","artist":"Radiohead"}],"index":0}""", page)
+        h.host.onMessage(hello, page)
+        h.host.onMessage(chunk(1, false), page)
+        h.host.detach()
+        slow.complete(Unit)
+        runCurrent()
+        assertThat(h.played).isEmpty()
+        assertThat(page.sent).isEmpty()
+        assertThat(h.saves.taken.map { it.seq }).containsExactly(0)
+        assertThat(h.saves.drops).isEqualTo(1)
+        // the "stopped" notice: no page said hello since, so back closes at once
+        h.host.back()
+        assertThat(h.events).containsExactly(RecordEvent.Close)
+        // the reloaded page is heard as usual
+        val again = Page()
+        h.say(hello, again)
+        runCurrent()
+        assertThat(again.archives()).isNotEmpty()
     }
 
     @Test fun `an archive that fails mid-way ends with a done chunk, and the listener is told`() = runTest {

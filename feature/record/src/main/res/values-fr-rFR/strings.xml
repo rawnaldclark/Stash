@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">Aucun de ces titres n’est téléchargé. Connectez-vous pour les écouter.</string>
     <string name="record_note_saved">Enregistré dans Téléchargements</string>
     <string name="record_note_save_failed">Impossible d’enregistrer.</string>
+    <string name="record_note_too_many_saves">Cela fait beaucoup de fichiers pour une visite. Fermez le disque et rouvrez-le pour en enregistrer d’autres.</string>
+    <string name="record_note_share_dropped">Le partage ne s’est pas ouvert : le disque s’est fermé avant.</string>
     <string name="record_share">Partager</string>
 </resources>

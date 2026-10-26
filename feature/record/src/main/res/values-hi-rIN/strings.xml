@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">इनमें से कोई भी गाना डाउनलोड नहीं है। चलाने के लिए कनेक्ट करें।</string>
     <string name="record_note_saved">डाउनलोड में सेव किया गया</string>
     <string name="record_note_save_failed">सेव नहीं हो सका।</string>
+    <string name="record_note_too_many_saves">एक बार में यह बहुत सारी फ़ाइलें हैं। और सेव करने के लिए रिकॉर्ड बंद करके फिर खोलें।</string>
+    <string name="record_note_share_dropped">शेयर नहीं खुला: रिकॉर्ड पहले ही बंद हो गया।</string>
     <string name="record_share">शेयर करें</string>
 </resources>

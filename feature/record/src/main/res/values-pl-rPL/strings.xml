@@ -41,5 +41,7 @@
     <string name="record_note_none_downloaded">Żaden z tych utworów nie jest pobrany. Połącz się z siecią, aby ich posłuchać.</string>
     <string name="record_note_saved">Zapisano w Pobranych</string>
     <string name="record_note_save_failed">Nie udało się zapisać.</string>
+    <string name="record_note_too_many_saves">To dużo plików jak na jedną wizytę. Zamknij płytę i otwórz ją ponownie, aby zapisać więcej.</string>
+    <string name="record_note_share_dropped">Udostępnianie się nie otworzyło: płyta została wcześniej zamknięta.</string>
     <string name="record_share">Udostępnij</string>
 </resources>

@@ -43,6 +43,8 @@
     <string name="record_note_none_downloaded">None of these songs are downloaded. Connect to play them.</string>
     <string name="record_note_saved">Saved to Downloads</string>
     <string name="record_note_save_failed">Couldn’t save that.</string>
+    <string name="record_note_too_many_saves">That’s a lot of files for one visit. Close the record and open it again to save more.</string>
+    <string name="record_note_share_dropped">The share didn’t open: the record closed first.</string>
     <!-- The share sheet's title for a poster or a video from the record. -->
     <string name="record_share">Share</string>
 </resources>

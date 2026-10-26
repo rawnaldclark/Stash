@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -184,5 +185,19 @@ class RecordMessagesTest {
         val list = c["covers"]!!.jsonArray.map { it as JsonObject }
         assertThat(list[0]["url"]!!.jsonPrimitive.content).isEqualTo("https://x/a.jpg")
         assertThat(list[1]["url"]).isEqualTo(JsonNull)
+    }
+
+    @Test fun `save-abort and backed in, save-ack out`() {
+        assertThat(read("""{"type":"stash:save-abort","id":"u-1"}""")).isEqualTo(RecordAsk.SaveAbort("u-1"))
+        assertThat(read("""{"type":"stash:save-abort"}""")).isNull()
+        assertThat(read("""{"type":"stash:save-abort","id":""}""")).isNull()
+        assertThat(read("""{"type":"stash:save-abort","id":"${"x".repeat(129)}"}""")).isNull()
+        assertThat(read("""{"type":"stash:backed"}""")).isEqualTo(RecordAsk.Backed)
+        val ack = Json.parseToJsonElement(RecordMessages.saveAck("u-\"1", 7)).jsonObject
+        assertThat(ack["type"]!!.jsonPrimitive.content).isEqualTo("stash:save-ack")
+        assertThat(ack["id"]!!.jsonPrimitive.content).isEqualTo("u-\"1")
+        // a number, not a string: the page ignores a seq that isn't one
+        assertThat(ack["seq"]!!.jsonPrimitive.isString).isFalse()
+        assertThat(ack["seq"]!!.jsonPrimitive.int).isEqualTo(7)
     }
 }

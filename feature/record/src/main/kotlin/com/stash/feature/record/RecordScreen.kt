@@ -1,6 +1,7 @@
 package com.stash.feature.record
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
@@ -105,6 +106,19 @@ fun RecordScreen(
     BackHandler { if (supported) viewModel.back() else close() }
     LightSystemBarIcons()
     PauseWithScreen(viewModel)
+    // A share sheet opens only while Stash is in front (Android refuses one from the background): a video that finished
+    // while the listener was elsewhere waits here and opens when they come back
+    val share by viewModel.shareReady.collectAsStateWithLifecycle()
+    val activity = LocalContext.current
+    LaunchedEffect(share) {
+        val ready = share ?: return@LaunchedEffect
+        try {
+            activity.startActivity(ready.chooser)
+        } catch (e: ActivityNotFoundException) {
+            say(RecordNote.SaveFailed)
+        }
+        viewModel.shareShown(ready)
+    }
 
     Box(Modifier.fillMaxSize().background(RecordGround)) {
         val gone by viewModel.gone.collectAsStateWithLifecycle()

@@ -47,5 +47,7 @@
     <string name="record_note_none_downloaded">لم يتم تنزيل أي من هذه الأغاني. اتصل بالإنترنت لتشغيلها.</string>
     <string name="record_note_saved">تم الحفظ في التنزيلات</string>
     <string name="record_note_save_failed">تعذر الحفظ.</string>
+    <string name="record_note_too_many_saves">هذه ملفات كثيرة لزيارة واحدة. أغلق الأسطوانة وافتحها مجددًا لحفظ المزيد.</string>
+    <string name="record_note_share_dropped">لم تُفتح المشاركة: أُغلقت الأسطوانة أولًا.</string>
     <string name="record_share">مشاركة</string>
 </resources>

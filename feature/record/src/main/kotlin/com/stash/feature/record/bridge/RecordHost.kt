@@ -42,8 +42,13 @@ fun interface RecordCovers {
 
 /** Takes the record's files (`stash:save` chunks), in order ([RecordSaves]). */
 interface RecordSaveSink {
-    suspend fun take(chunk: RecordAsk.Save): RecordNote?
+    /** Takes [chunk], calling [appended] once it is in the file; what to tell the listener once a file is done, else null. */
+    suspend fun take(chunk: RecordAsk.Save, appended: suspend () -> Unit): RecordNote?
 
+    /** The page gave up on file [id]. */
+    suspend fun abort(id: String)
+
+    /** The page went. */
     suspend fun drop()
 }
 
@@ -51,8 +56,11 @@ interface RecordSaveSink {
  * The app's side of the bridge (PLAN "Bridge protocol v1"), apart from the WebView so it can be tested: it reads what the
  * record says ([RecordMessages.read]) and answers.
  *
- * Messages are handled one at a time in the order they came ([onMessage] only queues them): read off the main thread (a file's
- * chunk is most of a megabyte), files put together off it too, everything else handled on [main], where every post is made.
+ * Messages are handled one at a time in the order they came ([onMessage] only queues them), read off the main thread (a file's
+ * chunk is most of a megabyte) and handled on [main], where every post is made. A file's chunks go to a queue of their own
+ * ([SAVE_QUEUE] deep), put together by their own worker, so a tap, a cover's ask or the × never waits behind a 30 MB video being
+ * copied to Downloads. Each message carries the page it came from (a generation, moved on by [detach]): what a page that has
+ * gone still had queued is dropped.
  *
  * - `stash:hello`: the page's listener is live. The archive goes in chunks of at most [chunkSize] rows, `seq` from 0 for each
  *   hello and the last marked `done`. A chunk doesn't say which hello it answers (the record starts over at seq 0), so a new
@@ -64,16 +72,17 @@ interface RecordSaveSink {
  *   the screen: back right after a tap still plays.
  * - `stash:art`: covers looked up here ([RecordCovers]), handed back by the record's own names as each batch lands, then the
  *   whole list with null for none (and any found later, after that).
- * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared.
+ * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared; each answered
+ *   `stash:save-ack` once it is in the file (the page keeps two in flight). `stash:save-abort`: what was gathered goes.
  * - `stash:import`: the Spotify import is phase 3; for now the listener is told it's coming.
  * - `stash:close`: [RecordEvent.Close].
  *
  * Everything a page started (its archive, its covers, the wait on back) runs in that page's own job, which [detach] cancels.
  *
- * Back ([back]) asks the record to close what it has open ([RecordMessages.BACK]); it answers `stash:close` when nothing was,
- * and nothing when it closed something. So the screen [probe]s the page: if it neither closes nor shows any sign of life within
- * [BACK_WAIT_MS], or back comes again within [SECOND_BACK_MS], the record closes anyway. A page that never said hello (or has
- * stopped answering, [unresponsive]) can't answer, so back closes at once.
+ * Back ([back]) asks the record to close what it has open ([RecordMessages.BACK]); it answers `stash:backed` once it closed
+ * something, `stash:close` when nothing was open. With neither within [BACK_WAIT_MS] (a page that is stuck), the record closes
+ * anyway, and so does a second back while the first is still unanswered ([SECOND_BACK_MS]). A page that never said hello (or
+ * whose renderer stopped answering, [unresponsive]) can't answer, so back closes at once.
  */
 class RecordHost(
     private val scope: CoroutineScope,
@@ -87,13 +96,24 @@ class RecordHost(
     private val chunkSize: Int = CHUNK_ROWS,
     private val now: () -> Long = SystemClock::uptimeMillis,
 ) {
-    /** Asks the page for a sign of life; calls its argument on the main thread once the page's script answers. */
-    var probe: (onAlive: () -> Unit) -> Unit = {}
-
     /** The page's renderer stopped answering: back closes without asking it. */
     var unresponsive = false
 
-    private val inbox = Channel<Pair<String, RecordPort>>(Channel.UNLIMITED)
+    /** A message as it came: its words, the page that sent it, and that page's [generation] then. */
+    private class Incoming(val raw: String, val from: RecordPort, val generation: Int)
+
+    /** What the save worker does: a chunk (and where its ack goes), a file given up, or everything dropped. */
+    private sealed interface SaveWork {
+        class Chunk(val ask: RecordAsk.Save, val from: RecordPort, val generation: Int) : SaveWork
+        class Abort(val id: String) : SaveWork
+        data object Drop : SaveWork
+    }
+
+    private val inbox = Channel<Incoming>(Channel.UNLIMITED)
+    private val saveQueue = Channel<SaveWork>(SAVE_QUEUE)
+
+    /** Moved on by [detach]: messages a page that has gone still had queued carry an older one, and are dropped. */
+    @Volatile private var generation = 0
 
     /** The page's own job: its archive, covers and the wait on back. */
     private var page: CompletableJob = newPage()
@@ -105,39 +125,60 @@ class RecordHost(
     private var hellos = 0
     private var stream: Job? = null
     private var light = false
-    private var lastBack: Long? = null
+    /** When the back still waiting for the page's answer was pressed; null when none is. */
+    private var backAsked: Long? = null
     private var backWait: Job? = null
-    private var answered = true
 
     init {
         scope.launch(background) {
-            for ((raw, from) in inbox) {
-                val ask = RecordMessages.read(raw) ?: continue
-                if (ask is RecordAsk.Save) {
-                    val note = try {
-                        saves.take(ask)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.w(TAG, "a file from the record failed: ${e.javaClass.simpleName}")
-                        RecordNote.SaveFailed
-                    }
-                    if (note != null) withContext(main) { events(RecordEvent.Say(note)) }
-                } else {
-                    withContext(main) { handle(ask, from) }
+            for (m in inbox) {
+                if (m.generation != generation) continue
+                when (val ask = RecordMessages.read(m.raw) ?: continue) {
+                    is RecordAsk.Save -> queueSave(SaveWork.Chunk(ask, m.from, m.generation))
+                    is RecordAsk.SaveAbort -> queueSave(SaveWork.Abort(ask.id))
+                    else -> withContext(main) { if (m.generation == generation) handle(ask, m.from) }
                 }
             }
+        }
+        scope.launch(background) {
+            for (work in saveQueue) save(work)
         }
     }
 
     /** A message from the page. Queued: messages are handled in the order they came. */
     fun onMessage(raw: String, from: RecordPort) {
-        inbox.trySend(raw to from)
+        inbox.trySend(Incoming(raw, from, generation))
+    }
+
+    /**
+     * Onto the save worker's queue. The page keeps two chunks unacknowledged, so the queue never fills; a page that ignores
+     * that loses the chunk, and so the file (the next one comes out of order), and gives up on it by itself.
+     */
+    private fun queueSave(work: SaveWork) {
+        if (!saveQueue.trySend(work).isSuccess) Log.w(TAG, "a file from the record came faster than it could be kept; dropped")
+    }
+
+    private suspend fun save(work: SaveWork) {
+        try {
+            when (work) {
+                is SaveWork.Chunk -> {
+                    if (work.generation != generation) return
+                    val ack = RecordMessages.saveAck(work.ask.id, work.ask.seq)
+                    val note = saves.take(work.ask) { withContext(main) { if (work.generation == generation) work.from.post(ack) } }
+                    if (note != null) withContext(main) { events(RecordEvent.Say(note)) }
+                }
+                is SaveWork.Abort -> saves.abort(work.id)
+                SaveWork.Drop -> saves.drop()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "a file from the record failed: ${e.javaClass.simpleName}")
+            withContext(main) { events(RecordEvent.Say(RecordNote.SaveFailed)) }
+        }
     }
 
     private fun handle(ask: RecordAsk, from: RecordPort) {
-        // Any word from the page: it is alive, so back needn't close it by force
-        answered = true
         when (ask) {
             is RecordAsk.Hello -> hello(ask, from)
             is RecordAsk.Ready -> {
@@ -149,27 +190,31 @@ class RecordHost(
             is RecordAsk.Art -> art(ask, from)
             RecordAsk.Import -> events(RecordEvent.Say(RecordNote.ImportComing))
             RecordAsk.Close -> close()
-            is RecordAsk.Save -> Unit // taken off the main thread, before this
+            RecordAsk.Backed -> {
+                // The page closed what it had open: the record stays
+                backAsked = null
+                backWait?.cancel()
+                backWait = null
+            }
+            is RecordAsk.Save, is RecordAsk.SaveAbort -> Unit // the save worker's, before this
         }
     }
 
     /** Back pressed over the record. */
     fun back() {
         val at = now()
-        val again = lastBack?.let { at - it < SECOND_BACK_MS } == true
-        lastBack = at
+        // Back again while the page hasn't answered the last one: it is stuck, or the listener means it
+        val again = backAsked?.let { at - it < SECOND_BACK_MS } == true
         val page = current
         if (page == null || unresponsive || again) {
             close()
             return
         }
-        answered = false
+        if (backAsked == null) backAsked = at
         page.post(RecordMessages.BACK)
-        probe { answered = true }
-        backWait?.cancel()
-        backWait = pageScope().launch(main) {
-            delay(BACK_WAIT_MS)
-            if (!answered) {
+        if (backWait == null) {
+            backWait = pageScope().launch(main) {
+                delay(BACK_WAIT_MS)
                 Log.w(TAG, "the record didn't answer back; closing it")
                 close()
             }
@@ -183,8 +228,13 @@ class RecordHost(
         current?.post(RecordMessages.theme(light))
     }
 
-    /** The page is gone (closed, or its renderer died): all it started stops, and nothing more is sent to it. */
+    /**
+     * The page is gone (closed, or its renderer died): all it started stops, nothing more is sent to it, what it still had
+     * queued is dropped, and so is a file it was handing over. (When the whole screen goes, its scope is already cancelled:
+     * [RecordSaves.clearNow] clears the file then.)
+     */
     fun detach() {
+        generation++
         page.cancel()
         page = newPage()
         stream = null
@@ -192,14 +242,14 @@ class RecordHost(
         hellos++
         unresponsive = false
         backWait = null
-        lastBack = null
-        scope.launch(background) { saves.drop() }
+        backAsked = null
+        saveQueue.trySend(SaveWork.Drop)
     }
 
     private fun close() {
         backWait?.cancel()
         backWait = null
-        lastBack = null
+        backAsked = null
         events(RecordEvent.Close)
     }
 
@@ -275,10 +325,13 @@ class RecordHost(
         /** Rows per `stash:archive` chunk (PLAN: 20k; about 3 MB of JSON). */
         const val CHUNK_ROWS = 20_000
 
-        /** Back closes the record when the page has shown no sign of life this long after it. */
+        /** Back closes the record when the page hasn't answered it (`stash:backed` or `stash:close`) this long after. */
         const val BACK_WAIT_MS = 1_500L
 
-        /** A second back this soon after the first closes the record whatever the page is doing. */
+        /** A second back this soon after a first the page hasn't answered yet closes the record. */
         const val SECOND_BACK_MS = 1_000L
+
+        /** A file's chunks waiting to be kept, at most (the page keeps two unacknowledged). */
+        const val SAVE_QUEUE = 8
     }
 }

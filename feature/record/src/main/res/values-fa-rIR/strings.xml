@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">هیچ‌کدام از این آهنگ‌ها دانلود نشده است. برای پخش، متصل شوید.</string>
     <string name="record_note_saved">در «بارگیری‌ها» ذخیره شد</string>
     <string name="record_note_save_failed">ذخیره نشد.</string>
+    <string name="record_note_too_many_saves">این تعداد فایل برای یک بار زیاد است. صفحه را ببندید و دوباره باز کنید تا بیشتر ذخیره کنید.</string>
+    <string name="record_note_share_dropped">هم‌رسانی باز نشد: صفحه زودتر بسته شد.</string>
     <string name="record_share">هم‌رسانی</string>
 </resources>

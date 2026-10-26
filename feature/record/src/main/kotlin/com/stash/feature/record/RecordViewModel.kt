@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.MutableContextWrapper
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.WebLibraryExportDao
@@ -14,6 +15,7 @@ import com.stash.feature.record.bridge.RecordHost
 import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.bridge.RecordSaves
+import com.stash.feature.record.bridge.text
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -38,7 +40,7 @@ class RecordViewModel @Inject constructor(
     plays: WebLibraryExportDao,
     art: RecordArt,
     playback: RecordPlayback,
-    files: RecordFiles,
+    private val files: RecordFiles,
     @ApplicationContext private val app: Context,
 ) : ViewModel() {
     private val _events = MutableSharedFlow<RecordEvent>(extraBufferCapacity = 8)
@@ -49,14 +51,22 @@ class RecordViewModel @Inject constructor(
     /** What a tap came to when it couldn't play ([RecordPlayback] outlives this screen, and says so with a toast after it). */
     val playNotes: SharedFlow<RecordNote> = playback.notes
 
+    private val saves = RecordSaves(File(app.cacheDir, SAVES_DIR), files)
+
     private val host = RecordHost(
         scope = viewModelScope,
         archive = OwnArchive(plays),
         covers = { songs, retry, onBatch -> art.covers(songs, retry, onBatch) },
         player = playback,
-        saves = RecordSaves(File(app.cacheDir, SAVES_DIR), files),
+        saves = saves,
         events = { _events.tryEmit(it) },
     )
+
+    /** A poster or a video ready for the share sheet, for the screen to open while it is started. */
+    val shareReady: StateFlow<ShareReady?> = files.ready
+
+    /** The screen opened [share]'s sheet. */
+    fun shareShown(share: ShareReady) = files.shown(share)
 
     private val _gone = MutableStateFlow(false)
 
@@ -82,7 +92,6 @@ class RecordViewModel @Inject constructor(
         )
         web = w
         wrapper = holder
-        host.probe = { onAlive -> web?.probe(onAlive) }
         return w
     }
 
@@ -122,6 +131,9 @@ class RecordViewModel @Inject constructor(
 
     override fun onCleared() {
         host.detach()
+        // viewModelScope is already cancelled here, so nothing of the host's runs any more: the files go now
+        saves.clearNow()
+        if (files.dropWaiting()) Toast.makeText(app, RecordNote.ShareDropped.text(app.resources), Toast.LENGTH_SHORT).show()
         web?.let { w ->
             (w.parent as? ViewGroup)?.removeView(w)
             w.release()

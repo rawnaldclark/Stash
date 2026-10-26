@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">Keiner dieser Songs ist heruntergeladen. Verbinde dich, um sie abzuspielen.</string>
     <string name="record_note_saved">In Downloads gespeichert</string>
     <string name="record_note_save_failed">Konnte nicht gespeichert werden.</string>
+    <string name="record_note_too_many_saves">Das sind viele Dateien für einen Besuch. Schließe die Platte und öffne sie erneut, um mehr zu speichern.</string>
+    <string name="record_note_share_dropped">Das Teilen wurde nicht geöffnet: Die Platte wurde vorher geschlossen.</string>
     <string name="record_share">Teilen</string>
 </resources>

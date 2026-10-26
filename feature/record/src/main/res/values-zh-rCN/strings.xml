@@ -32,5 +32,7 @@
     <string name="record_note_none_downloaded">这些歌曲都没有下载。请联网后播放。</string>
     <string name="record_note_saved">已保存到“下载”</string>
     <string name="record_note_save_failed">无法保存。</string>
+    <string name="record_note_too_many_saves">这次保存的文件太多了。关闭唱片后重新打开即可继续保存。</string>
+    <string name="record_note_share_dropped">唱片已先关闭，分享未能打开。</string>
     <string name="record_share">分享</string>
 </resources>

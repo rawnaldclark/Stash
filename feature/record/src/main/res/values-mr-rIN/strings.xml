@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">यापैकी एकही गाणे डाउनलोड केलेले नाही. ऐकण्यासाठी कनेक्ट करा.</string>
     <string name="record_note_saved">डाउनलोडमध्ये सेव्ह केले</string>
     <string name="record_note_save_failed">सेव्ह करता आले नाही.</string>
+    <string name="record_note_too_many_saves">एका वेळी या खूप फाइल्स झाल्या. आणखी सेव्ह करण्यासाठी रेकॉर्ड बंद करून पुन्हा उघडा.</string>
+    <string name="record_note_share_dropped">शेअर उघडले नाही: रेकॉर्ड आधीच बंद झाला.</string>
     <string name="record_share">शेअर करा</string>
 </resources>

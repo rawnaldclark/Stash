@@ -35,5 +35,7 @@
     <string name="record_note_none_downloaded">Wala sa mga kantang ito ang naka-download. Kumonekta para i-play ang mga ito.</string>
     <string name="record_note_saved">Na-save sa Downloads</string>
     <string name="record_note_save_failed">Hindi ma-save.</string>
+    <string name="record_note_too_many_saves">Masyadong maraming file para sa isang pagbisita. Isara at buksan ulit ang record para mag-save pa.</string>
+    <string name="record_note_share_dropped">Hindi bumukas ang share: naisara na ang record.</string>
     <string name="record_share">Ibahagi</string>
 </resources>

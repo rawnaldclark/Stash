@@ -41,5 +41,7 @@
     <string name="record_note_none_downloaded">Ни одна из этих песен не скачана. Подключитесь к сети, чтобы их послушать.</string>
     <string name="record_note_saved">Сохранено в «Загрузки»</string>
     <string name="record_note_save_failed">Не удалось сохранить.</string>
+    <string name="record_note_too_many_saves">Слишком много файлов за один раз. Закройте пластинку и откройте снова, чтобы сохранить ещё.</string>
+    <string name="record_note_share_dropped">Окно «Поделиться» не открылось: пластинка закрылась раньше.</string>
     <string name="record_share">Поделиться</string>
 </resources>
