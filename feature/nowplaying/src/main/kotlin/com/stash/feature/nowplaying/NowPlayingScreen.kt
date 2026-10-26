@@ -1203,6 +1203,10 @@ fun NowPlayingScreen(
                                         isLiked = uiState.currentTrack?.stashLikedAt != null,
                                         onLikeTap = viewModel::onLikeTap,
                                         alignStart = titleAlign == com.stash.core.data.prefs.NpTitleAlign.START,
+                                        // The sleep timer's time left hangs under the moon, beside the
+                                        // artist line: the line keeps clear of it while one runs.
+                                        sideCaption = titleButton == com.stash.core.data.prefs.TitleButton.SLEEP_TIMER &&
+                                            sleepTimerState != SleepTimerController.State.Off,
                                         sideButton = when {
                                             titleButton == com.stash.core.data.prefs.TitleButton.SLEEP_TIMER -> { m ->
                                                 // The album accent is read in its own scope: the crossfade
@@ -1544,10 +1548,14 @@ private fun riseIn(risePx: Int, delayMs: Int): EnterTransition =
  * artist profile; the trailing chevron signals it's actionable, and swaps to a spinner while the
  * artist name is being resolved.
  *
- * Centred (the default): the side button floats at the leading edge and the heart at the
- * trailing one, with symmetric padding keeping the title optically centred under the art. With
- * [alignStart] (Settings > Appearance > Title alignment), the title and artist sit at the leading
- * edge and the side button and heart follow at the trailing one.
+ * The side button and the heart sit on the title's line, so artist · album under it has the whole
+ * width (beside them it was cut short: "King Crimson • In the Court of th…"). Centered: the side
+ * button at the leading edge and the heart at the trailing one, symmetric padding keeping the
+ * title centered under the art. With [alignStart] (Settings > Appearance > Title alignment): the
+ * title at the leading edge, the side button and heart after it.
+ *
+ * @param sideCaption The side button shows a caption under it (the sleep timer's time left): the
+ *   artist line keeps clear of it.
  */
 @Composable
 private fun TrackInfoBlock(
@@ -1558,6 +1566,7 @@ private fun TrackInfoBlock(
     onLikeTap: () -> Unit,
     alignStart: Boolean,
     sideButton: (@Composable (Modifier) -> Unit)?,
+    sideCaption: Boolean = false,
 ) {
     val tapToArtist = if (track != null) {
         Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
@@ -1579,107 +1588,128 @@ private fun TrackInfoBlock(
     } else {
         null
     }
-    if (alignStart) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TitleAndArtist(track, resolvingArtist, alignStart = true, modifier = Modifier.weight(1f).then(tapToArtist))
-            if (track != null) sideButton?.invoke(Modifier.padding(start = 12.dp))
-            heart?.invoke(Modifier.padding(start = 12.dp))
+    val showsSide = track != null && sideButton != null
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (alignStart) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TitleLine(track, resolvingArtist, alignStart = true, modifier = Modifier.weight(1f).then(tapToArtist))
+                if (showsSide) sideButton?.invoke(Modifier.padding(start = 12.dp))
+                heart?.invoke(Modifier.padding(start = 12.dp))
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TitleLine(
+                    track,
+                    resolvingArtist,
+                    alignStart = false,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).then(tapToArtist),
+                )
+                // The side button at the leading edge, mirroring the heart at the trailing one
+                // (the sleep timer accented while armed, its time left under the moon).
+                if (showsSide) sideButton?.invoke(Modifier.align(Alignment.CenterStart))
+                heart?.invoke(Modifier.align(Alignment.CenterEnd))
+            }
         }
-        return
-    }
-    Box(modifier = Modifier.fillMaxWidth()) {
-        TitleAndArtist(
+        Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
+        // Clear of a caption under the side button: centered, the 40dp the title keeps on both sides
+        // (so the line stays centered under it); at the leading edge, up to where the side button
+        // starts (it and the heart after it, 26dp each and 12dp before each).
+        val captionRoom = when {
+            !showsSide || !sideCaption -> 0.dp
+            alignStart -> if (heart != null) 76.dp else 38.dp
+            else -> 40.dp
+        }
+        ArtistLine(
             track,
-            resolvingArtist,
-            alignStart = false,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).then(tapToArtist),
+            alignStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = if (alignStart) 0.dp else captionRoom, end = captionRoom)
+                .then(tapToArtist),
         )
-        // The side button floats at the leading edge, mirroring the heart at the trailing one
-        // (the sleep timer accented while armed, its time left under the moon).
-        if (track != null) sideButton?.invoke(Modifier.align(Alignment.CenterStart))
-        heart?.invoke(Modifier.align(Alignment.CenterEnd))
     }
 }
 
-/** The title (with its chevron to the artist) over artist · album, centred or at the leading edge. */
+/** The title, with its chevron to the artist (a spinner while the artist resolves). */
 @Composable
-private fun TitleAndArtist(
+private fun TitleLine(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     alignStart: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    Row(
         modifier = modifier,
-        horizontalAlignment = if (alignStart) Alignment.Start else Alignment.CenterHorizontally,
+        horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // A long title scrolls instead of ending in "…": every
-            // character is worth more than an ellipsis here, and the
-            // width the format badge used to take beside it now
-            // belongs to the title — QualityLine below already says
-            // FLAC and the bit depth, so the badge said it twice.
-            Text(
-                text = track?.title ?: "Not Playing",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = npInk(),
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .marqueeWhileShown(),
-            )
-            if (track != null) {
-                Spacer(modifier = Modifier.width(6.dp))
-                if (resolvingArtist) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = npInk(),
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "Open artist",
-                        tint = npInk().copy(alpha = 0.6f),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+        // A long title scrolls instead of ending in "…": every
+        // character is worth more than an ellipsis here, and the
+        // width the format badge used to take beside it now
+        // belongs to the title — QualityLine below already says
+        // FLAC and the bit depth, so the badge said it twice.
+        Text(
+            text = track?.title ?: "Not Playing",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = npInk(),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip,
+            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .marqueeWhileShown(),
+        )
+        if (track != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            if (resolvingArtist) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = npInk(),
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "Open artist",
+                    tint = npInk().copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
-
-        Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
-
-        // Collapse collaboration credits to the lead act
-        // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
-        // remember the split — this Text recomposes with every
-        // player-state change.
-        val displayArtist = remember(track) { track?.artist?.primaryArtist() }
-        Text(
-            text = buildString {
-                if (track != null && displayArtist != null) {
-                    append(displayArtist)
-                    if (track.album.isNotBlank()) {
-                        append(" • ")
-                        append(track.album)
-                    }
-                }
-            },
-            fontSize = 15.sp,
-            color = npInk().copy(alpha = 0.7f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
+}
+
+/** Artist · album under the title, over the block's whole width. */
+@Composable
+private fun ArtistLine(
+    track: com.stash.core.model.Track?,
+    alignStart: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    // Collapse collaboration credits to the lead act
+    // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
+    // remember the split — this Text recomposes with every
+    // player-state change.
+    val displayArtist = remember(track) { track?.artist?.primaryArtist() }
+    Text(
+        text = buildString {
+            if (track != null && displayArtist != null) {
+                append(displayArtist)
+                if (track.album.isNotBlank()) {
+                    append(" • ")
+                    append(track.album)
+                }
+            }
+        },
+        fontSize = 15.sp,
+        color = npInk().copy(alpha = 0.7f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+        modifier = modifier,
+    )
 }
 
 /**
