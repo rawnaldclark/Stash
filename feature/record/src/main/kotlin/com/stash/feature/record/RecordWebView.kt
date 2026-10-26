@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -74,6 +75,11 @@ internal class RecordWebView(
     private val assetLoader = recordAssetLoader(context)
 
     init {
+        // Its own size, whatever holds it. Compose's AndroidView adds a view with the ViewGroup default, wrap_content, and a
+        // WebView whose height is wrap_content lays its page out at height 0 (so the page can't grow itself without end):
+        // every vh, svh and dvh in the record was 0, and its sheets and search, `max-height: min(640px, 100dvh - 48px)`,
+        // collapsed to nothing (seen on the rig, Chrome 155 WebView).
+        layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         setBackgroundColor(RECORD_GROUND_ARGB)
         settings.apply {
             javaScriptEnabled = true
