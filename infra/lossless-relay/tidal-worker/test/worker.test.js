@@ -438,6 +438,18 @@ test("search maps Tidal catalog entries to the relay contract", async () => {
   });
 });
 
+test("search carries Tidal's explicit flag, null when Tidal doesn't say", async () => {
+  const f = fixture({ tidalResponse: async () => new Response(JSON.stringify({ items: [
+    { id: 1, title: "Father Stretch My Hands Pt. 1", artist: { name: "Kanye West" }, duration: 135, explicit: true },
+    { id: 2, title: "Father Stretch My Hands Pt. 1", artist: { name: "Kanye West" }, duration: 135, explicit: false },
+    { id: 3, title: "Untagged", artist: { name: "Someone" }, duration: 200 },
+  ] }), { status: 200 }) });
+  await withFetch(null, f.fetchTidal, async () => {
+    const body = await (await worker.fetch(authorizedRequest("/search?q=father%20stretch"), f.env)).json();
+    assert.deepEqual(body.tracks.map((t) => t.explicit), [true, false, null]);
+  });
+});
+
 test("search cache is shared across normalized query variants for five days", async () => {
   const f = fixture({ tidalResponse: async () => new Response(JSON.stringify({ items: [{ id: 88, title: "Birds" }] }), { status: 200 }) });
   await withFetch(null, f.fetchTidal, async () => {

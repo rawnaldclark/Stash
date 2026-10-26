@@ -284,7 +284,10 @@ async function searchUncached(query, cc, request, env, onSeat = async () => {}) 
     const artists = [t.artist?.name, ...(t.artists || []).map((a) => a.name)].filter((v, i, a) => v && a.indexOf(v) === i);
     const title = `${t.title || ""}${t.version ? ` (${t.version})` : ""}`;
     const artwork = cover ? `https://resources.tidal.com/images/${cover.replaceAll("-", "/")}/1280x1280.jpg` : null;
-    return { id: `td:${t.id}`, title, artist: artists.join(", "), album: t.album?.title || "", duration: Math.round(Number(t.duration) || 0), artwork, artworkURL: artwork, format: "flac", audioQuality: quality, bitrate: quality === "HI_RES_LOSSLESS" ? 9216 : quality === "LOSSLESS" ? 1411 : 320, isrc: t.isrc || null };
+    return { id: `td:${t.id}`, title, artist: artists.join(", "), album: t.album?.title || "", duration: Math.round(Number(t.duration) || 0), artwork, artworkURL: artwork, format: "flac", audioQuality: quality, bitrate: quality === "HI_RES_LOSSLESS" ? 9216 : quality === "LOSSLESS" ? 1411 : 320, isrc: t.isrc || null,
+      // Tidal's parental advisory: the app picks the explicit original over its clean twin (they
+      // share title, album and length) unless the song is known clean. Null when Tidal doesn't say.
+      explicit: typeof t.explicit === "boolean" ? t.explicit : null };
   });
   return json({ tracks });
 }
