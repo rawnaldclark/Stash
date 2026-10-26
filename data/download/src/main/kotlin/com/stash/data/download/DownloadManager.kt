@@ -1060,6 +1060,8 @@ class DownloadManager @Inject constructor(
                 targetArtist = track.artist,
                 targetAlbum = track.album,
                 targetDurationMs = track.durationMs,
+                // Picks the album's explicit edition unless the track is known clean.
+                targetExplicit = track.explicit,
             )?.takeIf { YouTubeVideoId.isValid(it.id) }
             if (albumResult != null) {
                 val scored = matchScorer.scoreResults(

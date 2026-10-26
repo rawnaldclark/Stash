@@ -55,4 +55,14 @@ data class YtDlpSearchResult(
      */
     @Transient
     val musicVideoType: MusicVideoType? = null,
+    /**
+     * `true` when the InnerTube search row carries YouTube Music's explicit
+     * badge ([com.stash.data.ytmusic.explicitFromBadge]); null otherwise, and
+     * always for yt-dlp results. Not `false` for an unbadged row: YouTube leaves
+     * clean edits and never-explicit songs alike unmarked. [MatchScorer] uses it
+     * to choose between a song's explicit and clean twins. `@Transient` for the
+     * same reason as [musicVideoType]: only the InnerTube path sets it.
+     */
+    @Transient
+    val explicit: Boolean? = null,
 )

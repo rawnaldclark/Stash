@@ -146,6 +146,10 @@ internal fun parseTopResultCard(shelf: JsonObject): TopResultItem? {
                 album = album,
                 durationSeconds = parseDurationToSeconds(durationToken),
                 thumbnailUrl = thumbnailUrl,
+                // The card keeps its badge in `subtitleBadges`; an unfiltered
+                // search can show the explicit song here and its clean twin
+                // only as a later row.
+                explicit = explicitFromBadge(shelf),
             ),
         )
     }

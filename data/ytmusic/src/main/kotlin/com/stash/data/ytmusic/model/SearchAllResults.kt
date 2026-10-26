@@ -100,6 +100,10 @@ data class PlaylistSummary(
  *
  * [durationSeconds] is a [Double] to accept fractional values from some
  * InnerTube responses; UI code should round for display.
+ *
+ * [explicit] is `true` when YouTube Music shows its explicit badge on the row
+ * ([com.stash.data.ytmusic.explicitFromBadge]) and null otherwise: YouTube marks
+ * explicit songs and leaves clean edits and never-explicit songs alike unmarked.
  */
 @Serializable
 data class TrackSummary(
@@ -109,6 +113,7 @@ data class TrackSummary(
     val album: String?,
     val durationSeconds: Double,
     val thumbnailUrl: String?,
+    val explicit: Boolean? = null,
 )
 
 /**

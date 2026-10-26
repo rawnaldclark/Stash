@@ -30,6 +30,7 @@ class MatchScorerTest {
         viewCount: Long = 10_000_000,
         musicVideoType: MusicVideoType? = null,
         album: String? = null,
+        explicit: Boolean? = null,
     ) = YtDlpSearchResult(
         id = id,
         title = title,
@@ -45,6 +46,7 @@ class MatchScorerTest {
         thumbnail = null,
         album = album,
         musicVideoType = musicVideoType,
+        explicit = explicit,
     )
 
     // ── Phase 3a: duration hard gate ─────────────────────────────────────
@@ -290,10 +292,11 @@ class MatchScorerTest {
     }
 
     @Test
-    fun `unknown target explicit does not penalize either variant`() {
-        // For legacy pre-v12 rows and YouTube-imported tracks where the
-        // explicit flag is null, neither (Clean) nor (Explicit) titles
-        // should be penalised — we don't know what the user wanted.
+    fun `unknown target prefers the explicit variant and still accepts either`() {
+        // Legacy rows and YouTube imports often carry no flag. The original is
+        // the explicit cut, so a song that doesn't say plays that one, but the
+        // preference only orders acceptable candidates: the (Clean) one must
+        // still clear auto-accept on its own.
         val results = scorer.scoreResults(
             targetTitle = "Some Song",
             targetArtist = "Some Artist",
@@ -318,12 +321,92 @@ class MatchScorerTest {
                 ),
             ),
         )
-        // Both candidates should auto-accept — gate passes for either when
-        // the target has no explicit signal.
+        assertEquals("explicit", results.first().videoId)
         assertTrue(
             "both candidates must pass auto-accept when target explicit is null",
-            scorer.bestMatch(results) != null,
+            results.all { it.matchScore >= MatchScorer.AUTO_ACCEPT_THRESHOLD },
         )
+    }
+
+    // ── YouTube Music's explicit badge ───────────────────────────────────
+    //
+    // A song's explicit and clean twins share title, artist, album and length;
+    // only the badge tells them apart. Each test puts the expected loser first,
+    // so a tie (decided by input order) fails it.
+
+    private fun twin(id: String, badged: Boolean) = candidate(
+        id = id,
+        title = "Some Song",
+        artist = "Some Artist",
+        channel = "Some Artist - Topic",
+        durationSec = 180.0,
+        musicVideoType = MusicVideoType.ATV,
+        album = "Some Album",
+        explicit = if (badged) true else null,
+    )
+
+    private fun rankTwins(targetExplicit: Boolean?, vararg twins: YtDlpSearchResult) = scorer.scoreResults(
+        targetTitle = "Some Song",
+        targetArtist = "Some Artist",
+        targetDurationMs = 180_000,
+        results = twins.toList(),
+        targetAlbum = "Some Album",
+        targetExplicit = targetExplicit,
+    )
+
+    @Test
+    fun `a badged twin beats its unbadged twin for an explicit or unknown target`() {
+        for (target in listOf(true, null)) {
+            val results = rankTwins(target, twin("clean", badged = false), twin("explicit", badged = true))
+            assertEquals("target=$target", "explicit", results.first().videoId)
+        }
+    }
+
+    @Test
+    fun `a badged twin loses to its unbadged twin for a clean target`() {
+        val results = rankTwins(false, twin("explicit", badged = true), twin("clean", badged = false))
+        assertEquals("clean", results.first().videoId)
+        assertTrue(
+            "the explicit twin stays acceptable: it's the only copy some songs have",
+            results.all { it.matchScore >= MatchScorer.AUTO_ACCEPT_THRESHOLD },
+        )
+    }
+
+    @Test
+    fun `the badge never outweighs a much better candidate`() {
+        // The badged row names no album; the unbadged one is on the track's album
+        // (+0.15), which outweighs the badge (+0.03).
+        val results = rankTwins(
+            true,
+            twin("badged-elsewhere", badged = true).copy(album = null),
+            twin("on-the-album", badged = false),
+        )
+        assertEquals("on-the-album", results.first().videoId)
+    }
+
+    @Test
+    fun `explicitness never decides whether a candidate is accepted`() {
+        // Under the bar on its own (wrong title, wrong uploader): the badge doesn't lift it.
+        val weak = candidate(id = "weak", title = "Completely Different Track", artist = "Other Person")
+        fun scoreAlone(row: YtDlpSearchResult, target: Boolean?) = scorer.scoreResults(
+            "Some Song", "Some Artist", 180_000, listOf(row), targetExplicit = target,
+        ).single().matchScore
+        val weakScore = scoreAlone(weak, null)
+        assertTrue("precondition: $weakScore is under the bar", weakScore < MatchScorer.AUTO_ACCEPT_THRESHOLD)
+        assertEquals(weakScore, scoreAlone(weak.copy(explicit = true), null), 0.0001f)
+
+        // Just over the bar on its own (length 78 s off scores 0 there, the hard
+        // gate is the pipeline's): a clean target's dock can't push it under.
+        val borderline = candidate(id = "borderline", title = "Some Song", artist = "Some Artist")
+        val borderlineScore = scoreAlone(borderline, false)
+        assertTrue(
+            "precondition: $borderlineScore is over the bar by less than the dock",
+            borderlineScore >= MatchScorer.AUTO_ACCEPT_THRESHOLD &&
+                borderlineScore - MatchScorer.EXPLICIT_MISMATCH_PENALTY < MatchScorer.AUTO_ACCEPT_THRESHOLD,
+        )
+        val docked = scoreAlone(borderline.copy(explicit = true), false)
+        assertTrue("docked $docked < $borderlineScore", docked < borderlineScore)
+        assertTrue("docked $docked still accepted", docked >= MatchScorer.AUTO_ACCEPT_THRESHOLD)
     }
 
     // ── Decorated-title containment escape (titleContainsTarget) ─────────

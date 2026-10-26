@@ -220,5 +220,6 @@ internal fun parseTrackSummaryFromListItem(
         album = album,
         durationSeconds = durationText?.let(::parseDurationToSeconds) ?: subtitle.durationSeconds,
         thumbnailUrl = thumbnailUrl,
+        explicit = explicitFromBadge(renderer),
     )
 }

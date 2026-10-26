@@ -32,4 +32,28 @@ class AlbumMatchExecutorFlatSearchTest {
 
         assertEquals("MPREb_IIWn9LYU83g", browseId)
     }
+
+    /**
+     * YouTube Music keeps an album's explicit and clean editions as two albums of
+     * one title. `innertube_search_album_editions.json` is the live flat album row
+     * for The Life Of Pablo (explicit edition MPREb_ZIbQK9RFLQY, badged; search
+     * 2026-10-26), listed after a copy of it standing for the clean edition: badge
+     * removed and the clean edition's real browseId (MPREb_GDKC8gIBAVI), since the
+     * probe's search didn't list both. The clean one comes first, as the first
+     * match is what was always taken.
+     */
+    @Test
+    fun `picks the album's explicit edition unless the track is known clean`() {
+        val executor = AlbumMatchExecutor(mock<InnerTubeClient>(), TrackMatcher())
+        fun edition(explicit: Boolean?) = executor.extractAlbumBrowseId(
+            fixture("innertube_search_album_editions.json"),
+            targetAlbum = "The Life Of Pablo",
+            targetArtist = "Kanye West",
+            targetExplicit = explicit,
+        )
+
+        assertEquals("MPREb_ZIbQK9RFLQY", edition(true))
+        assertEquals("MPREb_ZIbQK9RFLQY", edition(null))
+        assertEquals("MPREb_GDKC8gIBAVI", edition(false))
+    }
 }

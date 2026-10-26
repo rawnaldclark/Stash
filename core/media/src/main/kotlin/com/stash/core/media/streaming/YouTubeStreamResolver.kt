@@ -5,9 +5,11 @@ import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.preview.PreviewUrlExtractor
+import com.stash.data.ytmusic.ExplicitTwinKey
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
+import com.stash.data.ytmusic.preferExplicitTwin
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -192,8 +194,10 @@ class YouTubeStreamResolver @Inject constructor(
         // and Ever") that the legacy unfiltered searchAll mislabels and drops
         // as "0 sections". That drop silently broke YouTube-fallback playback:
         // no videoId -> no stream URL -> nothing to play or auto-advance to.
+        // The track's parental advisory picks between the explicit and clean
+        // copies YouTube lists as twins: the explicit one unless it's known clean.
         val canonical = withTimeoutOrNull(YT_SEARCH_TIMEOUT_MS) {
-            runCatching { ytMusicApiClient.searchCanonicalVideoId(artist, title) }
+            runCatching { ytMusicApiClient.searchCanonicalVideoId(artist, title, track.explicit) }
                 .onFailure { t ->
                     if (t is CancellationException) throw t
                     Log.d(TAG, "canonical search failed for '$artist $title': ${t.message}")
@@ -233,10 +237,26 @@ class YouTubeStreamResolver @Inject constructor(
             // niche electronic, etc.) YT Music often returns ONLY a Top
             // result card and a Videos shelf, no Songs shelf — those used
             // to fall through to null with the original Songs-only lookup.
-            val songFirst = results.sections
+            val songs = results.sections
                 .filterIsInstance<SearchResultSection.Songs>()
                 .firstOrNull()
-                ?.tracks?.firstOrNull()
+                ?.tracks.orEmpty()
+            val topTrack = results.sections
+                .filterIsInstance<SearchResultSection.Top>()
+                .firstOrNull()
+                ?.item
+                ?.let { it as? TopResultItem.TrackTop }
+                ?.track
+            // Still the first Songs row, unless an explicit/clean twin of it suits
+            // the track's advisory better. The top card joins the twins: measured
+            // 2026-10-26, an unfiltered search showed the explicit song only in the
+            // card and its clean edit as the Songs row.
+            val songFirst = songs.takeIf { it.isNotEmpty() }
+                ?.let { rows ->
+                    preferExplicitTwin(rows + listOfNotNull(topTrack), track.explicit) {
+                        ExplicitTwinKey(it.title, it.artist, it.durationSeconds, it.explicit == true)
+                    }
+                }
                 ?.videoId
                 ?.takeIf { it.isNotBlank() }
             if (songFirst != null) {
@@ -244,12 +264,7 @@ class YouTubeStreamResolver @Inject constructor(
                 return@withTimeoutOrNull songFirst
             }
 
-            val topVideoId = results.sections
-                .filterIsInstance<SearchResultSection.Top>()
-                .firstOrNull()
-                ?.item
-                ?.let { it as? TopResultItem.TrackTop }
-                ?.track
+            val topVideoId = topTrack
                 ?.videoId
                 ?.takeIf { it.isNotBlank() }
             if (topVideoId != null) {
