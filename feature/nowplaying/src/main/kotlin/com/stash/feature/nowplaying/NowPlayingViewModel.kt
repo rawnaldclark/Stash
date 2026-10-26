@@ -65,7 +65,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -120,7 +119,6 @@ class NowPlayingViewModel @Inject constructor(
     // The album back covers the art flips to. Hilt binds the Cover Art Archive lookup; tests leave
     // the default, which knows none.
     private val backCovers: AlbumBackCovers = AlbumBackCovers.None,
-    private val trackAlbums: com.stash.core.data.lastfm.TrackAlbums = com.stash.core.data.lastfm.TrackAlbums.None,
 ) : ViewModel() {
 
     /**
@@ -687,7 +685,6 @@ class NowPlayingViewModel @Inject constructor(
      * Room's answer, as [lyricsTargets] does: the player's own track comes first without the ISRC
      * the library row holds, which finds the album more surely than its title.
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
     private val backCoverAlbums: Flow<BackCoverAlbum?> = uiState
         .filter { s -> s.currentTrack == null || s.currentTrackStored != null }
         .map { s -> s.currentTrack }
@@ -695,8 +692,9 @@ class NowPlayingViewModel @Inject constructor(
             a?.id == b?.id && a?.title == b?.title && a?.artist == b?.artist &&
                 a?.album == b?.album && a?.albumArtist == b?.albumArtist && a?.isrc == b?.isrc
         }
-        // A song with no album of its own (a Last.fm playlist's, a mix's) gets Last.fm's.
-        .mapLatest { track -> track?.let { BackCoverAlbum.of(it) ?: BackCoverAlbum.of(trackAlbums.withAlbum(it)) } }
+        // A song with no album of its own (a Last.fm playlist's, a mix's) has no back cover: the
+        // album Last.fm would name is its most scrobbled release, often a compilation.
+        .map { track -> track?.let { BackCoverAlbum.of(it) } }
         .distinctUntilChanged { old, new -> old?.key == new?.key }
 
     /**
@@ -761,7 +759,7 @@ class NowPlayingViewModel @Inject constructor(
     private suspend fun lookAhead(current: BackCoverAlbum) {
         val s = uiState.value
         val next = s.queue.getOrNull(s.currentIndex + 1) ?: return
-        val album = BackCoverAlbum.of(next) ?: BackCoverAlbum.of(trackAlbums.withAlbum(next)) ?: return
+        val album = BackCoverAlbum.of(next) ?: return
         if (album.key == current.key) return
         backCovers.resolve(album)?.back?.let(::fetchBackImage)
     }

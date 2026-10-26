@@ -59,6 +59,10 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.db.entity.TrackFts
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.data.db.entity.TrackTagEntity
+import com.stash.core.data.lastfm.LastFmLookupRules
+import com.stash.core.data.lastfm.LastFmTrackInfo
+import com.stash.core.data.lastfm.lastFmCacheKey
+import kotlinx.serialization.json.Json
 
 /**
  * Central Room database for the Stash application.
@@ -113,7 +117,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
     ],
-    version = 66,
+    version = 67,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1754,6 +1758,58 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v66 -> v67, data only: the albums Last.fm guessed are taken back. From 0.9.120 a song with
+         * no album of its own (a mix's, a Last.fm playlist's, a Search play's) got the album
+         * `track.getInfo` names, and its album artist. That is Last.fm's most scrobbled release, often
+         * a compilation: "Blinding Lights" on "Now 35" by Various Artists, whose page the Now Playing
+         * artist tap then opened.
+         *
+         * A row is cleared when its album AND album artist are exactly the answer Last.fm's cache
+         * holds for it (the guess wrote both; the client's key, so the same cleaned names). A row with
+         * a file or a cloud copy keeps its album: an album downloaded whole stores its own artist,
+         * which Last.fm mostly agrees with, and Recap caches Last.fm's answer for every song it reads.
+         * On the owner's phone (2026-10-26) this cleared 1,312 rows; checked against the same
+         * library's 10-21 copy, 3 of 7,557 albums it already had would have gone, each one Last.fm
+         * agreed with.
+         */
+        val MIGRATION_66_67 = object : Migration(66, 67) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val guessed = mutableListOf<Long>()
+                db.query(
+                    "SELECT `id`, `artist`, `title`, `album`, `album_artist` FROM `tracks` " +
+                        "WHERE `album` != '' AND `album_artist` != '' " +
+                        "AND `file_path` IS NULL AND `cloud_uri` IS NULL",
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val key = lastFmCacheKey(
+                            mapOf(
+                                "method" to "track.getInfo",
+                                "artist" to LastFmLookupRules.cleanArtist(c.getString(1)),
+                                "track" to LastFmLookupRules.cleanTitle(c.getString(2)),
+                                "autocorrect" to "1",
+                            ),
+                        )
+                        val json = db.query(
+                            "SELECT `json` FROM `lastfm_response_cache` WHERE `cache_key` = ?",
+                            arrayOf<Any?>(key),
+                        ).use { if (it.moveToFirst()) it.getString(0) else null } ?: continue
+                        val info = runCatching { LastFmTrackInfo.parse(Json.parseToJsonElement(json)) }
+                            .getOrNull() ?: continue
+                        if (info.albumTitle == c.getString(3) && info.albumArtist == c.getString(4)) {
+                            guessed += c.getLong(0)
+                        }
+                    }
+                }
+                guessed.chunked(500).forEach { ids ->
+                    db.execSQL(
+                        "UPDATE `tracks` SET `album` = '', `album_artist` = '' " +
+                            "WHERE `id` IN (${ids.joinToString(",")})",
+                    )
+                }
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1856,6 +1912,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_63_64,
                 MIGRATION_64_65,
                 MIGRATION_65_66,
+                MIGRATION_66_67,
             )
         }
     }

@@ -6,8 +6,6 @@ import com.stash.core.data.backcover.CoverArtArchiveClient
 import com.stash.core.data.backcover.CoverArtArchiveClientImpl
 import com.stash.core.data.backcover.DiscogsClient
 import com.stash.core.data.backcover.DiscogsClientImpl
-import com.stash.core.data.lastfm.LastFmTrackAlbums
-import com.stash.core.data.lastfm.TrackAlbums
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -19,6 +17,5 @@ abstract class BackCoverModule {
     @Binds abstract fun bindCoverArtArchiveClient(impl: CoverArtArchiveClientImpl): CoverArtArchiveClient
     @Binds abstract fun bindDiscogsClient(impl: DiscogsClientImpl): DiscogsClient
     @Binds abstract fun bindAlbumBackCovers(impl: AlbumBackCoverRepository): AlbumBackCovers
-    @Binds abstract fun bindTrackAlbums(impl: LastFmTrackAlbums): TrackAlbums
     @Binds abstract fun bindBackCoverSources(impl: com.stash.core.data.backcover.PreferenceBackCoverSources): com.stash.core.data.backcover.BackCoverSources
 }

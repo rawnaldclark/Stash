@@ -2560,51 +2560,9 @@ interface TrackDao {
     )
     suspend fun findStreamableMetadataBackfillCandidates(limit: Int): List<StreamableBackfillRow>
 
-    /**
-     * Rows with no album that the user has played or kept, newest first: a Last.fm playlist's or a
-     * mix's songs arrive with only a title and an artist. `ArtBackfillWorker` fills them from
-     * Last.fm ([fillMissingAlbum]). Only songs played, downloaded, liked, or saved / loved on a
-     * service: a mix's songs never played wait until they are (playing one fills its album then,
-     * through Now Playing), so the pass doesn't send every mix's songs through the Last.fm proxy
-     * (2026-10-26: one 0.9.120 phone swept its library at a lookup a second).
-     */
-    @Query(
-        """
-        SELECT id, artist, title
-        FROM tracks
-        WHERE (album IS NULL OR album = '')
-          AND artist != ''
-          AND title != ''
-          AND (
-            play_count > 0 OR last_played IS NOT NULL
-            OR is_downloaded = 1 OR file_path IS NOT NULL
-            OR stash_liked_at IS NOT NULL OR spotify_saved_at IS NOT NULL
-            OR ytmusic_saved_at IS NOT NULL OR lastfm_loved_at IS NOT NULL
-          )
-        ORDER BY id DESC
-        LIMIT :limit
-        """
-    )
-    suspend fun findAlbumBackfillCandidates(limit: Int): List<StreamableBackfillRow>
-
     /** The track's parental advisory, as its source's sync reports it ([DiffWorker]). */
     @Query("UPDATE tracks SET explicit = :explicit WHERE id = :trackId")
     suspend fun updateExplicit(trackId: Long, explicit: Boolean)
-
-    /**
-     * A row's album (and album artist, if it has none) where it has no album: never over one a
-     * source or a file's tags gave.
-     */
-    @Query(
-        """
-        UPDATE tracks
-        SET album = :album,
-            album_artist = CASE WHEN album_artist IS NULL OR album_artist = '' THEN :albumArtist ELSE album_artist END
-        WHERE id = :trackId
-          AND (album IS NULL OR album = '')
-        """
-    )
-    suspend fun fillMissingAlbum(trackId: Long, album: String, albumArtist: String)
 
     /**
      * Atomically reverts a track to an undownloaded state so the download
