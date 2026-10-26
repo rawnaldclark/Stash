@@ -32,6 +32,15 @@ const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0/";
 const CACHE_TTL_SECONDS = 14 * 24 * 60 * 60; // 14 days
 
 /**
+ * Last.fm's final answers: "not found" (6) and "invalid resource" (7). Kept as
+ * long as an answer, so a song Last.fm doesn't know is asked about once per TTL
+ * per edge, not on every request (2026-10-26: one "not found" lookup came in 13
+ * times in under three minutes, from apps that ask again every launch). The app
+ * treats these two the same way (LastFmCachedMiss.FINAL_ERROR_CODES).
+ */
+export const FINAL_ERROR_CODES = new Set([6, 7]);
+
+/**
  * Read-only, generic (non-personalized) methods this proxy is allowed to
  * serve. Anything else is rejected — the Worker must not become an open
  * Last.fm proxy, and must never touch signed/per-user endpoints.
@@ -110,6 +119,16 @@ async function handleLastFmRead(request, url, env, ctx) {
     // naturally shared across every caller), and nothing a client adds can
     // turn a cached lookup into a fresh upstream call.
     const query = canonicalParams(params);
+
+    // A lookup Last.fm can never answer is told so here, without a cache entry
+    // or an upstream call: most of the traffic from older apps is these.
+    if (isUnlookable(query)) {
+        return new Response(notFoundBody(method), {
+            status: 200,
+            headers: { "content-type": "application/json", "X-Stash-Cache": "SKIP" },
+        });
+    }
+
     const cacheKey = buildCacheKey(query);
     const cache = caches.default;
 
@@ -157,14 +176,14 @@ async function handleLastFmRead(request, url, env, ctx) {
     const body = await lfmResponse.text();
 
     // Last.fm returns HTTP 200 with { "error": N } on soft failures. error 29 is
-    // the rate limit — surface as 429 and DO NOT cache. Other errors (e.g. 6
-    // "not found") are passed through but also not cached (they're often
-    // transient or query-specific noise).
+    // the rate limit — surface as 429 and DO NOT cache. A final answer (not
+    // found) is cached like any answer; anything else (11/16 outages, 8) is
+    // passed through and not cached, as it may not hold a minute later.
     const errorCode = extractErrorCode(body);
     if (errorCode === 29) {
         return rateLimited();
     }
-    if (errorCode !== null) {
+    if (errorCode !== null && !FINAL_ERROR_CODES.has(errorCode)) {
         return new Response(body, {
             status: 200,
             headers: { "content-type": "application/json", "X-Stash-Cache": "BYPASS" },
@@ -208,6 +227,50 @@ export function canonicalParams(params) {
         }
     }
     return out;
+}
+
+/** Artist values a tagger or the media store writes when there is none (as the app's LastFmLookupRules). */
+const PLACEHOLDER_ARTISTS = new Set(["unknown artist", "<unknown>", "unknown"]);
+
+/** A YouTube channel credit carrying a view count ("wamp, yung sammy, 2.5m views"): not an artist. */
+const VIEW_COUNT = /\d[\d.,]*\s*[kmb]?\s+views?\b/i;
+
+/** Camera/messenger/recorder file names: `AUD-20240101-WA0001`, `PTT-…`, `REC_2024…`, `Recording_12`. */
+const FILE_NAME_TITLE = /^(?:aud|ptt|vid|img|rec|recording|voice)[-_ ]?\d/i;
+
+/** A WhatsApp media suffix anywhere: `-WA0001`. */
+const WHATSAPP_SUFFIX = /-WA\d{3,}/i;
+
+/** A title that is a file name: it ends in an audio/video extension. */
+const FILE_EXTENSION = /\.(?:mp3|m4a|aac|ogg|oga|opus|wav|flac|amr|3gp|3ga|mp4|m4b|wma|webm|mka|aiff?)$/i;
+
+/** A timestamp, not a title: digits and separators only, eight digits or more. */
+const NUMERIC_TITLE = /^(?=(?:\D*\d){8})[\d\s._-]+$/;
+
+/**
+ * True when Last.fm can't answer this lookup: a placeholder artist or a YouTube
+ * view count in the artist, or (for the track methods) a title that is a file
+ * name, a voice note or a timestamp. The app's own rules
+ * (LastFmLookupRules.isUnlookable), plus the view count, so apps from before
+ * those rules are answered here instead of by Last.fm. Pure + exported for tests.
+ */
+export function isUnlookable(query) {
+    if (!query.has("artist")) return false; // tag.* lookups name no artist
+    const artist = query.get("artist").trim();
+    if (!artist || PLACEHOLDER_ARTISTS.has(artist.toLowerCase()) || VIEW_COUNT.test(artist)) return true;
+    if (!query.has("track")) return false;
+    const title = query.get("track").trim();
+    return !title ||
+        FILE_NAME_TITLE.test(title) ||
+        WHATSAPP_SUFFIX.test(title) ||
+        FILE_EXTENSION.test(title) ||
+        NUMERIC_TITLE.test(title);
+}
+
+/** Last.fm's own "not found" for [method], word for word, so every app reads it as Last.fm's. */
+function notFoundBody(method) {
+    const message = method.startsWith("track.") ? "Track not found" : "The artist you supplied could not be found";
+    return JSON.stringify({ message, error: 6, links: [] });
 }
 
 /**
