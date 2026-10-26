@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Ang record mo</string>
+    <plurals name="record_hours">
+        <item quantity="one">oras</item>
+        <item quantity="other">oras</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s na play</item>
+    </plurals>
+    <string name="record_since">mula %1$d · %2$s</string>
+    <string name="record_most_played">Pinakamadalas pakinggan: %1$s</string>
+    <string name="record_open">Buksan ang record mo</string>
+    <string name="record_opens">Binubuksan ang record mo.</string>
+    <string name="record_invite_title">I-press ang record mo</string>
+    <string name="record_invite_body">Bawat taon ng pakikinig mo, nasa iisang lugar: mula sa Spotify, Last.fm, o Stash sa phone mo.</string>
+    <string name="record_invite_start">Magsimula</string>
+    <string name="record_invite_hide">Itago ang I-press ang record mo</string>
+    <string name="record_close">Isara</string>
+    <string name="record_webview_old_title">Kailangan nito ng mas bagong Android System WebView</string>
+    <string name="record_webview_old_body">I-update ang Android System WebView mula sa Google Play, pagkatapos ay buksan ulit ang record mo.</string>
+    <string name="record_stopped_title">Huminto ang record mo</string>
+    <string name="record_stopped_body">Naubusan ng memory o nag-crash ang page. Ligtas ang mga play mo.</string>
+    <string name="record_open_again">Buksan ulit</string>
+    <string name="record_note_import">Darating sa isang update ang pag-import ng Spotify history mo.</string>
+    <string name="record_note_archive_failed">Hindi nabasa ang ilan sa mga play mo.</string>
+    <string name="record_note_play_failed">Hindi ito ma-play dito.</string>
+    <string name="record_note_playing">Pinapatugtog ang %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Pinapatugtog ang %1$d kanta</item>
+        <item quantity="other">Pinapatugtog ang %1$d kanta</item>
+    </plurals>
+    <string name="record_note_none_found">Hindi mahanap ang mga kantang ito.</string>
+    <string name="record_note_none_downloaded">Wala sa mga kantang ito ang naka-download. Kumonekta para i-play ang mga ito.</string>
+    <string name="record_note_saved">Na-save sa Downloads</string>
+    <string name="record_note_save_failed">Hindi ma-save.</string>
+    <string name="record_share">Ibahagi</string>
+</resources>

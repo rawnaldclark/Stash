@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home's Your record card and the record's screen (feature/record). -->
+    <string name="record_eyebrow">Your record</string>
+    <!-- The word after the card's big number of hours ("412 hours"); the number is set apart, larger. -->
+    <plurals name="record_hours">
+        <item quantity="one">hour</item>
+        <item quantity="other">hours</item>
+    </plurals>
+    <!-- %1$s: the record's plays, already formatted with separators ("1,234"). -->
+    <plurals name="record_plays">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s plays</item>
+    </plurals>
+    <!-- %1$d: the year of the earliest play; %2$s: the plays ("since 2024 · 1,234 plays"). -->
+    <string name="record_since">since %1$d · %2$s</string>
+    <string name="record_most_played">Most played: %1$s</string>
+    <string name="record_open">Open your record</string>
+    <string name="record_opens">Opens your record.</string>
+    <!-- The invitation before there is a record (shown once the Spotify import exists). -->
+    <string name="record_invite_title">Press your record</string>
+    <string name="record_invite_body">Every year you’ve listened, in one place: from Spotify, Last.fm or Stash on your phone.</string>
+    <string name="record_invite_start">Get started</string>
+    <string name="record_invite_hide">Hide Press your record</string>
+    <string name="record_close">Close</string>
+    <!-- The record needs Android System WebView 74 or newer (the bridge). -->
+    <string name="record_webview_old_title">This needs a newer Android System WebView</string>
+    <string name="record_webview_old_body">Update Android System WebView from Google Play, then open Your record again.</string>
+    <string name="record_stopped_title">Your record stopped</string>
+    <string name="record_stopped_body">The page ran out of room or crashed. Your plays are safe.</string>
+    <string name="record_open_again">Open it again</string>
+    <!-- Snackbars over the record. -->
+    <string name="record_note_import">Bringing in your Spotify history is coming in an update.</string>
+    <string name="record_note_archive_failed">Some of your plays couldn’t be read.</string>
+    <string name="record_note_play_failed">Couldn’t play that here.</string>
+    <!-- %1$s: the song a tap in the record started. -->
+    <string name="record_note_playing">Playing %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Playing %1$d song</item>
+        <item quantity="other">Playing %1$d songs</item>
+    </plurals>
+    <string name="record_note_none_found">Couldn’t find these songs to play.</string>
+    <string name="record_note_none_downloaded">None of these songs are downloaded. Connect to play them.</string>
+    <string name="record_note_saved">Saved to Downloads</string>
+    <string name="record_note_save_failed">Couldn’t save that.</string>
+    <!-- The share sheet's title for a poster or a video from the record. -->
+    <string name="record_share">Share</string>
+</resources>

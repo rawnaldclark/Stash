@@ -33,10 +33,10 @@ sealed interface Found {
 }
 
 /**
- * Deezer's searches, one at a time and [gapMs] apart across every lookup in the app (its limit: 50 in 5 s from one address).
- * A search that would wait longer than [maxWaitMs] for its turn isn't queued.
+ * A search service's pace: one search at a time, [gapMs] apart, across every lookup in the app (Deezer allows 50 in 5 s from
+ * one address; Apple about 20 a minute). A search that would wait longer than [maxWaitMs] for its turn isn't queued.
  */
-class DeezerPace(
+class Pace(
     private val gapMs: Long = GAP_MS,
     private val maxWaitMs: Long = MAX_WAIT_MS,
     private val now: () -> Long = System::currentTimeMillis,
@@ -63,22 +63,35 @@ class DeezerPace(
 
         /** worker art.ts `DEEZER_MAX_WAIT_MS`. */
         const val MAX_WAIT_MS = 8_000L
+
+        /** Apple's search: about 20 a minute. */
+        const val ITUNES_GAP_MS = 3_000L
+
+        /** No more than a few of Apple's searches queued; the rest are asked later. */
+        const val ITUNES_MAX_WAIT_MS = 12_000L
     }
 }
 
 /**
  * An album's cover, a song's, or an artist's picture, found by their words: stash-player `worker/art.ts` `lookUp`, run on the
  * phone (the app has no Worker in between). Deezer first (its search allows far more than Apple's ~20 a minute): the album by
- * its artist and name, then the song's own; then Apple's iTunes search, sized 600. An artist's picture comes from Deezer.
+ * its artist and name, then the song by its words; then Apple's iTunes search, sized 600. An artist's picture comes from
+ * Deezer.
  *
- * Nothing about the listener is sent: only an artist's and an album's (or a song's) words.
+ * What leaves the phone: an album's, an artist's or a song's words, sent straight to Deezer and Apple from the phone's own
+ * address (the web's Worker asks for the player, so there they see the Worker's; here they see the listener's IP).
+ *
+ * Deezer's song search with field filters (`artist:"…" track:"…"`, even `artist:"…"` alone) answers nothing since 2026-10
+ * (checked 10-26; its album and artist searches still take them), so the song step searches the words as free text and the
+ * hits are still held to the artist and the title.
  *
  * Only covers the record may show are taken ([isAllowedCover]): its page allows images from Deezer's CDNs and Apple's mzstatic
  * alone, so a hit elsewhere counts as no hit.
  */
 class ArtLookup(
     private val http: ArtHttp,
-    private val pace: DeezerPace = DeezerPace(),
+    private val pace: Pace = Pace(),
+    private val applePace: Pace = Pace(gapMs = Pace.ITUNES_GAP_MS, maxWaitMs = Pace.ITUNES_MAX_WAIT_MS),
 ) {
     /** What Deezer said: its body, or why there is none. */
     private sealed interface Dz {
@@ -99,7 +112,7 @@ class ArtLookup(
             }
         }
         run {
-            val q = "artist:\"$artist\" track:\"${ArtText.searchTitle(s.title)}\""
+            val q = "$artist ${ArtText.searchTitle(s.title)}"
             when (val r = deezer("$DEEZER/search?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
                 is Dz.No -> return r.found
                 is Dz.Ok -> best(r.body.list("data"), { it.obj("artist")?.str("name") }, { it.str("title") }, s.title, ArtText::searchTitle, s.artist) {
@@ -109,7 +122,11 @@ class ArtLookup(
         }
         val album = s.album?.takeIf { it.isNotEmpty() }
         val term = if (album != null) "$artist ${ArtText.bareAlbum(album)}" else "$artist ${ArtText.searchTitle(s.title)}"
+        // Apple's limit is low: a search that can't have its turn soon, or that Apple refuses or doesn't answer, is "don't
+        // know yet" (asked again later), never "none"
+        if (!applePace.turn()) return Found.Later
         val r = http.get("$ITUNES/search?${form("term" to term, "media" to "music", "entity" to if (album != null) "album" else "song", "limit" to "10")}")
+        if (r.status == 0 || r.status == 403 || r.status == 429 || r.status >= 500) return Found.Later
         if (r.status in 200..299) {
             val hits = parse(r.body)?.list("results").orEmpty()
             val sized: (JsonObject) -> String? = { h -> h.str("artworkUrl100")?.replace(ITUNES_SIZE, "/600x600bb.jpg") }
@@ -120,7 +137,7 @@ class ArtLookup(
             }
             if (hit != null) return Found.Cover(hit)
         }
-        // Deezer answered and has none; Apple has none, or wouldn't say (its limit is low): none, for a while
+        // Deezer answered and has none, and so does Apple: none, for a while
         return Found.Cover(null)
     }
 

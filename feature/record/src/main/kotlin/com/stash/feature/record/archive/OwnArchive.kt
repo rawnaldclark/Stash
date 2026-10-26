@@ -2,6 +2,7 @@ package com.stash.feature.record.archive
 
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.weblibrary.WebLibraryListens
+import com.stash.core.model.weblink.SongKey
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -22,8 +23,8 @@ fun interface RecordArchiveSource {
  *
  * Streamed, so a decade of plays is never all in memory: the plays are read a page at a time and handed on a chunk at a time.
  * planPhone's "each id once" still holds exactly: an id carries its start, so only plays with one start can share one, and the
- * pages bring those together (newest first, by start). Skips are the few, so they are read first and kept aside: a play takes
- * an id before a skip does, as planPhone adds every play first.
+ * pages bring those together (newest first, by start). Skips are the few, so they are read first and kept aside, once each:
+ * a play takes an id before a skip does, as planPhone adds every play first.
  */
 class OwnArchive(
     private val dao: WebLibraryExportDao,
@@ -36,11 +37,10 @@ class OwnArchive(
     override suspend fun stream(chunkSize: Int, emit: suspend (rows: List<ArchivePlay>, last: Boolean) -> Unit) {
         require(chunkSize > 0) { "chunkSize must be positive" }
         val at = now()
-        val skips = LinkedHashMap<String, ArchivePlay>()
-        for (p in readSkips(at).sortedWith(PhoneRows.ORDER)) {
-            val r = PhoneRows.phoneRow(p, skip = true)
-            skips.putIfAbsent(r.id, r)
-        }
+        // A song's folded words, worked out once per song (a decade of plays is far fewer songs): the fold is the costly part
+        val keys = HashMap<String, String>()
+        fun keyOf(p: PhonePlay) = keys.getOrPut(p.t + '\u0000' + p.a) { SongKey.textKey(p.t, p.a) }
+        val skips = readSkips(at, ::keyOf)
 
         val out = Chunks(chunkSize, emit)
         // The plays of one start, in the file's order, decided together when the next start comes
@@ -48,7 +48,7 @@ class OwnArchive(
         suspend fun flushGroup() {
             val ids = HashSet<String>()
             for (p in group.sortedWith(PhoneRows.ORDER)) {
-                val r = PhoneRows.phoneRow(p, skip = false)
+                val r = PhoneRows.phoneRow(p, skip = false, textKey = keyOf(p))
                 if (!ids.add(r.id)) continue
                 skips.remove(r.id)
                 out.add(r)
@@ -81,9 +81,13 @@ class OwnArchive(
         out.finish()
     }
 
-    /** Every skip the export would carry (the newest [maxSkips]), as the web reads them. */
-    private suspend fun readSkips(at: Long): List<PhonePlay> {
-        val out = ArrayList<PhonePlay>()
+    /**
+     * Every skip the export would carry (the newest [maxSkips]), as the web reads them, each id once and each skip held once:
+     * planPhone keeps, of one id's skips, the first by start then title, the file's order breaking a tie. An id carries its
+     * start, so that is the one with the least title (in UTF-16 order), else the one read first.
+     */
+    private suspend fun readSkips(at: Long, keyOf: (PhonePlay) -> String): LinkedHashMap<String, ArchivePlay> {
+        val out = LinkedHashMap<String, ArchivePlay>()
         var entries = 0
         var cursorAt = Long.MAX_VALUE
         var cursorId = Long.MAX_VALUE
@@ -95,7 +99,11 @@ class OwnArchive(
                 cursorId = row.id
                 val e = WebLibraryListens.skip(row) ?: continue
                 entries++
-                PhoneRows.read(e.t, e.a, e.al, e.s, e.ms, null, at, skip = true)?.let { out += it }
+                PhoneRows.read(e.t, e.a, e.al, e.s, e.ms, null, at, skip = true)?.let { p ->
+                    val r = PhoneRows.phoneRow(p, skip = true, textKey = keyOf(p))
+                    val kept = out[r.id]
+                    if (kept == null || r.t < kept.t) out[r.id] = r
+                }
                 if (entries >= maxSkips) break@pages
             }
             if (rows.size < pageSize) break

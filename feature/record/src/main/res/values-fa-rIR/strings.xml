@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">صفحهٔ شما</string>
+    <plurals name="record_hours">
+        <item quantity="one">ساعت</item>
+        <item quantity="other">ساعت</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s پخش</item>
+        <item quantity="other">%1$s پخش</item>
+    </plurals>
+    <string name="record_since">از %1$d · %2$s</string>
+    <string name="record_most_played">بیشترین شنیده‌شده: %1$s</string>
+    <string name="record_open">باز کردن صفحهٔ شما</string>
+    <string name="record_opens">صفحهٔ شما را باز می‌کند.</string>
+    <string name="record_invite_title">صفحهٔ خود را بسازید</string>
+    <string name="record_invite_body">همهٔ سال‌هایی که گوش داده‌اید، در یک جا: از Spotify، Last.fm یا Stash روی گوشی شما.</string>
+    <string name="record_invite_start">شروع کنید</string>
+    <string name="record_invite_hide">پنهان کردن «صفحهٔ خود را بسازید»</string>
+    <string name="record_close">بستن</string>
+    <string name="record_webview_old_title">این بخش به نسخهٔ جدیدتر Android System WebView نیاز دارد</string>
+    <string name="record_webview_old_body">Android System WebView را از Google Play به‌روز کنید و سپس صفحهٔ خود را دوباره باز کنید.</string>
+    <string name="record_stopped_title">صفحهٔ شما متوقف شد</string>
+    <string name="record_stopped_body">حافظهٔ صفحه تمام شد یا از کار افتاد. پخش‌های شما محفوظ است.</string>
+    <string name="record_open_again">باز کردن دوباره</string>
+    <string name="record_note_import">وارد کردن سابقهٔ Spotify در یک به‌روزرسانی می‌آید.</string>
+    <string name="record_note_archive_failed">برخی از پخش‌های شما خوانده نشد.</string>
+    <string name="record_note_play_failed">این مورد اینجا پخش نمی‌شود.</string>
+    <string name="record_note_playing">در حال پخش %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">در حال پخش %1$d آهنگ</item>
+        <item quantity="other">در حال پخش %1$d آهنگ</item>
+    </plurals>
+    <string name="record_note_none_found">این آهنگ‌ها پیدا نشدند.</string>
+    <string name="record_note_none_downloaded">هیچ‌کدام از این آهنگ‌ها دانلود نشده است. برای پخش، متصل شوید.</string>
+    <string name="record_note_saved">در «بارگیری‌ها» ذخیره شد</string>
+    <string name="record_note_save_failed">ذخیره نشد.</string>
+    <string name="record_share">هم‌رسانی</string>
+</resources>

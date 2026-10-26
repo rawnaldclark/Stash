@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">나의 레코드</string>
+    <plurals name="record_hours">
+        <item quantity="other">시간</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="other">%1$s회 재생</item>
+    </plurals>
+    <string name="record_since">%1$d년부터 · %2$s</string>
+    <string name="record_most_played">가장 많이 들은 아티스트: %1$s</string>
+    <string name="record_open">나의 레코드 열기</string>
+    <string name="record_opens">나의 레코드를 엽니다.</string>
+    <string name="record_invite_title">나의 레코드 만들기</string>
+    <string name="record_invite_body">들어 온 모든 해를 한곳에: Spotify, Last.fm 또는 휴대전화의 Stash에서.</string>
+    <string name="record_invite_start">시작하기</string>
+    <string name="record_invite_hide">나의 레코드 만들기 숨기기</string>
+    <string name="record_close">닫기</string>
+    <string name="record_webview_old_title">최신 Android System WebView가 필요합니다</string>
+    <string name="record_webview_old_body">Google Play에서 Android System WebView를 업데이트한 다음 나의 레코드를 다시 여세요.</string>
+    <string name="record_stopped_title">나의 레코드가 중지되었습니다</string>
+    <string name="record_stopped_body">페이지의 메모리가 부족하거나 오류가 발생했습니다. 재생 기록은 안전합니다.</string>
+    <string name="record_open_again">다시 열기</string>
+    <string name="record_note_import">Spotify 기록 가져오기는 업데이트로 제공될 예정입니다.</string>
+    <string name="record_note_archive_failed">일부 재생 기록을 읽을 수 없습니다.</string>
+    <string name="record_note_play_failed">여기서는 재생할 수 없습니다.</string>
+    <string name="record_note_playing">%1$s 재생 중</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="other">%1$d곡 재생 중</item>
+    </plurals>
+    <string name="record_note_none_found">이 곡들을 찾을 수 없습니다.</string>
+    <string name="record_note_none_downloaded">다운로드된 곡이 없습니다. 연결한 후 재생하세요.</string>
+    <string name="record_note_saved">다운로드에 저장됨</string>
+    <string name="record_note_save_failed">저장할 수 없습니다.</string>
+    <string name="record_share">공유</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Votre disque</string>
+    <plurals name="record_hours">
+        <item quantity="one">heure</item>
+        <item quantity="other">heures</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s écoute</item>
+        <item quantity="other">%1$s écoutes</item>
+    </plurals>
+    <string name="record_since">depuis %1$d · %2$s</string>
+    <string name="record_most_played">Le plus écouté : %1$s</string>
+    <string name="record_open">Ouvrir votre disque</string>
+    <string name="record_opens">Ouvre votre disque.</string>
+    <string name="record_invite_title">Pressez votre disque</string>
+    <string name="record_invite_body">Chaque année d’écoute, au même endroit : depuis Spotify, Last.fm ou Stash sur votre téléphone.</string>
+    <string name="record_invite_start">Commencer</string>
+    <string name="record_invite_hide">Masquer « Pressez votre disque »</string>
+    <string name="record_close">Fermer</string>
+    <string name="record_webview_old_title">Une version plus récente d’Android System WebView est nécessaire</string>
+    <string name="record_webview_old_body">Mettez à jour Android System WebView depuis Google Play, puis rouvrez votre disque.</string>
+    <string name="record_stopped_title">Votre disque s’est arrêté</string>
+    <string name="record_stopped_body">La page a manqué de mémoire ou a planté. Vos écoutes ne sont pas perdues.</string>
+    <string name="record_open_again">Rouvrir</string>
+    <string name="record_note_import">L’import de votre historique Spotify arrive dans une mise à jour.</string>
+    <string name="record_note_archive_failed">Certaines de vos écoutes n’ont pas pu être lues.</string>
+    <string name="record_note_play_failed">Impossible de lire ceci ici.</string>
+    <string name="record_note_playing">Lecture de %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Lecture de %1$d titre</item>
+        <item quantity="other">Lecture de %1$d titres</item>
+    </plurals>
+    <string name="record_note_none_found">Ces titres sont introuvables.</string>
+    <string name="record_note_none_downloaded">Aucun de ces titres n’est téléchargé. Connectez-vous pour les écouter.</string>
+    <string name="record_note_saved">Enregistré dans Téléchargements</string>
+    <string name="record_note_save_failed">Impossible d’enregistrer.</string>
+    <string name="record_share">Partager</string>
+</resources>

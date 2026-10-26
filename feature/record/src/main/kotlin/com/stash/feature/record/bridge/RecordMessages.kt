@@ -33,6 +33,20 @@ sealed interface RecordAsk {
     data object Close : RecordAsk
 
     data class Art(val asks: List<RecordArtAsk>) : RecordAsk
+
+    /**
+     * One chunk of a file the record made (a poster, a race video) to save to Downloads or to share ([share]): [data] is base64
+     * of at most [RecordMessages.MAX_SAVE_CHUNK] bytes, [seq] counts the file's chunks from 0, [done] marks its last.
+     */
+    data class Save(
+        val id: String,
+        val name: String,
+        val mime: String,
+        val share: Boolean,
+        val seq: Int,
+        val done: Boolean,
+        val data: String,
+    ) : RecordAsk
 }
 
 /**
@@ -62,6 +76,20 @@ object RecordMessages {
 
     const val PROTOCOL = 1
 
+    /** The most bytes one `stash:save` chunk carries (512 KiB), and so the longest its base64 can be. */
+    const val MAX_SAVE_CHUNK = 512 * 1024
+    private const val MAX_SAVE_DATA = (MAX_SAVE_CHUNK + 2) / 3 * 4
+
+    /** A file's id and name, at most. */
+    private const val MAX_SAVE_ID = 128
+    private const val MAX_SAVE_NAME = 200
+
+    /**
+     * The files the record makes: its posters and its race video, and a file the page couldn't type (the fork falls back to
+     * `application/octet-stream`). Anything else isn't saved.
+     */
+    val SAVE_TYPES = setOf("image/png", "image/jpeg", "image/webp", "video/mp4", "video/webm", "application/octet-stream")
+
     /** The record's message, or null for anything that isn't one of them. */
     fun read(raw: String): RecordAsk? {
         if (raw.length > MAX_MESSAGE) return null
@@ -78,6 +106,7 @@ object RecordMessages {
             "stash:counts" -> (m["counts"] as? JsonObject)?.let { RecordAsk.Counts(plays(it["spotify"]), plays(it["stash"]), plays(it["lastfm"])) }
             "stash:art" -> art(m)
             "stash:play" -> play(m)
+            "stash:save" -> save(m)
             else -> null
         }
     }
@@ -110,6 +139,21 @@ object RecordMessages {
         }
         if (songs.isEmpty()) return null
         return RecordAsk.Play(songs, minOf(index, songs.lastIndex), line(m["from"], MAX_FROM).ifEmpty { FROM })
+    }
+
+    private fun save(m: JsonObject): RecordAsk? {
+        val id = m.string("id")?.takeIf { it.isNotEmpty() && it.length <= MAX_SAVE_ID } ?: return null
+        val name = m.string("name")?.takeIf { it.isNotBlank() && it.length <= MAX_SAVE_NAME } ?: return null
+        val mime = m.string("mime")?.takeIf { it in SAVE_TYPES } ?: return null
+        val share = when (m.string("action")) {
+            "save" -> false
+            "share" -> true
+            else -> return null
+        }
+        val seq = m.number("seq")?.takeIf { it >= 0 && it == Math.floor(it) && it <= Int.MAX_VALUE }?.toInt() ?: return null
+        val done = (m["done"] as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull() ?: return null
+        val data = m.string("data")?.takeIf { it.length <= MAX_SAVE_DATA } ?: return null
+        return RecordAsk.Save(id, name, mime, share, seq, done, data)
     }
 
     private fun song(v: JsonElement): RecordSong? {

@@ -1,11 +1,9 @@
 package com.stash.feature.record.card
 
 import android.content.Context
-import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.feature.record.art.ArtSong
 import com.stash.feature.record.art.RecordArt
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,15 +16,18 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * "Press your record" hidden with its × on this phone (HomeCard.svelte's `dismissed`). Only the invitation: once there is a
- * record, the card shows whatever this says. Settings › Home layout hides the whole section.
+ * "Press your record" hidden with its × on this phone (HomeCard.svelte's `dismissed`). Only the invitation (offered once the
+ * import exists: [RecordCard.INVITE_ENABLED]); once there is a record, the card shows whatever this says. Settings › Home
+ * layout hides the whole section.
  */
 @Singleton
 class RecordInvitePreference @Inject constructor(@ApplicationContext context: Context) {
@@ -46,71 +47,39 @@ class RecordInvitePreference @Inject constructor(@ApplicationContext context: Co
 }
 
 /**
- * Home's Your record card ([YourRecordSection]): the phone's own plays totalled ([WebLibraryExportDao.ownAlbumTotals]) into
- * [RecordCard]'s view, read again when Home comes back (a song played since changes the hours), and the sleeve's and the
- * row's covers looked up once per set of albums and artists, shown as each batch lands.
+ * Home's Your record card ([YourRecordSection]): the record's own numbers ([RecordCardSource], read only when the history
+ * changes) as [RecordCard]'s state, and the sleeve's and the row's covers, looked up once per set of albums and artists and
+ * shown as each batch lands.
  */
 @HiltViewModel
 class YourRecordViewModel @Inject constructor(
-    private val plays: WebLibraryExportDao,
+    source: RecordCardSource,
     private val art: RecordArt,
     private val invite: RecordInvitePreference,
 ) : ViewModel() {
-    /** The record's view once read (null: fewer plays than a record needs); the outer null: not read yet. */
-    private val loaded = MutableStateFlow<Loaded?>(null)
     private val covers = MutableStateFlow(Covers())
-
-    private data class Loaded(val view: CardView?)
 
     /** The covers found for the view whose albums and artists make [key]. */
     private data class Covers(val key: String = "", val albums: List<String?> = emptyList(), val artists: List<String?> = emptyList())
 
-    /** Null until the plays are read: Home shows nothing rather than a card that changes its mind. */
-    val state: StateFlow<RecordCardState?> = combine(loaded, invite.hidden, covers) { l, hidden, c ->
-        val view = l?.view
-        when {
-            l == null -> null
-            view == null -> if (hidden) RecordCardState.Hidden else RecordCardState.Invite
-            else -> {
-                val mine = c.key == coverKey(view)
-                RecordCardState.Record(
-                    view = view,
-                    albumArt = view.albums.mapIndexed { i, a -> a.cover ?: c.albums.getOrNull(i)?.takeIf { mine } },
-                    artistArt = view.artists.indices.map { i -> c.artists.getOrNull(i)?.takeIf { mine } },
-                )
-            }
-        }
+    /** The card before its covers: worked out off the main thread, and its covers asked for as soon as it is known. */
+    private val base = combine(source.data, invite.hidden) { data, hidden -> RecordCard.stateOf(data.summary, data.albums, hidden) }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .onEach { if (it is RecordCardState.Record) askCovers(it.view) }
+
+    /** Null until the history is read: Home shows nothing rather than a card that changes its mind. */
+    val state: StateFlow<RecordCardState?> = combine(base, covers) { s, c ->
+        if (s !is RecordCardState.Record) return@combine s
+        val view = s.view
+        val mine = c.key == coverKey(view)
+        s.copy(
+            albumArt = view.albums.mapIndexed { i, a -> a.cover ?: c.albums.getOrNull(i)?.takeIf { mine } },
+            artistArt = view.artists.indices.map { i -> c.artists.getOrNull(i)?.takeIf { mine } },
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private var loading: Job? = null
     private var coversJob: Job? = null
-    private var readAt = 0L
-
-    init {
-        refresh(force = true)
-    }
-
-    /** Reads the plays again ([force], or when the last read is older than [REFRESH_MS]: Home coming back often is cheap). */
-    fun refresh(force: Boolean = false) {
-        val now = SystemClock.elapsedRealtime()
-        if (loading?.isActive == true || (!force && now - readAt < REFRESH_MS)) return
-        readAt = now
-        loading = viewModelScope.launch {
-            val totals = try {
-                plays.ownAlbumTotals()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "the card's plays couldn't be read: ${e.javaClass.simpleName}")
-                return@launch
-            }
-            val view = withContext(Dispatchers.Default) {
-                if (totals.sumOf { it.plays } >= RecordCard.OWN_FOR_RECORD) RecordCard.fromOwn(totals) else null
-            }
-            loaded.value = Loaded(view)
-            view?.let(::askCovers)
-        }
-    }
 
     fun hideInvite() = invite.hide()
 
@@ -153,8 +122,5 @@ class YourRecordViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "YourRecord"
-
-        /** Home back within this long reads nothing again. */
-        const val REFRESH_MS = 30_000L
     }
 }

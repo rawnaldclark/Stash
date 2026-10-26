@@ -1,5 +1,7 @@
 package com.stash.feature.record.archive
 
+import com.stash.core.model.weblink.SongKey
+
 /**
  * One of the phone's plays as the web reads it from the library file's `listens` (stash-player `src/lib/spotify/export.ts`
  * `PhonePlay`): the words, when it started, how long it played when known ([ms]) and the song's length when known ([d]).
@@ -59,12 +61,12 @@ object PhoneRows {
         return PhonePlay(t = title, a = artist, al = str(al), s = s, ms = played, d = d?.takeIf { it in 1..MAX_MS })
     }
 
-    /** plays.ts `phoneRow`. */
-    fun phoneRow(p: PhonePlay, skip: Boolean): ArchivePlay {
+    /** plays.ts `phoneRow`. [textKey] is the song's folded words ([SongKey.textKey]), passed in when the caller keeps them. */
+    fun phoneRow(p: PhonePlay, skip: Boolean, textKey: String = SongKey.textKey(p.t, p.a)): ArchivePlay {
         val estimated = p.ms == null && !skip
         val f = RecordFlags.STASH or (if (skip) RecordFlags.SKIPPED else 0) or (if (estimated) RecordFlags.ESTIMATED else 0)
         return ArchivePlay(
-            id = playId(p.t, p.a, p.s),
+            id = "$textKey|${p.s}",
             t = p.t,
             a = p.a,
             al = p.al?.takeIf { it.isNotEmpty() },

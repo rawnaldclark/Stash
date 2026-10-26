@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Tu disco</string>
+    <plurals name="record_hours">
+        <item quantity="one">hora</item>
+        <item quantity="other">horas</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s reproducción</item>
+        <item quantity="other">%1$s reproducciones</item>
+    </plurals>
+    <string name="record_since">desde %1$d · %2$s</string>
+    <string name="record_most_played">Lo más escuchado: %1$s</string>
+    <string name="record_open">Abrir tu disco</string>
+    <string name="record_opens">Abre tu disco.</string>
+    <string name="record_invite_title">Graba tu disco</string>
+    <string name="record_invite_body">Cada año que has escuchado, en un solo lugar: desde Spotify, Last.fm o Stash en tu móvil.</string>
+    <string name="record_invite_start">Empezar</string>
+    <string name="record_invite_hide">Ocultar Graba tu disco</string>
+    <string name="record_close">Cerrar</string>
+    <string name="record_webview_old_title">Necesitas una versión más reciente de Android System WebView</string>
+    <string name="record_webview_old_body">Actualiza Android System WebView desde Google Play y vuelve a abrir tu disco.</string>
+    <string name="record_stopped_title">Tu disco se ha detenido</string>
+    <string name="record_stopped_body">La página se quedó sin memoria o falló. Tus reproducciones están a salvo.</string>
+    <string name="record_open_again">Volver a abrir</string>
+    <string name="record_note_import">La importación de tu historial de Spotify llegará en una actualización.</string>
+    <string name="record_note_archive_failed">No se pudieron leer algunas de tus reproducciones.</string>
+    <string name="record_note_play_failed">No se puede reproducir aquí.</string>
+    <string name="record_note_playing">Reproduciendo %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Reproduciendo %1$d canción</item>
+        <item quantity="other">Reproduciendo %1$d canciones</item>
+    </plurals>
+    <string name="record_note_none_found">No se encontraron estas canciones.</string>
+    <string name="record_note_none_downloaded">Ninguna de estas canciones está descargada. Conéctate para reproducirlas.</string>
+    <string name="record_note_saved">Guardado en Descargas</string>
+    <string name="record_note_save_failed">No se pudo guardar.</string>
+    <string name="record_share">Compartir</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Deine Platte</string>
+    <plurals name="record_hours">
+        <item quantity="one">Stunde</item>
+        <item quantity="other">Stunden</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s Wiedergabe</item>
+        <item quantity="other">%1$s Wiedergaben</item>
+    </plurals>
+    <string name="record_since">seit %1$d · %2$s</string>
+    <string name="record_most_played">Am meisten gehört: %1$s</string>
+    <string name="record_open">Deine Platte öffnen</string>
+    <string name="record_opens">Öffnet deine Platte.</string>
+    <string name="record_invite_title">Presse deine Platte</string>
+    <string name="record_invite_body">Jedes Jahr, das du gehört hast, an einem Ort: von Spotify, Last.fm oder Stash auf deinem Handy.</string>
+    <string name="record_invite_start">Los geht’s</string>
+    <string name="record_invite_hide">„Presse deine Platte“ ausblenden</string>
+    <string name="record_close">Schließen</string>
+    <string name="record_webview_old_title">Dafür ist eine neuere Android System WebView nötig</string>
+    <string name="record_webview_old_body">Aktualisiere Android System WebView über Google Play und öffne dann deine Platte erneut.</string>
+    <string name="record_stopped_title">Deine Platte wurde beendet</string>
+    <string name="record_stopped_body">Der Seite ging der Speicher aus oder sie ist abgestürzt. Deine Wiedergaben sind sicher.</string>
+    <string name="record_open_again">Erneut öffnen</string>
+    <string name="record_note_import">Das Importieren deines Spotify-Verlaufs kommt mit einem Update.</string>
+    <string name="record_note_archive_failed">Einige deiner Wiedergaben konnten nicht gelesen werden.</string>
+    <string name="record_note_play_failed">Das lässt sich hier nicht abspielen.</string>
+    <string name="record_note_playing">Spielt %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Spielt %1$d Song</item>
+        <item quantity="other">Spielt %1$d Songs</item>
+    </plurals>
+    <string name="record_note_none_found">Diese Songs wurden nicht gefunden.</string>
+    <string name="record_note_none_downloaded">Keiner dieser Songs ist heruntergeladen. Verbinde dich, um sie abzuspielen.</string>
+    <string name="record_note_saved">In Downloads gespeichert</string>
+    <string name="record_note_save_failed">Konnte nicht gespeichert werden.</string>
+    <string name="record_share">Teilen</string>
+</resources>

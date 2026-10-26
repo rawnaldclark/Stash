@@ -197,6 +197,7 @@
     <string name="settings_home_layout_desc">Arrange Home\'s sections or hide the ones you don\'t use. The Discover hero stays on top.</string>
     <string name="settings_home_section_community_desc">Playlists and songs other Stash listeners are into. Your posts show your name.</string>
     <string name="settings_home_section_listening_desc">Recently played and your History. Appears after your first listen.</string>
+    <string name="settings_home_section_record_desc">Все годы прослушивания на одной пластинке.</string>
     <string name="settings_home_show_liked_title">Show Liked Songs on Home</string>
     <string name="settings_home_show_liked_subtitle">Your Stash, Spotify and YouTube likes as one card in Your playlists</string>
     <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
@@ -209,6 +210,7 @@
     <string name="settings_home_section_mood_decades">Mood &amp; decades</string>
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
+    <string name="settings_home_section_your_record">Ваша пластинка</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>

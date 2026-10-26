@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Organiza las secciones de Inicio u oculta las que no uses. La tarjeta Discover permanece arriba.</string>
     <string name="settings_home_section_community_desc">Listas y canciones que les gustan a otros oyentes de Stash. Tus publicaciones muestran tu nombre.</string>
     <string name="settings_home_section_listening_desc">Reproducidos recientemente y tu Historial. Aparece después de tu primera escucha.</string>
+    <string name="settings_home_section_record_desc">Cada año que has escuchado, grabado en un disco.</string>
     <string name="settings_home_show_liked_title">Mostrar Canciones que te gustan en Inicio</string>
     <string name="settings_home_show_liked_subtitle">Tus Me gusta de Stash, Spotify y YouTube como una sola tarjeta en tus listas</string>
     <string name="settings_home_section_discover">Daily Discover y tus mezclas</string>
@@ -197,6 +198,7 @@
     <string name="settings_home_section_mood_decades">Estados de ánimo y décadas</string>
     <string name="settings_home_section_community">Comunidad</string>
     <string name="settings_home_section_your_listening">Actividad de escucha</string>
+    <string name="settings_home_section_your_record">Tu disco</string>
     <string name="settings_home_section_move_up">Subir %1$s</string>
     <string name="settings_home_section_move_down">Bajar %1$s</string>
     <string name="settings_home_section_show_desc">Mostrar %1$s en Inicio</string>

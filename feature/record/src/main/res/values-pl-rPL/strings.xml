@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Twoja płyta</string>
+    <plurals name="record_hours">
+        <item quantity="one">godzina</item>
+        <item quantity="few">godziny</item>
+        <item quantity="many">godzin</item>
+        <item quantity="other">godziny</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s odtworzenie</item>
+        <item quantity="few">%1$s odtworzenia</item>
+        <item quantity="many">%1$s odtworzeń</item>
+        <item quantity="other">%1$s odtworzenia</item>
+    </plurals>
+    <string name="record_since">od %1$d · %2$s</string>
+    <string name="record_most_played">Najczęściej słuchane: %1$s</string>
+    <string name="record_open">Otwórz swoją płytę</string>
+    <string name="record_opens">Otwiera twoją płytę.</string>
+    <string name="record_invite_title">Wytłocz swoją płytę</string>
+    <string name="record_invite_body">Każdy rok słuchania w jednym miejscu: ze Spotify, Last.fm lub Stash na telefonie.</string>
+    <string name="record_invite_start">Zaczynamy</string>
+    <string name="record_invite_hide">Ukryj „Wytłocz swoją płytę”</string>
+    <string name="record_close">Zamknij</string>
+    <string name="record_webview_old_title">Potrzebna jest nowsza wersja Android System WebView</string>
+    <string name="record_webview_old_body">Zaktualizuj Android System WebView w Google Play, a potem otwórz płytę ponownie.</string>
+    <string name="record_stopped_title">Twoja płyta się zatrzymała</string>
+    <string name="record_stopped_body">Stronie zabrakło pamięci lub uległa awarii. Twoje odtworzenia są bezpieczne.</string>
+    <string name="record_open_again">Otwórz ponownie</string>
+    <string name="record_note_import">Import historii ze Spotify pojawi się w aktualizacji.</string>
+    <string name="record_note_archive_failed">Nie udało się odczytać części odtworzeń.</string>
+    <string name="record_note_play_failed">Nie można tego tu odtworzyć.</string>
+    <string name="record_note_playing">Odtwarzanie: %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Odtwarzanie %1$d utworu</item>
+        <item quantity="few">Odtwarzanie %1$d utworów</item>
+        <item quantity="many">Odtwarzanie %1$d utworów</item>
+        <item quantity="other">Odtwarzanie %1$d utworu</item>
+    </plurals>
+    <string name="record_note_none_found">Nie znaleziono tych utworów.</string>
+    <string name="record_note_none_downloaded">Żaden z tych utworów nie jest pobrany. Połącz się z siecią, aby ich posłuchać.</string>
+    <string name="record_note_saved">Zapisano w Pobranych</string>
+    <string name="record_note_save_failed">Nie udało się zapisać.</string>
+    <string name="record_share">Udostępnij</string>
+</resources>

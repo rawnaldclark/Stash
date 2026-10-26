@@ -58,6 +58,9 @@ private class ProxyPort(private val proxy: JavaScriptReplyProxy) : RecordPort {
  * mixed content never, no extra windows. A link that leaves the record opens in the browser. Every message from the page's
  * main frame goes to [onMessage] with the page's reply proxy.
  *
+ * Made on a [android.content.MutableContextWrapper] by [RecordViewModel], which keeps it across configuration changes and
+ * points the wrapper at whichever Activity shows it.
+ *
  * [onGone]: the page's renderer died; this view can't be used again ([release] then only destroys it).
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
@@ -102,7 +105,12 @@ internal class RecordWebView(
         loadUrl(RECORD_URL)
     }
 
-    /** Stops the page and frees the view; the screen calls it as it leaves. */
+    /** Asks the page's script for a sign of life: [onAlive] runs (main thread) once it answers, never if it is stuck. */
+    fun probe(onAlive: () -> Unit) {
+        if (!rendererGone) evaluateJavascript("0") { onAlive() }
+    }
+
+    /** Stops the page and frees the view, for good. */
     fun release() {
         if (!rendererGone) {
             WebViewCompat.removeWebMessageListener(this, BRIDGE)

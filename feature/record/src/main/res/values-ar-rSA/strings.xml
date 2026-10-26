@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">أسطوانتك</string>
+    <plurals name="record_hours">
+        <item quantity="zero">ساعة</item>
+        <item quantity="one">ساعة</item>
+        <item quantity="two">ساعتان</item>
+        <item quantity="few">ساعات</item>
+        <item quantity="many">ساعة</item>
+        <item quantity="other">ساعة</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="zero">%1$s تشغيل</item>
+        <item quantity="one">%1$s تشغيل</item>
+        <item quantity="two">%1$s تشغيلان</item>
+        <item quantity="few">%1$s تشغيلات</item>
+        <item quantity="many">%1$s تشغيلًا</item>
+        <item quantity="other">%1$s تشغيل</item>
+    </plurals>
+    <string name="record_since">منذ %1$d · %2$s</string>
+    <string name="record_most_played">الأكثر استماعًا: %1$s</string>
+    <string name="record_open">افتح أسطوانتك</string>
+    <string name="record_opens">يفتح أسطوانتك.</string>
+    <string name="record_invite_title">اطبع أسطوانتك</string>
+    <string name="record_invite_body">كل عام استمعت فيه، في مكان واحد: من Spotify أو Last.fm أو Stash على هاتفك.</string>
+    <string name="record_invite_start">ابدأ</string>
+    <string name="record_invite_hide">إخفاء «اطبع أسطوانتك»</string>
+    <string name="record_close">إغلاق</string>
+    <string name="record_webview_old_title">يتطلب هذا إصدارًا أحدث من Android System WebView</string>
+    <string name="record_webview_old_body">حدّث Android System WebView من Google Play، ثم افتح أسطوانتك مجددًا.</string>
+    <string name="record_stopped_title">توقفت أسطوانتك</string>
+    <string name="record_stopped_body">نفدت ذاكرة الصفحة أو تعطلت. تشغيلاتك محفوظة.</string>
+    <string name="record_open_again">افتحها مجددًا</string>
+    <string name="record_note_import">سيأتي استيراد سجل Spotify في تحديث قادم.</string>
+    <string name="record_note_archive_failed">تعذرت قراءة بعض تشغيلاتك.</string>
+    <string name="record_note_play_failed">تعذر تشغيل هذا هنا.</string>
+    <string name="record_note_playing">يتم تشغيل %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="zero">يتم تشغيل %1$d أغنية</item>
+        <item quantity="one">يتم تشغيل %1$d أغنية</item>
+        <item quantity="two">يتم تشغيل %1$d أغنيتين</item>
+        <item quantity="few">يتم تشغيل %1$d أغانٍ</item>
+        <item quantity="many">يتم تشغيل %1$d أغنية</item>
+        <item quantity="other">يتم تشغيل %1$d أغنية</item>
+    </plurals>
+    <string name="record_note_none_found">تعذر العثور على هذه الأغاني.</string>
+    <string name="record_note_none_downloaded">لم يتم تنزيل أي من هذه الأغاني. اتصل بالإنترنت لتشغيلها.</string>
+    <string name="record_note_saved">تم الحفظ في التنزيلات</string>
+    <string name="record_note_save_failed">تعذر الحفظ.</string>
+    <string name="record_share">مشاركة</string>
+</resources>

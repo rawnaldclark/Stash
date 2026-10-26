@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">你的唱片</string>
+    <plurals name="record_hours">
+        <item quantity="other">小时</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="other">%1$s 次播放</item>
+    </plurals>
+    <string name="record_since">自 %1$d 年起 · %2$s</string>
+    <string name="record_most_played">最常听：%1$s</string>
+    <string name="record_open">打开你的唱片</string>
+    <string name="record_opens">打开你的唱片。</string>
+    <string name="record_invite_title">压制你的唱片</string>
+    <string name="record_invite_body">你听过的每一年，汇聚一处：来自 Spotify、Last.fm 或手机上的 Stash。</string>
+    <string name="record_invite_start">开始</string>
+    <string name="record_invite_hide">隐藏“压制你的唱片”</string>
+    <string name="record_close">关闭</string>
+    <string name="record_webview_old_title">需要更新版本的 Android System WebView</string>
+    <string name="record_webview_old_body">请从 Google Play 更新 Android System WebView，然后重新打开你的唱片。</string>
+    <string name="record_stopped_title">你的唱片已停止</string>
+    <string name="record_stopped_body">页面内存不足或已崩溃。你的播放记录是安全的。</string>
+    <string name="record_open_again">重新打开</string>
+    <string name="record_note_import">导入 Spotify 历史记录的功能将在后续更新中推出。</string>
+    <string name="record_note_archive_failed">部分播放记录无法读取。</string>
+    <string name="record_note_play_failed">无法在这里播放。</string>
+    <string name="record_note_playing">正在播放 %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="other">正在播放 %1$d 首歌曲</item>
+    </plurals>
+    <string name="record_note_none_found">找不到这些歌曲。</string>
+    <string name="record_note_none_downloaded">这些歌曲都没有下载。请联网后播放。</string>
+    <string name="record_note_saved">已保存到“下载”</string>
+    <string name="record_note_save_failed">无法保存。</string>
+    <string name="record_share">分享</string>
+</resources>

@@ -4,9 +4,10 @@ import com.stash.core.data.db.dao.WebLibraryExportDao.OwnAlbumTotal
 import com.stash.core.data.weblink.handoff.HandoffWire
 import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.JsText
+import com.stash.feature.record.archive.RecordSummary
 import com.stash.feature.record.art.ArtText
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.util.Locale
 
 /** An album on the card: its words (to look its cover up by) and the cover one of its songs already has, when any does. */
@@ -28,25 +29,32 @@ data class CardView(
 
 /** The card, by what there is. */
 sealed interface RecordCardState {
-    /** Enough plays of the phone's own for a record: the way into it. Covers come as they're found ([albumArt], [artistArt]). */
+    /** Enough plays for a record: the way into it. Covers come as they're found ([albumArt], [artistArt]). */
     data class Record(val view: CardView, val albumArt: List<String?>, val artistArt: List<String?>) : RecordCardState
 
-    /** Not yet: "Press your record", and Get started. */
+    /** Not yet: "Press your record", and Get started. Only once the import exists ([RecordCard.INVITE_ENABLED]). */
     data object Invite : RecordCardState
 
-    /** The invitation hidden with its ×, and no record yet: nothing on Home. */
+    /** Nothing on Home: no record yet, and no invitation (hidden with its ×, or not offered yet). */
     data object Hidden : RecordCardState
 }
 
 /**
- * The card's rules, ported from the web (record-card.ts, HomeCard.svelte, years.ts) so it reads the same: the record once the
- * phone has [OWN_FOR_RECORD] plays of its own (the web's `OWN_FOR_RECORD`), each counted at its song's length or a guess
- * (the web's quirk, copied knowingly: its own plays count `durationMs ?? 210000` on this card); the invitation before that,
- * unless it was hidden.
+ * The card's rules. Once there is a record it says what the record says, as the web's card does once a record exists
+ * (record-card.ts `fromTaste`, given the record's own count): the plays (its streams, 30 s or more: what every screen of the
+ * web's record calls plays), the hours (all the time it keeps), the earliest year and the artists come from the rows the
+ * record keeps ([RecordSummary]); only the sleeve's albums are ranked from the plays totalled by album (the web's
+ * `topAlbums`).
  */
 object RecordCard {
-    /** Plays of the phone's own that make a record without an import (shared.ts `OWN_FOR_RECORD`). */
+    /** Plays (streams) that make a record without an import (shared.ts `OWN_FOR_RECORD`). */
     const val OWN_FOR_RECORD = 50
+
+    /**
+     * "Press your record" under [OWN_FOR_RECORD] plays. Off until the Spotify import exists (phase 3 turns it on): until then
+     * its Get started would open a record with nothing to bring in, a dead end.
+     */
+    const val INVITE_ENABLED = false
 
     /** Albums on the sleeve (its 2×2; the first is also the label), and artists in the row. */
     const val CARD_ALBUMS = 4
@@ -54,58 +62,56 @@ object RecordCard {
 
     private const val HOUR_MS = 3_600_000.0
 
-    fun stateOf(totals: List<OwnAlbumTotal>, inviteHidden: Boolean): RecordCardState {
-        val plays = totals.sumOf { it.plays }
-        if (plays >= OWN_FOR_RECORD) {
-            val view = fromOwn(totals)
+    fun stateOf(
+        summary: RecordSummary,
+        albums: List<OwnAlbumTotal>,
+        inviteHidden: Boolean,
+        invite: Boolean = INVITE_ENABLED,
+    ): RecordCardState {
+        if (summary.streams >= OWN_FOR_RECORD) {
+            val view = viewOf(summary, albums)
             return RecordCardState.Record(view, view.albums.map { it.cover }, view.artists.map { null })
         }
-        return if (inviteHidden) RecordCardState.Hidden else RecordCardState.Invite
+        return if (invite && !inviteHidden) RecordCardState.Invite else RecordCardState.Hidden
     }
 
+    /** The card from the record's own numbers, and the sleeve from the albums played most. */
+    fun viewOf(summary: RecordSummary, albums: List<OwnAlbumTotal>): CardView = CardView(
+        listenedMs = summary.totalMs,
+        since = summary.first ?: 0,
+        plays = summary.streams,
+        topArtist = summary.topArtists.firstOrNull()?.name,
+        albums = topAlbums(albums),
+        artists = summary.topArtists.take(CARD_ARTISTS).map { it.name },
+    )
+
     /**
-     * record-card.ts `fromOwn`, from the plays totalled by artist and album (newest first, so a name's spelling is the one
-     * seen first, as the web's newest-first history has it). The words are cleaned as the export cleans them.
+     * record-card.ts `topAlbums`, from the plays totalled by artist and album (newest first, so an album's spelling and its
+     * song are the ones seen first, as the web's newest-first history has them): one per album however it's spelled (the
+     * primary artist and the album without its marks), the most played first, then by name. The words are cleaned as the
+     * export cleans them.
      */
-    fun fromOwn(totals: List<OwnAlbumTotal>): CardView {
-        class Artist(val name: String, var ms: Long)
+    fun topAlbums(totals: List<OwnAlbumTotal>): List<CardAlbum> {
         class Album(val a: CardAlbum, var ms: Long, var cover: String?)
-        val artists = LinkedHashMap<String, Artist>()
         val albums = LinkedHashMap<String, Album>()
-        var ms = 0L
-        var since = Long.MAX_VALUE
-        var plays = 0
         for (r in totals) {
             val artist = HandoffWire.cleanText(r.artist, TEXT)
             val album = HandoffWire.cleanText(r.album, TEXT)
-            val title = HandoffWire.cleanText(r.title, TEXT)
-            ms += r.listenedMs
-            plays += r.plays
-            since = minOf(since, r.firstAt)
-            artists.getOrPut(artistKey(artist)) { Artist(artist, 0) }.ms += r.listenedMs
             if (album.isEmpty()) continue
             val cover = r.albumArtUrl?.takeIf { it.isNotBlank() }
             val k = "${artistKey(artist)}|${ArtText.bareAlbum(album).lowercase()}"
             val a = albums[k]
             if (a == null) {
-                albums[k] = Album(CardAlbum(artist, album, title), r.listenedMs, cover)
+                albums[k] = Album(CardAlbum(artist, album, HandoffWire.cleanText(r.title, TEXT)), r.listenedMs, cover)
             } else {
                 a.ms += r.listenedMs
                 if (a.cover == null) a.cover = cover
             }
         }
-        val ranked = artists.values.sortedWith(compareByDescending<Artist> { it.ms }.thenComparator { x, y -> x.name.compareTo(y.name) })
-        return CardView(
-            listenedMs = ms,
-            since = if (since == Long.MAX_VALUE) 0 else since,
-            plays = plays,
-            topArtist = ranked.firstOrNull()?.name,
-            albums = albums.values
-                .sortedWith(compareByDescending<Album> { it.ms }.thenComparator { x, y -> x.a.album.compareTo(y.a.album) })
-                .take(CARD_ALBUMS)
-                .map { it.a.copy(cover = it.cover) },
-            artists = ranked.take(CARD_ARTISTS).map { it.name },
-        )
+        return albums.values
+            .sortedWith(compareByDescending<Album> { it.ms }.thenComparator { x, y -> x.a.album.compareTo(y.a.album) })
+            .take(CARD_ALBUMS)
+            .map { it.a.copy(cover = it.cover) }
     }
 
     /** taste.ts `artistKey`: the primary artist, folded. */
@@ -114,18 +120,12 @@ object RecordCard {
     /** years.ts `hours`: whole hours, at least 1 once anything was listened to (half up, as JavaScript rounds). */
     fun hours(ms: Long): Long = if (ms <= 0) 0 else maxOf(1L, Math.round(ms / HOUR_MS))
 
-    /** years.ts `count`: "1,234". */
-    fun count(n: Long): String = String.format(Locale.US, "%,d", n)
+    /** years.ts `count` in [locale]: "1,234" in English. */
+    fun count(n: Long, locale: Locale = Locale.US): String = String.format(locale, "%,d", n)
 
-    /** "412 hours", "1 hour". */
-    fun hoursLabel(ms: Long): String = hours(ms).let { "${count(it)} ${if (it == 1L) "hour" else "hours"}" }
-
-    /** "since 2024 · 1,234 plays" (the year in UTC, as the web's `getUTCFullYear`). */
-    fun sinceLine(view: CardView): String {
-        val year = if (view.since > 0) Instant.ofEpochMilli(view.since).atZone(ZoneOffset.UTC).year else null
-        val plays = "${count(view.plays.toLong())} ${if (view.plays == 1) "play" else "plays"}"
-        return if (year != null) "since $year · $plays" else plays
-    }
+    /** The year of the earliest play in the phone's time zone, as the record shows it; null with none. */
+    fun sinceYear(view: CardView, zone: ZoneId = ZoneId.systemDefault()): Int? =
+        if (view.since > 0) Instant.ofEpochMilli(view.since).atZone(zone).year else null
 
     /** record-card.ts `initials`: "AB" for an artist with no picture yet (the first letter of the first two words). */
     fun initials(name: String): String =

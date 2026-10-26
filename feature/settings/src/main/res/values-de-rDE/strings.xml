@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Ordne die Bereiche der Startseite oder blende ungenutzte aus. Der Entdecken-Bereich bleibt oben.</string>
     <string name="settings_home_section_community_desc">Playlists und Titel, die andere Stash-Hörer mögen. Deine Beiträge zeigen deinen Namen.</string>
     <string name="settings_home_section_listening_desc">Kürzlich gespielt und dein Verlauf. Erscheint nach der ersten Wiedergabe.</string>
+    <string name="settings_home_section_record_desc">Jedes Jahr, das du gehört hast, auf eine Platte gepresst.</string>
     <string name="settings_home_show_liked_title">„Gefällt mir“-Titel auf Startseite zeigen</string>
     <string name="settings_home_show_liked_subtitle">Deine Stash-, Spotify- und YouTube-„Gefällt mir“-Angaben als eine Karte unter „Deine Playlists“</string>
     <string name="settings_home_section_discover">Daily Discover &amp; deine Mixes</string>
@@ -197,6 +198,7 @@
     <string name="settings_home_section_mood_decades">Stimmungen und Jahrzehnte</string>
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Dein Hörverlauf</string>
+    <string name="settings_home_section_your_record">Deine Platte</string>
     <string name="settings_home_section_move_up">%1$s nach oben</string>
     <string name="settings_home_section_move_down">%1$s nach unten</string>
     <string name="settings_home_section_show_desc">%1$s auf Startseite zeigen</string>

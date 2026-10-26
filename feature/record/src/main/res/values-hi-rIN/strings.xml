@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">आपका रिकॉर्ड</string>
+    <plurals name="record_hours">
+        <item quantity="one">घंटा</item>
+        <item quantity="other">घंटे</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s प्ले</item>
+        <item quantity="other">%1$s प्ले</item>
+    </plurals>
+    <string name="record_since">%1$d से · %2$s</string>
+    <string name="record_most_played">सबसे ज़्यादा सुने गए: %1$s</string>
+    <string name="record_open">अपना रिकॉर्ड खोलें</string>
+    <string name="record_opens">आपका रिकॉर्ड खोलता है।</string>
+    <string name="record_invite_title">अपना रिकॉर्ड बनाएँ</string>
+    <string name="record_invite_body">आपके सुनने के सभी साल, एक जगह: Spotify, Last.fm या आपके फ़ोन पर Stash से।</string>
+    <string name="record_invite_start">शुरू करें</string>
+    <string name="record_invite_hide">अपना रिकॉर्ड बनाएँ छिपाएँ</string>
+    <string name="record_close">बंद करें</string>
+    <string name="record_webview_old_title">इसके लिए नया Android System WebView चाहिए</string>
+    <string name="record_webview_old_body">Google Play से Android System WebView अपडेट करें, फिर अपना रिकॉर्ड दोबारा खोलें।</string>
+    <string name="record_stopped_title">आपका रिकॉर्ड रुक गया</string>
+    <string name="record_stopped_body">पेज की मेमोरी खत्म हो गई या वह क्रैश हो गया। आपके प्ले सुरक्षित हैं।</string>
+    <string name="record_open_again">फिर से खोलें</string>
+    <string name="record_note_import">Spotify इतिहास इम्पोर्ट करना एक अपडेट में आएगा।</string>
+    <string name="record_note_archive_failed">आपके कुछ प्ले पढ़े नहीं जा सके।</string>
+    <string name="record_note_play_failed">इसे यहाँ नहीं चलाया जा सका।</string>
+    <string name="record_note_playing">%1$s चल रहा है</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">%1$d गाना चल रहा है</item>
+        <item quantity="other">%1$d गाने चल रहे हैं</item>
+    </plurals>
+    <string name="record_note_none_found">ये गाने नहीं मिले।</string>
+    <string name="record_note_none_downloaded">इनमें से कोई भी गाना डाउनलोड नहीं है। चलाने के लिए कनेक्ट करें।</string>
+    <string name="record_note_saved">डाउनलोड में सेव किया गया</string>
+    <string name="record_note_save_failed">सेव नहीं हो सका।</string>
+    <string name="record_share">शेयर करें</string>
+</resources>

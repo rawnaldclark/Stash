@@ -44,12 +44,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.record.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.ui.components.BlurredCoverBackdrop
@@ -61,13 +64,14 @@ import com.stash.core.ui.theme.StashElevation
  * listening, so feature/home doesn't depend on this module. Dark in every theme, like Daily Discover: its label's cover
  * blurred under a scrim, or Stash's purple.
  *
- * - With [RecordCard.OWN_FOR_RECORD] plays of the phone's own: a preview of the record. A disc out of a sleeve of the albums
+ * - With [RecordCard.OWN_FOR_RECORD] plays: a preview of the record, in its own numbers. A disc out of a sleeve of the albums
  *   played most, its label the most played album's cover; the hours set large; since when and how many plays; the artist
  *   played most; the top artists' pictures in an overlapping row. The whole card opens the record ([onOpen]).
- * - Before that: "Press your record" (an empty record out of a plain sleeve, the three ways in, Get started, which opens the
- *   record), with a × that hides it on this phone.
+ * - Before that, once the import exists ([RecordCard.INVITE_ENABLED]): "Press your record" (an empty record out of a plain
+ *   sleeve, Get started, which opens the record), with a × that hides it on this phone. Until then, nothing.
  *
- * Composes to nothing until the plays are read, and once the invitation is hidden.
+ * Composes to nothing until the history is read. Reads nothing when Home comes back: the card's numbers change only when the
+ * history does ([RecordCardSource]).
  */
 @Composable
 fun YourRecordSection(
@@ -75,11 +79,6 @@ fun YourRecordSection(
     viewModel: YourRecordViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // Home back from playing (or from the record): the hours may have moved
-    LifecycleResumeEffect(viewModel) {
-        viewModel.refresh()
-        onPauseOrDispose { }
-    }
     val s = state ?: return
     if (s == RecordCardState.Hidden) return
     Column(Modifier.fillMaxWidth()) {
@@ -124,17 +123,22 @@ private fun CardFrame(
 private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val view = s.view
     val label = s.albumArt.firstOrNull()
+    val locale = LocalConfiguration.current.locales[0]
     val hours = RecordCard.hours(view.listenedMs)
-    val spoken = buildString {
-        append("Your record, ${RecordCard.hoursLabel(view.listenedMs)}, ${RecordCard.sinceLine(view)}.")
-        view.topArtist?.let { append(" Most played: $it.") }
-        append(" Opens your record.")
-    }
+    val hoursCount = hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    val hoursWord = pluralStringResource(R.plurals.record_hours, hoursCount)
+    val plays = pluralStringResource(R.plurals.record_plays, view.plays, RecordCard.count(view.plays.toLong(), locale))
+    val year = RecordCard.sinceYear(view)
+    val line = if (year != null) stringResource(R.string.record_since, year, plays) else plays
+    val eyebrow = stringResource(R.string.record_eyebrow)
+    val mostPlayed = view.topArtist?.let { stringResource(R.string.record_most_played, it) }
+    val opens = stringResource(R.string.record_opens)
+    val spoken = listOfNotNull("$eyebrow, ${RecordCard.count(hours, locale)} $hoursWord, $line.", mostPlayed?.let { "$it." }, opens).joinToString(" ")
     CardFrame(
         backdrop = label,
         modifier = modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
         onClick = onOpen,
-        onClickLabel = "Open your record",
+        onClickLabel = stringResource(R.string.record_open),
     ) {
         RecordArtwork(
             sleeve = view.albums.mapIndexed { i, a -> SleeveTile(seed = a.album, cover = s.albumArt.getOrNull(i)) },
@@ -143,13 +147,14 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, mod
         )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text("Your record", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
+            Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
             Text(
                 text = buildAnnotatedString {
                     withStyle(SpanStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.035).em, color = Color.White)) {
-                        append(RecordCard.count(hours))
+                        append(RecordCard.count(hours, locale))
                     }
-                    append(if (hours == 1L) " hour" else " hours")
+                    append(" ")
+                    append(hoursWord)
                 },
                 style = MaterialTheme.typography.titleMedium.copy(fontFamily = SpaceGrotesk, lineHeight = 38.sp),
                 color = Color.White.copy(alpha = 0.82f),
@@ -157,18 +162,15 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, mod
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                RecordCard.sinceLine(view),
+                line,
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.86f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            view.topArtist?.let { artist ->
+            if (view.topArtist != null && mostPlayed != null) {
                 Text(
-                    buildAnnotatedString {
-                        append("Most played: ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White)) { append(artist) }
-                    },
+                    emphasised(mostPlayed, view.topArtist),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -206,7 +208,17 @@ private fun Faces(artists: List<String>, pictures: List<String?>) {
     }
 }
 
-/** "Press your record": an empty record out of a plain sleeve, the three ways in, Get started, and the × that hides it. */
+/** [text] with [part] (where it is) set bold and white: the artist's name in "Most played: …", in any language's order. */
+private fun emphasised(text: String, part: String) = buildAnnotatedString {
+    append(text)
+    val at = text.lastIndexOf(part)
+    if (at >= 0) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White), at, at + part.length)
+}
+
+/**
+ * "Press your record": an empty record out of a plain sleeve, Get started, and the × that hides it. No chips for the ways in
+ * (Spotify, Last.fm): neither can come in until the import exists, and a promise the card can't keep is a dead end.
+ */
 @Composable
 private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifier = Modifier) {
     CardFrame(
@@ -217,7 +229,7 @@ private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifie
                 IconButton(onClick = onHide, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Rounded.Close,
-                        contentDescription = "Hide Press your record",
+                        contentDescription = stringResource(R.string.record_invite_hide),
                         tint = Color.White.copy(alpha = 0.72f),
                         modifier = Modifier.size(18.dp),
                     )
@@ -228,20 +240,25 @@ private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifie
         RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f).padding(end = 20.dp)) {
+            val title = stringResource(R.string.record_invite_title)
+            val body = stringResource(R.string.record_invite_body)
             Text(
-                "Press your record",
+                title,
                 style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics {
-                    contentDescription = "Press your record. Every year you've listened, in one place: from Spotify, Last.fm or Stash on your phone."
-                },
+                modifier = Modifier.semantics { contentDescription = "$title. $body" },
             )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.clearAndSetSemantics { }) {
-                for (way in listOf("Spotify", "Last.fm", "Stash")) Chip(way)
-            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                body,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics { },
+            )
             Spacer(Modifier.height(10.dp))
             Button(
                 onClick = onOpen,
@@ -249,26 +266,10 @@ private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifie
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 modifier = Modifier.height(34.dp),
             ) {
-                Text("Get started", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
+                Text(stringResource(R.string.record_invite_start), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
             }
         }
     }
-}
-
-/** One of the three ways in, as the web's chips. */
-@Composable
-private fun Chip(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelSmall,
-        color = Color.White.copy(alpha = 0.92f),
-        maxLines = 1,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(Color.White.copy(alpha = 0.1f))
-            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)), RoundedCornerShape(50))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-    )
 }
 
 private val SidePadding = 20.dp

@@ -7,9 +7,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -18,13 +21,17 @@ import okhttp3.OkHttpClient
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Real covers for Your record and its Home card: stash-player `src/lib/spotify/art.ts` `createArt`, with the Worker's lookup
  * ([ArtLookup]) run here. A play from the record has only its words, so its album's cover is looked up by them.
  *
  * One cover per album (artist + album, folded: [ArtText.artKey]), kept ([ArtStore]) for [HIT_TTL_MS], a miss for
- * [MISS_TTL_MS]. Asked a batch of [BATCH] at a time, one batch at a time across the app. A refusal (429, 5xx) or no answer
+ * [MISS_TTL_MS]. Asked a batch of [BATCH] at a time, one batch at a time across the app (so an album two asks want at once is
+ * looked up once: the second finds it known when its turn comes). The work runs off the main thread. A refusal (429, 5xx) or no answer
  * stops the asking for [PAUSE_MS] and keeps nothing: the covers come another time. A song Deezer wouldn't look up yet (its
  * quota: [Found.Later]) is asked again once, [LATER_MS] later, and its cover handed on when it comes.
  */
@@ -33,6 +40,8 @@ class RecordArt internal constructor(
     private val lookUp: suspend (ArtSong) -> Found,
     private val store: ArtStore,
     private val now: () -> Long,
+    /** Where the work runs: off the main thread. */
+    private val work: CoroutineContext = Dispatchers.Default,
 ) {
     @Inject
     constructor(client: OkHttpClient, @ApplicationContext context: Context) : this(
@@ -59,21 +68,26 @@ class RecordArt internal constructor(
         retry: CoroutineScope? = null,
         onBatch: ((List<String?>) -> Unit)? = null,
     ): List<String?> {
-        val keys = songs.map(ArtText::artKey)
-        val out = MutableList(songs.size) { i -> kept(keys[i]) }
-        // The covers not known yet, once each, in the order they first appear
-        val missing = LinkedHashMap<String, ArtSong>()
-        for (i in songs.indices) if (!isKnown(keys[i]) && keys[i] !in missing) missing[keys[i]] = songs[i]
-        if (missing.isEmpty()) return out.toList()
-        onBatch?.invoke(out.toList())
-        val again = pass(missing.toList(), keys, out, onBatch)
-        if (again.isNotEmpty() && retry != null) {
-            retry.launch {
-                delay(LATER_MS)
-                pass(again, keys, out, onBatch)
+        // The work (folding, the store, parsing answers, matching hits) off the caller's thread; each batch told on it
+        val caller = currentCoroutineContext()[ContinuationInterceptor] ?: EmptyCoroutineContext
+        val tell: suspend (List<String?>) -> Unit = { sofar -> onBatch?.let { withContext(caller) { it(sofar) } } }
+        return withContext(work) {
+            val keys = songs.map(ArtText::artKey)
+            val out = MutableList(songs.size) { i -> kept(keys[i]) }
+            // The covers not known yet, once each, in the order they first appear
+            val missing = LinkedHashMap<String, ArtSong>()
+            for (i in songs.indices) if (!isKnown(keys[i]) && keys[i] !in missing) missing[keys[i]] = songs[i]
+            if (missing.isEmpty()) return@withContext out.toList()
+            tell(out.toList())
+            val again = pass(missing.toList(), keys, out, tell)
+            if (again.isNotEmpty() && retry != null) {
+                retry.launch(work) {
+                    delay(LATER_MS)
+                    pass(again, keys, out, tell)
+                }
             }
+            out.toList()
         }
-        return out.toList()
     }
 
     /** Asks for [list] a batch at a time, keeping what's found; returns those to ask again later. */
@@ -81,29 +95,36 @@ class RecordArt internal constructor(
         list: List<Pair<String, ArtSong>>,
         keys: List<String>,
         out: MutableList<String?>,
-        onBatch: ((List<String?>) -> Unit)?,
+        tell: suspend (List<String?>) -> Unit,
     ): List<Pair<String, ArtSong>> {
         val again = ArrayList<Pair<String, ArtSong>>()
         for (part in list.chunked(BATCH)) {
-            // Paused: nothing asked, nothing kept; the covers come another time
-            val answers = asking.withLock { ask(part.map { it.second }) } ?: break
             var stopped = false
-            part.forEachIndexed { j, entry ->
-                when (val a = answers[j]) {
-                    is Found.Cover -> remember(entry.first, a.url)
-                    Found.Later -> again += entry
-                    Found.Refused, null -> stopped = true
+            val paused = asking.withLock {
+                // Found while this waited its turn (another ask had the same album in flight): not asked twice
+                val todo = part.filter { !isKnown(it.first) }
+                if (todo.isEmpty()) return@withLock false
+                // Paused: nothing asked, nothing kept; the covers come another time
+                val answers = ask(todo.map { it.second }) ?: return@withLock true
+                todo.forEachIndexed { j, entry ->
+                    when (val a = answers[j]) {
+                        is Found.Cover -> remember(entry.first, a.url)
+                        Found.Later -> again += entry
+                        Found.Refused, null -> stopped = true
+                    }
                 }
+                store.flush()
+                false
             }
-            store.flush()
+            if (paused) break
             for (i in keys.indices) knownUrl(keys[i])?.let { out[i] = it }
-            onBatch?.invoke(out.toList())
+            tell(out.toList())
             if (stopped) break
         }
         return again
     }
 
-    /** One batch, a few at a time (Deezer's own searches stay one at a time: [DeezerPace]); null when paused. */
+    /** One batch, a few at a time (Deezer's own searches stay one at a time: [Pace]); null when paused. */
     private suspend fun ask(part: List<ArtSong>): List<Found?>? {
         if (now() < pausedUntil) return null
         val gate = Semaphore(CONCURRENCY)

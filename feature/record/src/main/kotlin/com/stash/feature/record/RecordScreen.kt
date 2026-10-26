@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -32,24 +33,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashTextPrimary
 import com.stash.core.ui.theme.StashTextSecondary
 import com.stash.feature.record.bridge.RecordEvent
+import com.stash.feature.record.bridge.RecordNote
+import com.stash.feature.record.bridge.text
 import kotlinx.coroutines.launch
 
 /** The record's ground: its own background (the fork's theme.css `--bg`, Stash's dark background), behind the system bars too. */
@@ -60,9 +65,12 @@ internal val RECORD_GROUND_ARGB = 0xFF06060C.toInt()
 
 /**
  * Your record, full screen (the scaffold hides the mini player and the tab bar on this route): the bundled record in a
- * WebView, fed by [RecordViewModel]'s host. Back asks the record to close what it has open first; its × and a back with
- * nothing open close the screen ([onClose]). The record is dark in both themes, like an album sleeve on a light shelf, so the
- * status bar's icons are light here.
+ * WebView, fed by [RecordViewModel]'s host. The WebView is the ViewModel's, so a configuration change shows the same page
+ * again instead of pressing the record anew; it pauses and resumes with this screen.
+ *
+ * Back asks the record to close what it has open first; its ×, a back with nothing open (or a page that doesn't answer back)
+ * close the screen ([onClose]). The record covers the mini player, so what a tap starts, and what a save did, show as a line
+ * over it. The record is dark in both themes, like an album sleeve on a light shelf, so the system bars' icons are light here.
  *
  * A phone whose Android System WebView is too old for the bridge says so instead. A renderer that dies (memory, a crash)
  * leaves a way to open the record again.
@@ -74,65 +82,69 @@ fun RecordScreen(
 ) {
     val close by rememberUpdatedState(onClose)
     val snackbar = remember { SnackbarHostState() }
+    val resources = LocalContext.current.resources
+    val say: suspend (RecordNote) -> Unit = { note ->
+        // Not awaited by what calls it: a close right behind a line still closes
+        snackbar.currentSnackbarData?.dismiss()
+        snackbar.showSnackbar(note.text(resources), duration = SnackbarDuration.Short)
+    }
     LaunchedEffect(viewModel) {
-        viewModel.events.collect { e ->
-            when (e) {
-                RecordEvent.Close -> close()
-                // Not awaited: a close right behind a line still closes
-                is RecordEvent.Say -> launch { snackbar.showSnackbar(e.text) }
+        launch {
+            viewModel.events.collect { e ->
+                when (e) {
+                    RecordEvent.Close -> close()
+                    is RecordEvent.Say -> launch { say(e.note) }
+                }
             }
         }
+        viewModel.playNotes.collect { launch { say(it) } }
     }
     val dark = LocalIsDarkTheme.current
     LaunchedEffect(dark) { viewModel.setTheme(light = !dark) }
     val supported = remember { bridgeSupported() }
     BackHandler { if (supported) viewModel.back() else close() }
-    LightStatusBarIcons()
+    LightSystemBarIcons()
+    PauseWithScreen(viewModel)
 
     Box(Modifier.fillMaxSize().background(RecordGround)) {
-        if (!supported) {
-            Notice(
-                title = "This needs a newer Android System WebView",
-                body = "Update Android System WebView from Google Play, then open Your record again.",
+        val gone by viewModel.gone.collectAsStateWithLifecycle()
+        when {
+            !supported -> Notice(
+                title = stringResource(R.string.record_webview_old_title),
+                body = stringResource(R.string.record_webview_old_body),
                 action = null,
                 onClose = close,
             )
-        } else {
-            // A new WebView each time the renderer dies and the record is opened again
-            var generation by remember { mutableIntStateOf(0) }
-            var gone by remember { mutableStateOf(false) }
-            if (gone) {
-                Notice(
-                    title = "Your record stopped",
-                    body = "The page ran out of room or crashed. Your plays are safe.",
-                    action = "Open it again" to {
-                        gone = false
-                        generation++
-                    },
-                    onClose = close,
-                )
-            } else {
-                key(generation) {
-                    DisposableEffect(Unit) { onDispose { viewModel.detach() } }
-                    AndroidView(
-                        factory = { context ->
-                            RecordWebView(
-                                context,
-                                onMessage = viewModel::onMessage,
-                                onResponsive = viewModel::setResponsive,
-                                onGone = {
-                                    viewModel.detach()
-                                    gone = true
-                                },
-                            )
-                        },
-                        onRelease = { it.release() },
-                        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
-                    )
-                }
-            }
+            gone -> Notice(
+                title = stringResource(R.string.record_stopped_title),
+                body = stringResource(R.string.record_stopped_body),
+                action = stringResource(R.string.record_open_again) to viewModel::reopen,
+                onClose = close,
+            )
+            else -> AndroidView(
+                factory = { context -> viewModel.webView(context) },
+                onRelease = { viewModel.letGo(it) },
+                modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
+            )
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+    }
+}
+
+/** The WebView pauses with this screen (its own timers and media: never the process-wide ones, other WebViews use those). */
+@Composable
+private fun PauseWithScreen(viewModel: RecordViewModel) {
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> viewModel.resume()
+                Lifecycle.Event.ON_PAUSE -> viewModel.pause()
+                else -> Unit
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
     }
 }
 
@@ -141,7 +153,9 @@ fun RecordScreen(
 private fun Notice(title: String, body: String, action: Pair<String, () -> Unit>?, onClose: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close", tint = StashTextPrimary) }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.record_close), tint = StashTextPrimary)
+            }
         }
         Spacer(Modifier.weight(1f))
         Text(title, style = MaterialTheme.typography.headlineSmall, color = StashTextPrimary)
@@ -155,9 +169,9 @@ private fun Notice(title: String, body: String, action: Pair<String, () -> Unit>
     }
 }
 
-/** Light status bar icons while the record shows (its ground is dark in both themes); the theme's own come back after. */
+/** Light system bar icons while the record shows (its ground is dark in both themes); the theme's own come back after. */
 @Composable
-private fun LightStatusBarIcons() {
+private fun LightSystemBarIcons() {
     val view = LocalView.current
     DisposableEffect(view) {
         val window = view.context.findActivity()?.window

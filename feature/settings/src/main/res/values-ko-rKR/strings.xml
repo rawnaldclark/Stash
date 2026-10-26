@@ -180,6 +180,7 @@
     <string name="settings_home_layout_desc">홈 섹션을 정렬하거나 사용하지 않는 섹션을 숨길 수 있습니다. 디스커버 메인 페이지는 항상 맨 위에 있습니다</string>
     <string name="settings_home_section_community_desc">다른 Stash 사용자들이 즐겨 듣는 플레이리스트와 노래를 확인할 수 있습니다. 게시물을 올리면 사용자 이름이 표시됩니다</string>
     <string name="settings_home_section_listening_desc">최근 재생한 음악과 재생 기록을 확인할 수 있습니다. 음악을 처음으로 감상한 후 표시됩니다</string>
+    <string name="settings_home_section_record_desc">들어 온 모든 해를 한 장의 레코드에 담았습니다.</string>
     <string name="settings_home_show_liked_title">홈 화면에 좋아요 표시한 노래 표시</string>
     <string name="settings_home_show_liked_subtitle">Stash, Spotify, YouTube의 좋아요 표시한 곡을 하나의 카드로 모아 내 플레이리스트에 표시합니다</string>
     <string name="settings_home_section_discover">데일리 디스커버 및 믹스</string>
@@ -192,6 +193,7 @@
     <string name="settings_home_section_mood_decades">분위기 및 시대별</string>
     <string name="settings_home_section_community">커뮤니티</string>
     <string name="settings_home_section_your_listening">듣고 있는 음악</string>
+    <string name="settings_home_section_your_record">나의 레코드</string>
     <string name="settings_home_section_move_up">%1$s 위로 이동</string>
     <string name="settings_home_section_move_down">%1$s 아래로 이동</string>
     <string name="settings_home_section_show_desc">홈에서 %1$s를 표시합니다</string>

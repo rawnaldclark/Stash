@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Réorganisez les sections de l’accueil ou masquez celles que vous n’utilisez pas. La bannière « Daily Discover » reste en haut.</string>
     <string name="settings_home_section_community_desc">Playlists et titres appréciés par les autres utilisateurs de Stash. Vos publications affichent votre nom.</string>
     <string name="settings_home_section_listening_desc">Écoutes récentes et historique. Apparaît après votre première écoute.</string>
+    <string name="settings_home_section_record_desc">Chaque année d’écoute, pressée sur un disque.</string>
     <string name="settings_home_show_liked_title">Afficher les titres aimés sur l’accueil</string>
     <string name="settings_home_show_liked_subtitle">Vos J’aime Stash, Spotify et YouTube réunis dans une carte de Vos playlists</string>
     <string name="settings_home_section_discover">Daily Discover &amp; vos mixes</string>
@@ -197,6 +198,7 @@
     <string name="settings_home_section_mood_decades">Ambiances et décennies</string>
     <string name="settings_home_section_community">Communauté</string>
     <string name="settings_home_section_your_listening">Vos écoutes</string>
+    <string name="settings_home_section_your_record">Votre disque</string>
     <string name="settings_home_section_move_up">Déplacer %1$s vers le haut</string>
     <string name="settings_home_section_move_down">Déplacer %1$s vers le bas</string>
     <string name="settings_home_section_show_desc">Afficher %1$s sur l’accueil</string>

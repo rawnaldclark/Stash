@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="record_eyebrow">Ваша пластинка</string>
+    <plurals name="record_hours">
+        <item quantity="one">час</item>
+        <item quantity="few">часа</item>
+        <item quantity="many">часов</item>
+        <item quantity="other">часа</item>
+    </plurals>
+    <plurals name="record_plays">
+        <item quantity="one">%1$s прослушивание</item>
+        <item quantity="few">%1$s прослушивания</item>
+        <item quantity="many">%1$s прослушиваний</item>
+        <item quantity="other">%1$s прослушивания</item>
+    </plurals>
+    <string name="record_since">с %1$d · %2$s</string>
+    <string name="record_most_played">Чаще всего: %1$s</string>
+    <string name="record_open">Открыть пластинку</string>
+    <string name="record_opens">Открывает вашу пластинку.</string>
+    <string name="record_invite_title">Отпечатайте свою пластинку</string>
+    <string name="record_invite_body">Все годы прослушивания в одном месте: из Spotify, Last.fm или Stash на телефоне.</string>
+    <string name="record_invite_start">Начать</string>
+    <string name="record_invite_hide">Скрыть «Отпечатайте свою пластинку»</string>
+    <string name="record_close">Закрыть</string>
+    <string name="record_webview_old_title">Нужна более новая версия Android System WebView</string>
+    <string name="record_webview_old_body">Обновите Android System WebView в Google Play и снова откройте пластинку.</string>
+    <string name="record_stopped_title">Пластинка остановилась</string>
+    <string name="record_stopped_body">Странице не хватило памяти или она завершилась с ошибкой. Ваши прослушивания в сохранности.</string>
+    <string name="record_open_again">Открыть снова</string>
+    <string name="record_note_import">Импорт истории Spotify появится в одном из обновлений.</string>
+    <string name="record_note_archive_failed">Не удалось прочитать часть прослушиваний.</string>
+    <string name="record_note_play_failed">Не получается воспроизвести это здесь.</string>
+    <string name="record_note_playing">Играет %1$s</string>
+    <plurals name="record_note_playing_songs">
+        <item quantity="one">Играет %1$d песня</item>
+        <item quantity="few">Играют %1$d песни</item>
+        <item quantity="many">Играют %1$d песен</item>
+        <item quantity="other">Играют %1$d песни</item>
+    </plurals>
+    <string name="record_note_none_found">Не удалось найти эти песни.</string>
+    <string name="record_note_none_downloaded">Ни одна из этих песен не скачана. Подключитесь к сети, чтобы их послушать.</string>
+    <string name="record_note_saved">Сохранено в «Загрузки»</string>
+    <string name="record_note_save_failed">Не удалось сохранить.</string>
+    <string name="record_share">Поделиться</string>
+</resources>

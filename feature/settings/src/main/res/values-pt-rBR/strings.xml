@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Organize as seções da página inicial ou oculte as que não usa. O destaque “Daily Discover &amp; seus mixes” permanece no topo.</string>
     <string name="settings_home_section_community_desc">Listas de reprodução e músicas de que outros ouvintes do Stash gostam. Suas postagens mostram seu nome.</string>
     <string name="settings_home_section_listening_desc">Reproduções recentes e seu histórico. Aparece após a primeira reprodução.</string>
+    <string name="settings_home_section_record_desc">Todos os anos que você ouviu, prensados em um disco.</string>
     <string name="settings_home_show_liked_title">Mostrar músicas curtidas na página inicial</string>
     <string name="settings_home_show_liked_subtitle">Suas curtidas do Stash, Spotify e YouTube em um único cartão em Suas playlists.</string>
     <string name="settings_home_section_discover">Daily Discover &amp; seus mixes</string>
@@ -197,6 +198,7 @@
     <string name="settings_home_section_mood_decades">Humor e décadas</string>
     <string name="settings_home_section_community">Comunidade</string>
     <string name="settings_home_section_your_listening">Sua escuta</string>
+    <string name="settings_home_section_your_record">Seu disco</string>
     <string name="settings_home_section_move_up">Mova %1$s para cima</string>
     <string name="settings_home_section_move_down">Mova %1$s para baixo</string>
     <string name="settings_home_section_show_desc">Mostrar %1$s na página inicial</string>
