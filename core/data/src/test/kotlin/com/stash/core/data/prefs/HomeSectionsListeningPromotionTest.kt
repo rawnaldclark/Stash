@@ -38,6 +38,8 @@ class HomeSectionsListeningPromotionTest {
             listOf(
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
+                // newer than the saved arrangement: appended
+                HomeSection.YOUR_RECORD,
             ),
             order.drop(2),
         )

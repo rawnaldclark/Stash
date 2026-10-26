@@ -96,10 +96,11 @@ class HomeSectionOrderTest {
     @Test
     fun `community is off by default, including right after the update that adds it`() {
         assertFalse(HomeSection.COMMUNITY in visibleHomeSections(effectiveHomeSectionOrder(emptyList(), false), emptySet(), communityOn = false))
-        // Saved before the update: Discover then Your listening lead (not promoted yet), the rest keep the saved order.
+        // Saved before the update: Discover then Your listening lead (not promoted yet), the rest keep the saved order, and
+        // Your record (newer still) comes after them.
         val savedBeforeTheUpdate = listOf("your_playlists", "new_releases", "qobuz_playlists", "top_albums", "made_for_you", "radios", "mood_decades")
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING) + savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey),
+            listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING) + savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey) + HomeSection.YOUR_RECORD,
             visibleHomeSections(effectiveHomeSectionOrder(savedBeforeTheUpdate, promoted = false), emptySet(), communityOn = false),
         )
         // Home before the preference loads, and the preference's fallback when it can't be read.
