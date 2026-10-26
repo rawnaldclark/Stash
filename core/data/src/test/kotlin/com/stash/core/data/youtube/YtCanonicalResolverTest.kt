@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -39,7 +40,7 @@ class YtCanonicalResolverTest {
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.ATV.name))
 
         assertEquals(found("abc123"), result)
-        verify(innerTube, never()).searchCanonicalLookup(any(), any())
+        verify(innerTube, never()).searchCanonicalLookup(any(), any(), anyOrNull())
     }
 
     @Test
@@ -51,7 +52,7 @@ class YtCanonicalResolverTest {
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.OMV.name))
 
         assertEquals(found("abc123"), result)
-        verify(innerTube, never()).searchCanonicalLookup(any(), any())
+        verify(innerTube, never()).searchCanonicalLookup(any(), any(), anyOrNull())
     }
 
     @Test
@@ -65,14 +66,14 @@ class YtCanonicalResolverTest {
         )
 
         assertEquals(found("cached123"), result)
-        verify(innerTube, never()).searchCanonicalLookup(any(), any())
+        verify(innerTube, never()).searchCanonicalLookup(any(), any(), anyOrNull())
     }
 
     @Test
     fun `UGC track with no cache triggers search and caches result`() = runTest {
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(found("resolved456"))
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song", null)).thenReturn(found("resolved456"))
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.UGC.name))
@@ -85,7 +86,7 @@ class YtCanonicalResolverTest {
     fun `UGC track with no canonical match returns NoMatch and does not cache`() = runTest {
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(CanonicalLookup.NoMatch)
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song", null)).thenReturn(CanonicalLookup.NoMatch)
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.UGC.name))
@@ -100,7 +101,7 @@ class YtCanonicalResolverTest {
         // can only do if this is told apart from "YouTube has no canonical version".
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(CanonicalLookup.Failed)
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song", null)).thenReturn(CanonicalLookup.Failed)
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = null))
@@ -114,11 +115,24 @@ class YtCanonicalResolverTest {
         // A track whose classification was never determined — treat like UGC.
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(found("resolved789"))
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song", null)).thenReturn(found("resolved789"))
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = null))
 
         assertEquals(found("resolved789"), result)
+    }
+
+    @Test
+    fun `the track's parental advisory reaches the search`() = runTest {
+        // It picks between YouTube's explicit and clean copies of the song.
+        val trackDao = mock<TrackDao>()
+        val innerTube = mock<InnerTubeClient>()
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song", false)).thenReturn(found("clean123"))
+        val resolver = YtCanonicalResolver(trackDao, innerTube)
+
+        val result = resolver.resolve(track(musicVideoType = null).copy(explicit = false))
+
+        assertEquals(found("clean123"), result)
     }
 }

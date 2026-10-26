@@ -1,9 +1,14 @@
 package com.stash.core.media.streaming
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.SearchAllResults
+import com.stash.data.ytmusic.model.SearchResultSection
+import com.stash.data.ytmusic.model.TopResultItem
+import com.stash.data.ytmusic.model.TrackSummary
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -200,6 +205,42 @@ class YouTubeStreamResolverTest {
 
             assertThat(result?.url).isEqualTo("https://raced/9Vz-MkbnSg4")
             coVerify(exactly = 0) { extractor.extractStreamUrl(storedId, any(), any()) }
+        }
+    }
+
+    /**
+     * The search fallback's pick between a song's explicit and clean copies. Measured 2026-10-26: an
+     * unfiltered search for "Kanye West Father Stretch My Hands Pt. 1" showed the explicit song only
+     * as the top card and its clean twin as the Songs row, so "the first Songs row" played the clean
+     * edit. The twin is taken by the track's advisory: the explicit one unless it's known clean.
+     */
+    @Test
+    fun resolve_searchFallback_picksTheExplicitTwinUnlessTheTrackIsKnownClean() = runTest {
+        val clean = TrackSummary(
+            videoId = "_MIsk8VoNhM", title = "Father Stretch My Hands Pt. 1", artist = "Kanye West",
+            album = null, durationSeconds = 0.0, thumbnailUrl = null,
+        )
+        val explicitCard = clean.copy(videoId = "wuO4_P_8p-Q", durationSeconds = 136.0, explicit = true)
+        val results = SearchAllResults(
+            listOf(
+                SearchResultSection.Top(TopResultItem.TrackTop(explicitCard)),
+                SearchResultSection.Songs(listOf(clean)),
+            ),
+        )
+        val expected = mapOf(true to "wuO4_P_8p-Q", null to "wuO4_P_8p-Q", false to "_MIsk8VoNhM")
+        for ((explicit, videoId) in expected) {
+            val extractor: PreviewUrlExtractor = mockk()
+            val ytMusic: YTMusicApiClient = mockk()
+            coEvery { ytMusic.searchCanonicalVideoId(any(), any(), any()) } returns null
+            coEvery { ytMusic.searchAll(any()) } returns results
+            coEvery { extractor.extractStreamUrl(any(), true, false) } answers { "https://raced/${firstArg<String>()}" }
+            every { extractor.observedCodec(any()) } returns "opus"
+            val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
+            val track = trackWithoutYoutubeId("Kanye West", "Father Stretch My Hands Pt. 1").copy(explicit = explicit)
+
+            val result = resolver.resolve(track, allowYtDlp = true)
+
+            assertWithMessage("explicit=$explicit").that(result?.url).isEqualTo("https://raced/$videoId")
         }
     }
 

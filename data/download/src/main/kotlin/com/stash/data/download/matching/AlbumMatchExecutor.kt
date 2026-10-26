@@ -3,7 +3,10 @@ package com.stash.data.download.matching
 import android.util.Log
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.download.ytdlp.YtDlpSearchResult
+import com.stash.data.ytmusic.ExplicitTwinKey
 import com.stash.data.ytmusic.InnerTubeClient
+import com.stash.data.ytmusic.hasExplicitBadge
+import com.stash.data.ytmusic.preferExplicitTwin
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -93,6 +96,8 @@ class AlbumMatchExecutor @Inject constructor(
      * @param targetArtist    The track artist (e.g. "Queen").
      * @param targetAlbum     The album name (e.g. "A Night at the Opera").
      * @param targetDurationMs The expected track duration in milliseconds.
+     * @param targetExplicit  The track's parental advisory: picks between an
+     *         album's explicit and clean editions ([extractAlbumBrowseId]).
      * @return A [YtDlpSearchResult] with the album-sourced video ID, or null
      *         if the album was not found or the track could not be matched.
      */
@@ -101,6 +106,7 @@ class AlbumMatchExecutor @Inject constructor(
         targetArtist: String,
         targetAlbum: String,
         targetDurationMs: Long,
+        targetExplicit: Boolean? = null,
     ): YtDlpSearchResult? = withContext(Dispatchers.IO) {
         try {
             if (targetAlbum.isBlank()) {
@@ -112,11 +118,14 @@ class AlbumMatchExecutor @Inject constructor(
                 return@withContext null
             }
 
-            val cacheKey = "${targetArtist.lowercase()}|${targetAlbum.lowercase()}"
+            // A clean track's album can be another edition than an explicit or
+            // unknown one's, so the two never share a cached tracklist.
+            val edition = if (targetExplicit == false) "|clean" else ""
+            val cacheKey = "${targetArtist.lowercase()}|${targetAlbum.lowercase()}$edition"
             Log.d(TAG, "findTrackInAlbum: '$targetTitle' by '$targetArtist' on '$targetAlbum' (cache key: $cacheKey)")
 
             // Check cache first — returns cached tracklist or fetches it
-            val tracks = getOrFetchAlbumTracks(cacheKey, targetArtist, targetAlbum)
+            val tracks = getOrFetchAlbumTracks(cacheKey, targetArtist, targetAlbum, targetExplicit)
             if (tracks == null) {
                 Log.d(TAG, "Album not found or unparseable: '$targetAlbum' by '$targetArtist'")
                 return@withContext null
@@ -171,12 +180,14 @@ class AlbumMatchExecutor @Inject constructor(
      * @param cacheKey     The "artist|album" cache key (lowercased).
      * @param targetArtist The artist name for the search query.
      * @param targetAlbum  The album name for the search query.
+     * @param targetExplicit The track's parental advisory, for the album edition.
      * @return List of album tracks, or null if the album could not be found/parsed.
      */
     private suspend fun getOrFetchAlbumTracks(
         cacheKey: String,
         targetArtist: String,
         targetAlbum: String,
+        targetExplicit: Boolean?,
     ): List<AlbumTrack>? {
         // Fast path: check cache atomically
         val cached = synchronized(cacheLock) { albumCache[cacheKey] }
@@ -199,7 +210,7 @@ class AlbumMatchExecutor @Inject constructor(
             Log.d(TAG, "Searching InnerTube for album: '$query'")
             val response = innerTubeClient.search(query) ?: continue
             anySearchAnswered = true
-            browseId = extractAlbumBrowseId(response, targetAlbum, targetArtist)
+            browseId = extractAlbumBrowseId(response, targetAlbum, targetArtist, targetExplicit)
             if (browseId != null) {
                 Log.d(TAG, "Found album browseId=$browseId from query '$query'")
                 break
@@ -270,15 +281,25 @@ class AlbumMatchExecutor @Inject constructor(
      * Each candidate is verified against the target album title (via Jaro-Winkler
      * similarity) and the target artist (via substring check in the subtitle).
      *
+     * The first match is the album, as it always was, unless the search also
+     * names its other edition: YouTube Music keeps an album's explicit and clean
+     * editions as two albums of one title, told apart only by the explicit badge
+     * and the browseId (The Life Of Pablo: `MPREb_ZIbQK9RFLQY` badged,
+     * `MPREb_GDKC8gIBAVI` not; 2026-10-26). Of the same-titled matches the
+     * badged edition is taken unless [targetExplicit] is `false`, and an unbadged
+     * one when it is ([preferExplicitTwin]).
+     *
      * @param response      The full InnerTube search response.
      * @param targetAlbum   The album name to verify against.
      * @param targetArtist  The artist name to verify against.
+     * @param targetExplicit The track's parental advisory; null when it doesn't say.
      * @return The browseId (e.g. "MPREb_...") of the matched album, or null.
      */
     internal fun extractAlbumBrowseId( // internal for tests
         response: JsonObject,
         targetAlbum: String,
         targetArtist: String,
+        targetExplicit: Boolean? = null,
     ): String? {
         // Navigate to the sections list
         val sections = response
@@ -292,18 +313,21 @@ class AlbumMatchExecutor @Inject constructor(
             return null
         }
 
+        // Every album that matches, in the order the strategies below rank them:
+        // the first is the pick unless an edition twin of it suits the track better.
+        val matches = mutableListOf<AlbumCandidate>()
+
         // Strategy 1: Check musicCardShelfRenderer (top result card)
         for (section in sections) {
             val cardShelf = section.jsonObject["musicCardShelfRenderer"]?.jsonObject
                 ?: continue
 
-            val browseId = extractBrowseIdFromCardShelf(cardShelf, targetAlbum, targetArtist)
-            if (browseId != null) return browseId
+            extractAlbumFromCardShelf(cardShelf, targetAlbum, targetArtist)?.let(matches::add)
         }
 
         // Strategy 2: the "Albums" shelf (signed in), or album rows in the flat layout
         // signed-out searches return (one itemSectionRenderer per row, no titled shelves;
-        // live 2026-09-28). extractBrowseIdFromAlbumShelf only takes MPRE album links.
+        // live 2026-09-28). extractAlbumsFromAlbumShelf only takes MPRE album links.
         for (section in sections) {
             val sectionObj = section.jsonObject
             val shelf = sectionObj["itemSectionRenderer"]?.jsonObject
@@ -315,29 +339,51 @@ class AlbumMatchExecutor @Inject constructor(
                 }
                 ?: continue
 
-            val browseId = extractBrowseIdFromAlbumShelf(shelf, targetAlbum, targetArtist)
-            if (browseId != null) return browseId
+            matches += extractAlbumsFromAlbumShelf(shelf, targetAlbum, targetArtist)
         }
 
-        Log.d(TAG, "No matching album found in search response sections")
-        return null
+        // Editions share the title; the artist already matched on each, and an album has no length here.
+        val pick = preferExplicitTwin(matches, targetExplicit) {
+            ExplicitTwinKey(title = it.title, artist = "", durationSeconds = 0.0, explicitBadge = it.explicitBadge)
+        }
+        if (pick == null) {
+            Log.d(TAG, "No matching album found in search response sections")
+            return null
+        }
+        if (pick !== matches.first()) {
+            Log.d(
+                TAG,
+                "Edition for explicit=$targetExplicit: ${pick.browseId} (badged=${pick.explicitBadge}) " +
+                    "over ${matches.first().browseId}",
+            )
+        }
+        return pick.browseId
     }
 
+    /** An album the search names that matches the target's title and artist. */
+    private data class AlbumCandidate(
+        val browseId: String,
+        val title: String,
+        /** YouTube Music's explicit badge on the card or row: the explicit edition. */
+        val explicitBadge: Boolean,
+    )
+
     /**
-     * Extracts a browseId from a `musicCardShelfRenderer` (top result card).
+     * Reads a `musicCardShelfRenderer` (top result card) as an album candidate.
      *
      * The card shelf contains:
      * - `title.runs[0].text` — the album title
      * - `title.runs[0].navigationEndpoint.browseEndpoint.browseId` — the browseId
      * - `subtitle.runs[]` — array containing ["Album", " . ", "Artist Name", ...]
+     * - `subtitleBadges[]` — the explicit badge, on an explicit edition
      *
-     * @return The browseId if the card matches our target album+artist, null otherwise.
+     * @return The album if the card matches our target album+artist, null otherwise.
      */
-    private fun extractBrowseIdFromCardShelf(
+    private fun extractAlbumFromCardShelf(
         cardShelf: JsonObject,
         targetAlbum: String,
         targetArtist: String,
-    ): String? {
+    ): AlbumCandidate? {
         val titleRuns = cardShelf.navigatePath("title", "runs")?.jsonArray
         if (titleRuns.isNullOrEmpty()) return null
 
@@ -378,25 +424,28 @@ class AlbumMatchExecutor @Inject constructor(
         }
 
         Log.d(TAG, "Card shelf match: '$albumTitle' by subtitle='$subtitleJoined' -> $browseId")
-        return browseId
+        return AlbumCandidate(browseId, albumTitle, hasExplicitBadge(cardShelf))
     }
 
     /**
-     * Extracts a browseId from a `musicShelfRenderer` (the "Albums" shelf section).
+     * Reads a `musicShelfRenderer` (the "Albums" shelf section), or a flat
+     * `itemSectionRenderer`, for album candidates.
      *
      * Each item in the shelf is a `musicResponsiveListItemRenderer` with:
      * - `navigationEndpoint.browseEndpoint.browseId` — the browseId
      * - `flexColumns[0]` — album title
      * - `flexColumns[1]` — "Album . Artist . Year"
+     * - `badges[]` — the explicit badge, on an explicit edition
      *
-     * @return The browseId of the first item matching our target, or null.
+     * @return Every item matching our target, in shelf order; empty when none does.
      */
-    private fun extractBrowseIdFromAlbumShelf(
+    private fun extractAlbumsFromAlbumShelf(
         shelf: JsonObject,
         targetAlbum: String,
         targetArtist: String,
-    ): String? {
-        val contents = shelf["contents"]?.jsonArray ?: return null
+    ): List<AlbumCandidate> {
+        val contents = shelf["contents"]?.jsonArray ?: return emptyList()
+        val matches = mutableListOf<AlbumCandidate>()
 
         for (item in contents) {
             val renderer = item.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
@@ -439,10 +488,10 @@ class AlbumMatchExecutor @Inject constructor(
             }
 
             Log.d(TAG, "Shelf item match: '$albumTitle' -> $browseId")
-            return browseId
+            matches += AlbumCandidate(browseId, albumTitle, hasExplicitBadge(renderer))
         }
 
-        return null
+        return matches
     }
 
     /**

@@ -1206,6 +1206,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             youtubeId = track.videoId,
                             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
                             position = position,
+                            // YouTube's explicit badge: true when the row has it, else unknown.
+                            explicit = track.explicit,
                         )
                     }
                     if (trackSnapshots.isNotEmpty()) {
@@ -1312,6 +1314,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             youtubeId = track.videoId,
                             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
                             position = position,
+                            // YouTube's explicit badge: true when the row has it, else unknown.
+                            explicit = track.explicit,
                         )
                     }
                     if (trackSnapshots.isNotEmpty()) {
@@ -1450,6 +1454,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         track.thumbnailUrl ?: detail.thumbnailUrl,
                     ),
                     position = position,
+                    // YouTube's explicit badge on the album's tracklist row, else unknown.
+                    explicit = track.explicit,
                 )
             }
             if (trackSnapshots.isNotEmpty()) {
@@ -1501,6 +1507,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             youtubeId = track.videoId,
                             albumArtUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(track.thumbnailUrl),
                             position = position,
+                            // YouTube's explicit badge: true when the row has it, else unknown.
+                            explicit = track.explicit,
                         )
                     }
                     if (trackSnapshots.isNotEmpty()) {

@@ -1323,6 +1323,52 @@ class DiffWorkerTest {
         assertEquals("mix_number must survive", 1, row.mixNumber)
     }
 
+    /**
+     * YouTube's explicit badge reaches a synced song's parental advisory, but only where
+     * nothing is known: YouTube marks explicit songs and leaves the rest unmarked, so it
+     * can't contradict a song Spotify calls clean (each sync would flip it back and forth).
+     */
+    @Test
+    fun `a YouTube badge fills an unknown advisory but never overrides a clean one`() = runBlocking {
+        val cleanId = db.trackDao().insert(
+            TrackEntity(
+                title = "Clean Song", artist = "Artist", youtubeId = "video-clean",
+                spotifyUri = "spotify:track:clean", explicit = false,
+            )
+        )
+        val unknownId = db.trackDao().insert(
+            TrackEntity(title = "Unknown Song", artist = "Artist", youtubeId = "video-unkno", explicit = null)
+        )
+        db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Badged", source = MusicSource.YOUTUBE,
+                sourceId = "youtube:playlist:badged", type = PlaylistType.CUSTOM, syncEnabled = true,
+            )
+        )
+        val playlistSnapshot = RemotePlaylistSnapshotEntity(
+            id = 7L, syncId = 1L, source = MusicSource.YOUTUBE,
+            sourcePlaylistId = "youtube:playlist:badged",
+            playlistName = "Badged", playlistType = PlaylistType.CUSTOM,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(playlistSnapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(7L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 7L, title = "Clean Song", artist = "Artist",
+                youtubeId = "video-clean", position = 0, explicit = true,
+            ),
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 7L, title = "Unknown Song", artist = "Artist",
+                youtubeId = "video-unkno", position = 1, explicit = true,
+            ),
+        )
+        coEvery { streamingPreference.current() } returns true
+
+        buildWorker().doWork()
+
+        assertEquals(false, db.trackDao().getById(cleanId)?.explicit)
+        assertEquals(true, db.trackDao().getById(unknownId)?.explicit)
+    }
+
     /** [canonicalRecompute]: done already by default; these tests are about the diff, not the one-time re-key. */
     private fun buildWorker(
         canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),

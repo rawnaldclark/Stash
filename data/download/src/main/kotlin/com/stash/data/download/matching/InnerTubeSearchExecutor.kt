@@ -3,6 +3,7 @@ package com.stash.data.download.matching
 import android.util.Log
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.stash.data.ytmusic.InnerTubeClient
+import com.stash.data.ytmusic.explicitFromBadge
 import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.parseListItemSubtitle
 import kotlinx.coroutines.Dispatchers
@@ -307,6 +308,9 @@ class InnerTubeSearchExecutor @Inject constructor(
             album = albumName,
             description = "",
             musicVideoType = musicVideoType,
+            // The explicit badge, the only thing telling a song's explicit and
+            // clean twins apart (same title, album and length).
+            explicit = explicitFromBadge(renderer),
         )
     }
 

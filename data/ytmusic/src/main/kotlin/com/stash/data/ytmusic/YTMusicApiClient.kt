@@ -506,9 +506,13 @@ class YTMusicApiClient @Inject constructor(
      * than [searchAll] for streaming fallback — `searchAll` gates on a literal
      * "Songs" shelf title and returns nothing for tracks YouTube labels
      * differently (older / compilation catalog), which silently broke playback.
+     *
+     * [explicit] is the source track's parental advisory: between the explicit
+     * and clean copies of the song it picks the explicit one unless it is `false`
+     * ([InnerTubeClient.searchCanonicalLookup]).
      */
-    suspend fun searchCanonicalVideoId(artist: String, title: String): String? =
-        innerTubeClient.searchCanonical(artist, title)
+    suspend fun searchCanonicalVideoId(artist: String, title: String, explicit: Boolean? = null): String? =
+        innerTubeClient.searchCanonical(artist, title, explicit)
 
     /** [searchCanonicalVideoId] plus the matched song's square album art. */
     suspend fun searchCanonicalMatch(artist: String, title: String): CanonicalMatch? =
@@ -1168,6 +1172,9 @@ class YTMusicApiClient @Inject constructor(
             durationMs = durationMs,
             thumbnailUrl = thumbnailUrl,
             musicVideoType = musicVideoType,
+            // Playlist and Liked Music rows carry the same badge as search rows;
+            // synced, it tells the matchers this song is the explicit original.
+            explicit = explicitFromBadge(renderer),
         )
     }
 

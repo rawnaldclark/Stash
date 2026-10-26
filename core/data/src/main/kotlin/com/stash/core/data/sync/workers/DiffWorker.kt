@@ -768,7 +768,11 @@ class DiffWorker @AssistedInject constructor(
 
             // Spotify's parental advisory, kept current: songs synced before the web-player
             // parsers read it were stored as clean (2026-10-26), and only a sync can say otherwise.
-            val snapshotExplicit = snapshot.explicit
+            // YouTube's badge only fills an unknown flag: it marks explicit songs and leaves the
+            // rest unmarked, and a song Spotify calls clean shouldn't flip with each YouTube sync.
+            val snapshotExplicit = snapshot.explicit?.takeIf {
+                playlistSnapshot.source != MusicSource.YOUTUBE || batchTrack.entity.explicit == null
+            }
             if (snapshotExplicit != null && snapshotExplicit != batchTrack.entity.explicit) {
                 trackDao.updateExplicit(existingTrack.id, snapshotExplicit)
                 batchTrack.entity = batchTrack.entity.copy(explicit = snapshotExplicit)
