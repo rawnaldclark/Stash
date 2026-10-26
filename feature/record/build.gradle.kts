@@ -21,6 +21,10 @@ dependencies {
     // Covers: Deezer and Apple's search, through the app's shared client (core:network provides it)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    // Bring your Spotify: the import runs as a foreground job, so it goes on when the person leaves the app
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")

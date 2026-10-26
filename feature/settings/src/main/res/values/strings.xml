@@ -734,4 +734,27 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
+    <string name="settings_your_record_section">Your record</string>
+    <string name="settings_your_record_open">Your record</string>
+    <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">From Spotify: %1$s play.</item>
+        <item quantity="other">From Spotify: %1$s plays.</item>
+    </plurals>
+    <string name="settings_your_record_import">Import from Spotify</string>
+    <string name="settings_your_record_newer">Bring a newer copy</string>
+    <string name="settings_your_record_import_subtitle">Your listening history from a Spotify data download. Stash reads the file on this phone. Nothing is uploaded.</string>
+    <string name="settings_your_record_remove">Remove imported history</string>
+    <string name="settings_your_record_remove_subtitle">Your record goes back to your plays in Stash.</string>
+    <string name="settings_your_record_remove_title">Remove your imported history?</string>
+    <string name="settings_your_record_remove_body">Everything brought in for your record from Spotify is deleted from this phone. Your plays in Stash stay.</string>
+    <string name="settings_your_record_remove_confirm">Remove</string>
+    <string name="settings_your_record_cancel">Cancel</string>
+    <string name="settings_your_record_removed">Removed your imported history.</string>
+    <string name="settings_your_record_remove_busy">An import is running. Remove it when that’s done.</string>
+    <string name="settings_your_record_remove_failed">Couldn’t remove it just now. Try again.</string>
+    <string name="settings_your_record_show">Show on Home</string>
+    <string name="settings_your_record_show_subtitle">Press your record is hidden on Home.</string>
+    <string name="settings_your_record_shown">Press your record is back on Home</string>
 </resources>

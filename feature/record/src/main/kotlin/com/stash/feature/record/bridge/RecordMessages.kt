@@ -217,6 +217,9 @@ object RecordMessages {
     /** Back pressed: the record closes what it has open on top and says `stash:backed`, or `stash:close` when nothing was. */
     const val BACK = "{\"type\":\"stash:back\"}"
 
+    /** The archive changed (an import written or removed): the record says hello again and is pressed from the new rows. */
+    const val RELOAD = "{\"type\":\"stash:reload\"}"
+
     /** `stash:save-ack {id, seq}`: chunk [seq] of file [id] is in the file; the page may send more (it keeps two in flight). */
     fun saveAck(id: String, seq: Int): String = buildString(id.length + 48) {
         append("{\"type\":\"stash:save-ack\",\"id\":").quote(id).append(",\"seq\":").append(seq).append('}')

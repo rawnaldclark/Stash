@@ -312,6 +312,18 @@ interface WebLibraryExportDao {
     )
     suspend fun ownFirstPlayAt(): Long?
 
+    /** When the last of those plays started (Your record's import record: its last listen); null when there is none. */
+    @Query(
+        """
+        SELECT MAX(le.started_at) FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.origin_device IS NULL AND le.started_at > 0
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        """,
+    )
+    suspend fun ownLastPlayAt(): Long?
+
     /**
      * One artist and album of this phone's plays, totalled ([ownAlbumTotals]). Your record's Home card ranks albums and artists
      * from these (stash-player record-card.ts `fromOwn`), so a decade of plays comes back as one row per album, not a row per play.

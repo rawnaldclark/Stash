@@ -13,6 +13,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -278,7 +279,7 @@ class RecordHostTest {
         assertThat(page.types().count { it == "stash:back" }).isEqualTo(3)
     }
 
-    @Test fun `close closes, import says the Spotify import is coming, counts and junk do nothing`() = runTest {
+    @Test fun `close closes, import opens the import, counts and junk do nothing`() = runTest {
         val h = Harness(this, rows(0))
         val page = Page()
         h.say("""{"type":"stash:close"}""", page)
@@ -286,8 +287,23 @@ class RecordHostTest {
         h.say("""{"type":"stash:counts","counts":{"spotify":0,"stash":333,"lastfm":0}}""", page)
         h.say("""{"type":"stash:live","plays":[]}""", page)
         h.say("not json", page)
-        assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Say(RecordNote.ImportComing)).inOrder()
+        assertThat(h.events).containsExactly(RecordEvent.Close, RecordEvent.Import).inOrder()
         assertThat(page.sent).isEmpty()
+    }
+
+    @Test fun `an archive that changed is a reload to the page that said hello, and its hello is answered with the new rows`() = runTest {
+        val h = Harness(this, rows(2))
+        h.host.reload() // no page yet: nothing to tell
+        val page = Page()
+        h.say("""{"type":"stash:hello","v":1}""", page)
+        advanceUntilIdle()
+        page.sent.clear()
+
+        h.host.reload()
+        assertThat(page.types()).containsExactly("stash:reload")
+        h.say("""{"type":"stash:hello","v":1}""", page)
+        advanceUntilIdle()
+        assertThat(page.types()).containsExactly("stash:reload", "stash:theme", "stash:archive").inOrder()
     }
 
     @Test fun `play says what starts at once and hands the songs, the start and the label on`() = runTest {

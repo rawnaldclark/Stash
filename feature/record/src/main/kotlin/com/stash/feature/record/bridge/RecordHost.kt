@@ -28,6 +28,9 @@ sealed interface RecordEvent {
 
     /** A line for the listener (a snackbar). */
     data class Say(val note: RecordNote) : RecordEvent
+
+    /** The record's "Bring your Spotify" (`stash:import`): the import sheet opens over it. */
+    data object Import : RecordEvent
 }
 
 /** Plays the record's songs in Stash; returns at once (the matching and the queue go on elsewhere: [RecordPlayback]). */
@@ -74,7 +77,8 @@ interface RecordSaveSink {
  *   whole list with null for none (and any found later, after that).
  * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared; each answered
  *   `stash:save-ack` once it is in the file (the page keeps two in flight). `stash:save-abort`: what was gathered goes.
- * - `stash:import`: the Spotify import is phase 3; for now the listener is told it's coming.
+ * - `stash:import`: the import sheet opens over the record ([RecordEvent.Import]). When an import or a removal changes the
+ *   archive, [reload] tells the page (`stash:reload`), which says hello again and is answered with the new archive.
  * - `stash:close`: [RecordEvent.Close].
  *
  * Everything a page started (its archive, its covers, the wait on back) runs in that page's own job, which [detach] cancels.
@@ -188,7 +192,7 @@ class RecordHost(
             is RecordAsk.Counts -> Log.i(TAG, "the record's sources: spotify ${ask.spotify}, stash ${ask.stash}, lastfm ${ask.lastfm}")
             is RecordAsk.Play -> play(ask)
             is RecordAsk.Art -> art(ask, from)
-            RecordAsk.Import -> events(RecordEvent.Say(RecordNote.ImportComing))
+            RecordAsk.Import -> events(RecordEvent.Import)
             RecordAsk.Close -> close()
             RecordAsk.Backed -> {
                 // The page closed what it had open: the record stays
@@ -219,6 +223,11 @@ class RecordHost(
                 close()
             }
         }
+    }
+
+    /** The archive changed (an import written or removed): the page says hello again, and gets the new rows. */
+    fun reload() {
+        current?.post(RecordMessages.RELOAD)
     }
 
     /** The app's theme; the record hears of a change at once, and of the theme with every hello and ready. */

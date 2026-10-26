@@ -95,6 +95,7 @@ fun RecordScreen(
                 when (e) {
                     RecordEvent.Close -> close()
                     is RecordEvent.Say -> launch { say(e.note) }
+                    RecordEvent.Import -> Unit // the view model opens the import sheet
                 }
             }
         }

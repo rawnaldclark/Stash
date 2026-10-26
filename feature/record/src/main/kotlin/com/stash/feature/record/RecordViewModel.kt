@@ -7,8 +7,11 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
+import com.stash.feature.record.archive.ImportedArchive
 import com.stash.feature.record.archive.OwnArchive
+import com.stash.feature.record.archive.StackedArchive
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.bridge.RecordEvent
 import com.stash.feature.record.bridge.RecordHost
@@ -16,6 +19,7 @@ import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.bridge.RecordSaves
 import com.stash.feature.record.bridge.text
+import com.stash.feature.record.imports.RecordImports
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,6 +28,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 
@@ -38,6 +43,8 @@ import javax.inject.Inject
 @HiltViewModel
 class RecordViewModel @Inject constructor(
     plays: WebLibraryExportDao,
+    imported: RecordPlayDao,
+    private val imports: RecordImports,
     art: RecordArt,
     playback: RecordPlayback,
     private val files: RecordFiles,
@@ -53,14 +60,23 @@ class RecordViewModel @Inject constructor(
 
     private val saves = RecordSaves(File(app.cacheDir, SAVES_DIR), files)
 
+    /**
+     * The record's archive: the imported plays (a Spotify export), then this phone's own, in the bridge's 20k chunks. The page
+     * keeps the first row of an id; the two never share one (they are different players).
+     */
     private val host = RecordHost(
         scope = viewModelScope,
-        archive = OwnArchive(plays),
+        archive = StackedArchive(listOf(ImportedArchive(imported), OwnArchive(plays))),
         covers = { songs, retry, onBatch -> art.covers(songs, retry, onBatch) },
         player = playback,
         saves = saves,
-        events = { _events.tryEmit(it) },
+        events = { e -> if (e == RecordEvent.Import) imports.openSheet() else _events.tryEmit(e) },
     )
+
+    init {
+        // An import written or removed while the record is open: the page presses itself again from the new archive
+        viewModelScope.launch { imports.archiveChanged.collect { host.reload() } }
+    }
 
     /** A poster or a video ready for the share sheet, for the screen to open while it is started. */
     val shareReady: StateFlow<ShareReady?> = files.ready

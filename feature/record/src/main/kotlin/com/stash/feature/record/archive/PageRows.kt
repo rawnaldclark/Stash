@@ -38,6 +38,8 @@ data class RecordSummary(
     /** The earliest start, epoch ms; null with no rows. */
     val first: Long?,
     val topArtists: List<RankedArtist>,
+    /** The streams of this phone's own plays ([RecordFlags.STASH]): enough of them make a record before any import. */
+    val ownStreams: Int = 0,
 )
 
 /**
@@ -57,6 +59,7 @@ class RecordSummaryBuilder {
     private val ids = HashSet<String>()
     private var plays = 0
     private var streams = 0
+    private var ownStreams = 0
     private var totalMs = 0L
     private var first = Long.MAX_VALUE
 
@@ -64,7 +67,10 @@ class RecordSummaryBuilder {
     fun add(r: ArchivePlay): Boolean {
         if (!PageRows.accepts(r) || !ids.add(r.id)) return false
         plays++
-        if (r.ms >= STREAM_MS) streams++
+        if (r.ms >= STREAM_MS) {
+            streams++
+            if (r.f and RecordFlags.STASH != 0) ownStreams++
+        }
         totalMs += r.ms
         if (r.s < first) first = r.s
         val end = r.s + r.ms
@@ -94,6 +100,7 @@ class RecordSummaryBuilder {
             )
             .take(top)
             .map { RankedArtist(it.name, it.ms) },
+        ownStreams = ownStreams,
     )
 
     companion object {

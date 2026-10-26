@@ -1,5 +1,7 @@
 package com.stash.feature.record.card
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -37,7 +40,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -45,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.stash.feature.record.R
@@ -58,17 +65,23 @@ import coil3.compose.AsyncImage
 import com.stash.core.ui.components.BlurredCoverBackdrop
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashElevation
+import com.stash.feature.record.imports.IMPORT_TYPES
+import com.stash.feature.record.imports.ImportText
 
 /**
  * Home's Your record card (stash-player HomeCard.svelte and RecordCard.svelte), passed into Home as a slot like Your
  * listening, so feature/home doesn't depend on this module. Dark in every theme, like Daily Discover: its label's cover
  * blurred under a scrim, or Stash's purple.
  *
- * - With [RecordCard.OWN_FOR_RECORD] plays: a preview of the record, in its own numbers. A disc out of a sleeve of the albums
- *   played most, its label the most played album's cover; the hours set large; since when and how many plays; the artist
- *   played most; the top artists' pictures in an overlapping row. The whole card opens the record ([onOpen]).
- * - Before that, once the import exists ([RecordCard.INVITE_ENABLED]): "Press your record" (an empty record out of a plain
- *   sleeve, Get started, which opens the record), with a × that hides it on this phone. Until then, nothing.
+ * - With an import, or [RecordCard.OWN_FOR_RECORD] plays of this phone's own: a preview of the record, in its own numbers. A
+ *   disc out of a sleeve of the albums played most, its label the most played album's cover; the hours set large; since when
+ *   and how many plays; the artist played most; the top artists' pictures in an overlapping row. The whole card opens the
+ *   record ([onOpen]).
+ * - An import on its way with its sheet closed: "Pressing your record" and how far it is, or "Ready to press" for a preview
+ *   waiting; Open or Review brings the sheet back.
+ * - Before any of that: "Press your record" (an empty record out of a plain sleeve, the sources, Get started: the import
+ *   sheet), or "Waiting for Spotify" once they asked for their data (Bring the zip, or How it works). A × hides it on this
+ *   phone; Settings › Library & Storage brings it back.
  *
  * Composes to nothing until the history is read. Reads nothing when Home comes back: the card's numbers change only when the
  * history does ([RecordCardSource]).
@@ -83,9 +96,25 @@ fun YourRecordSection(
     if (s == RecordCardState.Hidden) return
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(16.dp))
+        val pad = Modifier.padding(horizontal = SidePadding)
         when (s) {
-            is RecordCardState.Record -> RecordPreviewCard(s, onOpen, Modifier.padding(horizontal = SidePadding))
-            RecordCardState.Invite -> InviteCard(onOpen, viewModel::hideInvite, Modifier.padding(horizontal = SidePadding))
+            is RecordCardState.Record -> RecordPreviewCard(s, onOpen, pad)
+            RecordCardState.Invite -> InviteCard(viewModel::openImport, viewModel::hideInvite, pad)
+            is RecordCardState.Waiting -> WaitingCard(s.askedAt, viewModel::bring, viewModel::openImport, viewModel::hideInvite, pad)
+            is RecordCardState.Importing -> PressingCard(
+                title = stringResource(R.string.record_pressing_title),
+                line = ImportText.progressLine(LocalContext.current.resources, s.progress),
+                action = stringResource(R.string.record_pressing_open),
+                onAction = viewModel::openImport,
+                modifier = pad,
+            )
+            RecordCardState.Ready -> PressingCard(
+                title = stringResource(R.string.record_ready_title),
+                line = stringResource(R.string.record_ready_body),
+                action = stringResource(R.string.record_ready_review),
+                onAction = viewModel::openImport,
+                modifier = pad,
+            )
             RecordCardState.Hidden -> Unit
         }
     }
@@ -230,27 +259,140 @@ private fun emphasised(text: String, part: String) = buildAnnotatedString {
     if (at >= 0) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White), at, at + part.length)
 }
 
+/** The invitation's × (HomeCard.svelte's `rc-x`): hides it on this phone until Settings brings it back. */
+@Composable
+private fun HideButton(onHide: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(4.dp), contentAlignment = Alignment.TopEnd) {
+        IconButton(onClick = onHide, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = stringResource(R.string.record_invite_hide),
+                tint = Color.White.copy(alpha = 0.72f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** The sources that can come in today, as small chips (HomeCard.svelte's `rc-chips`): Spotify's export and Stash's own plays. */
+@Composable
+private fun SourceChips() {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.clearAndSetSemantics { }) {
+        for (name in listOf(stringResource(R.string.record_source_spotify), stringResource(R.string.record_source_stash))) {
+            Text(
+                name,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = Color.White.copy(alpha = 0.82f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/** The white pill the card's actions are (Daily Discover's family). */
+@Composable
+private fun CardButton(text: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF111111)),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        modifier = Modifier.height(34.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
+    }
+}
+
 /**
- * "Press your record": an empty record out of a plain sleeve, Get started, and the × that hides it. No chips for the ways in
- * (Spotify, Last.fm): neither can come in until the import exists, and a promise the card can't keep is a dead end.
+ * "Waiting for Spotify" (HomeCard.svelte, once they asked): when they asked, and the zip straight in when the email comes
+ * (Bring the zip: the files picked go into the sheet), or the steps again (How it works). The × hides it as the invitation's does.
+ */
+@Composable
+private fun WaitingCard(askedAt: Long, onBring: (List<android.net.Uri>) -> Unit, onHow: () -> Unit, onHide: () -> Unit, modifier: Modifier = Modifier) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> onBring(uris) }
+    val res = LocalContext.current.resources
+    CardFrame(backdrop = null, modifier = modifier, overlay = { HideButton(onHide) }) {
+        RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f).padding(end = 20.dp)) {
+            val title = stringResource(R.string.record_waiting_title)
+            val body = stringResource(R.string.record_waiting_body, ImportText.shortDate(res, askedAt))
+            Text(stringResource(R.string.record_eyebrow), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { contentDescription = "$title. $body" },
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                body,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics { },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CardButton(stringResource(R.string.record_waiting_bring)) { picker.launch(IMPORT_TYPES) }
+                Spacer(Modifier.width(4.dp))
+                TextButton(onClick = onHow, contentPadding = PaddingValues(horizontal = 10.dp), modifier = Modifier.height(34.dp)) {
+                    Text(stringResource(R.string.record_waiting_how), color = Color.White.copy(alpha = 0.86f), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * An import on its way with its sheet closed (HomeCard.svelte's busy card): the record being pressed, how far it is (or that
+ * a preview waits), and the way back to it.
+ */
+@Composable
+private fun PressingCard(title: String, line: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
+    CardFrame(backdrop = null, modifier = modifier) {
+        RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.record_eyebrow), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                line,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            Spacer(Modifier.height(10.dp))
+            CardButton(action, onAction)
+        }
+    }
+}
+
+/**
+ * "Press your record": an empty record out of a plain sleeve, the sources that can come in (Spotify, Stash), Get started (the
+ * import sheet), and the × that hides it.
  */
 @Composable
 private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifier = Modifier) {
     CardFrame(
         backdrop = null,
         modifier = modifier,
-        overlay = {
-            Box(Modifier.fillMaxWidth().padding(4.dp), contentAlignment = Alignment.TopEnd) {
-                IconButton(onClick = onHide, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.record_invite_hide),
-                        tint = Color.White.copy(alpha = 0.72f),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        },
+        overlay = { HideButton(onHide) },
     ) {
         RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
         Spacer(Modifier.width(14.dp))
@@ -274,15 +416,10 @@ private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifie
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clearAndSetSemantics { },
             )
+            Spacer(Modifier.height(6.dp))
+            SourceChips()
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = onOpen,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF111111)),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                modifier = Modifier.height(34.dp),
-            ) {
-                Text(stringResource(R.string.record_invite_start), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp))
-            }
+            CardButton(stringResource(R.string.record_invite_start), onOpen)
         }
     }
 }

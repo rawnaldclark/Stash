@@ -4,6 +4,10 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.WebLibraryExportDao.OwnAlbumTotal
 import com.stash.feature.record.archive.RankedArtist
 import com.stash.feature.record.archive.RecordSummary
+import com.stash.feature.record.importer.ImportPreview
+import com.stash.feature.record.importer.ImportProgress
+import com.stash.feature.record.imports.ImportFailure
+import com.stash.feature.record.imports.ImportState
 import org.junit.Test
 import java.time.ZoneId
 import java.util.Locale
@@ -18,8 +22,13 @@ class RecordCardTest {
     private fun total(artist: String, album: String, title: String, ms: Long, plays: Int = 1, first: Long = 1, last: Long = first, art: String? = null) =
         OwnAlbumTotal(artist = artist, album = album, title = title, albumArtUrl = art, plays = plays, listenedMs = ms, firstAt = first, lastAt = last)
 
-    private fun summary(streams: Int, totalMs: Long = h, first: Long? = 100, artists: List<String> = listOf("A")) =
-        RecordSummary(plays = streams + 3, streams = streams, totalMs = totalMs, first = first, topArtists = artists.map { RankedArtist(it, 1) })
+    private fun summary(streams: Int, totalMs: Long = h, first: Long? = 100, artists: List<String> = listOf("A"), own: Int = streams) =
+        RecordSummary(plays = streams + 3, streams = streams, totalMs = totalMs, first = first, topArtists = artists.map { RankedArtist(it, 1) }, ownStreams = own)
+
+    private val preview = ImportPreview(
+        plays = 10, same = 0, overlap = 0, listenedMs = h, first = 1, last = 2, years = 1, playlists = emptyList(),
+        likes = 0, hidden = 0, extended = true, phone = 0, unreadable = 0,
+    )
 
     @Test fun `the card's numbers are the record's - its streams, all its time, its earliest start, its ranking`() {
         val s = RecordSummary(
@@ -63,18 +72,45 @@ class RecordCardTest {
         assertThat(tie.map { it.album }).containsExactly("Alpha", "beta").inOrder()
     }
 
-    @Test fun `the record at fifty streams, under that nothing, until the import exists`() {
-        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), inviteHidden = false)).isEqualTo(RecordCardState.Hidden)
-        assertThat(RecordCard.INVITE_ENABLED).isFalse()
-        // once phase 3 offers it: the invitation, unless it was hidden
-        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), inviteHidden = false, invite = true)).isEqualTo(RecordCardState.Invite)
-        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), inviteHidden = true, invite = true)).isEqualTo(RecordCardState.Hidden)
-        val record = RecordCard.stateOf(summary(streams = 50, artists = listOf("A", "B")), listOf(total("A", "B", "C", h)), inviteHidden = true)
+    @Test fun `the record at fifty streams of this phone's own, under that the invitation, unless it was hidden`() {
+        assertThat(RecordCard.INVITE_ENABLED).isTrue()
+        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), CardImport())).isEqualTo(RecordCardState.Invite)
+        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), CardImport(inviteHidden = true))).isEqualTo(RecordCardState.Hidden)
+        assertThat(RecordCard.stateOf(summary(streams = 49), emptyList(), CardImport(), invite = false)).isEqualTo(RecordCardState.Hidden)
+        val record = RecordCard.stateOf(summary(streams = 50, artists = listOf("A", "B")), listOf(total("A", "B", "C", h)), CardImport(inviteHidden = true))
         assertThat(record).isInstanceOf(RecordCardState.Record::class.java)
         record as RecordCardState.Record
         assertThat(record.view.plays).isEqualTo(RecordCard.OWN_FOR_RECORD)
         assertThat(record.albumArt).hasSize(1)
         assertThat(record.artistArt).containsExactly(null, null)
+        // fifty streams in all, but only ten of them this phone's own (and nothing imported): not yet a record
+        assertThat(RecordCard.stateOf(summary(streams = 50, own = 10), emptyList(), CardImport())).isEqualTo(RecordCardState.Invite)
+    }
+
+    @Test fun `once anything is imported, the record, whatever this phone played`() {
+        val s = RecordCard.stateOf(summary(streams = 6_086, own = 0), emptyList(), CardImport(imported = true, inviteHidden = true))
+        assertThat(s).isInstanceOf(RecordCardState.Record::class.java)
+        assertThat((s as RecordCardState.Record).view.plays).isEqualTo(6_086)
+    }
+
+    @Test fun `waiting for Spotify once they asked, and the asked date survives a hidden card only as hidden`() {
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(asked = 1_761_000_000_000))).isEqualTo(RecordCardState.Waiting(1_761_000_000_000))
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(asked = 1, inviteHidden = true))).isEqualTo(RecordCardState.Hidden)
+    }
+
+    @Test fun `an import on its way shows how far it is, over the invitation and over the record`() {
+        val reading = ImportState.Working(ImportProgress.Read(2, 7, 0.4f, 2019))
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(state = reading))).isEqualTo(RecordCardState.Importing(reading.progress))
+        assertThat(RecordCard.stateOf(summary(streams = 80), emptyList(), CardImport(imported = true, state = reading))).isEqualTo(RecordCardState.Importing(reading.progress))
+        // even hidden: an import is on its way
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(inviteHidden = true, state = reading))).isEqualTo(RecordCardState.Importing(reading.progress))
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(state = ImportState.Preview(preview, 2)))).isEqualTo(RecordCardState.Ready)
+    }
+
+    @Test fun `a failure or a done import is no import on its way`() {
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), CardImport(state = ImportState.Failed(ImportFailure.NOT_EXPORT)))).isEqualTo(RecordCardState.Invite)
+        assertThat(RecordCard.stateOf(summary(streams = 60, own = 0), emptyList(), CardImport(imported = true, state = ImportState.Done(60, 60))))
+            .isInstanceOf(RecordCardState.Record::class.java)
     }
 
     @Test fun `hours, at least 1 once anything played, and counts with separators`() {

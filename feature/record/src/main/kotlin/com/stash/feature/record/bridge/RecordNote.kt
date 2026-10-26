@@ -5,9 +5,6 @@ import com.stash.feature.record.R
 
 /** A line for the listener over the record (a snackbar), worded by the screen from its resources ([text]). */
 sealed interface RecordNote {
-    /** `stash:import`: the Spotify import is phase 3. */
-    data object ImportComing : RecordNote
-
     /** The archive stopped part-way: the record is pressed from what came. */
     data object ArchiveFailed : RecordNote
 
@@ -41,7 +38,6 @@ sealed interface RecordNote {
 
 /** [note] in the app's language. */
 fun RecordNote.text(res: Resources): String = when (this) {
-    RecordNote.ImportComing -> res.getString(R.string.record_note_import)
     RecordNote.ArchiveFailed -> res.getString(R.string.record_note_archive_failed)
     is RecordNote.Playing -> res.getString(R.string.record_note_playing, title)
     is RecordNote.PlayingSongs -> res.getQuantityString(R.plurals.record_note_playing_songs, count, count)

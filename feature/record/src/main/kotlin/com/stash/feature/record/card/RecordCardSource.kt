@@ -2,13 +2,15 @@ package com.stash.feature.record.card
 
 import android.os.SystemClock
 import android.util.Log
+import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.dao.WebLibraryExportDao.OwnAlbumTotal
-import com.stash.core.data.db.dao.WebLibraryExportDao.OwnHistoryStamp
+import com.stash.feature.record.archive.ImportedArchive
 import com.stash.feature.record.archive.OwnArchive
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.archive.RecordSummary
 import com.stash.feature.record.archive.RecordSummaryBuilder
+import com.stash.feature.record.archive.StackedArchive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flowOn
@@ -35,11 +38,12 @@ import kotlin.coroutines.CoroutineContext
 data class CardData(val summary: RecordSummary, val albums: List<OwnAlbumTotal>)
 
 /**
- * The card's numbers, worked out the way the record works out its own (the same rows, [OwnArchive], read by the page's rules,
- * [RecordSummaryBuilder]), so the card and the record never disagree.
+ * The card's numbers, worked out the way the record works out its own (the same rows: the imported plays and this phone's own,
+ * [StackedArchive], read by the page's rules, [RecordSummaryBuilder]), so the card and the record never disagree.
  *
  * Read only when what they are made of changed, never because Home came back:
- * - the plays, skips or blocklist ([WebLibraryExportDao.ownHistoryStamp]): read once a burst settles ([SETTLE_MS]);
+ * - the plays, skips or blocklist ([WebLibraryExportDao.ownHistoryStamp]), or the imported plays ([RecordPlayDao.stamp]: an
+ *   import or a removal): read once a burst settles ([SETTLE_MS]);
  * - the songs themselves ([WebLibraryExportDao.tracksWritten]: a rename, an album moved). A sync writes them many times a
  *   second, so these are read once the writes settle ([TRACKS_SETTLE_MS]) and at most once every [TRACKS_GAP_MS].
  * The result is kept with its stamp: a new Home after a while (the sharing stopped) reads nothing for the same history. Off the
@@ -48,7 +52,8 @@ data class CardData(val summary: RecordSummary, val albums: List<OwnAlbumTotal>)
 @OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class RecordCardSource internal constructor(
-    private val stamps: Flow<OwnHistoryStamp>,
+    /** Changes when the history does (compared by value): this phone's own stamp and the imported plays' together. */
+    private val stamps: Flow<Any>,
     private val tracks: Flow<Long>,
     private val archive: RecordArchiveSource,
     private val albums: suspend () -> List<OwnAlbumTotal>,
@@ -58,24 +63,25 @@ class RecordCardSource internal constructor(
     private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     @Inject
-    constructor(dao: WebLibraryExportDao) : this(
-        stamps = dao.ownHistoryStamp(),
+    constructor(dao: WebLibraryExportDao, imported: RecordPlayDao) : this(
+        stamps = combine(dao.ownHistoryStamp(), imported.stamp()) { own, plays -> own to plays },
         tracks = dao.tracksWritten(),
-        archive = OwnArchive(dao),
-        albums = dao::ownAlbumTotals,
+        archive = StackedArchive(listOf(ImportedArchive(imported), OwnArchive(dao))),
+        // The album played last first, whichever source it's in (an album's spelling is the one seen first)
+        albums = { (dao.ownAlbumTotals() + imported.albumTotals()).sortedByDescending { it.lastAt } },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
-    @Volatile private var kept: Pair<OwnHistoryStamp, CardData>? = null
+    @Volatile private var kept: Pair<Any, CardData>? = null
 
     private sealed interface Change {
-        class History(val stamp: OwnHistoryStamp) : Change
+        class History(val stamp: Any) : Change
         data object Tracks : Change
     }
 
     /** The latest card data; the first as soon as it is read (or kept), each later one as above. */
     val data: Flow<CardData> = channelFlow {
-        var latest: OwnHistoryStamp? = null
+        var latest: Any? = null
         // The songs changed since the last read: the next reads afresh even for a history it has kept
         var tracksDirty = false
         var lastTracksRead = Long.MIN_VALUE / 2

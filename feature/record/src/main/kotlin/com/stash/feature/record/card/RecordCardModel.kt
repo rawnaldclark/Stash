@@ -6,6 +6,8 @@ import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.JsText
 import com.stash.feature.record.archive.RecordSummary
 import com.stash.feature.record.art.ArtText
+import com.stash.feature.record.importer.ImportProgress
+import com.stash.feature.record.imports.ImportState
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -27,17 +29,34 @@ data class CardView(
     val artists: List<String>,
 )
 
-/** The card, by what there is. */
+/** The card, by what there is (stash-player HomeCard.svelte's states). */
 sealed interface RecordCardState {
-    /** Enough plays for a record: the way into it. Covers come as they're found ([albumArt], [artistArt]). */
+    /** A record (an import, or enough plays of this phone's own): the way into it. Covers come as they're found. */
     data class Record(val view: CardView, val albumArt: List<String?>, val artistArt: List<String?>) : RecordCardState
 
-    /** Not yet: "Press your record", and Get started. Only once the import exists ([RecordCard.INVITE_ENABLED]). */
+    /** Nothing yet: "Press your record", the ways in, and Get started (the import sheet). */
     data object Invite : RecordCardState
 
-    /** Nothing on Home: no record yet, and no invitation (hidden with its ×, or not offered yet). */
+    /** They tapped through to ask Spotify for their data on [askedAt]: the zip can come straight in when the email does. */
+    data class Waiting(val askedAt: Long) : RecordCardState
+
+    /** An import on its way with its sheet closed: how far it is, and the way back to it. */
+    data class Importing(val progress: ImportProgress) : RecordCardState
+
+    /** A preview waiting for the person (nothing is written until they import). */
+    data object Ready : RecordCardState
+
+    /** Nothing on Home: no record yet, and the invitation hidden with its ×. */
     data object Hidden : RecordCardState
 }
+
+/** What the import says, for the card: whether anything came in, when Spotify was asked, the ×, and the import's own state. */
+data class CardImport(
+    val imported: Boolean = false,
+    val asked: Long? = null,
+    val inviteHidden: Boolean = false,
+    val state: ImportState = ImportState.Idle,
+)
 
 /**
  * The card's rules. Once there is a record it says what the record says, as the web's card does once a record exists
@@ -47,14 +66,11 @@ sealed interface RecordCardState {
  * `topAlbums`).
  */
 object RecordCard {
-    /** Plays (streams) that make a record without an import (shared.ts `OWN_FOR_RECORD`). */
+    /** This phone's own plays (streams) that make a record without an import (shared.ts `OWN_FOR_RECORD`). */
     const val OWN_FOR_RECORD = 50
 
-    /**
-     * "Press your record" under [OWN_FOR_RECORD] plays. Off until the Spotify import exists (phase 3 turns it on): until then
-     * its Get started would open a record with nothing to bring in, a dead end.
-     */
-    const val INVITE_ENABLED = false
+    /** "Press your record" before there is a record: on, now that Get started has something to bring in (the Spotify import). */
+    const val INVITE_ENABLED = true
 
     /** Albums on the sleeve (its 2×2; the first is also the label), and artists in the row. */
     const val CARD_ALBUMS = 4
@@ -62,17 +78,27 @@ object RecordCard {
 
     private const val HOUR_MS = 3_600_000.0
 
+    /**
+     * HomeCard.svelte: the record once anything was imported or this phone has [OWN_FOR_RECORD] streams of its own, unless an
+     * import is on its way (then how far it is, or the preview waiting); else the invitation ("Waiting for Spotify" once they
+     * asked), unless its × hid it.
+     */
     fun stateOf(
         summary: RecordSummary,
         albums: List<OwnAlbumTotal>,
-        inviteHidden: Boolean,
+        import: CardImport,
         invite: Boolean = INVITE_ENABLED,
     ): RecordCardState {
-        if (summary.streams >= OWN_FOR_RECORD) {
-            val view = viewOf(summary, albums)
-            return RecordCardState.Record(view, view.albums.map { it.cover }, view.artists.map { null })
+        val entry = import.imported || summary.ownStreams >= OWN_FOR_RECORD
+        val st = import.state
+        return when {
+            entry && !st.busy -> viewOf(summary, albums).let { view -> RecordCardState.Record(view, view.albums.map { it.cover }, view.artists.map { null }) }
+            st is ImportState.Preview -> RecordCardState.Ready
+            st is ImportState.Working -> RecordCardState.Importing(st.progress)
+            !invite || import.inviteHidden -> RecordCardState.Hidden
+            import.asked != null -> RecordCardState.Waiting(import.asked)
+            else -> RecordCardState.Invite
         }
-        return if (invite && !inviteHidden) RecordCardState.Invite else RecordCardState.Hidden
     }
 
     /** The card from the record's own numbers, and the sleeve from the albums played most. */
