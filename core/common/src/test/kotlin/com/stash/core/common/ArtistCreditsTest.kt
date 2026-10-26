@@ -8,7 +8,7 @@ import org.junit.Test
 /**
  * Contract tests for the artist-credit parser:
  * [String.splitArtistCredits], [expandArtistCredits],
- * [matchesArtistCredits], and [String.primaryArtist].
+ * [matchesArtistCredits], [String.primaryArtist], and [songArtist].
  *
  * The parser is comma-only + allowlist: collaborations joined with `", "`
  * (the delimiter the app itself uses) collapse correctly, while single acts
@@ -155,5 +155,41 @@ class ArtistCreditsTest {
             "Tyler, The Creator, Kali Uchis".splitArtistCredits(),
         )
         assertEquals(listOf("Kali Uchis", "Tyler, The Creator"), "Kali Uchis, tyler, the creator".splitArtistCredits())
+    }
+
+    // ── songArtist ────────────────────────────────────────────────────
+
+    @Test fun `a compilation's album artist is not the song's artist`() {
+        // Last.fm files "Blinding Lights" under "Now 35"; the Now Playing tap opened Various Artists.
+        assertEquals("The Weeknd", songArtist("The Weeknd", "Various Artists"))
+        assertEquals("Albin Lee Meldau", songArtist("Albin Lee Meldau", "Blandade artister"))
+        assertEquals("John Parish", songArtist("John Parish", "فنانون متعددون"))
+        assertEquals("Mark Lanegan", songArtist("Mark Lanegan", "[unknown]"))
+    }
+
+    @Test fun `another act's collection keeps the song's own artist`() {
+        assertEquals("The Supremes", songArtist("The Supremes", "Diana Ross"))
+        assertEquals("Billie Holiday", songArtist("Billie Holiday", "Ella Fitzgerald"))
+    }
+
+    @Test fun `an album artist the credit names is the clean name`() {
+        assertEquals("Drake", songArtist("Drake feat. 21 Savage", "Drake"))
+        assertEquals("Metro Boomin", songArtist("Metro Boomin, Travis Scott", "Metro Boomin"))
+        assertEquals("Neil Young & Crazy Horse", songArtist("Crazy Horse, Neil Young", "Neil Young & Crazy Horse"))
+    }
+
+    @Test fun `names compare with case, accents and punctuation folded`() {
+        assertEquals("Björk", songArtist("Bjork", "Björk"))
+        assertEquals("T. Rex", songArtist("T.Rex", "T. Rex"))
+        assertEquals("MOBB DEEP", songArtist("Mobb Deep", "MOBB DEEP"))
+    }
+
+    @Test fun `a word inside another word doesn't count as naming it`() {
+        assertEquals("Mae", songArtist("Mae", "Maestro Ziikos"))
+    }
+
+    @Test fun `a missing name falls back to the other`() {
+        assertEquals("The Weeknd", songArtist("The Weeknd", ""))
+        assertEquals("Diana Ross", songArtist("", "Diana Ross"))
     }
 }

@@ -1,5 +1,7 @@
 package com.stash.core.common
 
+import java.text.Normalizer
+
 /**
  * Single acts whose names happen to contain the characters a credit
  * parser would otherwise treat as separators (", ", "&", "+", "/", a
@@ -120,6 +122,36 @@ fun String.primaryArtist(): String {
     if (trimmed.isAllowlistedCredit()) return trimmed
     return trimmed.substringBefore(", ").trim().ifEmpty { trimmed }
 }
+
+/**
+ * The act a song's own artist link should open: [albumArtist] when the song's credit names it
+ * (the clean "Drake" of "Drake feat. 21 Savage" on Drake's album), else the song's [artist].
+ *
+ * An album artist the credit doesn't name belongs to the album, not the song: a compilation's
+ * "Various Artists" (Last.fm files big hits under one, "Blinding Lights" under "Now 35"), or
+ * another act's collection (The Supremes on Diana Ross's "Ultimate Collection"). Names compare
+ * word by word with case, accents and punctuation folded, so "T.Rex" names "T. Rex".
+ */
+fun songArtist(artist: String, albumArtist: String): String {
+    if (albumArtist.isBlank()) return artist
+    if (artist.isBlank()) return albumArtist
+    val album = creditWords(albumArtist)
+    val named = (artist.splitArtistCredits() + artist).any { act ->
+        val words = creditWords(act)
+        words.isNotEmpty() && album.isNotEmpty() && (album.contains(words) || words.contains(album))
+    }
+    return if (named) albumArtist else artist
+}
+
+/** [name]'s words with case and accents folded, padded with spaces: " t rex " for "T. Rex". */
+private fun creditWords(name: String): String {
+    val bare = Normalizer.normalize(name, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
+    val words = foldCase(bare).split(NON_WORD).filter { it.isNotEmpty() }
+    return if (words.isEmpty()) "" else words.joinToString(" ", prefix = " ", postfix = " ")
+}
+
+private val COMBINING_MARKS = Regex("\\p{M}+")
+private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
 
 private fun String.isAllowlistedCredit(): Boolean =
     ARTIST_CREDIT_ALLOWLIST.any { it.equals(this, ignoreCase = true) }

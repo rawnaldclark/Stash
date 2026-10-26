@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.common.songArtist
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
@@ -371,9 +372,11 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Tap on the Now Playing track block. Resolves the playing artist's NAME
      * to a YT browseId and emits an [ArtistNavTarget] carrying the current
-     * album as `focusAlbum`. Prefers the clean `albumArtist`, falling back to
-     * `artist`. No-op when nothing is playing or a resolve is already in
-     * flight (double-tap guard). Resolve miss/failure → snackbar, no nav.
+     * album as `focusAlbum`. Prefers the clean `albumArtist` when the song's
+     * credit names it, else `artist` ([songArtist]: a compilation's "Various
+     * Artists" isn't the song's artist). No-op when nothing is playing or a
+     * resolve is already in flight (double-tap guard). Resolve miss/failure →
+     * snackbar, no nav.
      */
     /** Live label of the active radio station (null when no station). */
     val radioSeedLabel: StateFlow<String?> = playerRepository.radioSeedLabel
@@ -447,7 +450,7 @@ class NowPlayingViewModel @Inject constructor(
     fun onTrackInfoTapped() {
         val track = _uiState.value.currentTrack ?: return
         if (_resolvingArtist.value) return
-        val name = track.albumArtist.ifBlank { track.artist }
+        val name = songArtist(track.artist, track.albumArtist)
         if (name.isBlank()) {
             _userMessages.tryEmit("Couldn't find this artist")
             return
