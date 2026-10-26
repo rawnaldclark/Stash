@@ -291,6 +291,7 @@ class RecordHost(
 
     private fun play(ask: RecordAsk.Play) {
         val songs = ask.songs
+        Log.i(TAG, "a play from the record: ${songs.size} songs")
         events(RecordEvent.Say(if (songs.size == 1) RecordNote.Playing(songs[0].title) else RecordNote.PlayingSongs(songs.size)))
         player.play(songs, ask.index, ask.from)
     }

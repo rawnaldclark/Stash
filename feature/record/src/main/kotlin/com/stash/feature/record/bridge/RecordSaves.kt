@@ -71,6 +71,7 @@ class RecordSaves(
                     return@withContext RecordNote.TooManySaves
                 }
                 current = start(chunk)
+                Log.i(TAG, "a file from the record: ${chunk.mime}, ${if (chunk.share) "to share" else "to save"}")
             }
             val c = current
             if (c == null || c.id != chunk.id || chunk.seq != c.next) {
@@ -101,7 +102,7 @@ class RecordSaves(
             if (!chunk.done) return@withContext null
             current = null
             finished++
-            deliver(c)
+            deliver(c).also { Log.i(TAG, "a file from the record, whole: ${c.mime}, ${c.size} bytes, ${it ?: "no note"}") }
         }
     }
 
