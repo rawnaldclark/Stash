@@ -1,7 +1,13 @@
 package com.stash.feature.settings
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -13,11 +19,15 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.AmbientStyle
+import com.stash.core.data.prefs.FullArtPan
+import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.prefs.StartTab
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.UiScale
 import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.feature.settings.components.SettingsGroupCard
+import com.stash.feature.settings.components.SettingsRowPadH
+import com.stash.feature.settings.components.SettingsRowPadV
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
@@ -49,6 +59,10 @@ fun SettingsAppearanceScreen(
     // Dragging only moves the draft: committing live would lay the whole app out again under the
     // finger. The store gets the value once, on release (or Reset).
     var draftScale by remember(uiScale, maxScale) { mutableFloatStateOf(minOf(uiScale, maxScale)) }
+    val fullArtZoom by viewModel.fullArtZoom.collectAsStateWithLifecycle()
+    val fullArtPan by viewModel.fullArtPan.collectAsStateWithLifecycle()
+    // As the display size: the slider moves a draft, stored once on release.
+    var draftZoom by remember(fullArtZoom) { mutableFloatStateOf(fullArtZoom) }
 
     SettingsScaffold(title = stringResource(R.string.settings_appearance_title), onBack = onBack, modifier = modifier) {
         SettingsSectionLabel(stringResource(R.string.settings_theme_section))
@@ -134,6 +148,50 @@ fun SettingsAppearanceScreen(
                 checked = uiState.cycleAlbumArt,
                 onCheckedChange = viewModel::onCycleAlbumArtChanged,
             )
+        }
+        // Full art (the toggle in Now Playing's top row): how close it shows the album, and how fast
+        // each page pans across what the screen can't show.
+        nowPlaying += {
+            SettingsSliderRow(
+                title = stringResource(R.string.settings_full_art_zoom_title),
+                valueLabel = String.format(java.util.Locale.US, "%.1fx", draftZoom),
+                subtitle = stringResource(R.string.settings_full_art_zoom_subtitle),
+                value = draftZoom,
+                onValueChange = { draftZoom = Math.round(it * 10f) / 10f },
+                onValueChangeFinished = { viewModel.onFullArtZoomChanged(draftZoom) },
+                valueRange = NowPlayingPreference.FULL_ART_ZOOM_MIN..NowPlayingPreference.FULL_ART_ZOOM_MAX,
+                steps = 9, // a detent every 0.1
+                onReset = {
+                    draftZoom = NowPlayingPreference.FULL_ART_ZOOM_DEFAULT
+                    viewModel.onFullArtZoomChanged(NowPlayingPreference.FULL_ART_ZOOM_DEFAULT)
+                },
+                resetEnabled = draftZoom != NowPlayingPreference.FULL_ART_ZOOM_DEFAULT,
+            )
+        }
+        nowPlaying += {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = SettingsRowPadH, vertical = SettingsRowPadV)) {
+                Text(
+                    text = stringResource(R.string.settings_full_art_pan_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.settings_full_art_pan_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                SettingsSegmented(
+                    options = listOf(
+                        stringResource(R.string.settings_full_art_pan_off),
+                        stringResource(R.string.settings_full_art_pan_slow),
+                        stringResource(R.string.settings_full_art_pan_normal),
+                        stringResource(R.string.settings_full_art_pan_fast),
+                    ), // FullArtPan order
+                    selectedIndex = fullArtPan.ordinal,
+                    onSelect = { viewModel.onFullArtPanChanged(FullArtPan.entries[it]) },
+                )
+            }
         }
         SettingsGroupCard(rows = nowPlaying)
 

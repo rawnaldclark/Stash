@@ -96,9 +96,6 @@ private const val PAGE_FADE_MS = 2_200L
 /** The art growing from its square to the full width, and back. */
 private const val GROW_MS = 650
 
-/** The art's height in full art, of the screen's: the controls sit over its lower part. */
-private const val ART_HEIGHT = 0.62f
-
 /** Where the art starts melting into the blend under it, of its height. */
 private const val ART_FADE_FROM = 0.55f
 
@@ -307,6 +304,8 @@ internal fun FullArtTheme(on: Boolean, content: @Composable () -> Unit) {
  * @param origin The square art in window coordinates: full art grows from it and back into it.
  * @param originCornerPx The square art's corner radius.
  * @param onPage Told the index of the page on screen when it changes.
+ * @param zoom How close the art shows the album: a square cover this many screen widths across.
+ * @param panDpPerS How fast a page pans across what its crop hides; 0 holds it still, centred.
  */
 @Composable
 internal fun FullArtLayer(
@@ -323,6 +322,8 @@ internal fun FullArtLayer(
     origin: () -> Rect?,
     originCornerPx: Float,
     onPage: (Int) -> Unit,
+    zoom: Float,
+    panDpPerS: Float,
     modifier: Modifier = Modifier,
 ) {
     val reducedMotion = rememberNpReducedMotion()
@@ -398,7 +399,7 @@ internal fun FullArtLayer(
     LightStatusBarIcons(on = state.grow.value > 0.5f)
 
     var layerOrigin by remember { mutableStateOf(Offset.Zero) }
-    val panSpeedPx = with(LocalDensity.current) { FULL_ART_PAN_DP_PER_S.dp.toPx() }
+    val panSpeedPx = with(LocalDensity.current) { panDpPerS.dp.toPx() }
     val blur = with(LocalDensity.current) { BLEND_BLUR.toPx() }
     val topPage = state.shown.lastOrNull()?.page
 
@@ -444,7 +445,7 @@ internal fun FullArtLayer(
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawBehind {
                     val t = state.grow.value
-                    val full = Rect(0f, 0f, size.width, size.height * ART_HEIGHT)
+                    val (full, extraZoom) = fullArtBox(size.width, size.height, zoom)
                     val from = origin()?.translate(-layerOrigin) ?: full
                     val stage = lerpRect(from, full, t)
                     val corner = originCornerPx * (1f - t)
@@ -464,6 +465,7 @@ internal fun FullArtLayer(
                                 direction = shown.direction,
                                 holdS = state.schedule.holdMs / 1000f,
                                 speedPxPerS = if (reducedMotion) 0f else panSpeedPx,
+                                zoom = extraZoom,
                             )
                             drawPage(page.image, lerpRect(square, panned, t), alpha)
                         }

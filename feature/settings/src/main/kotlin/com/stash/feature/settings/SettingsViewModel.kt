@@ -1689,6 +1689,28 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { nowPlayingPreference.setCycleAlbumArt(enabled) }
     }
 
+    /** Settings > Appearance > Full art zoom. */
+    val fullArtZoom: StateFlow<Float> = nowPlayingPreference.fullArtZoom.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        com.stash.core.data.prefs.NowPlayingPreference.FULL_ART_ZOOM_DEFAULT,
+    )
+
+    fun onFullArtZoomChanged(zoom: Float) {
+        viewModelScope.launch { nowPlayingPreference.setFullArtZoom(zoom) }
+    }
+
+    /** Settings > Appearance > Full art pan. */
+    val fullArtPan: StateFlow<com.stash.core.data.prefs.FullArtPan> = nowPlayingPreference.fullArtPan.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        com.stash.core.data.prefs.FullArtPan.NORMAL,
+    )
+
+    fun onFullArtPanChanged(pan: com.stash.core.data.prefs.FullArtPan) {
+        viewModelScope.launch { nowPlayingPreference.setFullArtPan(pan) }
+    }
+
     /** How the Now Playing ambient moves (Settings > Appearance > Ambient style). */
     fun onAmbientStyleChanged(style: com.stash.core.data.prefs.AmbientStyle) {
         viewModelScope.launch { nowPlayingPreference.setAmbientStyle(style) }

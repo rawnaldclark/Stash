@@ -74,6 +74,27 @@ class FullArtMathTest {
         }
     }
 
+    @Test fun `zoom 1 fits the whole cover across the screen`() {
+        // 412 x 915 screen: the box is a square the screen's width, so a square cover isn't cropped.
+        val (box, extra) = fullArtBox(412f, 915f, zoom = 1f)
+        assertEquals(412f, box.height, 0.01f)
+        assertEquals(1f, extra, 0.0001f)
+        val r = panCrop(1200f, 1200f, box.width, box.height, elapsedS = 5f, direction = 1, holdS = 38f, speedPxPerS = 16f, zoom = extra)
+        assertEquals(0f, r.left, 0.01f)
+        assertEquals(412f, r.width, 0.01f)
+    }
+
+    @Test fun `zoom past the art's tallest scales the page up inside it`() {
+        // 2.0x on 412 x 915: the box stops at 62% of the height (567.3); the rest scales the page.
+        val (box, extra) = fullArtBox(412f, 915f, zoom = 2f)
+        assertEquals(915f * FULL_ART_MAX_HEIGHT, box.height, 0.01f)
+        assertEquals(824f / (915f * FULL_ART_MAX_HEIGHT), extra, 0.0001f)
+        val r = panCrop(1200f, 1200f, box.width, box.height, elapsedS = 0f, direction = 1, holdS = 38f, speedPxPerS = 16f, zoom = extra)
+        assertEquals(824f, r.width, 0.5f)
+        // Centred on the side it doesn't pan along.
+        assertEquals((box.height - r.height) / 2f, r.top, 0.01f)
+    }
+
     @Test fun `with no pan the page sits centred`() {
         val r = panCrop(1200f, 1200f, 390f, 520f, elapsedS = 5f, direction = 1, holdS = 38f, speedPxPerS = 0f)
         assertEquals(-65f, r.left, 0.01f)

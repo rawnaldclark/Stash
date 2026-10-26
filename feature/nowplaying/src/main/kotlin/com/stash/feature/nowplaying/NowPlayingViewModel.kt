@@ -183,6 +183,14 @@ class NowPlayingViewModel @Inject constructor(
         .map<Boolean, Boolean?> { it }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Settings > Appearance > Full art zoom. */
+    val fullArtZoom: StateFlow<Float> = nowPlayingPreference.fullArtZoom
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.NowPlayingPreference.FULL_ART_ZOOM_DEFAULT)
+
+    /** Settings > Appearance > Full art pan. */
+    val fullArtPan: StateFlow<com.stash.core.data.prefs.FullArtPan> = nowPlayingPreference.fullArtPan
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtPan.NORMAL)
+
     fun onToggleFullArt() {
         val on = fullArt.value != true
         viewModelScope.launch { nowPlayingPreference.setFullArt(on) }

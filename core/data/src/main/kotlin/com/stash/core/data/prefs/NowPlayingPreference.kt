@@ -5,6 +5,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,6 +26,16 @@ enum class AmbientStyle {
 
     /** The app's original ambient. */
     CLASSIC,
+}
+
+/** How fast full art's pages pan across what their crop hides (Settings > Appearance > Full art pan). */
+enum class FullArtPan(val dpPerSecond: Float) {
+    OFF(0f),
+    SLOW(8f),
+
+    /** The default, as approved on the mockup (2026-10-26). */
+    NORMAL(16f),
+    FAST(28f),
 }
 
 @Singleton
@@ -59,6 +70,40 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     suspend fun setFullArt(on: Boolean) {
         context.nowPlayingDataStore.edit { it[fullArtKey] = on }
+    }
+
+    private val fullArtZoomKey = floatPreferencesKey("full_art_zoom")
+
+    /**
+     * How close full art shows the album (Settings > Appearance > Full art zoom): a square cover is
+     * this many screen widths across. 1.0 fits the whole cover across the screen; more crops it,
+     * and the pan shows what the crop hides.
+     */
+    val fullArtZoom = context.nowPlayingDataStore.data.map {
+        (it[fullArtZoomKey] ?: FULL_ART_ZOOM_DEFAULT).coerceIn(FULL_ART_ZOOM_MIN, FULL_ART_ZOOM_MAX)
+    }
+
+    suspend fun setFullArtZoom(zoom: Float) {
+        context.nowPlayingDataStore.edit { it[fullArtZoomKey] = zoom.coerceIn(FULL_ART_ZOOM_MIN, FULL_ART_ZOOM_MAX) }
+    }
+
+    private val fullArtPanKey = stringPreferencesKey("full_art_pan")
+
+    /** Unset or unknown reads as [FullArtPan.NORMAL]. */
+    val fullArtPan = context.nowPlayingDataStore.data.map { prefs ->
+        prefs[fullArtPanKey]?.let { name -> FullArtPan.entries.firstOrNull { it.name == name } } ?: FullArtPan.NORMAL
+    }
+
+    suspend fun setFullArtPan(pan: FullArtPan) {
+        context.nowPlayingDataStore.edit { it[fullArtPanKey] = pan.name }
+    }
+
+    companion object {
+        const val FULL_ART_ZOOM_MIN = 1f
+        const val FULL_ART_ZOOM_MAX = 2f
+
+        /** About the look approved on the mockup (2026-10-26). */
+        const val FULL_ART_ZOOM_DEFAULT = 1.4f
     }
 
     private val ambientStyleKey = stringPreferencesKey("ambient_style")

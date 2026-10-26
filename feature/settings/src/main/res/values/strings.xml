@@ -187,6 +187,14 @@
     <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
     <string name="settings_cycle_album_art_title">Cycle album art</string>
     <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
+    <string name="settings_full_art_zoom_title">Full art zoom</string>
+    <string name="settings_full_art_zoom_subtitle">How close full art shows the album. 1.0x fits the whole cover across the screen.</string>
+    <string name="settings_full_art_pan_title">Full art pan</string>
+    <string name="settings_full_art_pan_subtitle">How fast each page drifts across the part the screen can\'t show</string>
+    <string name="settings_full_art_pan_off">Off</string>
+    <string name="settings_full_art_pan_slow">Slow</string>
+    <string name="settings_full_art_pan_normal">Normal</string>
+    <string name="settings_full_art_pan_fast">Fast</string>
     <string name="settings_ambient_style_soft_glow">Soft glow</string>
     <string name="settings_ambient_style_classic">Classic</string>
     <string name="settings_open_stash_on_section">Open Stash on</string>

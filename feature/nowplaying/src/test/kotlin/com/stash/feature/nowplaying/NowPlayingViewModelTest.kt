@@ -279,6 +279,8 @@ class NowPlayingViewModelFindInFlacTest {
             every { pinnedActions } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.NowPlayingAction.DefaultPins)
             every { cycleAlbumArt } returns kotlinx.coroutines.flow.flowOf(false)
             every { fullArt } returns kotlinx.coroutines.flow.flowOf(false)
+            every { fullArtZoom } returns kotlinx.coroutines.flow.flowOf(1.4f)
+            every { fullArtPan } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.FullArtPan.NORMAL)
             every { ambientAnimationEnabled } returns flow {
                 releasePreference.await()
                 emit(false)

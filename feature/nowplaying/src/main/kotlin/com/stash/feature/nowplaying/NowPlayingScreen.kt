@@ -187,6 +187,8 @@ fun NowPlayingScreen(
     // album's pages taking turns as the song plays. It grows out of the square art, so where the
     // square sits is kept (window coordinates).
     val fullArtPref by viewModel.fullArt.collectAsStateWithLifecycle()
+    val fullArtZoom by viewModel.fullArtZoom.collectAsStateWithLifecycle()
+    val fullArtPan by viewModel.fullArtPan.collectAsStateWithLifecycle()
     val fullArt = com.stash.feature.nowplaying.ui.rememberFullArtState()
     var artBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Read as thresholds, so the grow's frames don't recompose the screen.
@@ -940,6 +942,8 @@ fun NowPlayingScreen(
                 originCornerPx = PlayerSheetMath.HERO_ART_CORNER_DP * screenDensity,
                 // The square art follows, so turning full art off lands on the same page.
                 onPage = { if (pagesLineUp) cycleIndex = it },
+                zoom = fullArtZoom,
+                panDpPerS = fullArtPan.dpPerSecond,
             )
 
             // The raw navigation-bar inset (never consumed by the scaffold here), so the

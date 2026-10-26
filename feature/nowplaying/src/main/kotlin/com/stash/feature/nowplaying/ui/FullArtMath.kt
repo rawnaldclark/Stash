@@ -14,11 +14,8 @@ internal const val FULL_ART_MAX_HOLD_MS = 40_000L
 /** The hold when the song's length isn't known (a live stream): the pages go round at this pace. */
 internal const val FULL_ART_UNKNOWN_HOLD_MS = 20_000L
 
-/**
- * How fast a page pans across what its crop hides, in dp a second (eased in and out): a drift,
- * never a sweep. Approved on the mockup 2026-10-26.
- */
-internal const val FULL_ART_PAN_DP_PER_S = 16f
+/** The art's height in full art at most, of the screen's: the controls sit over its lower part. */
+internal const val FULL_ART_MAX_HEIGHT = 0.62f
 
 /**
  * How the song paces the pages in full art: which page each stretch of the song shows ([pages],
@@ -69,11 +66,21 @@ internal fun coverCrop(pageW: Float, pageH: Float, boxW: Float, boxH: Float): Re
 }
 
 /**
- * A page of [pageW] x [pageH] filling a [boxW] x [boxH] box (cropped, never zoomed) and panned
- * across what the crop hides, [elapsedS] seconds into its time on screen: along the side it
- * overflows, from one edge toward the other ([direction] 1 left to right, -1 back), at
- * [speedPxPerS] eased in and out, then resting. A crop too wide to cross within [holdS] at that
- * speed is crossed through its middle, so the pan never hurries.
+ * The art's box in full art on a [viewW] x [viewH] screen at [zoom] (a square cover that many
+ * screen widths across): as tall as that square, up to [FULL_ART_MAX_HEIGHT] of the screen. The
+ * second value is the zoom left over past that height, which scales the page up inside the box.
+ */
+internal fun fullArtBox(viewW: Float, viewH: Float, zoom: Float): Pair<Rect, Float> {
+    val height = min(zoom * viewW, FULL_ART_MAX_HEIGHT * viewH).coerceAtLeast(1f)
+    return Rect(0f, 0f, viewW, height) to max(1f, zoom * viewW / height)
+}
+
+/**
+ * A page of [pageW] x [pageH] filling a [boxW] x [boxH] box, scaled up by [zoom] past filling it
+ * and centred, then panned across what the crop hides, [elapsedS] seconds into its time on
+ * screen: along the side it overflows most, from one edge toward the other ([direction] 1 left to
+ * right, -1 back), at [speedPxPerS] eased in and out, then resting. A crop too wide to cross
+ * within [holdS] at that speed is crossed through its middle, so the pan never hurries.
  */
 internal fun panCrop(
     pageW: Float,
@@ -84,8 +91,12 @@ internal fun panCrop(
     direction: Int,
     holdS: Float,
     speedPxPerS: Float,
+    zoom: Float = 1f,
 ): Rect {
-    val crop = coverCrop(pageW, pageH, boxW, boxH)
+    val filled = coverCrop(pageW, pageH, boxW, boxH)
+    val w = filled.width * zoom
+    val h = filled.height * zoom
+    val crop = Rect((boxW - w) / 2f, (boxH - h) / 2f, (boxW + w) / 2f, (boxH + h) / 2f)
     val horizontal = crop.width - boxW >= crop.height - boxH
     val overflow = if (horizontal) crop.width - boxW else crop.height - boxH
     if (overflow <= 0.5f || speedPxPerS <= 0f) return crop
