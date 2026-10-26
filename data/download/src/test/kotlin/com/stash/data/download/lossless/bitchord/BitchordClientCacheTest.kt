@@ -387,6 +387,17 @@ class BitchordClientCacheTest {
         assertThat(BitchordClient.cacheKey(query.copy(explicit = false))).isEqualTo("isrc:USQX91300108|clean")
     }
 
+    @Test fun `a length that is only a hint keys apart from the same length taken as exact`() {
+        // Shook Ones from Search: the top card is the 4:25 music video. Taken as exact, the
+        // pick was the 4:49 compilation edit; that answer must not serve the hinted lookup.
+        val video = TrackQuery(artist = "Mobb Deep", title = "Shook Ones, Pt. II", durationMs = 265_000)
+        assertThat(BitchordClient.cacheKey(video)).isEqualTo("t:mobb deep|shook ones, pt. ii|27|explicit")
+        assertThat(BitchordClient.cacheKey(video.copy(durationReliable = false)))
+            .isEqualTo("t:mobb deep|shook ones, pt. ii|~27|explicit")
+        assertThat(BitchordClient.cacheKey(video.copy(durationMs = null, durationReliable = false)))
+            .isEqualTo("t:mobb deep|shook ones, pt. ii|?|explicit")
+    }
+
     @Test fun `twins go to the explicit one unless the row is known clean, each cached apart`() = runBlocking {
         searchReply = { ok(TWINS) }
         val song = TrackQuery(artist = "Daft Punk", title = "Get Lucky", durationMs = 248_000)

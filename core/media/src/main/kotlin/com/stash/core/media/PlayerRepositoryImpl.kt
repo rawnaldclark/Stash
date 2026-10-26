@@ -2292,6 +2292,8 @@ class PlayerRepositoryImpl @Inject constructor(
         albumArtUrl = thumbnailUrl,
         isDownloaded = false,
         isStreamable = true,
+        musicVideoType = musicVideoType,
+        explicit = explicit,
     )
 
     private suspend fun playFromStreamInner(item: TrackItem, trackId: Long): StreamRoutingResult {
@@ -2306,6 +2308,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // first tap cached, second tap returned the FIRST track's URL and
         // Media3 no-op'd setMediaItem on the matching mediaId. Repeat taps
         // of the same videoId still hit the cache (intended TTL behaviour).
+        // The library row the tap landed on, when ensureTrackPersisted found one: its art is what
+        // the on-stream art swap below judges. The result's own thumbnail is a YouTube video frame,
+        // so judging that replaced a good library cover with whatever copy the chain picked.
+        val stored = trackDao.getById(trackId)
         val transient = TrackEntity(
             id = trackId,
             title = item.title,
@@ -2314,12 +2320,19 @@ class PlayerRepositoryImpl @Inject constructor(
             durationMs = (item.durationSeconds * 1000).toLong(),
             isDownloaded = false,
             isStreamable = true,
-            albumArtUrl = item.thumbnailUrl,
+            albumArtUrl = stored?.albumArtUrl?.takeIf { it.isNotBlank() } ?: item.thumbnailUrl,
             // Search results carry a YT videoId — propagate it so the
             // YouTube fallback resolver can extract directly when Qobuz
             // doesn't have the track. Without this the transient row's
             // youtubeId stays null and YouTubeStreamResolver bails.
             youtubeId = item.videoId,
+            // A YouTube result, whatever the library row is: the entity's default (SPOTIFY) made
+            // the lossless lookups trust the result's length as a song's. A music video's is an
+            // edit's (Shook Ones' top card is the 4:25 video; the album cut is 5:26), and Tidal
+            // then picked the copy nearest the video.
+            source = com.stash.core.model.MusicSource.YOUTUBE,
+            musicVideoType = item.musicVideoType,
+            explicit = item.explicit ?: stored?.explicit,
         )
         val result = buildMediaItemForTrack(transient)
         if (result is StreamRoutingResult.Item) {

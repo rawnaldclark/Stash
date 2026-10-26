@@ -150,6 +150,9 @@ internal fun parseTopResultCard(shelf: JsonObject): TopResultItem? {
                 // search can show the explicit song here and its clean twin
                 // only as a later row.
                 explicit = explicitFromBadge(shelf),
+                // Often the music video ("Video • <artist> • 326M views • 4:25"), whose length is
+                // an edit's, not the song's.
+                musicVideoType = watchEndpoint.watchMusicVideoType(),
             ),
         )
     }

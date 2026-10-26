@@ -104,6 +104,10 @@ data class PlaylistSummary(
  * [explicit] is `true` when YouTube Music shows its explicit badge on the row
  * ([com.stash.data.ytmusic.explicitFromBadge]) and null otherwise: YouTube marks
  * explicit songs and leaves clean edits and never-explicit songs alike unmarked.
+ *
+ * [musicVideoType] is the row's [MusicVideoType] name ("ATV", "OMV", ...) as `tracks.music_video_type`
+ * stores it, null when the row doesn't say. A music video's length is the video's, often an
+ * edit's: the lossless lookups read the type to know the length is only a hint.
  */
 @Serializable
 data class TrackSummary(
@@ -114,6 +118,7 @@ data class TrackSummary(
     val durationSeconds: Double,
     val thumbnailUrl: String?,
     val explicit: Boolean? = null,
+    val musicVideoType: String? = null,
 )
 
 /**

@@ -38,4 +38,12 @@ data class TrackItem(
      * artists.
      */
     val albumArtist: String? = null,
+    /**
+     * The result's video type as `tracks.music_video_type` stores it ("ATV", "OMV", ...), null
+     * when the search didn't say. A music video's length is the video's, so the lossless
+     * lookups treat it as a hint ([com.stash.core.model.Track.musicVideoType]).
+     */
+    val musicVideoType: String? = null,
+    /** True when YouTube Music badges the result explicit; null otherwise (it marks only explicit). */
+    val explicit: Boolean? = null,
 )

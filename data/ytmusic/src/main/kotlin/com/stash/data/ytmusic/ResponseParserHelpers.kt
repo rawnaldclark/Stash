@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -60,6 +61,14 @@ private fun JsonObject.runText(): String? = this["text"]?.asString()
 
 private fun JsonObject.runBrowseId(): String? =
     navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString()
+
+/**
+ * The [MusicVideoType] name ("ATV", "OMV", ...) a `watchEndpoint` carries, as `tracks.music_video_type`
+ * stores it; null when it carries none or one we don't know.
+ */
+internal fun JsonObject.watchMusicVideoType(): String? = MusicVideoType.fromInnerTube(
+    navigatePath("watchEndpointMusicSupportedConfigs", "watchEndpointMusicConfig", "musicVideoType")?.asString(),
+)?.name
 
 /** A run linking to an artist or channel (UC…, MPLAUC…) or a podcast show (MPSPP…). */
 private fun JsonObject.isArtistLink(): Boolean =
@@ -221,5 +230,14 @@ internal fun parseTrackSummaryFromListItem(
         durationSeconds = durationText?.let(::parseDurationToSeconds) ?: subtitle.durationSeconds,
         thumbnailUrl = thumbnailUrl,
         explicit = explicitFromBadge(renderer),
+        musicVideoType = (
+            renderer.navigatePath(
+                "overlay", "musicItemThumbnailOverlayRenderer", "content",
+                "musicPlayButtonRenderer", "playNavigationEndpoint", "watchEndpoint",
+            ) ?: flexColumns.getOrNull(0)?.asObject()
+                ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")
+                ?.firstArray()?.firstOrNull()?.asObject()
+                ?.navigatePath("navigationEndpoint", "watchEndpoint")
+            )?.asObject()?.watchMusicVideoType(),
     )
 }

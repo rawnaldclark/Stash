@@ -169,6 +169,19 @@ class YTMusicApiClientTest {
     }
 
     @Test
+    fun `top-card track carries its video type, so a music video's length reads as a hint`() = runTest {
+        // A search tap plays the card with the card's length. Shook Ones' card is the 4:25 music
+        // video; read as a song's length, it picked a 4:49 compilation edit over the 5:26 album cut.
+        suspend fun topTrack(json: String) = ((fakeClient(json).searchAll("never gonna give").sections.first()
+            as SearchResultSection.Top).item as TopResultItem.TrackTop).track
+
+        val fixture = loadFixture("search_track.json")
+        assertEquals("ATV", topTrack(fixture).musicVideoType)
+        assertEquals("OMV", topTrack(fixture.replace("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_OMV")).musicVideoType)
+        assertEquals(null, topTrack(fixture.replace("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_NEW")).musicVideoType)
+    }
+
+    @Test
     fun `getArtist returns full profile for rich artist`() = runTest {
         val client = fakeBrowseClient(loadFixture("artist_rich.json"))
 

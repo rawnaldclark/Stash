@@ -75,6 +75,15 @@ class ExplicitBadgeTest {
         assertNull(parseTrackSummaryFromListItem(cleanRow)?.explicit)
     }
 
+    @Test fun `a search row carries its video type from the play button or else the title`() {
+        val row = songsRows[0].jsonObject["musicResponsiveListItemRenderer"]!!.jsonObject
+        assertEquals("ATV", parseTrackSummaryFromListItem(row)?.musicVideoType)
+
+        // Rows without the thumbnail's play button still link the title to the watch page.
+        val noOverlay = JsonObject(row - "overlay" + ("playlistItemData" to Json.parseToJsonElement("""{"videoId":"wuO4_P_8p-Q"}""")))
+        assertEquals("ATV", parseTrackSummaryFromListItem(noOverlay)?.musicVideoType)
+    }
+
     @Test fun `an album page header keeps its badge in subtitleBadge`() {
         // musicResponsiveHeaderRenderer of MPREb_ZIbQK9RFLQY (The Life Of Pablo, explicit), trimmed.
         val header = Json.parseToJsonElement(

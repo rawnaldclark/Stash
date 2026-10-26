@@ -470,6 +470,8 @@ internal fun TrackSummary.toTrackItem() = com.stash.core.model.TrackItem(
     durationSeconds = durationSeconds,
     thumbnailUrl = thumbnailUrl,
     album = album,
+    musicVideoType = musicVideoType,
+    explicit = explicit,
 )
 
 /**

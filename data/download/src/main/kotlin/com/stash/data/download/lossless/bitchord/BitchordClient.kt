@@ -657,8 +657,13 @@ class BitchordClient @Inject constructor(
 
         /**
          * The song's cache identity: ISRC when known (the strongest identity across catalogs),
-         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown); then the
-         * version the pick prefers, `|explicit` or `|clean` ([explicitWant]).
+         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown, "~" before
+         * it when the length is only a hint, [TrackQuery.durationReliable]); then the version the
+         * pick prefers, `|explicit` or `|clean` ([explicitWant]).
+         *
+         * A hinted length picks differently from an exact one of the same value, so the two don't
+         * share an answer. A search tap once asked with a music video's 4:25 as exact, got the
+         * compilation copy nearest it, and would otherwise keep being served that pick.
          *
          * The preference is in the key, rather than a bare version prefix, for two reasons:
          *  - [QobuzCandidateMatcher.pickBest] takes the explicit twin unless the row is known
@@ -675,7 +680,9 @@ class BitchordClient @Inject constructor(
             val want = explicitWant(q)
             q.isrc?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }?.let { return "isrc:$it|$want" }
             fun norm(s: String) = s.lowercase().trim().replace(WHITESPACE, " ")
-            val bucket = q.durationMs?.takeIf { it > 0 }?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
+            val bucket = q.durationMs?.takeIf { it > 0 }
+                ?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
+                ?.let { if (q.durationReliable) "$it" else "~$it" }
             return "t:${norm(q.artist)}|${norm(q.title)}|${bucket ?: "?"}|$want"
         }
 
