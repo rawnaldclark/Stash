@@ -13,7 +13,18 @@ data class JioSaavnMatch(
 /** Conservative matcher: an uncertain result must fall through to YouTube. */
 object JioSaavnMatcher {
     fun best(query: TrackQuery, songs: List<JioSaavnSong>): JioSaavnMatch? {
-        val ranked = songs.mapNotNull { score(query, it) }.sortedByDescending { it.rankScore }
+        // A request that doesn't say clean or explicit gets the explicit original: a clean copy
+        // listed beside its explicit twin (same title, singers and length; only the flag differs)
+        // is dropped, so the two aren't rivals that make the match ambiguous. A known-clean or
+        // known-explicit request is held to its flag in [score].
+        val pool = if (query.explicit == null) {
+            songs.filterNot { clean ->
+                !clean.explicitContent && songs.any { it.explicitContent && sameRecording(clean, it, anyRating = true) }
+            }
+        } else {
+            songs
+        }
+        val ranked = pool.mapNotNull { score(query, it) }.sortedByDescending { it.rankScore }
         val top = ranked.firstOrNull() ?: return null
         // JioSaavn lists one recording on many compilations and the copies
         // score alike, so "Ae Mere Humsafar" on seven albums was rejected as
@@ -100,18 +111,18 @@ object JioSaavnMatcher {
     /**
      * One recording re-issued on another album: equal titles once a soundtrack
      * credit ('(From "Qayamat Se Qayamat Tak")') is dropped, known durations
-     * within [SAME_RECORDING_MAX_DRIFT_SEC], the same explicit flag (a
-     * search-tab request cannot tell clean from explicit) and the same singers.
+     * within [SAME_RECORDING_MAX_DRIFT_SEC], the same explicit flag (unless
+     * [anyRating]: the clean and the explicit cut of one song) and the same singers.
      * Every other parenthetical, "(Sad)", "(Female Version)", "(feat. X)", stays
      * significant, and an unknown duration never counts as a copy. The singers
      * matter because the artist check lets a solo by one of a duet's singers
      * through: without them a same-titled solo counted as a copy of the duet.
      */
-    private fun sameRecording(a: JioSaavnSong, b: JioSaavnSong): Boolean {
+    private fun sameRecording(a: JioSaavnSong, b: JioSaavnSong, anyRating: Boolean = false): Boolean {
         val aSec = a.duration?.takeIf { it > 0 } ?: return false
         val bSec = b.duration?.takeIf { it > 0 } ?: return false
         return abs(aSec - bSec) <= SAME_RECORDING_MAX_DRIFT_SEC &&
-            a.explicitContent == b.explicitContent &&
+            (anyRating || a.explicitContent == b.explicitContent) &&
             primaryArtists(a) == primaryArtists(b) &&
             recordingTitle(a.name) == recordingTitle(b.name)
     }

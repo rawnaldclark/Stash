@@ -113,7 +113,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
     ],
-    version = 65,
+    version = 66,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1738,6 +1738,27 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v65 -> v66, data only: the explicit flag Spotify syncs stored is cleared. The web-player
+         * parsers every playlist and Liked Songs sync went through never read Spotify's parental
+         * advisory, and the model defaulted it to false, so every Spotify song read as clean and the
+         * matcher picked clean versions (2026-10-26: 10,548 of 10,548 on the owner's phone). A false
+         * can't be told from those, so every one becomes unknown (null), which prefers the explicit
+         * original; the next sync writes Spotify's real flag back. A YouTube video a match found for
+         * a Spotify song (a song never downloaded, its match not picked by hand) is forgotten too, so
+         * a clean one doesn't stay: the next play matches again under the new rules.
+         */
+        val MIGRATION_65_66 = object : Migration(65, 66) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `tracks` SET `explicit` = NULL WHERE `explicit` = 0")
+                db.execSQL("UPDATE `remote_track_snapshots` SET `explicit` = NULL WHERE `explicit` = 0")
+                db.execSQL(
+                    "UPDATE `tracks` SET `youtube_id` = NULL WHERE `source` = 'SPOTIFY' AND `youtube_id` IS NOT NULL " +
+                        "AND `is_downloaded` = 0 AND `file_path` IS NULL AND `match_picked_at` IS NULL",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1839,6 +1860,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_62_63,
                 MIGRATION_63_64,
                 MIGRATION_64_65,
+                MIGRATION_65_66,
             )
         }
     }
