@@ -119,14 +119,14 @@ class PageRowsTest {
 
     @Test fun `an artist is the name as written, never folded or split, ranked by time, ties by earliest end then id`() {
         val b = RecordSummaryBuilder()
-        b.add(row("b", "Björk", 100, 50))
-        b.add(row("c", "Björk", 100, 50))
+        b.add(row("b", "Bj\u00f6rk", 100, 50))
+        b.add(row("c", "Bjo\u0308rk", 100, 50))
         b.add(row("d", "bjork", 50, 100))
         b.add(row("a", "Kendrick Lamar, SZA", 300, 100))
         b.add(row("e", "Kendrick Lamar", 10, 10))
         val ranked = b.build(top = 10).topArtists.map { it.name }
-        // 100 ms each: "bjork" ends first (150, against 400). 50 ms each: the two Björks end together, so the smaller id ("b")
-        assertThat(ranked).containsExactly("bjork", "Kendrick Lamar, SZA", "Björk", "Björk", "Kendrick Lamar").inOrder()
+        // 100 ms each: "bjork" ends first (150, against 400). 50 ms each: the two Bj\u00f6rks end together, so the smaller id ("b")
+        assertThat(ranked).containsExactly("bjork", "Kendrick Lamar, SZA", "Bj\u00f6rk", "Bjo\u0308rk", "Kendrick Lamar").inOrder()
     }
 
     @Test fun `a tie on time and on end goes to the smaller id, in UTF-16 order`() {
