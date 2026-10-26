@@ -281,6 +281,9 @@ class NowPlayingViewModelFindInFlacTest {
             every { fullArt } returns kotlinx.coroutines.flow.flowOf(false)
             every { fullArtZoom } returns kotlinx.coroutines.flow.flowOf(1.4f)
             every { fullArtPan } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.FullArtPan.NORMAL)
+            every { fullArtBlend } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.FullArtBlend.BLURRED)
+            every { titleAlign } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.NpTitleAlign.CENTER)
+            every { titleButton } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.prefs.TitleButton.SLEEP_TIMER)
             every { ambientAnimationEnabled } returns flow {
                 releasePreference.await()
                 emit(false)

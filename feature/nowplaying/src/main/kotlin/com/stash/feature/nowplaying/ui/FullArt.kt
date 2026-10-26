@@ -110,6 +110,9 @@ private const val ART_FADE_FROM = 0.55f
 private const val BLEND_DECODE_PX = 48
 private val BLEND_BLUR = 28.dp
 
+/** The solid blend: the page's bottom edge color, this much of its brightness (as on the mockup). */
+private const val SOLID_BLEND_DARKEN = 0.62f
+
 /** A gap this wide between the drawn clock and the player's own is a seek, followed at once. */
 private const val RESYNC_MS = 700L
 
@@ -134,8 +137,11 @@ internal class FullArtPage(
     val discogsPage: String? = null,
 )
 
-/** A page's image in hand, and a tiny copy of it stretched into the blend under the controls. */
-private class LoadedPage(val image: ImageBitmap, val small: ImageBitmap)
+/**
+ * A page's image in hand, a tiny copy of it stretched into the blurred blend under the controls,
+ * and the color of its bottom edge, darkened, for the solid one.
+ */
+private class LoadedPage(val image: ImageBitmap, val small: ImageBitmap, val solid: Color)
 
 /** A page on screen: fading in from [bornMs] (frame time), its pan timed from [atPlayMs] (playing time). */
 internal class Shown(val page: FullArtPage, val bornMs: Long, val atPlayMs: Long, val direction: Int)
@@ -314,6 +320,7 @@ internal fun FullArtTheme(on: Boolean, content: @Composable () -> Unit) {
  * @param onPage Told the index of the page on screen when it changes.
  * @param zoom How close the art shows the album: a square cover this many screen widths across.
  * @param panDpPerS How fast a page pans across what its crop hides; 0 holds it still, centred.
+ * @param solidBlend The blend is a color from each page's bottom edge, not the page blurred.
  */
 @Composable
 internal fun FullArtLayer(
@@ -333,6 +340,7 @@ internal fun FullArtLayer(
     onPage: (Int) -> Unit,
     zoom: Float,
     panDpPerS: Float,
+    solidBlend: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val reducedMotion = rememberNpReducedMotion()
@@ -422,14 +430,19 @@ internal fun FullArtLayer(
             .fillMaxSize()
             .onGloballyPositioned { layerOrigin = it.positionInWindow() },
     ) {
-        // The blend: the page under the controls, stretched from a tiny copy and softened. Redrawn
-        // only while a page fades in.
+        // The blend: the page under the controls, stretched from a tiny copy and softened, or the
+        // color of its bottom edge (Settings > Appearance > Full art blend). Redrawn only while a
+        // page fades in.
         Spacer(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
                     alpha = state.grow.value
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) renderEffect = BlurEffect(blur, blur, TileMode.Clamp)
+                    renderEffect = if (!solidBlend && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        BlurEffect(blur, blur, TileMode.Clamp)
+                    } else {
+                        null
+                    }
                 }
                 .drawBehind {
                     val now = state.fadeMs
@@ -437,8 +450,12 @@ internal fun FullArtLayer(
                         val page = loaded[shown.page.key] ?: return@forEachIndexed
                         val alpha = fadeAlpha(index, now, shown, reducedMotion)
                         if (alpha <= 0f) return@forEachIndexed
-                        val crop = coverCrop(page.small.width.toFloat(), page.small.height.toFloat(), size.width, size.height)
-                        drawPage(page.small, crop, alpha)
+                        if (solidBlend) {
+                            drawRect(page.solid, alpha = alpha)
+                        } else {
+                            val crop = coverCrop(page.small.width.toFloat(), page.small.height.toFloat(), size.width, size.height)
+                            drawPage(page.small, crop, alpha)
+                        }
                     }
                 },
         )
@@ -599,8 +616,8 @@ private fun PageLoader(page: FullArtPage, onLoaded: (LoadedPage) -> Unit, onFail
                 val image = (result as? SuccessResult)?.image
                 if (image != null && image.width > 0 && image.height > 0) {
                     val bitmap = image.toBitmap()
-                    val small = withContext(Dispatchers.Default) { smallCopy(bitmap) }
-                    currentOnLoaded(LoadedPage(bitmap.asImageBitmap(), small.asImageBitmap()))
+                    val (small, solid) = withContext(Dispatchers.Default) { smallCopy(bitmap).let { it to bottomEdge(it) } }
+                    currentOnLoaded(LoadedPage(bitmap.asImageBitmap(), small.asImageBitmap(), solid))
                     return@LaunchedEffect
                 }
                 Log.w("FullArt", "page image, try $attempt: ${(result as? ErrorResult)?.throwable?.javaClass?.simpleName}")
@@ -620,6 +637,24 @@ private fun smallCopy(bitmap: Bitmap): Bitmap {
     val readable = if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
     val h = (BLEND_DECODE_PX * readable.height.toFloat() / readable.width).roundToInt().coerceAtLeast(1)
     return Bitmap.createScaledBitmap(readable, BLEND_DECODE_PX, h, true)
+}
+
+/** The average color along [small]'s bottom two rows, darkened as the solid blend under white type. */
+private fun bottomEdge(small: Bitmap): Color {
+    var r = 0L
+    var g = 0L
+    var b = 0L
+    var n = 0
+    for (y in (small.height - 2).coerceAtLeast(0) until small.height) for (x in 0 until small.width) {
+        val p = small.getPixel(x, y)
+        r += (p shr 16) and 0xFF
+        g += (p shr 8) and 0xFF
+        b += p and 0xFF
+        n++
+    }
+    if (n == 0) return Color.Black
+    val k = SOLID_BLEND_DARKEN / 255f
+    return Color(r / n * k, g / n * k, b / n * k)
 }
 
 /** Light status bar icons while [on] (the art's shade is dark), the theme's own after. */

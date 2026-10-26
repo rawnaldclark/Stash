@@ -189,6 +189,9 @@ fun NowPlayingScreen(
     val fullArtPref by viewModel.fullArt.collectAsStateWithLifecycle()
     val fullArtZoom by viewModel.fullArtZoom.collectAsStateWithLifecycle()
     val fullArtPan by viewModel.fullArtPan.collectAsStateWithLifecycle()
+    val fullArtBlend by viewModel.fullArtBlend.collectAsStateWithLifecycle()
+    val titleAlign by viewModel.titleAlign.collectAsStateWithLifecycle()
+    val titleButton by viewModel.titleButton.collectAsStateWithLifecycle()
     val fullArt = com.stash.feature.nowplaying.ui.rememberFullArtState()
     var artBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Read as thresholds, so the grow's frames don't recompose the screen.
@@ -946,6 +949,7 @@ fun NowPlayingScreen(
                 onPage = { if (pagesLineUp) cycleIndex = it },
                 zoom = fullArtZoom,
                 panDpPerS = fullArtPan.dpPerSecond,
+                solidBlend = fullArtBlend == com.stash.core.data.prefs.FullArtBlend.SOLID,
             )
 
             // The raw navigation-bar inset (never consumed by the scaffold here), so the
@@ -1189,14 +1193,37 @@ fun NowPlayingScreen(
                                     // The like heart floats at the right edge (relocated out of the
                                     // crowded top icon row); symmetric horizontal padding keeps the
                                     // title/artist block optically centred under the album art.
+                                    // Settings > Appearance > Button beside the title: the sleep timer,
+                                    // nothing, or one of the actions (none while it can't be used here).
+                                    val titleAction = titleButton.action?.takeIf { isActionAvailable(it, actionCtx) }
                                     TrackInfoBlock(
                                         track = track,
                                         resolvingArtist = resolvingArtist,
                                         onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                        sleepTimerState = sleepTimerState,
-                                        onSleepTimerClick = { showSleepTimerSheet = true },
                                         isLiked = uiState.currentTrack?.stashLikedAt != null,
                                         onLikeTap = viewModel::onLikeTap,
+                                        alignStart = titleAlign == com.stash.core.data.prefs.NpTitleAlign.START,
+                                        sideButton = when {
+                                            titleButton == com.stash.core.data.prefs.TitleButton.SLEEP_TIMER -> { m ->
+                                                // The album accent is read in its own scope: the crossfade
+                                                // recomposes the button, not the title.
+                                                WithAlbumChrome { chrome ->
+                                                    SleepTimerButton(
+                                                        state = sleepTimerState,
+                                                        onClick = { showSleepTimerSheet = true },
+                                                        activeTint = chrome.accent,
+                                                        idleTint = npInk().copy(alpha = 0.7f),
+                                                        buttonSize = 26.dp,
+                                                        iconSize = 20.dp,
+                                                        modifier = m,
+                                                    )
+                                                }
+                                            }
+                                            titleAction != null -> { m ->
+                                                TitleActionButton(titleAction, visualState, onPinnedAction, m)
+                                            }
+                                            else -> null
+                                        },
                                     )
 
                                     // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
@@ -1507,130 +1534,168 @@ private fun riseIn(risePx: Int, delayMs: Int): EnterTransition =
         slideInVertically(tween(RISE_MS, delayMillis = delayMs, easing = FastOutSlowInEasing)) { risePx }
 
 /**
- * Title, artist · album, the sleep timer (leading edge) and the like heart (trailing edge),
- * under the big art. Tap the title/artist to open the artist profile; the trailing chevron
- * signals it's actionable, and swaps to a spinner while the artist name is being resolved.
- * Symmetric horizontal padding keeps the title/artist block optically centred under the art.
+ * Title, artist · album, the like heart, and the button beside the title ([sideButton]: the
+ * sleep timer unless Settings says otherwise), under the big art. Tap the title/artist to open the
+ * artist profile; the trailing chevron signals it's actionable, and swaps to a spinner while the
+ * artist name is being resolved.
+ *
+ * Centred (the default): the side button floats at the leading edge and the heart at the
+ * trailing one, with symmetric padding keeping the title optically centred under the art. With
+ * [alignStart] (Settings > Appearance > Title alignment), the title and artist sit at the leading
+ * edge and the side button and heart follow at the trailing one.
  */
 @Composable
 private fun TrackInfoBlock(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
-    sleepTimerState: SleepTimerController.State,
-    onSleepTimerClick: () -> Unit,
     isLiked: Boolean,
     onLikeTap: () -> Unit,
+    alignStart: Boolean,
+    sideButton: (@Composable (Modifier) -> Unit)?,
 ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 40.dp)
-                .then(
-                    if (track != null) {
-                        Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
-                    } else {
-                        Modifier
-                    },
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // A long title scrolls instead of ending in "…": every
-                // character is worth more than an ellipsis here, and the
-                // width the format badge used to take beside it now
-                // belongs to the title — QualityLine below already says
-                // FLAC and the bit depth, so the badge said it twice.
-                Text(
-                    text = track?.title ?: "Not Playing",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = npInk(),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .marqueeWhileShown(),
-                )
-                if (track != null) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    if (resolvingArtist) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = npInk(),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Open artist",
-                            tint = npInk().copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
-
-            // Collapse collaboration credits to the lead act
-            // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
-            // remember the split — this Text recomposes with every
-            // player-state change.
-            val displayArtist = remember(track) { track?.artist?.primaryArtist() }
-            Text(
-                text = buildString {
-                    if (track != null && displayArtist != null) {
-                        append(displayArtist)
-                        if (track.album.isNotBlank()) {
-                            append(" • ")
-                            append(track.album)
-                        }
-                    }
-                },
-                fontSize = 15.sp,
-                color = npInk().copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        // Sleep timer — floated to the leading edge, mirroring the
-        // Like heart's placement on the trailing edge. Accented
-        // while a timer is armed, with the time left under the moon
-        // ("23m", "0:45", "End"), so the state is visible at a
-        // glance without opening the sheet.
-        // The album accent is read in its own scope: the crossfade recomposes the button, not the title.
-        if (track != null) WithAlbumChrome { chrome ->
-            SleepTimerButton(
-                state = sleepTimerState,
-                onClick = onSleepTimerClick,
-                activeTint = chrome.accent,
-                idleTint = npInk().copy(alpha = 0.7f),
-                buttonSize = 26.dp,
-                iconSize = 20.dp,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-        }
-
-        // Like heart — floated to the trailing edge and vertically centred
-        // against the title/artist block. The track's other actions live in
-        // the top row (pinned) or the ⋮ menu. None for an All Songs file (no library row).
-        if (track != null && !track.isScannedSong) {
+    val tapToArtist = if (track != null) {
+        Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
+    } else {
+        Modifier
+    }
+    // Like heart — beside the title. The track's other actions live in the top row (pinned) or the
+    // ⋮ menu. None for an All Songs file (no library row).
+    val heart: (@Composable (Modifier) -> Unit)? = if (track != null && !track.isScannedSong) {
+        { m ->
             com.stash.core.ui.components.LikeButton(
                 isLiked = isLiked,
                 onTap = onLikeTap,
                 unlikedTint = npInk().copy(alpha = 0.7f),
                 size = 26.dp,
-                modifier = Modifier.align(Alignment.CenterEnd),
+                modifier = m,
+            )
+        }
+    } else {
+        null
+    }
+    if (alignStart) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TitleAndArtist(track, resolvingArtist, alignStart = true, modifier = Modifier.weight(1f).then(tapToArtist))
+            if (track != null) sideButton?.invoke(Modifier.padding(start = 12.dp))
+            heart?.invoke(Modifier.padding(start = 12.dp))
+        }
+        return
+    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        TitleAndArtist(
+            track,
+            resolvingArtist,
+            alignStart = false,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).then(tapToArtist),
+        )
+        // The side button floats at the leading edge, mirroring the heart at the trailing one
+        // (the sleep timer accented while armed, its time left under the moon).
+        if (track != null) sideButton?.invoke(Modifier.align(Alignment.CenterStart))
+        heart?.invoke(Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/** The title (with its chevron to the artist) over artist · album, centred or at the leading edge. */
+@Composable
+private fun TitleAndArtist(
+    track: com.stash.core.model.Track?,
+    resolvingArtist: Boolean,
+    alignStart: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (alignStart) Alignment.Start else Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // A long title scrolls instead of ending in "…": every
+            // character is worth more than an ellipsis here, and the
+            // width the format badge used to take beside it now
+            // belongs to the title — QualityLine below already says
+            // FLAC and the bit depth, so the badge said it twice.
+            Text(
+                text = track?.title ?: "Not Playing",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = npInk(),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .marqueeWhileShown(),
+            )
+            if (track != null) {
+                Spacer(modifier = Modifier.width(6.dp))
+                if (resolvingArtist) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = npInk(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Open artist",
+                        tint = npInk().copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
+
+        // Collapse collaboration credits to the lead act
+        // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
+        // remember the split — this Text recomposes with every
+        // player-state change.
+        val displayArtist = remember(track) { track?.artist?.primaryArtist() }
+        Text(
+            text = buildString {
+                if (track != null && displayArtist != null) {
+                    append(displayArtist)
+                    if (track.album.isNotBlank()) {
+                        append(" • ")
+                        append(track.album)
+                    }
+                }
+            },
+            fontSize = 15.sp,
+            color = npInk().copy(alpha = 0.7f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * One of Now Playing's actions as the button beside the title: its icon at the sleep timer's
+ * size, accented while it's on (radio playing, lyrics open), doing what its top-row pin does.
+ */
+@Composable
+private fun TitleActionButton(
+    action: NowPlayingAction,
+    visualState: ActionVisualState,
+    onAction: (NowPlayingAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val visual = actionVisual(action, visualState, pinned = true)
+    WithAlbumChrome { chrome ->
+        IconButton(onClick = { onAction(action) }, modifier = modifier.size(26.dp)) {
+            Icon(
+                imageVector = visual.icon,
+                contentDescription = visual.label,
+                tint = if (visual.active) chrome.accent else npInk().copy(alpha = 0.7f),
+                modifier = Modifier.size(20.dp),
             )
         }
     }

@@ -29,6 +29,35 @@ enum class AmbientStyle {
     CLASSIC,
 }
 
+/** Where Now Playing's title and artist sit (Settings > Appearance > Title alignment). */
+enum class NpTitleAlign { CENTER, START }
+
+/**
+ * What sits beside Now Playing's title, opposite the like heart (Settings > Appearance > Button
+ * beside the title): the sleep timer (the default), nothing, or one of Now Playing's actions.
+ */
+enum class TitleButton(val action: NowPlayingAction?) {
+    SLEEP_TIMER(null),
+    NONE(null),
+    LYRICS(NowPlayingAction.LYRICS),
+    QUEUE(NowPlayingAction.QUEUE),
+    RADIO(NowPlayingAction.RADIO),
+    PLAYBACK_SPEED(NowPlayingAction.PLAYBACK_SPEED),
+    SAVE_TO_PLAYLIST(NowPlayingAction.SAVE_TO_PLAYLIST),
+    SHARE(NowPlayingAction.SHARE),
+    DOWNLOAD(NowPlayingAction.DOWNLOAD),
+    VIEW_ALBUM(NowPlayingAction.VIEW_ALBUM),
+}
+
+/** What full art melts into under the controls (Settings > Appearance > Full art blend). */
+enum class FullArtBlend {
+    /** The page itself, blurred: the default. */
+    BLURRED,
+
+    /** A color from the page's bottom edge, darkened. */
+    SOLID,
+}
+
 /** How fast full art's pages pan across what their crop hides (Settings > Appearance > Full art pan). */
 enum class FullArtPan(val dpPerSecond: Float) {
     OFF(0f),
@@ -71,6 +100,39 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     suspend fun setFullArt(on: Boolean) {
         context.nowPlayingDataStore.edit { it[fullArtKey] = on }
+    }
+
+    private val titleAlignKey = stringPreferencesKey("title_align")
+
+    /** Unset or unknown reads as [NpTitleAlign.CENTER], the layout Now Playing always had. */
+    val titleAlign = context.nowPlayingDataStore.data.map { prefs ->
+        prefs[titleAlignKey]?.let { name -> NpTitleAlign.entries.firstOrNull { it.name == name } } ?: NpTitleAlign.CENTER
+    }
+
+    suspend fun setTitleAlign(align: NpTitleAlign) {
+        context.nowPlayingDataStore.edit { it[titleAlignKey] = align.name }
+    }
+
+    private val titleButtonKey = stringPreferencesKey("title_button")
+
+    /** Unset or unknown reads as [TitleButton.SLEEP_TIMER], the button Now Playing always had. */
+    val titleButton = context.nowPlayingDataStore.data.map { prefs ->
+        prefs[titleButtonKey]?.let { name -> TitleButton.entries.firstOrNull { it.name == name } } ?: TitleButton.SLEEP_TIMER
+    }
+
+    suspend fun setTitleButton(button: TitleButton) {
+        context.nowPlayingDataStore.edit { it[titleButtonKey] = button.name }
+    }
+
+    private val fullArtBlendKey = stringPreferencesKey("full_art_blend")
+
+    /** Unset or unknown reads as [FullArtBlend.BLURRED]. */
+    val fullArtBlend = context.nowPlayingDataStore.data.map { prefs ->
+        prefs[fullArtBlendKey]?.let { name -> FullArtBlend.entries.firstOrNull { it.name == name } } ?: FullArtBlend.BLURRED
+    }
+
+    suspend fun setFullArtBlend(blend: FullArtBlend) {
+        context.nowPlayingDataStore.edit { it[fullArtBlendKey] = blend.name }
     }
 
     private val discogsArtKey = booleanPreferencesKey("discogs_art")

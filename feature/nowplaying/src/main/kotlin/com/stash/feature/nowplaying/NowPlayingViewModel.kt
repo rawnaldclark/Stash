@@ -191,6 +191,18 @@ class NowPlayingViewModel @Inject constructor(
     val fullArtPan: StateFlow<com.stash.core.data.prefs.FullArtPan> = nowPlayingPreference.fullArtPan
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtPan.NORMAL)
 
+    /** Settings > Appearance > Full art blend. */
+    val fullArtBlend: StateFlow<com.stash.core.data.prefs.FullArtBlend> = nowPlayingPreference.fullArtBlend
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtBlend.BLURRED)
+
+    /** Settings > Appearance > Title alignment. */
+    val titleAlign: StateFlow<com.stash.core.data.prefs.NpTitleAlign> = nowPlayingPreference.titleAlign
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.NpTitleAlign.CENTER)
+
+    /** Settings > Appearance > Button beside the title. */
+    val titleButton: StateFlow<com.stash.core.data.prefs.TitleButton> = nowPlayingPreference.titleButton
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.TitleButton.SLEEP_TIMER)
+
     fun onToggleFullArt() {
         val on = fullArt.value != true
         viewModelScope.launch { nowPlayingPreference.setFullArt(on) }

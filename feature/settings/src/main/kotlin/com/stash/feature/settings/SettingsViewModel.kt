@@ -1689,6 +1689,39 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { nowPlayingPreference.setCycleAlbumArt(enabled) }
     }
 
+    /** Settings > Appearance > Title alignment. */
+    val titleAlign: StateFlow<com.stash.core.data.prefs.NpTitleAlign> = nowPlayingPreference.titleAlign.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        com.stash.core.data.prefs.NpTitleAlign.CENTER,
+    )
+
+    fun onTitleAlignChanged(align: com.stash.core.data.prefs.NpTitleAlign) {
+        viewModelScope.launch { nowPlayingPreference.setTitleAlign(align) }
+    }
+
+    /** Settings > Appearance > Button beside the title. */
+    val titleButton: StateFlow<com.stash.core.data.prefs.TitleButton> = nowPlayingPreference.titleButton.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        com.stash.core.data.prefs.TitleButton.SLEEP_TIMER,
+    )
+
+    fun onTitleButtonChanged(button: com.stash.core.data.prefs.TitleButton) {
+        viewModelScope.launch { nowPlayingPreference.setTitleButton(button) }
+    }
+
+    /** Settings > Appearance > Full art blend. */
+    val fullArtBlend: StateFlow<com.stash.core.data.prefs.FullArtBlend> = nowPlayingPreference.fullArtBlend.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        com.stash.core.data.prefs.FullArtBlend.BLURRED,
+    )
+
+    fun onFullArtBlendChanged(blend: com.stash.core.data.prefs.FullArtBlend) {
+        viewModelScope.launch { nowPlayingPreference.setFullArtBlend(blend) }
+    }
+
     /** Settings > Appearance > Discogs art. */
     val discogsArt: StateFlow<Boolean> = nowPlayingPreference.discogsArt.stateIn(
         viewModelScope,
