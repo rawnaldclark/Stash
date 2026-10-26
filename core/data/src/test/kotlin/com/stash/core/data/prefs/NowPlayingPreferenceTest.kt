@@ -40,6 +40,19 @@ class NowPlayingPreferenceTest {
         assertTrue(preference.ambientAnimationEnabled.first())
     }
 
+    @Test fun `a fresh install opens Now Playing as the owner set it up`() = runTest {
+        // Full art on, close to the whole cover, a slow pan over a solid blend, the title at the left.
+        assertTrue(preference.fullArt.first())
+        org.junit.Assert.assertEquals(1.1f, preference.fullArtZoom.first(), 0.0001f)
+        org.junit.Assert.assertEquals(FullArtPan.SLOW, preference.fullArtPan.first())
+        org.junit.Assert.assertEquals(FullArtBlend.SOLID, preference.fullArtBlend.first())
+        org.junit.Assert.assertEquals(NpTitleAlign.START, preference.titleAlign.first())
+        // Unchanged: the sleep timer beside the title, Discogs art and the cycle on.
+        org.junit.Assert.assertEquals(TitleButton.SLEEP_TIMER, preference.titleButton.first())
+        assertTrue(preference.discogsArt.first())
+        assertTrue(preference.cycleAlbumArt.first())
+    }
+
     @Test fun ambientStyle_defaultsToSoftGlow() = runTest {
         org.junit.Assert.assertEquals(AmbientStyle.SOFT_GLOW, preference.ambientStyle.first())
     }

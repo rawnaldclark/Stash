@@ -1693,7 +1693,7 @@ class SettingsViewModel @Inject constructor(
     val titleAlign: StateFlow<com.stash.core.data.prefs.NpTitleAlign> = nowPlayingPreference.titleAlign.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        com.stash.core.data.prefs.NpTitleAlign.CENTER,
+        com.stash.core.data.prefs.NpTitleAlign.DEFAULT,
     )
 
     fun onTitleAlignChanged(align: com.stash.core.data.prefs.NpTitleAlign) {
@@ -1715,7 +1715,7 @@ class SettingsViewModel @Inject constructor(
     val fullArtBlend: StateFlow<com.stash.core.data.prefs.FullArtBlend> = nowPlayingPreference.fullArtBlend.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        com.stash.core.data.prefs.FullArtBlend.BLURRED,
+        com.stash.core.data.prefs.FullArtBlend.DEFAULT,
     )
 
     fun onFullArtBlendChanged(blend: com.stash.core.data.prefs.FullArtBlend) {
@@ -1748,7 +1748,7 @@ class SettingsViewModel @Inject constructor(
     val fullArtPan: StateFlow<com.stash.core.data.prefs.FullArtPan> = nowPlayingPreference.fullArtPan.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        com.stash.core.data.prefs.FullArtPan.NORMAL,
+        com.stash.core.data.prefs.FullArtPan.DEFAULT,
     )
 
     fun onFullArtPanChanged(pan: com.stash.core.data.prefs.FullArtPan) {

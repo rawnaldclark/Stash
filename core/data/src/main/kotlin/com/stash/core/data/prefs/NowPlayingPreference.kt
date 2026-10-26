@@ -30,7 +30,16 @@ enum class AmbientStyle {
 }
 
 /** Where Now Playing's title and artist sit (Settings > Appearance > Title alignment). */
-enum class NpTitleAlign { CENTER, START }
+enum class NpTitleAlign {
+    CENTER,
+    START,
+    ;
+
+    companion object {
+        /** At the leading edge, as the owner set Now Playing up (2026-10-26). */
+        val DEFAULT = START
+    }
+}
 
 /**
  * What sits beside Now Playing's title, opposite the like heart (Settings > Appearance > Button
@@ -51,11 +60,17 @@ enum class TitleButton(val action: NowPlayingAction?) {
 
 /** What full art melts into under the controls (Settings > Appearance > Full art blend). */
 enum class FullArtBlend {
-    /** The page itself, blurred: the default. */
+    /** The page itself, blurred. */
     BLURRED,
 
     /** A color from the page's bottom edge, darkened. */
     SOLID,
+    ;
+
+    companion object {
+        /** A solid color, as the owner set Now Playing up (2026-10-26). */
+        val DEFAULT = SOLID
+    }
 }
 
 /** How fast full art's pages pan across what their crop hides (Settings > Appearance > Full art pan). */
@@ -63,9 +78,15 @@ enum class FullArtPan(val dpPerSecond: Float) {
     OFF(0f),
     SLOW(8f),
 
-    /** The default, as approved on the mockup (2026-10-26). */
+    /** As approved on the mockup (2026-10-26). */
     NORMAL(16f),
     FAST(28f),
+    ;
+
+    companion object {
+        /** Slow, as the owner set Now Playing up (2026-10-26). */
+        val DEFAULT = SLOW
+    }
 }
 
 @Singleton
@@ -94,9 +115,10 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
     /**
      * Now Playing's full art layout: the art across the whole width and down behind the controls,
      * the album's pages taking turns as the song plays (the toggle in its top row). Kept, so Now
-     * Playing opens as it was left. Off until turned on.
+     * Playing opens as it was left. On unless turned off: the layout the owner set Now Playing up
+     * with (2026-10-26).
      */
-    val fullArt = context.nowPlayingDataStore.data.map { it[fullArtKey] ?: false }
+    val fullArt = context.nowPlayingDataStore.data.map { it[fullArtKey] ?: true }
 
     suspend fun setFullArt(on: Boolean) {
         context.nowPlayingDataStore.edit { it[fullArtKey] = on }
@@ -104,9 +126,9 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     private val titleAlignKey = stringPreferencesKey("title_align")
 
-    /** Unset or unknown reads as [NpTitleAlign.CENTER], the layout Now Playing always had. */
+    /** Unset or unknown reads as [NpTitleAlign.DEFAULT]. */
     val titleAlign = context.nowPlayingDataStore.data.map { prefs ->
-        prefs[titleAlignKey]?.let { name -> NpTitleAlign.entries.firstOrNull { it.name == name } } ?: NpTitleAlign.CENTER
+        prefs[titleAlignKey]?.let { name -> NpTitleAlign.entries.firstOrNull { it.name == name } } ?: NpTitleAlign.DEFAULT
     }
 
     suspend fun setTitleAlign(align: NpTitleAlign) {
@@ -126,9 +148,9 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     private val fullArtBlendKey = stringPreferencesKey("full_art_blend")
 
-    /** Unset or unknown reads as [FullArtBlend.BLURRED]. */
+    /** Unset or unknown reads as [FullArtBlend.DEFAULT]. */
     val fullArtBlend = context.nowPlayingDataStore.data.map { prefs ->
-        prefs[fullArtBlendKey]?.let { name -> FullArtBlend.entries.firstOrNull { it.name == name } } ?: FullArtBlend.BLURRED
+        prefs[fullArtBlendKey]?.let { name -> FullArtBlend.entries.firstOrNull { it.name == name } } ?: FullArtBlend.DEFAULT
     }
 
     suspend fun setFullArtBlend(blend: FullArtBlend) {
@@ -172,9 +194,9 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
 
     private val fullArtPanKey = stringPreferencesKey("full_art_pan")
 
-    /** Unset or unknown reads as [FullArtPan.NORMAL]. */
+    /** Unset or unknown reads as [FullArtPan.DEFAULT]. */
     val fullArtPan = context.nowPlayingDataStore.data.map { prefs ->
-        prefs[fullArtPanKey]?.let { name -> FullArtPan.entries.firstOrNull { it.name == name } } ?: FullArtPan.NORMAL
+        prefs[fullArtPanKey]?.let { name -> FullArtPan.entries.firstOrNull { it.name == name } } ?: FullArtPan.DEFAULT
     }
 
     suspend fun setFullArtPan(pan: FullArtPan) {
@@ -185,8 +207,8 @@ class NowPlayingPreference @Inject constructor(@ApplicationContext private val c
         const val FULL_ART_ZOOM_MIN = 1f
         const val FULL_ART_ZOOM_MAX = 2f
 
-        /** About the look approved on the mockup (2026-10-26). */
-        const val FULL_ART_ZOOM_DEFAULT = 1.4f
+        /** Close to the whole cover, as the owner set Now Playing up (2026-10-26). */
+        const val FULL_ART_ZOOM_DEFAULT = 1.1f
     }
 
     private val ambientStyleKey = stringPreferencesKey("ambient_style")

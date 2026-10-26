@@ -176,8 +176,8 @@ class NowPlayingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
-     * The full art layout (the top row's toggle), kept for next time. Null until DataStore answers,
-     * so a Now Playing left in full art opens straight into it.
+     * The full art layout (the top row's toggle; on unless turned off), kept for next time. Null
+     * until DataStore answers, so Now Playing opens straight into the layout it was left in.
      */
     val fullArt: StateFlow<Boolean?> = nowPlayingPreference.fullArt
         .map<Boolean, Boolean?> { it }
@@ -189,15 +189,15 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Settings > Appearance > Full art pan. */
     val fullArtPan: StateFlow<com.stash.core.data.prefs.FullArtPan> = nowPlayingPreference.fullArtPan
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtPan.NORMAL)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtPan.DEFAULT)
 
     /** Settings > Appearance > Full art blend. */
     val fullArtBlend: StateFlow<com.stash.core.data.prefs.FullArtBlend> = nowPlayingPreference.fullArtBlend
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtBlend.BLURRED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.FullArtBlend.DEFAULT)
 
     /** Settings > Appearance > Title alignment. */
     val titleAlign: StateFlow<com.stash.core.data.prefs.NpTitleAlign> = nowPlayingPreference.titleAlign
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.NpTitleAlign.CENTER)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.stash.core.data.prefs.NpTitleAlign.DEFAULT)
 
     /** Settings > Appearance > Button beside the title. */
     val titleButton: StateFlow<com.stash.core.data.prefs.TitleButton> = nowPlayingPreference.titleButton
