@@ -1,0 +1,260 @@
+package com.stash.feature.record.art
+
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import java.net.URI
+import java.net.URLEncoder
+
+/** An HTTP answer as the lookup reads it: the status (0 for no answer at all) and, when it was a success, the body. */
+data class ArtReply(val status: Int, val body: String? = null)
+
+/** One GET (the lookup's only kind of request). Never throws for the network: no answer is status 0. */
+fun interface ArtHttp {
+    suspend fun get(url: String): ArtReply
+}
+
+/** What one lookup found. */
+sealed interface Found {
+    /** A cover's address, or null: none known (kept as a miss for a while). */
+    data class Cover(val url: String?) : Found
+
+    /** Deezer wouldn't look it up just now (its quota): nothing kept, asked again in a while. */
+    data object Later : Found
+
+    /** No answer, or a refusal (429, 5xx): nothing kept, and no more asking for a while. */
+    data object Refused : Found
+}
+
+/**
+ * Deezer's searches, one at a time and [gapMs] apart across every lookup in the app (its limit: 50 in 5 s from one address).
+ * A search that would wait longer than [maxWaitMs] for its turn isn't queued.
+ */
+class DeezerPace(
+    private val gapMs: Long = GAP_MS,
+    private val maxWaitMs: Long = MAX_WAIT_MS,
+    private val now: () -> Long = System::currentTimeMillis,
+    val sleep: suspend (Long) -> Unit = { delay(it) },
+) {
+    private val lock = Mutex()
+    private var next = 0L
+
+    /** Waits for this search's turn; false (no wait) when the turn is too far off. */
+    suspend fun turn(): Boolean {
+        val wait = lock.withLock {
+            val t = maxOf(now(), next)
+            if (t - now() > maxWaitMs) return false
+            next = t + gapMs
+            t - now()
+        }
+        if (wait > 0) sleep(wait)
+        return true
+    }
+
+    companion object {
+        /** worker art.ts `DEEZER_GAP_MS`. */
+        const val GAP_MS = 110L
+
+        /** worker art.ts `DEEZER_MAX_WAIT_MS`. */
+        const val MAX_WAIT_MS = 8_000L
+    }
+}
+
+/**
+ * An album's cover, a song's, or an artist's picture, found by their words: stash-player `worker/art.ts` `lookUp`, run on the
+ * phone (the app has no Worker in between). Deezer first (its search allows far more than Apple's ~20 a minute): the album by
+ * its artist and name, then the song's own; then Apple's iTunes search, sized 600. An artist's picture comes from Deezer.
+ *
+ * Nothing about the listener is sent: only an artist's and an album's (or a song's) words.
+ *
+ * Only covers the record may show are taken ([isAllowedCover]): its page allows images from Deezer's CDNs and Apple's mzstatic
+ * alone, so a hit elsewhere counts as no hit.
+ */
+class ArtLookup(
+    private val http: ArtHttp,
+    private val pace: DeezerPace = DeezerPace(),
+) {
+    /** What Deezer said: its body, or why there is none. */
+    private sealed interface Dz {
+        data class Ok(val body: JsonObject) : Dz
+        data class No(val found: Found) : Dz
+    }
+
+    suspend fun lookUp(s: ArtSong): Found {
+        if (s.isArtist) return artistPicture(s)
+        val artist = ArtText.primary(s.artist)
+        if (!s.album.isNullOrEmpty()) {
+            val q = "artist:\"$artist\" album:\"${ArtText.bareAlbum(s.album)}\""
+            when (val r = deezer("$DEEZER/search/album?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
+                is Dz.No -> return r.found
+                is Dz.Ok -> best(r.body.list("data"), { it.obj("artist")?.str("name") }, { it.str("title") }, s.album, ArtText::bareAlbum, s.artist) {
+                    it.str("cover_big")
+                }?.let { return Found.Cover(it) }
+            }
+        }
+        run {
+            val q = "artist:\"$artist\" track:\"${ArtText.searchTitle(s.title)}\""
+            when (val r = deezer("$DEEZER/search?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
+                is Dz.No -> return r.found
+                is Dz.Ok -> best(r.body.list("data"), { it.obj("artist")?.str("name") }, { it.str("title") }, s.title, ArtText::searchTitle, s.artist) {
+                    it.obj("album")?.str("cover_big")
+                }?.let { return Found.Cover(it) }
+            }
+        }
+        val album = s.album?.takeIf { it.isNotEmpty() }
+        val term = if (album != null) "$artist ${ArtText.bareAlbum(album)}" else "$artist ${ArtText.searchTitle(s.title)}"
+        val r = http.get("$ITUNES/search?${form("term" to term, "media" to "music", "entity" to if (album != null) "album" else "song", "limit" to "10")}")
+        if (r.status in 200..299) {
+            val hits = parse(r.body)?.list("results").orEmpty()
+            val sized: (JsonObject) -> String? = { h -> h.str("artworkUrl100")?.replace(ITUNES_SIZE, "/600x600bb.jpg") }
+            val hit = if (album != null) {
+                best(hits, { it.str("artistName") }, { it.str("collectionName") }, album, ArtText::bareAlbum, s.artist, sized)
+            } else {
+                best(hits, { it.str("artistName") }, { it.str("trackName") }, s.title, ArtText::searchTitle, s.artist, sized)
+            }
+            if (hit != null) return Found.Cover(hit)
+        }
+        // Deezer answered and has none; Apple has none, or wouldn't say (its limit is low): none, for a while
+        return Found.Cover(null)
+    }
+
+    /** An artist's picture on Deezer (Apple's search has none): the same name first, else one that starts the same. */
+    private suspend fun artistPicture(s: ArtSong): Found {
+        val q = "artist:\"${ArtText.primary(s.artist)}\""
+        val body = when (val r = deezer("$DEEZER/search/artist?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
+            is Dz.No -> return r.found
+            is Dz.Ok -> r.body
+        }
+        val want = ArtText.fold(ArtText.primary(s.artist))
+        var fallback: String? = null
+        for (a in body.list("data")) {
+            val n = a.str("name")?.let(ArtText::fold).orEmpty()
+            // Deezer's placeholder for an artist with no picture has an empty hash in its address
+            val url = allowed(a.str("picture_big")) ?: continue
+            if (EMPTY_ARTIST.containsMatchIn(url)) continue
+            if (n == want) return Found.Cover(url)
+            if (fallback == null && n.isNotEmpty() && (n.startsWith(want) || want.startsWith(n))) fallback = url
+        }
+        return Found.Cover(fallback)
+    }
+
+    /**
+     * A Deezer search, in its turn, asked again after a quota refusal ([RETRY_MS] apart). No answer or a 429/5xx is
+     * [Found.Refused]; any other trouble (an error in the answer, the quota still spent, no turn soon) is [Found.Later].
+     */
+    private suspend fun deezer(url: String): Dz {
+        var attempt = 0
+        while (true) {
+            if (!pace.turn()) return Dz.No(Found.Later)
+            val r = http.get(url)
+            if (r.status == 0 || r.status == 429 || r.status >= 500) return Dz.No(Found.Refused)
+            if (r.status !in 200..299) return Dz.No(Found.Later)
+            val body = parse(r.body) ?: return Dz.No(Found.Later)
+            val error = body["error"]
+            val code = ((error as? JsonObject)?.get("code") as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toDoubleOrNull()
+            if (code == QUOTA && attempt < RETRY_MS.size) {
+                pace.sleep(RETRY_MS[attempt++])
+                continue
+            }
+            return if (error.truthy()) Dz.No(Found.Later) else Dz.Ok(body)
+        }
+    }
+
+    /** worker art.ts `best`: by artist, then name; an exact name first, else the first that starts the same. */
+    private fun best(
+        hits: List<JsonObject>,
+        artistOf: (JsonObject) -> String?,
+        nameOf: (JsonObject) -> String?,
+        want: String,
+        bare: (String) -> String,
+        artist: String,
+        cover: (JsonObject) -> String?,
+    ): String? {
+        var fallback: String? = null
+        for (h in hits) {
+            if (!sameArtist(artistOf(h), artist)) continue
+            val c = allowed(cover(h)) ?: continue
+            when (nameMatch(nameOf(h), want, bare)) {
+                2 -> return c
+                1 -> if (fallback == null) fallback = c
+            }
+        }
+        return fallback
+    }
+
+    private companion object {
+        const val DEEZER = "https://api.deezer.com"
+        const val ITUNES = "https://itunes.apple.com"
+
+        /** Deezer's error code for "quota exceeded". */
+        const val QUOTA = 4.0
+
+        /** worker art.ts `DEEZER_RETRY_MS`. */
+        val RETRY_MS = longArrayOf(1200, 2500)
+
+        val ITUNES_SIZE = Regex("/\\d+x\\d+(bb)?\\.(jpg|png|webp)\\z", RegexOption.IGNORE_CASE)
+        val EMPTY_ARTIST = Regex("/artist//")
+
+        val json = Json { ignoreUnknownKeys = true }
+
+        fun parse(body: String?): JsonObject? = try {
+            body?.let { json.parseToJsonElement(it) as? JsonObject }
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+
+        /** `URLSearchParams` serialised: form encoding, a space as `+`. */
+        fun form(vararg pairs: Pair<String, String>): String =
+            pairs.joinToString("&") { (k, v) -> "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}" }
+
+        /** Is [found] (an artist's name as a catalogue has it) the song's artist? Either contains the other, folded. */
+        fun sameArtist(found: String?, artist: String): Boolean {
+            val a = found?.let(ArtText::fold).orEmpty()
+            val b = ArtText.fold(ArtText.primary(artist))
+            return a.isNotEmpty() && b.isNotEmpty() && (a.contains(b) || b.contains(a))
+        }
+
+        /** 2: the same name; 1: one that starts the same (a fallback); 0: another. */
+        fun nameMatch(found: String?, want: String, bare: (String) -> String): Int {
+            if (found == null) return 0
+            val n = ArtText.fold(bare(found))
+            val w = ArtText.fold(bare(want))
+            return when {
+                n == w -> 2
+                n.isNotEmpty() && (n.startsWith(w) || w.startsWith(n)) -> 1
+                else -> 0
+            }
+        }
+
+        /** An https address the record's page may show (its CSP: Deezer's two CDNs, Apple's mzstatic), else null. */
+        fun allowed(url: String?): String? = url?.takeIf { isAllowedCover(it) }
+
+        fun JsonElement?.truthy(): Boolean = when (this) {
+            null, JsonNull -> false
+            is JsonPrimitive -> if (isString) content.isNotEmpty() else content != "false" && content.toDoubleOrNull() != 0.0
+            else -> true
+        }
+
+        fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+        fun JsonObject.list(key: String): List<JsonObject> = (this[key] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+    }
+}
+
+/** The image hosts the record's page allows (embed.html's `img-src`): Deezer's CDNs and Apple's mzstatic, over https. */
+fun isAllowedCover(url: String): Boolean {
+    val uri = try {
+        URI(url)
+    } catch (e: java.net.URISyntaxException) {
+        return false
+    }
+    if (uri.scheme != "https" || uri.rawUserInfo != null || (uri.port != -1 && uri.port != 443)) return false
+    val host = uri.host?.lowercase() ?: return false
+    return host == "cdn-images.dzcdn.net" || host == "e-cdns-images.dzcdn.net" || host.endsWith(".mzstatic.com")
+}

@@ -144,4 +144,9 @@ object DatabaseModule {
     @Provides
     fun provideListeningHistoryDao(db: StashDatabase): com.stash.core.data.db.dao.ListeningHistoryDao =
         db.listeningHistoryDao()
+
+    /** This phone's own plays and skips, as the web export reads them; Your record (feature:record) reads them the same way. */
+    @Provides
+    fun provideWebLibraryExportDao(db: StashDatabase): com.stash.core.data.db.dao.WebLibraryExportDao =
+        db.webLibraryExportDao()
 }

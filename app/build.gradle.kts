@@ -275,6 +275,7 @@ dependencies {
     implementation(project(":feature:search"))
     implementation(project(":feature:community"))
     implementation(project(":feature:listening"))
+    implementation(project(":feature:record"))
     implementation(project(":data:download"))
     // Cloud storage libraries: CloudConfigModule hands BuildConfig's keys to data:cloud.
     implementation(project(":data:cloud"))
