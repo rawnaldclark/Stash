@@ -6,9 +6,12 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.db.entity.TrackSkipEventEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,6 +82,32 @@ class OwnAlbumTotalsDaoTest {
         assertEquals(237_000L, rush.listenedMs)
         // The same plays the export's own-play count sees
         assertEquals(db.webLibraryExportDao().ownPlayCount(), totals.sumOf { it.plays })
+    }
+
+    @Test fun `the history stamp moves with the plays, their time, the skips and the blocklist, and only those`() = runTest {
+        val dao = db.webLibraryExportDao()
+        track(1, "Ivy", "Frank Ocean", "Blonde")
+        val empty = dao.ownHistoryStamp().first()
+        db.listeningEventDao().insert(ListeningEventEntity(trackId = 1, startedAt = T, listenedMs = 1_000))
+        val played = dao.ownHistoryStamp().first()
+        assertEquals(1, played.plays)
+        assertEquals(1_000L, played.listenedMs)
+        assertNotEquals(empty, played)
+        // another device's play: newer, but not this phone's time
+        db.listeningEventDao().insert(ListeningEventEntity(trackId = 1, startedAt = T + 1, listenedMs = 9_000, originDevice = "d_web00000000000"))
+        val remote = dao.ownHistoryStamp().first()
+        assertEquals(1, remote.plays)
+        assertEquals(1_000L, remote.listenedMs)
+        db.trackSkipEventDao().insert(TrackSkipEventEntity(trackId = 1, skippedAt = T + 2, positionMs = 3_000))
+        assertEquals(1, dao.ownHistoryStamp().first().skips)
+        db.trackBlocklistDao().insert(
+            TrackBlocklistEntity(canonicalKey = "frank ocean|ivy", artist = "Frank Ocean", title = "Ivy", blockedAt = 1, blockedFrom = "OTHER"),
+        )
+        assertEquals(1, dao.ownHistoryStamp().first().blocked)
+        // a track rewritten (a sync) changes nothing here
+        val before = dao.ownHistoryStamp().first()
+        track(2, "Nights", "Frank Ocean", "Blonde")
+        assertEquals(before, dao.ownHistoryStamp().first())
     }
 
     private companion object {

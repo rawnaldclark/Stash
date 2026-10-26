@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.model.Track
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter). Nothing here writes.
@@ -349,6 +350,37 @@ interface WebLibraryExportDao {
         """,
     )
     suspend fun ownAlbumTotals(): List<OwnAlbumTotal>
+
+    /**
+     * What the phone's own history looks like from far off: how many plays and skips, the newest of each, the time played,
+     * and the blocklist's size. Any change to the plays, the skips or the blocklist changes it, so Your record's Home card
+     * reads the history again only then ([ownHistoryStamp]), never just because Home came back.
+     */
+    data class OwnHistoryStamp(
+        val plays: Int,
+        @ColumnInfo(name = "last_play") val lastPlay: Long,
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        val skips: Int,
+        @ColumnInfo(name = "last_skip") val lastSkip: Long,
+        val blocked: Int,
+    )
+
+    /**
+     * [OwnHistoryStamp], again each time Room sees `listening_events`, `track_skip_events` or `track_blocklist` written (and
+     * only those: a sync rewriting `tracks` doesn't wake it). Cheap: counts and sums over indexed tables, no join.
+     */
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM listening_events WHERE origin_device IS NULL) AS plays,
+            (SELECT COALESCE(MAX(id), 0) FROM listening_events) AS last_play,
+            (SELECT COALESCE(SUM(listened_ms), 0) FROM listening_events WHERE origin_device IS NULL) AS listened_ms,
+            (SELECT COUNT(*) FROM track_skip_events) AS skips,
+            (SELECT COALESCE(MAX(id), 0) FROM track_skip_events) AS last_skip,
+            (SELECT COUNT(*) FROM track_blocklist) AS blocked
+        """,
+    )
+    fun ownHistoryStamp(): Flow<OwnHistoryStamp>
 
     companion object {
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
