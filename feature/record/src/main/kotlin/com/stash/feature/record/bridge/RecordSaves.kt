@@ -134,7 +134,8 @@ class RecordSaves(
 
         /**
          * A safe file name from the page's [name]: letters (any script), digits, spaces, `.`, `-`, `_` and `()` kept, anything
-         * else a hyphen, no leading dots, cut to [MAX_NAME], and the extension [mime] calls for (added, or put right).
+         * else a hyphen, runs of hyphens or dots one, no leading dots, cut to [MAX_NAME], and the extension [mime] calls for
+         * (added, or put right).
          */
         fun fileName(name: String, mime: String): String {
             val ext = EXTENSIONS[mime] ?: "bin"

@@ -60,7 +60,7 @@ class RecordFiles @Inject constructor(@ApplicationContext private val context: C
             val dir = File(context.cacheDir, SHARE_DIR).apply { mkdirs() }
             val now = System.currentTimeMillis()
             dir.listFiles()?.forEach { f -> if (f.isFile && f.name.startsWith(PREFIX) && now - f.lastModified() > MAX_AGE_MS) f.delete() }
-            // Each share its own folder name-wise: a share sheet may still be reading an earlier file
+            // Each share its own file (the time in its name): a share sheet may still be reading an earlier one
             val target = File(dir, "$PREFIX$now-$name")
             if (!file.renameTo(target)) file.copyTo(target, overwrite = true)
             target
