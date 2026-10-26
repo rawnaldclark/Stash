@@ -313,10 +313,17 @@ class BitchordClient @Inject constructor(
                         else -> return@withContext TidalLookup.Failed
                     }
                     val tracks = json.decodeFromString<BitchordSearchResponse>(body).tracks
+                    val lossless = tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
+                    // The row's own recording when Tidal lists it. The search is by words, so a
+                    // song's twins both come back, and an ISRC match scores 0.95 against 1.0 for a
+                    // twin that matches on words and length: the clean twin beat the explicit
+                    // recording the row names. The Qobuz sources look the ISRC up first.
+                    val sameRecording = query.isrc?.takeIf { it.isNotBlank() }
+                        ?.let { isrc -> lossless.filter { it.isrc.equals(isrc, ignoreCase = true) } }
+                        .orEmpty()
                     val best = QobuzCandidateMatcher.pickBest(
                         query,
-                        tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
-                            .map { it to confidence(query, it) },
+                        sameRecording.ifEmpty { lossless }.map { it to confidence(query, it) },
                         explicit = { it.explicit },
                     ) { it.duration }
                     if (best == null) {

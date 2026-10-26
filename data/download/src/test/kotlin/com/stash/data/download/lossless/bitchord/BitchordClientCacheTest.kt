@@ -403,6 +403,16 @@ class BitchordClientCacheTest {
         assertThat(searches.get()).isEqualTo(2)
     }
 
+    @Test fun `the row's own ISRC wins over a twin that matches on words and length`() = runBlocking {
+        // The clean twin (td:1) scores 1.0 on words and length; the row's ISRC is the explicit
+        // one's (td:2), which scores 0.95. A clean row naming it still gets it: the ISRC is the row.
+        searchReply = { ok(ISRC_TWINS) }
+
+        val found = client.lookup(query.copy(isrc = "USQX91300199", explicit = false)) as TidalLookup.Found
+
+        assertThat(found.stream.trackId).isEqualTo("td:2")
+    }
+
     @Test fun `a match cached before the explicit tie-break is not served`() = runBlocking {
         // The old key had no preference suffix; its pick was by search order alone.
         dao.rows["isrc:USQX91300108"] = TidalMatchEntity(key = "isrc:USQX91300108", tidalId = "td:9", searchedAt = now)
@@ -418,6 +428,8 @@ class BitchordClientCacheTest {
         const val SEARCH_HIT = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300108"}]}"""
         /** A song's clean (td:1, listed first) and explicit (td:2) twins: same words, same length. */
         const val TWINS = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","explicit":false},{"id":"td:2","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","explicit":true}]}"""
+        /** [TWINS] with ISRCs: the explicit td:2 is USQX91300199. */
+        const val ISRC_TWINS = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300198","explicit":false},{"id":"td:2","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300199","explicit":true}]}"""
         const val FLAC = """{"url":"https://cdn.example/a.flac","codec":"flac","manifest":"none","bitDepth":16,"sampleRate":44100}"""
         const val AAC = """{"url":"https://cdn.example/a.mp4","codec":"aac","manifest":"none","bitrate":320}"""
     }
