@@ -33,6 +33,8 @@ import com.stash.feature.listening.history.HistoryScreen
 import com.stash.feature.listening.recap.RecapScreen
 import com.stash.feature.listening.stats.ListeningStatsScreen
 import com.stash.feature.listening.top.TopScreen
+import com.stash.feature.record.RecordScreen
+import com.stash.feature.record.card.YourRecordSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -195,6 +197,10 @@ private fun StashNavGraph(
                     navController.navigate(RecapRoute(kind, year, month)) { launchSingleTop = true }
                 },
                     )
+                },
+                yourRecordSection = {
+                    // A double tap opens one record, not two
+                    YourRecordSection(onOpen = { navController.navigate(YourRecordRoute) { launchSingleTop = true } })
                 },
             )
         }
@@ -566,6 +572,12 @@ private fun StashNavGraph(
                     navController.navigate(RecapRoute(kind, year, month, source = "lastfm")) { launchSingleTop = true }
                 },
             )
+        }
+
+        // Full screen over everything (StashScaffold hides the bottom chrome on this route). Pops only while the record is
+        // the top entry: its close racing a back must not pop Home as well.
+        composable<YourRecordRoute> { entry ->
+            RecordScreen(onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() })
         }
 
         // Full screen over everything (StashScaffold hides the bottom chrome on this route).

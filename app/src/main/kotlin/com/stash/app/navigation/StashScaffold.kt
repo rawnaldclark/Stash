@@ -108,8 +108,8 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    // The Recap story is full screen: no mini player, no tab bar, drawn under the status bar.
-    val immersive = navBackStackEntry?.destination?.hasRoute<RecapRoute>() == true
+    // The Recap story and Your record are full screen: no mini player, no tab bar, drawn under the status bar.
+    val immersive = navBackStackEntry?.destination?.let { it.hasRoute<RecapRoute>() || it.hasRoute<YourRecordRoute>() } == true
     // The artist page draws its header photo under the status bar; it keeps the bottom chrome.
     val bleedTop = immersive || navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
 

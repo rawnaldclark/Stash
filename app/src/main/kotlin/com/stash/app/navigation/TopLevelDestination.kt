@@ -76,6 +76,12 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  */
 @Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0, val source: String = "stash")
 
+/**
+ * Your record (feature:record): the bundled record from Stash on the web, in a WebView. Full screen like [RecapRoute]: the
+ * scaffold hides the mini player and the tab bar.
+ */
+@Serializable data object YourRecordRoute
+
 @Serializable
 data class SearchArtistRoute(
     val artistId: String,

@@ -26,7 +26,7 @@ class HomeSectionOrderTest {
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
                 // appended: added after this arrangement was saved.
-                HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
+                HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING, HomeSection.YOUR_RECORD,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -42,7 +42,7 @@ class HomeSectionOrderTest {
                 // appended in default order:
                 HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
-                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
+                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING, HomeSection.YOUR_RECORD,
             ),
             resolveHomeSectionOrder(saved),
         )
@@ -141,8 +141,9 @@ class HomeSectionOrderTest {
         )
         val resolved = resolveHomeSectionOrder(saved)
         assertEquals(HomeSection.DISCOVER, resolved.first())
-        assertEquals(saved.mapNotNull(HomeSection::fromKey), resolved.drop(1).dropLast(1))
-        assertEquals(HomeSection.YOUR_LISTENING, resolved.last())
+        assertEquals(saved.mapNotNull(HomeSection::fromKey), resolved.drop(1).dropLast(2))
+        // ...and Your record after it, newer still
+        assertEquals(listOf(HomeSection.YOUR_LISTENING, HomeSection.YOUR_RECORD), resolved.takeLast(2))
         // New in the update, it shows (Home itself waits for the first listen).
         assertTrue(HomeSection.YOUR_LISTENING in visibleHomeSections(resolved, emptySet(), communityOn = true))
         assertTrue(HomeSection.YOUR_LISTENING in DEFAULT_HOME_SECTIONS)
@@ -203,6 +204,21 @@ class HomeSectionOrderTest {
         val order = effectiveHomeSectionOrder(emptyList(), promoted = false)
         assertTrue(HomeSection.DISCOVER in visibleHomeSections(order, emptySet(), communityOn = false))
         assertFalse(HomeSection.DISCOVER in visibleHomeSections(order, setOf(HomeSection.DISCOVER), communityOn = false))
+    }
+
+    @Test
+    fun `your record is appended to a saved order and shows, without moving anything`() {
+        // A layout saved before the update that adds "Your record" (every older section in it, Your listening moved up).
+        val saved = listOf(
+            "discover", "your_listening", "your_playlists", "new_releases", "qobuz_playlists", "top_albums",
+            "made_for_you", "radios", "mood_decades", "community",
+        )
+        val resolved = resolveHomeSectionOrder(saved)
+        assertEquals(saved.mapNotNull(HomeSection::fromKey) + HomeSection.YOUR_RECORD, resolved)
+        assertTrue(HomeSection.YOUR_RECORD in visibleHomeSections(resolved, emptySet(), communityOn = false))
+        assertTrue(HomeSection.YOUR_RECORD in DEFAULT_HOME_SECTIONS)
+        assertEquals(HomeSection.YOUR_RECORD, HomeSection.fromKey("your_record"))
+        assertFalse(HomeSection.YOUR_RECORD in visibleHomeSections(resolved, setOf(HomeSection.YOUR_RECORD), communityOn = false))
     }
 
     @Test

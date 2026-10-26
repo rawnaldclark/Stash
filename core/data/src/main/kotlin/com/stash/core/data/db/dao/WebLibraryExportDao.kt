@@ -311,7 +311,49 @@ interface WebLibraryExportDao {
     )
     suspend fun ownFirstPlayAt(): Long?
 
+    /**
+     * One artist and album of this phone's plays, totalled ([ownAlbumTotals]). Your record's Home card ranks albums and artists
+     * from these (stash-player record-card.ts `fromOwn`), so a decade of plays comes back as one row per album, not a row per play.
+     */
+    data class OwnAlbumTotal(
+        val artist: String,
+        val album: String,
+        /** One of its songs: the cover lookup's way in when the album isn't found by its name. */
+        val title: String,
+        /** A cover one of its songs has, when any does. */
+        @ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
+        val plays: Int,
+        /** Each play its song's length, else [GUESS_MS] (the web counts this browser's own plays so on its card). */
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        @ColumnInfo(name = "first_at") val firstAt: Long,
+        @ColumnInfo(name = "last_at") val lastAt: Long,
+    )
+
+    /**
+     * The plays [ownPlaysBefore] pages through, totalled by the song's artist and album as written, the album played last
+     * first (so a name spelled two ways is shown as it was spelled lately).
+     */
+    @Query(
+        """
+        SELECT t.artist AS artist, t.album AS album, MAX(t.title) AS title, MAX(t.album_art_url) AS album_art_url,
+               COUNT(*) AS plays,
+               SUM(CASE WHEN t.duration_ms > 0 THEN t.duration_ms ELSE $GUESS_MS END) AS listened_ms,
+               MIN(le.started_at) AS first_at, MAX(le.started_at) AS last_at
+        FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.origin_device IS NULL AND le.started_at > 0
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        GROUP BY t.artist, t.album
+        ORDER BY last_at DESC, t.artist ASC, t.album ASC
+        """,
+    )
+    suspend fun ownAlbumTotals(): List<OwnAlbumTotal>
+
     companion object {
+        /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
+        const val GUESS_MS = 210_000L
+
         /** [SongColumns] of a track (`t`). */
         const val SONG_COLUMNS =
             "t.id, t.title, t.artist, t.album, t.duration_ms, t.isrc, t.spotify_uri, t.youtube_id, t.album_art_url, t.date_added"

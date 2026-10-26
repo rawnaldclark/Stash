@@ -43,7 +43,13 @@ enum class HomeSection(val key: String) {
      * a stale saved order appends it; Home shows it first until the user reorders Home
      * ([effectiveHomeSectionOrder]). Home renders it only once there's a listen.
      */
-    YOUR_LISTENING("your_listening");
+    YOUR_LISTENING("your_listening"),
+
+    /**
+     * Your record (PLAN record-in-app 2026-10-26: "Home card, like the web"): the way into the record, or "Press your record"
+     * before there is one. Appended, so a saved order gets it at its end and it shows for everyone who already has one.
+     */
+    YOUR_RECORD("your_record");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
