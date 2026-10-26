@@ -54,7 +54,7 @@ class QobuzStreamResolver @Inject constructor(
             isrc = track.isrc?.takeIf { it.isNotBlank() },
             durationMs = track.durationMs,
             explicit = track.explicit,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
         val requestedQuality = qualityPolicy.streamingTier().qobuzCode
         val result = source.resolveImmediate(query, requestedQuality) ?: run {
             Log.d(TAG, "no_result id=${track.id}")

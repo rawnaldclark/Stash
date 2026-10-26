@@ -113,6 +113,30 @@ class CandidatePickTest {
         assertThat(yt(artist = "Artist", title = "Song").durationReliable).isFalse()
     }
 
+    @Test fun `a mix song with no video takes its Last fm length as a hint, so the album cut wins`() {
+        // The owner's "Shook Ones, Pt. II" (2026-10-26): a mix row with Last.fm's 241 s radio edit and
+        // its compilation album, no video id. The album used to make the length count as the song's.
+        val stub = TrackQuery(
+            artist = "Mobb Deep",
+            title = "Shook Ones, Pt. II",
+            album = "Reminisce Hip Hop Classics",
+            durationMs = 241_000,
+        ).forLibrarySource(MusicSource.YOUTUBE, null, hasVideoId = false)
+        assertThat(stub.durationReliable).isFalse()
+        fun score(q: TrackQuery, sec: Int) = QobuzCandidateMatcher.confidence(q, "Shook Ones, Pt. II", "Mobb Deep", null, sec, true)
+        // The 326 s album cut, 35% longer than Last.fm says, still passes; before, it didn't.
+        assertThat(score(stub, 326)).isAtLeast(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        val asBefore = stub.copy(durationReliable = true)
+        assertThat(score(asBefore, 326)).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
+        // Against a same-titled clean edit of Last.fm's length, the explicit album cut wins.
+        val edit = Cand("radio edit", 241, explicit = false)
+        val album = Cand("album cut", 326, explicit = true)
+        assertThat(pick(stub, edit to score(stub, edit.sec), album to score(stub, album.sec))).isEqualTo("album cut")
+        // The same row once matched has a video, and the album reads as YouTube Music's again.
+        assertThat(stub.copy(durationReliable = true).forLibrarySource(MusicSource.YOUTUBE, null, hasVideoId = true).durationReliable)
+            .isTrue()
+    }
+
     @Test fun `other library rows are left as they are`() {
         val spotify = TrackQuery(artist = "Artist", title = "Song (Official Video)", durationMs = 210_000)
         assertThat(spotify.forLibrarySource(MusicSource.SPOTIFY, "OMV")).isEqualTo(spotify)

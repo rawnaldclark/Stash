@@ -683,7 +683,7 @@ class SearchDownloadCoordinator @Inject constructor(
                 durationMs = row.durationMs.takeIf { it > 0 },
                 explicit = row.explicit,
                 trackId = row.id,
-            ).forLibrarySource(row.source, row.musicVideoType)
+            ).forLibrarySource(row.source, row.musicVideoType, hasVideoId = !row.youtubeId.isNullOrBlank())
         } else {
             track.toQuery().forLibrarySource(MusicSource.YOUTUBE)
         }
