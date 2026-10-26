@@ -1768,9 +1768,9 @@ abstract class StashDatabase : RoomDatabase() {
          * holds for it (the guess wrote both; the client's key, so the same cleaned names). A row with
          * a file or a cloud copy keeps its album: an album downloaded whole stores its own artist,
          * which Last.fm mostly agrees with, and Recap caches Last.fm's answer for every song it reads.
-         * On the owner's phone (2026-10-26) this cleared 1,312 rows; checked against the same
-         * library's 10-21 copy, 3 of 7,557 albums it already had would have gone, each one Last.fm
-         * agreed with.
+         * On the owner's phone (2026-10-26) this clears 1,410 rows; checked against the same
+         * library's 10-21 copy, 5 of the 7,557 albums it already had go too, each one Last.fm
+         * agreed with ("Nude" on "In Rainbows").
          */
         val MIGRATION_66_67 = object : Migration(66, 67) {
             override fun migrate(db: SupportSQLiteDatabase) {
