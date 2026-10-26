@@ -167,9 +167,10 @@ class RecordHost(
         // web: a name with no title is an artist; a song's or album's words otherwise (the title stands in for an artist's)
         val songs = asks.map { if (it.isArtist) ArtSong(it.artist, it.artist, isArtist = true) else ArtSong(it.title!!, it.artist, it.album) }
         scope.launch {
+            // Called where covers() runs (this scope's thread, the main one), so it posts in order, before the final list
             val found: (List<String?>) -> Unit = { urls ->
                 val list = asks.indices.mapNotNull { i -> urls.getOrNull(i)?.let { asks[i].id to it } }
-                if (list.isNotEmpty()) scope.launch(main) { from.post(RecordMessages.covers(list)) }
+                if (list.isNotEmpty()) from.post(RecordMessages.covers(list))
             }
             try {
                 val urls = covers.covers(songs, scope, found)
