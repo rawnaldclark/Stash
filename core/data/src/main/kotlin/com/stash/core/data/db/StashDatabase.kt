@@ -116,8 +116,9 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.CloudItemEntity::class,
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
+        com.stash.core.data.db.entity.RecordPlayEntity::class,
     ],
-    version = 67,
+    version = 68,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -180,6 +181,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun scannedSongDao(): ScannedSongDao
 
     abstract fun listeningHistoryDao(): com.stash.core.data.db.dao.ListeningHistoryDao
+
+    abstract fun recordPlayDao(): com.stash.core.data.db.dao.RecordPlayDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1810,6 +1813,23 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v67 -> v68: Your record's imported plays (a Spotify data export), one new, empty table, `record_plays`, keyed by the
+         * play's id and indexed on its start and its flags. Kept apart from `listening_events` on purpose: these plays are never
+         * scrobbled, mirrored or exported as this phone's own. Nothing existing changes.
+         */
+        val MIGRATION_67_68 = object : Migration(67, 68) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_plays` (" +
+                        "`id` TEXT NOT NULL, `t` TEXT NOT NULL, `a` TEXT NOT NULL, `al` TEXT, `sid` TEXT, " +
+                        "`s` INTEGER NOT NULL, `ms` INTEGER NOT NULL, `f` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_s` ON `record_plays` (`s`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_f` ON `record_plays` (`f`)")
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1913,6 +1933,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_64_65,
                 MIGRATION_65_66,
                 MIGRATION_66_67,
+                MIGRATION_67_68,
             )
         }
     }

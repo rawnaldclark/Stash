@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
+import com.stash.core.data.db.entity.RecordPlayEntity
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
@@ -179,6 +180,29 @@ class WebLibraryListensTest {
         assertEquals(setOf("kind", "v", "exportedAt", "generator", "likes", "playlists", "history", "listens"), root.keys)
         assertEquals(2, root["listens"]!!.jsonObject["plays"]!!.jsonArray.size)
         // `history` is untouched: every origin, newest 5,000, as before.
+        assertEquals(4, root["history"]!!.jsonArray.size)
+    }
+
+    @Test fun `plays brought into Your record (a Spotify export) never go in the export`() = runTest {
+        fill()
+        // Your record's imported plays live in their own table: neither the history nor the listens section reads it
+        db.recordPlayDao().apply(
+            listOf(
+                RecordPlayEntity(id = "ivy|frank ocean|${T + 9_000}", t = "Ivy", a = "Frank Ocean", al = "Blonde", s = T + 9_000, ms = 200_000, f = 34),
+                RecordPlayEntity(id = "nights|frank ocean|${T + 9_500}", t = "Nights", a = "Frank Ocean", s = T + 9_500, ms = 300_000, f = 16),
+            ),
+            emptyList(),
+        )
+        val with = ByteArrayOutputStream()
+        shadowOf(context.contentResolver).registerOutputStream(EXPORT_URI, with)
+
+        val result = exporter.export(EXPORT_URI, listens = true).getOrThrow()
+
+        assertEquals(2, result.listens)
+        assertEquals(1, result.skips)
+        val root = parse(with.toByteArray())
+        val starts = root["listens"]!!.jsonObject["plays"]!!.jsonArray.map { it.jsonObject["s"]!!.jsonPrimitive.long }
+        assertEquals(listOf(T + 2_000, T + 1_000), starts)
         assertEquals(4, root["history"]!!.jsonArray.size)
     }
 

@@ -149,4 +149,8 @@ object DatabaseModule {
     @Provides
     fun provideWebLibraryExportDao(db: StashDatabase): com.stash.core.data.db.dao.WebLibraryExportDao =
         db.webLibraryExportDao()
+
+    /** Your record's imported plays (`record_plays`): a Spotify export, kept apart from this phone's own history. */
+    @Provides
+    fun provideRecordPlayDao(db: StashDatabase): com.stash.core.data.db.dao.RecordPlayDao = db.recordPlayDao()
 }
