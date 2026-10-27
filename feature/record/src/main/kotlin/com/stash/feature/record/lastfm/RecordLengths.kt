@@ -87,6 +87,11 @@ class RecordLengths internal constructor(
     private val applyWifiOnly: suspend (Boolean) -> Unit = {},
     /** Where the setting is followed; none in tests. */
     scope: CoroutineScope? = null,
+    /** Whether lookups could go now ([LengthHold.NETWORK], [LengthHold.NO_PROXY]: no): asked before planning a network-waiting run. */
+    private val gate: suspend () -> LengthHold? = { null },
+    /** Network-waiting runs in a row held again for want of one, kept across the app's death ([networkBackoffMs]). */
+    private val loadHolds: () -> Int = { 0 },
+    private val saveHolds: (Int) -> Unit = {},
     /** The day's lookups, written back once a slice. */
     private val budget: LookupBudget? = null,
     private val now: () -> Long = System::currentTimeMillis,
@@ -134,15 +139,41 @@ class RecordLengths internal constructor(
         sync: SyncPreferencesManager,
         budget: LookupBudget,
     ) : this(
-        newStore = { DaoLengthsStore(dao, lengths, store) },
+        context = context,
+        dao = dao,
+        lengths = lengths,
+        own = own,
+        store = store,
+        imports = imports,
+        writes = writes,
+        recap = recap,
+        sync = sync,
+        budget = budget,
         // No proxy, or no network the Wi-Fi-only setting allows: no lookup (the fill goes on all the same)
-        reader = GatedLengthReader(BudgetedLengthReader(ProxyLengthReader(ask = recap::songLength), budget)) {
+        gate = {
             when {
                 !api.hasProxy -> LengthHold.NO_PROXY
                 !LengthsNetwork.ready(sync.preferences.first().wifiOnly) { LengthsNetwork.state(context, it) } -> LengthHold.NETWORK
                 else -> null
             }
         },
+    )
+
+    private constructor(
+        context: Context,
+        dao: RecordPlayDao,
+        lengths: RecordLengthDao,
+        own: WebLibraryExportDao,
+        store: RecordImportStore,
+        imports: RecordImports,
+        writes: RecordWrites,
+        recap: LastFmRecapRepository,
+        sync: SyncPreferencesManager,
+        budget: LookupBudget,
+        gate: suspend () -> LengthHold?,
+    ) : this(
+        newStore = { DaoLengthsStore(dao, lengths, store) },
+        reader = GatedLengthReader(BudgetedLengthReader(ProxyLengthReader(ask = recap::songLength), budget), gate),
         library = { libraryLengths(own) },
         writes = writes,
         recordAfter = imports::recordAfterLengths,
@@ -154,6 +185,9 @@ class RecordLengths internal constructor(
         wifiOnly = sync.preferences.map { it.wifiOnly },
         applyWifiOnly = { RecordLengthsWorker.applyWifiOnly(context, it) },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        gate = gate,
+        loadHolds = { store.lengthsNetworkHolds },
+        saveHolds = { store.lengthsNetworkHolds = it },
         budget = budget,
     )
 
@@ -164,12 +198,6 @@ class RecordLengths internal constructor(
 
     /** ...and its token: only the run holding it may go on, ask for a wake-up, or let the card go. */
     private var current: Any? = null
-
-    /**
-     * Runs in a row (in this process) that ended for want of a network: after the first, the wait backs off ([networkBackoffMs]),
-     * so a network the job's constraint takes but the lookups can't use (one not validated, say) never loops the plan and fill.
-     */
-    private var networkHolds = 0
 
     /** The Wi-Fi-only setting as last seen changing (a run held for a network waits by it); null: not read yet. */
     private val wifiOnlyNow = MutableStateFlow<Boolean?>(null)
@@ -212,12 +240,17 @@ class RecordLengths internal constructor(
     /**
      * The pass, by the job: slices until nothing is left, Last.fm stops it, a limit holds it (it comes back by itself when that
      * lifts), or it is stopped ([pause], [stop], the system). Registered before it reads anything, so a stop never misses it.
+     *
+     * [waited]: started by the job waiting for a network ([RecordLengthsWorker.waitForNetwork]). Such a run asks the gate before
+     * planning (its free fill ran in the run that queued it), and held again it backs off: a network the job's constraint takes but
+     * the lookups can't use (one not validated, say) never loops it. A run asked for (opening the record, a run of the import) waits
+     * for a network with no delay and leaves the count alone, so it never grows the backoff, however often it comes.
      */
-    internal suspend fun run() {
+    internal suspend fun run(waited: Boolean = false) {
         val token = Any()
         var end: RunEnd? = null
         coroutineScope {
-            val job = launch(start = CoroutineStart.LAZY) { end = slices(token) }
+            val job = launch(start = CoroutineStart.LAZY) { end = slices(token, waited) }
             synchronized(lock) {
                 running = job
                 current = token
@@ -233,10 +266,10 @@ class RecordLengths internal constructor(
                         end?.retryAt?.let(wakeAt)
                         end?.let { e ->
                             if (e.network) {
-                                networkHolds++
-                                waitForNetwork(wifiOnlyNow.value ?: e.wifiOnly, networkBackoffMs(networkHolds))
-                            } else {
-                                networkHolds = 0
+                                val delayMs = if (waited) networkBackoffMs((loadHolds() + 1).also(saveHolds)) else 0L
+                                waitForNetwork(wifiOnlyNow.value ?: e.wifiOnly, delayMs)
+                            } else if (loadHolds() != 0) {
+                                saveHolds(0)
                             }
                         }
                         current = null
@@ -244,6 +277,8 @@ class RecordLengths internal constructor(
                 }
             }
         }
+        // The setting may have changed while the run ended: the wait just queued takes it (the job's own update, never a restart)
+        if (end?.network == true) wifiOnly.firstOrNull()?.let { applyWifiOnly(it) }
     }
 
     /** How a run ended, when it is to come back: at [retryAt] (a limit), or once there is a [network] ([wifiOnly]: unmetered). */
@@ -252,11 +287,22 @@ class RecordLengths internal constructor(
     private fun isCurrent(token: Any) = synchronized(lock) { current === token }
 
     /** The run's slices; when to come back, if a hold stopped it. */
-    private suspend fun slices(token: Any): RunEnd? {
+    private suspend fun slices(token: Any, waited: Boolean): RunEnd? {
         // Timed songs not on screen yet, and when they last were
         var dirty = false
         var shownAt: Long? = null
         var timed = 0
+        // Waiting for a network and still without one: nothing to plan (the run that queued it filled what needed none)
+        if (waited) {
+            when (gate()) {
+                LengthHold.NETWORK -> {
+                    Log.i(TAG, "the lengths pass waits for a network still: nothing planned")
+                    return RunEnd(null, network = true, wifiOnly = wifiOnly.firstOrNull() ?: true)
+                }
+                LengthHold.NO_PROXY -> return RunEnd(null)
+                else -> {}
+            }
+        }
         // (Held by a limit or without a network, it still plans and fills what needs no lookup: the first ask stops it)
         writes.beginLengths(token)
         try {
@@ -334,13 +380,13 @@ class RecordLengths internal constructor(
         /** After a rate limit (the proxy's 429, or Last.fm's 29 behind it), no lookups for this long. */
         const val LIMITED_WAIT_MS = 30 * 60_000L
 
-        /** After the first run in a row held for a network, the wait for one starts this late, doubling, at most [NETWORK_BACKOFF_MAX_MS]. */
+        /** A network-waiting run held again waits this long before its job may run again, doubling, at most [NETWORK_BACKOFF_MAX_MS]. */
         const val NETWORK_BACKOFF_MS = 15 * 60_000L
         const val NETWORK_BACKOFF_MAX_MS = 6 * 3_600_000L
 
-        /** How long the [n]th run in a row held for a network waits before its job may run: none for the first. */
+        /** How long the wait after the [n]th network-waiting run in a row held again is held off (none before any). */
         internal fun networkBackoffMs(n: Int): Long =
-            if (n <= 1) 0L else minOf(NETWORK_BACKOFF_MAX_MS, NETWORK_BACKOFF_MS shl minOf(n - 2, 10))
+            if (n <= 0) 0L else minOf(NETWORK_BACKOFF_MAX_MS, NETWORK_BACKOFF_MS shl minOf(n - 1, 10))
 
         /** The library's song lengths (spec §7, step 2), folded by song key. */
         internal suspend fun libraryLengths(own: WebLibraryExportDao): Map<String, Long> =
@@ -393,9 +439,23 @@ internal object LengthsNetwork {
     fun state(context: Context, wifiOnly: Boolean): State {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return State.NONE
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return State.NONE
-        if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) return State.NONE
-        if (wifiOnly && !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) return State.UNFIT
-        return if (caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) State.FITS else State.VALIDATING
+        fun has(c: Int) = caps.hasCapability(c)
+        return stateOf(
+            wifiOnly = wifiOnly,
+            internet = has(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET),
+            unmetered = has(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+            // API 30+: a metered network the carrier lets go unmetered for now, which JobScheduler counts as unmetered too
+            temporarilyUnmetered = android.os.Build.VERSION.SDK_INT >= 30 && has(android.net.NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED),
+            validated = has(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+        )
+    }
+
+    /** [state], from the default network's capabilities. */
+    internal fun stateOf(wifiOnly: Boolean, internet: Boolean, unmetered: Boolean, temporarilyUnmetered: Boolean, validated: Boolean): State = when {
+        !internet -> State.NONE
+        wifiOnly && !unmetered && !temporarilyUnmetered -> State.UNFIT
+        validated -> State.FITS
+        else -> State.VALIDATING
     }
 
     /**

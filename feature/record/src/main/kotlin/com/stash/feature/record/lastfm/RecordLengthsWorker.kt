@@ -15,6 +15,8 @@ import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.guava.await
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
@@ -38,7 +40,7 @@ class RecordLengthsWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        if (inputData.getBoolean(KEY_WAKE, false)) start(applicationContext) else lengths.run()
+        if (inputData.getBoolean(KEY_WAKE, false)) start(applicationContext) else lengths.run(waited = TAG_WIFI in tags || TAG_ANY in tags)
         return Result.success()
     }
 
@@ -63,24 +65,23 @@ class RecordLengthsWorker @AssistedInject constructor(
         }
 
         /**
-         * The Wi-Fi-only setting changed (or was read at start): a pass still waiting for a network waits by it now, as SyncScheduler
-         * `applyWifiOnlyToWaitingSync` does for a waiting sync, asked for again in its place. One running is left alone (replacing
-         * it would stop it); one asked for at once needs no network.
+         * The Wi-Fi-only setting changed (or was read at start, or a run just queued its wait): a pass waiting for a network waits by
+         * it now (SyncScheduler `applyWifiOnlyToWaitingSync`'s aim). The waiting job is updated in place, its id and delay kept, so
+         * one queued behind a pass still running takes the change too, and the running one is never touched; one asked for at once
+         * needs no network.
          */
         suspend fun applyWifiOnly(context: Context, wifiOnly: Boolean) {
             val work = WorkManager.getInstance(context)
-            val infos = work.getWorkInfosForUniqueWorkFlow(NAME).first().map { it.state to it.tags }
-            if (waitsByOther(infos, wifiOnly)) work.enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request(wifiOnly))
+            for (info in work.getWorkInfosForUniqueWorkFlow(NAME).first()) {
+                if (waitsByOther(info.state, info.tags, wifiOnly)) work.updateWork(request(wifiOnly, info.initialDelayMillis, info.id)).await()
+            }
         }
 
-        /**
-         * Whether the pass's jobs ([infos]: state and tags) hold one waiting for a network by the other setting than [wifiOnly], and
-         * none running.
-         */
-        internal fun waitsByOther(infos: List<Pair<WorkInfo.State, Set<String>>>, wifiOnly: Boolean): Boolean {
-            if (infos.any { it.first == WorkInfo.State.RUNNING }) return false
+        /** Whether a job ([state], [tags]) waits for a network by the other setting than [wifiOnly], and can still take a change. */
+        internal fun waitsByOther(state: WorkInfo.State, tags: Set<String>, wifiOnly: Boolean): Boolean {
             val want = if (wifiOnly) TAG_WIFI else TAG_ANY
-            return infos.any { (state, tags) -> !state.isFinished && (TAG_WIFI in tags || TAG_ANY in tags) && want !in tags }
+            val waiting = state == WorkInfo.State.ENQUEUED || state == WorkInfo.State.BLOCKED
+            return waiting && (TAG_WIFI in tags || TAG_ANY in tags) && want !in tags
         }
 
         /** The network a job waits for: none ([wifiOnly] null: the free fill, at once), unmetered, or any. */
@@ -90,8 +91,9 @@ class RecordLengthsWorker @AssistedInject constructor(
             false -> NetworkType.CONNECTED
         }
 
-        private fun request(wifiOnly: Boolean?, delayMs: Long = 0): OneTimeWorkRequest =
+        private fun request(wifiOnly: Boolean?, delayMs: Long = 0, id: UUID? = null): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<RecordLengthsWorker>()
+                .apply { if (id != null) setId(id) }
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(networkFor(wifiOnly)).build())
                 .setInitialDelay(delayMs.coerceAtLeast(0), TimeUnit.MILLISECONDS)
                 .addTag(

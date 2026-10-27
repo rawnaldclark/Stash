@@ -84,23 +84,32 @@ class RecordLengthsWorkerTest {
         assertThat(pass().single().constraints.requiredNetworkType).isEqualTo(NetworkType.NOT_REQUIRED)
     }
 
-    @Test fun `a change of the setting reaches a pass waiting for a network, never one running`() = runBlocking {
-        RecordLengthsWorker.waitForNetwork(context, wifiOnly = true)
-        val first = pass().single().id
+    @Test fun `a change of the setting reaches a pass waiting for a network in place, its delay kept`() = runBlocking {
+        RecordLengthsWorker.waitForNetwork(context, wifiOnly = true, delayMs = 3_600_000L)
+        val first = pass().single()
         RecordLengthsWorker.applyWifiOnly(context, wifiOnly = false)
         val now = pass().single()
-        assertThat(now.id).isNotEqualTo(first)
+        assertThat(now.id).isEqualTo(first.id)
         assertThat(now.constraints.requiredNetworkType).isEqualTo(NetworkType.CONNECTED)
+        assertThat(now.tags).contains(RecordLengthsWorker.TAG_ANY)
+        assertThat(now.tags).doesNotContain(RecordLengthsWorker.TAG_WIFI)
+        assertThat(now.initialDelayMillis).isEqualTo(3_600_000L)
         // The same setting again: left as it is
         RecordLengthsWorker.applyWifiOnly(context, wifiOnly = false)
-        assertThat(pass().single().id).isEqualTo(now.id)
+        assertThat(pass().single().constraints.requiredNetworkType).isEqualTo(NetworkType.CONNECTED)
+    }
 
-        // One running (the free fill), its wait queued behind it: replacing it would stop the run, so both stay
+    @Test fun `a change while a pass runs reaches the wait it queues as it ends, and the running pass goes on`() = runBlocking {
         RecordLengthsWorker.start(context)
+        val running = pass().single().id
+        // The run ends held for a network, queueing its wait by the setting it read; the setting has changed meanwhile
         RecordLengthsWorker.waitForNetwork(context, wifiOnly = true)
-        val before = pass().map { it.id }.toSet()
         RecordLengthsWorker.applyWifiOnly(context, wifiOnly = false)
-        assertThat(pass().map { it.id }.toSet()).isEqualTo(before)
+        val jobs = pass()
+        assertThat(jobs.single { it.state == WorkInfo.State.RUNNING }.id).isEqualTo(running)
+        val waiting = jobs.single { it.state == WorkInfo.State.BLOCKED }
+        assertThat(waiting.constraints.requiredNetworkType).isEqualTo(NetworkType.CONNECTED)
+        assertThat(waiting.tags).contains(RecordLengthsWorker.TAG_ANY)
     }
 
     @Test fun `a pass asked for at once is never turned into one waiting for a network`() = runBlocking {
@@ -108,6 +117,9 @@ class RecordLengthsWorkerTest {
         val running = pass().single().id
         RecordLengthsWorker.applyWifiOnly(context, wifiOnly = true)
         assertThat(pass().single().id).isEqualTo(running)
-        assertThat(RecordLengthsWorker.waitsByOther(listOf(WorkInfo.State.ENQUEUED to setOf(RecordLengthsWorker.TAG_NOW)), wifiOnly = true)).isFalse()
+        assertThat(pass().single().constraints.requiredNetworkType).isEqualTo(NetworkType.NOT_REQUIRED)
+        assertThat(RecordLengthsWorker.waitsByOther(WorkInfo.State.ENQUEUED, setOf(RecordLengthsWorker.TAG_NOW), wifiOnly = true)).isFalse()
+        assertThat(RecordLengthsWorker.waitsByOther(WorkInfo.State.RUNNING, setOf(RecordLengthsWorker.TAG_ANY), wifiOnly = true)).isFalse()
+        assertThat(RecordLengthsWorker.waitsByOther(WorkInfo.State.BLOCKED, setOf(RecordLengthsWorker.TAG_ANY), wifiOnly = true)).isTrue()
     }
 }

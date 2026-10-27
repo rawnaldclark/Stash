@@ -113,6 +113,10 @@ class RecordLengthsTest {
         library: Map<String, Long> = emptyMap(),
         /** The Wi-Fi-only setting, as the app's sync preferences give it. */
         wifiOnly: Flow<Boolean> = emptyFlow(),
+        /** The gate a network-waiting run asks before planning. */
+        gate: suspend () -> LengthHold? = { null },
+        /** Where the network holds are kept (shared: the app's death in between). */
+        val holds: Saved = Saved(),
     ) {
         val store = CountingStore(MemoryLengthsStore(rows))
         val writes = RecordWrites()
@@ -129,6 +133,8 @@ class RecordLengthsTest {
         val seen = mutableListOf<Pair<Boolean, Int>>()
         /** Called as the screens are told of a change (a Stop arriving then, say). */
         var onChanged: () -> Unit = {}
+        /** The settings applied to a waiting job ([RecordLengthsWorker.applyWifiOnly]). */
+        val applied = mutableListOf<Boolean>()
         val lengths: RecordLengths = RecordLengths(
             newStore = { store },
             reader = look,
@@ -141,6 +147,10 @@ class RecordLengthsTest {
             wakeAt = { wakes += it },
             waitForNetwork = { wifiOnly, delayMs -> networkWaits += wifiOnly; networkDelays += delayMs },
             wifiOnly = wifiOnly,
+            applyWifiOnly = { applied += it },
+            gate = gate,
+            loadHolds = { holds.value?.toInt() ?: 0 },
+            saveHolds = { holds.value = it.takeIf { n -> n > 0 }?.toString() },
             budget = budget,
             now = { nowS * 1000 + test.testScheduler.currentTime },
             clock = clock ?: { this.clock },
@@ -378,20 +388,80 @@ class RecordLengthsTest {
         assertThat(LengthsNetwork.ready(wifiOnly = false) { LengthsNetwork.State.FITS }).isTrue()
     }
 
-    @Test fun `runs in a row held for a network back off, so a network the job takes but the lookups can't use never loops`() = runTest {
+    @Test fun `network-waiting runs held again back off, kept across the app's death, so a network the job takes but the lookups can't use never loops`() = runTest {
         var online = false
-        val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { if (online) null else LengthHold.NETWORK })
-        repeat(4) { h.lengths.run() }
+        val gate: suspend () -> LengthHold? = { if (online) null else LengthHold.NETWORK }
+        val holds = Saved()
+        val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }, gate), gate = gate, holds = holds)
+        repeat(2) { h.lengths.run(waited = true) }
+        // The app dies; the count doesn't
+        val again = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }, gate), gate = gate, holds = holds)
+        repeat(2) { again.lengths.run(waited = true) }
         val m = 60_000L
-        assertThat(h.networkDelays).containsExactly(0L, 15 * m, 30 * m, 60 * m).inOrder()
-        // A run that could ask starts the count again
+        assertThat(h.networkDelays + again.networkDelays).containsExactly(15 * m, 30 * m, 60 * m, 120 * m).inOrder()
+        // A network-waiting run that could ask starts the count again
         online = true
-        h.lengths.run()
+        again.lengths.run(waited = true)
+        assertThat(holds.value).isNull()
         online = false
-        h.store.memory.rows.putAll(guessed(4).associateBy { it.id })
-        h.lengths.run()
-        assertThat(h.networkDelays).containsExactly(0L, 15 * m, 30 * m, 60 * m, 0L).inOrder()
+        again.store.memory.rows.putAll(guessed(4).associateBy { it.id })
+        again.lengths.run(waited = true)
+        assertThat(again.networkDelays.last()).isEqualTo(15 * m)
         assertThat(RecordLengths.networkBackoffMs(40)).isEqualTo(RecordLengths.NETWORK_BACKOFF_MAX_MS)
+        assertThat(RecordLengths.networkBackoffMs(0)).isEqualTo(0L)
+    }
+
+    @Test fun `runs asked for (opening the record hourly on mobile data, Wi-Fi only) never grow the backoff - their wait has none`() = runTest {
+        val holds = Saved()
+        val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { LengthHold.NETWORK }, holds = holds)
+        repeat(6) { h.lengths.run() }
+        assertThat(h.networkDelays).containsExactly(0L, 0L, 0L, 0L, 0L, 0L)
+        assertThat(holds.value).isNull()
+        // Nor do they reset one a network-waiting run built up
+        holds.value = "3"
+        h.lengths.run()
+        assertThat(holds.value).isEqualTo("3")
+        assertThat(h.networkDelays.last()).isEqualTo(0L)
+    }
+
+    @Test fun `the wait a run queues as it ends takes the setting as it is then, not as the run read it`() = runTest {
+        val setting = kotlinx.coroutines.flow.MutableStateFlow(true)
+        val h = Harness(
+            this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { LengthHold.NETWORK }, wifiOnly = setting,
+            library = mapOf(Scrobbles.songKey("Song 0", "Band") to 200_000L),
+        )
+        // Wi-Fi only switched off as the run shows what it filled, just before it ends held: its wait is set to the setting now
+        h.onChanged = { setting.value = false }
+        h.lengths.run()
+        assertThat(h.networkWaits).hasSize(1)
+        assertThat(h.applied).containsExactly(false)
+        // A run that ends any other way queues nothing, and sets nothing
+        val done = Harness(this, guessed(3), { _, _ -> LengthAnswer(200_000, hit = false) }, wifiOnly = setting)
+        done.lengths.run()
+        assertThat(done.applied).isEmpty()
+    }
+
+    @Test fun `a network-waiting run with no network yet plans nothing - the run that queued it filled what needed none`() = runTest {
+        val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { LengthHold.NETWORK }, gate = { LengthHold.NETWORK })
+        h.lengths.run(waited = true)
+        assertThat(h.store.plans).isEqualTo(0)
+        assertThat(h.networkDelays).containsExactly(RecordLengths.NETWORK_BACKOFF_MS)
+        // With one, it plans and asks
+        val online = Harness(this, guessed(3), { _, _ -> LengthAnswer(200_000, hit = false) }, gate = { null })
+        online.lengths.run(waited = true)
+        assertThat(online.store.plans).isEqualTo(1)
+        assertThat(online.networkWaits).isEmpty()
+    }
+
+    @Test fun `a network the carrier lets go unmetered for now counts as unmetered when Wi-Fi only`() {
+        fun state(wifiOnly: Boolean, unmetered: Boolean = false, temporarily: Boolean = false, validated: Boolean = true, internet: Boolean = true) =
+            LengthsNetwork.stateOf(wifiOnly, internet, unmetered, temporarily, validated)
+        assertThat(state(wifiOnly = true, temporarily = true)).isEqualTo(LengthsNetwork.State.FITS)
+        assertThat(state(wifiOnly = true)).isEqualTo(LengthsNetwork.State.UNFIT)
+        assertThat(state(wifiOnly = true, unmetered = true)).isEqualTo(LengthsNetwork.State.FITS)
+        assertThat(state(wifiOnly = false)).isEqualTo(LengthsNetwork.State.FITS)
+        assertThat(state(wifiOnly = true, temporarily = true, validated = false)).isEqualTo(LengthsNetwork.State.VALIDATING)
+        assertThat(state(wifiOnly = false, internet = false)).isEqualTo(LengthsNetwork.State.NONE)
     }
 
     @Test fun `no proxy to ask through - no song is marked, nothing comes back by itself, and the free fill still runs`() = runTest {
