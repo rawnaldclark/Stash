@@ -256,7 +256,7 @@ class RecordImportsTest {
         val m = LastfmMark(
             "me", to = 100, next = 3, pages = 3, done = false, newest = 90, added = 400, covered = 0, at = 100, oldest = 40,
             stuck = LastfmMark.Stuck(page = 2, runs = 2, since = 10, last = 20, pages = 3, topup = true, tail = true),
-            holes = listOf(LastfmMark.Hole(0, to = 100, at = 50, open = true), LastfmMark.Hole(60, to = 120, at = 70)),
+            holes = listOf(LastfmMark.Hole(0, to = 100, at = 50, open = true), LastfmMark.Hole(60, to = 120, at = 70, fails = 2, next = 900, empty = 80)),
         )
         RecordImportStore(prefs).setLastfm(m)
         assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(m)

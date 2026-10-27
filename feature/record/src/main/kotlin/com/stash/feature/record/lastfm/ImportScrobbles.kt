@@ -55,9 +55,18 @@ data class LastfmMark(
     /**
      * lastfm.ts `Hole`: a stretch of the history Last.fm didn't send, epoch s, both ends kept ([from] 0: everything below [to]),
      * and when it was found ([at]). [open]: the whole read's, its lower end not known yet: the next page read with plays sets it;
-     * none (the read reached the end) leaves it at 0, the tail.
+     * none (the read reached the end) leaves it at 0, the tail. [fails], [next]: asks in a row that didn't read through, and not
+     * before when to ask again; [empty]: when Last.fm first said there is nothing in it.
      */
-    data class Hole(val from: Long, val to: Long, val at: Long, val open: Boolean = false)
+    data class Hole(
+        val from: Long,
+        val to: Long,
+        val at: Long,
+        val open: Boolean = false,
+        val fails: Int = 0,
+        val next: Long? = null,
+        val empty: Long? = null,
+    )
 }
 
 /** How far a run is (lastfm.ts `LastfmProgress`): the page just read of how many, and the scrobbles kept so far. */
@@ -163,6 +172,23 @@ object ImportScrobbles {
     const val STUCK_SPAN_S = 3_600L
 
     /**
+     * lastfm.ts `HOLE_PAGES`: pages a top-up asks of its holes in one run, all holes together: a big one (a heavy listener's tail)
+     * goes on next time from where it stopped, so a run stays well inside a background job's ten minutes and never holds the
+     * archive's lock for long.
+     */
+    const val HOLE_PAGES = 100
+
+    /** lastfm.ts `HOLE_AGAIN_S`: a hole that didn't read through is asked again after a day, doubling each time, to 16 days at most. */
+    const val HOLE_AGAIN_S = 86_400L
+    const val HOLE_AGAIN_MAX_S = 16 * 86_400L
+
+    /** lastfm.ts `HOLE_EMPTY_S`: a hole Last.fm says is empty is dropped only when it says so again at least this long after. */
+    const val HOLE_EMPTY_S = 3_600L
+
+    /** lastfm.ts `holeWait`: how long a hole that didn't read through [fails] times in a row waits. */
+    fun holeWait(fails: Int): Long = minOf(HOLE_AGAIN_MAX_S, HOLE_AGAIN_S shl minOf(maxOf(0, fails - 1), 20))
+
+    /**
      * lastfm.ts `patiently`: [ask], asked again while Last.fm is busy (at most [tries] times, waiting [wait] × the attempt between).
      * A hold ([LastfmError.hold]) is never waited out here: it says when to come back.
      */
@@ -253,6 +279,8 @@ object ImportScrobbles {
         onStart: (LastfmMark) -> Unit = {},
         gapMs: Long = PAGE_GAP_MS,
         busyMs: Long = BUSY_WAIT_MS,
+        /** Pages a top-up may ask of its holes this run ([HOLE_PAGES]). */
+        holePages: Int = HOLE_PAGES,
     ): LastfmMark {
         var mark = startMark(store.mark(), user, nowS, store.held())
         onStart(mark)
@@ -332,31 +360,70 @@ object ImportScrobbles {
         fun oldestOf(plays: List<Scrobble>): Long = plays.minOf { it.uts }
 
         /**
-         * lastfm.ts `recheck`: a hole asked again, every page of its window of time (which deletions and late scrobbles can't move),
-         * with the page rules of any read: null once it reads through, nothing there included (Last.fm's total 0); else what is left
-         * of it, below what came. What it holds now comes in, its ids keeping each play once.
+         * lastfm.ts `recheckHoles`: the holes found before this run, each asked again by time (pages can't move under a window of
+         * time), at most [holePages] pages in all this run. Each page is asked once (one that won't come is tried again later, not
+         * waited out), its bounds a second wider (Last.fm's may leave out the second itself; ids keep each play once). What a hole
+         * holds now comes in, and the hole is narrowed to below what came with every page saved, so a run cut short (or out of
+         * pages) goes on next time from there. One that reads through is gone; one Last.fm says is empty only when it says so again
+         * at least [HOLE_EMPTY_S] later; one that fails is asked again after [holeWait].
          */
-        suspend fun recheck(h: LastfmMark.Hole): LastfmMark.Hole? {
-            var rest = h
-            var known = 0
-            var page = 1
-            while (true) {
-                val p = try {
-                    steadily(read, page, h.to, h.from.takeIf { it > 0 }, known, busyMs)
-                } catch (e: LastfmError) {
-                    if (e.kind == LastfmFailure.RECONNECT) throw e
-                    return rest
+        suspend fun recheckHoles() {
+            var left = holePages
+            val holes = mark.holes.orEmpty().toMutableList<LastfmMark.Hole?>()
+            suspend fun save() {
+                withHoles(holes.filterNotNull())
+                store.setMark(mark)
+            }
+            var k = 0
+            while (k < holes.size && left > 0) {
+                val w = holes[k]!!
+                if (w.open || w.at >= nowS || (w.next ?: 0L) > nowS) {
+                    k++
+                    continue
                 }
-                known = maxOf(known, p.pages)
-                if (p.plays.isNotEmpty()) {
-                    val got = take(p.plays)
-                    mark = mark.copy(added = mark.added + got.added, covered = mark.covered + got.covered)
-                    store.setMark(mark)
-                    rest = rest.copy(to = minOf(rest.to, oldestOf(p.plays)))
+                val to = w.to + 1
+                val from = if (w.from > 1) w.from - 1 else null
+                var page = 1
+                while (left > 0) {
+                    left--
+                    val p = try {
+                        read.read(page, to, from)
+                    } catch (e: LastfmError) {
+                        if (e.kind == LastfmFailure.RECONNECT) throw e
+                        val fails = holes[k]!!.fails + 1
+                        holes[k] = holes[k]!!.copy(fails = fails, next = nowS + holeWait(fails))
+                        save()
+                        break
+                    }
+                    // Inside the hole: the plays at its bounds (and the second beyond) were read with the pages beside it
+                    val inside = p.plays.filter { it.uts > w.from && it.uts < w.to }
+                    if (page == 1 && inside.isEmpty() && page >= p.pages) {
+                        // Nothing in it, Last.fm says (total 0, or only what its bounds hold): believed when it says so again, an hour on
+                        val h = holes[k]!!
+                        if (h.empty != null && nowS - h.empty >= HOLE_EMPTY_S) {
+                            holes[k] = null
+                        } else if (h.empty == null) {
+                            holes[k] = h.copy(empty = nowS)
+                        }
+                        save()
+                        break
+                    }
+                    if (p.plays.isNotEmpty()) {
+                        val got = take(p.plays)
+                        // Beside another account's rows, this account's own reads, as the whole read counts them
+                        val beside = (mark.base ?: 0) > 0
+                        val own = if (beside) store.kept(inside.map { Scrobbles.id(it) }.distinct()).size else 0
+                        mark = mark.copy(added = mark.added + if (beside) own else got.added, covered = mark.covered + got.covered)
+                        val h = holes[k]!!
+                        holes[k] = LastfmMark.Hole(h.from, minOf(h.to, oldestOf(p.plays)), h.at, h.open)
+                    }
+                    if (page >= p.pages) holes[k] = null
+                    save()
+                    if (holes[k] == null) break
+                    delay(gapMs)
+                    page++
                 }
-                if (page >= p.pages) return null
-                delay(gapMs)
-                page++
+                k++
             }
         }
 
@@ -414,18 +481,6 @@ object ImportScrobbles {
 
         // Newer than the newest kept, and the two weeks below it: every page of that window, newest first
         if (mark.newest != 0L && mark.to < nowS) {
-            // First the holes found before this run, each asked again by time: one read through is gone, one that isn't is kept,
-            // narrowed to what it may still hold
-            val due = mark.holes.orEmpty().filter { !it.open && it.at < nowS }
-            if (due.isNotEmpty()) {
-                val left = mark.holes.orEmpty().filter { it !in due }.toMutableList()
-                for (h in due) {
-                    recheck(h)?.let { left += it }
-                    delay(gapMs)
-                }
-                withHoles(left)
-                store.setMark(mark)
-            }
             val since = mark.newest
             val from = maxOf(1L, since - LATE_S)
             var newest = since
@@ -482,6 +537,8 @@ object ImportScrobbles {
             }
             mark = mark.copy(newest = newest, covered = mark.covered + covered, to = nowS, at = nowS)
             store.setMark(mark)
+            // Then the holes found before this run: after what is new, so new scrobbles never wait on a hole
+            recheckHoles()
         }
         return mark
     }

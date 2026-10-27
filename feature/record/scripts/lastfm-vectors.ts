@@ -205,23 +205,26 @@ write('plan.json', { plan, covered });
  * Worker's `empty`, with the pages Last.fm claims: the window's), empty saying it has `pages`, or (`short`) its plays as they are
  * but saying it has `pages`. `topup`: only asks with a `from` (true) or only without (false).
  */
-type Odd = { page: number; times: number; topup?: boolean; kind?: 'busy' | 'reconnect' | 'unavailable'; hole?: boolean; empty?: { pages: number; total: number }; short?: { pages: number; total: number } };
+type Odd = { page: number; times: number; topup?: boolean; to?: number; kind?: 'busy' | 'reconnect' | 'unavailable'; hole?: boolean; empty?: { pages: number; total: number }; short?: { pages: number; total: number } };
 type Q = { page: number; to: number; from?: number };
 /**
  * What else Last.fm does in a step: withholds a stretch of time (`hide`: a page whose plays reach into [lo, hi] lists nothing; `to`:
  * only on asks with no `from` below that bound), counts a stale total (`stale`: `extra` more on asks with no `from` below `to`),
- * or empties every page once a whole-history ask of page `incident` has been answered. A page that lists nothing is the Worker's:
- * before the last, busy saying so (`empty`, with the pages it claims); the last, just empty.
+ * or empties every page once a whole-history ask of page `incident` has been answered; `exclusive`: leaves out the second of each
+ * bound. A page that lists nothing is the Worker's: before the last, busy saying so (`empty`, with the pages it claims); the last,
+ * just empty. An odd page with a `to` is only the asks below that bound.
  */
-type Lies = { hide?: { lo: number; hi: number; to?: number }; stale?: { extra: number; to: number }; incident?: number };
+type Lies = { hide?: { lo: number; hi: number; to?: number }; stale?: { extra: number; to: number }; incident?: number; exclusive?: boolean };
 /** Last.fm as the web's test fakes it: the window below `to` (and from `from`), newest first, 200 a page. */
 function fakeLastfm(all: Scrobble[], odd: Odd[], calls: Q[], lies: Lies = {}): PageReader {
 	const left = odd.map((f) => ({ ...f }));
 	let incident = false;
 	return async (q) => {
 		calls.push(q.from ? { page: q.page, to: q.to, from: q.from } : { page: q.page, to: q.to });
-		const f = left.find((x) => x.page === q.page && x.times > 0 && (x.topup === undefined || x.topup === !!q.from));
-		const window = all.filter((s) => s.uts <= q.to && (!q.from || s.uts >= q.from)).sort((a, b) => b.uts - a.uts);
+		const f = left.find((x) => x.page === q.page && x.times > 0 && (x.topup === undefined || x.topup === !!q.from) && (x.to === undefined || x.to === q.to));
+		const window = all
+			.filter((s) => (lies.exclusive ? s.uts < q.to && (!q.from || s.uts > q.from) : s.uts <= q.to && (!q.from || s.uts >= q.from)))
+			.sort((a, b) => b.uts - a.uts);
 		const total = window.length + (lies.stale && !q.from && q.to === lies.stale.to ? lies.stale.extra : 0);
 		const pages = Math.ceil(total / 200);
 		if (f) {
@@ -250,9 +253,15 @@ const HALF_HOUR = 1800;
 const dayOf = (i: number) => T + i * DAY_S;
 /** Days 200 to 399 (page 2 of the whole history read later) withheld. */
 const HIDE_2 = { lo: dayOf(200), hi: dayOf(399) };
+/** 1400 scrobbles six hours apart, and the archive holding all but 200 to 1199, done, the hole between them found long ago. */
+const six = Array.from({ length: 1400 }, (_, i) => sc(`Six ${i}`, T + i * 6 * 3600));
+const sixOf = (i: number) => T + i * 6 * 3600;
+const doneWithHole = (hole: { from: number; to: number; at: number }, newest: number, added: number) =>
+	({ user: 'me', to: LATER - DAY_S, next: 9, pages: 8, done: true, newest, added, covered: 0, at: LATER - DAY_S, holes: [hole] }) as LastfmMark;
+const kept2 = [...daily(600).slice(0, 200), ...daily(600).slice(400)];
 /** What the archive is given before a step's run (a Spotify merge dropping rows, rows a closed tab wrote): explicit in the file. */
 type Before = { add?: ArchivePlay[]; drop?: string[] };
-type Step = { user: string; nowS: number; scrobbles: Scrobble[]; fails?: Odd[]; library?: LibItem[]; before?: (a: ArchiveStore) => Promise<Before> } & Lies;
+type Step = { user: string; nowS: number; scrobbles: Scrobble[]; fails?: Odd[]; library?: LibItem[]; before?: (a: ArchiveStore) => Promise<Before>; holePages?: number } & Lies;
 const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: Step[] }[] = [
 	{ name: 'every page, newest first', steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(450) }] },
 	{ name: 'carries on from the page it stopped at, waiting out a busy Last.fm', mark: { user: 'me', to: T + 100_000, next: 2, pages: 3, done: false, newest: 0, added: 0, covered: 0, at: 0 }, steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(450), fails: [{ page: 2, times: 2, kind: 'busy' }] }] },
@@ -347,7 +356,8 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 		name: 'a tail gone under a stale total: three runs over an hour, then a hole down to the start, until it reads as nothing there',
 		steps: [
 			...[0, 1, 2, 3].map((i) => ({ user: 'me', nowS: LATER + i * HALF_HOUR, scrobbles: daily(600).slice(200), stale: { extra: 400, to: LATER } })),
-			{ user: 'me', nowS: LATER + 3 * HALF_HOUR + DAY_S, scrobbles: daily(600).slice(200), stale: { extra: 400, to: LATER } }
+			{ user: 'me', nowS: LATER + 3 * HALF_HOUR + DAY_S, scrobbles: daily(600).slice(200), stale: { extra: 400, to: LATER } },
+			{ user: 'me', nowS: LATER + 3 * HALF_HOUR + DAY_S + 3600, scrobbles: daily(600).slice(200), stale: { extra: 400, to: LATER } }
 		]
 	},
 	{
@@ -358,6 +368,42 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 			// 50 scrobbles above it deleted: every page number below them moves up by 50
 			{ user: 'me', nowS: LATER + 2 * DAY_S, scrobbles: daily(550) },
 			{ user: 'me', nowS: LATER + 3 * DAY_S, scrobbles: daily(550) }
+		]
+	},
+	{
+		name: 'a big hole is asked a few pages a run, kept as it narrows page by page; new scrobbles come in first, every run',
+		have: planScrobbles([], [...six.slice(0, 200), ...six.slice(1200)], new Map(), songKey).add,
+		mark: doneWithHole({ from: sixOf(199), to: sixOf(1200), at: 0 }, sixOf(1399), 400),
+		steps: [
+			{ user: 'me', nowS: LATER, scrobbles: [...six, sc('New 0', LATER - 100)], holePages: 2 },
+			{ user: 'me', nowS: LATER + 3600, scrobbles: [...six, sc('New 0', LATER - 100), sc('New 1', LATER + 1000)], holePages: 2 },
+			{ user: 'me', nowS: LATER + 7200, scrobbles: [...six, sc('New 0', LATER - 100), sc('New 1', LATER + 1000)], holePages: 10 }
+		]
+	},
+	{
+		name: 'each bound of a hole is asked a second wider: a play in the same second as a bound, left out by Last.fm’s bounds, comes in',
+		have: planScrobbles([], kept2, new Map(), songKey).add,
+		mark: doneWithHole({ from: dayOf(199), to: dayOf(400), at: 0 }, dayOf(599), 400),
+		steps: [{ user: 'me', nowS: LATER, scrobbles: [...daily(600), sc('Twin', dayOf(400))], exclusive: true }]
+	},
+	{
+		name: 'a hole that won’t come is asked once, and again only after a day, doubling',
+		have: planScrobbles([], kept2, new Map(), songKey).add,
+		mark: doneWithHole({ from: dayOf(199), to: dayOf(400), at: 0 }, dayOf(599), 400),
+		steps: [LATER, LATER + 3600, LATER + DAY_S].map((nowS) => ({ user: 'me', nowS, scrobbles: daily(600), fails: [{ page: 1, times: 99, to: dayOf(400) + 1, kind: 'busy' as const }] }))
+	},
+	{
+		name: 'a hole Last.fm says is empty is dropped only when it says so again, at least an hour later',
+		have: planScrobbles([], kept2, new Map(), songKey).add,
+		mark: doneWithHole({ from: dayOf(200), to: dayOf(399), at: 0 }, dayOf(599), 400),
+		steps: [LATER, LATER + 1800, LATER + 3600].map((nowS) => ({ user: 'me', nowS, scrobbles: kept2 }))
+	},
+	{
+		name: 'beside another account’s rows, a hole asked again counts this account’s own plays, as the whole read does',
+		steps: [
+			{ user: 'alice', nowS: LATER, scrobbles: daily(600) },
+			...[0, 1, 2, 3].map((i) => ({ user: 'bob', nowS: LATER + i * HALF_HOUR, scrobbles: daily(600), hide: HIDE_2 })),
+			{ user: 'bob', nowS: LATER + 3 * HALF_HOUR + DAY_S, scrobbles: daily(600) }
 		]
 	},
 	{
@@ -407,7 +453,8 @@ for (const c of runCases) {
 		let mark: LastfmMark | null = null;
 		let start: LastfmMark | null = null;
 		try {
-			mark = await importScrobbles(archive, fakeLastfm(st.scrobbles, st.fails ?? [], calls, { hide: st.hide, stale: st.stale, incident: st.incident }), {
+			mark = await importScrobbles(archive, fakeLastfm(st.scrobbles, st.fails ?? [], calls, { hide: st.hide, stale: st.stale, incident: st.incident, exclusive: st.exclusive }), {
+				...(st.holePages ? { holePages: st.holePages } : {}),
 				user: st.user,
 				nowS: st.nowS,
 				lengths: libraryLengths(st.library ?? [], songKey),

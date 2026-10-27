@@ -110,8 +110,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         }
         if (m.oldest != null) putLong(L_OLDEST, m.oldest) else remove(L_OLDEST)
         val holes = m.holes
-        // "from,to,at,open" a hole, ';' between (open: 1 or 0)
-        if (!holes.isNullOrEmpty()) putString(L_HOLES, holes.joinToString(";") { "${it.from},${it.to},${it.at},${if (it.open) 1 else 0}" }) else remove(L_HOLES)
+        // "from,to,at,open,fails,next,empty" a hole, ';' between (open: 1 or 0; next and empty empty when not set)
+        if (!holes.isNullOrEmpty()) {
+            putString(L_HOLES, holes.joinToString(";") { "${it.from},${it.to},${it.at},${if (it.open) 1 else 0},${it.fails},${it.next ?: ""},${it.empty ?: ""}" })
+        } else {
+            remove(L_HOLES)
+        }
         // An earlier build's skipped pages, read into the holes above
         OLD_SKIPPED_KEYS.forEach(::remove)
     }
@@ -275,12 +279,16 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
 
         private fun readHoles(prefs: SharedPreferences): List<LastfmMark.Hole> =
             runCatching { prefs.getString(L_HOLES, null) }.getOrNull()?.split(';')?.mapNotNull { e ->
+                // (4 fields as round 3 wrote them; 7 since)
                 val f = e.split(',')
-                if (f.size != 4) return@mapNotNull null
+                if (f.size != 4 && f.size != 7) return@mapNotNull null
                 val from = f[0].toLongOrNull() ?: return@mapNotNull null
                 val to = f[1].toLongOrNull() ?: return@mapNotNull null
                 val at = f[2].toLongOrNull() ?: return@mapNotNull null
-                LastfmMark.Hole(from, to, at, open = f[3] == "1")
+                LastfmMark.Hole(
+                    from, to, at, open = f[3] == "1",
+                    fails = f.getOrNull(4)?.toIntOrNull() ?: 0, next = f.getOrNull(5)?.toLongOrNull(), empty = f.getOrNull(6)?.toLongOrNull(),
+                )
             }.orEmpty()
 
         private fun readOldSkipped(prefs: SharedPreferences): List<ImportScrobbles.SkippedPage> =

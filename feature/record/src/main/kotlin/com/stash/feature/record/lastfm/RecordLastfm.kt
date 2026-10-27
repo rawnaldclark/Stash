@@ -115,6 +115,8 @@ class RecordLastfm internal constructor(
     private val now: () -> Long = System::currentTimeMillis,
     private val gapMs: Long = ImportScrobbles.PAGE_GAP_MS,
     private val busyMs: Long = ImportScrobbles.BUSY_WAIT_MS,
+    /** Pages a top-up asks of its holes a run ([ImportScrobbles.HOLE_PAGES]). */
+    private val holePages: Int = ImportScrobbles.HOLE_PAGES,
     /** The library's song lengths ([Scrobbles.libraryLengths]), for the rows Spotify's plays can't time. */
     private val library: suspend () -> Map<String, Long> = { emptyMap() },
     /** The lengths pass: stopped (waited for) before a run or a removal takes the lock... */
@@ -344,7 +346,7 @@ class RecordLastfm internal constructor(
                     val reader = LastfmPages(remote, acc.name, account = { accountFlow.first() }, nowS = { now() / 1000 })
                     val m = ImportScrobbles.run(
                         newStore(), reader, acc.name, nowS, library = library(), progress = { report(it, onProgress) }, onStart = { start = it },
-                        gapMs = gapMs, busyMs = busyMs,
+                        gapMs = gapMs, busyMs = busyMs, holePages = holePages,
                     )
                     recordAfter()
                     m
