@@ -10,16 +10,16 @@ TIDAL_PKCE_CLIENT_ID = "6BDSRdpK9hqEBTgU" # python-tidal's PKCE client: web seat
 TIDAL_MSE_CDN_HOSTS = "sp-ad-cf.audio.tidal.com" # ?web=mse: the only CDN hosts handed to browsers (CloudFront, Access-Control-Allow-Origin: *)
 TIDAL_RELAY_PAUSED = "0"
 TIDAL_COUNTRY_CODE = "US"
-TIDAL_ACCOUNT_HOURLY_CAP = "450" # 200→218→251 on 10-20; →450 on 10-21 with the 7 s gap (gap allows ~514/h; 429s are burst-driven)
-TIDAL_ACCOUNT_DAILY_CAP = "9600"
-TIDAL_SEAT_MIN_GAP_SECONDS = "7" # every upstream call; Tidal 429s are burst limits
+TIDAL_ACCOUNT_HOURLY_CAP = "518" # 200→218→251 on 10-20; →450 on 10-21 with the 7 s gap; →518 (+15%) on 10-27 with the 6 s gap (gap allows 600/h; 429s are burst-driven)
+TIDAL_ACCOUNT_DAILY_CAP = "11040" # 9600 → 11040 (+15%) on 10-27
+TIDAL_SEAT_MIN_GAP_SECONDS = "6" # every upstream call; Tidal 429s are burst limits. Whole seconds: 7 → 6 on 10-27 (+17%). Rollback "7"
 TIDAL_429_COOLDOWN_SECONDS = "120" # doubles per strike while hot, max TIDAL_429_COOLDOWN_MAX_SECONDS
 TIDAL_429_COOLDOWN_MAX_SECONDS = "960"
 TIDAL_SOFT_OPEN_PERCENT = "50"
 TIDAL_SOFT_OPEN_SECONDS = "600"
-GLOBAL_DAILY_CAP = "34667"
-NETWORK_DAILY_CAP = "2000"
-NETWORK_SEARCH_DAILY_CAP = "2000" # uncached (upstream) searches per network per day; cache hits are free
+GLOBAL_DAILY_CAP = "39867" # 34667 → 39867 (+15%) on 10-27
+NETWORK_DAILY_CAP = "2300" # 2000 → 2300 (+15%) on 10-27
+NETWORK_SEARCH_DAILY_CAP = "2300" # 2000 → 2300 (+15%) on 10-27. Uncached (upstream) searches per network per day; cache hits are free
 EDGE_BASE = "https://stash-tidal-edge.stashfm.deno.net" # tidal-edge on Deno Deploy (Tidal's CDN refuses Cloudflare); ?web=1 signs links for it with the EDGE_SECRET secret
 # The daily lossless counter shared with the Qobuz relay (QUOTA_DB below): free FLAC answers per verified install
 # per UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
@@ -52,7 +52,7 @@ migrations_dir = "../../lossless-quota/migrations"
 [[ratelimits]]
 name = "REQUEST_RL"
 namespace_id = "1002"
-simple = { limit = 40, period = 60 }
+simple = { limit = 46, period = 60 } # 40 → 46 (+15%) on 10-27
 
 # Per-network fair share of the seats: only requests about to take a seat (search/stream cache
 # miss, hires lookup) count. The whole pool makes ~12 upstream calls/min, so one network must
@@ -60,7 +60,7 @@ simple = { limit = 40, period = 60 }
 [[ratelimits]]
 name = "UPSTREAM_RL"
 namespace_id = "1003"
-simple = { limit = 6, period = 60 }
+simple = { limit = 7, period = 60 } # 6 → 7 (+17%) on 10-27
 
 [triggers]
 crons = ["17 * * * *"]
