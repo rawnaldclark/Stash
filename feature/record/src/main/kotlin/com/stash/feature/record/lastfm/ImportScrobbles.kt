@@ -398,6 +398,12 @@ object ImportScrobbles {
                     // Inside the hole: the plays at its bounds (and the second beyond) were read with the pages beside it
                     val inside = p.plays.filter { it.uts > w.from && it.uts < w.to }
                     if (page == 1 && inside.isEmpty() && page >= p.pages) {
+                        // What its bounds hold comes in all the same: a play in a bound's second not read before is kept (ids keep the
+                        // rest once); the hole and when it first answered empty stay as they are
+                        if (p.plays.isNotEmpty()) {
+                            val got = take(p.plays)
+                            mark = mark.copy(added = mark.added + got.added, covered = mark.covered + got.covered)
+                        }
                         // Nothing in it, Last.fm says (total 0, or only what its bounds hold): believed when it says so again, an hour on
                         val h = holes[k]!!
                         if (h.empty != null && nowS - h.empty >= HOLE_EMPTY_S) {

@@ -399,6 +399,12 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 		steps: [LATER, LATER + 1800, LATER + 3600].map((nowS) => ({ user: 'me', nowS, scrobbles: kept2 }))
 	},
 	{
+		name: 'a same-second play left alone at a bound is kept',
+		have: planScrobbles([], kept2, new Map(), songKey).add,
+		mark: doneWithHole({ from: dayOf(199), to: dayOf(400), at: 0 }, dayOf(599), 400),
+		steps: [LATER, LATER + 3600].map((nowS) => ({ user: 'me', nowS, scrobbles: [...kept2, sc('Twin', dayOf(400))] }))
+	},
+	{
 		name: 'beside another account’s rows, a hole asked again counts this account’s own plays, as the whole read does',
 		steps: [
 			{ user: 'alice', nowS: LATER, scrobbles: daily(600) },
