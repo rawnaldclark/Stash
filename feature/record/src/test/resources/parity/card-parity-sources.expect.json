@@ -1,0 +1,500 @@
+{
+  "counts": {
+    "spotify": 4,
+    "stash": 5,
+    "lastfm": 8
+  },
+  "coveredRows": [
+    13,
+    15,
+    18,
+    20,
+    21
+  ],
+  "leftOutRows": [
+    19
+  ],
+  "states": [
+    {
+      "on": {
+        "spotify": false,
+        "stash": false,
+        "lastfm": false
+      },
+      "plays": 0,
+      "totalMs": 0,
+      "hours": 0,
+      "streams": 0,
+      "first": null,
+      "sinceYear": null,
+      "topArtists": [],
+      "artists": []
+    },
+    {
+      "on": {
+        "spotify": true,
+        "stash": false,
+        "lastfm": false
+      },
+      "plays": 6,
+      "totalMs": 22115999,
+      "hours": 6,
+      "streams": 4,
+      "first": 1560600000000,
+      "sinceYear": 2019,
+      "topArtists": [
+        {
+          "label": "DJ",
+          "ms": 21600000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000
+        },
+        {
+          "label": "Artist One",
+          "ms": 215000
+        },
+        {
+          "label": "Artist Two",
+          "ms": 59999
+        }
+      ],
+      "artists": [
+        {
+          "label": "DJ",
+          "ms": 21600000,
+          "plays": 1
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000,
+          "plays": 1
+        },
+        {
+          "label": "Artist One",
+          "ms": 215000,
+          "plays": 1
+        },
+        {
+          "label": "Artist Two",
+          "ms": 59999,
+          "plays": 1
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": false,
+        "stash": true,
+        "lastfm": false
+      },
+      "plays": 7,
+      "totalMs": 26044000,
+      "hours": 7,
+      "streams": 5,
+      "first": 1736546400000,
+      "sinceYear": 2025,
+      "topArtists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 610000
+        },
+        {
+          "label": "Artist One",
+          "ms": 222000
+        },
+        {
+          "label": "Band",
+          "ms": 12000
+        }
+      ],
+      "artists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000,
+          "plays": 1
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 610000,
+          "plays": 3
+        },
+        {
+          "label": "Artist One",
+          "ms": 222000,
+          "plays": 1
+        },
+        {
+          "label": "Band",
+          "ms": 12000,
+          "plays": 0
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": true,
+        "stash": true,
+        "lastfm": false
+      },
+      "plays": 13,
+      "totalMs": 48159999,
+      "hours": 13,
+      "streams": 9,
+      "first": 1560600000000,
+      "sinceYear": 2019,
+      "topArtists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000
+        },
+        {
+          "label": "DJ",
+          "ms": 21600000
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 610000
+        },
+        {
+          "label": "Artist One",
+          "ms": 437000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000
+        }
+      ],
+      "artists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000,
+          "plays": 1
+        },
+        {
+          "label": "DJ",
+          "ms": 21600000,
+          "plays": 1
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 610000,
+          "plays": 3
+        },
+        {
+          "label": "Artist One",
+          "ms": 437000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000,
+          "plays": 1
+        },
+        {
+          "label": "Artist Two",
+          "ms": 59999,
+          "plays": 1
+        },
+        {
+          "label": "Band",
+          "ms": 12000,
+          "plays": 0
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": false,
+        "stash": false,
+        "lastfm": true
+      },
+      "plays": 8,
+      "totalMs": 1671000,
+      "hours": 0,
+      "streams": 8,
+      "first": 1583226000000,
+      "sinceYear": 2020,
+      "topArtists": [
+        {
+          "label": "Stash Artist",
+          "ms": 600000
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000
+        },
+        {
+          "label": "Bj\u00f6rk",
+          "ms": 210000
+        },
+        {
+          "label": "Artist One",
+          "ms": 200000
+        }
+      ],
+      "artists": [
+        {
+          "label": "Stash Artist",
+          "ms": 600000,
+          "plays": 3
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000,
+          "plays": 1
+        },
+        {
+          "label": "Bj\u00f6rk",
+          "ms": 210000,
+          "plays": 1
+        },
+        {
+          "label": "Artist One",
+          "ms": 200000,
+          "plays": 1
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": true,
+        "stash": false,
+        "lastfm": true
+      },
+      "plays": 14,
+      "totalMs": 23786999,
+      "hours": 7,
+      "streams": 12,
+      "first": 1560600000000,
+      "sinceYear": 2019,
+      "topArtists": [
+        {
+          "label": "DJ",
+          "ms": 21600000
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 600000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 482000
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000
+        },
+        {
+          "label": "Artist One",
+          "ms": 415000
+        }
+      ],
+      "artists": [
+        {
+          "label": "DJ",
+          "ms": 21600000,
+          "plays": 1
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 600000,
+          "plays": 3
+        },
+        {
+          "label": "Artist Three",
+          "ms": 482000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000,
+          "plays": 2
+        },
+        {
+          "label": "Artist One",
+          "ms": 415000,
+          "plays": 2
+        },
+        {
+          "label": "Bj\u00f6rk",
+          "ms": 210000,
+          "plays": 1
+        },
+        {
+          "label": "Artist Two",
+          "ms": 59999,
+          "plays": 1
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": false,
+        "stash": true,
+        "lastfm": true
+      },
+      "plays": 15,
+      "totalMs": 27715000,
+      "hours": 8,
+      "streams": 13,
+      "first": 1583226000000,
+      "sinceYear": 2020,
+      "topArtists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 1210000
+        },
+        {
+          "label": "Artist One",
+          "ms": 422000
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000
+        }
+      ],
+      "artists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000,
+          "plays": 1
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 1210000,
+          "plays": 6
+        },
+        {
+          "label": "Artist One",
+          "ms": 422000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Three",
+          "ms": 241000,
+          "plays": 1
+        },
+        {
+          "label": "Bj\u00f6rk",
+          "ms": 210000,
+          "plays": 1
+        },
+        {
+          "label": "Band",
+          "ms": 12000,
+          "plays": 0
+        }
+      ]
+    },
+    {
+      "on": {
+        "spotify": true,
+        "stash": true,
+        "lastfm": true
+      },
+      "plays": 21,
+      "totalMs": 49830999,
+      "hours": 14,
+      "streams": 17,
+      "first": 1560600000000,
+      "sinceYear": 2019,
+      "topArtists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000
+        },
+        {
+          "label": "DJ",
+          "ms": 21600000
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 1210000
+        },
+        {
+          "label": "Artist One",
+          "ms": 637000
+        },
+        {
+          "label": "Artist Three",
+          "ms": 482000
+        }
+      ],
+      "artists": [
+        {
+          "label": "Endurance",
+          "ms": 25200000,
+          "plays": 1
+        },
+        {
+          "label": "DJ",
+          "ms": 21600000,
+          "plays": 1
+        },
+        {
+          "label": "Stash Artist",
+          "ms": 1210000,
+          "plays": 6
+        },
+        {
+          "label": "Artist One",
+          "ms": 637000,
+          "plays": 3
+        },
+        {
+          "label": "Artist Three",
+          "ms": 482000,
+          "plays": 2
+        },
+        {
+          "label": "Artist Four",
+          "ms": 420000,
+          "plays": 2
+        },
+        {
+          "label": "Bj\u00f6rk",
+          "ms": 210000,
+          "plays": 1
+        },
+        {
+          "label": "Artist Two",
+          "ms": 59999,
+          "plays": 1
+        },
+        {
+          "label": "Band",
+          "ms": 12000,
+          "plays": 0
+        }
+      ]
+    }
+  ]
+}

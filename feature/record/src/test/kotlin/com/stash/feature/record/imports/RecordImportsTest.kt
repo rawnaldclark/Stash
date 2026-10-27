@@ -1,5 +1,8 @@
 package com.stash.feature.record.imports
 
+import com.stash.feature.record.archive.RecordFlags
+import com.stash.feature.record.lastfm.LastfmMark
+
 import com.google.common.truth.Truth.assertThat
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.importer.ArchiveListens
@@ -94,6 +97,8 @@ class RecordImportsTest {
         private val cancelStops: Boolean = true,
         /** When set, the start-up's question to WorkManager waits on it (the app still starting). */
         startUp: CompletableDeferred<Unit>? = null,
+        /** The archive's write lock, shared with the Last.fm import. */
+        val writes: RecordWrites = RecordWrites(),
     ) {
         val store = RecordImportStore(prefs)
         val notices = Notices()
@@ -131,6 +136,7 @@ class RecordImportsTest {
                 now = { NOW },
                 zone = ZoneOffset.UTC,
                 io = dispatcher,
+                writeLock = writes,
             )
         }
 
@@ -235,6 +241,37 @@ class RecordImportsTest {
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
         rig.imports.showInvite()
         assertThat(rig.store.info.value.inviteHidden).isFalse()
+    }
+
+    @Test fun `remove takes the Last fm import's mark too, and is refused while a Last fm run holds the archive`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.store.setLastfm(LastfmMark("me", 1, 3, 9, false, 0, 400, 2, 1))
+        rig.writes.setLastfmRunning(true)
+        assertThat(rig.imports.removeImport()).isFalse()
+        assertThat(rig.store.info.value.lastfm).isNotNull()
+        rig.writes.setLastfmRunning(false)
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.store.info.value.lastfm).isNull()
+        assertThat(rig.imports.settings.value.importing).isFalse()
+    }
+
+    @Test fun `scrobbles alone make an import record, with them all removed and nothing else, it goes`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.imports.markAsked()
+        val scrobble = ArchivePlay("ivy|frank ocean|1714564800000", "Ivy", "Frank Ocean", s = 1_714_564_800_000, ms = 249_000, f = RecordFlags.LASTFM)
+        rig.archive.apply(listOf(scrobble), emptyList())
+        rig.imports.recordAfterScrobbles()
+        assertThat(rig.store.info.value.record!!.imports).isEqualTo(1)
+        assertThat(rig.store.info.value.record!!.bySource!!.lastfm).isEqualTo(1)
+        // a top-up later: the same record, no second import counted
+        rig.imports.recordAfterScrobbles()
+        assertThat(rig.store.info.value.record!!.imports).isEqualTo(1)
+        rig.archive.apply(emptyList(), listOf(scrobble.id))
+        rig.imports.recordAfterScrobblesRemoved()
+        assertThat(rig.store.info.value.record).isNull()
+        assertThat(rig.store.info.value.asked).isEqualTo(NOW)
     }
 
     @Test fun `remove is refused while an import runs, and files brought meanwhile wait`() = runTest {

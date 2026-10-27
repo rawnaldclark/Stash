@@ -6,6 +6,7 @@ import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.dao.WebLibraryExportDao.OwnAlbumTotal
 import com.stash.feature.record.archive.ArchivePlay
+import com.stash.feature.record.archive.KindArchive
 import com.stash.feature.record.archive.OwnArchive
 import com.stash.feature.record.archive.RecordArchiveSource
 import com.stash.feature.record.archive.RecordSources
@@ -24,8 +25,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -340,21 +339,5 @@ internal class ScrobbleAlbums {
             j += Character.charCount(y)
         }
         return (a.length - i).compareTo(b.length - j)
-    }
-}
-
-/** One kind of imported play ([scrobbles], or every other), a page at a time by id. */
-internal class KindArchive(private val dao: RecordPlayDao, private val scrobbles: Boolean) : RecordArchiveSource {
-    override suspend fun stream(chunkSize: Int, emit: suspend (rows: List<ArchivePlay>, last: Boolean) -> Unit) {
-        require(chunkSize > 0) { "chunkSize must be positive" }
-        var after = ""
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            val page = dao.pageAfterOf(after, scrobbles, chunkSize)
-            val last = page.size < chunkSize
-            emit(page.map { it.toArchivePlay() }, last)
-            if (last) break
-            after = page.last().id
-        }
     }
 }

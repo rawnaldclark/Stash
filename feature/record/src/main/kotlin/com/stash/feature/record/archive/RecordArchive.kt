@@ -20,14 +20,19 @@ import kotlinx.coroutines.ensureActive
  * scrobbles are out, so the order only decides which row the page keeps if two ever did: the Spotify play, then this phone's.
  */
 class RecordArchive(
-    private val dao: RecordPlayDao,
+    /** The imported plays that aren't scrobbles (the Spotify export's). */
+    private val imported: RecordArchiveSource,
+    /** This phone's own plays and skips. */
     private val own: RecordArchiveSource,
-    private val pageSize: Int = PAGE,
+    /** The Last.fm scrobbles. */
+    private val scrobbles: RecordArchiveSource,
 ) : RecordArchiveSource {
+    constructor(dao: RecordPlayDao, own: RecordArchiveSource) : this(KindArchive(dao, scrobbles = false), own, KindArchive(dao, scrobbles = true))
+
     override suspend fun stream(chunkSize: Int, emit: suspend (rows: List<ArchivePlay>, last: Boolean) -> Unit) {
         require(chunkSize > 0) { "chunkSize must be positive" }
         val out = Rechunk(chunkSize, emit)
-        forEach(scrobbles = false) { out.add(it) }
+        imported.stream(chunkSize) { rows, _ -> for (r in rows) out.add(r) }
         val cover = StashCover.Builder()
         own.stream(chunkSize) { rows, _ ->
             for (r in rows) {
@@ -36,23 +41,23 @@ class RecordArchive(
             }
         }
         val covers = cover.build()
-        forEach(scrobbles = true) { if (!covers.covers(it)) out.add(it) }
+        scrobbles.stream(chunkSize) { rows, _ -> for (r in rows) if (!covers.covers(r)) out.add(r) }
         out.finish()
     }
+}
 
-    private suspend fun forEach(scrobbles: Boolean, block: suspend (ArchivePlay) -> Unit) {
+/** One kind of imported play ([scrobbles], or every other), a page at a time by id (the primary key). */
+internal class KindArchive(private val dao: RecordPlayDao, private val scrobbles: Boolean) : RecordArchiveSource {
+    override suspend fun stream(chunkSize: Int, emit: suspend (rows: List<ArchivePlay>, last: Boolean) -> Unit) {
+        require(chunkSize > 0) { "chunkSize must be positive" }
         var after = ""
         while (true) {
             currentCoroutineContext().ensureActive()
-            val page: List<RecordPlayEntity> = dao.pageAfterOf(after, scrobbles, pageSize)
-            for (r in page) block(r.toArchivePlay())
-            if (page.size < pageSize) break
+            val page: List<RecordPlayEntity> = dao.pageAfterOf(after, scrobbles, chunkSize)
+            val last = page.size < chunkSize
+            emit(page.map { it.toArchivePlay() }, last)
+            if (last) break
             after = page.last().id
         }
-    }
-
-    companion object {
-        /** Rows read at a time. */
-        const val PAGE = 5_000
     }
 }

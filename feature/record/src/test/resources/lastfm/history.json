@@ -1,0 +1,1413 @@
+[
+ {
+  "name": "a page",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Other",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564740",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Other",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564740
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "the song playing now is left out",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Now",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "@attr": {
+       "nowplaying": "true"
+      }
+     },
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "nowplaying not the string true",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Now",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      },
+      "@attr": {
+       "nowplaying": true
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Now",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "one track is an object, not a list",
+  "page": 2,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": {
+     "name": "Alone",
+     "artist": {
+      "#text": "Band",
+      "mbid": ""
+     },
+     "album": {
+      "#text": "An Album",
+      "mbid": ""
+     },
+     "date": {
+      "uts": "1714564800",
+      "#text": "01 May 2024, 12:00"
+     }
+    },
+    "@attr": {
+     "page": "2",
+     "totalPages": "2",
+     "total": "201"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Alone",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 2,
+   "pages": 2,
+   "total": 201
+  }
+ },
+ {
+  "name": "no tracks at all",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "@attr": {
+     "page": "1",
+     "totalPages": "0",
+     "total": "0"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "tracks of the wrong shape",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     null,
+     5,
+     "x",
+     [],
+     {
+      "name": "No artist",
+      "date": {
+       "uts": "1714564800"
+      }
+     },
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "artist given by name, not #text",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "name": "Band"
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "artist as a string",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": "Band",
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "whitespace runs become one space, trimmed",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "  A\t\tSong \n Title ",
+      "artist": {
+       "#text": " Band　",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "A Song Title",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "a control character drops the scrobble",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Bad\u0007Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "BadSong",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Good",
+      "artist": {
+       "#text": "Band\u0001",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "a bidi override drops the scrobble",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Evil‮Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Iso⁦late",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "words longer than 300 drop it; 300 exactly stays",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "     wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww     ",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "an album that is not clean is dropped, the scrobble kept",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "Bad\u0002Album"
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Two",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "   "
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Three",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": "Flat",
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Four",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Two",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Three",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Four",
+     "a": "Band",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "times as JavaScript reads them",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Pad",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": " 1714564800 ",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Hex",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "0x65FE0000",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Exp",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1.7e9",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Frac",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800.9",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Junk",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800abc",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Num",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": 1714564800,
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Empty",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Neg",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "-5",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Inf",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "Infinity",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Bool",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": true,
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Plus",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "+1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Pad",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Hex",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1711144960
+    },
+    {
+     "t": "Exp",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1700000000
+    },
+    {
+     "t": "Frac",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Num",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Plus",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "times before 2002 and more than a day ahead are broken rows",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Old",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1009843199",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "First",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1009843200",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Day",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1793188800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Past",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1793188801",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "First",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1009843200
+    },
+    {
+     "t": "Day",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1793188800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "error 6: no such user, an empty last page",
+  "page": 4,
+  "nowS": 1793102400,
+  "body": {
+   "error": 6,
+   "message": "User not found"
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 4,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "error 17 as text: a private profile, an empty last page",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "error": "17",
+   "message": "Login: User required to be logged in"
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "error 29: try again",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "error": 29,
+   "message": "Rate Limit Exceeded"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "error 8: try again",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "error": "8",
+   "message": "Operation failed"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "error 0 is no error",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "error": 0,
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "no recenttracks: try again",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "something": "else"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "recenttracks a string: try again",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": "nothing"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "recenttracks a list: an empty page",
+  "page": 3,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": []
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 3,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "paging as text, missing or odd",
+  "page": 5,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "0",
+     "totalPages": "-1",
+     "total": "many"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 5,
+   "pages": -1,
+   "total": 0
+  }
+ },
+ {
+  "name": "paging as numbers",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": 7,
+     "totalPages": 12.9,
+     "total": 2400
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 7,
+   "pages": 12,
+   "total": 2400
+  }
+ },
+ {
+  "name": "no @attr",
+  "page": 2,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ]
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 2,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "case and accents kept as written",
+  "page": 1,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Björk",
+      "artist": {
+       "#text": "BJÖRK",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Jóga",
+      "artist": {
+       "#text": "Björk",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Björk",
+     "a": "BJÖRK",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Jóga",
+     "a": "Björk",
+     "al": "An Album",
+     "uts": 1714564800
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ }
+]

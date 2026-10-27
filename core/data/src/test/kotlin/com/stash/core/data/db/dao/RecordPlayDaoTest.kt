@@ -145,6 +145,70 @@ class RecordPlayDaoTest {
         assertEquals(0, events)
     }
 
+    // ── Your Last.fm scrobbles beside the export's plays ───────────────────────────────────────────────────────────────
+
+    @Test fun `the scrobbles and the other plays are read apart, each a page at a time by id`() = runTest {
+        dao.apply(
+            listOf(row("a|x|1"), row("b|x|1", f = 64), row("c|x|1", f = 64 or 128), row("d|x|1", f = 256), row("e|x|1", f = 16)),
+            emptyList(),
+        )
+        val first = dao.pageAfterOf("", scrobbles = false, limit = 2)
+        assertEquals(listOf("a|x|1", "d|x|1"), first.map { it.id })
+        assertEquals(listOf("e|x|1"), dao.pageAfterOf(first.last().id, scrobbles = false, limit = 2).map { it.id })
+        assertEquals(listOf("b|x|1", "c|x|1"), dao.pageAfterOf("", scrobbles = true, limit = 5).map { it.id })
+    }
+
+    @Test fun `which ids are kept already`() = runTest {
+        dao.apply(listOf(row("a|x|1"), row("b|x|1", f = 64)), emptyList())
+        assertEquals(setOf("a|x|1", "b|x|1"), dao.keptIds(listOf("a|x|1", "b|x|1", "z|x|1")).toSet())
+    }
+
+    @Test fun `a title's plays by a range on the id - that title exactly, never a longer one, never a scrobble`() = runTest {
+        dao.apply(
+            listOf(
+                row("song|band|1000", s = 1_000, ms = 200_000),
+                row("song|other band|5000", s = 5_000, ms = 100_000),
+                row("song|band|9000", s = 9_000, f = 64), // a scrobble: never a title's play
+                row("song 2|band|1000", s = 1_000), // a longer title
+                row("songs|band|1000", s = 1_000),
+                row("son|band|1000", s = 1_000),
+                row("|band|7000", s = 7_000), // a title that folds to nothing
+            ),
+            emptyList(),
+        )
+        val plays = dao.playsIn("song|", "song}").map { it.s to it.ms }
+        assertEquals(listOf(1_000L to 200_000L, 5_000L to 100_000L), plays.sortedBy { it.first })
+        assertEquals(listOf(7_000L), dao.playsIn("|", "}").map { it.s })
+    }
+
+    @Test fun `the longest done play by words, never a scrobble's or one not done`() = runTest {
+        dao.apply(
+            listOf(
+                row("ivy|frank ocean|1", ms = 249_000, f = 34), // done, with reasons
+                row("ivy|frank ocean|2", ms = 250_000, f = 34),
+                row("ivy|frank ocean|3", ms = 900_000, f = 32), // not done
+                row("ivy|frank ocean|4", ms = 999_000, f = 64 or 2), // a scrobble
+                row("nights|frank ocean|1", ms = 307_000, f = 2, t = "Nights"),
+            ),
+            emptyList(),
+        )
+        val lengths = dao.doneLengths().associate { "${it.t}|${it.a}" to it.ms }
+        assertEquals(mapOf("Ivy|Frank Ocean" to 250_000L, "Nights|Frank Ocean" to 307_000L), lengths)
+    }
+
+    @Test fun `removing the scrobbles keeps every other play`() = runTest {
+        dao.apply(listOf(row("a|x|1"), row("b|x|1", f = 64), row("c|x|1", f = 64 or 128), row("d|x|1", f = 256)), emptyList())
+        assertEquals(2, dao.deleteScrobbles())
+        assertEquals(listOf("a|x|1", "d|x|1"), dao.pageAfter("", 10).map { it.id })
+    }
+
+    @Test fun `the export's albums without the scrobbles'`() = runTest {
+        dao.apply(listOf(row("a|x|1", s = 1_000), row("b|x|2", s = 2_000, f = 64, al = "Blonde"), row("c|x|3", s = 3_000, f = 64, al = "Endless")), emptyList())
+        val totals = dao.albumTotalsWithoutScrobbles()
+        assertEquals(listOf("Blonde"), totals.map { it.album })
+        assertEquals(1, totals.single().plays)
+    }
+
     private companion object {
         const val T = 1_759_838_400_000L
     }
