@@ -204,6 +204,36 @@ class RecordTasteTest {
         assertThat(db.recordTasteDao().computedAt()).isEqualTo(now)
     }
 
+    @Test fun `the put-back rules walk as the web's archive walks them (kept-out json rules)`() = runBlocking {
+        val rules = kotlinx.serialization.json.Json.parseToJsonElement(requireNotNull(javaClass.getResource("/taste/kept-out.json")).readText())
+            .let { (it as kotlinx.serialization.json.JsonObject)["rules"] as kotlinx.serialization.json.JsonArray }
+            .map { it as kotlinx.serialization.json.JsonObject }
+        fun keepOf(i: Int): List<String> = (rules[i]["keep"] as? kotlinx.serialization.json.JsonArray)?.map { (it as kotlinx.serialization.json.JsonPrimitive).content }.orEmpty()
+        fun resultOf(i: Int): Boolean = (rules[i]["result"] as kotlinx.serialization.json.JsonPrimitive).content.toBoolean()
+        // Kept sorted by UTF-16 units in Kotlin, each once (the table's key), as archive.ts keeps its list
+        suspend fun keep() = db.recordTasteDao().keepKeys().sorted()
+
+        assertThat(taste.putBack("zed|band")).isEqualTo(resultOf(0))
+        assertThat(keep()).isEqualTo(keepOf(0))
+        imported()
+        assertThat(taste.putBack("zed|band")).isEqualTo(resultOf(1))
+        assertThat(keep()).isEqualTo(keepOf(1))
+        assertThat(taste.putBack("alpha|band")).isEqualTo(resultOf(2))
+        assertThat(keep()).isEqualTo(keepOf(2))
+        assertThat(taste.putBack("zed|band")).isEqualTo(resultOf(3))
+        assertThat(keep()).isEqualTo(keepOf(3))
+        // Remove import (RecordImports.removeImport clears the taste and the songs put back)
+        taste.clearLocked(keep = true)
+        assertThat(keep()).isEqualTo(keepOf(4))
+        // Removing Last.fm: when it was all there was, they go; beside Spotify plays, they stay (RecordImports'
+        // recordAfterScrobblesRemoved calls clearLocked(keep = true), or refreshLocked, which keeps them: RecordImportsTest)
+        db.recordTasteDao().insertKeep(com.stash.core.data.db.entity.RecordTasteKeepEntity("back|band", 1))
+        taste.refreshLocked()
+        assertThat(keep()).isEqualTo(keepOf(6))
+        taste.clearLocked(keep = true)
+        assertThat(keep()).isEqualTo(keepOf(5))
+    }
+
     private companion object {
         const val DAY = 86_400_000L
 
