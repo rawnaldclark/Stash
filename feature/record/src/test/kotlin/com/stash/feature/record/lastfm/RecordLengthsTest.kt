@@ -360,6 +360,24 @@ class RecordLengthsTest {
         assertThat(stopped.networkWaits).isEmpty()
     }
 
+    @Test fun `a network just back is given time to validate - WorkManager may start the waiting pass before then`() = runTest {
+        // Validating for 3 s, then fit: the lookups go, in the same run
+        var reads = 0
+        val back = LengthsNetwork.ready(wifiOnly = true) { if (reads++ < 3) LengthsNetwork.State.VALIDATING else LengthsNetwork.State.FITS }
+        assertThat(back).isTrue()
+        assertThat(testScheduler.currentTime).isEqualTo(3_000L)
+        // Never validated (a portal): held after the grace
+        val start = testScheduler.currentTime
+        assertThat(LengthsNetwork.ready(wifiOnly = true) { LengthsNetwork.State.VALIDATING }).isFalse()
+        assertThat(testScheduler.currentTime - start).isEqualTo(LengthsNetwork.VALIDATION_GRACE_MS)
+        // None, or metered when Wi-Fi only: held at once
+        val now = testScheduler.currentTime
+        assertThat(LengthsNetwork.ready(wifiOnly = false) { LengthsNetwork.State.NONE }).isFalse()
+        assertThat(LengthsNetwork.ready(wifiOnly = true) { LengthsNetwork.State.UNFIT }).isFalse()
+        assertThat(testScheduler.currentTime).isEqualTo(now)
+        assertThat(LengthsNetwork.ready(wifiOnly = false) { LengthsNetwork.State.FITS }).isTrue()
+    }
+
     @Test fun `runs in a row held for a network back off, so a network the job takes but the lookups can't use never loops`() = runTest {
         var online = false
         val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { if (online) null else LengthHold.NETWORK })

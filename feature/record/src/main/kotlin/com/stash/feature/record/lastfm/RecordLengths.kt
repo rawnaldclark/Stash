@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -138,7 +139,7 @@ class RecordLengths internal constructor(
         reader = GatedLengthReader(BudgetedLengthReader(ProxyLengthReader(ask = recap::songLength), budget)) {
             when {
                 !api.hasProxy -> LengthHold.NO_PROXY
-                !LengthsNetwork.fits(context, sync.preferences.first().wifiOnly) -> LengthHold.NETWORK
+                !LengthsNetwork.ready(sync.preferences.first().wifiOnly) { LengthsNetwork.state(context, it) } -> LengthHold.NETWORK
                 else -> null
             }
         },
@@ -366,13 +367,51 @@ internal class ProxyLengthReader(
     }
 }
 
-/** Whether the network now is one the lengths pass's lookups may use: online, and unmetered when the app is Wi-Fi only. */
+/**
+ * Whether the network now is one the lengths pass's lookups may use: online (validated, as SyncScheduler counts a network), and
+ * unmetered when the app is Wi-Fi only.
+ */
 internal object LengthsNetwork {
-    fun fits(context: Context, wifiOnly: Boolean): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        val online = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        return online && (!wifiOnly || caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+    /** The default network, as the lookups see it. */
+    enum class State {
+        /** None, or one that can't reach the internet. */
+        NONE,
+
+        /** Metered, and the app is Wi-Fi only. */
+        UNFIT,
+
+        /** Connected, not validated yet (a network just back: WorkManager may start a job waiting for it before then). */
+        VALIDATING,
+
+        /** One the lookups may use. */
+        FITS,
+    }
+
+    /** A network still validating is given this long before the run is held for want of one. */
+    const val VALIDATION_GRACE_MS = 30_000L
+
+    fun state(context: Context, wifiOnly: Boolean): State {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return State.NONE
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return State.NONE
+        if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) return State.NONE
+        if (wifiOnly && !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) return State.UNFIT
+        return if (caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) State.FITS else State.VALIDATING
+    }
+
+    /**
+     * Whether the lookups may go now ([state] read for [wifiOnly]): a network that fits at once, or one still validating that fits
+     * within [graceMs]. None, or a metered one when Wi-Fi only, is no at once.
+     */
+    suspend fun ready(wifiOnly: Boolean, graceMs: Long = VALIDATION_GRACE_MS, stepMs: Long = 1_000L, state: (Boolean) -> State): Boolean {
+        var waited = 0L
+        while (true) {
+            when (state(wifiOnly)) {
+                State.FITS -> return true
+                State.NONE, State.UNFIT -> return false
+                State.VALIDATING -> if (waited >= graceMs) return false
+            }
+            delay(stepMs)
+            waited += stepMs
+        }
     }
 }
