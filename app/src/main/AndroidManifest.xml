@@ -85,42 +85,6 @@
                 <data android:scheme="db-${dropboxAppKey}" android:host="1" android:path="/connect" />
             </intent-filter>
         </activity>
-        <!--
-            Your record's intake: a Spotify export opened with Stash or shared to it lands on this see-through screen in the
-            sending app's task, which copies it in while its grant to read it holds, brings up Stash's own window with the import
-            sheet, and goes (RecordIntakeActivity). taskAffinity "" keeps it out of Stash's task (bringing that forward with
-            CLEAR_TOP would close it, and its grant, mid-copy); configChanges keep it alive through a rotation for the same reason.
-        -->
-        <activity
-            android:name=".RecordIntakeActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <!--
-                Your record: a Spotify data export (its zips, or a loose JSON file) opened with Stash from Files or an email, or
-                shared to it. The import copies it in at once and looks at the names inside before taking it: anything else is
-                told "That isn't a Spotify export". Content URIs only (a file:// URI can't cross apps any more, and isn't read).
-            -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
-                <data android:mimeType="application/zip" />
-                <data android:mimeType="application/x-zip-compressed" />
-                <data android:mimeType="application/json" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <!-- No scheme here: a share carries its files as extras, not as the intent's data (a scheme would match none) -->
-                <data android:mimeType="application/zip" />
-                <data android:mimeType="application/x-zip-compressed" />
-                <data android:mimeType="application/json" />
-            </intent-filter>
-        </activity>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/Theme.Stash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

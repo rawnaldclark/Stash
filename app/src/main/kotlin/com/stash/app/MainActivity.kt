@@ -43,17 +43,20 @@ import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.feature.record.imports.RecordImports
+import com.stash.feature.record.imports.RecordIntake
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -309,17 +312,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * A Spotify export in a share that reached this window rather than [RecordIntakeActivity] (a share of mixed types, `*` `/` `*`,
-     * matches the audio filters too): Your record's import, which copies it in at once while this Activity's grant holds, looks
-     * inside and says in its sheet whether it's an export. Content URIs only. True when the intent held one (and is taken, so a
-     * recreation doesn't bring it in twice); the audio in the same share goes to the local import below.
+     * A Spotify export in a share that reached this window rather than Your record's intake screen (a share of mixed types,
+     * `*` `/` `*`, matches the audio filters too): the files' types are looked up off the main thread (a call into the app that
+     * has them), the export goes to Your record's import (it copies it at once, while this window's grant holds) and the rest to
+     * the local import below. True when the intent was taken that way (and is cleared, so a recreation doesn't bring it in
+     * twice). Shares typed as audio, and the audio the intake screen forwards here, go straight to [handleShareIntent], as ever.
      */
     private fun handleRecordImportIntent(intent: Intent?): Boolean {
         if (intent == null || intent.action == Intent.ACTION_VIEW) return false
-        val (exports, rest) = RecordIntake.split(intent, contentResolver)
-        if (exports.isEmpty()) return false
-        recordImports.bringShared(exports)
-        if (rest.isNotEmpty()) localImportCoordinator.start(rest)
+        if (intent.getBooleanExtra(RecordIntake.EXTRA_FORWARDED, false) || !RecordIntake.mayHoldExport(intent.type)) return false
+        val uris = RecordIntake.urisOf(intent, packageName)
+        if (uris.isEmpty()) return false
+        val original = Intent(intent)
+        lifecycleScope.launch {
+            val exports = withContext(Dispatchers.IO) {
+                RecordIntake.split(uris, original.type) { runCatching { contentResolver.getType(it) }.getOrNull() }.first
+            }
+            if (exports.isEmpty()) {
+                // No export after all: the share goes the way it always has, every file of it
+                handleShareIntent(original)
+                return@launch
+            }
+            recordImports.bringShared(exports)
+            val rest = shareUris(original) - exports.toSet()
+            if (rest.isNotEmpty()) localImportCoordinator.start(rest)
+        }
         // Taken: a configuration change replays the Activity's intent, and must not bring the files in again
         setIntent(Intent(intent).apply {
             action = Intent.ACTION_MAIN
@@ -399,7 +416,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null) return
-        val uris: List<Uri> = when (intent.action) {
+        val uris = shareUris(intent)
+        if (uris.isNotEmpty()) {
+            localImportCoordinator.start(uris)
+        }
+    }
+
+    /** A share's streams, as the local import takes them. */
+    private fun shareUris(intent: Intent): List<Uri> =
+        when (intent.action) {
             Intent.ACTION_SEND -> {
                 IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
                     ?.let { listOf(it) } ?: emptyList()
@@ -413,8 +438,4 @@ class MainActivity : AppCompatActivity() {
             }
             else -> emptyList()
         }
-        if (uris.isNotEmpty()) {
-            localImportCoordinator.start(uris)
-        }
-    }
 }
