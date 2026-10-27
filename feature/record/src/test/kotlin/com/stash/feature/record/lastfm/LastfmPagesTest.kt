@@ -88,6 +88,21 @@ class LastfmPagesTest {
     @Test fun `a page before the last that lists nothing is a stumble - busy`() = runTest {
         val empty = Json.parseToJsonElement("""{"recenttracks":{"track":[],"@attr":{"page":"2","totalPages":"5","total":"900"}}}""").jsonObject
         assertThat(failure { reader(Remote({ empty })).read(2, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+        // ...told apart from an outage: counted, since one that stays so is a hole the import skips
+        val hole = try {
+            reader(Remote({ empty })).read(2, nowS, null)
+            null
+        } catch (e: LastfmError) {
+            e
+        }
+        assertThat(hole!!.empty).isTrue()
+        val outage = try {
+            reader(Remote({ throw LastFmApiException(29, "Rate limit") })).read(2, nowS, null)
+            null
+        } catch (e: LastfmError) {
+            e
+        }
+        assertThat(outage!!.empty).isFalse()
         val last = Json.parseToJsonElement("""{"recenttracks":{"track":[],"@attr":{"page":"5","totalPages":"5","total":"900"}}}""").jsonObject
         assertThat(reader(Remote({ last })).read(5, nowS, null)).isEqualTo(HistoryPage(emptyList(), 5, 5, 900))
     }

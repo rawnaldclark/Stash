@@ -22,6 +22,9 @@ sealed interface HistoryAnswer {
     /** Busy, rate limited, or stumbling: the import waits and asks again (the Worker's 503). */
     data object Retry : HistoryAnswer
 
+    /** A page before the last that listed nothing: the same, but counted (the Worker's 503 with `empty`). */
+    data object Empty : HistoryAnswer
+
     /** Error 9 on a signed read: the session ended (the Worker's 401). */
     data object Reconnect : HistoryAnswer
 }
@@ -38,7 +41,8 @@ sealed interface HistoryAnswer {
  *   still a page, with no plays;
  * - what can't be the real answer is "try again" ([HistoryAnswer.Retry]), never the end of the history: any Last.fm error but
  *   those below, an answer that isn't a page, Last.fm's "nothing to read here" (6: no such user; 17: a profile that hides its
- *   listening) after page 1 (the history was there a page ago), and a page before Last.fm's own last that lists nothing at all;
+ *   listening) after page 1 (the history was there a page ago), and a page before Last.fm's own last that lists nothing at all
+ *   ([HistoryAnswer.Empty]: counted, since one that stays so is a hole the import skips);
  * - 6 or 17 on page 1 is no history: an empty last page;
  * - 9 on a signed read is a session Last.fm no longer takes ([HistoryAnswer.Reconnect]).
  *
@@ -89,7 +93,7 @@ object LastfmHistory {
         val pages = whole(int(attr["totalPages"]))
         // What Last.fm listed, before any row is dropped as broken: nothing at all on a page before its last is a stumble, not the end
         val rows = list(rt["track"]).filterNot { (it as? JsonObject)?.let(::nowPlaying) == true }
-        if (rows.isEmpty() && page < pages) return HistoryAnswer.Retry
+        if (rows.isEmpty() && page < pages) return HistoryAnswer.Empty
         val plays = ArrayList<Scrobble>()
         for (item in rows) {
             val o2 = item as? JsonObject ?: continue

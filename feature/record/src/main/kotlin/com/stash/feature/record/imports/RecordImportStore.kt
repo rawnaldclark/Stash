@@ -95,7 +95,28 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         putInt(L_COVERED, m.covered)
         putLong(L_AT, m.at)
         if (m.base != null) putInt(L_BASE, m.base) else remove(L_BASE)
+        val stuck = m.stuck
+        if (stuck != null) {
+            putInt(L_STUCK_PAGE, stuck.page)
+            putInt(L_STUCK_RUNS, stuck.runs)
+            putBoolean(L_STUCK_TOPUP, stuck.topup)
+        } else {
+            remove(L_STUCK_PAGE)
+            remove(L_STUCK_RUNS)
+            remove(L_STUCK_TOPUP)
+        }
+        if (m.skipped != null) putInt(L_SKIPPED, m.skipped) else remove(L_SKIPPED)
     }
+
+    /**
+     * The lengths pass's lookups this device made lately (by hour, [com.stash.feature.record.lastfm.LookupBudget]'s own words)
+     * and when it may ask again after a rate limit: kept through every removal, since they are this device's, not the scrobbles'.
+     */
+    var lookupBudget: String?
+        get() = prefs.getString(KEY_BUDGET, null)
+        set(v) {
+            prefs.edit().apply { if (v == null) remove(KEY_BUDGET) else putString(KEY_BUDGET, v) }.commit()
+        }
 
     /** The lengths pass's own count and time ([com.stash.feature.record.lastfm.LengthsMark]'s `timed` and `at`). */
     fun setLengths(timed: Int, at: Long) = edit {
@@ -168,6 +189,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                 covered = prefs.getInt(L_COVERED, 0),
                 at = prefs.getLong(L_AT, 0),
                 base = if (prefs.contains(L_BASE)) prefs.getInt(L_BASE, 0) else null,
+                stuck = if (prefs.contains(L_STUCK_PAGE)) {
+                    LastfmMark.Stuck(prefs.getInt(L_STUCK_PAGE, 0), prefs.getInt(L_STUCK_RUNS, 0), prefs.getBoolean(L_STUCK_TOPUP, false))
+                } else {
+                    null
+                },
+                skipped = if (prefs.contains(L_SKIPPED)) prefs.getInt(L_SKIPPED, 0) else null,
             )
         },
     )
@@ -202,7 +229,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val L_COVERED = "lastfm_covered"
         private const val L_AT = "lastfm_at"
         private const val L_BASE = "lastfm_base"
-        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE)
+        private const val L_STUCK_PAGE = "lastfm_stuck_page"
+        private const val L_STUCK_RUNS = "lastfm_stuck_runs"
+        private const val L_STUCK_TOPUP = "lastfm_stuck_topup"
+        private const val L_SKIPPED = "lastfm_skipped"
+        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE, L_STUCK_PAGE, L_STUCK_RUNS, L_STUCK_TOPUP, L_SKIPPED)
+        private const val KEY_BUDGET = "lengths_lookups"
         private const val LEN_TIMED = "lengths_timed"
         private const val LEN_AT = "lengths_at"
         private val LENGTHS_KEYS = listOf(LEN_TIMED, LEN_AT)

@@ -29,14 +29,28 @@ class RecordWrites @Inject constructor() {
 
     private val _lengths = MutableStateFlow(false)
 
+    /** The run of the lengths pass that holds [lengthsRunning]: only it lets it go, never a run that came before it. */
+    private var lengthsOwner: Any? = null
+
     /**
-     * The lengths pass is timing songs (a row rewritten every second or so, for as long as it takes): the Home card holds the
-     * plays as they were, and reads them again only when the pass shows what it timed ([lengthsShown]) and once it is over.
+     * The lengths pass is timing songs (a slice written every 20 s or so, for as long as it takes): the Home card holds the plays
+     * as they were, and reads them again only when the pass shows what it timed ([lengthsShown]) and once it is over.
      */
     val lengthsRunning: StateFlow<Boolean> = _lengths.asStateFlow()
 
-    internal fun setLengthsRunning(running: Boolean) {
-        _lengths.value = running
+    /** A run of the lengths pass begins: it holds [lengthsRunning], taking it over from any before it. */
+    @Synchronized
+    internal fun beginLengths(owner: Any) {
+        lengthsOwner = owner
+        _lengths.value = true
+    }
+
+    /** A run of the lengths pass ends: [lengthsRunning] goes only if it is still the one holding it. */
+    @Synchronized
+    internal fun endLengths(owner: Any) {
+        if (lengthsOwner !== owner) return
+        lengthsOwner = null
+        _lengths.value = false
     }
 
     private val _shown = MutableStateFlow(0)

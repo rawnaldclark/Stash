@@ -11,8 +11,10 @@ import kotlinx.coroutines.withContext
 data class LengthsMark(
     /** Song key -> when Last.fm last said it has no length (epoch s). */
     val none: Map<String, Long>,
-    /** Song key -> when its ask last failed after every try (epoch s). */
+    /** Song key -> when its ask last failed (epoch s)... */
     val failed: Map<String, Long> = emptyMap(),
+    /** ...and how many times in a row it has (1 when missing): its wait doubles with each ([Lengths.failedWait]). */
+    val failures: Map<String, Int> = emptyMap(),
     /** Rows the pass has timed so far. */
     val timed: Int = 0,
     /** When a slice last ran (epoch s). */
@@ -38,8 +40,9 @@ data class LengthPlan(
     val asks: List<LengthAsk>,
     /** The pass's misses, kept only for songs still guessed and asked within [Lengths.NONE_AGAIN_S]. */
     val none: Map<String, Long>,
-    /** Its failures, kept only for songs still guessed and failed within [Lengths.FAILED_AGAIN_S]. */
+    /** Its failures and their counts, kept for songs still guessed until they are answered. */
     val failed: Map<String, Long>,
+    val failures: Map<String, Int> = emptyMap(),
 )
 
 /** One answer to a length ask (lengths.ts `LengthAnswer`): the song's length in ms, or null; [hit] when no request reached Last.fm. */
@@ -47,7 +50,10 @@ data class LengthAnswer(val ms: Long?, val hit: Boolean = false)
 
 /** How the pass asks for a song's length (lengths.ts `LengthReader`). */
 fun interface LengthReader {
-    /** @throws LastfmError [LastfmFailure.RECONNECT] (the account is gone), [LastfmFailure.BUSY] (try later) or [LastfmFailure.UNAVAILABLE]. */
+    /**
+     * @throws LastfmError [LastfmFailure.RECONNECT], [LastfmFailure.BUSY] (try later; [LastfmError.limited]: not before
+     *   [LastfmError.retryAt]) or [LastfmFailure.UNAVAILABLE].
+     */
     suspend fun look(artist: String, track: String): LengthAnswer
 }
 
@@ -63,12 +69,46 @@ interface LengthsStore {
 
     suspend fun setMark(mark: LengthsMark)
 
-    /** Every guessed scrobble with one of [spellings]' words plays [ms] and is guessed no more; returns how many rows. */
-    suspend fun time(spellings: List<GuessedSpelling>, ms: Long): Int
+    /**
+     * Every guessed scrobble of each song (its spellings' words) plays that song's `ms` and is guessed no more, all in one write;
+     * returns how many rows each song timed, in order.
+     */
+    suspend fun time(songs: List<Pair<List<GuessedSpelling>, Long>>): List<Int>
 }
 
-/** What one slice did (lengths.ts `LengthsRun`): rows rewritten (filled and timed), songs asked, songs left to ask, and why it stopped short. */
-data class LengthsRun(val rows: Int, val asked: Int, val left: Int, val stopped: LastfmFailure? = null)
+/**
+ * What one slice did (lengths.ts `LengthsRun`): rows rewritten (filled and timed), songs asked, songs left to ask, why it stopped
+ * short (if it did), the songs failing in a row at its end (the run's next slice carries on from it), and, when it was stopped by a
+ * limit (a rate limit, the daily cap), when to come back.
+ */
+data class LengthsRun(
+    val rows: Int,
+    val asked: Int,
+    val left: Int,
+    val stopped: LastfmFailure? = null,
+    val streak: Int = 0,
+    val retryAt: Long? = null,
+)
+
+/**
+ * A run of the lengths pass, planned once ([Lengths.plan]) and asked a slice at a time ([Lengths.slice]): within a run no other
+ * writer touches the archive (they stop the pass first), so the plan holds, and the songs answered drop off its front as they go.
+ */
+class LengthsRunState internal constructor(
+    internal val guessed: Map<String, List<GuessedSpelling>>,
+    internal var fill: List<LengthFill>,
+    internal val asks: ArrayDeque<LengthAsk>,
+    internal val none: LinkedHashMap<String, Long>,
+    internal val failed: LinkedHashMap<String, Long>,
+    internal val failures: LinkedHashMap<String, Int>,
+    /** The mark's timed count, with what this run has timed. */
+    internal var timed: Int,
+    /** Songs failing in a row, carried from slice to slice. */
+    internal var streak: Int,
+) {
+    /** Songs left to ask. */
+    val left: Int get() = asks.size
+}
 
 /**
  * Your record's lengths pass (stash-player `src/lib/spotify/lengths.ts`, spec §7). A scrobble says when it started, never how
@@ -78,14 +118,15 @@ data class LengthsRun(val rows: Int, val asked: Int, val left: Int, val stopped:
  *   1. again from Spotify and the library, which may know a song now (an export or a library song that came later): no ask;
  *   2. then from Last.fm's track.getInfo (through Stash's proxy, [com.stash.core.data.lastfm.recap.LastFmRecapRepository.songLength]),
  *      the songs with the most guessed plays first, so the hours come right soonest.
- * A song Last.fm can't time stays guessed and isn't asked again for [NONE_AGAIN_S]; one whose ask keeps failing (busy after every
- * try) is left for [FAILED_AGAIN_S] and the pass goes on to the next, so one bad song never holds up the rest.
+ * A song Last.fm can't time stays guessed and isn't asked again for [NONE_AGAIN_S]. One whose ask keeps failing (busy after its
+ * [LENGTH_TRIES], or an answer that isn't one) waits [FAILED_AGAIN_S], twice that after a second failure in a row, and so on up
+ * to [FAILED_AGAIN_MAX_S], and the pass goes on to the next, so one bad song never holds up the rest. [FAILS_IN_A_ROW] songs
+ * failing one after another is Last.fm down: the run ends (the streak carries from slice to slice).
  *
- * Resumable without a cursor: a timed song's rows lose the estimated flag, so they are out of the next plan, and the songs Last.fm
- * had no length for are kept ([LengthsMark]), saved after each. Paced like the history pages: one ask at a time,
- * [ImportScrobbles.PAGE_GAP_MS] apart (an answer the phone already had never reached Last.fm, so the next ask goes straight on), a
- * busy answer waited out [ImportScrobbles.BUSY_TRIES] times. [RecordLengths] runs it in slices ([SLICE] asks or [SLICE_MS],
- * whichever ends first) under the archive's write lock, each planned against the archive as it is then.
+ * Resumable without a cursor: a timed song's rows lose the estimated flag, so they are out of the next run's plan, and the songs
+ * Last.fm had no length for are kept ([LengthsMark]). Paced: one ask at a time, a gap after one that reached the network (none
+ * after an answer the phone had). [RecordLengths] runs it in slices ([SLICE] asks or [SLICE_MS], whichever ends first) under the
+ * archive's write lock, each written at its end in one go.
  *
  * The phone plans from the guessed rows' spellings, grouped in the database ([com.stash.core.data.db.dao.RecordPlayDao.guessed]),
  * never the rows themselves: the same plan, since a song key is a function of a row's words.
@@ -94,15 +135,27 @@ object Lengths {
     /** A song Last.fm had no length for is asked again after this long (it may have learnt it). */
     const val NONE_AGAIN_S = 30 * 86_400L
 
-    /** A song whose ask kept failing is asked again after this long. */
+    /** A song whose ask failed is asked again after this long, doubled for each failure in a row after the first... */
     const val FAILED_AGAIN_S = 86_400L
 
-    /** This many songs failing in a row is Last.fm down, not a bad song: the slice stops. */
+    /** ...up to this. */
+    const val FAILED_AGAIN_MAX_S = 16 * 86_400L
+
+    /** Asks of one song while Last.fm says busy (the pages' six are for a whole history; a song is asked again after its wait). */
+    const val LENGTH_TRIES = 2
+
+    /** This many songs failing in a row is Last.fm down, not a bad song: the run ends, whichever slice it is in. */
     const val FAILS_IN_A_ROW = 3
 
     /** One slice of the pass (one hold of the write lock): at most this many asks, for at most this long. */
     const val SLICE = 200
     const val SLICE_MS = 20_000L
+
+    /** lengths.ts `failedWait`: how long a song that has failed [failures] times in a row waits (s): 1, 2, 4, 8, then 16 days. */
+    fun failedWait(failures: Int): Long {
+        val doublings = (failures - 1).coerceIn(0, 30)
+        return minOf(FAILED_AGAIN_MAX_S, FAILED_AGAIN_S shl doublings.coerceAtMost(5))
+    }
 
     /** lengths.ts `guessedBySong`: the guessed scrobbles' spellings, by song key ([Scrobbles.songKey]: remasters folded). */
     fun guessedBySong(spellings: Iterable<GuessedSpelling>): Map<String, List<GuessedSpelling>> {
@@ -116,9 +169,10 @@ object Lengths {
 
     /**
      * lengths.ts `planLengths`, pure. [guessed]: [guessedBySong] over the archive; [known]: [Scrobbles.bestLengths] (the archive's
-     * Spotify lengths, then the library's); [none] and [failed]: the mark's misses and failures. A song [known] times is filled
-     * straight away; the rest are asked, except those Last.fm had no length for within [NONE_AGAIN_S], or whose ask failed within
-     * [FAILED_AGAIN_S]. Each ask uses the spelling most of its scrobbles have (a tie: the first in string order, title then artist).
+     * Spotify lengths, then the library's); [none], [failed] and [failures]: the mark's misses, failures and their counts. A song
+     * [known] times is filled straight away; the rest are asked, except those Last.fm had no length for within [NONE_AGAIN_S], or
+     * whose ask failed within its wait ([failedWait]). Each ask uses the spelling most of its scrobbles have (a tie: the first in
+     * string order, title then artist).
      */
     fun planLengths(
         guessed: Map<String, List<GuessedSpelling>>,
@@ -126,11 +180,13 @@ object Lengths {
         none: Map<String, Long>,
         nowS: Long,
         failed: Map<String, Long> = emptyMap(),
+        failures: Map<String, Int> = emptyMap(),
     ): LengthPlan {
         val fill = ArrayList<LengthFill>()
         val asks = ArrayList<LengthAsk>()
         val keptNone = LinkedHashMap<String, Long>()
         val keptFailed = LinkedHashMap<String, Long>()
+        val keptFailures = LinkedHashMap<String, Int>()
         fun lately(at: Long?, within: Long) = at != null && at > nowS - within && at <= nowS
         for (k in guessed.keys.sortedWith(byText)) {
             val spellings = guessed.getValue(k)
@@ -143,9 +199,13 @@ object Lengths {
                 keptNone[k] = none.getValue(k)
                 continue
             }
-            if (lately(failed[k], FAILED_AGAIN_S)) {
-                keptFailed[k] = failed.getValue(k)
-                continue
+            val at = failed[k]
+            if (at != null) {
+                // Kept with its count until it is answered, so another failure waits longer
+                val n = failures[k] ?: 1
+                keptFailed[k] = at
+                keptFailures[k] = n
+                if (lately(at, failedWait(n))) continue
             }
             // The same words in one place, however the database grouped them
             val counts = LinkedHashMap<Pair<String, String>, Int>()
@@ -158,18 +218,158 @@ object Lengths {
             asks += LengthAsk(key = k, t = best.first, a = best.second, plays = counts.values.sum())
         }
         asks.sortWith(compareByDescending<LengthAsk> { it.plays }.thenComparator { x, y -> byText.compare(x.key, y.key) })
-        return LengthPlan(fill, asks, keptNone, keptFailed)
+        return LengthPlan(fill, asks, keptNone, keptFailed, keptFailures)
+    }
+
+    /** A run's plan, read from [store] as the archive is now (under the write lock). */
+    suspend fun plan(store: LengthsStore, nowS: Long, library: Map<String, Long> = emptyMap(), streak: Int = 0): LengthsRunState {
+        val guessed = guessedBySong(store.guessed())
+        val prev = store.mark()
+        val plan = planLengths(guessed, Scrobbles.bestLengths(store.knownLengths(), library), prev?.none.orEmpty(), nowS, prev?.failed.orEmpty(), prev?.failures.orEmpty())
+        return LengthsRunState(
+            guessed = guessed,
+            fill = plan.fill,
+            asks = ArrayDeque(plan.asks),
+            none = LinkedHashMap(plan.none),
+            failed = LinkedHashMap(plan.failed),
+            failures = LinkedHashMap(plan.failures),
+            timed = prev?.timed ?: 0,
+            streak = streak,
+        )
     }
 
     /**
-     * lengths.ts `fillLengths`: one slice of the pass. Plans against the archive as it is, fills what Spotify and the library
-     * know, then asks Last.fm for up to [max] songs in order for up to [maxMs] (by [clock], a monotonic one), writing each answer
-     * before the next ask. The caller holds the write lock. A song still busy after every try is left for [FAILED_AGAIN_S] and
-     * the next asked; [FAILS_IN_A_ROW] of them, a reconnect or an unavailable reader end the slice ([LengthsRun.stopped]). What was
-     * written stays, and the mark is saved at the end.
+     * lengths.ts `fillLengths`'s slice, over a run's plan: fills what Spotify and the library know (the run's first slice), then
+     * asks Last.fm for up to [max] songs in order for up to [maxMs] (by [clock], a monotonic one), and writes what it learnt in one
+     * go at its end ([LengthsStore.time], then the mark). The caller holds the write lock.
+     * - A song still busy after [LENGTH_TRIES] waits ([failedWait]) and the next is asked; [FAILS_IN_A_ROW] in a row, counting the
+     *   run's earlier slices, end the slice ([LengthsRun.stopped] BUSY), and the run.
+     * - An answer that isn't one ([LastfmFailure.UNAVAILABLE], or an ask that throws) marks its song failed too, then ends the
+     *   slice, so the next pass goes on to the next song. A reconnect ends it, marking nothing.
+     * - A limit ([LastfmError.limited]: a rate limit, the daily cap) ends it at once, marking nothing, with when to come back.
+     * - A song whose rows can't be found when written (none timed) is marked as having no length, so it can't sit at the front.
      *
      * A cancelled coroutine (the web's stop) reads and writes nothing if it was cancelled before it began; cancelled part way, it
-     * saves the mark and goes on being cancelled (the web returns `stopped` instead).
+     * writes what it learnt and goes on being cancelled (the web returns `stopped` instead).
+     */
+    suspend fun slice(
+        state: LengthsRunState,
+        store: LengthsStore,
+        look: LengthReader,
+        nowS: Long,
+        max: Int = SLICE,
+        maxMs: Long? = null,
+        gapMs: Long = ImportScrobbles.PAGE_GAP_MS,
+        busyMs: Long = ImportScrobbles.BUSY_WAIT_MS,
+        clock: () -> Long = { System.nanoTime() / 1_000_000 },
+        /** Rows were rewritten (as written, at the slice's end): a slice stopped part way has still changed the hours. */
+        onTimed: (Int) -> Unit = {},
+    ): LengthsRun {
+        // Stopped while it waited for the lock: nothing read, nothing written
+        currentCoroutineContext().ensureActive()
+        val until = maxMs?.let { clock() + it }
+        // What this slice learnt, written at its end: songs to time (key, spellings, ms), in order
+        val pending = ArrayList<Triple<String, List<GuessedSpelling>, Long>>()
+        for (f in state.fill) pending += Triple(f.key, f.spellings, f.ms)
+        state.fill = emptyList()
+        var rows = 0
+        var asked = 0
+        var stopped: LastfmFailure? = null
+        var retryAt: Long? = null
+        fun fail(key: String) {
+            state.failed[key] = nowS
+            state.failures[key] = (state.failures[key] ?: 0) + 1
+        }
+        suspend fun write() {
+            if (pending.isNotEmpty()) {
+                val counts = store.time(pending.map { it.second to it.third })
+                var timedNow = 0
+                for ((i, p) in pending.withIndex()) {
+                    val n = counts.getOrElse(i) { 0 }
+                    if (n > 0) {
+                        timedNow += n
+                    } else {
+                        // Its rows weren't there to time: no length, rather than the front of every plan from now on
+                        state.none[p.first] = nowS
+                        state.failed.remove(p.first)
+                        state.failures.remove(p.first)
+                    }
+                }
+                pending.clear()
+                rows += timedNow
+                state.timed += timedNow
+                if (timedNow > 0) onTimed(timedNow)
+            }
+            store.setMark(LengthsMark(none = state.none.toMap(), failed = state.failed.toMap(), failures = state.failures.toMap(), timed = state.timed, at = nowS))
+        }
+        val count = minOf(max, state.asks.size)
+        try {
+            for (i in 0 until count) {
+                currentCoroutineContext().ensureActive()
+                if (i > 0 && until != null && clock() >= until) break
+                val ask = state.asks.first()
+                val a: LengthAnswer? = try {
+                    ImportScrobbles.patiently(busyMs, LENGTH_TRIES) { look.look(ask.a, ask.t) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: LastfmError) {
+                    when {
+                        // A limit isn't the song's: it stays first, nothing marked, and the run comes back when it lifts
+                        e.limited -> {
+                            retryAt = e.retryAt
+                            throw e
+                        }
+                        e.kind == LastfmFailure.RECONNECT -> throw e
+                        e.kind == LastfmFailure.BUSY -> null
+                        else -> {
+                            // An answer that isn't one: this song waits too, so the next pass goes on to the next one
+                            state.asks.removeFirst()
+                            asked++
+                            fail(ask.key)
+                            throw LastfmError(LastfmFailure.UNAVAILABLE)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // An ask that throws (a fault, an answer that couldn't be read): the same
+                    state.asks.removeFirst()
+                    asked++
+                    fail(ask.key)
+                    throw LastfmError(LastfmFailure.UNAVAILABLE)
+                }
+                state.asks.removeFirst()
+                asked++
+                if (a == null) {
+                    // Busy after its tries: this song waits, the next is asked; several in a row is Last.fm down
+                    fail(ask.key)
+                    state.streak++
+                    if (state.streak >= FAILS_IN_A_ROW) throw LastfmError(LastfmFailure.BUSY)
+                } else {
+                    state.streak = 0
+                    // Answered: no longer failing
+                    state.failed.remove(ask.key)
+                    state.failures.remove(ask.key)
+                    if (a.ms != null && a.ms != 0L) {
+                        pending += Triple(ask.key, state.guessed[ask.key].orEmpty(), Scrobbles.scrobbleMs(a.ms))
+                    } else {
+                        state.none[ask.key] = nowS
+                    }
+                }
+                if (i < count - 1) delay(if (a?.hit == true) 0 else gapMs)
+            }
+        } catch (e: CancellationException) {
+            // Stopped part way: what it learnt is kept, as the web saves after a stop
+            withContext(NonCancellable) { write() }
+            throw e
+        } catch (e: LastfmError) {
+            stopped = e.kind
+        }
+        write()
+        return LengthsRun(rows = rows, asked = asked, left = state.asks.size, stopped = stopped, streak = state.streak, retryAt = retryAt)
+    }
+
+    /**
+     * lengths.ts `fillLengths`: one slice planned against the archive as it is ([plan] then [slice]), as the web runs every slice;
+     * [streak]: the songs failing in a row before it.
      */
     suspend fun fill(
         store: LengthsStore,
@@ -181,67 +381,11 @@ object Lengths {
         gapMs: Long = ImportScrobbles.PAGE_GAP_MS,
         busyMs: Long = ImportScrobbles.BUSY_WAIT_MS,
         clock: () -> Long = { System.nanoTime() / 1_000_000 },
-        /** Rows were rewritten (each fill and each length, as written): a slice stopped part way has still changed the hours. */
+        streak: Int = 0,
         onTimed: (Int) -> Unit = {},
     ): LengthsRun {
         // Stopped while it waited for the lock: nothing read, nothing written
         currentCoroutineContext().ensureActive()
-        val until = maxMs?.let { clock() + it }
-        val guessed = guessedBySong(store.guessed())
-        val prev = store.mark()
-        val plan = planLengths(guessed, Scrobbles.bestLengths(store.knownLengths(), library), prev?.none.orEmpty(), nowS, prev?.failed.orEmpty())
-        val none = LinkedHashMap(plan.none)
-        val failed = LinkedHashMap(plan.failed)
-        var rows = 0
-        var asked = 0
-        var left = plan.asks.size
-        suspend fun save() = store.setMark(LengthsMark(none = none.toMap(), failed = failed.toMap(), timed = (prev?.timed ?: 0) + rows, at = nowS))
-        for (f in plan.fill) {
-            val n = store.time(f.spellings, f.ms)
-            rows += n
-            if (n > 0) onTimed(n)
-        }
-        val asks = plan.asks.take(max)
-        var inARow = 0
-        var stopped: LastfmFailure? = null
-        try {
-            for ((i, ask) in asks.withIndex()) {
-                currentCoroutineContext().ensureActive()
-                if (i > 0 && until != null && clock() >= until) break
-                val a: LengthAnswer? = try {
-                    ImportScrobbles.patiently(busyMs) { look.look(ask.a, ask.t) }
-                } catch (e: LastfmError) {
-                    if (e.kind != LastfmFailure.BUSY) throw e
-                    null
-                }
-                asked++
-                left--
-                if (a == null) {
-                    // Busy after every try: this song waits, the next is asked; several in a row is Last.fm down
-                    failed[ask.key] = nowS
-                    save()
-                    if (++inARow >= FAILS_IN_A_ROW) throw LastfmError(LastfmFailure.BUSY)
-                } else {
-                    inARow = 0
-                    if (a.ms != null && a.ms != 0L) {
-                        val n = store.time(guessed[ask.key].orEmpty(), Scrobbles.scrobbleMs(a.ms))
-                        rows += n
-                        if (n > 0) onTimed(n)
-                    } else {
-                        none[ask.key] = nowS
-                        save()
-                    }
-                }
-                if (i < asks.size - 1) delay(if (a?.hit == true) 0 else gapMs)
-            }
-        } catch (e: CancellationException) {
-            // Stopped part way: what it learnt is kept, as the web saves after a stop
-            withContext(NonCancellable) { save() }
-            throw e
-        } catch (e: LastfmError) {
-            stopped = e.kind
-        }
-        save()
-        return LengthsRun(rows = rows, asked = asked, left = left, stopped = stopped)
+        return slice(plan(store, nowS, library, streak), store, look, nowS, max, maxMs, gapMs, busyMs, clock, onTimed)
     }
 }

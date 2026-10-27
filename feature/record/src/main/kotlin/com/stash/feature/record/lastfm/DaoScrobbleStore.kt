@@ -55,19 +55,20 @@ internal class DaoScrobbleStore(
 }
 
 /**
- * The lengths pass's archive in the database, for one slice: the guessed scrobbles by spelling ([RecordPlayDao.guessed]), a
- * song's rows timed by their id range ([RecordPlayDao.timeAll]), and its mark: the songs it couldn't time in `record_lengths`
- * ([RecordLengthDao]), its count and time beside the import record ([RecordImportStore.setLengths]).
+ * The lengths pass's archive in the database, for one run: the guessed scrobbles by spelling ([RecordPlayDao.guessed]), a slice's
+ * songs timed by their id ranges in one transaction ([RecordPlayDao.timeSongs]), and its mark: the songs it couldn't time in
+ * `record_lengths` ([RecordLengthDao]: `kind` 0 for no length, else how many times in a row its ask failed), its count and time
+ * beside the import record ([RecordImportStore.setLengths]).
  *
- * The web saves its whole mark after every answer; a long history leaves thousands of songs Last.fm can't time, so each save here
- * writes only what moved since the last (the first, everything the plan pruned away): the same mark, row for row.
+ * The mark is written once a slice, and only what moved since the last write (the first, everything the plan pruned away); the
+ * count and time in the preferences only when they changed: thousands of songs Last.fm can't time never rewrite the lot.
  */
 internal class DaoLengthsStore(
     private val dao: RecordPlayDao,
     private val lengths: RecordLengthDao,
     private val store: RecordImportStore,
 ) : LengthsStore {
-    /** The mark as the table holds it now, once read. */
+    /** The mark as it is kept now, once read. */
     private var written: LengthsMark? = null
     private var read = false
 
@@ -83,7 +84,8 @@ internal class DaoLengthsStore(
         } else {
             LengthsMark(
                 none = rows.filter { it.kind == RecordLengthEntity.NONE }.associate { it.key to it.at },
-                failed = rows.filter { it.kind == RecordLengthEntity.FAILED }.associate { it.key to it.at },
+                failed = rows.filter { it.kind != RecordLengthEntity.NONE }.associate { it.key to it.at },
+                failures = rows.filter { it.kind != RecordLengthEntity.NONE }.associate { it.key to it.kind },
                 timed = store.info.value.lengthsTimed,
                 at = at ?: 0,
             )
@@ -98,25 +100,26 @@ internal class DaoLengthsStore(
         val before = written
         val was = HashMap<String, Pair<Int, Long>>()
         before?.none?.forEach { (k, at) -> was[k] = RecordLengthEntity.NONE to at }
-        before?.failed?.forEach { (k, at) -> was[k] = RecordLengthEntity.FAILED to at }
+        before?.failed?.forEach { (k, at) -> was[k] = (before.failures[k] ?: 1) to at }
         val now = HashMap<String, Pair<Int, Long>>()
         mark.none.forEach { (k, at) -> now[k] = RecordLengthEntity.NONE to at }
-        mark.failed.forEach { (k, at) -> now[k] = RecordLengthEntity.FAILED to at }
+        mark.failed.forEach { (k, at) -> now[k] = (mark.failures[k] ?: 1).coerceAtLeast(1) to at }
         val put = now.filter { (k, v) -> was[k] != v }.map { (k, v) -> RecordLengthEntity(k, v.first, v.second) }
         val drop = was.keys.filter { it !in now }
         if (put.isNotEmpty() || drop.isNotEmpty()) lengths.apply(put, drop)
-        store.setLengths(mark.timed, mark.at)
+        if (before == null || before.timed != mark.timed || before.at != mark.at) store.setLengths(mark.timed, mark.at)
         written = mark
     }
 
-    override suspend fun time(spellings: List<GuessedSpelling>, ms: Long): Int {
-        if (spellings.isEmpty()) return 0
-        return dao.timeAll(
-            spellings.map {
-                val fold = SongKey.fold(it.t)
-                RecordPlayDao.Spelling(it.t, it.a, "$fold|", "$fold}")
+    override suspend fun time(songs: List<Pair<List<GuessedSpelling>, Long>>): List<Int> {
+        if (songs.isEmpty()) return emptyList()
+        return dao.timeSongs(
+            songs.map { (spellings, ms) ->
+                spellings.map {
+                    val fold = SongKey.fold(it.t)
+                    RecordPlayDao.Spelling(it.t, it.a, "$fold|", "$fold}")
+                } to ms
             },
-            ms,
         )
     }
 }

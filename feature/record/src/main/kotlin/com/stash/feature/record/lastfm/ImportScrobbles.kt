@@ -29,7 +29,14 @@ data class LastfmMark(
     val at: Long,
     /** The Last.fm rows other accounts had brought in when this one's import began (they stay in the record). Set: [added] is counted from reads. */
     val base: Int? = null,
-)
+    /** A page before the last that listed nothing, and how many runs in a row stopped on it (the whole read's, or a top-up's). */
+    val stuck: Stuck? = null,
+    /** Pages skipped as holes ([ImportScrobbles.STUCK_RUNS]): their scrobbles, if any, never came in. */
+    val skipped: Int? = null,
+) {
+    /** lastfm.ts `stuck`: [page] stopped [runs] runs in a row as a page before the last that listed nothing; [topup]: in a top-up. */
+    data class Stuck(val page: Int, val runs: Int, val topup: Boolean = false)
+}
 
 /** How far a run is (lastfm.ts `LastfmProgress`): the page just read of how many, and the scrobbles kept so far. */
 data class LastfmProgress(val page: Int, val pages: Int, val added: Int)
@@ -49,8 +56,17 @@ enum class LastfmFailure {
     OTHER,
 }
 
-/** lastfm.ts `LastfmError`: a page that couldn't be read, and why. */
-class LastfmError(val kind: LastfmFailure) : Exception("Last.fm: $kind")
+/**
+ * lastfm.ts `LastfmError`: a page (or a length) that couldn't be read, and why. [empty]: busy because a page before the last listed
+ * nothing (a hole in the paging, not an outage: counted, [ImportScrobbles.STUCK_RUNS]). [limited]: a rate limit or the daily cap,
+ * not to be asked again before [retryAt] (epoch ms): never waited out in place.
+ */
+class LastfmError(
+    val kind: LastfmFailure,
+    val empty: Boolean = false,
+    val limited: Boolean = false,
+    val retryAt: Long? = null,
+) : Exception("Last.fm: $kind")
 
 /** One page from Last.fm (lastfm.ts `PageReader`): page [page] (from 1) up to [to], from [from] when given (epoch s). */
 fun interface PageReader {
@@ -96,14 +112,25 @@ object ImportScrobbles {
     /** lastfm.ts `LATE_S`: how far below the newest scrobble kept a top-up reads (Last.fm takes scrobbles stamped up to 14 days back). */
     const val LATE_S = 14 * 86_400L
 
-    /** lastfm.ts `patiently`: [ask], asked again while Last.fm is busy (at most [BUSY_TRIES] times, waiting [wait] × the attempt between). */
-    internal suspend fun <T> patiently(wait: Long, ask: suspend () -> T): T {
+    /**
+     * lastfm.ts `STUCK_RUNS`: a page before the last that still lists nothing after this many runs, each asking it [BUSY_TRIES]
+     * times over minutes, is a hole in Last.fm's paging, not a stumble: the next run skips it (and says so in the mark) so the
+     * import can finish. Three runs are three separate tries at different times; more would leave the import stuck for the
+     * listener, who taps Carry on each time.
+     */
+    const val STUCK_RUNS = 3
+
+    /**
+     * lastfm.ts `patiently`: [ask], asked again while Last.fm is busy (at most [tries] times, waiting [wait] × the attempt between).
+     * A limit ([LastfmError.limited]) is never waited out here: it says when to come back.
+     */
+    internal suspend fun <T> patiently(wait: Long, tries: Int = BUSY_TRIES, ask: suspend () -> T): T {
         var i = 0
         while (true) {
             try {
                 return ask()
             } catch (e: LastfmError) {
-                if (e.kind != LastfmFailure.BUSY || i >= BUSY_TRIES - 1) throw e
+                if (e.kind != LastfmFailure.BUSY || e.limited || i >= tries - 1) throw e
                 delay(wait * (i + 1))
             }
             i++
@@ -111,14 +138,14 @@ object ImportScrobbles {
     }
 
     /**
-     * lastfm.ts `steadily`: a page, asked patiently, and asked again (bounded) while it comes back empty saying the history is
-     * shorter than the run knew ([known] pages): that is Last.fm stumbling as often as a history that shrank. Still so after
-     * [BUSY_TRIES] asks, it is believed.
+     * lastfm.ts `steadily`: a page, asked patiently, and asked again (bounded) while it says the history is shorter than the run
+     * knew ([known] pages), empty or not: that is Last.fm stumbling as often as a history that shrank, and a smaller total would
+     * end the read short. Still so after [BUSY_TRIES] asks, it is believed.
      */
     private suspend fun steadily(read: PageReader, page: Int, to: Long, from: Long?, known: Int, wait: Long): HistoryPage {
         var p = patiently(wait) { read.read(page, to, from) }
         var i = 1
-        while (i < BUSY_TRIES && p.plays.isEmpty() && p.pages < known && page <= known) {
+        while (i < BUSY_TRIES && p.pages < known && page <= known) {
             delay(wait * i)
             p = patiently(wait) { read.read(page, to, from) }
             i++
@@ -139,7 +166,7 @@ object ImportScrobbles {
             return LastfmMark(user = user, to = nowS, next = 1, pages = 0, done = false, newest = 0, added = 0, covered = 0, at = 0, base = held.takeIf { it > 0 })
         }
         val added = if ((prev.base ?: 0) > 0) prev.added else held
-        if (prev.done && prev.newest == 0L) return prev.copy(to = nowS, next = 1, pages = 0, done = false, added = added)
+        if (prev.done && prev.newest == 0L) return prev.copy(to = nowS, next = 1, pages = 0, done = false, added = added, stuck = null)
         return prev.copy(added = added)
     }
 
@@ -150,7 +177,8 @@ object ImportScrobbles {
      * lastfm.ts `importScrobbles`: [user]'s scrobbles into [store], the rest of the whole history, then (or once that's done)
      * what is newer. Each page is planned against the archive as it is and written before the next is asked for; the mark is
      * saved after every page's plays, in the whole read and in a top-up alike. Only a page at or past Last.fm's last ends a read:
-     * an empty page before it is Last.fm stumbling, which [LastfmPages] answers as busy.
+     * an empty page before it is Last.fm stumbling, which [LastfmPages] answers as busy ([LastfmError.empty]); one that stays so
+     * [STUCK_RUNS] runs in a row is skipped ([LastfmMark.skipped]).
      *
      * [library]: the library's song lengths ([Scrobbles.libraryLengths]), for the rows the archive's Spotify plays can't time.
      * [onStart]: the mark the run starts from, its count taken from the archive (the done line counts from it). The caller holds
@@ -189,10 +217,33 @@ object ImportScrobbles {
             return Took(add.size, held, plan.covered, maxOf(0L, plays.maxOfOrNull { it.uts } ?: 0L))
         }
 
+        /** The run stopped on an empty page before the last: one more run for it ([topup]: in a top-up), kept with the mark. */
+        suspend fun stuckOn(e: LastfmError, page: Int, topup: Boolean) {
+            if (!e.empty) return
+            val s = mark.stuck
+            val runs = if (s != null && s.page == page && s.topup == topup) s.runs + 1 else 1
+            mark = mark.copy(stuck = LastfmMark.Stuck(page, runs, topup))
+            store.setMark(mark)
+        }
+
+        /** [page] has stopped [STUCK_RUNS] runs in a row: a hole, skipped. */
+        fun hole(page: Int, topup: Boolean) = mark.stuck?.let { it.page == page && it.topup == topup && it.runs >= STUCK_RUNS } == true
+
         // The whole history, from where it stopped (pages are newest first, below a fixed `to`)
         while (!mark.done) {
             val page = mark.next
-            val p = steadily(read, page, mark.to, null, mark.pages, busyMs)
+            if (hole(page, false)) {
+                mark = mark.copy(stuck = null, skipped = (mark.skipped ?: 0) + 1, next = page + 1, done = page >= mark.pages, at = nowS)
+                store.setMark(mark)
+                continue
+            }
+            val p = try {
+                steadily(read, page, mark.to, null, mark.pages, busyMs)
+            } catch (e: LastfmError) {
+                stuckOn(e, page, false)
+                throw e
+            }
+            if (mark.stuck?.let { !it.topup && it.page == page } == true) mark = mark.copy(stuck = null)
             val beside = (mark.base ?: 0) > 0
             val got = take(p.plays, own = beside)
             // Beside another account's rows the count is this account's own reads; alone, the archive's (taken at the start) and what is new
@@ -219,7 +270,20 @@ object ImportScrobbles {
             var pages = 0
             var page = 1
             while (true) {
-                val p = steadily(read, page, nowS, from, pages, busyMs)
+                if (hole(page, true)) {
+                    mark = mark.copy(stuck = null, skipped = (mark.skipped ?: 0) + 1)
+                    store.setMark(mark)
+                    if (pages != 0 && page >= pages) break
+                    page++
+                    continue
+                }
+                val p = try {
+                    steadily(read, page, nowS, from, pages, busyMs)
+                } catch (e: LastfmError) {
+                    stuckOn(e, page, true)
+                    throw e
+                }
+                if (mark.stuck?.let { it.topup && it.page == page } == true) mark = mark.copy(stuck = null)
                 pages = maxOf(pages, p.pages)
                 val got = take(p.plays, since)
                 newest = maxOf(newest, got.newest)

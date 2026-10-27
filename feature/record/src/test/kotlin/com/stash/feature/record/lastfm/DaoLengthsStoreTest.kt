@@ -73,12 +73,19 @@ class DaoLengthsStoreTest {
         store.setLengths(timed = 7, at = nowS - 100)
         val s = lengths()
         assertThat(s.mark()).isEqualTo(
-            LengthsMark(none = mapOf("gone|band" to nowS - 10), failed = mapOf(Scrobbles.songKey("A", "Band") to nowS - 5), timed = 7, at = nowS - 100),
+            LengthsMark(
+                none = mapOf("gone|band" to nowS - 10), failed = mapOf(Scrobbles.songKey("A", "Band") to nowS - 5),
+                failures = mapOf(Scrobbles.songKey("A", "Band") to 1), timed = 7, at = nowS - 100,
+            ),
         )
         s.setMark(LengthsMark(none = mapOf(Scrobbles.songKey("B", "Band") to nowS), failed = mapOf(Scrobbles.songKey("A", "Band") to nowS - 5), timed = 8, at = nowS))
         assertThat(db.recordLengthDao().all().associate { it.key to (it.kind to it.at) }).isEqualTo(
             mapOf(Scrobbles.songKey("A", "Band") to (RecordLengthEntity.FAILED to nowS - 5), Scrobbles.songKey("B", "Band") to (RecordLengthEntity.NONE to nowS)),
         )
+        // A third failure in a row is kept as its count (the table's kind), and read back so
+        s.setMark(LengthsMark(none = emptyMap(), failed = mapOf(Scrobbles.songKey("A", "Band") to nowS), failures = mapOf(Scrobbles.songKey("A", "Band") to 3), timed = 8, at = nowS))
+        assertThat(db.recordLengthDao().all().map { it.key to it.kind }).containsExactly(Scrobbles.songKey("A", "Band") to 3)
+        assertThat(lengths().mark()!!.failures).containsExactly(Scrobbles.songKey("A", "Band"), 3)
         assertThat(store.info.value.lengthsTimed).isEqualTo(8)
         assertThat(store.lengthsAt).isEqualTo(nowS)
     }

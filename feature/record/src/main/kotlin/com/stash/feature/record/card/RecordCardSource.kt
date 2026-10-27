@@ -34,16 +34,19 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
+import kotlin.coroutines.CoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.CoroutineContext
 
 /**
  * What Home's card is made from: the record's own numbers and the albums played most (for the sleeve), for the sources switched
@@ -268,26 +271,43 @@ class RecordCardSource internal constructor(
     /** A held stamp the lengths pass asked to show ([importsShown]): another value, so the plays are read again whatever the stamp. */
     private data class Shown(val n: Int, val stamp: Any)
 
+    /** What the hold hears: the stamp, or the pass's word (and whether it came while holding). */
+    private sealed interface Held {
+        data class Stamp(val s: Any) : Held
+
+        data class Word(val n: Int, val holding: Boolean) : Held
+    }
+
     /**
      * [stamps] as they come, except while [paused]: then the one before stays (the first is taken whatever, so Home has a card),
-     * until [shown] moves on, which reads the plays as they are then. (Not the stamp of that moment: the database's own may come
-     * a moment after the pass's word.)
+     * until [shown] moves on, which reads the plays as they are then. While held, [stamps] isn't read at all (it sums the table on
+     * every write, a page or a slice at a time): once the writing is over it is read again.
      */
     private fun heldWhile(stamps: Flow<Any>, paused: Flow<Boolean>, shown: Flow<Int>): Flow<Any> = flow {
         var held: Any? = null
         var seen: Int? = null
-        combine(stamps, paused, shown) { s, p, w -> Triple(s, p, w) }.collect { (s, p, w) ->
-            val moved = seen != null && w != seen
-            seen = w
-            when {
-                !p || held == null -> {
-                    held = s
-                    emit(s)
+        paused.distinctUntilChanged().flatMapLatest { p ->
+            val live = when {
+                !p -> stamps
+                held == null -> stamps.take(1)
+                else -> emptyFlow()
+            }
+            merge(live.map { Held.Stamp(it) }, shown.map { Held.Word(it, p) })
+        }.collect { e ->
+            when (e) {
+                is Held.Stamp -> {
+                    held = e.s
+                    emit(e.s)
                 }
-                moved -> {
-                    val h = Shown(w, s)
-                    held = h
-                    emit(h)
+                is Held.Word -> {
+                    val moved = seen != null && e.n != seen
+                    seen = e.n
+                    val h = held
+                    if (moved && e.holding && h != null) {
+                        val s = Shown(e.n, h)
+                        held = s
+                        emit(s)
+                    }
                 }
             }
         }

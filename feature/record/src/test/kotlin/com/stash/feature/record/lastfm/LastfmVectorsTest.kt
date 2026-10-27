@@ -45,7 +45,11 @@ class LastfmVectorsTest {
             val got = LastfmHistory.read(c["body"]!!, c.int("page"), c.long("nowS"), signed = c["auth"]!!.jsonPrimitive.boolean)
             val want = c["answer"]!!.jsonObject
             if (!want["ok"]!!.jsonPrimitive.boolean) {
-                val expected = if (want["reconnect"] != null) HistoryAnswer.Reconnect else HistoryAnswer.Retry
+                val expected = when {
+                    want["reconnect"] != null -> HistoryAnswer.Reconnect
+                    want["empty"] != null -> HistoryAnswer.Empty
+                    else -> HistoryAnswer.Retry
+                }
                 assertWithMessage(name).that(got).isEqualTo(expected)
                 continue
             }
@@ -148,7 +152,8 @@ class LastfmVectorsTest {
             val guessed = Lengths.guessedBySong(MemoryLengthsStore.spellings(rows))
             val wantGuessed = c["guessed"]!!.jsonObject.mapValues { (_, ids) -> ids.jsonArray.size }
             assertWithMessage("$name: guessed").that(guessed.mapValues { (_, s) -> s.sumOf { it.n } }).isEqualTo(wantGuessed)
-            val plan = Lengths.planLengths(guessed, longs(c["known"]!!.jsonObject), longs(c["none"]!!.jsonObject), c.long("nowS"), longs(c["failed"]!!.jsonObject))
+            val failures = (c["failures"] as? JsonObject)?.mapValues { it.value.jsonPrimitive.int }.orEmpty()
+            val plan = Lengths.planLengths(guessed, longs(c["known"]!!.jsonObject), longs(c["none"]!!.jsonObject), c.long("nowS"), longs(c["failed"]!!.jsonObject), failures)
             val want = c["plan"]!!.jsonObject
             // The web's fill is the rows themselves: here, each song's key, the ms its rows will play, and how many there are
             val wantFill = want["fill"]!!.jsonArray.map { row(it.jsonObject) }.groupBy { Scrobbles.songKey(it.t, it.a) }
@@ -160,12 +165,17 @@ class LastfmVectorsTest {
             )
             assertWithMessage("$name: none").that(plan.none).isEqualTo(longs(want["none"]!!.jsonObject))
             assertWithMessage("$name: failed").that(plan.failed).isEqualTo(longs(want["failed"]!!.jsonObject))
+            assertWithMessage("$name: failures").that(plan.failures).isEqualTo(want["failures"]!!.jsonObject.mapValues { it.value.jsonPrimitive.int })
         }
     }
 
+    /**
+     * The web writes each answer as it comes; the phone writes a slice at its end, in one go: the asks, the slice's result, its last
+     * save (the mark as the slice leaves it) and the rows after it are the web's.
+     */
     @Test fun `lengths pass slices ask, write, save and stop as the web's fillLengths does`() = runTest {
         val cases = resource("lengths.json").jsonObject["fill"]!!.jsonArray
-        assertThat(cases.size).isAtLeast(10)
+        assertThat(cases.size).isAtLeast(15)
         for (c in cases.map { it.jsonObject }) {
             val name = c.str("name")
             val store = MemoryLengthsStore(c["have"]!!.jsonArray.map { row(it.jsonObject) }, (c["mark"] as? JsonObject)?.let(::lengthsMark))
@@ -179,18 +189,24 @@ class LastfmVectorsTest {
                 val look = LengthReader { artist, track ->
                     asked += "$track / $artist"
                     val f = fails.firstOrNull { f -> (f["at"] as? JsonArray)?.any { it.jsonPrimitive.int == asked.size } == true || f.opt("track") == track }
-                    if (f != null) throw LastfmError(LastfmFailure.valueOf(f.str("kind").uppercase()))
+                    if (f != null) {
+                        if (f.str("kind") == "throws") throw IllegalStateException("not a length")
+                        throw LastfmError(LastfmFailure.valueOf(f.str("kind").uppercase()))
+                    }
                     // As the web's reader reads the Worker's answer: a length above 0 and at most 6 h, else none
                     val v = (lengths[track] as? JsonPrimitive)?.doubleOrNull
                     LengthAnswer(v?.takeIf { it > 0 && it <= Scrobbles.MAX_SONG_MS }?.toLong(), hit)
                 }
                 val library = Scrobbles.libraryLengths(sl["library"]!!.jsonArray.map { item(it.jsonObject) })
-                val run = Lengths.fill(store, look, sl.long("nowS"), library, max = (sl["max"] as? JsonPrimitive)?.int ?: Lengths.SLICE, gapMs = 0, busyMs = 0)
+                val run = Lengths.fill(
+                    store, look, sl.long("nowS"), library, max = (sl["max"] as? JsonPrimitive)?.int ?: Lengths.SLICE, gapMs = 0, busyMs = 0,
+                    streak = sl.int("streak"),
+                )
                 val want = sl["run"]!!.jsonObject
                 val wantStopped = want.opt("stopped")?.let { LastfmFailure.valueOf(it.uppercase()) }
-                assertWithMessage("$at: run").that(run).isEqualTo(LengthsRun(want.int("rows"), want.int("asked"), want.int("left"), wantStopped))
+                assertWithMessage("$at: run").that(run).isEqualTo(LengthsRun(want.int("rows"), want.int("asked"), want.int("left"), wantStopped, want.int("streak")))
                 assertWithMessage("$at: asks").that(asked).isEqualTo(sl["asked"]!!.jsonArray.map { it.jsonPrimitive.content })
-                assertWithMessage("$at: saves").that(store.saves).isEqualTo(sl["saves"]!!.jsonArray.map { lengthsMark(it.jsonObject) })
+                assertWithMessage("$at: the slice's mark").that(store.saves.lastOrNull()).isEqualTo(sl["saves"]!!.jsonArray.lastOrNull()?.jsonObject?.let(::lengthsMark))
                 assertWithMessage("$at: rows").that(store.rows.values.sortedBy { it.id }).isEqualTo(sl["rows"]!!.jsonArray.map { row(it.jsonObject) })
             }
         }
@@ -228,19 +244,23 @@ class LastfmVectorsTest {
      * page busy (or worse), or empty saying it has `pages` (`topup`: only the asks with a `from`).
      */
     private fun fakeLastfm(all: List<Scrobble>, fails: JsonArray?, calls: MutableList<Triple<Int, Long, Long?>>): PageReader {
-        class Odd(val page: Int, var times: Int, val topup: Boolean?, val kind: String?, val empty: JsonObject?)
+        class Odd(val page: Int, var times: Int, val topup: Boolean?, val kind: String?, val hole: Boolean, val empty: JsonObject?, val short: JsonObject?)
         val left = fails.orEmpty().map { it.jsonObject }.map {
-            Odd(it.int("page"), it.int("times"), (it["topup"] as? JsonPrimitive)?.boolean, it.opt("kind"), it["empty"] as? JsonObject)
+            Odd(
+                it.int("page"), it.int("times"), (it["topup"] as? JsonPrimitive)?.boolean, it.opt("kind"), (it["hole"] as? JsonPrimitive)?.boolean == true,
+                it["empty"] as? JsonObject, it["short"] as? JsonObject,
+            )
         }
         return PageReader { page, to, from ->
             val f0 = from?.takeIf { it != 0L }
             calls += Triple(page, to, f0)
+            val window = all.filter { it.uts <= to && (f0 == null || it.uts >= f0) }.sortedByDescending { it.uts }
             left.firstOrNull { it.page == page && it.times > 0 && (it.topup == null || it.topup == (f0 != null)) }?.let { f ->
                 f.times--
-                if (f.kind != null) throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()))
+                if (f.kind != null) throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()), empty = f.hole)
+                if (f.short != null) return@PageReader HistoryPage(window.drop((page - 1) * 200).take(200), page, f.short.int("pages"), f.short.int("total"))
                 return@PageReader HistoryPage(emptyList(), page, f.empty!!.int("pages"), f.empty.int("total"))
             }
-            val window = all.filter { it.uts <= to && (f0 == null || it.uts >= f0) }.sortedByDescending { it.uts }
             val pages = (window.size + 199) / 200
             HistoryPage(window.drop((page - 1) * 200).take(200), page, pages, window.size)
         }
@@ -266,11 +286,14 @@ class LastfmVectorsTest {
         user = o.str("user"), to = o.long("to"), next = o.int("next"), pages = o.int("pages"), done = o["done"]!!.jsonPrimitive.boolean,
         newest = o.long("newest"), added = o.int("added"), covered = o.int("covered"), at = o.long("at"),
         base = (o["base"] as? JsonPrimitive)?.int,
+        stuck = (o["stuck"] as? JsonObject)?.let { LastfmMark.Stuck(it.int("page"), it.int("runs"), (it["topup"] as? JsonPrimitive)?.boolean == true) },
+        skipped = (o["skipped"] as? JsonPrimitive)?.int,
     )
 
     private fun lengthsMark(o: JsonObject) = LengthsMark(
         none = longs(o["none"]!!.jsonObject),
         failed = (o["failed"] as? JsonObject)?.let(::longs).orEmpty(),
+        failures = (o["failures"] as? JsonObject)?.mapValues { it.value.jsonPrimitive.int }.orEmpty(),
         timed = (o["timed"] as? JsonPrimitive)?.int ?: 0,
         at = o.long("at"),
     )
@@ -326,7 +349,7 @@ internal class MemoryLengthsStore(have: List<ArchivePlay> = emptyList(), var mar
         saves += mark
     }
 
-    override suspend fun time(spellings: List<GuessedSpelling>, ms: Long): Int {
+    override suspend fun time(songs: List<Pair<List<GuessedSpelling>, Long>>): List<Int> = songs.map { (spellings, ms) ->
         val words = spellings.mapTo(HashSet()) { it.t to it.a }
         var n = 0
         for (e in rows.entries) {
@@ -335,7 +358,7 @@ internal class MemoryLengthsStore(have: List<ArchivePlay> = emptyList(), var mar
             e.setValue(r.copy(ms = ms, f = r.f and RecordFlags.ESTIMATED.inv()))
             n++
         }
-        return n
+        n
     }
 
     companion object {

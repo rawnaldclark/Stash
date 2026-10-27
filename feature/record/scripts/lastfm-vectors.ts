@@ -11,7 +11,8 @@
  *   filtered by `to` and `from`, busy, failing or empty for a few asks of one page), every ask, every progress, the mark it
  *   started from, the mark and the archive's ids; and `startMark` alone (start.json).
  * - lengths.json: the lengths pass (src/lib/spotify/lengths.ts): `libraryLengths`, `bestLengths`, `scrobbleMs`, `guessedBySong`
- *   with `planLengths`, and `fillLengths` slices against a fake length reader, every ask, every save of the mark, the rows after.
+ *   with `planLengths` (failures and their waits), and `fillLengths` slices against a fake length reader, the streak carried from
+ *   slice to slice as the service carries it, every ask, every save of the mark, the rows after.
  * - service.json: the service's done line state after each Last.fm run (src/lib/spotify/service.ts `importLastfm`).
  * - words.json: lastfm.ts's English (`doneLine`, the reconnect line, the hours note).
  * - sources.json: record.ts `readSources`, `present`, `shownSources` and `toggleSource` over every choice and source.
@@ -199,7 +200,12 @@ write('plan.json', { plan, covered });
 // ── runs.json ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A page asked for that Last.fm answers oddly, `times` times: busy (or worse), or empty saying it has `pages`. `topup`: only asks with a `from`. */
-type Odd = { page: number; times: number; topup?: boolean; kind?: 'busy' | 'reconnect' | 'unavailable'; empty?: { pages: number; total: number } };
+/**
+ * A page asked for that Last.fm answers oddly, `times` times: busy (or worse; `hole`: busy because the page listed nothing, the
+ * Worker's `empty`), empty saying it has `pages`, or (`short`) its plays as they are but saying it has `pages`. `topup`: only asks
+ * with a `from`.
+ */
+type Odd = { page: number; times: number; topup?: boolean; kind?: 'busy' | 'reconnect' | 'unavailable'; hole?: boolean; empty?: { pages: number; total: number }; short?: { pages: number; total: number } };
 type Q = { page: number; to: number; from?: number };
 /** Last.fm as the web's test fakes it: the window below `to` (and from `from`), newest first, 200 a page. */
 function fakeLastfm(all: Scrobble[], odd: Odd[], calls: Q[]): PageReader {
@@ -207,12 +213,13 @@ function fakeLastfm(all: Scrobble[], odd: Odd[], calls: Q[]): PageReader {
 	return async (q) => {
 		calls.push(q.from ? { page: q.page, to: q.to, from: q.from } : { page: q.page, to: q.to });
 		const f = left.find((x) => x.page === q.page && x.times > 0 && (x.topup === undefined || x.topup === !!q.from));
+		const window = all.filter((s) => s.uts <= q.to && (!q.from || s.uts >= q.from)).sort((a, b) => b.uts - a.uts);
 		if (f) {
 			f.times--;
-			if (f.kind) throw new LastfmError(f.kind);
+			if (f.kind) throw new LastfmError(f.kind, !!f.hole);
+			if (f.short) return { plays: window.slice((q.page - 1) * 200, q.page * 200), page: q.page, pages: f.short.pages, total: f.short.total } satisfies HistoryPage;
 			return { plays: [], page: q.page, pages: f.empty!.pages, total: f.empty!.total } satisfies HistoryPage;
 		}
-		const window = all.filter((s) => s.uts <= q.to && (!q.from || s.uts >= q.from)).sort((a, b) => b.uts - a.uts);
 		const pages = Math.ceil(window.length / 200);
 		return { plays: window.slice((q.page - 1) * 200, q.page * 200), page: q.page, pages, total: window.length } satisfies HistoryPage;
 	};
@@ -285,6 +292,27 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 		steps: [
 			{ user: 'me', nowS: T + 100_000, scrobbles: many(450), fails: [{ page: 2, times: 1, kind: 'reconnect' }] },
 			{ user: 'me', nowS: T + 100_000, scrobbles: many(450), before: async (a) => ({ add: planScrobbles(await a.all(), many(450).slice(50, 250), new Map(), songKey).add }) }
+		]
+	},
+	{ name: 'a page with plays saying fewer pages is asked again, and the read goes on', steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 1, short: { pages: 2, total: 400 } }] }] },
+	{ name: 'a smaller total that stays is believed, after six asks', mark: { user: 'me', to: T + 100_000, next: 2, pages: 3, done: false, newest: T + 599 * 60, added: 200, covered: 0, at: 0 }, steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 9, short: { pages: 2, total: 400 } }] }] },
+	{
+		name: 'a page empty before the last, three runs in a row, is skipped and the import completes',
+		steps: [1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy' as const, hole: true }] }))
+	},
+	{ name: 'an outage is not a hole: plain busy pages are never skipped', steps: [1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy' as const }] })) },
+	{
+		name: 'a stuck page that reads again is no longer stuck',
+		steps: [
+			{ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy', hole: true }] },
+			{ user: 'me', nowS: T + 100_000, scrobbles: many(600) }
+		]
+	},
+	{
+		name: 'a top-up’s page empty before its last, three top-ups in a row, is skipped and the window moves',
+		steps: [
+			{ user: 'me', nowS: T + 100_000, scrobbles: many(5) },
+			...[1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 900_000, scrobbles: [...many(5), ...many(450, T + 200_000, 'New')], fails: [{ page: 2, times: 99, topup: true, kind: 'busy' as const, hole: true }] }))
 		]
 	},
 	{
@@ -368,7 +396,12 @@ const ms = msCases.map((x) => ({ length: x, ms: scrobbleMs(x) }));
 const k = (t: string) => songKey(t, 'Band');
 const planRows = guessedRows([sc('Rare', T), sc('Hit', T + 1), sc('Hit', T + 2), sc('hit', T + 3), sc('Hit - 2011 Remaster', T + 4), sc('Known', T + 5), sc('Known', T + 6), sc('Missed', T + 7), sc('Missed', T + 8), sc('Old Miss', T + 9)]);
 const planAll: ArchivePlay[] = [...planRows, spotify('Spotify Song', T - 9000), { ...guessedRows([sc('Timed', T + 10)])[0]!, ms: 190_000, f: 64 }];
-const lengthPlanCases: { name: string; rows: ArchivePlay[]; known: Record<string, number>; none: Record<string, number>; failed: Record<string, number>; nowS: number }[] = [
+const lengthPlanCases: { name: string; rows: ArchivePlay[]; known: Record<string, number>; none: Record<string, number>; failed: Record<string, number>; failures?: Record<string, number>; nowS: number }[] = [
+	{ name: 'failed twice in a row, a day and a half ago: two days to wait, its count kept', rows: guessedRows([sc('Bad', T), sc('Good', T + 1)]), known: {}, none: {}, failed: { [k('Bad')]: NOW - 1.5 * 86_400 }, failures: { [k('Bad')]: 2 }, nowS: NOW },
+	{ name: 'failed twice, two days ago: asked again, its count kept', rows: guessedRows([sc('Bad', T), sc('Good', T + 1)]), known: {}, none: {}, failed: { [k('Bad')]: NOW - 2 * 86_400 }, failures: { [k('Bad')]: 2 }, nowS: NOW },
+	{ name: 'failed nine times: sixteen days at most', rows: guessedRows([sc('Bad', T)]), known: {}, none: {}, failed: { [k('Bad')]: NOW - 15 * 86_400 }, failures: { [k('Bad')]: 9 }, nowS: NOW },
+	{ name: 'a failure long ago is kept with its count until answered', rows: guessedRows([sc('Bad', T)]), known: {}, none: {}, failed: { [k('Bad')]: NOW - 400 * 86_400 }, failures: { [k('Bad')]: 1 }, nowS: NOW },
+	{ name: 'a failed song Spotify now knows is filled, its failure gone', rows: guessedRows([sc('Bad', T)]), known: { [k('Bad')]: 201_000 }, none: {}, failed: { [k('Bad')]: NOW - 10 }, failures: { [k('Bad')]: 3 }, nowS: NOW },
 	{ name: 'fills what is known, asks the most played first in the spelling most use', rows: planAll, known: { [k('Known')]: 222_000 }, none: { [k('Missed')]: NOW - 86_400, [k('Old Miss')]: NOW - 30 * 86_400 - 1, [k('Gone')]: NOW - 10 }, failed: {}, nowS: NOW },
 	{ name: 'a miss exactly 30 days old is asked again; one a second younger waits', rows: planAll, known: {}, none: { [k('Missed')]: NOW - 30 * 86_400, [k('Old Miss')]: NOW - 30 * 86_400 + 1 }, failed: {}, nowS: NOW },
 	{ name: 'a miss from the future is asked again', rows: planAll, known: {}, none: { [k('Missed')]: NOW + 5 }, failed: { [k('Rare')]: NOW + 5 }, nowS: NOW },
@@ -379,11 +412,12 @@ const lengthPlanCases: { name: string; rows: ArchivePlay[]; known: Record<string
 ];
 const lengthPlans = lengthPlanCases.map((c) => {
 	const g = guessedBySong(c.rows);
-	return { ...c, guessed: sortedObject(new Map([...g].map(([key, rows]) => [key, rows.map((r) => r.id)]))), plan: planLengths(g, new Map(Object.entries(c.known)), c.none, c.nowS, c.failed) };
+	return { ...c, guessed: sortedObject(new Map([...g].map(([key, rows]) => [key, rows.map((r) => r.id)]))), plan: planLengths(g, new Map(Object.entries(c.known)), c.none, c.nowS, c.failed, c.failures ?? {}) };
 });
 
 /** A Last.fm that knows `lengths` (by title); `fails` throw for the asks numbered `at` (from 1, across the slice) or of `track`. */
-type LengthFail = { at?: number[]; track?: string; kind: 'busy' | 'reconnect' | 'unavailable' };
+/** `throws`: the ask throws something that isn't a LastfmError (an answer that couldn't be read). */
+type LengthFail = { at?: number[]; track?: string; kind: 'busy' | 'reconnect' | 'unavailable' | 'throws' };
 type Slice = { nowS: number; max?: number; library?: LibItem[]; lengths: Record<string, number | null>; hit?: boolean; fails?: LengthFail[] };
 const fillCases: { name: string; have: ArchivePlay[]; mark?: LengthsMark; slices: Slice[] }[] = [
 	{
@@ -415,6 +449,38 @@ const fillCases: { name: string; have: ArchivePlay[]; mark?: LengthsMark; slices
 	{ name: 'a reconnect after a length keeps the length', have: guessedRows([sc('A', T), sc('A', T + 1), sc('B', T + 2)]), slices: [{ nowS: NOW, lengths: { A: 222_000 }, fails: [{ at: [2], kind: 'reconnect' }] }] },
 	{ name: 'a mark from before: old misses pruned, the timed count grows', have: guessedRows([sc('A', T), sc('B', T + 1)]), mark: { none: { [k('B')]: NOW - 100, [k('Gone')]: NOW - 100, [k('A')]: NOW - 40 * 86_400 }, failed: { [k('Gone')]: NOW - 5 }, timed: 7, at: NOW - 100 }, slices: [{ nowS: NOW, lengths: { A: 31_000 } }] },
 	{ name: 'nothing guessed: no asks, the mark saved', have: [spotify('Only Spotify', T)], slices: [{ nowS: NOW, lengths: {} }] },
+	{
+		name: 'three songs failing in a row end the run, however its slices fall (the streak carries)',
+		have: guessedRows(Array.from({ length: 6 }, (_, i) => sc(`S${i}`, T + i))),
+		slices: [1, 2, 3].map(() => ({ nowS: NOW, max: 1, lengths: {}, fails: [{ at: [1, 2], kind: 'busy' as const }] }))
+	},
+	{
+		name: 'an answer ends a streak',
+		have: guessedRows([sc('A', T), sc('B', T + 1), sc('C', T + 2), sc('D', T + 3)]),
+		slices: [
+			{ nowS: NOW, max: 2, lengths: { C: 200_000, D: 200_000 }, fails: [{ track: 'A', kind: 'busy' }, { track: 'B', kind: 'busy' }] },
+			{ nowS: NOW, lengths: { C: 200_000, D: 200_000 } }
+		]
+	},
+	{
+		name: 'a song failing day after day waits longer each time; an answer clears it',
+		have: guessedRows([sc('Bad', T), sc('Bad', T + 1)]),
+		slices: [
+			{ nowS: NOW, lengths: {}, fails: [{ track: 'Bad', kind: 'busy' }] },
+			{ nowS: NOW + 86_400, lengths: {}, fails: [{ track: 'Bad', kind: 'busy' }] },
+			{ nowS: NOW + 2 * 86_400, lengths: {}, fails: [{ track: 'Bad', kind: 'busy' }] },
+			{ nowS: NOW + 3 * 86_400, lengths: { Bad: null } }
+		]
+	},
+	{
+		name: 'an unusable answer marks its song before the pass stops; the next pass goes on to the next',
+		have: guessedRows([sc('A', T), sc('A', T + 1), sc('B', T + 2)]),
+		slices: [
+			{ nowS: NOW, lengths: { B: 200_000 }, fails: [{ track: 'A', kind: 'unavailable' }] },
+			{ nowS: NOW + 60, lengths: { B: 200_000 }, fails: [{ track: 'A', kind: 'unavailable' }] }
+		]
+	},
+	{ name: 'an ask that throws marks its song too', have: guessedRows([sc('A', T), sc('B', T + 1)]), slices: [{ nowS: NOW, lengths: {}, fails: [{ track: 'A', kind: 'throws' }] }] },
 	{ name: 'lengths over six hours or under 0 are none; under 30 s a listen', have: guessedRows([sc('Long', T), sc('Neg', T + 1), sc('Tiny', T + 2), sc('Max', T + 3)]), slices: [{ nowS: NOW, lengths: { Long: 6 * 3600_000 + 1, Neg: -5, Tiny: 1, Max: 6 * 3600_000 } }] }
 ];
 /** The Worker's answer read as httpLengthReader reads it (a length over MAX_SONG_MS or not above 0 is none). */
@@ -425,6 +491,7 @@ for (const c of fillCases) {
 	await base.apply(c.have, []);
 	if (c.mark) await base.set('lengths', c.mark);
 	const slices = [];
+	let streak = 0;
 	for (const sl of c.slices) {
 		const saves: LengthsMark[] = [];
 		// Every save of the mark, as it was given
@@ -433,11 +500,13 @@ for (const c of fillCases) {
 		const look: LengthReader = async ({ artist, track: title }) => {
 			asked.push(`${title} / ${artist}`);
 			const f = (sl.fails ?? []).find((x) => (x.at && x.at.includes(asked.length)) || x.track === title);
-			if (f) throw new LastfmError(f.kind);
+			if (f) throw f.kind === 'throws' ? new TypeError('not a length') : new LastfmError(f.kind);
 			return { ms: asRead(sl.lengths[title]), hit: sl.hit ?? true };
 		};
-		const run = await fillLengths(archive, look, { nowS: sl.nowS, lengths: libraryLengths(sl.library ?? [], songKey), max: sl.max, gapMs: 0, busyMs: 0 });
-		slices.push({ ...sl, library: sl.library ?? [], fails: sl.fails ?? [], asked, run, saves, rows: sortById(await base.all()) });
+		// The streak carries from slice to slice, as the service runs them
+		const run = await fillLengths(archive, look, { nowS: sl.nowS, lengths: libraryLengths(sl.library ?? [], songKey), max: sl.max, gapMs: 0, busyMs: 0, streak });
+		slices.push({ ...sl, library: sl.library ?? [], fails: sl.fails ?? [], streak, asked, run, saves, rows: sortById(await base.all()) });
+		streak = run.streak;
 	}
 	fills.push({ name: c.name, have: c.have, mark: c.mark ?? null, slices });
 }
