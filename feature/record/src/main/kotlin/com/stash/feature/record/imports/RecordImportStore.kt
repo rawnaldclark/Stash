@@ -3,6 +3,7 @@ package com.stash.feature.record.imports
 import android.content.Context
 import android.content.SharedPreferences
 import com.stash.feature.record.importer.ImportRecord
+import com.stash.feature.record.lastfm.ImportScrobbles
 import com.stash.feature.record.lastfm.LastfmMark
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,12 +104,16 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
             putLong(L_STUCK_LAST, stuck.last)
             if (stuck.pages != null) putInt(L_STUCK_PAGES, stuck.pages) else remove(L_STUCK_PAGES)
             putBoolean(L_STUCK_TOPUP, stuck.topup)
+            putBoolean(L_STUCK_TAIL, stuck.tail)
         } else {
             STUCK_KEYS.forEach(::remove)
         }
-        val skipped = m.skipped
-        // "page,to,from,at" a page, ';' between: from empty for a whole read's page
-        if (!skipped.isNullOrEmpty()) putString(L_SKIPPED, skipped.joinToString(";") { "${it.page},${it.to},${it.from ?: ""},${it.at}" }) else remove(L_SKIPPED)
+        if (m.oldest != null) putLong(L_OLDEST, m.oldest) else remove(L_OLDEST)
+        val holes = m.holes
+        // "from,to,at,open" a hole, ';' between (open: 1 or 0)
+        if (!holes.isNullOrEmpty()) putString(L_HOLES, holes.joinToString(";") { "${it.from},${it.to},${it.at},${if (it.open) 1 else 0}" }) else remove(L_HOLES)
+        // An earlier build's skipped pages, read into the holes above
+        OLD_SKIPPED_KEYS.forEach(::remove)
     }
 
     /**
@@ -119,6 +124,16 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         get() = prefs.getString(KEY_BUDGET, null)
         set(v) {
             prefs.edit().apply { if (v == null) remove(KEY_BUDGET) else putString(KEY_BUDGET, v) }.commit()
+        }
+
+    /**
+     * Network-waiting runs of the lengths pass in a row held again for want of a network (its backoff), kept across the app's
+     * death; this device's, like [lookupBudget].
+     */
+    var lengthsNetworkHolds: Int
+        get() = prefs.getInt(KEY_NETWORK_HOLDS, 0)
+        set(v) {
+            prefs.edit().apply { if (v > 0) putInt(KEY_NETWORK_HOLDS, v) else remove(KEY_NETWORK_HOLDS) }.apply()
         }
 
     /** The lengths pass's own count and time ([com.stash.feature.record.lastfm.LengthsMark]'s `timed` and `at`). */
@@ -192,7 +207,9 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                 covered = prefs.getInt(L_COVERED, 0),
                 at = prefs.getLong(L_AT, 0),
                 base = if (prefs.contains(L_BASE)) prefs.getInt(L_BASE, 0) else null,
-                stuck = if (prefs.contains(L_STUCK_PAGE)) {
+                oldest = if (prefs.contains(L_OLDEST)) prefs.getLong(L_OLDEST, 0) else null,
+                // A stuck page kept before its times were starts counting again
+                stuck = if (prefs.contains(L_STUCK_PAGE) && prefs.contains(L_STUCK_SINCE) && prefs.contains(L_STUCK_LAST)) {
                     LastfmMark.Stuck(
                         page = prefs.getInt(L_STUCK_PAGE, 0),
                         runs = prefs.getInt(L_STUCK_RUNS, 0),
@@ -200,15 +217,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                         last = prefs.getLong(L_STUCK_LAST, 0),
                         pages = if (prefs.contains(L_STUCK_PAGES)) prefs.getInt(L_STUCK_PAGES, 0) else null,
                         topup = prefs.getBoolean(L_STUCK_TOPUP, false),
+                        tail = prefs.getBoolean(L_STUCK_TAIL, false),
                     )
                 } else {
                     null
                 },
-                skipped = runCatching { prefs.getString(L_SKIPPED, null) }.getOrNull()?.split(';')?.mapNotNull { e ->
-                    val f = e.split(',')
-                    if (f.size != 4) return@mapNotNull null
-                    LastfmMark.SkippedPage(f[0].toIntOrNull() ?: return@mapNotNull null, f[1].toLongOrNull() ?: return@mapNotNull null, f[2].toLongOrNull(), f[3].toLongOrNull() ?: return@mapNotNull null)
-                }?.ifEmpty { null },
+                holes = (readHoles(prefs) + ImportScrobbles.holesFrom(readOldSkipped(prefs))).ifEmpty { null },
             )
         },
     )
@@ -249,10 +263,37 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val L_STUCK_SINCE = "lastfm_stuck_since"
         private const val L_STUCK_LAST = "lastfm_stuck_last"
         private const val L_STUCK_PAGES = "lastfm_stuck_pages"
-        private const val L_SKIPPED = "lastfm_skipped_pages"
-        private val STUCK_KEYS = listOf(L_STUCK_PAGE, L_STUCK_RUNS, L_STUCK_SINCE, L_STUCK_LAST, L_STUCK_PAGES, L_STUCK_TOPUP)
-        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE, L_SKIPPED, "lastfm_skipped") + STUCK_KEYS
+        private const val L_STUCK_TAIL = "lastfm_stuck_tail"
+        private const val L_OLDEST = "lastfm_oldest"
+        private const val L_HOLES = "lastfm_holes"
+        private val STUCK_KEYS = listOf(L_STUCK_PAGE, L_STUCK_RUNS, L_STUCK_SINCE, L_STUCK_LAST, L_STUCK_PAGES, L_STUCK_TOPUP, L_STUCK_TAIL)
+
+        /** An earlier build's skipped pages: by number ("page,to,from,at", ';' between), and before that a bare count. */
+        private const val L_OLD_SKIPPED_PAGES = "lastfm_skipped_pages"
+        private val OLD_SKIPPED_KEYS = listOf(L_OLD_SKIPPED_PAGES, "lastfm_skipped")
+        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE, L_OLDEST, L_HOLES) + STUCK_KEYS + OLD_SKIPPED_KEYS
+
+        private fun readHoles(prefs: SharedPreferences): List<LastfmMark.Hole> =
+            runCatching { prefs.getString(L_HOLES, null) }.getOrNull()?.split(';')?.mapNotNull { e ->
+                val f = e.split(',')
+                if (f.size != 4) return@mapNotNull null
+                val from = f[0].toLongOrNull() ?: return@mapNotNull null
+                val to = f[1].toLongOrNull() ?: return@mapNotNull null
+                val at = f[2].toLongOrNull() ?: return@mapNotNull null
+                LastfmMark.Hole(from, to, at, open = f[3] == "1")
+            }.orEmpty()
+
+        private fun readOldSkipped(prefs: SharedPreferences): List<ImportScrobbles.SkippedPage> =
+            runCatching { prefs.getString(L_OLD_SKIPPED_PAGES, null) }.getOrNull()?.split(';')?.mapNotNull { e ->
+                val f = e.split(',')
+                if (f.size != 4) return@mapNotNull null
+                val page = f[0].toIntOrNull() ?: return@mapNotNull null
+                val to = f[1].toLongOrNull() ?: return@mapNotNull null
+                val at = f[3].toLongOrNull() ?: return@mapNotNull null
+                ImportScrobbles.SkippedPage(page, to, f[2].toLongOrNull(), at)
+            }.orEmpty()
         private const val KEY_BUDGET = "lengths_lookups"
+        private const val KEY_NETWORK_HOLDS = "lengths_network_holds"
         private const val LEN_TIMED = "lengths_timed"
         private const val LEN_AT = "lengths_at"
         private val LENGTHS_KEYS = listOf(LEN_TIMED, LEN_AT)

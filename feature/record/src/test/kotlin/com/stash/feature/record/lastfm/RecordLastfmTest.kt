@@ -124,7 +124,7 @@ class RecordLastfmTest {
             LastfmState.Working(LastfmProgress(2, 3, 400)),
             LastfmState.Working(LastfmProgress(3, 3, 450)),
         ).inOrder()
-        assertThat(h.store.mark).isEqualTo(LastfmMark("me", nowS, 4, 3, true, t0 + 449 * 60, 450, 0, nowS))
+        assertThat(h.store.mark).isEqualTo(LastfmMark("me", nowS, 4, 3, true, t0 + 449 * 60, 450, 0, nowS, oldest = t0))
         assertThat(h.records).isEqualTo(1)
         assertThat(h.changes).isEqualTo(1)
         assertThat(h.writes.lastfmRunning.value).isFalse()
@@ -496,6 +496,9 @@ class RecordLastfmTest {
         var all: List<Scrobble> = emptyList()
         val fails = mutableListOf<Odd>()
 
+        /** A stretch of time withheld (lastfm-vectors.ts `hide`): a page whose plays reach into it lists nothing. */
+        var hide: LongRange? = null
+
         override suspend fun page(user: String, from: Long?, to: Long, page: Int): JsonObject =
             throw com.stash.core.data.lastfm.LastFmApiException(17, "Login required")
 
@@ -513,7 +516,8 @@ class RecordLastfmTest {
                 }
             }
             // A hole: the page lists nothing, though Last.fm says there are more after it
-            val shown = if (odd?.hole == true) emptyList() else window.drop((page - 1) * 200).take(200)
+            val slice = window.drop((page - 1) * 200).take(200)
+            val shown = if (odd?.hole == true || hide?.let { h -> slice.any { it.uts in h } } == true) emptyList() else slice
             val tracks = shown.joinToString(",") { s ->
                 """{"name":${Json.encodeToString(String.serializer(), s.t)},"artist":{"#text":${Json.encodeToString(String.serializer(), s.a)}},"date":{"uts":"${s.uts}"}}"""
             }
@@ -547,6 +551,7 @@ class RecordLastfmTest {
                     Scrobble(it["t"]!!.jsonPrimitive.content, it["a"]!!.jsonPrimitive.content, null, it["uts"]!!.jsonPrimitive.long)
                 }
                 remote.fails.clear()
+                remote.hide = (r["hide"] as? JsonObject)?.let { it["lo"]!!.jsonPrimitive.long..it["hi"]!!.jsonPrimitive.long }
                 r["fails"]!!.jsonArray.map { it.jsonObject }.forEach {
                     remote.fails += VectorRemote.Odd(
                         it["page"]!!.jsonPrimitive.int, it["times"]!!.jsonPrimitive.int, it["kind"]!!.jsonPrimitive.content,

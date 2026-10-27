@@ -295,5 +295,149 @@
    "at": 0,
    "base": 7
   }
+ },
+ {
+  "name": "an earlier build’s skipped pages load as the stretches they could hold, after any holes",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": true,
+   "newest": 90,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "holes": [
+    {
+     "from": 10,
+     "to": 20,
+     "at": 30
+    }
+   ],
+   "skipped": [
+    {
+     "page": 2,
+     "to": 50,
+     "at": 60
+    },
+    {
+     "page": 1,
+     "to": 95,
+     "from": 70,
+     "at": 96
+    }
+   ]
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 3,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": true,
+   "newest": 90,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "holes": [
+    {
+     "from": 10,
+     "to": 20,
+     "at": 30
+    },
+    {
+     "from": 0,
+     "to": 50,
+     "at": 60
+    },
+    {
+     "from": 70,
+     "to": 95,
+     "at": 96
+    }
+   ]
+  }
+ },
+ {
+  "name": "an earlier build’s bare count of skipped pages is dropped, and a stuck page kept without its times",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "skipped": 2,
+   "stuck": {
+    "page": 2,
+    "runs": 1
+   }
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 3,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0
+  }
+ },
+ {
+  "name": "a stuck tail and the oldest read carry on",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 3,
+   "pages": 4,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "oldest": 40,
+   "stuck": {
+    "page": 3,
+    "runs": 2,
+    "since": 10,
+    "last": 20,
+    "pages": 4,
+    "tail": true
+   }
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 3,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 3,
+   "pages": 4,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "oldest": 40,
+   "stuck": {
+    "page": 3,
+    "runs": 2,
+    "since": 10,
+    "last": 20,
+    "pages": 4,
+    "tail": true
+   }
+  }
  }
 ]

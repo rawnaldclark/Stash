@@ -251,22 +251,39 @@ class RecordImportsTest {
         assertThat(rig.store.info.value.inviteHidden).isFalse()
     }
 
-    @Test fun `the Last fm mark keeps its stuck page and its skipped pages, read back the same, and a fresh mark drops them`() {
+    @Test fun `the Last fm mark keeps its stuck page, the oldest read and its holes, read back the same, and a fresh mark drops them`() {
         val prefs = MemoryPrefs()
         val m = LastfmMark(
-            "me", to = 100, next = 3, pages = 3, done = true, newest = 90, added = 400, covered = 0, at = 100,
-            stuck = LastfmMark.Stuck(page = 2, runs = 2, since = 10, last = 20, pages = 3, topup = true),
-            skipped = listOf(LastfmMark.SkippedPage(1, to = 100, from = null, at = 50), LastfmMark.SkippedPage(4, to = 120, from = 60, at = 70)),
+            "me", to = 100, next = 3, pages = 3, done = false, newest = 90, added = 400, covered = 0, at = 100, oldest = 40,
+            stuck = LastfmMark.Stuck(page = 2, runs = 2, since = 10, last = 20, pages = 3, topup = true, tail = true),
+            holes = listOf(LastfmMark.Hole(0, to = 100, at = 50, open = true), LastfmMark.Hole(60, to = 120, at = 70)),
         )
         RecordImportStore(prefs).setLastfm(m)
         assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(m)
-        // A stuck page Last.fm gave no count for, and nothing skipped
-        val plain = m.copy(stuck = LastfmMark.Stuck(page = 1, runs = 1, since = 5, last = 5), skipped = null)
+        // A stuck page Last.fm gave no count for, and no holes
+        val plain = m.copy(stuck = LastfmMark.Stuck(page = 1, runs = 1, since = 5, last = 5), holes = null, oldest = null)
         RecordImportStore(prefs).setLastfm(plain)
         assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain)
         RecordImportStore(prefs).setLastfm(plain.copy(stuck = null))
         assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain.copy(stuck = null))
-        assertThat(prefs.map.keys.filter { it.startsWith("lastfm_stuck") || it.startsWith("lastfm_skipped") }).isEmpty()
+        assertThat(prefs.map.keys.filter { it.startsWith("lastfm_stuck") || it.startsWith("lastfm_holes") || it.startsWith("lastfm_oldest") }).isEmpty()
+    }
+
+    @Test fun `an earlier build's skipped pages load as the stretches they could hold, and a stuck page kept without its times is dropped`() {
+        val prefs = MemoryPrefs()
+        RecordImportStore(prefs).setLastfm(LastfmMark("me", to = 100, next = 4, pages = 3, done = true, newest = 90, added = 400, covered = 0, at = 100))
+        // As round 2 kept them: "page,to,from,at", from empty for a whole read's page; and a stuck page from before its times were kept
+        prefs.map["lastfm_skipped_pages"] = "2,100,,60;1,95,70,96"
+        prefs.map["lastfm_skipped"] = 2
+        prefs.map["lastfm_stuck_page"] = 3
+        prefs.map["lastfm_stuck_runs"] = 1
+        val read = RecordImportStore(prefs).info.value.lastfm!!
+        assertThat(read.holes).containsExactly(LastfmMark.Hole(0, 100, 60), LastfmMark.Hole(70, 95, 96)).inOrder()
+        assertThat(read.stuck).isNull()
+        // Written back in today's shape: the old keys go
+        RecordImportStore(prefs).setLastfm(read)
+        assertThat(prefs.map.keys).containsNoneOf("lastfm_skipped_pages", "lastfm_skipped")
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(read)
     }
 
     @Test fun `remove takes the Last fm import's mark too, and is refused while a Last fm run holds the archive`() = runTest {

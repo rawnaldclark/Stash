@@ -97,7 +97,7 @@ class LastfmVectorsTest {
                 store.add(before["add"]!!.jsonArray.map { row(it.jsonObject) })
                 before["drop"]!!.jsonArray.forEach { store.rows.remove(it.jsonPrimitive.content) }
                 val calls = mutableListOf<Triple<Int, Long, Long?>>()
-                val reader = fakeLastfm(st["scrobbles"]!!.jsonArray.map { scrobble(it.jsonObject) }, st["fails"] as? JsonArray, calls)
+                val reader = fakeLastfm(st["scrobbles"]!!.jsonArray.map { scrobble(it.jsonObject) }, st["fails"] as? JsonArray, calls, lies(st))
                 val progress = mutableListOf<LastfmProgress>()
                 var error: String? = null
                 var got: LastfmMark? = null
@@ -239,12 +239,25 @@ class LastfmVectorsTest {
 
     // ── the web's fakes, ported ──────────────────────────────────────────────────────────────────────────────────────
 
+    /** lastfm-vectors.ts `Lies`: a stretch of time withheld (only below [hideTo] with no `from`, when set), a stale total, an incident. */
+    private class Lies(val hideLo: Long? = null, val hideHi: Long? = null, val hideTo: Long? = null, val staleExtra: Int = 0, val staleTo: Long? = null, val incident: Int? = null)
+
+    private fun lies(st: JsonObject): Lies {
+        val h = st["hide"] as? JsonObject
+        val s = st["stale"] as? JsonObject
+        return Lies(
+            hideLo = h?.long("lo"), hideHi = h?.long("hi"), hideTo = (h?.get("to") as? JsonPrimitive)?.long,
+            staleExtra = s?.int("extra") ?: 0, staleTo = s?.long("to"), incident = (st["incident"] as? JsonPrimitive)?.int,
+        )
+    }
+
     /**
      * lastfm-vectors.ts `fakeLastfm`: the window below `to` (and from `from`), newest first, 200 a page; for a few asks of one
      * page busy (or worse; a hole: busy as an empty page, claiming the window's pages), or empty saying it has `pages` (`topup`:
-     * only the asks with a `from`, or only those without).
+     * only the asks with a `from`, or only those without); and what else Last.fm does in the step ([Lies]). A page that lists
+     * nothing is the Worker's: before the last, busy saying so; the last, just empty.
      */
-    private fun fakeLastfm(all: List<Scrobble>, fails: JsonArray?, calls: MutableList<Triple<Int, Long, Long?>>): PageReader {
+    private fun fakeLastfm(all: List<Scrobble>, fails: JsonArray?, calls: MutableList<Triple<Int, Long, Long?>>, lies: Lies = Lies()): PageReader {
         class Odd(val page: Int, var times: Int, val topup: Boolean?, val kind: String?, val hole: Boolean, val empty: JsonObject?, val short: JsonObject?)
         val left = fails.orEmpty().map { it.jsonObject }.map {
             Odd(
@@ -252,20 +265,30 @@ class LastfmVectorsTest {
                 it["empty"] as? JsonObject, it["short"] as? JsonObject,
             )
         }
+        var incident = false
         return PageReader { page, to, from ->
             val f0 = from?.takeIf { it != 0L }
             calls += Triple(page, to, f0)
             val window = all.filter { it.uts <= to && (f0 == null || it.uts >= f0) }.sortedByDescending { it.uts }
+            val total = window.size + if (lies.staleTo != null && f0 == null && to == lies.staleTo) lies.staleExtra else 0
+            val pages = (total + 199) / 200
             left.firstOrNull { it.page == page && it.times > 0 && (it.topup == null || it.topup == (f0 != null)) }?.let { f ->
                 f.times--
                 if (f.kind != null) {
-                    throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()), empty = f.hole, pages = if (f.hole) (window.size + 199) / 200 else null)
+                    throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()), empty = f.hole, pages = if (f.hole) pages else null)
                 }
                 if (f.short != null) return@PageReader HistoryPage(window.drop((page - 1) * 200).take(200), page, f.short.int("pages"), f.short.int("total"))
                 return@PageReader HistoryPage(emptyList(), page, f.empty!!.int("pages"), f.empty.int("total"))
             }
-            val pages = (window.size + 199) / 200
-            HistoryPage(window.drop((page - 1) * 200).take(200), page, pages, window.size)
+            val plays = window.drop((page - 1) * 200).take(200)
+            val hideOn = lies.hideLo != null && (lies.hideTo == null || (f0 == null && to == lies.hideTo))
+            val hidden = incident || (hideOn && plays.any { it.uts >= lies.hideLo!! && it.uts <= lies.hideHi!! })
+            if (hidden || (plays.isEmpty() && page < pages)) {
+                if (page < pages) throw LastfmError(LastfmFailure.BUSY, empty = true, pages = pages)
+                return@PageReader HistoryPage(emptyList(), page, pages, total)
+            }
+            if (lies.incident != null && f0 == null && page == lies.incident) incident = true
+            HistoryPage(plays, page, pages, total)
         }
     }
 
@@ -289,15 +312,24 @@ class LastfmVectorsTest {
         user = o.str("user"), to = o.long("to"), next = o.int("next"), pages = o.int("pages"), done = o["done"]!!.jsonPrimitive.boolean,
         newest = o.long("newest"), added = o.int("added"), covered = o.int("covered"), at = o.long("at"),
         base = (o["base"] as? JsonPrimitive)?.int,
-        stuck = (o["stuck"] as? JsonObject)?.let {
+        oldest = (o["oldest"] as? JsonPrimitive)?.long,
+        // As the store reads a mark (lastfm.ts `readMark`): a stuck page kept without its times starts counting again...
+        stuck = (o["stuck"] as? JsonObject)?.takeIf { it["since"] != null && it["last"] != null }?.let {
             LastfmMark.Stuck(
                 it.int("page"), it.int("runs"), it.long("since"), it.long("last"), (it["pages"] as? JsonPrimitive)?.int,
-                (it["topup"] as? JsonPrimitive)?.boolean == true,
+                (it["topup"] as? JsonPrimitive)?.boolean == true, (it["tail"] as? JsonPrimitive)?.boolean == true,
             )
         },
-        skipped = (o["skipped"] as? JsonArray)?.map { it.jsonObject }?.map {
-            LastfmMark.SkippedPage(it.int("page"), it.long("to"), (it["from"] as? JsonPrimitive)?.long, it.long("at"))
-        },
+        // ...and an earlier build's skipped pages (a bare count dropped) follow the holes, as the stretches they could hold
+        holes = (
+            (o["holes"] as? JsonArray).orEmpty().map { it.jsonObject }.map {
+                LastfmMark.Hole(it.long("from"), it.long("to"), it.long("at"), (it["open"] as? JsonPrimitive)?.boolean == true)
+            } + ImportScrobbles.holesFrom(
+                (o["skipped"] as? JsonArray).orEmpty().map { it.jsonObject }.map {
+                    ImportScrobbles.SkippedPage(it.int("page"), it.long("to"), (it["from"] as? JsonPrimitive)?.long, it.long("at"))
+                },
+            )
+            ).ifEmpty { null },
     )
 
     private fun lengthsMark(o: JsonObject) = LengthsMark(
