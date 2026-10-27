@@ -11,7 +11,7 @@
     <string name="record_most_played">가장 많이 들은 아티스트: %1$s</string>
     <string name="record_open">나의 레코드 열기</string>
     <string name="record_invite_title">나의 레코드 만들기</string>
-    <string name="record_invite_body">들어 온 모든 해를 한곳에: Spotify, Last.fm 또는 휴대전화의 Stash에서.</string>
+    <string name="record_invite_body">들어 온 모든 해를 한곳에: Spotify 또는 Stash에서.</string>
     <string name="record_invite_start">시작하기</string>
     <string name="record_invite_hide">나의 레코드 만들기 숨기기</string>
     <string name="record_close">닫기</string>
@@ -20,7 +20,6 @@
     <string name="record_stopped_title">나의 레코드가 중지되었습니다</string>
     <string name="record_stopped_body">페이지의 메모리가 부족하거나 오류가 발생했습니다. 재생 기록은 안전합니다.</string>
     <string name="record_open_again">다시 열기</string>
-    <string name="record_note_import">Spotify 기록 가져오기는 업데이트로 제공될 예정입니다.</string>
     <string name="record_note_archive_failed">일부 재생 기록을 읽을 수 없습니다.</string>
     <string name="record_note_play_failed">여기서는 재생할 수 없습니다.</string>
     <string name="record_note_playing">%1$s 재생 중</string>
@@ -34,4 +33,85 @@
     <string name="record_note_too_many_saves">한 번에 저장하기엔 파일이 너무 많습니다. 레코드를 닫았다가 다시 열어 더 저장하세요.</string>
     <string name="record_note_share_dropped">레코드가 먼저 닫혀 공유 창이 열리지 않았습니다.</string>
     <string name="record_share">공유</string>
+    <string name="record_waiting_title">Spotify 기다리는 중</string>
+    <string name="record_waiting_body">%1$s에 요청함. 이메일이 오면 Stash로 zip 파일을 여세요.</string>
+    <string name="record_waiting_bring">zip 파일 가져오기</string>
+    <string name="record_waiting_how">이용 방법</string>
+    <string name="record_pressing_title">나의 레코드를 만드는 중</string>
+    <string name="record_pressing_open">열기</string>
+    <string name="record_ready_title">만들 준비 완료</string>
+    <string name="record_ready_body">가져오기 전에는 아무것도 저장되지 않습니다.</string>
+    <string name="record_ready_review">검토</string>
+    <string name="record_import_intro">들어 온 모든 해를 한곳에. Stash의 재생 기록은 이미 여기 있습니다. Spotify 기록을 가져와 첫 곡까지 거슬러 올라가 보세요.</string>
+    <string name="record_import_ask_title">Spotify에 데이터 요청하기</string>
+    <string name="record_import_ask_body">Spotify 개인정보 보호 페이지에서 둘 다 선택하세요: %1$s(약 5일: 플레이리스트, 좋아요, 최근 1년) 및 %2$s(최대 30일: 첫 곡부터 전부).</string>
+    <string name="record_import_account_data">계정 데이터</string>
+    <string name="record_import_extended_history">확장된 스트리밍 기록</string>
+    <string name="record_import_ask_button">Spotify 개인정보 보호 페이지 열기</string>
+    <string name="record_import_asked">%1$s에 요청함</string>
+    <string name="record_import_email_title">Spotify에서 zip 파일을 이메일로 보냅니다</string>
+    <string name="record_import_email_body">요청마다 하나씩 옵니다. 도착하는 대로 다운로드하세요. 열 필요는 없습니다.</string>
+    <string name="record_import_open_title">Stash로 zip 파일 열기</string>
+    <string name="record_import_open_body">이메일이나 파일 앱에서 ‘다음으로 열기’ 또는 ‘공유’를 사용해 Stash를 선택하세요. 여기에서 선택할 수도 있습니다.</string>
+    <string name="record_import_choose">파일 선택</string>
+    <string name="record_import_each">도착하는 대로 하나씩 가져오세요.</string>
+    <string name="record_import_private">Stash는 이 휴대전화에서 파일을 읽습니다. 아무것도 업로드되지 않습니다.</string>
+    <string name="record_import_working_title">청취 기록을 가져오는 중</string>
+    <string name="record_import_opening">파일을 여는 중…</string>
+    <string name="record_import_reading_one">파일을 읽는 중…</string>
+    <string name="record_import_reading">파일을 읽는 중: %2$d개 중 %1$d개</string>
+    <string name="record_import_saving">재생 기록 저장 중: %2$s회 중 %1$s회</string>
+    <string name="record_import_saving_start">저장 중…</string>
+    <string name="record_import_year">%1$d년 읽는 중</string>
+    <string name="record_import_channel">나의 레코드</string>
+    <string name="record_preview_title">나의 Spotify</string>
+    <string name="record_preview_span">%1$s~%2$s</string>
+    <plurals name="record_preview_hours">
+        <item quantity="other">시간</item>
+    </plurals>
+    <plurals name="record_preview_years">
+        <item quantity="other">년</item>
+    </plurals>
+    <plurals name="record_preview_plays">
+        <item quantity="other">재생</item>
+    </plurals>
+    <plurals name="record_preview_here">
+        <item quantity="other">%1$s회 재생은 이미 여기 있으며 한 번만 집계됩니다.</item>
+    </plurals>
+    <string name="record_preview_account_title">최근 1년만 있습니다</string>
+    <string name="record_preview_account_body">전체 기록은 다른 이메일인 확장된 스트리밍 기록으로 옵니다. 도착하면 그 zip 파일을 여기로 가져오세요.</string>
+    <string name="record_preview_also">함께 들어 있는 항목</string>
+    <plurals name="record_preview_songs">
+        <item quantity="other">%1$d곡</item>
+    </plurals>
+    <string name="record_preview_liked">좋아요 표시한 곡</string>
+    <string name="record_preview_later">플레이리스트와 좋아요 표시한 곡은 이후 업데이트에서 라이브러리에 추가됩니다. zip 파일을 보관하세요.</string>
+    <string name="record_preview_import">가져오기</string>
+    <string name="record_preview_cancel">취소</string>
+    <string name="record_preview_add">다른 파일 추가</string>
+    <string name="record_preview_private">가져오기 전에는 아무것도 저장되지 않습니다. Stash는 이 휴대전화에서 파일을 읽습니다. 아무것도 업로드되지 않습니다.</string>
+    <string name="record_error_nothing_new_title">이미 가져온 파일입니다</string>
+    <string name="record_error_nothing_new_body">새로운 내용이 없습니다. 더 최신 사본이 생기면 그것을 가져오세요.</string>
+    <string name="record_error_not_export_title">Spotify 내보내기 파일이 아닙니다</string>
+    <string name="record_error_not_export_body">Spotify 이메일로 받은 zip 파일을 그대로 가져오세요(파일 이름이 “my_spotify_data”로 시작합니다).</string>
+    <string name="record_error_no_plays_title">다시 들을 새 기록이 없습니다</string>
+    <string name="record_error_no_plays_body">이 파일에는 재생 기록이 없습니다. 파일의 플레이리스트와 좋아요 표시한 곡은 이후 업데이트에서 추가됩니다.</string>
+    <string name="record_error_unreadable_title">zip 파일이 열리지 않았습니다</string>
+    <string name="record_error_unreadable_body">다운로드가 끝나지 않았을 수 있습니다. Spotify 이메일에서 다시 다운로드한 후 새 사본을 가져오세요.</string>
+    <string name="record_error_storage_title">휴대전화 저장 공간이 부족합니다</string>
+    <string name="record_error_storage_body">공간을 확보한 후 다시 시도하세요. 새로 추가된 것은 없습니다.</string>
+    <string name="record_error_storage_saving_body">공간을 확보한 후 다시 시도하세요. 중복으로 집계되는 것은 없습니다.</string>
+    <string name="record_error_other_title">문제가 발생했습니다</string>
+    <string name="record_error_other_body">새로 추가된 것은 없습니다. 다시 시도하거나 zip 파일을 다시 가져오세요.</string>
+    <string name="record_error_saving_title">저장하는 중에 문제가 발생했습니다</string>
+    <string name="record_error_saving_body">다시 시도하세요. 중복으로 집계되는 것은 없습니다.</string>
+    <string name="record_error_choose_another">다른 파일 선택</string>
+    <string name="record_error_try_again">다시 시도</string>
+    <string name="record_error_back">뒤로</string>
+    <plurals name="record_done">
+        <item quantity="other">재생 기록 %1$s회를 가져왔습니다</item>
+    </plurals>
+    <string name="record_done_nothing">나의 레코드가 최신 상태입니다</string>
+    <string name="record_intake_not_export">Spotify 내보내기 파일이 아닙니다</string>
+    <string name="record_intake_busy">가져오기가 진행 중입니다. 완료된 후 가져오세요.</string>
 </resources>

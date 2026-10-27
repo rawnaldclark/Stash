@@ -788,4 +788,29 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">أسطوانتك</string>
+    <string name="settings_your_record_open">أسطوانتك</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="zero">من Spotify: %1$s تشغيل.</item>
+        <item quantity="one">من Spotify: %1$s تشغيل.</item>
+        <item quantity="two">من Spotify: %1$s تشغيلان.</item>
+        <item quantity="few">من Spotify: %1$s تشغيلات.</item>
+        <item quantity="many">من Spotify: %1$s تشغيلًا.</item>
+        <item quantity="other">من Spotify: %1$s تشغيل.</item>
+    </plurals>
+    <string name="settings_your_record_import">استيراد من Spotify</string>
+    <string name="settings_your_record_newer">إضافة نسخة أحدث</string>
+    <string name="settings_your_record_import_subtitle">سجل استماعك من تنزيل بيانات Spotify. يقرأ Stash الملف على هذا الهاتف. لا يُرفع أي شيء.</string>
+    <string name="settings_your_record_remove">إزالة السجل المستورد</string>
+    <string name="settings_your_record_remove_subtitle">تعود أسطوانتك إلى تشغيلاتك في Stash.</string>
+    <string name="settings_your_record_remove_title">هل تريد إزالة سجلك المستورد؟</string>
+    <string name="settings_your_record_remove_body">يُحذف من هذا الهاتف كل ما أُضيف إلى أسطوانتك من Spotify. تبقى تشغيلاتك في Stash.</string>
+    <string name="settings_your_record_remove_confirm">إزالة</string>
+    <string name="settings_your_record_cancel">إلغاء</string>
+    <string name="settings_your_record_removed">تمت إزالة سجلك المستورد.</string>
+    <string name="settings_your_record_remove_busy">يجري استيراد الآن. أزِل السجل عند انتهائه.</string>
+    <string name="settings_your_record_remove_failed">تعذرت الإزالة الآن. حاول مجددًا.</string>
+    <string name="settings_your_record_show">إظهار في الرئيسية</string>
+    <string name="settings_your_record_show_subtitle">«اطبع أسطوانتك» مخفية في الرئيسية.</string>
+    <string name="settings_your_record_shown">عادت «اطبع أسطوانتك» إلى الرئيسية</string>
 </resources>

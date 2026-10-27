@@ -664,4 +664,25 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">صفحهٔ شما</string>
+    <string name="settings_your_record_open">صفحهٔ شما</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">از Spotify: %1$s پخش.</item>
+        <item quantity="other">از Spotify: %1$s پخش.</item>
+    </plurals>
+    <string name="settings_your_record_import">وارد کردن از Spotify</string>
+    <string name="settings_your_record_newer">آوردن نسخهٔ جدیدتر</string>
+    <string name="settings_your_record_import_subtitle">سابقهٔ شنیدن شما از دانلود داده‌های Spotify. Stash فایل را روی همین گوشی می‌خواند. چیزی بارگذاری نمی‌شود.</string>
+    <string name="settings_your_record_remove">حذف سابقهٔ واردشده</string>
+    <string name="settings_your_record_remove_subtitle">صفحهٔ شما به پخش‌هایتان در Stash برمی‌گردد.</string>
+    <string name="settings_your_record_remove_title">سابقهٔ واردشده حذف شود؟</string>
+    <string name="settings_your_record_remove_body">هر چه از Spotify برای صفحهٔ شما آورده شده، از این گوشی حذف می‌شود. پخش‌های شما در Stash می‌مانند.</string>
+    <string name="settings_your_record_remove_confirm">حذف</string>
+    <string name="settings_your_record_cancel">لغو</string>
+    <string name="settings_your_record_removed">سابقهٔ واردشده حذف شد.</string>
+    <string name="settings_your_record_remove_busy">وارد کردنی در حال انجام است. وقتی تمام شد، حذفش کنید.</string>
+    <string name="settings_your_record_remove_failed">الان حذف نشد. دوباره امتحان کنید.</string>
+    <string name="settings_your_record_show">نمایش در خانه</string>
+    <string name="settings_your_record_show_subtitle">«صفحهٔ خود را بسازید» در خانه پنهان است.</string>
+    <string name="settings_your_record_shown">«صفحهٔ خود را بسازید» دوباره در خانه است</string>
 </resources>

@@ -726,4 +726,27 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">Twoja płyta</string>
+    <string name="settings_your_record_open">Twoja płyta</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Ze Spotify: %1$s odtworzenie.</item>
+        <item quantity="few">Ze Spotify: %1$s odtworzenia.</item>
+        <item quantity="many">Ze Spotify: %1$s odtworzeń.</item>
+        <item quantity="other">Ze Spotify: %1$s odtworzenia.</item>
+    </plurals>
+    <string name="settings_your_record_import">Importuj ze Spotify</string>
+    <string name="settings_your_record_newer">Dodaj nowszą kopię</string>
+    <string name="settings_your_record_import_subtitle">Twoja historia słuchania z pobranych danych Spotify. Stash odczytuje plik na tym telefonie. Nic nie jest wysyłane.</string>
+    <string name="settings_your_record_remove">Usuń zaimportowaną historię</string>
+    <string name="settings_your_record_remove_subtitle">Twoja płyta wraca do odtworzeń w Stash.</string>
+    <string name="settings_your_record_remove_title">Usunąć zaimportowaną historię?</string>
+    <string name="settings_your_record_remove_body">Wszystko, co trafiło na twoją płytę ze Spotify, zostanie usunięte z tego telefonu. Twoje odtworzenia w Stash zostają.</string>
+    <string name="settings_your_record_remove_confirm">Usuń</string>
+    <string name="settings_your_record_cancel">Anuluj</string>
+    <string name="settings_your_record_removed">Usunięto zaimportowaną historię.</string>
+    <string name="settings_your_record_remove_busy">Trwa import. Usuń historię, gdy się zakończy.</string>
+    <string name="settings_your_record_remove_failed">Nie udało się teraz usunąć. Spróbuj ponownie.</string>
+    <string name="settings_your_record_show">Pokaż na stronie głównej</string>
+    <string name="settings_your_record_show_subtitle">„Wytłocz swoją płytę” jest ukryte na stronie głównej.</string>
+    <string name="settings_your_record_shown">„Wytłocz swoją płytę” znów jest na stronie głównej</string>
 </resources>

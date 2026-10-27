@@ -11,7 +11,7 @@
     <string name="record_most_played">最常听：%1$s</string>
     <string name="record_open">打开你的唱片</string>
     <string name="record_invite_title">压制你的唱片</string>
-    <string name="record_invite_body">你听过的每一年，汇聚一处：来自 Spotify、Last.fm 或手机上的 Stash。</string>
+    <string name="record_invite_body">你听过的每一年，汇聚一处：来自 Spotify 或 Stash。</string>
     <string name="record_invite_start">开始</string>
     <string name="record_invite_hide">隐藏“压制你的唱片”</string>
     <string name="record_close">关闭</string>
@@ -20,7 +20,6 @@
     <string name="record_stopped_title">你的唱片已停止</string>
     <string name="record_stopped_body">页面内存不足或已崩溃。你的播放记录是安全的。</string>
     <string name="record_open_again">重新打开</string>
-    <string name="record_note_import">导入 Spotify 历史记录的功能将在后续更新中推出。</string>
     <string name="record_note_archive_failed">部分播放记录无法读取。</string>
     <string name="record_note_play_failed">无法在这里播放。</string>
     <string name="record_note_playing">正在播放 %1$s</string>
@@ -34,4 +33,85 @@
     <string name="record_note_too_many_saves">这次保存的文件太多了。关闭唱片后重新打开即可继续保存。</string>
     <string name="record_note_share_dropped">唱片已先关闭，分享未能打开。</string>
     <string name="record_share">分享</string>
+    <string name="record_waiting_title">正在等待 Spotify</string>
+    <string name="record_waiting_body">已于 %1$s 申请。收到邮件后，用 Stash 打开 zip 文件。</string>
+    <string name="record_waiting_bring">添加 zip 文件</string>
+    <string name="record_waiting_how">如何操作</string>
+    <string name="record_pressing_title">正在压制你的唱片</string>
+    <string name="record_pressing_open">打开</string>
+    <string name="record_ready_title">准备压制</string>
+    <string name="record_ready_body">导入前不会保存任何内容。</string>
+    <string name="record_ready_review">查看</string>
+    <string name="record_import_intro">你听过的每一年，汇聚一处。你在 Stash 的播放记录已经在这里了；导入你的 Spotify 记录，一直回到你听的第一首歌。</string>
+    <string name="record_import_ask_title">向 Spotify 申请你的数据</string>
+    <string name="record_import_ask_body">在 Spotify 的隐私页面勾选这两项：%1$s（约 5 天：歌单、点赞和你最近一年）和%2$s（最多 30 天：所有内容，从你的第一首歌开始）。</string>
+    <string name="record_import_account_data">账户数据</string>
+    <string name="record_import_extended_history">扩展的流媒体播放记录</string>
+    <string name="record_import_ask_button">打开 Spotify 隐私页面</string>
+    <string name="record_import_asked">已于 %1$s 申请</string>
+    <string name="record_import_email_title">Spotify 会通过邮件发给你 zip 文件</string>
+    <string name="record_import_email_body">每项各一个。收到就下载，无需打开。</string>
+    <string name="record_import_open_title">用 Stash 打开 zip 文件</string>
+    <string name="record_import_open_body">在邮件或文件中，使用“打开方式”或“分享”并选择 Stash。或在这里选择。</string>
+    <string name="record_import_choose">选择文件</string>
+    <string name="record_import_each">每收到一个就添加一个。</string>
+    <string name="record_import_private">Stash 在这部手机上读取文件。不会上传任何内容。</string>
+    <string name="record_import_working_title">正在导入你的收听记录</string>
+    <string name="record_import_opening">正在打开你的文件…</string>
+    <string name="record_import_reading_one">正在读取你的文件…</string>
+    <string name="record_import_reading">正在读取你的文件：第 %1$d 个，共 %2$d 个</string>
+    <string name="record_import_saving">正在保存你的播放记录：%1$s / %2$s</string>
+    <string name="record_import_saving_start">正在保存…</string>
+    <string name="record_import_year">正在读取 %1$d 年</string>
+    <string name="record_import_channel">你的唱片</string>
+    <string name="record_preview_title">这是你的 Spotify</string>
+    <string name="record_preview_span">%1$s 至 %2$s</string>
+    <plurals name="record_preview_hours">
+        <item quantity="other">小时</item>
+    </plurals>
+    <plurals name="record_preview_years">
+        <item quantity="other">年</item>
+    </plurals>
+    <plurals name="record_preview_plays">
+        <item quantity="other">次播放</item>
+    </plurals>
+    <plurals name="record_preview_here">
+        <item quantity="other">%1$s 次播放已在这里，只会计算一次。</item>
+    </plurals>
+    <string name="record_preview_account_title">这里只有你最近一年的记录</string>
+    <string name="record_preview_account_body">你的完整记录在另一封邮件“扩展的流媒体播放记录”中。收到后把那个 zip 文件添加到这里。</string>
+    <string name="record_preview_also">其中还有</string>
+    <plurals name="record_preview_songs">
+        <item quantity="other">%1$d 首歌曲</item>
+    </plurals>
+    <string name="record_preview_liked">已点赞的歌曲</string>
+    <string name="record_preview_later">你的歌单和已点赞的歌曲会在之后的更新中加入你的音乐库。请保留 zip 文件。</string>
+    <string name="record_preview_import">导入</string>
+    <string name="record_preview_cancel">取消</string>
+    <string name="record_preview_add">添加其他文件</string>
+    <string name="record_preview_private">导入前不会保存任何内容。Stash 在这部手机上读取文件。不会上传任何内容。</string>
+    <string name="record_error_nothing_new_title">你已经添加过这个文件了</string>
+    <string name="record_error_nothing_new_body">里面没有新内容。有更新的副本时，再添加那个。</string>
+    <string name="record_error_not_export_title">这不是 Spotify 导出文件</string>
+    <string name="record_error_not_export_body">请添加 Spotify 邮件中的原始 zip 文件（文件名以“my_spotify_data”开头）。</string>
+    <string name="record_error_no_plays_title">没有新的可回听内容</string>
+    <string name="record_error_no_plays_body">这个文件里没有播放记录。其中的歌单和已点赞的歌曲会在之后的更新中加入。</string>
+    <string name="record_error_unreadable_title">那个 zip 文件打不开</string>
+    <string name="record_error_unreadable_body">它可能没有下载完。请从 Spotify 的邮件重新下载，然后添加新的副本。</string>
+    <string name="record_error_storage_title">这部手机空间不足</string>
+    <string name="record_error_storage_body">请释放一些空间，然后重试。没有添加任何新内容。</string>
+    <string name="record_error_storage_saving_body">请释放一些空间，然后重试：不会重复计算。</string>
+    <string name="record_error_other_title">出了点问题</string>
+    <string name="record_error_other_body">没有添加任何新内容。请重试，或重新添加 zip 文件。</string>
+    <string name="record_error_saving_title">保存时出了点问题</string>
+    <string name="record_error_saving_body">请重试：不会重复计算。</string>
+    <string name="record_error_choose_another">选择其他文件</string>
+    <string name="record_error_try_again">重试</string>
+    <string name="record_error_back">返回</string>
+    <plurals name="record_done">
+        <item quantity="other">已导入 %1$s 次播放</item>
+    </plurals>
+    <string name="record_done_nothing">你的唱片已是最新</string>
+    <string name="record_intake_not_export">这不是 Spotify 导出文件</string>
+    <string name="record_intake_busy">正在导入中。完成后再添加。</string>
 </resources>

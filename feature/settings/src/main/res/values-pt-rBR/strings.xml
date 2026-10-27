@@ -664,4 +664,25 @@
     <string name="settings_equalizer_preset_classical">Clássico</string>
     <string name="settings_equalizer_save_preset_dialog_title">Salvar predefinição</string>
     <string name="settings_equalizer_preset_name_label">Nome da predefinição</string>
+    <string name="settings_your_record_section">Seu disco</string>
+    <string name="settings_your_record_open">Seu disco</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Do Spotify: %1$s reprodução.</item>
+        <item quantity="other">Do Spotify: %1$s reproduções.</item>
+    </plurals>
+    <string name="settings_your_record_import">Importar do Spotify</string>
+    <string name="settings_your_record_newer">Adicionar uma cópia mais recente</string>
+    <string name="settings_your_record_import_subtitle">Seu histórico de escuta de um download de dados do Spotify. O Stash lê o arquivo neste telefone. Nada é enviado.</string>
+    <string name="settings_your_record_remove">Remover histórico importado</string>
+    <string name="settings_your_record_remove_subtitle">Seu disco volta às suas reproduções no Stash.</string>
+    <string name="settings_your_record_remove_title">Remover seu histórico importado?</string>
+    <string name="settings_your_record_remove_body">Tudo o que foi trazido do Spotify para seu disco é apagado deste telefone. Suas reproduções no Stash ficam.</string>
+    <string name="settings_your_record_remove_confirm">Remover</string>
+    <string name="settings_your_record_cancel">Cancelar</string>
+    <string name="settings_your_record_removed">Seu histórico importado foi removido.</string>
+    <string name="settings_your_record_remove_busy">Uma importação está em andamento. Remova quando ela terminar.</string>
+    <string name="settings_your_record_remove_failed">Não foi possível remover agora. Tente de novo.</string>
+    <string name="settings_your_record_show">Mostrar na página inicial</string>
+    <string name="settings_your_record_show_subtitle">Prense seu disco está oculto na página inicial.</string>
+    <string name="settings_your_record_shown">Prense seu disco voltou à página inicial</string>
 </resources>

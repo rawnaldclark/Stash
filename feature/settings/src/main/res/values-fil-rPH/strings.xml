@@ -664,4 +664,25 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">Ang record mo</string>
+    <string name="settings_your_record_open">Ang record mo</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Mula sa Spotify: %1$s play.</item>
+        <item quantity="other">Mula sa Spotify: %1$s na play.</item>
+    </plurals>
+    <string name="settings_your_record_import">I-import mula sa Spotify</string>
+    <string name="settings_your_record_newer">Magdagdag ng mas bagong kopya</string>
+    <string name="settings_your_record_import_subtitle">Ang listening history mo mula sa isang Spotify data download. Binabasa ng Stash ang file sa phone na ito. Walang ina-upload.</string>
+    <string name="settings_your_record_remove">Alisin ang na-import na history</string>
+    <string name="settings_your_record_remove_subtitle">Babalik ang record mo sa mga play mo sa Stash.</string>
+    <string name="settings_your_record_remove_title">Alisin ang na-import mong history?</string>
+    <string name="settings_your_record_remove_body">Buburahin sa phone na ito ang lahat ng idinagdag mula sa Spotify para sa record mo. Mananatili ang mga play mo sa Stash.</string>
+    <string name="settings_your_record_remove_confirm">Alisin</string>
+    <string name="settings_your_record_cancel">Kanselahin</string>
+    <string name="settings_your_record_removed">Inalis ang na-import mong history.</string>
+    <string name="settings_your_record_remove_busy">May import na tumatakbo. Alisin ito kapag tapos na iyon.</string>
+    <string name="settings_your_record_remove_failed">Hindi ito maalis ngayon. Subukan ulit.</string>
+    <string name="settings_your_record_show">Ipakita sa Home</string>
+    <string name="settings_your_record_show_subtitle">Nakatago sa Home ang I-press ang record mo.</string>
+    <string name="settings_your_record_shown">Nasa Home na ulit ang I-press ang record mo</string>
 </resources>

@@ -633,4 +633,24 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">你的唱片</string>
+    <string name="settings_your_record_open">你的唱片</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="other">来自 Spotify：%1$s 次播放。</item>
+    </plurals>
+    <string name="settings_your_record_import">从 Spotify 导入</string>
+    <string name="settings_your_record_newer">添加更新的副本</string>
+    <string name="settings_your_record_import_subtitle">来自 Spotify 数据下载的收听记录。Stash 在这部手机上读取文件。不会上传任何内容。</string>
+    <string name="settings_your_record_remove">移除导入的记录</string>
+    <string name="settings_your_record_remove_subtitle">你的唱片将恢复为你在 Stash 的播放记录。</string>
+    <string name="settings_your_record_remove_title">要移除导入的记录吗？</string>
+    <string name="settings_your_record_remove_body">从 Spotify 导入到你的唱片中的所有内容都会从这部手机上删除。你在 Stash 的播放记录会保留。</string>
+    <string name="settings_your_record_remove_confirm">移除</string>
+    <string name="settings_your_record_cancel">取消</string>
+    <string name="settings_your_record_removed">已移除导入的记录。</string>
+    <string name="settings_your_record_remove_busy">正在导入中。完成后再移除。</string>
+    <string name="settings_your_record_remove_failed">暂时无法移除。请重试。</string>
+    <string name="settings_your_record_show">在首页显示</string>
+    <string name="settings_your_record_show_subtitle">“压制你的唱片”已在首页隐藏。</string>
+    <string name="settings_your_record_shown">“压制你的唱片”已回到首页</string>
 </resources>

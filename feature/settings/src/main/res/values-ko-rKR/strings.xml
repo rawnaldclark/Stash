@@ -633,4 +633,24 @@
     <string name="settings_equalizer_preset_classical">클래식</string>
     <string name="settings_equalizer_save_preset_dialog_title">프리셋 저장</string>
     <string name="settings_equalizer_preset_name_label">프리셋 이름</string>
+    <string name="settings_your_record_section">나의 레코드</string>
+    <string name="settings_your_record_open">나의 레코드</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="other">Spotify에서: %1$s회 재생.</item>
+    </plurals>
+    <string name="settings_your_record_import">Spotify에서 가져오기</string>
+    <string name="settings_your_record_newer">최신 사본 가져오기</string>
+    <string name="settings_your_record_import_subtitle">Spotify 데이터 다운로드의 청취 기록입니다. Stash는 이 휴대폰에서 파일을 읽습니다. 아무것도 업로드되지 않습니다.</string>
+    <string name="settings_your_record_remove">가져온 기록 삭제</string>
+    <string name="settings_your_record_remove_subtitle">나의 레코드가 Stash의 재생 기록으로 돌아갑니다.</string>
+    <string name="settings_your_record_remove_title">가져온 기록을 삭제할까요?</string>
+    <string name="settings_your_record_remove_body">Spotify에서 나의 레코드로 가져온 모든 항목이 이 휴대폰에서 삭제됩니다. Stash의 재생 기록은 그대로 유지됩니다.</string>
+    <string name="settings_your_record_remove_confirm">삭제</string>
+    <string name="settings_your_record_cancel">취소</string>
+    <string name="settings_your_record_removed">가져온 기록을 삭제했습니다.</string>
+    <string name="settings_your_record_remove_busy">가져오기가 진행 중입니다. 완료된 후 삭제하세요.</string>
+    <string name="settings_your_record_remove_failed">지금은 삭제할 수 없습니다. 다시 시도하세요.</string>
+    <string name="settings_your_record_show">홈에 표시</string>
+    <string name="settings_your_record_show_subtitle">‘나의 레코드 만들기’가 홈에서 숨겨져 있습니다.</string>
+    <string name="settings_your_record_shown">‘나의 레코드 만들기’가 홈에 다시 표시됩니다</string>
 </resources>

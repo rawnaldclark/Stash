@@ -664,4 +664,25 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">आपका रिकॉर्ड</string>
+    <string name="settings_your_record_open">आपका रिकॉर्ड</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Spotify से: %1$s प्ले।</item>
+        <item quantity="other">Spotify से: %1$s प्ले।</item>
+    </plurals>
+    <string name="settings_your_record_import">Spotify से इंपोर्ट करें</string>
+    <string name="settings_your_record_newer">नई कॉपी लाएँ</string>
+    <string name="settings_your_record_import_subtitle">Spotify डेटा डाउनलोड से आपका सुनने का इतिहास। Stash इसी फ़ोन पर फ़ाइल पढ़ता है। कुछ भी अपलोड नहीं होता।</string>
+    <string name="settings_your_record_remove">इंपोर्ट किया गया इतिहास हटाएँ</string>
+    <string name="settings_your_record_remove_subtitle">आपका रिकॉर्ड फिर से Stash में आपके प्ले पर लौट आएगा।</string>
+    <string name="settings_your_record_remove_title">अपना इंपोर्ट किया गया इतिहास हटाएँ?</string>
+    <string name="settings_your_record_remove_body">Spotify से आपके रिकॉर्ड के लिए लाया गया सब कुछ इस फ़ोन से मिटा दिया जाएगा। Stash में आपके प्ले बने रहेंगे।</string>
+    <string name="settings_your_record_remove_confirm">हटाएँ</string>
+    <string name="settings_your_record_cancel">रद्द करें</string>
+    <string name="settings_your_record_removed">आपका इंपोर्ट किया गया इतिहास हटा दिया गया।</string>
+    <string name="settings_your_record_remove_busy">एक इंपोर्ट चल रहा है। उसके पूरा होने पर इसे हटाएँ।</string>
+    <string name="settings_your_record_remove_failed">अभी इसे हटाया नहीं जा सका। दोबारा कोशिश करें।</string>
+    <string name="settings_your_record_show">होम पर दिखाएँ</string>
+    <string name="settings_your_record_show_subtitle">“अपना रिकॉर्ड बनाएँ” होम पर छिपा है।</string>
+    <string name="settings_your_record_shown">“अपना रिकॉर्ड बनाएँ” फिर से होम पर है</string>
 </resources>
