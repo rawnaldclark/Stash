@@ -393,6 +393,12 @@ suspend fun updateNowPlaying(
         username: String? = null,
         /** Called when the answer (a success or a remembered miss) came from the local cache. */
         onCacheHit: () -> Unit = {},
+        /**
+         * Through Stash's proxy or not at all (Your record's lengths pass, which asks about thousands of songs): a proxy that is
+         * throttled, unreachable or missing fails the read ([LastFmRateLimitedException], the network's own error, or
+         * [LastFmProxyMissingException]) instead of falling back to a direct read on the app's own keys. Needs no [username].
+         */
+        proxyOnly: Boolean = false,
     ): Result<LastFmTrackInfo> = runCatching {
         val params = sortedMapOf(
             "method" to "track.getInfo",
@@ -401,10 +407,12 @@ suspend fun updateNowPlaying(
             "track" to title,
             "autocorrect" to "1",
         )
+        // Only a shared (cacheable) read can go through the proxy
+        require(!proxyOnly || username.isNullOrBlank()) { "a proxy-only read can't be a user's" }
         if (!username.isNullOrBlank()) params["username"] = username
         // Cacheable only without a username — with one, the response carries
         // that user's personal playcount/loved flags and must stay per-user.
-        val response = unsignedGet(params, cacheable = username.isNullOrBlank(), onCacheHit = onCacheHit)
+        val response = unsignedGet(params, cacheable = username.isNullOrBlank(), onCacheHit = onCacheHit, direct = !proxyOnly)
         LastFmTrackInfo.parse(response)
     }
 
@@ -677,6 +685,8 @@ suspend fun updateNowPlaying(
         onCacheHit: () -> Unit = {},
         /** The read keys a direct request may use (round-robin, breakers respected). */
         keys: List<String> = credentials.readApiKeys,
+        /** False: through the proxy or not at all, never a direct read (see [getTrackInfo]'s `proxyOnly`). Needs [cacheable]. */
+        direct: Boolean = true,
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheKey = if (cacheable) lastFmCacheKey(params) else null
@@ -698,7 +708,8 @@ suspend fun updateNowPlaying(
 
             // The network part is shared by identical concurrent reads.
             if (cacheKey == null) return@withContext fetchUnsigned(params, null, keys)
-            coalesced(cacheKey) { fetchUnsigned(params, cacheKey, keys) }
+            // (a proxy-only read never hands its failure to a caller that could have read direct)
+            coalesced(if (direct) cacheKey else "$cacheKey#proxy-only") { fetchUnsigned(params, cacheKey, keys, direct) }
         }
 
     /**
@@ -753,6 +764,8 @@ suspend fun updateNowPlaying(
         params: Map<String, String>,
         cacheKey: String?,
         keys: List<String>,
+        /** False: the proxy only; its failure is the read's (no direct fallback), and with no proxy nothing is sent. */
+        direct: Boolean = true,
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheable = cacheKey != null
@@ -847,6 +860,12 @@ suspend fun updateNowPlaying(
             // FALL BACK to a direct read key instead of failing — a throttled proxy
             // must not kill discovery (radios, mixes). Breaker keyed by "proxy".
             val useProxy = cacheable && !proxyUrl.isNullOrBlank()
+            if (!direct) {
+                // A bulk lookup: the proxy's answer or failure is the read's own, never one more read on the app's keys
+                if (!useProxy) throw LastFmProxyMissingException("Last.fm proxy not configured; not reading direct")
+                if (rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) throw LastFmRateLimitedException("Last.fm proxy rate-limited; skipping request")
+                return@withContext send(proxyUrl!!, PROXY_BREAKER_KEY, params.toMutableMap().apply { remove("api_key") })
+            }
             if (useProxy && !rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
                 val proxyOutgoing = params.toMutableMap().apply { remove("api_key") }
                 try {

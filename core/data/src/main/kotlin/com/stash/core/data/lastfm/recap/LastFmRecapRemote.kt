@@ -22,6 +22,12 @@ interface LastFmRecapRemote {
     /** track.getInfo's length (cacheable: the proxy and the shared lastfm_cache table keep it). */
     suspend fun trackDurationMs(artist: String, title: String): Result<Long?>
 
+    /**
+     * [trackDurationMs] through Stash's proxy only, never a direct read (Your record's lengths pass asks about whole histories);
+     * [onCacheHit] when the answer was on the phone. The fakes' default: [trackDurationMs].
+     */
+    suspend fun trackLength(artist: String, title: String, onCacheHit: () -> Unit): Result<Long?> = trackDurationMs(artist, title)
+
     /** artist.getTopTags (cacheable, as above). */
     suspend fun artistTags(artist: String): Result<List<LastFmTag>>
 
@@ -42,6 +48,9 @@ internal class LastFmRecapApiRemote(private val api: LastFmApiClient) : LastFmRe
 
     override suspend fun trackDurationMs(artist: String, title: String): Result<Long?> =
         api.getTrackInfo(artist, title).map { it.durationMs }
+
+    override suspend fun trackLength(artist: String, title: String, onCacheHit: () -> Unit): Result<Long?> =
+        api.getTrackInfo(artist, title, onCacheHit = onCacheHit, proxyOnly = true).map { it.durationMs }
 
     override suspend fun artistTags(artist: String): Result<List<LastFmTag>> = api.getArtistTopTags(artist)
 

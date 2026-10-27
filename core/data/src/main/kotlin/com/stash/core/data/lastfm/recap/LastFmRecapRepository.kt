@@ -40,6 +40,21 @@ data class LastFmSpanTotal(val span: LastFmRecapSpan, val total: Int)
 /** A song whose length is wanted: [key] is the caller's song key (what the answer map is keyed by). */
 data class LastFmSongAsk(val key: String, val artist: String, val title: String)
 
+/** What asking Last.fm for one song's length came to ([LastFmRecapRepository.songLength]: Your record's lengths pass). */
+sealed interface LastFmSongLength {
+    /** Its length in ms, above 0 and at most [LastFmRecapRepository.MAX_SONG_MS]; [cached]: the answer was on the phone already. */
+    data class Known(val ms: Long, val cached: Boolean) : LastFmSongLength
+
+    /** Last.fm has no length for it: not found (errors 6 and 7), or a duration of 0, none, or past belief. */
+    data class None(val cached: Boolean) : LastFmSongLength
+
+    /** Busy, rate limited, offline, or an answer that isn't one: ask again later. */
+    data object Busy : LastFmSongLength
+
+    /** Nothing to ask through (no proxy), or the proxy refused the read itself: stop asking. */
+    data object Unavailable : LastFmSongLength
+}
+
 /** Why Last.fm history couldn't be read, so the screen can say so calmly. */
 class LastFmRecapException(val reason: Reason, cause: Throwable? = null) : Exception("Last.fm recap: $reason", cause) {
     enum class Reason {
@@ -310,6 +325,29 @@ class LastFmRecapRepository internal constructor(
         asks.mapNotNull { ask -> cache[ask.key]?.value?.takeIf { it > 0 }?.let { ask.key to it } }.toMap()
     }
 
+    /**
+     * One song's length for Your record's lengths pass (stash-player `src/lib/spotify/lengths.ts`, which asks its Worker's
+     * `/api/lastfm/length`): [durations]'s track.getInfo, by the same paced request and the same shared cache, one song at a time
+     * so the pass can tell a length from none, a busy Last.fm from a missing proxy, and an answer the phone had from one that
+     * cost a request. Through Stash's proxy only, never direct on the app's own keys: the pass asks about every song a whole
+     * Last.fm history holds. Asks once (the pass waits out a busy answer itself) and never throws but for a cancellation.
+     *
+     * What a "no length" costs again: the client keeps Last.fm's not-found 14 days ([com.stash.core.data.lastfm.LastFmCachedMiss])
+     * and the proxy keeps it 14 days at its edge, both under the pass's own 30 days: a song the pass asks again a month on reaches
+     * Last.fm once, and none sooner.
+     */
+    suspend fun songLength(artist: String, title: String): LastFmSongLength = withContext(io) {
+        var cached = false
+        val result = pacer.paced { remote.trackLength(artist, title) { cached = true } }
+        val error = result.exceptionOrNull()
+        if (error == null) {
+            val ms = result.getOrNull()
+            return@withContext if (ms != null && ms in 1..MAX_SONG_MS) LastFmSongLength.Known(ms, cached) else LastFmSongLength.None(cached)
+        }
+        if (error is CancellationException) throw error
+        lengthFailure(error, cached)
+    }
+
     // ── Genres ────────────────────────────────────────────────────────
 
     /**
@@ -446,6 +484,9 @@ class LastFmRecapRepository internal constructor(
         /** Song lengths / artist genres asked of Last.fm per story at most. */
         const val MAX_LOOKUPS = 20
 
+        /** The longest a song's length can be and still be believed (plays.ts `MAX_SONG_MS`). */
+        const val MAX_SONG_MS = 6 * 3_600_000L
+
         /** A song Last.fm had no length for is asked again after this long. */
         const val MISS_RETRY_MS = 30L * 86_400_000
 
@@ -489,6 +530,26 @@ class LastFmRecapRepository internal constructor(
             is LastFmApiException -> error.code in TRANSIENT_ERRORS
             is LastFmHttpException -> error.status >= 500
             else -> false
+        }
+
+        /**
+         * A failed length ask, as the web's Worker answers it (`worker/lastfm-length.ts`: not-found is no length, any other
+         * Last.fm trouble "ask later") and its reader reads that (`lengths.ts` `httpLengthReader`): no proxy, or a proxy that
+         * refuses the read (a 4xx that isn't a rate limit), stops the pass.
+         */
+        internal fun lengthFailure(error: Throwable, cached: Boolean): LastFmSongLength = when (error) {
+            is LastFmApiException ->
+                if (error.code == LastFmApiException.NOT_FOUND || error.code == LastFmApiException.INVALID_RESOURCE) {
+                    LastFmSongLength.None(cached)
+                } else {
+                    LastFmSongLength.Busy
+                }
+            is com.stash.core.data.lastfm.LastFmProxyMissingException -> LastFmSongLength.Unavailable
+            is LastFmRateLimitedException -> LastFmSongLength.Busy
+            is LastFmHttpException -> if (error.status == 429 || error.status >= 500) LastFmSongLength.Busy else LastFmSongLength.Unavailable
+            // No connection, a timeout, a body that isn't JSON or is empty
+            is IOException, is IllegalStateException, is IllegalArgumentException -> LastFmSongLength.Busy
+            else -> LastFmSongLength.Unavailable
         }
 
         /** What a failed read means for the user. */

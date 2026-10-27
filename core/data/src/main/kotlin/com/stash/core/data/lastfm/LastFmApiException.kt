@@ -54,6 +54,12 @@ class LastFmApiException(
 class LastFmRateLimitedException(message: String) : IllegalStateException(message)
 
 /**
+ * A read that may only go through Stash's Last.fm proxy (a bulk lookup that must never land on the app's own key) found no proxy
+ * to ask: this build has none configured. Nothing was sent.
+ */
+class LastFmProxyMissingException(message: String) : IllegalStateException(message)
+
+/**
  * Last.fm (or the proxy) answered HTTP [status] with no `{ error }` body. Typed so a caller can
  * tell a server error (5xx: worth retrying) from anything else. Extends [IllegalStateException],
  * as the plain `error(...)` it replaces did, with the same message.

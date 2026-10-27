@@ -454,6 +454,41 @@ class LastFmRecapRepositoryTest {
         assertThat(repo.durations(asks)).containsExactly("a", 200_000L)
     }
 
+    @Test fun `one song's length for Your record - a length, none, and each failure read as the web's Worker reads it`() = runTest {
+        val (remote, repo) = setup()
+        remote.durations["A"] = 200_000L
+        remote.durations["Zero"] = 0L
+        remote.durations["Null"] = null
+        remote.durations["Huge"] = LastFmRecapRepository.MAX_SONG_MS + 1
+        remote.durations["Max"] = LastFmRecapRepository.MAX_SONG_MS
+        assertThat(repo.songLength("X", "A")).isEqualTo(LastFmSongLength.Known(200_000L, cached = false))
+        assertThat(repo.songLength("X", "Max")).isEqualTo(LastFmSongLength.Known(LastFmRecapRepository.MAX_SONG_MS, cached = false))
+        for (t in listOf("Zero", "Null", "Huge", "Missing")) assertThat(repo.songLength("X", t)).isEqualTo(LastFmSongLength.None(cached = false))
+        // One ask each, through the remote's proxy-only read: never the recap's cache file
+        assertThat(remote.calls.map { it.kind }).containsExactly("duration:A", "duration:Max", "duration:Zero", "duration:Null", "duration:Huge", "duration:Missing").inOrder()
+        val failures = mapOf(
+            LastFmApiException("7", "invalid resource") to LastFmSongLength.None(cached = false),
+            LastFmApiException("29", "rate limit") to LastFmSongLength.Busy,
+            LastFmApiException("8", "operation failed") to LastFmSongLength.Busy,
+            LastFmRateLimitedException("proxy throttled") to LastFmSongLength.Busy,
+            LastFmHttpException(503, "HTTP 503") to LastFmSongLength.Busy,
+            LastFmHttpException(429, "HTTP 429") to LastFmSongLength.Busy,
+            java.io.IOException("no route") to LastFmSongLength.Busy,
+            kotlinx.serialization.SerializationException("not json") to LastFmSongLength.Busy,
+            LastFmHttpException(403, "HTTP 403") to LastFmSongLength.Unavailable,
+            com.stash.core.data.lastfm.LastFmProxyMissingException("no proxy") to LastFmSongLength.Unavailable,
+        )
+        for ((e, want) in failures) {
+            remote.failures += e
+            assertThat(repo.songLength("X", "A")).isEqualTo(want)
+        }
+    }
+
+    @Test fun `a length the phone had is told apart from one that cost a request`() {
+        assertThat(LastFmRecapRepository.lengthFailure(LastFmApiException("6", "not found"), cached = true)).isEqualTo(LastFmSongLength.None(cached = true))
+        assertThat(LastFmRecapRepository.lengthFailure(RuntimeException("bug"), cached = false)).isEqualTo(LastFmSongLength.Unavailable)
+    }
+
     @Test fun `genres - the shared cache is read, only the artists it lacks are asked`() = runTest {
         val (remote, repo) = setup()
         genreRows = listOf(
