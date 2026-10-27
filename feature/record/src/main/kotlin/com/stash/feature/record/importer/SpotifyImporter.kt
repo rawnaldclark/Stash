@@ -54,6 +54,9 @@ data class ImportChoice(val playlists: Set<Int>? = null, val likes: Boolean = tr
 
     companion object {
         val ALL = ImportChoice()
+
+        /** The plays alone: no playlist, no liked songs. */
+        val PLAYS_ONLY = ImportChoice(playlists = emptySet(), likes = false)
     }
 }
 

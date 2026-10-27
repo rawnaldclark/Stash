@@ -65,9 +65,13 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         }.commit()
     }
 
-    /** What the commit under way brings into the library (all of it, for a commit written before the choice was kept). */
+    /**
+     * What the commit under way brings into the library. None saved (a commit an earlier build left pending, from before the
+     * library came in, or none under way): its plays only, never playlists or likes nobody chose.
+     */
     val pendingChoice: ImportChoice
         get() {
+            if (!prefs.contains(KEY_CHOICE_LIKES)) return ImportChoice.PLAYS_ONLY
             val likes = prefs.getBoolean(KEY_CHOICE_LIKES, true)
             val playlists = prefs.getString(KEY_CHOICE_PLAYLISTS, null)?.let { s ->
                 if (s.isEmpty()) emptySet() else s.split(',').mapNotNullTo(LinkedHashSet()) { it.toIntOrNull() }
