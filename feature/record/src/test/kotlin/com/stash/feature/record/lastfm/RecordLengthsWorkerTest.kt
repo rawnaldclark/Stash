@@ -112,6 +112,15 @@ class RecordLengthsWorkerTest {
         assertThat(waiting.tags).contains(RecordLengthsWorker.TAG_ANY)
     }
 
+    @Test fun `a waiting job replaced between the read and the update is passed over, never a crash`() = runBlocking {
+        RecordLengthsWorker.waitForNetwork(context, wifiOnly = true)
+        val read = work.getWorkInfosForUniqueWork("record-lengths").get()
+        // A pass asked for takes its place (REPLACE) before the update gets there
+        RecordLengthsWorker.start(context)
+        RecordLengthsWorker.applyWifiOnly(context, wifiOnly = false, infos = { read })
+        assertThat(pass().single().constraints.requiredNetworkType).isEqualTo(NetworkType.NOT_REQUIRED)
+    }
+
     @Test fun `a pass asked for at once is never turned into one waiting for a network`() = runBlocking {
         RecordLengthsWorker.start(context)
         val running = pass().single().id

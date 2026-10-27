@@ -14,6 +14,8 @@ import com.stash.feature.record.imports.RecordImportStore
 import com.stash.feature.record.imports.RecordImports
 import com.stash.feature.record.imports.RecordWrites
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -184,7 +186,7 @@ class RecordLengths internal constructor(
         waitForNetwork = { wifiOnly, delayMs -> RecordLengthsWorker.waitForNetwork(context, wifiOnly, delayMs) },
         wifiOnly = sync.preferences.map { it.wifiOnly },
         applyWifiOnly = { RecordLengthsWorker.applyWifiOnly(context, it) },
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e -> Log.w(TAG, "the lengths pass's setting follower failed", e) }),
         gate = gate,
         loadHolds = { store.lengthsNetworkHolds },
         saveHolds = { store.lengthsNetworkHolds = it },
@@ -206,7 +208,14 @@ class RecordLengths internal constructor(
         scope?.launch {
             wifiOnly.distinctUntilChanged().collect {
                 wifiOnlyNow.value = it
-                applyWifiOnly(it)
+                // A failure here never ends the following (the next change is applied all the same)
+                try {
+                    applyWifiOnly(it)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "the Wi-Fi-only setting didn't reach the lengths pass's waiting job", e)
+                }
             }
         }
     }
@@ -278,7 +287,15 @@ class RecordLengths internal constructor(
             }
         }
         // The setting may have changed while the run ended: the wait just queued takes it (the job's own update, never a restart)
-        if (end?.network == true) wifiOnly.firstOrNull()?.let { applyWifiOnly(it) }
+        if (end?.network == true) {
+            try {
+                wifiOnly.firstOrNull()?.let { applyWifiOnly(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "the Wi-Fi-only setting didn't reach the lengths pass's waiting job", e)
+            }
+        }
     }
 
     /** How a run ended, when it is to come back: at [retryAt] (a limit), or once there is a [network] ([wifiOnly]: unmetered). */

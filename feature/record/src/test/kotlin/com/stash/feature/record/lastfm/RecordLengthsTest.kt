@@ -117,6 +117,10 @@ class RecordLengthsTest {
         gate: suspend () -> LengthHold? = { null },
         /** Where the network holds are kept (shared: the app's death in between). */
         val holds: Saved = Saved(),
+        /** Where the setting is followed (none: not followed). */
+        scope: kotlinx.coroutines.CoroutineScope? = null,
+        /** What applying the setting to a waiting job does, besides being recorded. */
+        val onApply: (Boolean) -> Unit = {},
     ) {
         val store = CountingStore(MemoryLengthsStore(rows))
         val writes = RecordWrites()
@@ -147,7 +151,8 @@ class RecordLengthsTest {
             wakeAt = { wakes += it },
             waitForNetwork = { wifiOnly, delayMs -> networkWaits += wifiOnly; networkDelays += delayMs },
             wifiOnly = wifiOnly,
-            applyWifiOnly = { applied += it },
+            applyWifiOnly = { applied += it; onApply(it) },
+            scope = scope,
             gate = gate,
             loadHolds = { holds.value?.toInt() ?: 0 },
             saveHolds = { holds.value = it.takeIf { n -> n > 0 }?.toString() },
@@ -422,6 +427,20 @@ class RecordLengthsTest {
         h.lengths.run()
         assertThat(holds.value).isEqualTo("3")
         assertThat(h.networkDelays.last()).isEqualTo(0L)
+    }
+
+    @Test fun `a setting that fails to reach the waiting job never ends the following - the next change gets there`() = runTest {
+        val setting = kotlinx.coroutines.flow.MutableStateFlow(true)
+        var first = true
+        val h = Harness(
+            this, guessed(1), { _, _ -> LengthAnswer(200_000) }, wifiOnly = setting, scope = backgroundScope,
+            // The waiting job replaced between the read and the update (WorkManager's IllegalArgumentException)
+            onApply = { if (first) { first = false; throw IllegalArgumentException("no such work") } },
+        )
+        runCurrent()
+        setting.value = false
+        runCurrent()
+        assertThat(h.applied).containsExactly(true, false).inOrder()
     }
 
     @Test fun `the wait a run queues as it ends takes the setting as it is then, not as the run read it`() = runTest {

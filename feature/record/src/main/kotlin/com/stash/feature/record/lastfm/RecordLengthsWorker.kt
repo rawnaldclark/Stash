@@ -1,6 +1,7 @@
 package com.stash.feature.record.lastfm
 
 import android.content.Context
+import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -14,6 +15,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.await
 import java.util.UUID
@@ -45,6 +47,7 @@ class RecordLengthsWorker @AssistedInject constructor(
     }
 
     companion object {
+        private const val TAG = "YourRecord"
         private const val NAME = "record-lengths"
         private const val WAKE = "record-lengths-wake"
         private const val KEY_WAKE = "wake"
@@ -70,10 +73,23 @@ class RecordLengthsWorker @AssistedInject constructor(
          * one queued behind a pass still running takes the change too, and the running one is never touched; one asked for at once
          * needs no network.
          */
-        suspend fun applyWifiOnly(context: Context, wifiOnly: Boolean) {
+        suspend fun applyWifiOnly(
+            context: Context,
+            wifiOnly: Boolean,
+            /** The pass's jobs as read (a seam: the read can be stale by the time of the update). */
+            infos: suspend (WorkManager) -> List<WorkInfo> = { it.getWorkInfosForUniqueWorkFlow(NAME).first() },
+        ) {
             val work = WorkManager.getInstance(context)
-            for (info in work.getWorkInfosForUniqueWorkFlow(NAME).first()) {
-                if (waitsByOther(info.state, info.tags, wifiOnly)) work.updateWork(request(wifiOnly, info.initialDelayMillis, info.id)).await()
+            for (info in infos(work)) {
+                if (!waitsByOther(info.state, info.tags, wifiOnly)) continue
+                try {
+                    work.updateWork(request(wifiOnly, info.initialDelayMillis, info.id)).await()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Gone since it was read (a pass asked for replaced it): nothing waits to take the setting
+                    Log.w(TAG, "the lengths pass's waiting job was gone before it took the Wi-Fi-only setting", e)
+                }
             }
         }
 
