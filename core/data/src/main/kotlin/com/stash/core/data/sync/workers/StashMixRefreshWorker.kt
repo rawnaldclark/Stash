@@ -36,12 +36,15 @@ import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
 import com.stash.core.data.prefs.DownloadNetworkPreference
+import com.stash.core.data.record.MixTaste
+import com.stash.core.data.record.RecordMixTaste
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.withLock
@@ -93,6 +96,11 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private val tagPoolBuilder: TagPoolBuilder,
     private val trackMatcher: TrackMatcher,
     private val downloadNetworkPreference: DownloadNetworkPreference,
+    /**
+     * Your record's taste (feature:record works it out from the imported history): read once per run. None (no import, or "Use
+     * your record in mixes" off) and every mix is made exactly as before.
+     */
+    private val recordMixTaste: RecordMixTaste = RecordMixTaste.NONE,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -231,6 +239,13 @@ class StashMixRefreshWorker @AssistedInject constructor(
         const val KEY_MATERIALIZE_ONLY = "stash_mix_refresh_materialize_only"
 
         /**
+         * Input-data key for the single-recipe [enqueueOneTime]: the mix made again in today's order (its discoveries rotated by
+         * the day, as the day's periodic run rotates them, never reshuffled as a "Refresh this mix" tap reshuffles them). What
+         * it is made from changed: "Use your record in mixes" was flipped.
+         */
+        const val KEY_SAME_DAY = "stash_mix_refresh_same_day"
+
+        /**
          * Schedule the periodic refresh. Default 24-hour cadence with no
          * constraints — the library-only path works offline and fast
          * enough to not care. Discovery is opportunistic and tolerates
@@ -292,8 +307,12 @@ class StashMixRefreshWorker @AssistedInject constructor(
          * refresh of mix B; REPLACE means a rapid double-tap on the same
          * mix coalesces into one job.
          */
-        fun enqueueOneTime(context: Context, recipeId: Long) {
-            val data = androidx.work.workDataOf(KEY_RECIPE_ID to recipeId)
+        fun enqueueOneTime(context: Context, recipeId: Long, sameDay: Boolean = false) {
+            val data = if (sameDay) {
+                androidx.work.workDataOf(KEY_RECIPE_ID to recipeId, KEY_SAME_DAY to true)
+            } else {
+                androidx.work.workDataOf(KEY_RECIPE_ID to recipeId)
+            }
             val work = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
                 .setConstraints(
                     Constraints.Builder()
@@ -352,6 +371,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
 
         val now = System.currentTimeMillis()
         val lastFmConfigured = lastFmCredentials.isConfigured
+        val taste = readTaste()
 
         val username = sessionPreference.session.first()?.username
         val personas = if (lastFmConfigured && !username.isNullOrBlank()) {
@@ -381,7 +401,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // #287: manual single-recipe refresh rotates on every tap; periodic
         // batch runs rotate once per day (stable within the day so the
         // idempotency backstop still suppresses same-day no-op flashes).
-        val rotationSeed = if (targetId > 0L) now else now / DAY_MS
+        val rotationSeed = if (targetId > 0L && !inputData.getBoolean(KEY_SAME_DAY, false)) now else now / DAY_MS
 
         // v0.9.20 follow-up: single-recipe path needs explicit seeding from the
         // OTHER mixes' current playlist contents. The batch-mode loop accumulates
@@ -404,7 +424,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // tests / future tracing can see exactly what was excluded
             // at the moment of the call.
             val excludeSnapshot = excludeIds.toSet()
-            val tracks = mixGenerator.generate(recipe, excludeSnapshot)
+            val tracks = mixGenerator.generate(recipe, excludeSnapshot, taste)
 
             // Empty-tracks skip is only safe for library-only recipes
             // (discoveryRatio == 0). Pure-discovery recipes like "Stash
@@ -429,7 +449,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // mix" tap shouldn't wait for them. `recipe` was read before the
             // lock, so materializeMix also finds the playlist by its source id.
             val result = materializeMutex.withLock {
-                materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed)
+                materializeMix(recipe, tracks, now, excludeSnapshot, rotationSeed, taste)
             }
             recipeDao.setPlaylistId(recipe.id, result.playlistId)
             recipeDao.setLastRefreshedAt(recipe.id, now)
@@ -442,7 +462,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // Skipped in materialize-only mode: the post-drain re-link must not
             // queue MORE candidates (that's the loop's fuel).
             if (recipe.discoveryRatio > 0f && lastFmConfigured && !materializeOnly) {
-                runCatching { queueDiscoveryForRecipe(recipe, personas) }
+                runCatching { queueDiscoveryForRecipe(recipe, personas, taste) }
                     .onFailure { Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it) }
             }
         }
@@ -484,6 +504,25 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
 
         return Result.success()
+    }
+
+    /**
+     * Your record's taste for this run ([RecordMixTaste.current]): null with none, or when it can't be read (a mix is never held
+     * up by the record).
+     */
+    private suspend fun readTaste(): MixTaste? {
+        val taste = try {
+            recordMixTaste.current()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "your record's taste couldn't be read; mixes without it", e)
+            null
+        }
+        if (taste != null) {
+            Log.i(TAG, "your record: ${taste.artists.size} seed artists, ${taste.avoid.size} songs kept out, ${taste.weights.size} weighted")
+        }
+        return taste
     }
 
     /**
@@ -537,6 +576,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         now: Long,
         excludeIds: Set<Long>,
         rotationSeed: Long,
+        taste: MixTaste? = null,
     ): MaterializeResult {
         // Existing playlist: verify it's still there (could have been
         // deleted by the user). If gone, fall through to re-create.
@@ -657,10 +697,18 @@ class StashMixRefreshWorker @AssistedInject constructor(
             }
             preferredIds + backfill
         }
-        val discoveryTrackIds = buildList {
+        val unblocked = buildList {
             for (trackId in survivorCandidates) {
                 if (!blocklistGuard.isBlockedByTrackId(trackId)) add(trackId)
             }
+        }
+        // Your record's taste: a find it keeps out (hidden on Spotify, always skipped) is never linked
+        val discoveryTrackIds = if (taste == null || taste.avoid.isEmpty() || unblocked.isEmpty()) {
+            unblocked
+        } else {
+            val out = trackDao.getByIds(unblocked).filter { taste.avoids(it.title, it.artist) }.mapTo(HashSet()) { it.id }
+            if (out.isNotEmpty()) Log.i(TAG, "'${recipe.name}': avoided ${out.size} finds (your record)")
+            unblocked.filter { it !in out }
         }
         Log.i(
             TAG,
@@ -764,6 +812,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private suspend fun queueDiscoveryForRecipe(
         recipe: StashMixRecipeEntity,
         personas: LastFmPersonas,
+        taste: MixTaste? = null,
     ) {
         val strategy = MixSeedStrategy.fromStored(recipe.seedStrategy)
         if (strategy == MixSeedStrategy.NONE) return
@@ -772,7 +821,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // not the user's global top tags — the custom-mix + retuned-Deep-Cuts path.
         // Other strategies keep the persona-seeded path below, unchanged.
         if (strategy == MixSeedStrategy.TAG_GRAPH) {
-            queueTagSeededDiscovery(recipe)
+            queueTagSeededDiscovery(recipe, taste)
             return
         }
 
@@ -791,13 +840,17 @@ class StashMixRefreshWorker @AssistedInject constructor(
         val recentArtists = listeningEventDao
             .getTopArtistsSince(recentSince, TOP_ARTISTS_LIMIT)
             .map { it.artist }
-        val affinityArtists = personas.topArtistsByPeriod[LastFmPeriod.ONE_MONTH]
-            ?.takeIf { it.isNotEmpty() }
-            ?.take(TOP_ARTISTS_LIMIT)?.map { it.name }
-            ?: listeningEventDao.getTopArtistsSince(since, TOP_ARTISTS_LIMIT)
-                .map { it.artist }
-                .ifEmpty { trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT) }
-        val seedArtists = blendRecentFirst(recentArtists, affinityArtists, TOP_ARTISTS_LIMIT)
+        val seedArtists = if (taste != null && strategy == MixSeedStrategy.ARTIST_SIMILAR) {
+            tasteSeeds(recipe, recentArtists, personas, since, taste)
+        } else {
+            val affinityArtists = personas.topArtistsByPeriod[LastFmPeriod.ONE_MONTH]
+                ?.takeIf { it.isNotEmpty() }
+                ?.take(TOP_ARTISTS_LIMIT)?.map { it.name }
+                ?: listeningEventDao.getTopArtistsSince(since, TOP_ARTISTS_LIMIT)
+                    .map { it.artist }
+                    .ifEmpty { trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT) }
+            blendRecentFirst(recentArtists, affinityArtists, TOP_ARTISTS_LIMIT)
+        }
 
         // v0.9.20 PR 8: seedTracks gets the same fallback chain as
         // seedArtists (persona > local events > library top-by-LFM-playcount),
@@ -885,7 +938,40 @@ class StashMixRefreshWorker @AssistedInject constructor(
             "'${recipe.name}': ${final.size} candidates via $strategy " +
                 "(${candidates.size - filtered.size} filtered as library/banned)",
         )
-        mixGenerator.queueDiscoveryCandidates(recipe, final)
+        mixGenerator.queueDiscoveryCandidates(recipe, final, taste)
+    }
+
+    /**
+     * Daily Discover's seeds with Your record (stash-player `discover/mix.ts` `seedArtists`): this phone's own (the last 48 hours,
+     * then the Last.fm month or the local 180 days, [blendRecentFirst] as ever), with the taste's seed artists not among them
+     * keeping `max(3, 8 - own)` places ([MixTaste.blendSeeds]). No own seeds: the taste alone, before the library's top artists
+     * (those are not "own": they are what the library holds, not what was played).
+     */
+    private suspend fun tasteSeeds(
+        recipe: StashMixRecipeEntity,
+        recentArtists: List<String>,
+        personas: LastFmPersonas,
+        since: Long,
+        taste: MixTaste,
+    ): List<String> {
+        val longRun = personas.topArtistsByPeriod[LastFmPeriod.ONE_MONTH]
+            ?.takeIf { it.isNotEmpty() }
+            ?.take(TOP_ARTISTS_LIMIT)?.map { it.name }
+            ?: listeningEventDao.getTopArtistsSince(since, TOP_ARTISTS_LIMIT).map { it.artist }
+        val own = blendRecentFirst(recentArtists, longRun, TOP_ARTISTS_LIMIT)
+        val blend = MixTaste.blendSeeds(own, taste.artists)
+        val ownKept = blend.count { it in own }
+        val seeds = if (blend.isNotEmpty()) {
+            blend
+        } else {
+            blendRecentFirst(recentArtists, trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT), TOP_ARTISTS_LIMIT)
+        }
+        val from = if (own.isNotEmpty()) "plays" else if (blend.isNotEmpty()) "history" else "library"
+        Log.i(
+            TAG,
+            "'${recipe.name}': seeds from $from: own=$own, your record=${blend.drop(ownKept)} -> $seeds",
+        )
+        return seeds
     }
 
     /**
@@ -895,7 +981,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
      * the same library/skip pre-filter as the persona path, plus a relaxation
      * ladder (drop era -> drop moods) when the filtered pool is below the floor.
      */
-    private suspend fun queueTagSeededDiscovery(recipe: StashMixRecipeEntity) {
+    private suspend fun queueTagSeededDiscovery(recipe: StashMixRecipeEntity, taste: MixTaste? = null) {
         val userTopTags = mixGenerator.computeUserTopTags(limit = 10)
         val userTopArtists = trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT)
             .map { it.trim().lowercase() }.toHashSet()
@@ -939,7 +1025,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             return
         }
         Log.i(TAG, "'${recipe.name}': queueing ${pool.size} tag-seeded candidates")
-        mixGenerator.queueDiscoveryCandidates(recipe, pool)
+        mixGenerator.queueDiscoveryCandidates(recipe, pool, taste)
     }
 
     /**
