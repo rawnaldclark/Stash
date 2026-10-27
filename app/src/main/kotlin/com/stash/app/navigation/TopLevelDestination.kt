@@ -85,8 +85,9 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object YourRecordRoute
 
 /**
- * Opens Your record, from anywhere (Home's card, Settings, a finished import), and never again over itself: navigating to the
- * record while it shows (an import finished over it, from its own "Bring your Spotify") crashed the app.
+ * Opens Your record, from anywhere (Home's card, Settings, a finished import), and never again over itself: an import finished
+ * over the record (its own "Bring your Spotify") has nothing to open. Navigating to it again replaced its back-stack entry in
+ * place, which crashed the app while the NavHost was the Haze source (StashScaffold now keeps the source off the NavHost).
  */
 fun NavController.openRecord() {
     if (currentDestination?.hasRoute<YourRecordRoute>() == true) return

@@ -409,9 +409,12 @@ fun StashScaffold(
             // The NavHost takes its host lifecycle from here and caps every page at it.
             LocalLifecycleOwner provides pageLifecycleOwner,
         ) {
-        StashNavHost(
-            navController = navController,
-            modifier = Modifier
+        // The page's own box, the NavHost a plain child of it (never on the NavHost's own modifier): a navigate to the page
+        // already showing (single-top) replaces its back-stack entry in place, and with the NavHost itself the Haze source the
+        // RenderThread then recursed through the render tree until its stack ran out (SIGSEGV, the app gone; bisected on the
+        // Pixel 5: any such navigate, Home's or the record's, crashed while the NavHost was the source, none once it wasn't).
+        Box(
+            Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
                 // The bottom chrome owns the system bar inset, so screens' own Scaffolds don't
@@ -429,6 +432,10 @@ fun StashScaffold(
                     alpha = if (p >= 1f) 0f else 1f
                 }
                 .hazeSource(hazeState),
+        ) {
+        StashNavHost(
+            navController = navController,
+            modifier = Modifier.fillMaxSize(),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
             startDestination = when (startTab) {
@@ -438,6 +445,7 @@ fun StashScaffold(
             },
             posting = communityPosting,
         )
+        }
         }
     }
 
