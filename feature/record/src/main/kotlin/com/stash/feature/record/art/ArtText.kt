@@ -1,5 +1,6 @@
 package com.stash.feature.record.art
 
+import com.stash.core.model.weblink.Credits
 import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.JsText
 import java.text.Normalizer
@@ -11,16 +12,14 @@ data class ArtSong(val title: String, val artist: String, val album: String? = n
  * The words rules of the web's cover lookup, ported regex for regex: the Worker's (stash-player `worker/art.ts`: how a song is
  * searched for and a hit is judged) and the client's (`src/lib/spotify/art.ts` `artKey`, `src/lib/spotify/song-key.ts`
  * `bareTitle`: what a cover is kept under). JavaScript's `\s` is spelled out ([JsText.SPACE]) and its `$` (no `m` flag: the
- * end of the text only) is `\z`, since Java's `$` also matches before a final line break.
+ * end of the text only) is `\z`, since Java's `$` also matches before a final line break. The song key's and the credit's cuts are
+ * core:model's ([SongKey.bareTitle], [Credits]), shared with the taste and the mixes.
  */
 internal object ArtText {
     private const val S = JsText.SPACE
     private val MARKS = Regex("\\p{M}")
     private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
     private val SPACE_RUN = Regex("$S+")
-
-    /** The first credited artist's cut: "A, B feat. C" -> "A"; "A & B" stays one name. */
-    private val CREDIT_SPLIT = Regex("$S*(?:[,;]|$S(?:feat\\.?|ft\\.?|featuring|with)$S)$S*", RegexOption.IGNORE_CASE)
 
     /** An album's marks that aren't its name: "- Single", "- EP", "(Deluxe Edition)", "[2011 Remaster]". */
     private val ALBUM_EXTRA = Regex(
@@ -31,13 +30,6 @@ internal object ArtText {
     /** worker art.ts `bareTitle`'s marks: " - 2011 Remaster", "(Remastered)", "(feat. B)". `.` never crosses a line break. */
     private val SEARCH_TITLE_EXTRA = Regex(
         "$S*(?:[-\\u2013]$S*[^\\n\\r\\u2028\\u2029]*remaster[^\\n\\r\\u2028\\u2029]*\\z|[(\\[][^)\\]]*(?:remaster|feat|ft\\.)[^)\\]]*[)\\]])",
-        RegexOption.IGNORE_CASE,
-    )
-
-    /** song-key.ts `REMASTER`: a trailing remaster mark only, the song's own words kept. */
-    private val REMASTER = Regex(
-        "$S*(?:[-\\u2013]$S*(?:\\d{4}$S+)?(?:digital(?:ly)?$S+)?remaster(?:ed)?(?:$S+\\d{4})?(?:$S+version)?|" +
-            "[(\\[]$S*(?:\\d{4}$S+)?(?:digital(?:ly)?$S+)?remaster(?:ed)?(?:$S+\\d{4})?(?:$S+version)?$S*[)\\]])$S*\\z",
         RegexOption.IGNORE_CASE,
     )
 
@@ -55,8 +47,11 @@ internal object ArtText {
             .replace(NON_WORD, " ")
             .trim(' ')
 
-    /** worker art.ts `primary` (radio station.ts `primaryArtist` is the same cut): the first credited artist. */
-    fun primary(a: String): String = JsText.trim(a.split(CREDIT_SPLIT, limit = 2)[0]).ifEmpty { a }
+    /**
+     * worker art.ts `primary`: the first credited artist ([Credits.firstCredit], the cut station.ts `primaryArtist` makes too),
+     * or the credit as it was when the cut leaves nothing (`primaryArtist` gives it trimmed: [Credits.primary]).
+     */
+    fun primary(a: String): String = Credits.firstCredit(a).ifEmpty { a }
 
     /** worker art.ts / client art.ts `bareAlbum`. */
     fun bareAlbum(a: String): String = JsText.trim(ALBUM_EXTRA.replace(a, "")).ifEmpty { a }
@@ -64,8 +59,8 @@ internal object ArtText {
     /** worker art.ts `bareTitle`: what a song is searched for by. */
     fun searchTitle(t: String): String = JsText.trim(SEARCH_TITLE_EXTRA.replace(t, "")).ifEmpty { t }
 
-    /** song-key.ts `bareTitle`: what a song's cover is kept under. */
-    fun keyTitle(t: String): String = JsText.trim(REMASTER.replaceFirst(t, "")).ifEmpty { t }
+    /** song-key.ts `bareTitle` ([SongKey.bareTitle]): what a song's cover is kept under. */
+    fun keyTitle(t: String): String = SongKey.bareTitle(t)
 
     /**
      * client art.ts `artKey`: one cover per album (the primary artist and the album, folded by the identity fold); a song with

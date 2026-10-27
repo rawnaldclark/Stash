@@ -48,11 +48,9 @@ interface RecordLibrary {
     companion object {
         /**
          * importer.ts `commit`'s hidden set: each song under its song key (the same song across its remasters: `songKey`), the
-         * first spelling of each kept.
-         *
-         * Phase 5b: these keys come from today's `ArtText.keyTitle` (Kotlin's `IGNORE_CASE` and `\d`, not JavaScript's ASCII-only
-         * `/i` and `\d`). When 5b moves `songKey` to ASCII-only classes, its migration (v71) must work every `record_hidden` key
-         * out again from the stored `t` and `a`, or a hidden song keyed the old way stops matching.
+         * first spelling of each kept. The key is core:model's [com.stash.core.model.weblink.SongKey.songKey], JavaScript's
+         * ASCII-only `/i` and `\d` spelled out; keys written before it (Kotlin's `IGNORE_CASE` and ICU's `\d`) were worked out
+         * again from the stored `t` and `a` by the v71 migration.
          */
         fun hiddenRows(songs: List<ExportSong>): List<RecordHiddenEntity> =
             songs.map { RecordHiddenEntity(Scrobbles.songKey(it.title, it.artist), it.title, it.artist) }.distinctBy { it.key }

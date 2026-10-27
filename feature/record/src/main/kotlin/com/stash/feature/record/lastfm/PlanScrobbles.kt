@@ -4,7 +4,6 @@ import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.archive.GUESS_MS
 import com.stash.feature.record.archive.RecordFlags
-import com.stash.feature.record.art.ArtText
 
 /** A kept play's span: its start and its end (start plus time played), epoch ms. */
 data class PlaySpan(val s: Long, val e: Long)
@@ -81,8 +80,8 @@ object Scrobbles {
         return out
     }
 
-    /** song-key.ts `songKey`: one song across its remasters ("Song - 2011 Remaster" is "Song"). */
-    fun songKey(title: String, artist: String): String = SongKey.textKey(ArtText.keyTitle(title), artist)
+    /** song-key.ts `songKey` ([SongKey.songKey]): one song across its remasters ("Song - 2011 Remaster" is "Song"). */
+    fun songKey(title: String, artist: String): String = SongKey.songKey(title, artist)
 
     /**
      * plays.ts `knownLengths`: from (title, artist, longest time) of the plays that ran to their end and aren't scrobbles (the

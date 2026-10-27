@@ -35,7 +35,7 @@ class SongRef(
  * whitespace class is spelled out to be JavaScript's `\s` exactly (it matches U+FEFF and not U+0085).
  */
 object SongKey {
-    private const val JS_SPACE = "[\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"
+    private const val JS_SPACE = JsString.SPACE
 
     /** A bracketed credit that starts with feat. / ft. / featuring, as a whole word. Everything else in brackets is identity. */
     private val FEAT_BRACKET = Regex(
@@ -62,6 +62,31 @@ object SongKey {
 
     /** The song's words alone: `fold(title)|fold(artist)`, whatever its ISRC. */
     fun textKey(title: String, artist: String): String = "${fold(title)}|${fold(artist)}"
+
+    /**
+     * stash-player `src/lib/spotify/song-key.ts` `REMASTER`: a trailing remaster mark ("- 2011 Remaster", "– Remastered 2009",
+     * "(Digitally Remastered)", "[2015 Remaster Version]"), ported with JavaScript's own classes spelled out, so the phone's ICU
+     * and the JVM agree with V8: `/i` without `u` folds ASCII letters only ([JsString.ascii]), `\d` is `[0-9]` (ICU's takes every
+     * Unicode digit), `\s` is [JsString.SPACE] and `$` is `\z` (Java's also matches before a final line break).
+     */
+    private val REMASTER: Regex = run {
+        val s = JS_SPACE
+        val mark = "(?:[0-9]{4}$s+)?(?:${JsString.ascii("digital")}(?:${JsString.ascii("ly")})?$s+)?${JsString.ascii("remaster")}" +
+            "(?:${JsString.ascii("ed")})?(?:$s+[0-9]{4})?(?:$s+${JsString.ascii("version")})?"
+        Regex("$s*(?:[-\\u2013]$s*$mark|[(\\[]$s*$mark$s*[)\\]])$s*\\z")
+    }
+
+    /**
+     * song-key.ts `bareTitle`: [title] without a trailing remaster mark, trimmed as JavaScript trims; the title as it was when
+     * nothing would be left. "Song - 2011 Remaster", "Song (Remastered)" and "Song" are one song to the taste.
+     */
+    fun bareTitle(title: String): String = JsString.trim(REMASTER.replaceFirst(title, "")).ifEmpty { title }
+
+    /**
+     * song-key.ts `songKey`: the taste's and the mixes' key for a song, one across its versions: `textKey(bareTitle(title),
+     * artist)`. Never a play's id (that keeps the exact words: [textKey]).
+     */
+    fun songKey(title: String, artist: String): String = textKey(bareTitle(title), artist)
 
     fun textKey(s: SongIdentity): String = textKey(s.title, s.artist)
 
