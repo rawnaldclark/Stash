@@ -61,6 +61,50 @@ class RecordCardSourceTest {
         assertThat(reads).isEqualTo(2)
     }
 
+    @Test fun `a song played here re-reads this phone's plays alone, an import or a removal the imported ones`() = runTest {
+        val stamps = MutableStateFlow(stamp(1))
+        val importedStamp = MutableStateFlow(10)
+        var ownReads = 0
+        var importedReads = 0
+        val imported = { n: Int -> (0 until n).map { ArchivePlay(id = "i$it|x|$it", t = "I$it", a = "Spotify Artist", s = 5_000L + it, ms = 200_000, f = 34) } }
+        val source = RecordCardSource(
+            stamps = stamps,
+            tracks = MutableStateFlow(0L),
+            archive = RecordArchiveSource { _, emit ->
+                ownReads++
+                emit((0 until stamps.value.plays).map(::row), true)
+            },
+            albums = { emptyList() },
+            scope = backgroundScope,
+            work = StandardTestDispatcher(testScheduler),
+            now = { testScheduler.currentTime },
+            importedStamps = importedStamp,
+            imported = RecordArchiveSource { _, emit ->
+                importedReads++
+                emit(imported(importedStamp.value), true)
+            },
+        )
+        val seen = mutableListOf<Int>()
+        backgroundScope.launch { source.data.collect { seen += it.summary.plays } }
+        runCurrent()
+        assertThat(seen.last()).isEqualTo(11)
+        assertThat(listOf(ownReads, importedReads)).containsExactly(1, 1).inOrder()
+
+        // a song played here: this phone's plays read again, the imported part kept
+        stamps.value = stamp(2)
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(seen.last()).isEqualTo(12)
+        assertThat(listOf(ownReads, importedReads)).containsExactly(2, 1).inOrder()
+
+        // an import: both parts read again
+        importedStamp.value = 20
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(seen.last()).isEqualTo(22)
+        assertThat(listOf(ownReads, importedReads)).containsExactly(3, 2).inOrder()
+    }
+
     @Test fun `a history that can't be read keeps what the card had`() = runTest {
         val stamps = MutableStateFlow(stamp(1))
         var fail = false

@@ -136,4 +136,18 @@ class PageRowsTest {
         // "Z" (U+005A) sorts before "z" (U+007A)
         assertThat(b.build().topArtists.map { it.name }).containsExactly("Upper", "Later").inOrder()
     }
+
+    @Test fun `a source's partial, with another source's rows on top, comes to what reading both does`() {
+        fun play(id: String, a: String, s: Long, ms: Long, f: Int) = ArchivePlay(id = id, t = id, a = a, s = s, ms = ms, f = f)
+        val imported = listOf(play("a|1", "Low", 100, 200_000, 34), play("b|2", "Hum", 50, 10_000, 34), play("c|3", "Low", 10, 300_000, 16))
+        val own = listOf(play("d|4", "Hum", 20, 250_000, 256), play("e|5", "Wye Oak", 5, 40_000, 256), play("d|4", "Hum", 20, 250_000, 256))
+
+        val both = RecordSummaryBuilder().apply { (imported + own).forEach { add(it) } }.build()
+        val part = RecordSummaryBuilder().apply { imported.forEach { add(it) } }.partial()
+        val seeded = RecordSummaryBuilder(part).apply { own.forEach { add(it) } }.build()
+
+        assertThat(seeded).isEqualTo(both)
+        assertThat(seeded.ownStreams).isEqualTo(2)
+        assertThat(seeded.plays).isEqualTo(5) // the own id read twice counts once
+    }
 }
