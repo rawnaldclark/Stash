@@ -35,7 +35,17 @@ class ContentOnlyIntakeTest {
         assertThat(ImportIntake.takes(Uri.parse("https://example.com/my_spotify_data.zip"))).isFalse()
     }
 
-    @Test fun `a file URI picked or shared is never opened, and the content ones beside it are`() = runTest {
+    @Test fun `Stash's own providers are never read back through the intake`() {
+        val own = "com.stash.app.debug"
+        assertThat(ImportIntake.takes(Uri.parse("content://com.stash.app.debug.fileprovider/cache/my_spotify_data.zip"), own)).isFalse()
+        assertThat(ImportIntake.takes(Uri.parse("content://com.stash.app.debug/files/x.zip"), own)).isFalse()
+        assertThat(ImportIntake.takes(Uri.parse("content://0@com.stash.app.debug.fileprovider/x.zip"), own)).isFalse()
+        // another app whose name merely starts the same, and any other provider
+        assertThat(ImportIntake.takes(Uri.parse("content://com.stash.app.debugger/x.zip"), own)).isTrue()
+        assertThat(ImportIntake.takes(Uri.parse("content://com.android.providers.downloads.documents/document/42"), own)).isTrue()
+    }
+
+    @Test fun `a file URI or one of Stash's own picked or shared is never opened, and the content ones beside it are`() = runTest {
         val opened = mutableListOf<Uri>()
         var launches = 0
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -53,6 +63,7 @@ class ContentOnlyIntakeTest {
             cancelJob = {},
             jobAlive = { false },
             scope = CoroutineScope(backgroundScope.coroutineContext + dispatcher),
+            ownPackage = "com.stash.app.debug",
             now = { 0L },
             zone = ZoneOffset.UTC,
             io = dispatcher,
@@ -67,7 +78,8 @@ class ContentOnlyIntakeTest {
         assertThat(launches).isEqualTo(0)
 
         val content = Uri.parse("content://com.android.providers.downloads.documents/document/42")
-        imports.bringShared(listOf(Uri.parse("file:///dev/zero"), content))
+        val own = Uri.parse("content://com.stash.app.debug.fileprovider/cache/my_spotify_data.zip")
+        imports.bringShared(listOf(Uri.parse("file:///dev/zero"), own, content))
         runCurrent()
         assertThat(opened).containsExactly(content)
     }

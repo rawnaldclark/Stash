@@ -28,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -45,6 +47,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.InputStream
+import java.util.concurrent.atomic.AtomicReference
 import java.time.ZoneId
 import kotlin.coroutines.CoroutineContext
 import javax.inject.Inject
@@ -108,6 +112,12 @@ enum class ImportNote {
 private class StoppedTooOften : Exception("stopped by the system too often")
 
 /**
+ * The step's import was cancelled (or replaced) while the step ran: thrown at its next checkpoint, so it stops at once even
+ * before WorkManager's own cancel (asynchronous) reaches the job.
+ */
+private class ImportCancelled : CancellationException("the import was cancelled")
+
+/**
  * Bring your Spotify, the app's side (stash-player `src/lib/spotify/service.ts`): the import's state for the Home card, the
  * sheet and Settings, and the steps that change it. One flow, opened from three places: the Home card, the record's
  * `stash:import`, and a zip shared or opened with Stash ([bringShared]: the sheet opens at once and looks inside first).
@@ -145,6 +155,8 @@ class RecordImports internal constructor(
     private val jobAlive: suspend () -> Boolean,
     private val scope: CoroutineScope,
     private val notices: ImportNotices = ImportNotices.None,
+    /** This app's package: URIs of its own providers are never read back through the intake. */
+    private val ownPackage: String = "",
     private val now: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault(),
     /** Where files are copied and looked into (tests run it in place). */
@@ -168,9 +180,16 @@ class RecordImports internal constructor(
         jobAlive = { RecordImportWorker.alive(context) },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         notices = ImportNotifications(context),
+        ownPackage = context.packageName,
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
+
+    /**
+     * Where a provider is read (its name, size and bytes): a call that may never return is left running here when its import is
+     * cancelled, and one that fails fails only its own wait (a supervisor: never the service's scope).
+     */
+    private val reads = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
 
     private val _state = MutableStateFlow<ImportState>(ImportState.Idle)
     val state: StateFlow<ImportState> = _state.asStateFlow()
@@ -234,7 +253,12 @@ class RecordImports internal constructor(
     private var epoch = 0L
     private var cancelledThrough = -1L
 
+    /** A step waits for the job's next run (the app died with it under way): its import's epoch, taken by [resumed]. */
+    private var resumeEpoch: Long? = null
+
     init {
+        // A save the app's death interrupted shows as one at once (and turns new files away) until the job takes it up again
+        if (store.pending != null) markResuming(saving = true)
         scope.launch { start() }
     }
 
@@ -253,7 +277,7 @@ class RecordImports internal constructor(
 
     /** Files chosen in the sheet: read alone, or with the ones already in the preview (each file once). */
     fun bring(uris: List<Uri>) {
-        bringSources(uris.filter(ImportIntake::takes).map(sourceOf), shared = false)
+        bringSources(uris.filter { ImportIntake.takes(it, ownPackage) }.map(sourceOf), shared = false)
     }
 
     /**
@@ -261,7 +285,7 @@ class RecordImports internal constructor(
      * them holds, looked inside, and read only when they hold a Spotify export. Returns the copy (the intake screen keeps its
      * grant until it's done); null when they were turned away because an import is running.
      */
-    fun bringShared(uris: List<Uri>): Job? = bringSources(uris.filter(ImportIntake::takes).map(sourceOf), shared = true)
+    fun bringShared(uris: List<Uri>): Job? = bringSources(uris.filter { ImportIntake.takes(it, ownPackage) }.map(sourceOf), shared = true)
 
     /**
      * Files brought: copied in at once, here in the app (the job may start later than a grant lasts), then read by the job.
@@ -269,9 +293,16 @@ class RecordImports internal constructor(
      */
     internal fun bringSources(sources: List<IntakeSource>, shared: Boolean): Job? {
         if (sources.isEmpty()) return null
+        var tooMany = false
         val copy = synchronized(lock) {
             val current = _state.value
             if (current is ImportState.Working || queued != null || copying?.isActive == true) {
+                null
+            } else if (sources.size > MAX_FILES) {
+                // More files than an export has: refused whole, never a partial import
+                ++epoch
+                _state.value = ImportState.Failed(ImportFailure.TOO_BIG)
+                tooMany = true
                 null
             } else {
                 val e = ++epoch
@@ -280,7 +311,7 @@ class RecordImports internal constructor(
                 scope.launch { copyIn(sources, add, shared, e) }.also { copying = it }
             }
         }
-        if (copy == null) _notes.tryEmit(ImportNote.BUSY)
+        if (tooMany) markUnfinished() else if (copy == null) _notes.tryEmit(ImportNote.BUSY)
         if (shared) openSheet()
         return copy
     }
@@ -308,7 +339,7 @@ class RecordImports internal constructor(
         clearUnfinished()
         scope.launch {
             ready.await()
-            val had = synchronized(lock) { files }.ifEmpty { withContext(io) { intake.existing() } }
+            val had = synchronized(lock) { files }.ifEmpty { kept() }
             val go = synchronized(lock) {
                 if (e != epoch || e <= cancelledThrough) return@launch
                 if (had.isNotEmpty()) {
@@ -333,15 +364,14 @@ class RecordImports internal constructor(
             if (_state.value !is ImportState.Working) return
             cancelledThrough = epoch
             queued = null
+            resumeEpoch = null
             _state.value = ImportState.Idle
-            epoch to copying
+            (epoch to copying).also { copying = null }
         }
+        // Not waited for: a provider's read can block for ever. The copy stops at once and its read cleans up when it returns.
         copy?.cancel()
         cancelJob()
-        scope.launch {
-            copy?.join()
-            dropAfterCancel(e)
-        }
+        scope.launch { dropAfterCancel(e) }
     }
 
     /** Back to the start (a preview, a failure or the done step): its files let go. Nothing while an import runs. */
@@ -384,23 +414,88 @@ class RecordImports internal constructor(
 
     // ── the copy ────────────────────────────────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Copies [sources] in, each in three steps (a name reserved, the bytes streamed, the part renamed) so that the lock on the
+     * copies is never held while a provider is read, and a read that never returns holds up nothing: neither a Cancel, nor the
+     * next import. The provider's name, size and bytes are all read off the main thread.
+     */
     private suspend fun copyIn(sources: List<IntakeSource>, add: Boolean, shared: Boolean, e: Long) {
+        val copied = ArrayList<PickedFile>()
         try {
             ready.await()
             val had = synchronized(lock) { if (add) files else emptyList() }
-            val job = currentCoroutineContext().job
-            val copies = disk.withLock { withContext(io) { intake.copy(sources, had) { job.ensureActive() } } }
+            var total = withContext(io) { had.sumOf { it.file.length() } }
+            for (src in sources) {
+                val (name, size) = abandonable(e) { src.name to src.size }
+                if (intake.alreadyHave(name, size, had + copied)) continue
+                val part = disk.withLock { withContext(io) { intake.reserve(name) } }
+                val n = streamInto(src, part, intake.maxTotal - total, e)
+                total += n
+                // Kept only while the import is wanted; otherwise its part goes now
+                val copy = withContext(NonCancellable) {
+                    disk.withLock {
+                        withContext(io) {
+                            if (synchronized(lock) { live(e) }) intake.finish(part) else null.also { part.delete() }
+                        }
+                    }
+                } ?: throw ImportCancelled()
+                copied += copy
+            }
             synchronized(lock) {
-                if (e != epoch || e <= cancelledThrough) return
-                queued = Work.Read(had, copies, shared, e)
+                if (!live(e)) throw ImportCancelled()
+                queued = Work.Read(had, copied, shared, e)
             }
             launch()
         } catch (c: CancellationException) {
+            dropCopies(copied)
             throw c
         } catch (t: Throwable) {
+            dropCopies(copied)
             failed(t, saving = false, e = e)
         }
     }
+
+    /**
+     * Streams [src] into [part] on [io], where a provider's read can block for as long as it likes: this waits for it only while
+     * import [e] is wanted. On a cancel it returns at once, closes the provider's stream (on Android that wakes a blocked read)
+     * and leaves the read to delete the part when it ends, however it ends.
+     */
+    private suspend fun streamInto(src: IntakeSource, part: File, cap: Long, e: Long): Long {
+        val input = AtomicReference<InputStream?>()
+        val streaming = reads.async(io) {
+            intake.stream(src, part, cap, opened = input::set) {
+                if (!isActive || !synchronized(lock) { live(e) }) throw ImportCancelled()
+            }
+        }
+        try {
+            return streaming.await()
+        } catch (t: Throwable) {
+            streaming.cancel()
+            streaming.invokeOnCompletion { part.delete() }
+            input.get()?.let { s -> reads.launch(io) { runCatching { s.close() } } }
+            throw t
+        }
+    }
+
+    /** [block] (a call into another app) on [io], waited for only while import [e] is wanted. */
+    private suspend fun <T> abandonable(e: Long, block: () -> T): T {
+        val call = reads.async(io) { block() }
+        return try {
+            call.await().also { if (!synchronized(lock) { live(e) }) throw ImportCancelled() }
+        } catch (t: Throwable) {
+            call.cancel()
+            throw t
+        }
+    }
+
+    /** This call's copies go (a refused or cancelled copy keeps nothing). */
+    private suspend fun dropCopies(copies: List<PickedFile>) {
+        if (copies.isEmpty()) return
+        withContext(NonCancellable) { disk.withLock { withContext(io) { intake.delete(copies) } } }
+    }
+
+    /** The finished copies, listed under the lock (never a part still streaming). */
+    private suspend fun kept(): List<PickedFile> = disk.withLock { withContext(io) { intake.existing() } }
 
     // ── the job ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -415,6 +510,8 @@ class RecordImports internal constructor(
             }
         } catch (c: CancellationException) {
             withContext(NonCancellable) { stopped(work) }
+            // The import cancelled under a step still running (WorkManager's cancel hadn't reached it): the step just ends
+            if (c is ImportCancelled && currentCoroutineContext().isActive) return
             throw c
         } catch (t: Throwable) {
             // Whatever it was (an OutOfMemoryError among them), the import never stays at Working
@@ -424,17 +521,35 @@ class RecordImports internal constructor(
 
     /**
      * Nothing queued: the job ran again after the app died. A save it was writing goes on (from the copies it kept); a read it
-     * was doing is done again from the copies, to its preview. A failed import's copies wait for the person's Try again.
+     * was doing is done again from the copies, to its preview. A failed import's copies wait for the person's Try again. The
+     * step's import is claimed under the lock, so files brought meanwhile are turned away rather than mixed in.
      */
     private suspend fun resumed(): Work? {
-        if (_state.value != ImportState.Idle) return null
-        val e = synchronized(lock) { ++epoch }
+        val e = synchronized(lock) {
+            if (queued != null || copying?.isActive == true) return null
+            val waiting = resumeEpoch
+            resumeEpoch = null
+            when {
+                waiting != null -> waiting.takeIf { it == epoch && it > cancelledThrough } ?: return null
+                _state.value == ImportState.Idle ->
+                    (++epoch).also { _state.value = ImportState.Working(ImportProgress.Open, saving = store.pending != null) }
+                else -> return null
+            }
+        }
         if (store.pending != null) return Work.Commit(e)
-        if (store.info.value.unfinished != null) return null
-        val kept = withContext(io) { intake.existing() }
-        if (kept.isEmpty()) return null
-        _state.value = ImportState.Working(ImportProgress.Open)
+        val kept = if (store.info.value.unfinished == null) kept() else emptyList()
+        if (kept.isEmpty()) {
+            publishAt(e, ImportState.Idle)
+            return null
+        }
+        publishAt(e, ImportState.Working(ImportProgress.Open))
         return Work.Read(emptyList(), kept, shared = false, epoch = e)
+    }
+
+    /** A step waits for the job's next run: shown as under way (files brought meanwhile are turned away), cancellable. */
+    private fun markResuming(saving: Boolean) = synchronized(lock) {
+        resumeEpoch = ++epoch
+        _state.value = ImportState.Working(ImportProgress.Open, saving = saving)
     }
 
     private suspend fun read(work: Work.Read, onProgress: (ImportProgress) -> Unit) {
@@ -471,7 +586,7 @@ class RecordImports internal constructor(
                 }
             }
             publish(work, ImportState.Working(ImportProgress.Open))
-            val prep = importer.prepare(all, now(), checkpoint = { job.ensureActive() }, zip = zip) { p ->
+            val prep = importer.prepare(all, now(), checkpoint = { checkpoint(job, work) }, zip = zip) { p ->
                 publish(work, ImportState.Working(p))
                 onProgress(p)
             }
@@ -507,7 +622,7 @@ class RecordImports internal constructor(
         val job = currentCoroutineContext().job
         val prep = synchronized(lock) { prepared } ?: run {
             // The app died after the preview or mid-write: read the kept copies again (the merge is planned afresh anyway)
-            val kept = withContext(io) { intake.existing() }
+            val kept = kept()
             if (kept.isEmpty()) {
                 writes.withLock { finishPending() }
                 publish(work, ImportState.Idle)
@@ -515,13 +630,13 @@ class RecordImports internal constructor(
             }
             synchronized(lock) { if (live(work)) files = kept }
             publish(work, ImportState.Working(ImportProgress.Open, saving = true))
-            importer.prepare(kept, now(), checkpoint = { job.ensureActive() }) { onProgress(it) }
+            importer.prepare(kept, now(), checkpoint = { checkpoint(job, work) }) { onProgress(it) }
         }
         val result = writes.withLock {
-            job.ensureActive()
+            checkpoint(job, work)
             store.setPending(now())
             publish(work, ImportState.Working(ImportProgress.Write(0, 0), saving = true))
-            val r = importer.commit(prep, checkpoint = { job.ensureActive() }) { p ->
+            val r = importer.commit(prep, checkpoint = { checkpoint(job, work) }) { p ->
                 publish(work, ImportState.Working(p, saving = true))
                 onProgress(p)
             }
@@ -529,14 +644,16 @@ class RecordImports internal constructor(
             store.setPending(null)
             r
         }
-        val e = synchronized(lock) {
-            if (live(work)) {
-                prepared = null
-                files = emptyList()
+        val mine = synchronized(lock) {
+            live(work).also {
+                if (it) {
+                    prepared = null
+                    files = emptyList()
+                }
             }
-            epoch
         }
-        clearCopies(e)
+        // Its own import's copies only: a newer import's are never touched
+        if (mine) clearCopies(work.epoch)
         store.clearStops()
         clearUnfinished()
         Log.i(TAG, "import written: ${result.listens} new listens, ${result.written} plays, ${result.dropped} dropped")
@@ -545,7 +662,21 @@ class RecordImports internal constructor(
     }
 
     /** [work]'s import is the latest and wasn't cancelled. Under [lock]. */
-    private fun live(work: Work): Boolean = work.epoch == epoch && work.epoch > cancelledThrough
+    private fun live(work: Work): Boolean = live(work.epoch)
+
+    /** Import [e] is the latest and wasn't cancelled. Under [lock]. */
+    private fun live(e: Long): Boolean = e == epoch && e > cancelledThrough
+
+    /** Between a step's blocks: stops on the job's cancel, and on the import's (WorkManager's cancel reaches the job later). */
+    private fun checkpoint(job: Job, work: Work) {
+        job.ensureActive()
+        if (!synchronized(lock) { live(work) }) throw ImportCancelled()
+    }
+
+    /** Shows [s] for import [e], unless it was cancelled or another has begun since. */
+    private fun publishAt(e: Long, s: ImportState): Boolean = synchronized(lock) {
+        live(e).also { if (it) _state.value = s }
+    }
 
     /**
      * Shows [s] for [work]'s import, unless the person cancelled it or another import has begun since: a step stopped by a
@@ -571,8 +702,9 @@ class RecordImports internal constructor(
             return
         }
         Log.i(TAG, "the import was stopped by the system ($stops): it goes on when the job runs again")
-        // A stopped job runs again by itself: in this process it takes the same step; after the app's death, resumed() finds it
-        synchronized(lock) { if (queued == null) queued = work }
+        // A stopped job runs again by itself: in this process it takes the same step; after the app's death, resumed() finds it.
+        // Checked again here, in the lock that queues it: a Cancel can land while the stop was being counted
+        synchronized(lock) { if (queued == null && live(work)) queued = work }
     }
 
     /**
@@ -680,7 +812,19 @@ class RecordImports internal constructor(
             if (store.pending != null) {
                 if (!alive) launch()
             } else {
-                if (!alive && store.info.value.unfinished == null) withContext(io) { intake.clear() }
+                val waits = store.info.value.unfinished != null
+                if (!alive && !waits) {
+                    // Nothing can be copying yet (files brought now wait for this check): parts left by a dead copy go too
+                    disk.withLock { withContext(io) { intake.clearAll() } }
+                } else if (alive && !waits && kept().isNotEmpty()) {
+                    // A read the app's death interrupted, its job still to run: under way, so new files don't replace it unseen
+                    synchronized(lock) {
+                        if (_state.value == ImportState.Idle && queued == null && copying?.isActive != true) {
+                            resumeEpoch = ++epoch
+                            _state.value = ImportState.Working(ImportProgress.Open)
+                        }
+                    }
+                }
                 if (store.info.value.record == null && archive.count() > 0) writes.withLock { storeRecord(added = 1) }
             }
         } catch (e: CancellationException) {
@@ -696,6 +840,9 @@ class RecordImports internal constructor(
 
     internal companion object {
         const val TAG = "YourRecord"
+
+        /** Files in one import, at most (Spotify sends two zips; a folder of loose history files is a few dozen). */
+        const val MAX_FILES = 64
 
         /** Times the system may stop one import before it's given up as unfinished (a heavy import takes a minute or two). */
         const val MAX_STOPS = 3

@@ -142,6 +142,43 @@ class ImportIntakeTest {
         assertThat(ImportIntake.safeName("my_spotify_data.zip")).isEqualTo("my_spotify_data.zip")
     }
 
+    @Test fun `a copy still streaming is a part - never listed, never cleared under it, gone with everything at start`() {
+        val dir = tmp.newFolder("files")
+        val intake = ImportIntake(dir)
+        val done = intake.copy(listOf(source("my_spotify_data.zip", resource("my_spotify_data.zip"))), emptyList())
+        val part = intake.reserve("my_spotify_data (1).zip")
+
+        assertThat(part.exists()).isTrue()
+        assertThat(intake.existing().map { it.file }).containsExactly(done.single().file)
+        // the next name after both
+        val next = intake.reserve("x.json")
+        assertThat(next.name).startsWith("part2__")
+        intake.clear()
+        assertThat(intake.existing()).isEmpty()
+        assertThat(part.exists() && next.exists()).isTrue()
+        intake.clearAll()
+        assertThat(dir.listFiles().orEmpty()).isEmpty()
+        // a file someone named .part is a copy like any other
+        val named = intake.copy(listOf(source("history.part", file("h.part", "[]".toByteArray()))), emptyList())
+        assertThat(intake.existing().map { it.name }).containsExactly("history.part")
+        assertThat(named).hasSize(1)
+    }
+
+    @Test fun `an Error while streaming (not only an Exception) leaves no file behind`() {
+        val dir = tmp.newFolder("files")
+        val intake = ImportIntake(dir)
+        val broken = IntakeSource("my_spotify_data.zip", null) {
+            object : InputStream() {
+                override fun read(): Int = throw OutOfMemoryError("test")
+                override fun read(b: ByteArray, off: Int, len: Int): Int = throw OutOfMemoryError("test")
+            }
+        }
+        assertThrows(OutOfMemoryError::class.java) {
+            intake.copy(listOf(source("my_spotify_data (1).zip", resource("my_spotify_data (1).zip")), broken), emptyList())
+        }
+        assertThat(dir.listFiles().orEmpty()).isEmpty()
+    }
+
     @Test fun `clear lets every copy go`() {
         val dir = tmp.newFolder("files")
         val intake = ImportIntake(dir)

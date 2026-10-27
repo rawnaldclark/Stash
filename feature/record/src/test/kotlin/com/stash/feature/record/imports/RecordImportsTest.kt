@@ -2,10 +2,12 @@ package com.stash.feature.record.imports
 
 import com.google.common.truth.Truth.assertThat
 import com.stash.feature.record.archive.ArchivePlay
+import com.stash.feature.record.importer.ArchiveListens
 import com.stash.feature.record.importer.ImportProgress
 import com.stash.feature.record.importer.KeptPlay
 import com.stash.feature.record.importer.MemoryArchive
 import com.stash.feature.record.importer.RecordArchiveStore
+import com.stash.feature.record.importer.SpotifyImporter
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,6 +24,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.time.ZoneOffset
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -87,12 +90,17 @@ class RecordImportsTest {
         val scratch: File = tmp.newFolder(),
         alive: Boolean = false,
         intake: ImportIntake = ImportIntake(files),
+        /** False: the person's Cancel reaches the job only later (WorkManager's cancel is asynchronous). */
+        private val cancelStops: Boolean = true,
     ) {
         val store = RecordImportStore(prefs)
         val notices = Notices()
         var launches = 0
         var cancels = 0
         val jobs = mutableListOf<Job>()
+
+        /** Each step's progress, as the job's notification hears it. */
+        var onProgress: (ImportProgress) -> Unit = {}
         lateinit var imports: RecordImports
         private val dispatcher = StandardTestDispatcher(test.testScheduler)
 
@@ -110,7 +118,7 @@ class RecordImportsTest {
                 },
                 cancelJob = {
                     cancels++
-                    stop()
+                    if (cancelStops) stop()
                 },
                 jobAlive = { alive },
                 scope = CoroutineScope(test.backgroundScope.coroutineContext + dispatcher),
@@ -123,7 +131,7 @@ class RecordImportsTest {
 
         /** The job runs (again): WorkManager's run of the unique work. */
         fun rerun() {
-            jobs += test.backgroundScope.launch(dispatcher) { imports.runNext() }
+            jobs += test.backgroundScope.launch(dispatcher) { imports.runNext { onProgress(it) } }
         }
 
         /** The job is stopped: by the system, when nobody called [RecordImports.cancel]. */
@@ -586,6 +594,159 @@ class RecordImportsTest {
         runCurrent()
         assertThat(rig.store.info.value.record!!.plays).isEqualTo(1)
         assertThat(rig.launches).isEqualTo(0)
+    }
+
+    // ── round 3 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a commit finishing after a Cancel never deletes the copies of the import brought since`() = runTest {
+        // WorkManager's cancel reaches the job late: the commit, past its last write, is still putting its record together
+        val gate = CompletableDeferred<Unit>()
+        val memory = MemoryArchive()
+        val archive = object : RecordArchiveStore by memory {
+            override suspend fun listens(): ArchiveListens {
+                withContext(NonCancellable) { gate.await() }
+                return memory.listens()
+            }
+        }
+        val rig = Rig(this, archive = archive, cancelStops = false)
+        rig.imports.bringSources(listOf(source(ACCOUNT)), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        rig.imports.cancel()
+        runCurrent()
+        // A new import, brought and copied while the old commit hasn't finished
+        rig.imports.bringSources(listOf(source(EXTENDED)), shared = false)
+        runCurrent()
+
+        gate.complete(Unit)
+        runCurrent()
+
+        assertThat(rig.copies().map { it.name.substringAfter("__") }).contains(EXTENDED)
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Preview::class.java)
+    }
+
+    @Test fun `a Cancel during an import under 5,000 plays writes none of it`() = runTest {
+        val memory = MemoryArchive()
+        // The job hears of the Cancel late (WorkManager's is asynchronous): the import's own checkpoint stops it
+        val rig = Rig(this, archive = memory, cancelStops = false)
+        rig.imports.bringSources(listOf(source(ACCOUNT)), shared = false)
+        runCurrent()
+        assertThat((rig.imports.state.value as ImportState.Preview).preview.plays).isLessThan(SpotifyImporter.BATCH)
+        rig.onProgress = { if (it is ImportProgress.Write) rig.imports.cancel() }
+
+        rig.imports.confirm()
+        runCurrent()
+
+        assertThat(memory.plays).isEmpty()
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
+        assertThat(rig.store.pending).isNull()
+        assertThat(rig.store.info.value.record).isNull()
+    }
+
+    @Test fun `a Cancel while a system stop is being counted - the step isn't queued again, and new files are taken`() = runTest {
+        val prefs = MemoryPrefs()
+        val rig = Rig(this, archive = GatedArchive(MemoryArchive(), from = 2, gate = CompletableDeferred()), prefs = prefs)
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        // The Cancel lands just as the stop is written down
+        prefs.onCommit = { keys ->
+            if ("import_stops" in keys) {
+                prefs.onCommit = null
+                rig.imports.cancel()
+            }
+        }
+
+        rig.stop()
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
+        assertThat(rig.imports.bringSources(listOf(source(ACCOUNT)), shared = false)).isNotNull()
+    }
+
+    @Test fun `after the app's death with a save under way, it shows as one at once and new files wait for it`() = runTest {
+        val prefs = MemoryPrefs()
+        val files = tmp.newFolder()
+        resource(EXTENDED).copyTo(File(files, "0__$EXTENDED"))
+        resource(ACCOUNT).copyTo(File(files, "1__$ACCOUNT"))
+        RecordImportStore(prefs).setPending(NOW - 1_000)
+        val memory = MemoryArchive()
+        // The job is still queued (WorkManager runs it again once the app is back)
+        val rig = Rig(this, archive = memory, prefs = prefs, files = files, runs = false, alive = true)
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Working(ImportProgress.Open, saving = true))
+        runCurrent()
+        assertThat(rig.imports.bringSources(listOf(source(ACCOUNT)), shared = false)).isNull()
+
+        rig.rerun()
+        runCurrent()
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Done::class.java)
+        assertThat(memory.plays).hasSize(6_814)
+        assertThat(rig.copies()).isEmpty()
+    }
+
+    @Test fun `after the app's death mid-read with its job still to run, it shows as under way and new files wait for it`() = runTest {
+        val files = tmp.newFolder()
+        resource(EXTENDED).copyTo(File(files, "0__$EXTENDED"))
+        resource(ACCOUNT).copyTo(File(files, "1__$ACCOUNT"))
+        val rig = Rig(this, files = files, runs = false, alive = true)
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Working(ImportProgress.Open))
+        assertThat(rig.imports.bringSources(listOf(decoy), shared = false)).isNull()
+
+        rig.rerun()
+        runCurrent()
+        assertThat((rig.imports.state.value as ImportState.Preview).preview.plays).isEqualTo(6_086)
+    }
+
+    @Test fun `more files than an export has are refused whole - too big, nothing copied`() = runTest {
+        val rig = Rig(this)
+        val many = (0..RecordImports.MAX_FILES).map { i -> IntakeSource("StreamingHistory_music_$i.json", 2) { "[]".byteInputStream() } }
+
+        assertThat(rig.imports.bringSources(many, shared = true)).isNull()
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.TOO_BIG))
+        assertThat(rig.imports.sheetOpen.value).isTrue()
+        assertThat(rig.copies()).isEmpty()
+        assertThat(rig.launches).isEqualTo(0)
+        assertThat(rig.notices.shown).isEqualTo(1)
+        // At the cap, taken
+        val atCap = many.take(RecordImports.MAX_FILES)
+        rig.imports.reset()
+        assertThat(rig.imports.bringSources(atCap, shared = false)).isNotNull()
+    }
+
+    @Test fun `a provider's name and size are asked when the copy runs, never on the caller's thread`() = runTest {
+        var asked = 0
+        val src = IntakeSource(describe = { asked++; EXTENDED to null }, open = { resource(EXTENDED).inputStream() })
+        val rig = Rig(this, runs = false)
+
+        rig.imports.bringSources(listOf(src), shared = false)
+        assertThat(asked).isEqualTo(0)
+        runCurrent()
+
+        assertThat(asked).isEqualTo(1)
+        assertThat(rig.copies()).hasSize(1)
+    }
+
+    @Test fun `an Error while a provider is read ends at Failed and leaves no part behind`() = runTest {
+        val broken = IntakeSource(EXTENDED, null) {
+            object : InputStream() {
+                override fun read(): Int = throw OutOfMemoryError("test")
+                override fun read(b: ByteArray, off: Int, len: Int): Int = throw OutOfMemoryError("test")
+            }
+        }
+        val rig = Rig(this)
+
+        rig.imports.bringSources(listOf(broken), shared = false)
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.OTHER))
+        assertThat(rig.files.listFiles().orEmpty()).isEmpty()
     }
 
     private companion object {

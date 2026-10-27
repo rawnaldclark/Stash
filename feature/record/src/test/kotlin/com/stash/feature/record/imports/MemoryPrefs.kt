@@ -6,6 +6,9 @@ import android.content.SharedPreferences
 class MemoryPrefs : SharedPreferences {
     val map = HashMap<String, Any?>()
 
+    /** Called after each commit with the keys it wrote (a test steps in at a chosen write). */
+    var onCommit: ((Set<String>) -> Unit)? = null
+
     override fun getAll(): MutableMap<String, *> = HashMap(map)
     override fun getString(key: String, defValue: String?): String? = map[key] as? String ?: defValue
 
@@ -35,6 +38,7 @@ class MemoryPrefs : SharedPreferences {
             if (clear) map.clear()
             removes.forEach { map.remove(it) }
             map.putAll(puts)
+            onCommit?.invoke(puts.keys.toSet())
             return true
         }
         override fun apply() {

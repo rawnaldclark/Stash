@@ -216,11 +216,16 @@ internal class SpotifyImporter(
             }
         }
         if (batch.isNotEmpty()) {
+            // The last batch too (an import under 5,000 plays is only this one): a cancel before it writes nothing
+            checkpoint()
             archive.apply(batch.toList(), emptyList())
             done += batch.size
             progress(ImportProgress.Write(done, total))
         }
-        for (part in plan.drop.chunked(BATCH)) archive.apply(emptyList(), part)
+        for (part in plan.drop.chunked(BATCH)) {
+            checkpoint()
+            archive.apply(emptyList(), part)
+        }
         return CommitResult(listens = listens, written = total, dropped = plan.drop.size)
     }
 
