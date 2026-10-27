@@ -157,4 +157,8 @@ object DatabaseModule {
     /** Your record's lengths pass: the songs it couldn't time (`record_lengths`). */
     @Provides
     fun provideRecordLengthDao(db: StashDatabase): com.stash.core.data.db.dao.RecordLengthDao = db.recordLengthDao()
+
+    /** Your record's songs hidden on Spotify (`record_hidden`), from a Spotify export. */
+    @Provides
+    fun provideRecordHiddenDao(db: StashDatabase): com.stash.core.data.db.dao.RecordHiddenDao = db.recordHiddenDao()
 }

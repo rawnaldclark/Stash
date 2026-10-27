@@ -118,8 +118,9 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
         com.stash.core.data.db.entity.RecordPlayEntity::class,
         com.stash.core.data.db.entity.RecordLengthEntity::class,
+        com.stash.core.data.db.entity.RecordHiddenEntity::class,
     ],
-    version = 69,
+    version = 70,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -186,6 +187,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun recordPlayDao(): com.stash.core.data.db.dao.RecordPlayDao
 
     abstract fun recordLengthDao(): com.stash.core.data.db.dao.RecordLengthDao
+
+    abstract fun recordHiddenDao(): com.stash.core.data.db.dao.RecordHiddenDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1844,6 +1847,19 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v69 -> v70: Your record's songs hidden on Spotify (`record_hidden`, keyed by song key), from a Spotify export's
+         * YourLibrary.json. Empty to begin with; nothing else changes.
+         */
+        val MIGRATION_69_70 = object : Migration(69, 70) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_hidden` (" +
+                        "`key` TEXT NOT NULL, `t` TEXT NOT NULL, `a` TEXT NOT NULL, PRIMARY KEY(`key`))",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1949,6 +1965,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_66_67,
                 MIGRATION_67_68,
                 MIGRATION_68_69,
+                MIGRATION_69_70,
             )
         }
     }
