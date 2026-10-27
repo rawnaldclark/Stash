@@ -5,13 +5,17 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.common.TrackCanonical
+import com.stash.core.data.blocklist.BlocklistGuard
+import com.stash.core.data.blocklist.BlocklistKey
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.library.canonicalWordsForSave
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.record.ChosenPlaylist
 import com.stash.core.data.record.ExportPlaylist
+import com.stash.core.data.record.ExportSong
 import com.stash.core.data.record.SpotifyLibraryImport
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.share.SharedMixRepository
@@ -60,16 +64,26 @@ class SpotifyLibraryImportTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java).allowMainThreadQueries().build()
         val music = mockk<MusicRepository>()
-        // Listen Together's exact persist: a stream-only row for a song the library doesn't have (never downloaded)
+        // The app's blocklist guard over this database: its key check, and so the real canonicalWordsForSave
+        val guard = mockk<BlocklistGuard>()
+        coEvery { guard.isKeyBlocked(any(), any()) } coAnswers {
+            db.trackBlocklistDao().findByKey(BlocklistKey.fromStoredCanonicals(secondArg(), firstArg())) != null
+        }
+        // Listen Together's exact persist, as MusicRepositoryImpl does it: a row found by an id, else a new stream-only row
+        // (never downloaded) under the words canonicalWordsForSave picks (the strict ones when the usual key is blocked)
         coEvery { music.ensureExactTrackPersisted(any()) } coAnswers {
             val s = firstArg<SharedTrack>()
-            db.trackDao().insert(
-                TrackEntity(
-                    title = s.title, artist = s.artist, album = s.album ?: "", isrc = s.isrc, youtubeId = s.youtubeId,
-                    spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true, source = MusicSource.BOTH,
-                    canonicalTitle = TrackCanonical.title(s.title), canonicalArtist = TrackCanonical.artist(s.artist),
-                ),
-            )
+            val byId = s.youtubeId?.let { db.trackDao().findByYoutubeId(it) } ?: s.spotifyId?.let { db.trackDao().findBySpotifyUri("spotify:track:$it") }
+            byId?.id ?: run {
+                val (title, artist) = guard.canonicalWordsForSave(s.title, s.artist)
+                db.trackDao().insert(
+                    TrackEntity(
+                        title = s.title, artist = s.artist, album = s.album ?: "", isrc = s.isrc, youtubeId = s.youtubeId,
+                        spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true, source = MusicSource.BOTH,
+                        canonicalTitle = title, canonicalArtist = artist,
+                    ),
+                )
+            }
         }
         // The repository's add, as it is when the playlist isn't kept offline (it queues nothing then)
         coEvery { music.addTracksToPlaylist(any(), any()) } coAnswers {
@@ -202,6 +216,51 @@ class SpotifyLibraryImportTest {
         assertThat(db.webLibraryExportDao().likes().map { it.track.title }).isEqualTo(b.likes.filter { it != liked }.map { it.title })
     }
 
+    @Test fun `a blocked song whose strict words differ from its key stays out, and leaves no row behind`() = runTest {
+        // "Don't Stop Me Now": its usual key is `queen|don t stop me now`, its strict words `don't stop me now`
+        val song = ExportSong("Don't Stop Me Now", "Queen", sid = "7hQJA50XrCWABAu5v6QZ4i")
+        val other = ExportSong("Bohemian Rhapsody", "Queen")
+        db.trackBlocklistDao().insert(
+            TrackBlocklistEntity(
+                canonicalKey = BlocklistKey.fromStoredCanonicals(TrackCanonical.artist("Queen"), TrackCanonical.title("Don't Stop Me Now")),
+                artist = "Queen", title = "Don't Stop Me Now", blockedAt = NOW, blockedFrom = "OTHER",
+            ),
+        )
+        val tracks = count("SELECT COUNT(*) FROM tracks")
+
+        library.write(chosen(listOf(ExportPlaylist("Queen", items = listOf(song, other)))), listOf(song, other), NOW) { _, _ -> }
+
+        val pl = imported().single()
+        assertThat(db.playlistDao().getCrossRefsForPlaylist(pl.id).map { db.trackDao().getById(it.trackId)!!.title }).containsExactly("Bohemian Rhapsody")
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL")).isEqualTo(1)
+        // Only the song brought in has a row: none was made for the blocked one
+        assertThat(count("SELECT COUNT(*) FROM tracks")).isEqualTo(tracks + 1)
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE title = 'Don''t Stop Me Now'")).isEqualTo(0)
+    }
+
+    @Test fun `a blocked Spotify id stays out too`() = runTest {
+        val song = ExportSong("Renamed Upstream", "Band", sid = "0123456789abcdefghijAB")
+        db.trackBlocklistDao().insert(
+            TrackBlocklistEntity(canonicalKey = "someone|something else", artist = "Someone", title = "Something else", spotifyUri = "spotify:track:0123456789abcdefghijAB", blockedAt = NOW, blockedFrom = "OTHER"),
+        )
+        library.write(chosen(listOf(ExportPlaylist("Ids", items = listOf(song)))), emptyList(), NOW) { _, _ -> }
+        assertThat(db.playlistDao().getCrossRefsForPlaylist(imported().single().id)).isEmpty()
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE title = 'Renamed Upstream'")).isEqualTo(0)
+    }
+
+    @Test fun `a local file whose title is only brackets is brought in once, import after import`() = runTest {
+        val intro = ExportSong("(Intro)", "Band", album = "Demo")
+        val outro = ExportSong("[Outro]", "Band")
+        val songs = listOf(intro, ExportSong("Real Song", "Band"), outro)
+        repeat(3) { library.write(chosen(listOf(ExportPlaylist("Locals", items = songs))), listOf(intro), NOW) { _, _ -> } }
+
+        val pl = imported().single()
+        assertThat(db.playlistDao().getCrossRefsForPlaylist(pl.id).filter { it.removedAt == null }.sortedBy { it.position }.map { db.trackDao().getById(it.trackId)!!.title })
+            .containsExactly("(Intro)", "Real Song", "[Outro]").inOrder()
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE title IN ('(Intro)', '[Outro]', 'Real Song')")).isEqualTo(3)
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL")).isEqualTo(1)
+    }
+
     @Test fun `a Spotify sync's sweep of its playlists leaves the imported ones be`() = runTest {
         val b = fixture()
         library.write(chosen(b.playlists), emptyList(), NOW) { _, _ -> }
@@ -229,9 +288,15 @@ class SpotifyLibraryImportTest {
         // Brought in anyway: its own playlist, beside the listener's
         library.write(chosen(b.playlists), emptyList(), NOW) { _, _ -> }
         assertThat(imported().map { it.name }).containsExactly("Road trip", "Glass Harbor era")
-        // The listener's gone: the one the import made is that playlist (updated next time, so ticked), not "already in"
+        // Next time it is that playlist, brought in once and updated now: ticked, though the listener's own still holds it
+        assertThat(library.alreadyHere(b.playlists)).isEmpty()
+        // The listener's gone too: still ticked
         db.playlistDao().setActiveById(own, false)
         assertThat(library.alreadyHere(b.playlists)).isEmpty()
+        // The import's own deleted since, the listener's back: compared again
+        db.playlistDao().setActiveById(own, true)
+        db.playlistDao().setActiveById(imported().single { it.name == "Road trip" }.id, false)
+        assertThat(library.alreadyHere(b.playlists)).containsExactly(0)
     }
 
     @Test fun `the liked songs would download when Liked Songs is kept on this phone`() = runTest {

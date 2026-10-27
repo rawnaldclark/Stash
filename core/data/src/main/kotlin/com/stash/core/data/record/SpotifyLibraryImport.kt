@@ -64,11 +64,15 @@ class SpotifyLibraryImport @Inject constructor(
     /**
      * The indexes of [playlists] the library holds already (owner decision D3; importer.ts `alreadyIn`): one of the listener's
      * own playlists, as Library shows them and not made by a Spotify import, has the same folded name and at least half its
-     * songs. They start unticked in the preview.
+     * songs. They start unticked in the preview. An export playlist whose own playlist (`custom_spotify_…` of its `name#n`) an
+     * earlier import made, still here, is that playlist, brought in once and updated now: never marked, or it would start
+     * unticked on every import after the first (importer.ts `made`).
      */
     suspend fun alreadyHere(playlists: List<ExportPlaylist>): Set<Int> = withContext(Dispatchers.IO) {
         if (playlists.isEmpty()) return@withContext emptySet()
+        val keys = playlistKeys(playlists)
         val dao = database.webLibraryExportDao()
+        val made = playlists.indices.filterTo(HashSet()) { i -> database.playlistDao().findBySourceId(sourceIdOf(keys[i]))?.isActive == true }
         val names = playlists.mapTo(HashSet()) { SongKey.fold(it.name) }
         val byName = dao.playlists()
             .filter { !it.sourceId.startsWith(SOURCE_PREFIX) && SongKey.fold(it.name) in names }
@@ -76,7 +80,7 @@ class SpotifyLibraryImport @Inject constructor(
             .groupBy { SongKey.fold(it.name) }
         playlists.indices.filterTo(LinkedHashSet()) { i ->
             val p = playlists[i]
-            alreadyIn(have(p), byName[SongKey.fold(p.name)].orEmpty())
+            i !in made && alreadyIn(have(p), byName[SongKey.fold(p.name)].orEmpty())
         }
     }
 
@@ -128,10 +132,12 @@ class SpotifyLibraryImport @Inject constructor(
 
         /**
          * importer.ts `alreadyIn`: one of [have] has [p]'s folded name and at least half its songs, paired by occurrence
-         * ([matchOccurrences]: a song twice in the export needs two copies here). An empty playlist of the same name is held already.
+         * ([matchOccurrences]: a song twice in the export needs two copies here). An empty playlist of the same name is held already;
+         * a name that folds to nothing ("🔥") names no playlist and matches none.
          */
         fun alreadyIn(p: HavePlaylist, have: List<HavePlaylist>): Boolean {
             val name = SongKey.fold(p.name)
+            if (name.isEmpty()) return false
             return have.any { h -> SongKey.fold(h.name) == name && 2 * matchOccurrences(h.items, p.items).count { it >= 0 } >= p.items.size }
         }
 

@@ -6,10 +6,11 @@
  * playlists, liked songs and hidden songs as read (`bundle`), the playlists and likes a commit hands the library with each
  * playlist's `name#n` (`commit`, with the case's `choose`), the hidden set it keeps (`archive.get('hidden')`) and what the
  * service's `libraryData` makes of them (`library`). `already.json`: the preview's "Already in your library" (`alreadyIn`).
+ * `words.json`: the word after an import (src/lib/ui/spotify/years.ts `doneLine`).
  *
  * Run from this repository's root (TZ=UTC: a time with no offset is local time to JavaScript, and the test reads it as UTC),
  * against a stash-player checkout with its node_modules (read only); phase 5a's vectors come from stash-player PR #27
- * (`fix/record-library-import`, 7242ef7):
+ * (`fix/record-library-import`, d70b58b):
  *   PLAYER=../stash-web/player-record-lastfm
  *   NODE_PATH=$PLAYER/node_modules $PLAYER/node_modules/.bin/esbuild feature/record/scripts/spotify-vectors.ts --bundle --platform=node --format=esm \
  *     --alias:@player=$PLAYER/src/lib --outfile=build/spotify-vectors.mjs
@@ -21,6 +22,7 @@ import { memoryArchive } from '@player/spotify/archive';
 import { zipOf } from '@player/spotify/fixture';
 import { alreadyIn, commit, openFiles, prepare, type HavePlaylist } from '@player/spotify/importer';
 import { libraryData } from '@player/spotify/service';
+import { doneLine } from '@player/ui/spotify/years';
 
 type F = { name: string; bytes: Uint8Array };
 /** `choose`: the commit's choice (the preview's ticks): the playlists kept by index, and the liked songs on or off. */
@@ -496,7 +498,10 @@ function alreadyCases() {
 		{ name: 'a featuring credit folds away', p: pl('Summer (feat. Friends)', ['A']), have: [pl('summer', ['A'])] },
 		{ name: 'other brackets are the name', p: pl('Summer (2019)', ['A']), have: [pl('Summer', ['A'])] },
 		{ name: 'full-width and ligatures', p: pl('\ufb01ve \uff2d\uff49\uff58', ['A']), have: [pl('five mix', ['A'])] },
-		{ name: 'names that fold to nothing', p: pl('\u{1F525}\u{1F525}', ['A']), have: [pl('\u{1F495}', ['A'])] },
+		{ name: 'names that fold to nothing name no playlist', p: pl('\u{1F525}\u{1F525}', ['A']), have: [pl('\u{1F495}', ['A'])] },
+		{ name: 'the same name of only emoji is still no name', p: pl('\u{1F525}', ['A']), have: [pl('\u{1F525}', ['A'])] },
+		{ name: 'punctuation alone is no name', p: pl('!!!', []), have: [pl('...', [])] },
+		{ name: 'emoji around words fold away', p: pl('\u{1F525} Mix \u{1F525}', ['A']), have: [pl('mix', ['A'])] },
 		{ name: 'empty, same name', p: pl('Empty', []), have: [pl('empty', [])] },
 		{ name: 'empty, nothing here', p: pl('Empty', []), have: [] },
 		{ name: 'nothing here', p: pl('Road trip', ['A']), have: [] },
@@ -531,4 +536,7 @@ for (const c of await cases()) {
 writeFileSync(join(out, 'cases.json'), JSON.stringify({ now: NOW, cases: index }, null, 1) + '\n');
 const already = alreadyCases();
 writeFileSync(join(out, 'already.json'), JSON.stringify(already, null, 1) + '\n');
+// years.ts `doneLine`, the word after an import: its plays (the new listens), its playlists and the songs newly liked
+const done = [0, 1, 2, 1234].flatMap((plays) => [0, 1, 3].flatMap((playlists) => [0, 1, 9].map((likes) => ({ plays, playlists, likes, line: doneLine({ plays, playlists, likes }) }))));
+writeFileSync(join(out, 'words.json'), JSON.stringify({ done }, null, 1) + '\n');
 console.log(`${index.length} cases and ${already.length} already-in cases written to ${out}`);

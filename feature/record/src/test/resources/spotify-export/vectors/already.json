@@ -316,7 +316,7 @@
   "expect": true
  },
  {
-  "name": "names that fold to nothing",
+  "name": "names that fold to nothing name no playlist",
   "p": {
    "name": "🔥🔥",
    "items": [
@@ -329,6 +329,68 @@
   "have": [
    {
     "name": "💕",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "the same name of only emoji is still no name",
+  "p": {
+   "name": "🔥",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "🔥",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "punctuation alone is no name",
+  "p": {
+   "name": "!!!",
+   "items": []
+  },
+  "have": [
+   {
+    "name": "...",
+    "items": []
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "emoji around words fold away",
+  "p": {
+   "name": "🔥 Mix 🔥",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "mix",
     "items": [
      {
       "title": "A",
