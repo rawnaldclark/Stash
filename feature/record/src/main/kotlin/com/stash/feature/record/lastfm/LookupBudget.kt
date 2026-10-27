@@ -9,12 +9,15 @@ import java.util.TreeMap
  * are kept until a whole day has passed since their end, so no rolling day ever holds more than [cap].
  *
  * Kept in memory as the pass asks, and written back ([flush]) once a slice: losing the last slice's count to the app's death
- * costs at most a slice's asks of the day's budget.
+ * costs at most a slice's asks of the day's budget. The wall clock can go back (a time zone fix, a user's hand): hours more than an
+ * hour ahead of now are dropped, and a hold is never longer than [maxHoldMs] from now, so the pass never stops for good on a clock
+ * that moved.
  */
 class LookupBudget(
     private val cap: Int,
     private val load: () -> String?,
     private val save: (String?) -> Unit,
+    private val maxHoldMs: Long = RecordLengths.LIMITED_WAIT_MS,
 ) {
     /** Hour (epoch ms / an hour) -> lookups made in it. */
     private val hours = TreeMap<Long, Int>()
@@ -36,7 +39,8 @@ class LookupBudget(
     @Synchronized
     fun retryAt(nowMs: Long): Long? {
         prune(nowMs)
-        var at = if (blockedUntil > nowMs) blockedUntil else null
+        val held = hold(nowMs)
+        var at = if (held > nowMs) held else null
         var used = hours.values.sum()
         if (used >= cap) {
             // The hours leave the window oldest first: the first after which there is room again
@@ -67,6 +71,15 @@ class LookupBudget(
         }
     }
 
+    /** When asking may go on after a rate limit, held to at most [maxHoldMs] from [nowMs] (a clock that went back). */
+    private fun hold(nowMs: Long): Long {
+        if (blockedUntil > nowMs + maxHoldMs) {
+            blockedUntil = nowMs + maxHoldMs
+            dirty = true
+        }
+        return blockedUntil
+    }
+
     /** What changed, written back. */
     @Synchronized
     fun flush() {
@@ -79,13 +92,13 @@ class LookupBudget(
     private fun end(h: Long) = (h + 1) * HOUR_MS + DAY_MS
 
     private fun prune(nowMs: Long) {
+        // Gone: hours a whole day past their end, and hours more than an hour ahead of now (the clock went back since)
         val it = hours.entries.iterator()
         while (it.hasNext()) {
-            if (end(it.next().key) <= nowMs) {
+            val h = it.next().key
+            if (end(h) <= nowMs || h * HOUR_MS > nowMs + HOUR_MS) {
                 it.remove()
                 dirty = true
-            } else {
-                break
             }
         }
     }
@@ -122,7 +135,7 @@ internal class BudgetedLengthReader(
 ) : LengthReader {
     override suspend fun look(artist: String, track: String): LengthAnswer {
         val t = now()
-        budget.retryAt(t)?.let { throw LastfmError(LastfmFailure.BUSY, limited = true, retryAt = it) }
+        budget.retryAt(t)?.let { throw LastfmError(LastfmFailure.BUSY, hold = LengthHold.LIMIT, retryAt = it) }
         try {
             return inner.look(artist, track).also { if (!it.hit) budget.spend(t) }
         } catch (e: CancellationException) {
@@ -131,11 +144,25 @@ internal class BudgetedLengthReader(
             if (e.limited) {
                 budget.spend(t)
                 budget.block(e.retryAt ?: (t + limitWaitMs))
-                throw LastfmError(LastfmFailure.BUSY, limited = true, retryAt = budget.retryAt(now()) ?: (t + limitWaitMs))
+                throw LastfmError(LastfmFailure.BUSY, hold = LengthHold.LIMIT, retryAt = budget.retryAt(now()) ?: (t + limitWaitMs))
             }
             // A busy answer reached the network too
             if (e.kind == LastfmFailure.BUSY) budget.spend(t)
             throw e
         }
+    }
+}
+
+/**
+ * [inner], only when it can be asked at all: [gate] says why not ([LengthHold.NETWORK]: no network the app's Wi-Fi-only setting
+ * allows; [LengthHold.NO_PROXY]: no proxy to ask through), and the pass stops there, marking nothing.
+ */
+internal class GatedLengthReader(
+    private val inner: LengthReader,
+    private val gate: suspend () -> LengthHold?,
+) : LengthReader {
+    override suspend fun look(artist: String, track: String): LengthAnswer {
+        gate()?.let { throw LastfmError(LastfmFailure.BUSY, hold = it) }
+        return inner.look(artist, track)
     }
 }

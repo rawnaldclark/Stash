@@ -22,8 +22,8 @@ sealed interface HistoryAnswer {
     /** Busy, rate limited, or stumbling: the import waits and asks again (the Worker's 503). */
     data object Retry : HistoryAnswer
 
-    /** A page before the last that listed nothing: the same, but counted (the Worker's 503 with `empty`). */
-    data object Empty : HistoryAnswer
+    /** A page before the last that listed nothing: the same, but counted (the Worker's 503 with `empty`); Last.fm claiming [pages]. */
+    data class Empty(val pages: Int) : HistoryAnswer
 
     /** Error 9 on a signed read: the session ended (the Worker's 401). */
     data object Reconnect : HistoryAnswer
@@ -93,7 +93,7 @@ object LastfmHistory {
         val pages = whole(int(attr["totalPages"]))
         // What Last.fm listed, before any row is dropped as broken: nothing at all on a page before its last is a stumble, not the end
         val rows = list(rt["track"]).filterNot { (it as? JsonObject)?.let(::nowPlaying) == true }
-        if (rows.isEmpty() && page < pages) return HistoryAnswer.Empty
+        if (rows.isEmpty() && page < pages) return HistoryAnswer.Empty(pages)
         val plays = ArrayList<Scrobble>()
         for (item in rows) {
             val o2 = item as? JsonObject ?: continue

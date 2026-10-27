@@ -251,6 +251,24 @@ class RecordImportsTest {
         assertThat(rig.store.info.value.inviteHidden).isFalse()
     }
 
+    @Test fun `the Last fm mark keeps its stuck page and its skipped pages, read back the same, and a fresh mark drops them`() {
+        val prefs = MemoryPrefs()
+        val m = LastfmMark(
+            "me", to = 100, next = 3, pages = 3, done = true, newest = 90, added = 400, covered = 0, at = 100,
+            stuck = LastfmMark.Stuck(page = 2, runs = 2, since = 10, last = 20, pages = 3, topup = true),
+            skipped = listOf(LastfmMark.SkippedPage(1, to = 100, from = null, at = 50), LastfmMark.SkippedPage(4, to = 120, from = 60, at = 70)),
+        )
+        RecordImportStore(prefs).setLastfm(m)
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(m)
+        // A stuck page Last.fm gave no count for, and nothing skipped
+        val plain = m.copy(stuck = LastfmMark.Stuck(page = 1, runs = 1, since = 5, last = 5), skipped = null)
+        RecordImportStore(prefs).setLastfm(plain)
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain)
+        RecordImportStore(prefs).setLastfm(plain.copy(stuck = null))
+        assertThat(RecordImportStore(prefs).info.value.lastfm).isEqualTo(plain.copy(stuck = null))
+        assertThat(prefs.map.keys.filter { it.startsWith("lastfm_stuck") || it.startsWith("lastfm_skipped") }).isEmpty()
+    }
+
     @Test fun `remove takes the Last fm import's mark too, and is refused while a Last fm run holds the archive`() = runTest {
         val rig = Rig(this)
         runCurrent()

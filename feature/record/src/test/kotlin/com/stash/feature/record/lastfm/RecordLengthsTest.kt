@@ -9,6 +9,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.TestScope
@@ -106,6 +109,10 @@ class RecordLengthsTest {
         val budget: LookupBudget? = null,
         busyMs: Long = 0,
         clock: (() -> Long)? = null,
+        /** What the library times (no lookup). */
+        library: Map<String, Long> = emptyMap(),
+        /** The Wi-Fi-only setting, as the app's sync preferences give it. */
+        wifiOnly: Flow<Boolean> = emptyFlow(),
     ) {
         val store = CountingStore(MemoryLengthsStore(rows))
         val writes = RecordWrites()
@@ -115,18 +122,25 @@ class RecordLengthsTest {
         var launches = 0
         var cancels = 0
         val wakes = mutableListOf<Long>()
+        /** The waits for a network asked for, by the Wi-Fi-only setting each, and their delays. */
+        val networkWaits = mutableListOf<Boolean>()
+        val networkDelays = mutableListOf<Long>()
         /** What the screens saw at each change: whether the card was held, and how many times the pass had shown its songs. */
         val seen = mutableListOf<Pair<Boolean, Int>>()
-        val lengths = RecordLengths(
+        /** Called as the screens are told of a change (a Stop arriving then, say). */
+        var onChanged: () -> Unit = {}
+        val lengths: RecordLengths = RecordLengths(
             newStore = { store },
             reader = look,
-            library = { emptyMap() },
+            library = { library },
             writes = writes,
             recordAfter = { records++ },
-            changed = { changes++; seen += writes.lengthsRunning.value to writes.lengthsShown.value },
+            changed = { changes++; seen += writes.lengthsRunning.value to writes.lengthsShown.value; onChanged() },
             launch = { launches++ },
             cancelJob = { cancels++ },
             wakeAt = { wakes += it },
+            waitForNetwork = { wifiOnly, delayMs -> networkWaits += wifiOnly; networkDelays += delayMs },
+            wifiOnly = wifiOnly,
             budget = budget,
             now = { nowS * 1000 + test.testScheduler.currentTime },
             clock = clock ?: { this.clock },
@@ -292,12 +306,92 @@ class RecordLengthsTest {
         assertThat(h.wakes).hasSize(1)
         assertThat(h.wakes.single()).isGreaterThan(nowMs() + 23 * 3_600_000L)
         assertThat(h.wakes.single()).isAtMost(nowMs() + 25 * 3_600_000L)
-        // Kept: a run started before then plans nothing and waits again
-        val again = Harness(this, rows, BudgetedLengthReader(inner, LookupBudget(5, { saved.value }, { saved.value = it }), now = nowMs), budget = LookupBudget(5, { saved.value }, { saved.value = it }))
+        // Kept: a run started before then asks nothing and waits again, but still plans and times what needs no lookup (the
+        // library knows a song now)
+        val known = Scrobbles.songKey("Song 9", "Band")
+        val again = Harness(
+            this, rows, BudgetedLengthReader(inner, LookupBudget(5, { saved.value }, { saved.value = it }), now = nowMs),
+            budget = LookupBudget(5, { saved.value }, { saved.value = it }), library = mapOf(known to 200_000L),
+        )
         again.lengths.run()
-        assertThat(again.store.plans).isEqualTo(0)
-        assertThat(again.wakes).hasSize(1)
+        assertThat(again.store.plans).isEqualTo(1)
         assertThat(asked).hasSize(5)
+        assertThat(again.wakes).hasSize(1)
+        assertThat(again.store.rows.values.filter { it.t == "Song 9" }.map { it.f and RecordFlags.ESTIMATED }).containsExactly(0)
+        assertThat(again.store.mark!!.failed).isEmpty()
+    }
+
+    @Test fun `a Stop as a held run ends asks for no wake-up - the wake goes in the same step as the run's token`() = runTest {
+        val budget = LookupBudget(1, load = { null }, save = {})
+        val nowMs = { nowS * 1000 + testScheduler.currentTime }
+        val h = Harness(this, guessed(3), BudgetedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }, budget, now = nowMs), budget = budget)
+        // The Stop lands as the run tells the screens what it timed, just before it ends held by the day's cap
+        h.onChanged = { h.lengths.stop() }
+        h.lengths.run()
+        assertThat(h.changes).isAtLeast(1)
+        assertThat(h.wakes).isEmpty()
+        // Not stopped: the same run asks for its wake-up
+        val held = Harness(this, guessed(3), BudgetedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }, LookupBudget(1, { null }, {}), now = nowMs))
+        held.lengths.run()
+        assertThat(held.wakes).hasSize(1)
+    }
+
+    @Test fun `no network the setting allows - the free fill runs, nothing is asked or marked, and the pass waits for one`() = runTest {
+        val asked = mutableListOf<String>()
+        val inner = LengthReader { _, t -> asked += t; LengthAnswer(200_000, hit = false) }
+        val known = Scrobbles.songKey("Song 2", "Band")
+        val h = Harness(this, guessed(3), GatedLengthReader(inner) { LengthHold.NETWORK }, library = mapOf(known to 187_000L), wifiOnly = flowOf(false))
+        h.lengths.run()
+        assertThat(asked).isEmpty()
+        assertThat(h.store.rows.values.filter { it.f and RecordFlags.ESTIMATED == 0 }.map { it.t }).containsExactly("Song 2")
+        assertThat(h.store.mark!!.failed).isEmpty()
+        assertThat(h.store.mark!!.none).isEmpty()
+        assertThat(h.wakes).isEmpty()
+        // Back once there is a network, any when the app isn't Wi-Fi only
+        assertThat(h.networkWaits).containsExactly(false)
+
+        // Wi-Fi only (the setting unread: the stricter), and a Stop as it ends: no wait asked for
+        val strict = Harness(this, guessed(3), GatedLengthReader(inner) { LengthHold.NETWORK })
+        strict.lengths.run()
+        assertThat(strict.networkWaits).containsExactly(true)
+        val stopped = Harness(this, guessed(3), GatedLengthReader(inner) { LengthHold.NETWORK }, library = mapOf(known to 187_000L))
+        stopped.onChanged = { stopped.lengths.stop() }
+        stopped.lengths.run()
+        assertThat(stopped.networkWaits).isEmpty()
+    }
+
+    @Test fun `runs in a row held for a network back off, so a network the job takes but the lookups can't use never loops`() = runTest {
+        var online = false
+        val h = Harness(this, guessed(3), GatedLengthReader({ _, _ -> LengthAnswer(200_000, hit = false) }) { if (online) null else LengthHold.NETWORK })
+        repeat(4) { h.lengths.run() }
+        val m = 60_000L
+        assertThat(h.networkDelays).containsExactly(0L, 15 * m, 30 * m, 60 * m).inOrder()
+        // A run that could ask starts the count again
+        online = true
+        h.lengths.run()
+        online = false
+        h.store.memory.rows.putAll(guessed(4).associateBy { it.id })
+        h.lengths.run()
+        assertThat(h.networkDelays).containsExactly(0L, 15 * m, 30 * m, 60 * m, 0L).inOrder()
+        assertThat(RecordLengths.networkBackoffMs(40)).isEqualTo(RecordLengths.NETWORK_BACKOFF_MAX_MS)
+    }
+
+    @Test fun `no proxy to ask through - no song is marked, nothing comes back by itself, and the free fill still runs`() = runTest {
+        var asks = 0
+        val known = Scrobbles.songKey("Song 1", "Band")
+        val h = Harness(this, guessed(3), ProxyLengthReader(ask = { _, _ -> asks++; LastFmSongLength.NoProxy }), library = mapOf(known to 187_000L))
+        h.lengths.run()
+        assertThat(asks).isEqualTo(1)
+        assertThat(h.store.mark!!.failed).isEmpty()
+        assertThat(h.store.mark!!.failures).isEmpty()
+        assertThat(h.store.rows.values.filter { it.f and RecordFlags.ESTIMATED == 0 }.map { it.t }).containsExactly("Song 1")
+        assertThat(h.wakes).isEmpty()
+        assertThat(h.networkWaits).isEmpty()
+        // The gate says so before any ask
+        val gated = Harness(this, guessed(3), GatedLengthReader({ _, _ -> asks++; LengthAnswer(1) }) { LengthHold.NO_PROXY })
+        gated.lengths.run()
+        assertThat(asks).isEqualTo(1)
+        assertThat(gated.store.mark!!.failed).isEmpty()
     }
 
     @Test fun `answers the phone had don't count against the day`() = runTest {
@@ -345,8 +439,31 @@ class RecordLengthsTest {
         assertThat(read.left(t + 28 * hour)).isEqualTo(3)
         // A rate limit holds it whatever is left
         read.block(t + 30 * hour)
-        assertThat(read.retryAt(t + 29 * hour)).isEqualTo(t + 30 * hour)
+        assertThat(read.retryAt(t + 29 * hour + 40 * 60_000L)).isEqualTo(t + 30 * hour)
         assertThat(read.retryAt(t + 30 * hour)).isNull()
+    }
+
+    @Test fun `the budget never trusts a clock that went back - hours ahead of now dropped, a hold at most half an hour`() {
+        val hour = 3_600_000L
+        val t = 1_800_000_000_000L / hour * hour
+        val saved = Saved()
+        // Spent and held under a clock ten days ahead (set by hand, then put right)
+        val ahead = LookupBudget(3, load = { saved.value }, save = { saved.value = it })
+        repeat(3) { ahead.spend(t + 240 * hour) }
+        ahead.block(t + 240 * hour + 10 * 60_000L)
+        ahead.flush()
+        val b = LookupBudget(3, load = { saved.value }, save = { saved.value = it })
+        // Now, back at t: the hours from the future are gone, and the hold is half an hour from now at most
+        assertThat(b.left(t)).isEqualTo(3)
+        assertThat(b.retryAt(t)).isEqualTo(t + RecordLengths.LIMITED_WAIT_MS)
+        assertThat(b.retryAt(t + RecordLengths.LIMITED_WAIT_MS)).isNull()
+        // Written back so: read again, the same
+        b.flush()
+        assertThat(LookupBudget(3, { saved.value }, {}).retryAt(t + 60_000L)).isEqualTo(t + RecordLengths.LIMITED_WAIT_MS)
+        // An hour just begun (the clock a little ahead of the hour's bucket) is kept
+        val near = LookupBudget(1, load = { null }, save = {})
+        near.spend(t + hour)
+        assertThat(near.left(t + 1)).isEqualTo(0)
     }
 
     // ── the reader ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -371,5 +488,9 @@ class RecordLengthsTest {
         assertThat(error()!!.retryAt).isEqualTo(1_000L + RecordLengths.LIMITED_WAIT_MS)
         answer = LastFmSongLength.Unavailable
         assertThat(error()!!.kind).isEqualTo(LastfmFailure.UNAVAILABLE)
+        assertThat(error()!!.hold).isNull()
+        // No proxy in this build: a hold, never a song's failure
+        answer = LastFmSongLength.NoProxy
+        assertThat(error()!!.hold).isEqualTo(LengthHold.NO_PROXY)
     }
 }

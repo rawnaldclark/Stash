@@ -3,59 +3,101 @@
   {
    "added": 0,
    "total": null,
+   "missing": false,
    "line": "Nothing new on Last.fm since last time. You’re up to date."
   },
   {
    "added": 1,
    "total": null,
+   "missing": false,
    "line": "1 scrobble in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 7660,
    "total": null,
+   "missing": false,
    "line": "7,660 scrobbles in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 0,
    "total": 0,
+   "missing": false,
    "line": "No scrobbles on Last.fm yet. Anything you scrobble from now on comes in next time."
   },
   {
    "added": 3,
    "total": 3,
+   "missing": false,
    "line": "3 scrobbles in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 1,
    "total": 1,
+   "missing": false,
    "line": "1 scrobble in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 0,
    "total": 30060,
+   "missing": false,
    "line": "30,060 scrobbles in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 7660,
    "total": 30060,
+   "missing": false,
    "line": "30,060 scrobbles in, 7,660 of them this time. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 30060,
    "total": 30060,
+   "missing": false,
    "line": "30,060 scrobbles in. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 1,
    "total": 2,
+   "missing": false,
    "line": "2 scrobbles in, 1 of them this time. Plays Spotify or Stash already had were counted once."
   },
   {
    "added": 5,
    "total": 3,
+   "missing": false,
    "line": "3 scrobbles in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 0,
+   "total": null,
+   "missing": true,
+   "line": "Nothing new on Last.fm since last time. You’re up to date. Last.fm didn’t send part of your history; Stash will ask again next time."
+  },
+  {
+   "added": 200,
+   "total": null,
+   "missing": true,
+   "line": "200 scrobbles in. Plays Spotify or Stash already had were counted once. Last.fm didn’t send part of your history; Stash will ask again next time."
+  },
+  {
+   "added": 400,
+   "total": 400,
+   "missing": true,
+   "line": "400 scrobbles in. Plays Spotify or Stash already had were counted once. Last.fm didn’t send part of your history; Stash will ask again next time."
+  },
+  {
+   "added": 0,
+   "total": 0,
+   "missing": true,
+   "line": "No scrobbles on Last.fm yet. Anything you scrobble from now on comes in next time. Last.fm didn’t send part of your history; Stash will ask again next time."
+  },
+  {
+   "added": 7660,
+   "total": 30060,
+   "missing": true,
+   "line": "30,060 scrobbles in, 7,660 of them this time. Plays Spotify or Stash already had were counted once. Last.fm didn’t send part of your history; Stash will ask again next time."
   }
  ],
+ "missing": "Last.fm didn’t send part of your history; Stash will ask again next time.",
  "reconnect": "Connect the same account again and it carries on from where it stopped. Another account starts over, and the scrobbles already in stay.",
  "hours": "Last.fm doesn’t say how long you listened, so Stash counts each song’s length, from Spotify, your library or Last.fm itself."
 }

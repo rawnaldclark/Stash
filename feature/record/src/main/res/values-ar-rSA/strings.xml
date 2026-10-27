@@ -183,6 +183,7 @@
     <string name="record_lastfm_done_none">لا جديد على Last.fm منذ المرة الأخيرة. أسطوانتك محدّثة.</string>
     <string name="record_lastfm_done_part">تمت الإضافة: %1$s، منها %2$s هذه المرة. التشغيلات التي كانت لدى Spotify أو Stash بالفعل احتُسبت مرة واحدة.</string>
     <string name="record_lastfm_done_none_yet">لا توجد scrobbles على Last.fm بعد. كل ما تعمل له scrobble من الآن فصاعدًا سيُضاف في المرة القادمة.</string>
+    <string name="record_lastfm_done_missing">لم يرسل Last.fm جزءًا من سجلك؛ سيطلبه Stash مجددًا في المرة القادمة.</string>
     <string name="record_lastfm_idle_connect">كل الـ scrobbles الخاصة بك، مجتمعة على أسطوانتك مع Spotify وStash.</string>
     <string name="record_lastfm_idle_had">تمت إضافة %1$s من %2$s. اربط Last.fm بحساب %2$s لإضافة الأحدث.</string>
     <string name="record_lastfm_idle_bring">أضف كل الـ scrobbles الخاصة بك باسم %1$s.</string>

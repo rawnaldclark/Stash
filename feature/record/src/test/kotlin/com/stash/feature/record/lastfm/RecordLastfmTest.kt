@@ -21,6 +21,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -434,7 +435,7 @@ class RecordLastfmTest {
         assertThat(h.lengths).containsExactly("pause", "start").inOrder()
     }
 
-    @Test fun `stopped short the pass still times what came in, not after a reconnect, a Stop, or a run that did nothing`() = runTest {
+    @Test fun `stopped short the pass still times what came in, after a reconnect too, not after a Stop or a run that did nothing`() = runTest {
         val busy = Harness(this, songs = 450)
         busy.remote.fail = { throw LastFmRateLimitedException("HTTP 429") }
         busy.lastfm.bringIn()
@@ -452,7 +453,8 @@ class RecordLastfmTest {
         gone.remote.gate[2]!!.complete(Unit)
         run.join()
         assertThat(gone.lastfm.state.value).isEqualTo(LastfmState.Failed(LastfmFailure.RECONNECT))
-        assertThat(gone.lengths).containsExactly("pause")
+        // Its lookups need no session: what came in before is timed all the same
+        assertThat(gone.lengths).containsExactly("pause", "start").inOrder()
 
         // The person's Stop: the pass stops too, and doesn't start after
         val stopped = Harness(this, songs = 450)
@@ -484,28 +486,35 @@ class RecordLastfmTest {
 
     /**
      * Last.fm as service.json's runs fake it, behind the app's client: a profile that keeps its listening private (so every page
-     * reads signed), the vector's scrobbles newest first, and its odd pages (busy: a rate limit; reconnect: error 9 on the signed
-     * read, a session Last.fm no longer takes).
+     * reads signed), the vector's scrobbles newest first, and its odd pages (busy: a rate limit; a hole: a page before the last
+     * listing nothing; reconnect: error 9 on the signed read, a session Last.fm no longer takes), each only in a top-up's asks
+     * (`topup`), only in the whole read's, or in both.
      */
     private class VectorRemote : LastfmRemote {
+        class Odd(val page: Int, var times: Int, val kind: String, val hole: Boolean, val topup: Boolean?)
+
         var all: List<Scrobble> = emptyList()
-        val fails = mutableListOf<Pair<Int, Pair<String, IntArray>>>()
+        val fails = mutableListOf<Odd>()
 
         override suspend fun page(user: String, from: Long?, to: Long, page: Int): JsonObject =
             throw com.stash.core.data.lastfm.LastFmApiException(17, "Login required")
 
         override suspend fun signedPage(sessionKey: String, user: String, from: Long?, to: Long, page: Int): JsonObject {
-            fails.firstOrNull { it.first == page && it.second.second[0] > 0 }?.let { (_, f) ->
-                f.second[0]--
-                when (f.first) {
-                    "busy" -> throw LastFmRateLimitedException("HTTP 429")
-                    "reconnect" -> throw com.stash.core.data.lastfm.LastFmApiException(9, "Invalid session key")
+            val window = all.filter { it.uts <= to && (from == null || it.uts >= from) }.sortedByDescending { it.uts }
+            val pages = (window.size + 199) / 200
+            val odd = fails.firstOrNull { it.page == page && it.times > 0 && (it.topup == null || it.topup == (from != null)) }
+            odd?.let { f ->
+                f.times--
+                when {
+                    f.hole -> {}
+                    f.kind == "busy" -> throw LastFmRateLimitedException("HTTP 429")
+                    f.kind == "reconnect" -> throw com.stash.core.data.lastfm.LastFmApiException(9, "Invalid session key")
                     else -> throw com.stash.core.data.lastfm.LastFmHttpException(404, "HTTP 404")
                 }
             }
-            val window = all.filter { it.uts <= to && (from == null || it.uts >= from) }.sortedByDescending { it.uts }
-            val pages = (window.size + 199) / 200
-            val tracks = window.drop((page - 1) * 200).take(200).joinToString(",") { s ->
+            // A hole: the page lists nothing, though Last.fm says there are more after it
+            val shown = if (odd?.hole == true) emptyList() else window.drop((page - 1) * 200).take(200)
+            val tracks = shown.joinToString(",") { s ->
                 """{"name":${Json.encodeToString(String.serializer(), s.t)},"artist":{"#text":${Json.encodeToString(String.serializer(), s.a)}},"date":{"uts":"${s.uts}"}}"""
             }
             return Json.parseToJsonElement("""{"recenttracks":{"track":[$tracks],"@attr":{"page":"$page","totalPages":"$pages","total":"${window.size}"}}}""").jsonObject
@@ -539,13 +548,16 @@ class RecordLastfmTest {
                 }
                 remote.fails.clear()
                 r["fails"]!!.jsonArray.map { it.jsonObject }.forEach {
-                    remote.fails += it["page"]!!.jsonPrimitive.int to (it["kind"]!!.jsonPrimitive.content to intArrayOf(it["times"]!!.jsonPrimitive.int))
+                    remote.fails += VectorRemote.Odd(
+                        it["page"]!!.jsonPrimitive.int, it["times"]!!.jsonPrimitive.int, it["kind"]!!.jsonPrimitive.content,
+                        (it["hole"] as? JsonPrimitive)?.boolean == true, (it["topup"] as? JsonPrimitive)?.boolean,
+                    )
                 }
                 lastfm.bringIn()
                 lastfm.run(LastfmAsk(false, user, 0))
                 val st = r["state"]!!.jsonObject
                 val want = when (st["step"]!!.jsonPrimitive.content) {
-                    "done" -> LastfmState.Done(st["added"]!!.jsonPrimitive.int, (st["total"] as? JsonPrimitive)?.int)
+                    "done" -> LastfmState.Done(st["added"]!!.jsonPrimitive.int, (st["total"] as? JsonPrimitive)?.int, (st["missing"] as? JsonPrimitive)?.boolean == true)
                     else -> LastfmState.Failed(LastfmFailure.valueOf(st["reason"]!!.jsonPrimitive.content.uppercase()))
                 }
                 assertWithMessage("$at: state").that(lastfm.state.value).isEqualTo(want)

@@ -143,6 +143,7 @@
     <string name="record_lastfm_done_none">Seit dem letzten Mal nichts Neues auf Last.fm. Du bist auf dem neuesten Stand.</string>
     <string name="record_lastfm_done_part">%1$s importiert, %2$s davon diesmal. Wiedergaben, die Spotify oder Stash schon hatten, wurden nur einmal gezählt.</string>
     <string name="record_lastfm_done_none_yet">Noch keine Scrobbel-Einträge auf Last.fm. Alles, was du ab jetzt scrobbelst, kommt beim nächsten Mal dazu.</string>
+    <string name="record_lastfm_done_missing">Last.fm hat einen Teil deines Verlaufs nicht geschickt; Stash fragt beim nächsten Mal erneut.</string>
     <string name="record_lastfm_idle_connect">Alle deine Scrobbel-Einträge auf deiner Platte, zusammen mit Spotify und Stash.</string>
     <string name="record_lastfm_idle_had">%1$s von %2$s importiert. Verbinde Last.fm als %2$s, um neuere hinzuzufügen.</string>
     <string name="record_lastfm_idle_bring">Füge alle Scrobbel-Einträge von %1$s hinzu.</string>

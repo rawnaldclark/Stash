@@ -34,15 +34,19 @@ internal object LastfmText {
     /**
      * lastfm.ts `doneLine`: what a finished run brought. [total] (the run read the whole history, or carried on with it): the whole
      * import, with this run's part beside it when it carried on from an earlier one ("30,060 scrobbles in, 7,660 of them this
-     * time"). Without (a top-up): what was newer.
+     * time"). Without (a top-up): what was newer. [missing]: pages still skipped, said after it.
      */
-    fun doneLine(res: Resources, added: Int, total: Int? = null): String = when {
-        total == 0 -> res.getString(R.string.record_lastfm_done_none_yet)
-        total != null && added > 0 && added < total ->
-            res.getString(R.string.record_lastfm_done_part, scrobbles(res, total), ImportText.count(res, added.toLong()))
-        total != null -> res.getString(R.string.record_lastfm_done, scrobbles(res, total))
-        added > 0 -> res.getString(R.string.record_lastfm_done, scrobbles(res, added))
-        else -> res.getString(R.string.record_lastfm_done_none)
+    fun doneLine(res: Resources, added: Int, total: Int? = null, missing: Boolean = false): String {
+        val line = when {
+            total == 0 -> res.getString(R.string.record_lastfm_done_none_yet)
+            total != null && added > 0 && added < total ->
+                res.getString(R.string.record_lastfm_done_part, scrobbles(res, total), ImportText.count(res, added.toLong()))
+            total != null -> res.getString(R.string.record_lastfm_done, scrobbles(res, total))
+            added > 0 -> res.getString(R.string.record_lastfm_done, scrobbles(res, added))
+            else -> res.getString(R.string.record_lastfm_done_none)
+        }
+        // Pages still skipped as holes: said in plain words, as the web says it (lastfm.ts `MISSING`)
+        return if (missing) "$line ${res.getString(R.string.record_lastfm_done_missing)}" else line
     }
 
     /**

@@ -133,6 +133,7 @@
     <string name="record_lastfm_done_none">지난번 이후 Last.fm에 새 기록이 없습니다. 최신 상태입니다.</string>
     <string name="record_lastfm_done_part">%1$s를 가져왔습니다(이번에 %2$s개). Spotify나 Stash에 이미 있던 재생 기록은 한 번만 집계했습니다.</string>
     <string name="record_lastfm_done_none_yet">아직 Last.fm에 스크로블 기록이 없습니다. 지금부터 스크로블링하는 기록은 다음에 가져옵니다.</string>
+    <string name="record_lastfm_done_missing">Last.fm이 기록의 일부를 보내지 않았습니다. 다음에 Stash가 다시 요청합니다.</string>
     <string name="record_lastfm_idle_connect">스크로블링한 모든 기록이 Spotify, Stash와 함께 나의 레코드에 쌓입니다.</string>
     <string name="record_lastfm_idle_had">%2$s 계정에서 %1$s를 가져왔습니다. 새 기록을 가져오려면 %2$s 계정으로 Last.fm을 연결하세요.</string>
     <string name="record_lastfm_idle_bring">%1$s 계정으로 스크로블링한 모든 기록을 가져오세요.</string>

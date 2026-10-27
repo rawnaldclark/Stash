@@ -163,6 +163,7 @@
     <string name="record_lastfm_done_none">Od ostatniego razu nie ma nic nowego na Last.fm. Wszystko jest aktualne.</string>
     <string name="record_lastfm_done_part">Dodano: %1$s, w tym %2$s tym razem. Odtworzenia, które Spotify lub Stash już miały, policzono raz.</string>
     <string name="record_lastfm_done_none_yet">Na Last.fm nie ma jeszcze scrobbli. Wszystko, co od teraz zescrobblujesz, trafi tu następnym razem.</string>
+    <string name="record_lastfm_done_missing">Last.fm nie przesłał części twojej historii; Stash poprosi o nią ponownie następnym razem.</string>
     <string name="record_lastfm_idle_connect">Wszystkie twoje scrobble na płycie, razem ze Spotify i Stash.</string>
     <string name="record_lastfm_idle_had">Dodano już %1$s z konta %2$s. Połącz Last.fm jako %2$s, aby dodać nowsze.</string>
     <string name="record_lastfm_idle_bring">Dodaj wszystkie scrobble z konta %1$s.</string>

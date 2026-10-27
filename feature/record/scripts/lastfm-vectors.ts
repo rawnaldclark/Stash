@@ -14,7 +14,7 @@
  *   with `planLengths` (failures and their waits), and `fillLengths` slices against a fake length reader, the streak carried from
  *   slice to slice as the service carries it, every ask, every save of the mark, the rows after.
  * - service.json: the service's done line state after each Last.fm run (src/lib/spotify/service.ts `importLastfm`).
- * - words.json: lastfm.ts's English (`doneLine`, the reconnect line, the hours note).
+ * - words.json: lastfm.ts's English (`doneLine`, with a page still missing too, the reconnect line, the hours note).
  * - sources.json: record.ts `readSources`, `present`, `shownSources` and `toggleSource` over every choice and source.
  *
  * Run from this repository's root, against a stash-player checkout with its node_modules (read only):
@@ -32,7 +32,7 @@ import { fillLengths, guessedBySong, planLengths, type LengthReader, type Length
 import { bestLengths, coveredBy, knownLengths, libraryLengths, planScrobbles, scrobbleMs, toArchive, type ArchivePlay, type Scrobble } from '@player/spotify/plays';
 import { createSpotifyService } from '@player/spotify/service';
 import { songKey } from '@player/spotify/taste';
-import { doneLine, HOURS_NOTE, LASTFM_ERRORS } from '@player/ui/spotify/lastfm';
+import { doneLine, HOURS_NOTE, LASTFM_ERRORS, MISSING } from '@player/ui/spotify/lastfm';
 import { present, readSources, shownSources, toggleSource, type Counts, type Source, type SourcesOn } from '@player/ui/spotify/record';
 import { historyPage } from '@worker/lastfm-history';
 
@@ -199,11 +199,10 @@ write('plan.json', { plan, covered });
 
 // ── runs.json ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** A page asked for that Last.fm answers oddly, `times` times: busy (or worse), or empty saying it has `pages`. `topup`: only asks with a `from`. */
 /**
  * A page asked for that Last.fm answers oddly, `times` times: busy (or worse; `hole`: busy because the page listed nothing, the
- * Worker's `empty`), empty saying it has `pages`, or (`short`) its plays as they are but saying it has `pages`. `topup`: only asks
- * with a `from`.
+ * Worker's `empty`, with the pages Last.fm claims: the window's), empty saying it has `pages`, or (`short`) its plays as they are
+ * but saying it has `pages`. `topup`: only asks with a `from` (true) or only without (false).
  */
 type Odd = { page: number; times: number; topup?: boolean; kind?: 'busy' | 'reconnect' | 'unavailable'; hole?: boolean; empty?: { pages: number; total: number }; short?: { pages: number; total: number } };
 type Q = { page: number; to: number; from?: number };
@@ -216,7 +215,7 @@ function fakeLastfm(all: Scrobble[], odd: Odd[], calls: Q[]): PageReader {
 		const window = all.filter((s) => s.uts <= q.to && (!q.from || s.uts >= q.from)).sort((a, b) => b.uts - a.uts);
 		if (f) {
 			f.times--;
-			if (f.kind) throw new LastfmError(f.kind, !!f.hole);
+			if (f.kind) throw new LastfmError(f.kind, !!f.hole, f.hole ? Math.ceil(window.length / 200) : 0);
 			if (f.short) return { plays: window.slice((q.page - 1) * 200, q.page * 200), page: q.page, pages: f.short.pages, total: f.short.total } satisfies HistoryPage;
 			return { plays: [], page: q.page, pages: f.empty!.pages, total: f.empty!.total } satisfies HistoryPage;
 		}
@@ -225,6 +224,13 @@ function fakeLastfm(all: Scrobble[], odd: Odd[], calls: Q[]): PageReader {
 	};
 }
 const many = (n: number, from = T, prefix = 'Song') => Array.from({ length: n }, (_, i) => sc(`${prefix} ${i}`, from + i * 60));
+/** `n` scrobbles a day apart, read [LATER]: a top-up's two weeks never reach back to a page skipped below them. */
+const DAY_S = 86_400;
+const daily = (n: number) => Array.from({ length: n }, (_, i) => sc(`Day ${i}`, T + i * DAY_S));
+const LATER = T + 700 * DAY_S;
+const HALF_HOUR = 1800;
+/** A page of the whole read that lists nothing, every time it is asked (and only there: not in a top-up's window). */
+const holeAt = (page: number): Odd => ({ page, times: 99, topup: false, kind: 'busy', hole: true });
 /** What the archive is given before a step's run (a Spotify merge dropping rows, rows a closed tab wrote): explicit in the file. */
 type Before = { add?: ArchivePlay[]; drop?: string[] };
 type Step = { user: string; nowS: number; scrobbles: Scrobble[]; fails?: Odd[]; library?: LibItem[]; before?: (a: ArchiveStore) => Promise<Before> };
@@ -297,8 +303,34 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 	{ name: 'a page with plays saying fewer pages is asked again, and the read goes on', steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 1, short: { pages: 2, total: 400 } }] }] },
 	{ name: 'a smaller total that stays is believed, after six asks', mark: { user: 'me', to: T + 100_000, next: 2, pages: 3, done: false, newest: T + 599 * 60, added: 200, covered: 0, at: 0 }, steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 9, short: { pages: 2, total: 400 } }] }] },
 	{
-		name: 'a page empty before the last, three runs in a row, is skipped and the import completes',
-		steps: [1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy' as const, hole: true }] }))
+		name: 'three runs in a row within the hour never skip a page: a short incident is not a hole',
+		steps: [0, 1, 2, 3].map((i) => ({ user: 'me', nowS: T + 100_000 + i * 60, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy' as const, hole: true }] }))
+	},
+	{
+		name: 'a page empty before the last, three runs over an hour, is skipped and kept; the import completes',
+		steps: [0, 1, 2, 3].map((i) => ({ user: 'me', nowS: LATER + i * HALF_HOUR, scrobbles: daily(600), fails: [holeAt(2)] }))
+	},
+	{
+		name: 'a first page stuck and skipped never marks a fresh import done: the page count comes from the empty answer',
+		steps: [0, 1, 2, 3].map((i) => ({ user: 'me', nowS: LATER + i * HALF_HOUR, scrobbles: daily(600), fails: [holeAt(1)] }))
+	},
+	{
+		name: 'an empty page whose claimed last page is empty too: the tail is gone, and the read is done',
+		steps: [{ user: 'me', nowS: LATER, scrobbles: daily(600), fails: [holeAt(2), { page: 3, times: 1, topup: false, empty: { pages: 3, total: 600 } }] }]
+	},
+	{
+		name: 'a skipped page is asked again on every later top-up: kept while still empty, read in once it has plays',
+		steps: [
+			...[0, 1, 2, 3].map((i) => ({ user: 'me', nowS: LATER + i * HALF_HOUR, scrobbles: daily(600), fails: [holeAt(2)] })),
+			{ user: 'me', nowS: LATER + DAY_S, scrobbles: daily(600), fails: [holeAt(2)] },
+			{ user: 'me', nowS: LATER + 2 * DAY_S, scrobbles: daily(600) },
+			{ user: 'me', nowS: LATER + 3 * DAY_S, scrobbles: daily(600) }
+		]
+	},
+	{
+		name: 'a fresh whole read after one that found nothing drops the old stuck and skipped pages',
+		mark: { user: 'me', to: T + 50_000, next: 2, pages: 0, done: true, newest: 0, added: 0, covered: 0, at: T + 50_000, stuck: { page: 1, runs: 2, since: T, last: T + 40_000, pages: 3 }, skipped: [{ page: 1, to: T + 50_000, at: T + 50_000 }] },
+		steps: [{ user: 'me', nowS: T + 100_000, scrobbles: many(5) }]
 	},
 	{ name: 'an outage is not a hole: plain busy pages are never skipped', steps: [1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 100_000, scrobbles: many(600), fails: [{ page: 2, times: 99, kind: 'busy' as const }] })) },
 	{
@@ -309,10 +341,10 @@ const runCases: { name: string; have?: ArchivePlay[]; mark?: LastfmMark; steps: 
 		]
 	},
 	{
-		name: 'a top-up’s page empty before its last, three top-ups in a row, is skipped and the window moves',
+		name: 'a top-up’s page empty before its last, three top-ups over an hour, is skipped and the window moves',
 		steps: [
 			{ user: 'me', nowS: T + 100_000, scrobbles: many(5) },
-			...[1, 2, 3, 4].map(() => ({ user: 'me', nowS: T + 900_000, scrobbles: [...many(5), ...many(450, T + 200_000, 'New')], fails: [{ page: 2, times: 99, topup: true, kind: 'busy' as const, hole: true }] }))
+			...[0, 1, 2, 3].map((i) => ({ user: 'me', nowS: T + 900_000 + i * HALF_HOUR, scrobbles: [...many(5), ...many(450, T + 200_000, 'New')], fails: [{ page: 2, times: 99, topup: true, kind: 'busy' as const, hole: true }] }))
 		]
 	},
 	{
@@ -521,7 +553,15 @@ const serviceCases: { name: string; runs: Run[] }[] = [
 	{ name: 'a whole first read that finds nothing says so; the next reads the whole history again', runs: [{ nowS: T + 100_000, scrobbles: [] }, { nowS: T + 200_000, scrobbles: many(3, T + 120_000) }] },
 	{ name: 'a whole read in one go: all of it this time', runs: [{ nowS: T + 100_000, scrobbles: many(250) }] },
 	{ name: 'another account: its own whole read beside the first', runs: [{ nowS: T + 100_000, scrobbles: many(20, T, 'Alice'), user: 'alice' }, { nowS: T + 200_000, scrobbles: many(5, T + 50_000, 'Bob'), user: 'bob' }, { nowS: T + 300_000, scrobbles: many(20, T, 'Alice'), user: 'alice' }] },
-	{ name: 'busy part way: an error, and the next run counts what came in before', runs: [{ nowS: T + 100_000, scrobbles: many(450), fails: [{ page: 3, times: 6, kind: 'busy' }] }, { nowS: T + 100_000, scrobbles: many(450) }] }
+	{ name: 'busy part way: an error, and the next run counts what came in before', runs: [{ nowS: T + 100_000, scrobbles: many(450), fails: [{ page: 3, times: 6, kind: 'busy' }] }, { nowS: T + 100_000, scrobbles: many(450) }] },
+	{
+		name: 'a page still skipped: the done line says part is missing, until a top-up brings it in',
+		runs: [
+			...[0, 1, 2, 3].map((i) => ({ nowS: LATER + i * HALF_HOUR, scrobbles: daily(600), fails: [holeAt(2)] })),
+			{ nowS: LATER + DAY_S, scrobbles: daily(600), fails: [holeAt(2)] },
+			{ nowS: LATER + 2 * DAY_S, scrobbles: daily(600) }
+		]
+	}
 ];
 const service = [];
 for (const c of serviceCases) {
@@ -544,7 +584,16 @@ write('service.json', service, true);
 // ── words.json ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const doneCases: [number, number | undefined][] = [[0, undefined], [1, undefined], [7660, undefined], [0, 0], [3, 3], [1, 1], [0, 30_060], [7660, 30_060], [30_060, 30_060], [1, 2], [5, 3]];
-write('words.json', { done: doneCases.map(([added, total]) => ({ added, total: total ?? null, line: doneLine(added, total) })), reconnect: LASTFM_ERRORS.reconnect.line, hours: HOURS_NOTE });
+const missingCases: [number, number | undefined][] = [[0, undefined], [200, undefined], [400, 400], [0, 0], [7660, 30_060]];
+write('words.json', {
+	done: [
+		...doneCases.map(([added, total]) => ({ added, total: total ?? null, missing: false, line: doneLine(added, total) })),
+		...missingCases.map(([added, total]) => ({ added, total: total ?? null, missing: true, line: doneLine(added, total, true) }))
+	],
+	missing: MISSING,
+	reconnect: LASTFM_ERRORS.reconnect.line,
+	hours: HOURS_NOTE
+});
 
 // ── sources.json ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -564,5 +613,5 @@ write('sources.json', { read, rules });
 
 console.log(
 	`wrote ${history.length} history, ${plan.length} plan, ${covered.length} covered, ${runs.length} run, ${startCases.length} start, ` +
-		`${lengthPlans.length} length plan, ${fills.length} fill, ${service.length} service, ${doneCases.length} done line and ${rules.length} rule vectors to ${out}`
+		`${lengthPlans.length} length plan, ${fills.length} fill, ${service.length} service, ${doneCases.length + missingCases.length} done line and ${rules.length} rule vectors to ${out}`
 );

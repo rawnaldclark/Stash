@@ -49,9 +49,10 @@ sealed interface LastfmState {
 
     /**
      * A run finished (service.ts `done`): [added] the scrobbles this run brought in; [total], when this run read the whole history
-     * (or the rest of it, carrying on), every scrobble the import holds, so the done line counts the whole import.
+     * (or the rest of it, carrying on), every scrobble the import holds, so the done line counts the whole import; [missing], pages
+     * still skipped as holes (asked again next time).
      */
-    data class Done(val added: Int, val total: Int? = null) : LastfmState
+    data class Done(val added: Int, val total: Int? = null, val missing: Boolean = false) : LastfmState
 
     data class Failed(val reason: LastfmFailure) : LastfmState
 }
@@ -74,7 +75,7 @@ sealed interface LastfmState {
  *
  * A run holds the archive's write lock ([RecordWrites]) from its first page to its import record, as the web holds its lock.
  * The lengths pass ([RecordLengths]) lets go of the lock for it, and times the songs after it: after every run that finished or
- * stopped short, but not after the person's Stop or a session that ended.
+ * stopped short (a session that ended too: its lookups need none), but not after the person's Stop.
  */
 @Singleton
 class RecordLastfm internal constructor(
@@ -319,7 +320,7 @@ class RecordLastfm internal constructor(
         var start: LastfmMark? = null
         // The run took the archive (and read the mark then): what it wrote may change the record
         var took = false
-        // The lengths pass times what came in after it: not after a Stop, nor once the session has ended
+        // The lengths pass times what came in after it (a session that ended too): not after a Stop
         var timeAfter = false
         var outcome: LastfmState = LastfmState.Idle
         try {
@@ -355,7 +356,7 @@ class RecordLastfm internal constructor(
             val from = start
             val added = maxOf(0, m.added - (from?.added ?: 0))
             Log.i(TAG, "Last.fm: $added scrobbles in (${m.added} in all, ${m.covered} another source had), page ${m.next - 1} of ${m.pages}")
-            outcome = LastfmState.Done(added, total = m.added.takeIf { from != null && !from.done })
+            outcome = LastfmState.Done(added, total = m.added.takeIf { from != null && !from.done }, missing = !m.skipped.isNullOrEmpty())
             timeAfter = true
         } catch (e: CancellationException) {
             // Stopped: by the person (it carries on next time), or by the system (the job runs again by itself)
@@ -364,7 +365,8 @@ class RecordLastfm internal constructor(
         } catch (e: LastfmError) {
             Log.w(TAG, "Last.fm stopped short: ${e.kind}")
             outcome = LastfmState.Failed(e.kind)
-            timeAfter = took && e.kind != LastfmFailure.RECONNECT
+            // A session that ended stops the import, not the lengths: their lookups need no session (the web's route does)
+            timeAfter = took
         } catch (e: Exception) {
             Log.w(TAG, "Last.fm failed: ${e.javaClass.simpleName}", e)
             outcome = LastfmState.Failed(LastfmFailure.OTHER)

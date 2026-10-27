@@ -6,23 +6,29 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * Runs Your record's lengths pass ([RecordLengths.run]) as a plain job: quiet, with no notification, on an unmetered network (a
- * whole history is thousands of lookups). A job the system stops (its ten minutes are up, the network went, the app died) runs
- * again by itself and plans afresh, since timed songs drop out of the plan and the misses are kept. One at a time: a pass asked
- * for while one runs leaves it running (`KEEP`, the web's `timeSongs` returning the pass under way); the writers that could add
- * songs to time stop it first ([RecordLengths.pause]) and ask for a new one after.
+ * Runs Your record's lengths pass ([RecordLengths.run]) as a plain job: quiet, with no notification.
  *
- * A run held by a limit (the day's lookups spent, a rate limit) ends and comes back at the time it lifts: a second, waiting job
- * ([wakeAt]) whose only work is to ask for a pass then.
+ * - Asked for ([start]), it runs at once, with no network asked of it: the free fill (the songs Spotify or the library times)
+ *   needs none. Its lookups go only on a network the app's Wi-Fi-only setting allows; with none, the run ends after the fill and
+ *   the pass comes back as a job waiting for that network ([waitForNetwork]: unmetered when Wi-Fi only, else any), queued
+ *   behind the run. A change of the setting reaches a job still waiting ([applyWifiOnly]), as it reaches a waiting sync.
+ * - A run held by a limit (the day's lookups spent, a rate limit) comes back at the time it lifts: a second, waiting job
+ *   ([wakeAt]) whose only work is to ask for a pass then.
+ * - A job the system stops (its ten minutes are up, the app died) runs again by itself and plans afresh: timed songs drop out of
+ *   the plan and the misses are kept. The writers that could add songs to time stop it first ([RecordLengths.pause]) and ask for
+ *   a new one after, which takes the place of any still waiting.
  */
 @HiltWorker
 class RecordLengthsWorker @AssistedInject constructor(
@@ -41,16 +47,61 @@ class RecordLengthsWorker @AssistedInject constructor(
         private const val WAKE = "record-lengths-wake"
         private const val KEY_WAKE = "wake"
 
-        /** A pass, unless one is queued or running. */
+        /** How the job was asked for: at once (no network asked), or waiting for a network by the setting then. */
+        internal const val TAG_NOW = "record-lengths-now"
+        internal const val TAG_WIFI = "record-lengths-wifi"
+        internal const val TAG_ANY = "record-lengths-any-network"
+
+        /** A pass now, with no network asked of it, in the place of any queued or waiting. */
         fun start(context: Context) {
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                NAME,
-                ExistingWorkPolicy.KEEP,
-                OneTimeWorkRequestBuilder<RecordLengthsWorker>()
-                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build())
-                    .build(),
-            )
+            WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request(null))
         }
+
+        /** The pass again once there is a network [wifiOnly] allows (and [delayMs] has passed), behind the run ending now. */
+        fun waitForNetwork(context: Context, wifiOnly: Boolean, delayMs: Long = 0) {
+            WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request(wifiOnly, delayMs))
+        }
+
+        /**
+         * The Wi-Fi-only setting changed (or was read at start): a pass still waiting for a network waits by it now, as SyncScheduler
+         * `applyWifiOnlyToWaitingSync` does for a waiting sync, asked for again in its place. One running is left alone (replacing
+         * it would stop it); one asked for at once needs no network.
+         */
+        suspend fun applyWifiOnly(context: Context, wifiOnly: Boolean) {
+            val work = WorkManager.getInstance(context)
+            val infos = work.getWorkInfosForUniqueWorkFlow(NAME).first().map { it.state to it.tags }
+            if (waitsByOther(infos, wifiOnly)) work.enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request(wifiOnly))
+        }
+
+        /**
+         * Whether the pass's jobs ([infos]: state and tags) hold one waiting for a network by the other setting than [wifiOnly], and
+         * none running.
+         */
+        internal fun waitsByOther(infos: List<Pair<WorkInfo.State, Set<String>>>, wifiOnly: Boolean): Boolean {
+            if (infos.any { it.first == WorkInfo.State.RUNNING }) return false
+            val want = if (wifiOnly) TAG_WIFI else TAG_ANY
+            return infos.any { (state, tags) -> !state.isFinished && (TAG_WIFI in tags || TAG_ANY in tags) && want !in tags }
+        }
+
+        /** The network a job waits for: none ([wifiOnly] null: the free fill, at once), unmetered, or any. */
+        internal fun networkFor(wifiOnly: Boolean?): NetworkType = when (wifiOnly) {
+            null -> NetworkType.NOT_REQUIRED
+            true -> NetworkType.UNMETERED
+            false -> NetworkType.CONNECTED
+        }
+
+        private fun request(wifiOnly: Boolean?, delayMs: Long = 0): OneTimeWorkRequest =
+            OneTimeWorkRequestBuilder<RecordLengthsWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(networkFor(wifiOnly)).build())
+                .setInitialDelay(delayMs.coerceAtLeast(0), TimeUnit.MILLISECONDS)
+                .addTag(
+                    when (wifiOnly) {
+                        null -> TAG_NOW
+                        true -> TAG_WIFI
+                        false -> TAG_ANY
+                    },
+                )
+                .build()
 
         /** A pass asked for at [atMs] (epoch ms), replacing any wake-up asked for before. */
         fun wakeAt(context: Context, atMs: Long) {
@@ -65,7 +116,7 @@ class RecordLengthsWorker @AssistedInject constructor(
             )
         }
 
-        /** The pass ends, queued, running or waiting to come back, and nothing runs again by itself. */
+        /** The pass ends, queued, running, waiting for a network or to come back, and nothing runs again by itself. */
         fun cancel(context: Context) {
             val work = WorkManager.getInstance(context)
             work.cancelUniqueWork(NAME)

@@ -143,6 +143,7 @@
     <string name="record_lastfm_done_none">از دفعهٔ قبل چیز تازه‌ای در Last.fm نیست. همه‌چیز به‌روز است.</string>
     <string name="record_lastfm_done_part">آورده شد: %1$s، که %2$s مورد آن این بار بود. پخش‌هایی که Spotify یا Stash از قبل داشتند، فقط یک بار شمرده شدند.</string>
     <string name="record_lastfm_done_none_yet">هنوز scrobble‌ای در Last.fm نیست. هر چه از این به بعد scrobble کنید، دفعهٔ بعد آورده می‌شود.</string>
+    <string name="record_lastfm_done_missing">Last.fm بخشی از سابقهٔ شما را نفرستاد؛ Stash دفعهٔ بعد دوباره درخواست می‌کند.</string>
     <string name="record_lastfm_idle_connect">همهٔ scrobble‌های شما، کنار Spotify و Stash روی صفحهٔ شما.</string>
     <string name="record_lastfm_idle_had">از %2$s آورده شد: %1$s. برای آوردن موارد جدیدتر، Last.fm را با حساب %2$s وصل کنید.</string>
     <string name="record_lastfm_idle_bring">همهٔ scrobble‌های حساب %1$s را بیاورید.</string>

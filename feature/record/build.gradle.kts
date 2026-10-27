@@ -36,4 +36,6 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.13")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation(libs.room.runtime)
+    // The lengths pass's job: what it asks of WorkManager (its network), against WorkManager's own test runtime
+    testImplementation(libs.work.testing)
 }

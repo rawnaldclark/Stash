@@ -65,7 +65,7 @@ class LastfmPages(
         return when (answer) {
             is HistoryAnswer.Page -> answer.page
             HistoryAnswer.Retry -> throw LastfmError(LastfmFailure.BUSY)
-            HistoryAnswer.Empty -> throw LastfmError(LastfmFailure.BUSY, empty = true)
+            is HistoryAnswer.Empty -> throw LastfmError(LastfmFailure.BUSY, empty = true, pages = answer.pages)
             HistoryAnswer.Reconnect -> throw LastfmError(LastfmFailure.RECONNECT)
         }
     }

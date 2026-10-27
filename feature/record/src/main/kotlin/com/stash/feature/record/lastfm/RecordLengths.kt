@@ -6,16 +6,28 @@ import android.util.Log
 import com.stash.core.data.db.dao.RecordLengthDao
 import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
+import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.recap.LastFmRecapRepository
 import com.stash.core.data.lastfm.recap.LastFmSongLength
+import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.feature.record.imports.RecordImportStore
 import com.stash.feature.record.imports.RecordImports
 import com.stash.feature.record.imports.RecordWrites
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -27,6 +39,11 @@ import javax.inject.Singleton
  * nothing is left to ask, Last.fm stops it, a limit holds it, or it is stopped. Quiet: no notification, nothing on screen but the
  * hours coming right. It needs no Last.fm session: its lookups go through Stash's proxy with the proxy's key.
  *
+ * The free fill (the songs Spotify or the library times, no lookup) never waits for a network: a pass asked for runs at once, with
+ * no network asked of it. Its lookups go only on a network the app's Wi-Fi-only setting allows (as its syncs and cloud uploads
+ * do): with none, the run ends after the fill and comes back, as a job waiting for that network, behind it. A change of the
+ * setting applies to a job still waiting.
+ *
  * - [start]: after every Last.fm run, whole read or top-up, including one that stopped short (but not one the person stopped, or
  *   one whose session ended), and after a Spotify commit once Last.fm has been brought in. Run by [RecordLengthsWorker], a plain
  *   job on an unmetered network: one the system stops runs again by itself, and plans afresh. The pass running now carries on.
@@ -35,8 +52,9 @@ import javax.inject.Singleton
  * - [stop]: the person's Stop on a Last.fm run stops the pass too.
  * - Limits: the lookups are this device's share of the proxy's key, which every listener's scrobbling also uses: at most
  *   [DAILY_LOOKUPS] in a rolling day ([LookupBudget]), at least [LENGTH_GAP_MS] apart, and a rate limit holds them all for
- *   [LIMITED_WAIT_MS]. A run held by one ends and comes back by itself when it lifts ([RecordLengthsWorker.wakeAt]); the songs
- *   go most played first, so the first day puts most of the hours right.
+ *   [LIMITED_WAIT_MS]. A run held by one still fills what needs no lookup, then ends and comes back by itself when it lifts
+ *   ([RecordLengthsWorker.wakeAt]); the songs go most played first, so the first day puts most of the hours right. Without a
+ *   proxy there are no lookups at all, and nothing is marked.
  *
  * The hours on screen follow: the import record again (under the lock) and the card and an open record read the plays again
  * after the first slice that timed songs, then at most every [REFRESH_MS], and at the end. A pass stopped part way leaves the
@@ -60,6 +78,14 @@ class RecordLengths internal constructor(
     private val cancelJob: () -> Unit,
     /** A run held by a limit comes back at this time (epoch ms). */
     private val wakeAt: (Long) -> Unit = {},
+    /** A run held for a network comes back as a job waiting for one (the Wi-Fi-only setting now, and how long it waits first). */
+    private val waitForNetwork: (wifiOnly: Boolean, delayMs: Long) -> Unit = { _, _ -> },
+    /** The app's Wi-Fi-only setting, as it changes (a job waiting for a network takes a change: [applyWifiOnly]). */
+    private val wifiOnly: Flow<Boolean> = emptyFlow(),
+    /** A job still waiting for a network, waiting by the setting given. */
+    private val applyWifiOnly: suspend (Boolean) -> Unit = {},
+    /** Where the setting is followed; none in tests. */
+    scope: CoroutineScope? = null,
     /** The day's lookups, written back once a slice. */
     private val budget: LookupBudget? = null,
     private val now: () -> Long = System::currentTimeMillis,
@@ -78,6 +104,8 @@ class RecordLengths internal constructor(
         imports: RecordImports,
         writes: RecordWrites,
         recap: LastFmRecapRepository,
+        api: LastFmApiClient,
+        sync: SyncPreferencesManager,
     ) : this(
         context = context,
         dao = dao,
@@ -87,6 +115,8 @@ class RecordLengths internal constructor(
         imports = imports,
         writes = writes,
         recap = recap,
+        api = api,
+        sync = sync,
         budget = LookupBudget(DAILY_LOOKUPS, load = { store.lookupBudget }, save = { store.lookupBudget = it }),
     )
 
@@ -99,10 +129,19 @@ class RecordLengths internal constructor(
         imports: RecordImports,
         writes: RecordWrites,
         recap: LastFmRecapRepository,
+        api: LastFmApiClient,
+        sync: SyncPreferencesManager,
         budget: LookupBudget,
     ) : this(
         newStore = { DaoLengthsStore(dao, lengths, store) },
-        reader = BudgetedLengthReader(ProxyLengthReader(ask = recap::songLength), budget),
+        // No proxy, or no network the Wi-Fi-only setting allows: no lookup (the fill goes on all the same)
+        reader = GatedLengthReader(BudgetedLengthReader(ProxyLengthReader(ask = recap::songLength), budget)) {
+            when {
+                !api.hasProxy -> LengthHold.NO_PROXY
+                !LengthsNetwork.fits(context, sync.preferences.first().wifiOnly) -> LengthHold.NETWORK
+                else -> null
+            }
+        },
         library = { libraryLengths(own) },
         writes = writes,
         recordAfter = imports::recordAfterLengths,
@@ -110,6 +149,10 @@ class RecordLengths internal constructor(
         launch = { RecordLengthsWorker.start(context) },
         cancelJob = { RecordLengthsWorker.cancel(context) },
         wakeAt = { RecordLengthsWorker.wakeAt(context, it) },
+        waitForNetwork = { wifiOnly, delayMs -> RecordLengthsWorker.waitForNetwork(context, wifiOnly, delayMs) },
+        wifiOnly = sync.preferences.map { it.wifiOnly },
+        applyWifiOnly = { RecordLengthsWorker.applyWifiOnly(context, it) },
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         budget = budget,
     )
 
@@ -118,17 +161,38 @@ class RecordLengths internal constructor(
     /** The pass running in this process, to stop and wait for... */
     private var running: Job? = null
 
-    /** ...and its token: only the run holding it may go on, or let the card go. */
+    /** ...and its token: only the run holding it may go on, ask for a wake-up, or let the card go. */
     private var current: Any? = null
 
-    /** service.ts `timeSongs`: the pass, in the background; the one running now carries on. */
+    /**
+     * Runs in a row (in this process) that ended for want of a network: after the first, the wait backs off ([networkBackoffMs]),
+     * so a network the job's constraint takes but the lookups can't use (one not validated, say) never loops the plan and fill.
+     */
+    private var networkHolds = 0
+
+    /** The Wi-Fi-only setting as last seen changing (a run held for a network waits by it); null: not read yet. */
+    private val wifiOnlyNow = MutableStateFlow<Boolean?>(null)
+
+    init {
+        scope?.launch {
+            wifiOnly.distinctUntilChanged().collect {
+                wifiOnlyNow.value = it
+                applyWifiOnly(it)
+            }
+        }
+    }
+
+    /** service.ts `timeSongs`: the pass, in the background, at once (the free fill needs no network). */
     fun start() = launch()
 
-    /** service.ts `pauseLengths`: stops the pass and waits for it to let go of the lock (another writer is next); whether one was running. */
+    /**
+     * service.ts `pauseLengths`: stops the pass and waits for it to let go of the lock (another writer is next); whether one was
+     * running. The job and any wake-up go in the same step as the run's token, so a run ending meanwhile can't ask for one after.
+     */
     suspend fun pause(): Boolean {
-        cancelJob()
         val job = synchronized(lock) {
             current = null
+            cancelJob()
             running
         } ?: return false
         job.cancelAndJoin()
@@ -137,9 +201,9 @@ class RecordLengths internal constructor(
 
     /** The person's Stop (service.ts `stopLastfm`): the pass ends, and nothing runs again by itself. */
     fun stop() {
-        cancelJob()
         synchronized(lock) {
             current = null
+            cancelJob()
             running
         }?.cancel()
     }
@@ -150,9 +214,9 @@ class RecordLengths internal constructor(
      */
     internal suspend fun run() {
         val token = Any()
-        var comeBack: Long? = null
+        var end: RunEnd? = null
         coroutineScope {
-            val job = launch(start = CoroutineStart.LAZY) { comeBack = slices(token) }
+            val job = launch(start = CoroutineStart.LAZY) { end = slices(token) }
             synchronized(lock) {
                 running = job
                 current = token
@@ -163,23 +227,36 @@ class RecordLengths internal constructor(
             } finally {
                 synchronized(lock) {
                     if (running === job) running = null
-                    if (current === token) current = null
+                    // Still this run's (no Remove or Stop since): a wake-up, or a wait for a network; in the lock a stop takes
+                    if (current === token) {
+                        end?.retryAt?.let(wakeAt)
+                        end?.let { e ->
+                            if (e.network) {
+                                networkHolds++
+                                waitForNetwork(wifiOnlyNow.value ?: e.wifiOnly, networkBackoffMs(networkHolds))
+                            } else {
+                                networkHolds = 0
+                            }
+                        }
+                        current = null
+                    }
                 }
             }
         }
-        comeBack?.let(wakeAt)
     }
+
+    /** How a run ended, when it is to come back: at [retryAt] (a limit), or once there is a [network] ([wifiOnly]: unmetered). */
+    private data class RunEnd(val retryAt: Long?, val network: Boolean = false, val wifiOnly: Boolean = true)
 
     private fun isCurrent(token: Any) = synchronized(lock) { current === token }
 
-    /** The run's slices; when to come back, if a limit held it. */
-    private suspend fun slices(token: Any): Long? {
+    /** The run's slices; when to come back, if a hold stopped it. */
+    private suspend fun slices(token: Any): RunEnd? {
         // Timed songs not on screen yet, and when they last were
         var dirty = false
         var shownAt: Long? = null
         var timed = 0
-        // Held by a limit still: nothing to plan until it lifts
-        budget?.retryAt(now())?.let { return it }
+        // (Held by a limit or without a network, it still plans and fills what needs no lookup: the first ask stops it)
         writes.beginLengths(token)
         try {
             val store = newStore()
@@ -216,11 +293,14 @@ class RecordLengths internal constructor(
                 if (r.left == 0 || r.stopped != null) {
                     val why = when {
                         r.stopped == null -> "is done"
-                        r.retryAt != null -> "waits until ${r.retryAt} (a limit)"
+                        r.hold == LengthHold.LIMIT -> "waits until ${r.retryAt} (a limit)"
+                        r.hold == LengthHold.NETWORK -> "waits for a network"
+                        r.hold == LengthHold.NO_PROXY -> "has no proxy to ask through"
                         else -> "stopped: ${r.stopped}"
                     }
                     Log.i(TAG, "the lengths pass $why: $timed rows timed, ${r.left} songs left")
-                    return r.retryAt
+                    if (r.hold == LengthHold.NETWORK) return RunEnd(null, network = true, wifiOnly = wifiOnly.firstOrNull() ?: true)
+                    return RunEnd(r.retryAt.takeIf { r.hold == LengthHold.LIMIT })
                 }
             }
         } finally {
@@ -253,6 +333,14 @@ class RecordLengths internal constructor(
         /** After a rate limit (the proxy's 429, or Last.fm's 29 behind it), no lookups for this long. */
         const val LIMITED_WAIT_MS = 30 * 60_000L
 
+        /** After the first run in a row held for a network, the wait for one starts this late, doubling, at most [NETWORK_BACKOFF_MAX_MS]. */
+        const val NETWORK_BACKOFF_MS = 15 * 60_000L
+        const val NETWORK_BACKOFF_MAX_MS = 6 * 3_600_000L
+
+        /** How long the [n]th run in a row held for a network waits before its job may run: none for the first. */
+        internal fun networkBackoffMs(n: Int): Long =
+            if (n <= 1) 0L else minOf(NETWORK_BACKOFF_MAX_MS, NETWORK_BACKOFF_MS shl minOf(n - 2, 10))
+
         /** The library's song lengths (spec §7, step 2), folded by song key. */
         internal suspend fun libraryLengths(own: WebLibraryExportDao): Map<String, Long> =
             Scrobbles.libraryLengths(own.libraryLengths().map { Triple(it.title, it.artist, it.durationMs.toDouble()) })
@@ -262,7 +350,7 @@ class RecordLengths internal constructor(
 /**
  * The pass's length reader ([LengthReader]) over the Last.fm recap's one-song ask ([LastFmRecapRepository.songLength]: through
  * Stash's proxy only, its answers cached on the phone): the web's `httpLengthReader` with its Worker. A rate limit is a limit
- * ([LastfmError.limited]), never waited out in place.
+ * ([LengthHold.LIMIT]), never waited out in place; no proxy is a hold too, never a song's failure.
  */
 internal class ProxyLengthReader(
     private val ask: suspend (artist: String, title: String) -> LastFmSongLength,
@@ -272,7 +360,19 @@ internal class ProxyLengthReader(
         is LastFmSongLength.Known -> LengthAnswer(r.ms, hit = r.cached)
         is LastFmSongLength.None -> LengthAnswer(null, hit = r.cached)
         LastFmSongLength.Busy -> throw LastfmError(LastfmFailure.BUSY)
-        LastFmSongLength.Limited -> throw LastfmError(LastfmFailure.BUSY, limited = true, retryAt = now() + RecordLengths.LIMITED_WAIT_MS)
+        LastFmSongLength.Limited -> throw LastfmError(LastfmFailure.BUSY, hold = LengthHold.LIMIT, retryAt = now() + RecordLengths.LIMITED_WAIT_MS)
         LastFmSongLength.Unavailable -> throw LastfmError(LastfmFailure.UNAVAILABLE)
+        LastFmSongLength.NoProxy -> throw LastfmError(LastfmFailure.UNAVAILABLE, hold = LengthHold.NO_PROXY)
+    }
+}
+
+/** Whether the network now is one the lengths pass's lookups may use: online, and unmetered when the app is Wi-Fi only. */
+internal object LengthsNetwork {
+    fun fits(context: Context, wifiOnly: Boolean): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        val online = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        return online && (!wifiOnly || caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
     }
 }

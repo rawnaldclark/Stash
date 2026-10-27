@@ -143,6 +143,7 @@
     <string name="record_lastfm_done_none">Walang bago sa Last.fm mula noong huli. Updated ka na.</string>
     <string name="record_lastfm_done_part">Naidagdag ang %1$s, %2$s dito ngayong beses. Isang beses lang binilang ang mga play na nasa Spotify o Stash na.</string>
     <string name="record_lastfm_done_none_yet">Wala pang scrobble sa Last.fm. Lahat ng i-scrobble mo mula ngayon ay idadagdag sa susunod.</string>
+    <string name="record_lastfm_done_missing">Hindi ipinadala ng Last.fm ang bahagi ng history mo; hihingin ulit ito ng Stash sa susunod.</string>
     <string name="record_lastfm_idle_connect">Lahat ng na-scrobble mo, nakapatong sa record mo kasama ang Spotify at Stash.</string>
     <string name="record_lastfm_idle_had">Naidagdag ang %1$s mula sa %2$s. Ikonekta ang Last.fm bilang %2$s para idagdag ang mas bago.</string>
     <string name="record_lastfm_idle_bring">Idagdag ang lahat ng na-scrobble mo bilang %1$s.</string>

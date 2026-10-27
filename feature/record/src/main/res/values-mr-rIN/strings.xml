@@ -143,6 +143,7 @@
     <string name="record_lastfm_done_none">मागच्या वेळेपासून Last.fm वर काहीही नवीन नाही. सर्व काही अद्ययावत आहे.</string>
     <string name="record_lastfm_done_part">आणले: %1$s, त्यापैकी %2$s या वेळी. Spotify किंवा Stash कडे आधीच असलेले प्ले एकदाच मोजले.</string>
     <string name="record_lastfm_done_none_yet">Last.fm वर अजून एकही scrobble नाही. आतापासून तुम्ही जे scrobble कराल ते पुढच्या वेळी येईल.</string>
+    <string name="record_lastfm_done_missing">Last.fm ने तुमच्या इतिहासाचा काही भाग पाठवला नाही; Stash पुढच्या वेळी पुन्हा मागेल.</string>
     <string name="record_lastfm_idle_connect">तुमचे सर्व scrobble, Spotify आणि Stash सोबत तुमच्या रेकॉर्डवर.</string>
     <string name="record_lastfm_idle_had">%2$s कडून आणले: %1$s. नवीन आणण्यासाठी %2$s म्हणून Last.fm कनेक्ट करा.</string>
     <string name="record_lastfm_idle_bring">%1$s म्हणून केलेले तुमचे सर्व scrobble आणा.</string>

@@ -133,6 +133,7 @@
     <string name="record_lastfm_done_none">自上次以来，Last.fm 上没有新内容。已是最新。</string>
     <string name="record_lastfm_done_part">已导入 %1$s，其中 %2$s 条是这次导入的。Spotify 或 Stash 已有的播放只计算一次。</string>
     <string name="record_lastfm_done_none_yet">Last.fm 上还没有音乐记录。从现在起你记录的内容，下次就会导入。</string>
+    <string name="record_lastfm_done_missing">Last.fm 没有发送你的部分记录；Stash 下次会再次请求。</string>
     <string name="record_lastfm_idle_connect">你所有的音乐记录，与 Spotify 和 Stash 一起汇入你的唱片。</string>
     <string name="record_lastfm_idle_had">已从 %2$s 导入 %1$s。以 %2$s 连接 Last.fm 即可导入更新的记录。</string>
     <string name="record_lastfm_idle_bring">导入 %1$s 的所有音乐记录。</string>

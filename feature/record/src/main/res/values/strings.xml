@@ -185,6 +185,8 @@
     <string name="record_lastfm_done_part">%1$s in, %2$s of them this time. Plays Spotify or Stash already had were counted once.</string>
     <!-- After a whole read that found nothing on Last.fm. -->
     <string name="record_lastfm_done_none_yet">No scrobbles on Last.fm yet. Anything you scrobble from now on comes in next time.</string>
+    <!-- Said after the done line while pages Last.fm didn't send are left out (they are asked again on the next top-up). -->
+    <string name="record_lastfm_done_missing">Last.fm didn’t send part of your history; Stash will ask again next time.</string>
     <!-- Not connected to Last.fm, nothing brought in yet. -->
     <string name="record_lastfm_idle_connect">Everything you’ve scrobbled, stacked on your record with Spotify and Stash.</string>
     <!-- Not connected any more: %1$s is the scrobbles brought in before (record_lastfm_scrobbles), %2$s the Last.fm name they came from. -->

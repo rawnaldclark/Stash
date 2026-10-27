@@ -143,6 +143,7 @@
     <string name="record_lastfm_done_none">Rien de nouveau sur Last.fm depuis la dernière fois. Vous êtes à jour.</string>
     <string name="record_lastfm_done_part">Import terminé : %1$s, dont %2$s cette fois. Les écoutes que Spotify ou Stash avaient déjà n’ont été comptées qu’une fois.</string>
     <string name="record_lastfm_done_none_yet">Aucun scrobble sur Last.fm pour l’instant. Tout ce que vous scrobblerez désormais arrivera la prochaine fois.</string>
+    <string name="record_lastfm_done_missing">Last.fm n’a pas envoyé une partie de votre historique ; Stash la redemandera la prochaine fois.</string>
     <string name="record_lastfm_idle_connect">Tout ce que vous avez scrobblé, réuni sur votre disque avec Spotify et Stash.</string>
     <string name="record_lastfm_idle_had">Déjà là : %1$s du compte %2$s. Connectez Last.fm en tant que %2$s pour ajouter les plus récents.</string>
     <string name="record_lastfm_idle_bring">Ajoutez tout ce que vous avez scrobblé en tant que %1$s.</string>

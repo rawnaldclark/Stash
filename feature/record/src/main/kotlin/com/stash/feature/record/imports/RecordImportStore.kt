@@ -99,13 +99,16 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         if (stuck != null) {
             putInt(L_STUCK_PAGE, stuck.page)
             putInt(L_STUCK_RUNS, stuck.runs)
+            putLong(L_STUCK_SINCE, stuck.since)
+            putLong(L_STUCK_LAST, stuck.last)
+            if (stuck.pages != null) putInt(L_STUCK_PAGES, stuck.pages) else remove(L_STUCK_PAGES)
             putBoolean(L_STUCK_TOPUP, stuck.topup)
         } else {
-            remove(L_STUCK_PAGE)
-            remove(L_STUCK_RUNS)
-            remove(L_STUCK_TOPUP)
+            STUCK_KEYS.forEach(::remove)
         }
-        if (m.skipped != null) putInt(L_SKIPPED, m.skipped) else remove(L_SKIPPED)
+        val skipped = m.skipped
+        // "page,to,from,at" a page, ';' between: from empty for a whole read's page
+        if (!skipped.isNullOrEmpty()) putString(L_SKIPPED, skipped.joinToString(";") { "${it.page},${it.to},${it.from ?: ""},${it.at}" }) else remove(L_SKIPPED)
     }
 
     /**
@@ -190,11 +193,22 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                 at = prefs.getLong(L_AT, 0),
                 base = if (prefs.contains(L_BASE)) prefs.getInt(L_BASE, 0) else null,
                 stuck = if (prefs.contains(L_STUCK_PAGE)) {
-                    LastfmMark.Stuck(prefs.getInt(L_STUCK_PAGE, 0), prefs.getInt(L_STUCK_RUNS, 0), prefs.getBoolean(L_STUCK_TOPUP, false))
+                    LastfmMark.Stuck(
+                        page = prefs.getInt(L_STUCK_PAGE, 0),
+                        runs = prefs.getInt(L_STUCK_RUNS, 0),
+                        since = prefs.getLong(L_STUCK_SINCE, 0),
+                        last = prefs.getLong(L_STUCK_LAST, 0),
+                        pages = if (prefs.contains(L_STUCK_PAGES)) prefs.getInt(L_STUCK_PAGES, 0) else null,
+                        topup = prefs.getBoolean(L_STUCK_TOPUP, false),
+                    )
                 } else {
                     null
                 },
-                skipped = if (prefs.contains(L_SKIPPED)) prefs.getInt(L_SKIPPED, 0) else null,
+                skipped = runCatching { prefs.getString(L_SKIPPED, null) }.getOrNull()?.split(';')?.mapNotNull { e ->
+                    val f = e.split(',')
+                    if (f.size != 4) return@mapNotNull null
+                    LastfmMark.SkippedPage(f[0].toIntOrNull() ?: return@mapNotNull null, f[1].toLongOrNull() ?: return@mapNotNull null, f[2].toLongOrNull(), f[3].toLongOrNull() ?: return@mapNotNull null)
+                }?.ifEmpty { null },
             )
         },
     )
@@ -232,8 +246,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val L_STUCK_PAGE = "lastfm_stuck_page"
         private const val L_STUCK_RUNS = "lastfm_stuck_runs"
         private const val L_STUCK_TOPUP = "lastfm_stuck_topup"
-        private const val L_SKIPPED = "lastfm_skipped"
-        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE, L_STUCK_PAGE, L_STUCK_RUNS, L_STUCK_TOPUP, L_SKIPPED)
+        private const val L_STUCK_SINCE = "lastfm_stuck_since"
+        private const val L_STUCK_LAST = "lastfm_stuck_last"
+        private const val L_STUCK_PAGES = "lastfm_stuck_pages"
+        private const val L_SKIPPED = "lastfm_skipped_pages"
+        private val STUCK_KEYS = listOf(L_STUCK_PAGE, L_STUCK_RUNS, L_STUCK_SINCE, L_STUCK_LAST, L_STUCK_PAGES, L_STUCK_TOPUP)
+        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE, L_SKIPPED, "lastfm_skipped") + STUCK_KEYS
         private const val KEY_BUDGET = "lengths_lookups"
         private const val LEN_TIMED = "lengths_timed"
         private const val LEN_AT = "lengths_at"

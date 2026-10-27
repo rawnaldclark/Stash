@@ -54,8 +54,11 @@ sealed interface LastFmSongLength {
     /** The proxy (or Last.fm behind it) is rate limiting: stop asking for a while, never try again straight away. */
     data object Limited : LastFmSongLength
 
-    /** Nothing to ask through (no proxy), or the proxy refused the read itself: stop asking. */
+    /** The proxy refused the read itself: stop asking. */
     data object Unavailable : LastFmSongLength
+
+    /** No proxy to ask through (this build has none): no lookups at all, and no song to blame. */
+    data object NoProxy : LastFmSongLength
 }
 
 /** Why Last.fm history couldn't be read, so the screen can say so calmly. */
@@ -547,7 +550,7 @@ class LastFmRecapRepository internal constructor(
                     LastFmApiException.RATE_LIMIT_EXCEEDED -> LastFmSongLength.Limited
                     else -> LastFmSongLength.Busy
                 }
-            is com.stash.core.data.lastfm.LastFmProxyMissingException -> LastFmSongLength.Unavailable
+            is com.stash.core.data.lastfm.LastFmProxyMissingException -> LastFmSongLength.NoProxy
             is LastFmRateLimitedException -> LastFmSongLength.Limited
             is LastFmHttpException -> when {
                 error.status == 429 -> LastFmSongLength.Limited

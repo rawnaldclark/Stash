@@ -549,6 +549,9 @@ suspend fun updateNowPlaying(
      */
     val isConfigured: Boolean get() = credentials.isConfigured
 
+    /** Whether this build has Stash's Last.fm proxy to read through (a proxy-only read has nothing to ask without it). */
+    val hasProxy: Boolean get() = !credentials.proxyUrl.isNullOrBlank()
+
     /**
      * A signed read sent as a POST form (secrets stay out of the URL), with Last.fm's
      * `{ error, message }` kept as a [LastFmApiException] and rate limits recorded on the primary

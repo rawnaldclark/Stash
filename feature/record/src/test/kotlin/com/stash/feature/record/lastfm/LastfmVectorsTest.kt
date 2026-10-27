@@ -47,7 +47,7 @@ class LastfmVectorsTest {
             if (!want["ok"]!!.jsonPrimitive.boolean) {
                 val expected = when {
                     want["reconnect"] != null -> HistoryAnswer.Reconnect
-                    want["empty"] != null -> HistoryAnswer.Empty
+                    want["empty"] != null -> HistoryAnswer.Empty(want.int("pages"))
                     else -> HistoryAnswer.Retry
                 }
                 assertWithMessage(name).that(got).isEqualTo(expected)
@@ -241,7 +241,8 @@ class LastfmVectorsTest {
 
     /**
      * lastfm-vectors.ts `fakeLastfm`: the window below `to` (and from `from`), newest first, 200 a page; for a few asks of one
-     * page busy (or worse), or empty saying it has `pages` (`topup`: only the asks with a `from`).
+     * page busy (or worse; a hole: busy as an empty page, claiming the window's pages), or empty saying it has `pages` (`topup`:
+     * only the asks with a `from`, or only those without).
      */
     private fun fakeLastfm(all: List<Scrobble>, fails: JsonArray?, calls: MutableList<Triple<Int, Long, Long?>>): PageReader {
         class Odd(val page: Int, var times: Int, val topup: Boolean?, val kind: String?, val hole: Boolean, val empty: JsonObject?, val short: JsonObject?)
@@ -257,7 +258,9 @@ class LastfmVectorsTest {
             val window = all.filter { it.uts <= to && (f0 == null || it.uts >= f0) }.sortedByDescending { it.uts }
             left.firstOrNull { it.page == page && it.times > 0 && (it.topup == null || it.topup == (f0 != null)) }?.let { f ->
                 f.times--
-                if (f.kind != null) throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()), empty = f.hole)
+                if (f.kind != null) {
+                    throw LastfmError(LastfmFailure.valueOf(f.kind.uppercase()), empty = f.hole, pages = if (f.hole) (window.size + 199) / 200 else null)
+                }
                 if (f.short != null) return@PageReader HistoryPage(window.drop((page - 1) * 200).take(200), page, f.short.int("pages"), f.short.int("total"))
                 return@PageReader HistoryPage(emptyList(), page, f.empty!!.int("pages"), f.empty.int("total"))
             }
@@ -286,8 +289,15 @@ class LastfmVectorsTest {
         user = o.str("user"), to = o.long("to"), next = o.int("next"), pages = o.int("pages"), done = o["done"]!!.jsonPrimitive.boolean,
         newest = o.long("newest"), added = o.int("added"), covered = o.int("covered"), at = o.long("at"),
         base = (o["base"] as? JsonPrimitive)?.int,
-        stuck = (o["stuck"] as? JsonObject)?.let { LastfmMark.Stuck(it.int("page"), it.int("runs"), (it["topup"] as? JsonPrimitive)?.boolean == true) },
-        skipped = (o["skipped"] as? JsonPrimitive)?.int,
+        stuck = (o["stuck"] as? JsonObject)?.let {
+            LastfmMark.Stuck(
+                it.int("page"), it.int("runs"), it.long("since"), it.long("last"), (it["pages"] as? JsonPrimitive)?.int,
+                (it["topup"] as? JsonPrimitive)?.boolean == true,
+            )
+        },
+        skipped = (o["skipped"] as? JsonArray)?.map { it.jsonObject }?.map {
+            LastfmMark.SkippedPage(it.int("page"), it.long("to"), (it["from"] as? JsonPrimitive)?.long, it.long("at"))
+        },
     )
 
     private fun lengthsMark(o: JsonObject) = LengthsMark(

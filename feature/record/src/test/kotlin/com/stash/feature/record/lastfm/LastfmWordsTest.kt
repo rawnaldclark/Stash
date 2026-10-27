@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertWithMessage
 import com.stash.feature.record.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -26,14 +27,18 @@ class LastfmWordsTest {
     private val res = ApplicationProvider.getApplicationContext<Context>().resources
     private val words = Json.parseToJsonElement(requireNotNull(javaClass.getResource("/lastfm/words.json")).readText()).jsonObject
 
-    @Test fun `the done line, for a top-up, a whole read, a run carried on, and one that found nothing`() {
+    @Test fun `the done line, for a top-up, a whole read, a run carried on, one that found nothing, and part still missing`() {
         val cases = words["done"]!!.jsonArray.map { it.jsonObject }
-        assertThat(cases.size).isAtLeast(10)
+        assertThat(cases.size).isAtLeast(15)
+        assertThat(cases.count { it["missing"]!!.jsonPrimitive.boolean }).isAtLeast(5)
         for (c in cases) {
             val added = c["added"]!!.jsonPrimitive.int
             val total = (c["total"] as? JsonPrimitive)?.takeIf { it.content != "null" }?.int
-            assertWithMessage("added $added, total $total").that(LastfmText.doneLine(res, added, total)).isEqualTo(c["line"]!!.jsonPrimitive.content)
+            val missing = c["missing"]!!.jsonPrimitive.boolean
+            assertWithMessage("added $added, total $total, missing $missing").that(LastfmText.doneLine(res, added, total, missing))
+                .isEqualTo(c["line"]!!.jsonPrimitive.content)
         }
+        assertThat(res.getString(R.string.record_lastfm_done_missing)).isEqualTo(words["missing"]!!.jsonPrimitive.content)
     }
 
     @Test fun `the sheet's line with Last fm open says where the scrobbles and the lengths come from, as the web's does`() {

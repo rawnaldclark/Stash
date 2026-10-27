@@ -51,8 +51,8 @@ data class LengthAnswer(val ms: Long?, val hit: Boolean = false)
 /** How the pass asks for a song's length (lengths.ts `LengthReader`). */
 fun interface LengthReader {
     /**
-     * @throws LastfmError [LastfmFailure.RECONNECT], [LastfmFailure.BUSY] (try later; [LastfmError.limited]: not before
-     *   [LastfmError.retryAt]) or [LastfmFailure.UNAVAILABLE].
+     * @throws LastfmError [LastfmFailure.RECONNECT], [LastfmFailure.BUSY] (try later), [LastfmFailure.UNAVAILABLE], or one with a
+     *   [LastfmError.hold] (a limit, no network, no proxy: no song to blame).
      */
     suspend fun look(artist: String, track: String): LengthAnswer
 }
@@ -79,7 +79,7 @@ interface LengthsStore {
 /**
  * What one slice did (lengths.ts `LengthsRun`): rows rewritten (filled and timed), songs asked, songs left to ask, why it stopped
  * short (if it did), the songs failing in a row at its end (the run's next slice carries on from it), and, when it was stopped by a
- * limit (a rate limit, the daily cap), when to come back.
+ * hold ([LengthHold]: a limit, no network, no proxy), which, and for a limit when to come back.
  */
 data class LengthsRun(
     val rows: Int,
@@ -88,6 +88,7 @@ data class LengthsRun(
     val stopped: LastfmFailure? = null,
     val streak: Int = 0,
     val retryAt: Long? = null,
+    val hold: LengthHold? = null,
 )
 
 /**
@@ -246,7 +247,8 @@ object Lengths {
      *   run's earlier slices, end the slice ([LengthsRun.stopped] BUSY), and the run.
      * - An answer that isn't one ([LastfmFailure.UNAVAILABLE], or an ask that throws) marks its song failed too, then ends the
      *   slice, so the next pass goes on to the next song. A reconnect ends it, marking nothing.
-     * - A limit ([LastfmError.limited]: a rate limit, the daily cap) ends it at once, marking nothing, with when to come back.
+     * - A hold ([LastfmError.hold]: a rate limit, the daily cap, no network, no proxy) ends it at once, marking nothing, with
+     *   when to come back for a limit. What Spotify and the library know is filled all the same.
      * - A song whose rows can't be found when written (none timed) is marked as having no length, so it can't sit at the front.
      *
      * A cancelled coroutine (the web's stop) reads and writes nothing if it was cancelled before it began; cancelled part way, it
@@ -276,6 +278,7 @@ object Lengths {
         var asked = 0
         var stopped: LastfmFailure? = null
         var retryAt: Long? = null
+        var hold: LengthHold? = null
         fun fail(key: String) {
             state.failed[key] = nowS
             state.failures[key] = (state.failures[key] ?: 0) + 1
@@ -314,8 +317,9 @@ object Lengths {
                     throw e
                 } catch (e: LastfmError) {
                     when {
-                        // A limit isn't the song's: it stays first, nothing marked, and the run comes back when it lifts
-                        e.limited -> {
+                        // A hold isn't the song's: it stays first, nothing marked, and the run comes back when it lifts
+                        e.hold != null -> {
+                            hold = e.hold
                             retryAt = e.retryAt
                             throw e
                         }
@@ -364,7 +368,7 @@ object Lengths {
             stopped = e.kind
         }
         write()
-        return LengthsRun(rows = rows, asked = asked, left = state.asks.size, stopped = stopped, streak = state.streak, retryAt = retryAt)
+        return LengthsRun(rows = rows, asked = asked, left = state.asks.size, stopped = stopped, streak = state.streak, retryAt = retryAt, hold = hold)
     }
 
     /**

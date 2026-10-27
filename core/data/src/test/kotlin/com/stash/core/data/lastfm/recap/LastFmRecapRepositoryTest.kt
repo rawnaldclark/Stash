@@ -476,7 +476,8 @@ class LastFmRecapRepositoryTest {
             java.io.IOException("no route") to LastFmSongLength.Busy,
             kotlinx.serialization.SerializationException("not json") to LastFmSongLength.Busy,
             LastFmHttpException(403, "HTTP 403") to LastFmSongLength.Unavailable,
-            com.stash.core.data.lastfm.LastFmProxyMissingException("no proxy") to LastFmSongLength.Unavailable,
+            // No proxy in this build: no song to blame, so the pass marks none
+            com.stash.core.data.lastfm.LastFmProxyMissingException("no proxy") to LastFmSongLength.NoProxy,
         )
         for ((e, want) in failures) {
             remote.failures += e
