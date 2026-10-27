@@ -30,9 +30,15 @@ class HandoffSongMatcher @Inject constructor(
     /**
      * [songs] matched in order, in transactions of [BATCH] songs: the stream-only rows a batch inserts invalidate the library
      * once per batch, not once per song (every library screen re-queries on each invalidation), and the write lock is never
-     * held for long. Same result as [match] one by one.
+     * held for long. Same result as [match] one by one. [onBatch] is told each batch's size once it is matched (an import's
+     * progress; it may throw to stop the call).
      */
-    suspend fun matchAll(songs: List<WireSong?>, mirror: Boolean = false, identities: MirrorIdentities? = null): List<TrackEntity?> = withContext(Dispatchers.IO) {
+    suspend fun matchAll(
+        songs: List<WireSong?>,
+        mirror: Boolean = false,
+        identities: MirrorIdentities? = null,
+        onBatch: (Int) -> Unit = {},
+    ): List<TrackEntity?> = withContext(Dispatchers.IO) {
         val out = ArrayList<TrackEntity?>(songs.size)
         // The song each row was taken for in this call: a row stands for one song only (final check F-B1).
         val claims = HashMap<Long, WireSong>()
@@ -55,6 +61,7 @@ class HandoffSongMatcher @Inject constructor(
                 chunk.map { null }
             }
             out += rows
+            onBatch(chunk.size)
         }
         out
     }
