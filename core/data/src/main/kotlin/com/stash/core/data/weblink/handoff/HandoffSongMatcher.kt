@@ -142,11 +142,18 @@ class HandoffSongMatcher @Inject constructor(
     private suspend fun byWords(song: WireSong): TrackEntity? =
         rowsWithWordsOf(song).firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
 
-    /** Every row with [song]'s canonical words, oldest first; none for a blank key, which would load every local import. */
+    /**
+     * Every row with [song]'s canonical words, oldest first. A blank key would load every local import, so a song whose canonical
+     * words are blank (a title that is only brackets, "(Intro)") is looked up by its exact words instead: matched by nothing else,
+     * it got a new row each time it came (a Spotify export's liked "(Intro)" and the same "(Intro)" in a playlist were two rows).
+     */
     private suspend fun rowsWithWordsOf(song: WireSong): List<TrackEntity> {
         val title = TrackCanonical.title(song.title)
         val artist = TrackCanonical.artist(song.artist)
-        if (TrackCanonical.isBlankKey(title, artist)) return emptyList()
+        if (TrackCanonical.isBlankKey(title, artist)) {
+            if (song.title.isBlank() || song.artist.isBlank()) return emptyList()
+            return trackDao.findAllByExactWords(song.title, song.artist)
+        }
         return trackDao.findAllByCanonicalIdentity(title, artist)
     }
 

@@ -909,6 +909,13 @@ interface TrackDao {
     suspend fun findAllByCanonicalIdentity(title: String, artist: String): List<TrackEntity>
 
     /**
+     * Every row with exactly these words as written, oldest first: how a song whose canonical words are blank (a title that is
+     * only brackets, "(Intro)") is found again, since every lookup by canonical words skips a blank pair. Rare, so no index.
+     */
+    @Query("SELECT * FROM tracks WHERE title = :title AND artist = :artist ORDER BY id ASC")
+    suspend fun findAllByExactWords(title: String, artist: String): List<TrackEntity>
+
+    /**
      * The next [limit] rows after [afterId], in id order, with just the columns the canonical
      * recompute reads. Keyset paging on the primary key: each page is an index seek, however far
      * into a ~19k-row library a resumed run starts.

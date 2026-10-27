@@ -30,6 +30,16 @@ class HandoffSongMatcherBlankKeyTest {
         coVerify(exactly = 0) { trackDao.findAllByCanonicalIdentity(any(), any()) }
     }
 
+    @Test fun `a blank key is found again by its exact words, never made twice`() = runTest {
+        coEvery { trackDao.findAllByExactWords("(Intro)", "Artist") } returns listOf(TrackEntity(id = 9L, title = "(Intro)", artist = "Artist"))
+
+        val row = matcher.match(WireSong(title = "(Intro)", artist = "Artist"))
+
+        assertEquals(9L, row?.id)
+        coVerify(exactly = 0) { music.ensureExactTrackPersisted(any()) }
+        coVerify(exactly = 0) { trackDao.findAllByCanonicalIdentity(any(), any()) }
+    }
+
     @Test fun `a song with words is still looked up by them`() = runTest {
         coEvery { trackDao.findAllByCanonicalIdentity("intro", "artist") } returns
             listOf(TrackEntity(id = 7L, title = "Intro", artist = "Artist"))
