@@ -468,11 +468,11 @@ class LastFmRecapRepositoryTest {
         assertThat(remote.calls.map { it.kind }).containsExactly("duration:A", "duration:Max", "duration:Zero", "duration:Null", "duration:Huge", "duration:Missing").inOrder()
         val failures = mapOf(
             LastFmApiException("7", "invalid resource") to LastFmSongLength.None(cached = false),
-            LastFmApiException("29", "rate limit") to LastFmSongLength.Busy,
+            LastFmApiException("29", "rate limit") to LastFmSongLength.Limited,
             LastFmApiException("8", "operation failed") to LastFmSongLength.Busy,
-            LastFmRateLimitedException("proxy throttled") to LastFmSongLength.Busy,
+            LastFmRateLimitedException("proxy throttled") to LastFmSongLength.Limited,
             LastFmHttpException(503, "HTTP 503") to LastFmSongLength.Busy,
-            LastFmHttpException(429, "HTTP 429") to LastFmSongLength.Busy,
+            LastFmHttpException(429, "HTTP 429") to LastFmSongLength.Limited,
             java.io.IOException("no route") to LastFmSongLength.Busy,
             kotlinx.serialization.SerializationException("not json") to LastFmSongLength.Busy,
             LastFmHttpException(403, "HTTP 403") to LastFmSongLength.Unavailable,

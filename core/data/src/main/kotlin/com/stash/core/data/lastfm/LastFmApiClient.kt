@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -12,6 +13,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -397,6 +400,8 @@ suspend fun updateNowPlaying(
          * Through Stash's proxy or not at all (Your record's lengths pass, which asks about thousands of songs): a proxy that is
          * throttled, unreachable or missing fails the read ([LastFmRateLimitedException], the network's own error, or
          * [LastFmProxyMissingException]) instead of falling back to a direct read on the app's own keys. Needs no [username].
+         * Its rate limits open a breaker of its own, never the one mixes, radios and the recap read through; the request is
+         * cancelled when the caller is, so a stopped pass never waits out an HTTP timeout.
          */
         proxyOnly: Boolean = false,
     ): Result<LastFmTrackInfo> = runCatching {
@@ -781,6 +786,8 @@ suspend fun updateNowPlaying(
                 targetBase: String,
                 breakerKey: String,
                 outgoing: MutableMap<String, String>,
+                /** The call ends when the caller's coroutine is cancelled (a bulk read stopped part way). */
+                cancellable: Boolean = false,
             ): JsonObject {
                 outgoing["format"] = "json"
                 val url = targetBase.toHttpUrl().newBuilder().apply {
@@ -789,12 +796,15 @@ suspend fun updateNowPlaying(
                 val request = Request.Builder().url(url).get().apply {
                     // Lets the proxy's logs attribute traffic to a build. Only the
                     // owner's proxy sees it; Last.fm direct gets nothing extra.
-                    if (breakerKey == PROXY_BREAKER_KEY) {
+                    if (targetBase == proxyUrl) {
                         credentials.appVersion?.takeIf { it.isNotBlank() }?.let { header(VERSION_HEADER, it) }
                     }
                 }.build()
-                val (code, body) = okHttpClient.newCall(request).execute().use {
-                    it.code to it.body?.string()
+                val call = okHttpClient.newCall(request)
+                val (code, body) = if (cancellable) {
+                    call.awaitCodeAndBody()
+                } else {
+                    call.execute().use { it.code to it.body?.string() }
                 }
                 // HTTP 429 — hard rate limit. Trip this source's breaker, then throw.
                 if (code == 429) {
@@ -861,10 +871,11 @@ suspend fun updateNowPlaying(
             // must not kill discovery (radios, mixes). Breaker keyed by "proxy".
             val useProxy = cacheable && !proxyUrl.isNullOrBlank()
             if (!direct) {
-                // A bulk lookup: the proxy's answer or failure is the read's own, never one more read on the app's keys
+                // A bulk lookup: the proxy's answer or failure is the read's own, never one more read on the app's keys; its
+                // rate limits trip a breaker of its own, so they never hold up the app's other lookups
                 if (!useProxy) throw LastFmProxyMissingException("Last.fm proxy not configured; not reading direct")
-                if (rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) throw LastFmRateLimitedException("Last.fm proxy rate-limited; skipping request")
-                return@withContext send(proxyUrl!!, PROXY_BREAKER_KEY, params.toMutableMap().apply { remove("api_key") })
+                if (rateLimitGate.isOpen(PROXY_BULK_BREAKER_KEY, now)) throw LastFmRateLimitedException("Last.fm proxy rate-limited; skipping request")
+                return@withContext send(proxyUrl!!, PROXY_BULK_BREAKER_KEY, params.toMutableMap().apply { remove("api_key") }, cancellable = true)
             }
             if (useProxy && !rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
                 val proxyOutgoing = params.toMutableMap().apply { remove("api_key") }
@@ -1008,6 +1019,29 @@ suspend fun updateNowPlaying(
 
         /** Synthetic breaker key for the Worker proxy source (vs. real api keys). */
         private const val PROXY_BREAKER_KEY = "__proxy__"
+
+        /** The proxy's breaker for bulk proxy-only reads (Your record's lengths pass): apart from [PROXY_BREAKER_KEY]. */
+        private const val PROXY_BULK_BREAKER_KEY = "__proxy_bulk__"
+
+        /**
+         * This call's code and body, run on OkHttp's own threads and cancelled with the caller's coroutine (a blocking
+         * `execute()` can't be: the coroutine would wait out the HTTP timeouts).
+         */
+        private suspend fun Call.awaitCodeAndBody(): Pair<Int, String?> = suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback {
+                    override fun onFailure(call: Call, e: java.io.IOException) {
+                        if (cont.isActive) cont.resumeWith(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: Call, response: okhttp3.Response) {
+                        val read = runCatching { response.use { it.code to it.body?.string() } }
+                        if (cont.isActive) cont.resumeWith(read)
+                    }
+                },
+            )
+        }
     }
 }
 

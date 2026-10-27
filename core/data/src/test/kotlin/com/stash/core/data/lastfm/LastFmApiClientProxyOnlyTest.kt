@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.dao.LastFmCacheDao
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -84,6 +85,46 @@ class LastFmApiClientProxyOnlyTest {
         assertThat(c.getTrackInfo("a", "t2", proxyOnly = true).exceptionOrNull()).isInstanceOf(LastFmRateLimitedException::class.java)
         assertThat(canned.proxyCalls).isEqualTo(1)
         assertThat(canned.directCalls).isEqualTo(0)
+    }
+
+    @Test fun `a bulk read's rate limit trips its own breaker, never the one the app's other lookups use`() = runTest {
+        val canned = Canned(proxyHost, 429, "")
+        val c = client(canned)
+        assertThat(c.getTrackInfo("a", "t", proxyOnly = true).exceptionOrNull()).isInstanceOf(LastFmRateLimitedException::class.java)
+        // A mix's or a radio's lookup still goes to the proxy (and, throttled there, on to its own fallback)
+        c.getTrackInfo("a", "t2")
+        assertThat(canned.proxyCalls).isEqualTo(2)
+    }
+
+    @Test fun `a bulk read in flight is cancelled with its caller, never waited out`() = runTest {
+        val started = java.util.concurrent.CountDownLatch(1)
+        var cancelled = false
+        val slow = Interceptor { chain ->
+            started.countDown()
+            // Last.fm taking its time: until the call is cancelled, or 10 s
+            val until = System.currentTimeMillis() + 10_000
+            while (!chain.call().isCanceled() && System.currentTimeMillis() < until) Thread.sleep(10)
+            cancelled = chain.call().isCanceled()
+            throw java.io.IOException("Canceled")
+        }
+        val cacheDao = mockk<LastFmCacheDao>(relaxed = true)
+        coEvery { cacheDao.get(any()) } returns null
+        val c = LastFmApiClient(
+            okHttpClient = OkHttpClient.Builder().addInterceptor(slow).build(),
+            credentials = LastFmCredentials(apiKey = "key", apiSecret = "secret", proxyUrl = "https://$proxyHost/lastfm"),
+            rateLimitGate = LastFmRateLimitGate(),
+            cacheDao = cacheDao,
+        )
+        val began = System.currentTimeMillis()
+        val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { c.getTrackInfo("a", "t", proxyOnly = true) }
+        assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+        job.cancel()
+        job.join()
+        assertThat(System.currentTimeMillis() - began).isLessThan(5_000L)
+        // The call itself was cancelled (OkHttp's thread let go too)
+        val until = System.currentTimeMillis() + 5_000
+        while (!cancelled && System.currentTimeMillis() < until) Thread.sleep(10)
+        assertThat(cancelled).isTrue()
     }
 
     @Test fun `no proxy, nothing sent`() = runTest {

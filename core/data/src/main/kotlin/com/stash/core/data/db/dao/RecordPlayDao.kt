@@ -113,6 +113,15 @@ interface RecordPlayDao {
     @Transaction
     suspend fun timeAll(spellings: List<Spelling>, ms: Long): Int = spellings.sumOf { time(it.from, it.until, it.t, it.a, ms) }
 
+    /**
+     * [timeAll] for many songs (each its spellings and its `ms`) in one transaction: a slice of the lengths pass is one write, so
+     * whatever watches the table hears it once. Returns how many rows each song timed, in order.
+     */
+    @Transaction
+    suspend fun timeSongs(songs: List<Pair<List<Spelling>, Long>>): List<Int> = songs.map { (spellings, ms) ->
+        spellings.sumOf { time(it.from, it.until, it.t, it.a, ms) }
+    }
+
     /** Remove your Last.fm scrobbles: every scrobble goes, the other plays stay. Returns how many went. */
     @Query("DELETE FROM record_plays WHERE (f & $LASTFM) != 0")
     suspend fun deleteScrobbles(): Int

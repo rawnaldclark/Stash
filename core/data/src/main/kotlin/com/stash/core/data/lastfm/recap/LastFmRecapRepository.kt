@@ -48,8 +48,11 @@ sealed interface LastFmSongLength {
     /** Last.fm has no length for it: not found (errors 6 and 7), or a duration of 0, none, or past belief. */
     data class None(val cached: Boolean) : LastFmSongLength
 
-    /** Busy, rate limited, offline, or an answer that isn't one: ask again later. */
+    /** Busy, offline, or an answer that isn't one: ask again later. */
     data object Busy : LastFmSongLength
+
+    /** The proxy (or Last.fm behind it) is rate limiting: stop asking for a while, never try again straight away. */
+    data object Limited : LastFmSongLength
 
     /** Nothing to ask through (no proxy), or the proxy refused the read itself: stop asking. */
     data object Unavailable : LastFmSongLength
@@ -539,14 +542,18 @@ class LastFmRecapRepository internal constructor(
          */
         internal fun lengthFailure(error: Throwable, cached: Boolean): LastFmSongLength = when (error) {
             is LastFmApiException ->
-                if (error.code == LastFmApiException.NOT_FOUND || error.code == LastFmApiException.INVALID_RESOURCE) {
-                    LastFmSongLength.None(cached)
-                } else {
-                    LastFmSongLength.Busy
+                when (error.code) {
+                    LastFmApiException.NOT_FOUND, LastFmApiException.INVALID_RESOURCE -> LastFmSongLength.None(cached)
+                    LastFmApiException.RATE_LIMIT_EXCEEDED -> LastFmSongLength.Limited
+                    else -> LastFmSongLength.Busy
                 }
             is com.stash.core.data.lastfm.LastFmProxyMissingException -> LastFmSongLength.Unavailable
-            is LastFmRateLimitedException -> LastFmSongLength.Busy
-            is LastFmHttpException -> if (error.status == 429 || error.status >= 500) LastFmSongLength.Busy else LastFmSongLength.Unavailable
+            is LastFmRateLimitedException -> LastFmSongLength.Limited
+            is LastFmHttpException -> when {
+                error.status == 429 -> LastFmSongLength.Limited
+                error.status >= 500 -> LastFmSongLength.Busy
+                else -> LastFmSongLength.Unavailable
+            }
             // No connection, a timeout, a body that isn't JSON or is empty
             is IOException, is IllegalStateException, is IllegalArgumentException -> LastFmSongLength.Busy
             else -> LastFmSongLength.Unavailable
