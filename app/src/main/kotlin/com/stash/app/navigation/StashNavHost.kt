@@ -200,7 +200,7 @@ private fun StashNavGraph(
                 },
                 yourRecordSection = {
                     // A double tap opens one record, not two
-                    YourRecordSection(onOpen = { navController.navigate(YourRecordRoute) { launchSingleTop = true } })
+                    YourRecordSection(onOpen = { navController.openRecord() })
                 },
             )
         }
@@ -411,7 +411,7 @@ private fun StashNavGraph(
                 } else {
                     null
                 },
-                onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } },
+                onOpenRecord = { navController.openRecord() },
                 // Not connected: the app's own Last.fm sign-in, on Accounts & Sync
                 yourRecordLastfm = {
                     com.stash.feature.record.lastfm.recordLastfmSettingsRows(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })

@@ -489,15 +489,9 @@ fun StashScaffold(
     PlayerMessagesToaster()
 
     // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
-    // shared with Stash, Settings). A finished import opens the record, unless it is showing already (its own "Bring your
-    // Spotify"): navigating to it again, even single-top, crashed the app every time (SIGSEGV on the RenderThread, libhwui
-    // recursing through the render tree until the stack ran out; seen on the rig, the exact cause not pinned down).
+    // shared with Stash, Settings). A finished import opens the record (never over itself: openRecord).
     RecordImportHost(
-        onOpenRecord = {
-            if (navController.currentDestination?.hasRoute<YourRecordRoute>() != true) {
-                navController.navigate(YourRecordRoute) { launchSingleTop = true }
-            }
-        },
+        onOpenRecord = { navController.openRecord() },
         // Last.fm not connected: the app's own sign-in, on Accounts & Sync
         onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
     )
