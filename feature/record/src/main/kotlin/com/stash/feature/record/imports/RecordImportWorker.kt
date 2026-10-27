@@ -1,7 +1,5 @@
 package com.stash.feature.record.imports
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.ServiceInfo
@@ -31,7 +29,8 @@ import kotlinx.coroutines.launch
  * screen or the app, with a quiet notification saying how far it is. Why WorkManager: it keeps the work alive in the
  * background, runs it again after the app is killed mid-write (the commit then carries on from the copies it kept), and is how
  * this app's other long jobs run (downloads, Google Drive uploads). One at a time: a step asked for while another runs waits
- * behind it.
+ * behind it. A step the system stops (Android 15's dataSync budget, the 10-minute cap of a job that couldn't go foreground)
+ * runs again by itself and takes up where it was; only the person's Cancel ([cancel]) ends it for good.
  */
 @HiltWorker
 class RecordImportWorker @AssistedInject constructor(
@@ -78,16 +77,13 @@ class RecordImportWorker @AssistedInject constructor(
 
     private fun foregroundInfo(p: ImportProgress?): ForegroundInfo {
         val context = applicationContext
-        val nm = context.getSystemService(NotificationManager::class.java)
-        if (nm != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, context.getString(R.string.record_import_channel), NotificationManager.IMPORTANCE_LOW))
-        }
+        ImportNotifications.ensureChannel(context)
         val open = context.packageManager.getLaunchIntentForPackage(context.packageName)?.let {
             PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
         val part = (p as? ImportProgress.Read)?.part?.let { (it * 100).toInt() }
             ?: (p as? ImportProgress.Write)?.takeIf { it.total > 0 }?.let { it.done * 100 / it.total }
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, ImportNotifications.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(context.getString(R.string.record_import_working_title))
             .setContentText(ImportText.progressLine(context.resources, p ?: ImportProgress.Open))
@@ -107,7 +103,6 @@ class RecordImportWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "YourRecord"
         private const val NAME = "record-import"
-        private const val CHANNEL_ID = "record_import"
         private const val NOTIFICATION_ID = 9481
         private const val NOTIFY_EVERY_MS = 1_000L
 
@@ -118,6 +113,11 @@ class RecordImportWorker @AssistedInject constructor(
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<RecordImportWorker>().build(),
             )
+        }
+
+        /** The person cancelled: the step running is stopped and any queued one dropped (RecordImports tells that from a system stop). */
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(NAME)
         }
 
         /** A step is queued or running. */

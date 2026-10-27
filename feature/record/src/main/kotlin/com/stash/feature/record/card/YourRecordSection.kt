@@ -81,6 +81,8 @@ import com.stash.feature.record.imports.ImportText
  *   record ([onOpen]).
  * - An import on its way with its sheet closed: "Pressing your record" and how far it is, or "Ready to press" for a preview
  *   waiting; Open or Review brings the sheet back.
+ * - An import that came to nothing: "Your import didn't finish", Try again (the files kept, read again) and a × that dismisses
+ *   it, over whatever the card showed before.
  * - Before any of that: "Press your record" (an empty record out of a plain sleeve, the sources, Get started: the import
  *   sheet), or "Waiting for Spotify" once they asked for their data (Bring the zip, or How it works). A × hides it on this
  *   phone; Settings › Library & Storage brings it back.
@@ -115,6 +117,15 @@ fun YourRecordSection(
                 line = stringResource(R.string.record_ready_body),
                 action = stringResource(R.string.record_ready_review),
                 onAction = viewModel::openImport,
+                modifier = pad,
+            )
+            RecordCardState.Unfinished -> PressingCard(
+                title = stringResource(R.string.record_unfinished_title),
+                line = stringResource(R.string.record_error_saving_body),
+                action = stringResource(R.string.record_error_try_again),
+                onAction = viewModel::retry,
+                onHide = viewModel::dismissUnfinished,
+                hideLabel = stringResource(R.string.record_unfinished_dismiss),
                 modifier = pad,
             )
             RecordCardState.Hidden -> Unit
@@ -262,14 +273,14 @@ private fun emphasised(text: String, part: String) = buildAnnotatedString {
     if (at >= 0) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White), at, at + part.length)
 }
 
-/** The invitation's × (HomeCard.svelte's `rc-x`): hides it on this phone until Settings brings it back. */
+/** The invitation's × (HomeCard.svelte's `rc-x`): hides it on this phone until Settings brings it back. [label]: what it does, spoken. */
 @Composable
-private fun HideButton(onHide: () -> Unit) {
+private fun HideButton(onHide: () -> Unit, label: String = stringResource(R.string.record_invite_hide)) {
     Box(Modifier.fillMaxWidth().padding(4.dp), contentAlignment = Alignment.TopEnd) {
         IconButton(onClick = onHide, modifier = Modifier.size(36.dp)) {
             Icon(
                 Icons.Rounded.Close,
-                contentDescription = stringResource(R.string.record_invite_hide),
+                contentDescription = label,
                 tint = Color.White.copy(alpha = 0.72f),
                 modifier = Modifier.size(18.dp),
             )
@@ -354,14 +365,22 @@ private fun WaitingCard(askedAt: Long, onBring: (List<android.net.Uri>) -> Unit,
 
 /**
  * An import on its way with its sheet closed (HomeCard.svelte's busy card): the record being pressed, how far it is (or that
- * a preview waits), and the way back to it.
+ * a preview waits), and the way back to it. With [onHide], a × too (an import that didn't finish, dismissed).
  */
 @Composable
-private fun PressingCard(title: String, line: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
-    CardFrame(backdrop = null, modifier = modifier) {
+private fun PressingCard(
+    title: String,
+    line: String,
+    action: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+    onHide: (() -> Unit)? = null,
+    hideLabel: String = "",
+) {
+    CardFrame(backdrop = null, modifier = modifier, overlay = { if (onHide != null) HideButton(onHide, hideLabel) }) {
         RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
         Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).padding(end = if (onHide != null) 20.dp else 0.dp)) {
             Text(stringResource(R.string.record_eyebrow), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
             Text(
                 title,

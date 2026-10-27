@@ -46,6 +46,9 @@ sealed interface RecordCardState {
     /** A preview waiting for the person (nothing is written until they import). */
     data object Ready : RecordCardState
 
+    /** An import came to nothing (it failed, or the system stopped it for good): "Your import didn't finish", Try again, ×. */
+    data object Unfinished : RecordCardState
+
     /** Nothing on Home: no record yet, and the invitation hidden with its ×. */
     data object Hidden : RecordCardState
 }
@@ -56,6 +59,8 @@ data class CardImport(
     val asked: Long? = null,
     val inviteHidden: Boolean = false,
     val state: ImportState = ImportState.Idle,
+    /** An import came to nothing, not yet tried again or dismissed. */
+    val unfinished: Boolean = false,
 )
 
 /**
@@ -81,7 +86,8 @@ object RecordCard {
     /**
      * HomeCard.svelte: the record once anything was imported or this phone has [OWN_FOR_RECORD] streams of its own, unless an
      * import is on its way (then how far it is, or the preview waiting); else the invitation ("Waiting for Spotify" once they
-     * asked), unless its × hid it.
+     * asked), unless its × hid it. An import that came to nothing says so first (the app's own: the web's runs in the open tab),
+     * until it's tried again or dismissed: even over the record and a hidden invitation, since the person asked for it.
      */
     fun stateOf(
         summary: RecordSummary,
@@ -92,6 +98,7 @@ object RecordCard {
         val entry = import.imported || summary.ownStreams >= OWN_FOR_RECORD
         val st = import.state
         return when {
+            import.unfinished && !st.busy -> RecordCardState.Unfinished
             entry && !st.busy -> viewOf(summary, albums).let { view -> RecordCardState.Record(view, view.albums.map { it.cover }, view.artists.map { null }) }
             st is ImportState.Preview -> RecordCardState.Ready
             st is ImportState.Working -> RecordCardState.Importing(st.progress)

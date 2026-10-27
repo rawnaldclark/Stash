@@ -18,11 +18,14 @@ data class ImportInfo(
     val record: ImportRecord? = null,
     /** "Press your record" closed with its × (Settings brings it back). */
     val inviteHidden: Boolean = false,
+    /** When an import last came to nothing (it failed, or the system stopped it for good): the card says so until it's dismissed or tried again. */
+    val unfinished: Long? = null,
 )
 
 /**
  * Your record's import meta in this phone's preferences (the `your_record` file the Home card's × already lives in): `asked`,
- * the import record, and `pending` (an import's plays are being written: finished on the next start if the app died first).
+ * the import record, `pending` (an import's plays are being written: finished on the next start if the app died first),
+ * `unfinished` (an import that came to nothing, for the card) and `stops` (times the system stopped the import running now).
  * The plays themselves are in the database (`record_plays`).
  */
 @Singleton
@@ -41,6 +44,21 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
 
     fun setPending(at: Long?) {
         prefs.edit().apply { if (at == null) remove(KEY_PENDING) else putLong(KEY_PENDING, at) }.commit()
+    }
+
+    /** Times the system stopped the import running now (a stopped job runs again; past a few, the import is given up). */
+    val stops: Int get() = prefs.getInt(KEY_STOPS, 0)
+
+    /** One more stop; returns the count. */
+    fun addStop(): Int = (stops + 1).also { n -> prefs.edit().putInt(KEY_STOPS, n).commit() }
+
+    fun clearStops() {
+        if (prefs.contains(KEY_STOPS)) prefs.edit().remove(KEY_STOPS).commit()
+    }
+
+    fun setUnfinished(at: Long?) {
+        if (at == null && !prefs.contains(KEY_UNFINISHED)) return
+        edit { if (at == null) remove(KEY_UNFINISHED) else putLong(KEY_UNFINISHED, at) }
     }
 
     fun setRecord(r: ImportRecord) = edit {
@@ -87,6 +105,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
             )
         },
         inviteHidden = prefs.getBoolean(KEY_HIDDEN, false),
+        unfinished = prefs.getLong(KEY_UNFINISHED, 0L).takeIf { it > 0 },
     )
 
     companion object {
@@ -94,6 +113,8 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val KEY_HIDDEN = "invite_hidden"
         private const val KEY_ASKED = "spotify_asked_at"
         private const val KEY_PENDING = "import_pending_at"
+        private const val KEY_STOPS = "import_stops"
+        private const val KEY_UNFINISHED = "import_unfinished_at"
         private const val R_FIRST_AT = "import_first_at"
         private const val R_LAST_AT = "import_last_at"
         private const val R_IMPORTS = "import_count"

@@ -113,6 +113,11 @@
     <string name="record_error_other_body">چیز تازه‌ای اضافه نشد. دوباره امتحان کنید، یا فایل zip را دوباره بیاورید.</string>
     <string name="record_error_saving_title">هنگام ذخیره مشکلی پیش آمد</string>
     <string name="record_error_saving_body">دوباره امتحان کنید: چیزی دو بار شمرده نمی‌شود.</string>
+    <string name="record_error_too_big_title">این برای خروجی Spotify خیلی بزرگ است</string>
+    <string name="record_error_too_big_body">خروجی‌های Spotify خیلی کوچک‌ترند، برای همین خوانده نشد. چیزی اضافه نشد.</string>
+    <string name="record_unfinished_title">وارد کردن شما کامل نشد</string>
+    <string name="record_unfinished_notice">برای امتحان دوباره Stash را باز کنید: چیزی دو بار شمرده نمی‌شود.</string>
+    <string name="record_unfinished_dismiss">بستن</string>
     <string name="record_error_choose_another">انتخاب فایل دیگر</string>
     <string name="record_error_try_again">تلاش دوباره</string>
     <string name="record_error_back">بازگشت</string>

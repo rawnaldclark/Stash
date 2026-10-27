@@ -105,6 +105,11 @@
     <string name="record_error_other_body">새로 추가된 것은 없습니다. 다시 시도하거나 zip 파일을 다시 가져오세요.</string>
     <string name="record_error_saving_title">저장하는 중에 문제가 발생했습니다</string>
     <string name="record_error_saving_body">다시 시도하세요. 중복으로 집계되는 것은 없습니다.</string>
+    <string name="record_error_too_big_title">Spotify 내보내기 파일이라기엔 너무 큽니다</string>
+    <string name="record_error_too_big_body">Spotify 내보내기 파일은 훨씬 작기 때문에 읽지 않았습니다. 추가된 것은 없습니다.</string>
+    <string name="record_unfinished_title">가져오기를 마치지 못했습니다</string>
+    <string name="record_unfinished_notice">Stash를 열어 다시 시도하세요. 중복으로 집계되는 것은 없습니다.</string>
+    <string name="record_unfinished_dismiss">닫기</string>
     <string name="record_error_choose_another">다른 파일 선택</string>
     <string name="record_error_try_again">다시 시도</string>
     <string name="record_error_back">뒤로</string>

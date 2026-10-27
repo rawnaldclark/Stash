@@ -145,6 +145,11 @@
     <string name="record_error_other_body">لم يُضف أي شيء جديد. حاول مجددًا، أو أضف ملف zip مرة أخرى.</string>
     <string name="record_error_saving_title">حدث خطأ ما أثناء الحفظ</string>
     <string name="record_error_saving_body">حاول مجددًا: لن يُحتسب أي شيء مرتين.</string>
+    <string name="record_error_too_big_title">هذا أكبر بكثير من أن يكون ملف تصدير من Spotify</string>
+    <string name="record_error_too_big_body">ملفات التصدير من Spotify أصغر بكثير، لذا لم تتم قراءته. لم يُضف أي شيء.</string>
+    <string name="record_unfinished_title">لم يكتمل الاستيراد</string>
+    <string name="record_unfinished_notice">افتح Stash لتحاول مجددًا: لن يُحتسب أي شيء مرتين.</string>
+    <string name="record_unfinished_dismiss">إغلاق</string>
     <string name="record_error_choose_another">اختيار ملف آخر</string>
     <string name="record_error_try_again">إعادة المحاولة</string>
     <string name="record_error_back">رجوع</string>

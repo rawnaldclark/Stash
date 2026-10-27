@@ -41,7 +41,7 @@ class YourRecordViewModel @Inject constructor(
 
     /** The card before its covers: worked out off the main thread, and its covers asked for as soon as it is known. */
     private val base = combine(source.data, imports.info, imports.state) { data, info, st ->
-        RecordCard.stateOf(data.summary, data.albums, CardImport(info.record != null, info.asked, info.inviteHidden, st))
+        RecordCard.stateOf(data.summary, data.albums, CardImport(info.record != null, info.asked, info.inviteHidden, st, info.unfinished != null))
     }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
@@ -64,6 +64,15 @@ class YourRecordViewModel @Inject constructor(
 
     /** Get started, How it works, Open, Review: the import sheet. */
     fun openImport() = imports.openSheet()
+
+    /** "Your import didn't finish" › Try again: the files kept, read again in the sheet (or the sheet, to bring them). */
+    fun retry() {
+        imports.openSheet()
+        imports.again()
+    }
+
+    /** "Your import didn't finish" › ×: the card goes back to what it was, the files kept for it let go. */
+    fun dismissUnfinished() = imports.dismissUnfinished()
 
     /** "Bring the zip": the files chosen from the card go straight in, in the sheet. */
     fun bring(uris: List<Uri>) {

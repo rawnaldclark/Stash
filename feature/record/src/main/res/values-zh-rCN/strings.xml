@@ -105,6 +105,11 @@
     <string name="record_error_other_body">没有添加任何新内容。请重试，或重新添加 zip 文件。</string>
     <string name="record_error_saving_title">保存时出了点问题</string>
     <string name="record_error_saving_body">请重试：不会重复计算。</string>
+    <string name="record_error_too_big_title">这对 Spotify 导出文件来说太大了</string>
+    <string name="record_error_too_big_body">Spotify 导出文件要小得多，所以没有读取它。没有添加任何内容。</string>
+    <string name="record_unfinished_title">你的导入没有完成</string>
+    <string name="record_unfinished_notice">打开 Stash 重试：不会重复计算。</string>
+    <string name="record_unfinished_dismiss">关闭</string>
     <string name="record_error_choose_another">选择其他文件</string>
     <string name="record_error_try_again">重试</string>
     <string name="record_error_back">返回</string>

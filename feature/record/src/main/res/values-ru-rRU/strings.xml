@@ -129,6 +129,11 @@
     <string name="record_error_other_body">Ничего нового не добавлено. Попробуйте снова или добавьте zip-архив ещё раз.</string>
     <string name="record_error_saving_title">Что-то пошло не так при сохранении</string>
     <string name="record_error_saving_body">Попробуйте снова: ничего не будет учтено дважды.</string>
+    <string name="record_error_too_big_title">Это слишком большой файл для экспорта Spotify</string>
+    <string name="record_error_too_big_body">Экспорт Spotify намного меньше, поэтому файл не прочитан. Ничего не добавлено.</string>
+    <string name="record_unfinished_title">Импорт не завершён</string>
+    <string name="record_unfinished_notice">Откройте Stash, чтобы попробовать снова: ничего не будет учтено дважды.</string>
+    <string name="record_unfinished_dismiss">Закрыть</string>
     <string name="record_error_choose_another">Выбрать другой файл</string>
     <string name="record_error_try_again">Повторить</string>
     <string name="record_error_back">Назад</string>

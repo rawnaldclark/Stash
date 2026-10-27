@@ -128,10 +128,15 @@ fun RecordImportHost(onOpenRecord: () -> Unit, viewModel: RecordImportViewModel 
         if (wasOpen) onOpenRecord()
     }
 
-    if (!open) return
+    // Registered whether the sheet is open or not: when the app was killed behind the picker, the sheet starts closed, and the
+    // files picked come back to this launcher (its key is saved with the screen), which brings them in and opens the sheet
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) imports.bring(uris)
+        if (uris.isNotEmpty()) {
+            imports.openSheet()
+            imports.bring(uris)
+        }
     }
+    if (!open) return
     val pick = { picker.launch(IMPORT_TYPES) }
     ModalBottomSheet(
         onDismissRequest = imports::closeSheet,
@@ -158,7 +163,7 @@ fun RecordImportHost(onOpenRecord: () -> Unit, viewModel: RecordImportViewModel 
                             onAsk = imports::markAsked,
                             onPick = pick,
                         )
-                        Step.WORKING -> (state as? ImportState.Working)?.let { Working(it.progress) }
+                        Step.WORKING -> (state as? ImportState.Working)?.let { Working(it.progress, onCancel = imports::cancel) }
                         Step.PREVIEW -> (state as? ImportState.Preview)?.let {
                             PreviewStep(it.preview, onImport = imports::confirm, onCancel = imports::reset, onAdd = pick)
                         }
@@ -265,7 +270,7 @@ private fun StepRow(n: Int, title: String, last: Boolean = false, content: @Comp
 // ── working ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun Working(progress: ImportProgress) {
+private fun Working(progress: ImportProgress, onCancel: () -> Unit) {
     val res = LocalContext.current.resources
     val line = ImportText.progressLine(res, progress)
     Heading(stringResource(R.string.record_import_working_title))
@@ -297,7 +302,10 @@ private fun Working(progress: ImportProgress) {
     } else {
         LinearProgressIndicator(progress = { part }, modifier = Modifier.fillMaxWidth(), color = StashPurple)
     }
-    Spacer(Modifier.height(20.dp))
+    Spacer(Modifier.height(12.dp))
+    // Stops it for good: the files go (a save stopped halfway keeps what it wrote, counted once)
+    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.record_preview_cancel)) }
+    Spacer(Modifier.height(16.dp))
     Private(stringResource(R.string.record_import_private))
 }
 
@@ -435,9 +443,10 @@ private fun FailedStep(f: ImportState.Failed, onPick: () -> Unit, onAgain: () ->
     )
     Spacer(Modifier.height(18.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val saving = f.saving && (f.reason == ImportFailure.STORAGE || f.reason == ImportFailure.OTHER)
-        Button(onClick = if (saving) onAgain else onPick, colors = ButtonDefaults.buttonColors(containerColor = StashPurple, contentColor = Color.White)) {
-            Text(stringResource(if (saving) R.string.record_error_try_again else R.string.record_error_choose_another))
+        // Out of room, or something went wrong: the files are kept, so Try again reads them again (nothing is counted twice)
+        val again = f.reason == ImportFailure.STORAGE || f.reason == ImportFailure.OTHER
+        Button(onClick = if (again) onAgain else onPick, colors = ButtonDefaults.buttonColors(containerColor = StashPurple, contentColor = Color.White)) {
+            Text(stringResource(if (again) R.string.record_error_try_again else R.string.record_error_choose_another))
         }
         OutlinedButton(onClick = onBack) { Text(stringResource(R.string.record_error_back)) }
     }
@@ -458,6 +467,7 @@ internal fun failureWords(f: ImportState.Failed): Pair<Int, Int> {
         ImportFailure.NO_PLAYS -> R.string.record_error_no_plays_title to R.string.record_error_no_plays_body
         ImportFailure.UNREADABLE -> R.string.record_error_unreadable_title to R.string.record_error_unreadable_body
         ImportFailure.STORAGE -> R.string.record_error_storage_title to R.string.record_error_storage_body
+        ImportFailure.TOO_BIG -> R.string.record_error_too_big_title to R.string.record_error_too_big_body
         ImportFailure.OTHER -> R.string.record_error_other_title to R.string.record_error_other_body
     }
 }

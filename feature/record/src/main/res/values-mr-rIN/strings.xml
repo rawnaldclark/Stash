@@ -113,6 +113,11 @@
     <string name="record_error_other_body">काहीही नवीन जोडले गेले नाही. पुन्हा प्रयत्न करा, किंवा zip पुन्हा आणा.</string>
     <string name="record_error_saving_title">सेव्ह करताना काहीतरी चुकले</string>
     <string name="record_error_saving_body">पुन्हा प्रयत्न करा: काहीही दोनदा मोजले जाणार नाही.</string>
+    <string name="record_error_too_big_title">हे Spotify एक्सपोर्ट असण्यासाठी खूपच मोठे आहे</string>
+    <string name="record_error_too_big_body">Spotify चे एक्सपोर्ट यापेक्षा खूप लहान असतात, म्हणून हे वाचले नाही. काहीही जोडले गेले नाही.</string>
+    <string name="record_unfinished_title">तुमचे इंपोर्ट पूर्ण झाले नाही</string>
+    <string name="record_unfinished_notice">पुन्हा प्रयत्न करण्यासाठी Stash उघडा: काहीही दोनदा मोजले जाणार नाही.</string>
+    <string name="record_unfinished_dismiss">बंद करा</string>
     <string name="record_error_choose_another">दुसरी फाइल निवडा</string>
     <string name="record_error_try_again">पुन्हा प्रयत्न करा</string>
     <string name="record_error_back">मागे</string>

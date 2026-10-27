@@ -113,6 +113,11 @@
     <string name="record_error_other_body">Walang naidagdag na bago. Subukan ulit, o idagdag ulit ang zip.</string>
     <string name="record_error_saving_title">May nangyaring mali habang nagse-save</string>
     <string name="record_error_saving_body">Subukan ulit: walang mabibilang nang dalawang beses.</string>
+    <string name="record_error_too_big_title">Masyadong malaki iyan para maging Spotify export</string>
+    <string name="record_error_too_big_body">Mas maliit ang mga Spotify export, kaya hindi ito binasa. Walang naidagdag.</string>
+    <string name="record_unfinished_title">Hindi natapos ang pag-import mo</string>
+    <string name="record_unfinished_notice">Buksan ang Stash para subukan ulit: walang mabibilang nang dalawang beses.</string>
+    <string name="record_unfinished_dismiss">Isara</string>
     <string name="record_error_choose_another">Pumili ng ibang file</string>
     <string name="record_error_try_again">Subukan ulit</string>
     <string name="record_error_back">Bumalik</string>

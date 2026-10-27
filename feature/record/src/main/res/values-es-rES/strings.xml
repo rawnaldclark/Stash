@@ -113,6 +113,11 @@
     <string name="record_error_other_body">No se ha añadido nada nuevo. Vuelve a intentarlo o añade el zip de nuevo.</string>
     <string name="record_error_saving_title">Algo ha salido mal al guardar</string>
     <string name="record_error_saving_body">Vuelve a intentarlo: nada se contará dos veces.</string>
+    <string name="record_error_too_big_title">Es demasiado grande para ser una exportación de Spotify</string>
+    <string name="record_error_too_big_body">Las exportaciones de Spotify son mucho más pequeñas, así que no se ha leído. No se ha añadido nada.</string>
+    <string name="record_unfinished_title">Tu importación no ha terminado</string>
+    <string name="record_unfinished_notice">Abre Stash para volver a intentarlo: nada se contará dos veces.</string>
+    <string name="record_unfinished_dismiss">Descartar</string>
     <string name="record_error_choose_another">Elegir otro archivo</string>
     <string name="record_error_try_again">Reintentar</string>
     <string name="record_error_back">Atrás</string>

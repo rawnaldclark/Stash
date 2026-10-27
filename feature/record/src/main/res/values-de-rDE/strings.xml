@@ -113,6 +113,11 @@
     <string name="record_error_other_body">Es wurde nichts Neues hinzugefügt. Versuch es noch einmal oder füge die Zip-Datei erneut hinzu.</string>
     <string name="record_error_saving_title">Beim Speichern ist etwas schiefgelaufen</string>
     <string name="record_error_saving_body">Versuch es noch einmal: Nichts wird doppelt gezählt.</string>
+    <string name="record_error_too_big_title">Das ist viel zu groß für einen Spotify-Export</string>
+    <string name="record_error_too_big_body">Spotify-Exporte sind viel kleiner, deshalb wurde die Datei nicht gelesen. Es wurde nichts hinzugefügt.</string>
+    <string name="record_unfinished_title">Dein Import wurde nicht abgeschlossen</string>
+    <string name="record_unfinished_notice">Öffne Stash, um es noch einmal zu versuchen: Nichts wird doppelt gezählt.</string>
+    <string name="record_unfinished_dismiss">Schließen</string>
     <string name="record_error_choose_another">Andere Datei auswählen</string>
     <string name="record_error_try_again">Erneut versuchen</string>
     <string name="record_error_back">Zurück</string>

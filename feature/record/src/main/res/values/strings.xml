@@ -142,6 +142,11 @@
     <string name="record_error_other_body">Nothing new was added. Try again, or bring the zip again.</string>
     <string name="record_error_saving_title">Something went wrong while saving</string>
     <string name="record_error_saving_body">Try again: nothing will be counted twice.</string>
+    <string name="record_error_too_big_title">That’s far too big for a Spotify export</string>
+    <string name="record_error_too_big_body">Spotify’s exports are much smaller, so it wasn’t read. Nothing was added.</string>
+    <string name="record_unfinished_title">Your import didn’t finish</string>
+    <string name="record_unfinished_notice">Open Stash to try again: nothing will be counted twice.</string>
+    <string name="record_unfinished_dismiss">Dismiss</string>
     <string name="record_error_choose_another">Choose another file</string>
     <string name="record_error_try_again">Try again</string>
     <string name="record_error_back">Back</string>

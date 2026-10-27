@@ -113,6 +113,18 @@ class RecordCardTest {
             .isInstanceOf(RecordCardState.Record::class.java)
     }
 
+    @Test fun `an import that didn't finish says so over the record and a hidden invitation, until an import is on its way again`() {
+        val unfinished = CardImport(unfinished = true)
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), unfinished)).isEqualTo(RecordCardState.Unfinished)
+        assertThat(RecordCard.stateOf(summary(streams = 6_086), emptyList(), unfinished.copy(imported = true))).isEqualTo(RecordCardState.Unfinished)
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), unfinished.copy(inviteHidden = true))).isEqualTo(RecordCardState.Unfinished)
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), unfinished.copy(state = ImportState.Failed(ImportFailure.OTHER, saving = true))))
+            .isEqualTo(RecordCardState.Unfinished)
+        // Tried again: how far it is
+        val reading = ImportState.Working(ImportProgress.Open)
+        assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), unfinished.copy(state = reading))).isEqualTo(RecordCardState.Importing(ImportProgress.Open))
+    }
+
     @Test fun `hours, at least 1 once anything played, and counts with separators`() {
         assertThat(RecordCard.count(48_210)).isEqualTo("48,210")
         assertThat(RecordCard.count(48_210, Locale.GERMANY)).isEqualTo("48.210")
