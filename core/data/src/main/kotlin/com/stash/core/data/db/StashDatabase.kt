@@ -119,8 +119,11 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.RecordPlayEntity::class,
         com.stash.core.data.db.entity.RecordLengthEntity::class,
         com.stash.core.data.db.entity.RecordHiddenEntity::class,
+        com.stash.core.data.db.entity.RecordTasteSongEntity::class,
+        com.stash.core.data.db.entity.RecordTasteEntity::class,
+        com.stash.core.data.db.entity.RecordTasteKeepEntity::class,
     ],
-    version = 70,
+    version = 71,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -189,6 +192,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun recordLengthDao(): com.stash.core.data.db.dao.RecordLengthDao
 
     abstract fun recordHiddenDao(): com.stash.core.data.db.dao.RecordHiddenDao
+
+    abstract fun recordTasteDao(): com.stash.core.data.db.dao.RecordTasteDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1860,6 +1865,55 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v70 -> v71: Your record's taste (phase 5b). The taste's songs (`record_taste_songs`, by song key, with an index on the
+         * folded primary artist), its one row (`record_taste`: version, when, and the rest as JSON), the songs put back into mixes
+         * (`record_taste_keep`), and an index on `record_plays(s)` for the reads by time. All empty: the taste is worked out by the
+         * app once it runs. And `record_hidden`'s keys worked out again from the stored `t` and `a`: v70 keyed them with Kotlin's
+         * Unicode `IGNORE_CASE` and ICU's `\d`, and the song key now spells out JavaScript's ASCII-only classes, so a key that
+         * differs moves to its new one (two that become one keep the first written, rowid order).
+         */
+        val MIGRATION_70_71 = object : Migration(70, 71) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_taste_songs` (`key` TEXT NOT NULL, `rank` INTEGER NOT NULL, " +
+                        "`title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT, `sid` TEXT, `artist_key` TEXT NOT NULL, " +
+                        "`starts` INTEGER NOT NULL, `plays` INTEGER NOT NULL, `full` INTEGER NOT NULL, `chosen` INTEGER NOT NULL, " +
+                        "`skips` INTEGER NOT NULL, `years` INTEGER NOT NULL, `listened_ms` INTEGER NOT NULL, `first` INTEGER NOT NULL, " +
+                        "`last` INTEGER NOT NULL, `peak` INTEGER NOT NULL, `peak_at` INTEGER NOT NULL, `weight` REAL NOT NULL, " +
+                        "`depth` REAL NOT NULL, `avoid` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_taste_songs_artist_key` ON `record_taste_songs` (`artist_key`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_taste` (`id` INTEGER NOT NULL, `v` INTEGER NOT NULL, " +
+                        "`computed_at` INTEGER NOT NULL, `body` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `record_taste_keep` (`key` TEXT NOT NULL, `at` INTEGER NOT NULL, PRIMARY KEY(`key`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_s` ON `record_plays` (`s`)")
+                rekeyHidden(db)
+            }
+        }
+
+        /** `record_hidden` keyed by today's [com.stash.core.model.weblink.SongKey.songKey], the first spelling of each kept. */
+        internal fun rekeyHidden(db: SupportSQLiteDatabase) {
+            class Row(val key: String, val t: String, val a: String)
+            val rows = ArrayList<Row>()
+            db.query("SELECT `key`, t, a FROM record_hidden ORDER BY rowid").use { c ->
+                while (c.moveToNext()) rows += Row(c.getString(0), c.getString(1), c.getString(2))
+            }
+            val keyed = rows.map { it to com.stash.core.model.weblink.SongKey.songKey(it.t, it.a) }
+            if (keyed.all { (r, k) -> r.key == k }) return
+            db.execSQL("DELETE FROM record_hidden")
+            val insert = db.compileStatement("INSERT OR IGNORE INTO record_hidden (`key`, t, a) VALUES (?, ?, ?)")
+            for ((r, k) in keyed) {
+                insert.clearBindings()
+                insert.bindString(1, k)
+                insert.bindString(2, r.t)
+                insert.bindString(3, r.a)
+                insert.executeInsert()
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1966,6 +2020,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_67_68,
                 MIGRATION_68_69,
                 MIGRATION_69_70,
+                MIGRATION_70_71,
             )
         }
     }

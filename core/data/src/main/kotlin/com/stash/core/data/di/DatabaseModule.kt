@@ -161,4 +161,8 @@ object DatabaseModule {
     /** Your record's songs hidden on Spotify (`record_hidden`), from a Spotify export. */
     @Provides
     fun provideRecordHiddenDao(db: StashDatabase): com.stash.core.data.db.dao.RecordHiddenDao = db.recordHiddenDao()
+
+    /** Your record's taste and the songs put back into mixes (`record_taste`, `record_taste_songs`, `record_taste_keep`). */
+    @Provides
+    fun provideRecordTasteDao(db: StashDatabase): com.stash.core.data.db.dao.RecordTasteDao = db.recordTasteDao()
 }
