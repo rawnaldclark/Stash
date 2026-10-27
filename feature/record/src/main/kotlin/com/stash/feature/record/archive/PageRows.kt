@@ -51,8 +51,11 @@ data class RecordSummary(
  * exactly as written (no trim, no fold, credits never split) and ranks by the time summed, ties in the order each artist first
  * appears in that sorted list: the artist whose earliest-ending play ends first, then the one whose such play has the smaller
  * id (plain UTF-16 order). So each artist keeps its least (end, id).
+ *
+ * [uniqueIds]: the rows come from a source whose ids are unique already (the imported plays, `record_plays`' primary key), so
+ * no id is kept to check them (a heavy history's are hundreds of thousands of strings, tens of MB).
  */
-class RecordSummaryBuilder() {
+class RecordSummaryBuilder(private val uniqueIds: Boolean = false) {
     private class Artist(val name: String, var ms: Long, var firstEnd: Long, var firstId: String)
 
     private val artists = HashMap<String, Artist>()
@@ -100,7 +103,7 @@ class RecordSummaryBuilder() {
 
     /** Takes [r] as the page does; false when the page leaves it out (not a play, or an id already kept). */
     fun add(r: ArchivePlay): Boolean {
-        if (!PageRows.accepts(r) || !ids.add(r.id)) return false
+        if (!PageRows.accepts(r) || (!uniqueIds && !ids.add(r.id))) return false
         plays++
         if (r.ms >= STREAM_MS) {
             streams++

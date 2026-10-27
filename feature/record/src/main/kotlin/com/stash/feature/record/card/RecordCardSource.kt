@@ -152,7 +152,8 @@ class RecordCardSource internal constructor(
         val importedStamp = (stamp as? Pair<*, *>)?.second ?: Unit
         // The imported plays' part, read again only when they changed (they come first, as the record has them)
         val part = importedPart?.takeIf { it.stamp == importedStamp } ?: run {
-            val b = RecordSummaryBuilder()
+            // record_plays is keyed by id: no set of ids to hold while it's read
+            val b = RecordSummaryBuilder(uniqueIds = true)
             imported.stream(CHUNK) { rows, _ -> rows.forEach(b::add) }
             ImportedPart(importedStamp, b.partial(), importedAlbums()).also { importedPart = it }
         }
