@@ -130,9 +130,12 @@
     <string name="record_lastfm_progress">%2$s페이지 중 %1$s페이지 · %3$s</string>
     <string name="record_lastfm_done">%1$s를 가져왔습니다. Spotify나 Stash에 이미 있던 재생 기록은 한 번만 집계했습니다.</string>
     <string name="record_lastfm_done_none">지난번 이후 Last.fm에 새 기록이 없습니다. 최신 상태입니다.</string>
+    <string name="record_lastfm_done_part">%1$s를 가져왔습니다(이번에 %2$s개). Spotify나 Stash에 이미 있던 재생 기록은 한 번만 집계했습니다.</string>
+    <string name="record_lastfm_done_none_yet">아직 Last.fm에 스크로블 기록이 없습니다. 지금부터 스크로블링하는 기록은 다음에 가져옵니다.</string>
     <string name="record_lastfm_idle_connect">스크로블링한 모든 기록이 Spotify, Stash와 함께 나의 레코드에 쌓입니다.</string>
-    <string name="record_lastfm_idle_had">%2$s 계정에서 %1$s를 가져왔습니다. 새 기록을 가져오려면 Last.fm을 연결하세요.</string>
+    <string name="record_lastfm_idle_had">%2$s 계정에서 %1$s를 가져왔습니다. 새 기록을 가져오려면 %2$s 계정으로 Last.fm을 연결하세요.</string>
     <string name="record_lastfm_idle_bring">%1$s 계정으로 스크로블링한 모든 기록을 가져오세요.</string>
+    <string name="record_lastfm_idle_bring_beside">%1$s 계정으로 스크로블링한 모든 기록을 가져오세요. 이미 나의 레코드에 있는 스크로블은 그대로 남습니다.</string>
     <string name="record_lastfm_idle_stopped">%2$s페이지 중 %1$s페이지에서 멈췄습니다. 그 지점부터 이어서 진행됩니다.</string>
     <string name="record_lastfm_idle_done">%2$s 계정에서 %1$s를 가져왔습니다. 마지막으로 가져온 날: %3$s.</string>
     <string name="record_lastfm_connect">Last.fm 연결</string>
@@ -142,9 +145,9 @@
     <string name="record_lastfm_stop">중지</string>
     <string name="record_lastfm_see">나의 레코드 보기</string>
     <string name="record_lastfm_after_spotify">진행 중인 Spotify 가져오기가 끝난 후</string>
-    <string name="record_lastfm_hours_note">Last.fm은 들은 시간을 알려 주지 않아서, Stash는 알 수 있는 경우 각 곡의 길이를 사용합니다.</string>
+    <string name="record_lastfm_hours_note">Last.fm은 들은 시간을 알려 주지 않아서, Stash는 Spotify, 내 라이브러리 또는 Last.fm에서 확인한 각 곡의 길이로 계산합니다.</string>
     <string name="record_lastfm_reconnect_title">Last.fm에서 Stash가 로그아웃되었습니다</string>
-    <string name="record_lastfm_reconnect_body">다시 연결하면 멈춘 곳부터 이어서 진행됩니다.</string>
+    <string name="record_lastfm_reconnect_body">같은 계정을 다시 연결하면 멈춘 곳부터 이어서 진행됩니다. 다른 계정은 처음부터 시작하며, 이미 가져온 스크로블은 그대로 남습니다.</string>
     <string name="record_lastfm_reconnect">다시 연결</string>
     <string name="record_lastfm_busy_title">Last.fm이 혼잡합니다</string>
     <string name="record_lastfm_busy_body">나중에 계속하세요. 멈춘 곳부터 이어서 진행됩니다.</string>

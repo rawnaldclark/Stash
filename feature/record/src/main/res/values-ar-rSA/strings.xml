@@ -180,9 +180,12 @@
     <string name="record_lastfm_progress">الصفحة %1$s من %2$s · %3$s</string>
     <string name="record_lastfm_done">تمت الإضافة: %1$s. التشغيلات التي كانت لدى Spotify أو Stash بالفعل احتُسبت مرة واحدة.</string>
     <string name="record_lastfm_done_none">لا جديد على Last.fm منذ المرة الأخيرة. أسطوانتك محدّثة.</string>
+    <string name="record_lastfm_done_part">تمت الإضافة: %1$s، منها %2$s هذه المرة. التشغيلات التي كانت لدى Spotify أو Stash بالفعل احتُسبت مرة واحدة.</string>
+    <string name="record_lastfm_done_none_yet">لا توجد scrobbles على Last.fm بعد. كل ما تعمل له scrobble من الآن فصاعدًا سيُضاف في المرة القادمة.</string>
     <string name="record_lastfm_idle_connect">كل الـ scrobbles الخاصة بك، مجتمعة على أسطوانتك مع Spotify وStash.</string>
-    <string name="record_lastfm_idle_had">تمت إضافة %1$s من %2$s. اربط Last.fm لإضافة الأحدث.</string>
+    <string name="record_lastfm_idle_had">تمت إضافة %1$s من %2$s. اربط Last.fm بحساب %2$s لإضافة الأحدث.</string>
     <string name="record_lastfm_idle_bring">أضف كل الـ scrobbles الخاصة بك باسم %1$s.</string>
+    <string name="record_lastfm_idle_bring_beside">أضف كل الـ scrobbles الخاصة بك باسم %1$s. تبقى الـ scrobbles الموجودة في أسطوانتك.</string>
     <string name="record_lastfm_idle_stopped">توقف عند الصفحة %1$s من %2$s. سيكمل من هناك.</string>
     <string name="record_lastfm_idle_done">تمت إضافة %1$s من %2$s، وآخر إضافة في %3$s.</string>
     <string name="record_lastfm_connect">ربط Last.fm</string>
@@ -192,9 +195,9 @@
     <string name="record_lastfm_stop">إيقاف</string>
     <string name="record_lastfm_see">عرض أسطوانتك</string>
     <string name="record_lastfm_after_spotify">بعد استيراد Spotify الجاري الآن</string>
-    <string name="record_lastfm_hours_note">لا يذكر Last.fm مدة استماعك، لذا يستخدم Stash طول كل أغنية حين يعرفه.</string>
+    <string name="record_lastfm_hours_note">لا يذكر Last.fm مدة استماعك، لذا يحتسب Stash طول كل أغنية، من Spotify أو مكتبتك أو Last.fm نفسه.</string>
     <string name="record_lastfm_reconnect_title">سجّل Last.fm خروج Stash</string>
-    <string name="record_lastfm_reconnect_body">اربطه مجددًا وسيكمل من حيث توقف.</string>
+    <string name="record_lastfm_reconnect_body">اربط الحساب نفسه مجددًا وسيكمل من حيث توقف. أما الحساب الآخر فيبدأ من جديد، وتبقى الـ scrobbles التي أُضيفت.</string>
     <string name="record_lastfm_reconnect">إعادة الربط</string>
     <string name="record_lastfm_busy_title">Last.fm مشغول</string>
     <string name="record_lastfm_busy_body">تابع لاحقًا: سيكمل من حيث توقف.</string>

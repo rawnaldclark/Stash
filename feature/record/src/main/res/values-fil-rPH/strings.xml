@@ -140,9 +140,12 @@
     <string name="record_lastfm_progress">Page %1$s sa %2$s · %3$s</string>
     <string name="record_lastfm_done">Naidagdag ang %1$s. Isang beses lang binilang ang mga play na nasa Spotify o Stash na.</string>
     <string name="record_lastfm_done_none">Walang bago sa Last.fm mula noong huli. Updated ka na.</string>
+    <string name="record_lastfm_done_part">Naidagdag ang %1$s, %2$s dito ngayong beses. Isang beses lang binilang ang mga play na nasa Spotify o Stash na.</string>
+    <string name="record_lastfm_done_none_yet">Wala pang scrobble sa Last.fm. Lahat ng i-scrobble mo mula ngayon ay idadagdag sa susunod.</string>
     <string name="record_lastfm_idle_connect">Lahat ng na-scrobble mo, nakapatong sa record mo kasama ang Spotify at Stash.</string>
-    <string name="record_lastfm_idle_had">Naidagdag ang %1$s mula sa %2$s. Ikonekta ang Last.fm para idagdag ang mas bago.</string>
+    <string name="record_lastfm_idle_had">Naidagdag ang %1$s mula sa %2$s. Ikonekta ang Last.fm bilang %2$s para idagdag ang mas bago.</string>
     <string name="record_lastfm_idle_bring">Idagdag ang lahat ng na-scrobble mo bilang %1$s.</string>
+    <string name="record_lastfm_idle_bring_beside">Idagdag ang lahat ng na-scrobble mo bilang %1$s. Mananatili ang mga scrobble na nasa record mo na.</string>
     <string name="record_lastfm_idle_stopped">Huminto sa page %1$s sa %2$s. Itutuloy ito mula roon.</string>
     <string name="record_lastfm_idle_done">Naidagdag ang %1$s mula sa %2$s, huling idinagdag noong %3$s.</string>
     <string name="record_lastfm_connect">Ikonekta ang Last.fm</string>
@@ -152,9 +155,9 @@
     <string name="record_lastfm_stop">Ihinto</string>
     <string name="record_lastfm_see">Tingnan ang record mo</string>
     <string name="record_lastfm_after_spotify">Pagkatapos ng Spotify import na tumatakbo ngayon</string>
-    <string name="record_lastfm_hours_note">Hindi sinasabi ng Last.fm kung gaano ka katagal nakinig, kaya ginagamit ng Stash ang haba ng bawat kanta kapag alam nito.</string>
+    <string name="record_lastfm_hours_note">Hindi sinasabi ng Last.fm kung gaano ka katagal nakinig, kaya binibilang ng Stash ang haba ng bawat kanta, mula sa Spotify, sa library mo o sa Last.fm mismo.</string>
     <string name="record_lastfm_reconnect_title">Na-sign out ng Last.fm ang Stash</string>
-    <string name="record_lastfm_reconnect_body">Kumonekta ulit at itutuloy ito mula sa kung saan ito huminto.</string>
+    <string name="record_lastfm_reconnect_body">Ikonekta ulit ang parehong account at itutuloy ito mula sa kung saan ito huminto. Magsisimula ulit ang ibang account, at mananatili ang mga scrobble na naidagdag na.</string>
     <string name="record_lastfm_reconnect">Kumonekta ulit</string>
     <string name="record_lastfm_busy_title">Busy ang Last.fm</string>
     <string name="record_lastfm_busy_body">Ituloy mamaya: magpapatuloy ito mula sa kung saan ito huminto.</string>

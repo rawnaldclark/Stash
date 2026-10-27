@@ -160,9 +160,12 @@
     <string name="record_lastfm_progress">Страница %1$s из %2$s · %3$s</string>
     <string name="record_lastfm_done">Добавлено: %1$s. Прослушивания, которые уже были в Spotify или Stash, учтены один раз.</string>
     <string name="record_lastfm_done_none">С прошлого раза в Last.fm ничего нового. Всё актуально.</string>
+    <string name="record_lastfm_done_part">Добавлено: %1$s, из них %2$s в этот раз. Прослушивания, которые уже были в Spotify или Stash, учтены один раз.</string>
+    <string name="record_lastfm_done_none_yet">В Last.fm пока нет прослушиваний. Всё, что вы заскробблите с этого момента, добавится в следующий раз.</string>
     <string name="record_lastfm_idle_connect">Всё, что вы скробблили, — на пластинке вместе со Spotify и Stash.</string>
-    <string name="record_lastfm_idle_had">Уже добавлено: %1$s с аккаунта %2$s. Подключите Last.fm, чтобы добавить новые.</string>
+    <string name="record_lastfm_idle_had">Уже добавлено: %1$s с аккаунта %2$s. Подключите Last.fm как %2$s, чтобы добавить новые.</string>
     <string name="record_lastfm_idle_bring">Добавьте всё, что вы скробблили как %1$s.</string>
+    <string name="record_lastfm_idle_bring_beside">Добавьте всё, что вы скробблили как %1$s. Прослушивания, которые уже есть на пластинке, останутся.</string>
     <string name="record_lastfm_idle_stopped">Остановлено на странице %1$s из %2$s. Импорт продолжится с этого места.</string>
     <string name="record_lastfm_idle_done">Уже добавлено: %1$s с аккаунта %2$s, последний раз %3$s.</string>
     <string name="record_lastfm_connect">Подключить Last.fm</string>
@@ -172,9 +175,9 @@
     <string name="record_lastfm_stop">Остановить</string>
     <string name="record_lastfm_see">Посмотреть пластинку</string>
     <string name="record_lastfm_after_spotify">После текущего импорта из Spotify</string>
-    <string name="record_lastfm_hours_note">Last.fm не сообщает, сколько вы слушали, поэтому Stash берёт длительность каждой песни, если она известна.</string>
+    <string name="record_lastfm_hours_note">Last.fm не сообщает, сколько вы слушали, поэтому Stash учитывает длительность каждой песни — из Spotify, вашей медиатеки или самого Last.fm.</string>
     <string name="record_lastfm_reconnect_title">Last.fm отключил Stash</string>
-    <string name="record_lastfm_reconnect_body">Подключитесь снова, и импорт продолжится с того места, где остановился.</string>
+    <string name="record_lastfm_reconnect_body">Подключите тот же аккаунт снова, и импорт продолжится с того места, где остановился. Другой аккаунт начнёт заново, а уже добавленные прослушивания останутся.</string>
     <string name="record_lastfm_reconnect">Подключить снова</string>
     <string name="record_lastfm_busy_title">Last.fm перегружен</string>
     <string name="record_lastfm_busy_body">Продолжите позже: импорт продолжится с того места, где остановился.</string>

@@ -140,9 +140,12 @@
     <string name="record_lastfm_progress">صفحهٔ %1$s از %2$s · %3$s</string>
     <string name="record_lastfm_done">آورده شد: %1$s. پخش‌هایی که Spotify یا Stash از قبل داشتند، فقط یک بار شمرده شدند.</string>
     <string name="record_lastfm_done_none">از دفعهٔ قبل چیز تازه‌ای در Last.fm نیست. همه‌چیز به‌روز است.</string>
+    <string name="record_lastfm_done_part">آورده شد: %1$s، که %2$s مورد آن این بار بود. پخش‌هایی که Spotify یا Stash از قبل داشتند، فقط یک بار شمرده شدند.</string>
+    <string name="record_lastfm_done_none_yet">هنوز scrobble‌ای در Last.fm نیست. هر چه از این به بعد scrobble کنید، دفعهٔ بعد آورده می‌شود.</string>
     <string name="record_lastfm_idle_connect">همهٔ scrobble‌های شما، کنار Spotify و Stash روی صفحهٔ شما.</string>
-    <string name="record_lastfm_idle_had">از %2$s آورده شد: %1$s. برای آوردن موارد جدیدتر، Last.fm را وصل کنید.</string>
+    <string name="record_lastfm_idle_had">از %2$s آورده شد: %1$s. برای آوردن موارد جدیدتر، Last.fm را با حساب %2$s وصل کنید.</string>
     <string name="record_lastfm_idle_bring">همهٔ scrobble‌های حساب %1$s را بیاورید.</string>
+    <string name="record_lastfm_idle_bring_beside">همهٔ scrobble‌های حساب %1$s را بیاورید. scrobble‌هایی که از قبل روی صفحهٔ شما هستند، می‌مانند.</string>
     <string name="record_lastfm_idle_stopped">در صفحهٔ %1$s از %2$s متوقف شد. از همان‌جا ادامه می‌دهد.</string>
     <string name="record_lastfm_idle_done">از %2$s آورده شد: %1$s، آخرین بار در %3$s.</string>
     <string name="record_lastfm_connect">وصل کردن Last.fm</string>
@@ -152,9 +155,9 @@
     <string name="record_lastfm_stop">توقف</string>
     <string name="record_lastfm_see">دیدن صفحهٔ شما</string>
     <string name="record_lastfm_after_spotify">پس از وارد کردن Spotify که الان در حال انجام است</string>
-    <string name="record_lastfm_hours_note">Last.fm نمی‌گوید چه مدت گوش داده‌اید، برای همین Stash هر جا طول آهنگ را بداند، از آن استفاده می‌کند.</string>
+    <string name="record_lastfm_hours_note">Last.fm نمی‌گوید چه مدت گوش داده‌اید، برای همین Stash طول هر آهنگ را می‌شمارد، از Spotify، کتابخانهٔ شما یا خود Last.fm.</string>
     <string name="record_lastfm_reconnect_title">Last.fm اتصال Stash را قطع کرد</string>
-    <string name="record_lastfm_reconnect_body">دوباره وصل شوید تا از همان‌جا که متوقف شد ادامه دهد.</string>
+    <string name="record_lastfm_reconnect_body">همان حساب را دوباره وصل کنید تا از همان‌جا که متوقف شد ادامه دهد. حساب دیگر از اول شروع می‌کند و scrobble‌هایی که آورده شده‌اند، می‌مانند.</string>
     <string name="record_lastfm_reconnect">اتصال دوباره</string>
     <string name="record_lastfm_busy_title">Last.fm شلوغ است</string>
     <string name="record_lastfm_busy_body">بعداً ادامه دهید: از همان‌جا که متوقف شد ادامه می‌دهد.</string>

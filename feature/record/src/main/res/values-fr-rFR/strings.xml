@@ -140,9 +140,12 @@
     <string name="record_lastfm_progress">Page %1$s sur %2$s · %3$s</string>
     <string name="record_lastfm_done">Import terminé : %1$s. Les écoutes que Spotify ou Stash avaient déjà n’ont été comptées qu’une fois.</string>
     <string name="record_lastfm_done_none">Rien de nouveau sur Last.fm depuis la dernière fois. Vous êtes à jour.</string>
+    <string name="record_lastfm_done_part">Import terminé : %1$s, dont %2$s cette fois. Les écoutes que Spotify ou Stash avaient déjà n’ont été comptées qu’une fois.</string>
+    <string name="record_lastfm_done_none_yet">Aucun scrobble sur Last.fm pour l’instant. Tout ce que vous scrobblerez désormais arrivera la prochaine fois.</string>
     <string name="record_lastfm_idle_connect">Tout ce que vous avez scrobblé, réuni sur votre disque avec Spotify et Stash.</string>
-    <string name="record_lastfm_idle_had">Déjà là : %1$s du compte %2$s. Connectez Last.fm pour ajouter les plus récents.</string>
+    <string name="record_lastfm_idle_had">Déjà là : %1$s du compte %2$s. Connectez Last.fm en tant que %2$s pour ajouter les plus récents.</string>
     <string name="record_lastfm_idle_bring">Ajoutez tout ce que vous avez scrobblé en tant que %1$s.</string>
+    <string name="record_lastfm_idle_bring_beside">Ajoutez tout ce que vous avez scrobblé en tant que %1$s. Les scrobbles déjà sur votre disque restent.</string>
     <string name="record_lastfm_idle_stopped">Arrêté à la page %1$s sur %2$s. L’import reprendra à partir de là.</string>
     <string name="record_lastfm_idle_done">Déjà là : %1$s du compte %2$s, dernier import le %3$s.</string>
     <string name="record_lastfm_connect">Connecter Last.fm</string>
@@ -152,9 +155,9 @@
     <string name="record_lastfm_stop">Arrêter</string>
     <string name="record_lastfm_see">Voir votre disque</string>
     <string name="record_lastfm_after_spotify">Après l’import Spotify en cours</string>
-    <string name="record_lastfm_hours_note">Last.fm n’indique pas combien de temps vous avez écouté : Stash utilise donc la durée de chaque titre quand il la connaît.</string>
+    <string name="record_lastfm_hours_note">Last.fm n’indique pas combien de temps vous avez écouté : Stash compte donc la durée de chaque titre, d’après Spotify, votre bibliothèque ou Last.fm lui-même.</string>
     <string name="record_lastfm_reconnect_title">Last.fm a déconnecté Stash</string>
-    <string name="record_lastfm_reconnect_body">Reconnectez-vous et l’import reprendra là où il s’est arrêté.</string>
+    <string name="record_lastfm_reconnect_body">Reconnectez le même compte et l’import reprendra là où il s’est arrêté. Un autre compte repart de zéro, et les scrobbles déjà là restent.</string>
     <string name="record_lastfm_reconnect">Se reconnecter</string>
     <string name="record_lastfm_busy_title">Last.fm est surchargé</string>
     <string name="record_lastfm_busy_body">Continuez plus tard : l’import reprendra là où il s’est arrêté.</string>

@@ -179,12 +179,18 @@
     <!-- After a run: %1$s is the scrobbles it brought (record_lastfm_scrobbles: "600 scrobbles"). -->
     <string name="record_lastfm_done">%1$s in. Plays Spotify or Stash already had were counted once.</string>
     <string name="record_lastfm_done_none">Nothing new on Last.fm since last time. You’re up to date.</string>
+    <!-- After a run that read the whole history, part of it carried on from before: %1$s is every scrobble the import holds (record_lastfm_scrobbles: "30,060 scrobbles"), %2$s how many came this time ("7,660", formatted with separators). -->
+    <string name="record_lastfm_done_part">%1$s in, %2$s of them this time. Plays Spotify or Stash already had were counted once.</string>
+    <!-- After a whole read that found nothing on Last.fm. -->
+    <string name="record_lastfm_done_none_yet">No scrobbles on Last.fm yet. Anything you scrobble from now on comes in next time.</string>
     <!-- Not connected to Last.fm, nothing brought in yet. -->
     <string name="record_lastfm_idle_connect">Everything you’ve scrobbled, stacked on your record with Spotify and Stash.</string>
     <!-- Not connected any more: %1$s is the scrobbles brought in before (record_lastfm_scrobbles), %2$s the Last.fm name they came from. -->
-    <string name="record_lastfm_idle_had">%1$s in from %2$s. Connect Last.fm to bring in newer ones.</string>
+    <string name="record_lastfm_idle_had">%1$s in from %2$s. Connect Last.fm as %2$s to bring in newer ones.</string>
     <!-- Connected: %1$s is the Last.fm name. -->
     <string name="record_lastfm_idle_bring">Bring in everything you’ve scrobbled as %1$s.</string>
+    <!-- Connected as another Last.fm account than the one the scrobbles came from: %1$s is its name. It starts over for this account; the scrobbles brought in before stay. -->
+    <string name="record_lastfm_idle_bring_beside">Bring in everything you’ve scrobbled as %1$s. The scrobbles already in your record stay.</string>
     <!-- A run that stopped part way: %1$s is the last page read, %2$s the pages in all. -->
     <string name="record_lastfm_idle_stopped">Stopped at page %1$s of %2$s. It carries on from there.</string>
     <!-- All of it in: %1$s the scrobbles (record_lastfm_scrobbles), %2$s the Last.fm name, %3$s the day it last ran ("Oct 21"). -->
@@ -197,10 +203,10 @@
     <string name="record_lastfm_see">See your record</string>
     <!-- Why the button waits: the Spotify import is writing. -->
     <string name="record_lastfm_after_spotify">After the Spotify import running now</string>
-    <string name="record_lastfm_hours_note">Last.fm doesn’t say how long you listened, so Stash uses each song’s length where it knows it.</string>
+    <string name="record_lastfm_hours_note">Last.fm doesn’t say how long you listened, so Stash counts each song’s length, from Spotify, your library or Last.fm itself.</string>
     <!-- Each way a run can stop short: a title, a line, and (for the session) the button. -->
     <string name="record_lastfm_reconnect_title">Last.fm signed Stash out</string>
-    <string name="record_lastfm_reconnect_body">Connect again and it carries on from where it stopped.</string>
+    <string name="record_lastfm_reconnect_body">Connect the same account again and it carries on from where it stopped. Another account starts over, and the scrobbles already in stay.</string>
     <string name="record_lastfm_reconnect">Reconnect</string>
     <string name="record_lastfm_busy_title">Last.fm is busy</string>
     <string name="record_lastfm_busy_body">Carry on later: it picks up from where it stopped.</string>

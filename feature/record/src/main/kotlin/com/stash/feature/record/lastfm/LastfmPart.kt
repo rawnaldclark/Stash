@@ -113,7 +113,7 @@ private fun lastfmView(viewModel: RecordLastfmViewModel, onConnect: () -> Unit, 
         is LastfmState.Working -> LastfmText.progressLine(res, st.progress)
         is LastfmState.Failed -> failure!!.second
         // The sheet says what the run brought; Settings, what there is
-        is LastfmState.Done -> if (settings) idle.line else LastfmText.doneLine(res, st.added)
+        is LastfmState.Done -> if (settings) idle.line else LastfmText.doneLine(res, st.added, st.total)
         LastfmState.Idle -> idle.line
     }
     return LastfmView(

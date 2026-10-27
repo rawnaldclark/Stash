@@ -130,9 +130,12 @@
     <string name="record_lastfm_progress">第 %1$s 页，共 %2$s 页 · %3$s</string>
     <string name="record_lastfm_done">已导入 %1$s。Spotify 或 Stash 已有的播放只计算一次。</string>
     <string name="record_lastfm_done_none">自上次以来，Last.fm 上没有新内容。已是最新。</string>
+    <string name="record_lastfm_done_part">已导入 %1$s，其中 %2$s 条是这次导入的。Spotify 或 Stash 已有的播放只计算一次。</string>
+    <string name="record_lastfm_done_none_yet">Last.fm 上还没有音乐记录。从现在起你记录的内容，下次就会导入。</string>
     <string name="record_lastfm_idle_connect">你所有的音乐记录，与 Spotify 和 Stash 一起汇入你的唱片。</string>
-    <string name="record_lastfm_idle_had">已从 %2$s 导入 %1$s。连接 Last.fm 即可导入更新的记录。</string>
+    <string name="record_lastfm_idle_had">已从 %2$s 导入 %1$s。以 %2$s 连接 Last.fm 即可导入更新的记录。</string>
     <string name="record_lastfm_idle_bring">导入 %1$s 的所有音乐记录。</string>
+    <string name="record_lastfm_idle_bring_beside">导入 %1$s 的所有音乐记录。已在你唱片中的音乐记录会保留。</string>
     <string name="record_lastfm_idle_stopped">停在第 %1$s 页，共 %2$s 页。会从那里继续。</string>
     <string name="record_lastfm_idle_done">已从 %2$s 导入 %1$s，上次导入于 %3$s。</string>
     <string name="record_lastfm_connect">连接 Last.fm</string>
@@ -142,9 +145,9 @@
     <string name="record_lastfm_stop">停止</string>
     <string name="record_lastfm_see">查看你的唱片</string>
     <string name="record_lastfm_after_spotify">等当前的 Spotify 导入完成后</string>
-    <string name="record_lastfm_hours_note">Last.fm 不提供收听时长，因此 Stash 会在已知时使用每首歌的时长。</string>
+    <string name="record_lastfm_hours_note">Last.fm 不提供收听时长，因此 Stash 会按每首歌的时长计算，时长来自 Spotify、你的资料库或 Last.fm 本身。</string>
     <string name="record_lastfm_reconnect_title">Last.fm 已将 Stash 登出</string>
-    <string name="record_lastfm_reconnect_body">重新连接后，会从中断的地方继续。</string>
+    <string name="record_lastfm_reconnect_body">重新连接同一个账号，会从中断的地方继续。换成其他账号会从头开始，已导入的音乐记录会保留。</string>
     <string name="record_lastfm_reconnect">重新连接</string>
     <string name="record_lastfm_busy_title">Last.fm 正忙</string>
     <string name="record_lastfm_busy_body">稍后继续：会从中断的地方接着导入。</string>

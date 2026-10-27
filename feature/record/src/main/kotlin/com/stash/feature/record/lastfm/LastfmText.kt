@@ -31,9 +31,19 @@ internal object LastfmText {
             )
         }
 
-    /** What a finished run brought. */
-    fun doneLine(res: Resources, added: Int): String =
-        if (added > 0) res.getString(R.string.record_lastfm_done, scrobbles(res, added)) else res.getString(R.string.record_lastfm_done_none)
+    /**
+     * lastfm.ts `doneLine`: what a finished run brought. [total] (the run read the whole history, or carried on with it): the whole
+     * import, with this run's part beside it when it carried on from an earlier one ("30,060 scrobbles in, 7,660 of them this
+     * time"). Without (a top-up): what was newer.
+     */
+    fun doneLine(res: Resources, added: Int, total: Int? = null): String = when {
+        total == 0 -> res.getString(R.string.record_lastfm_done_none_yet)
+        total != null && added > 0 && added < total ->
+            res.getString(R.string.record_lastfm_done_part, scrobbles(res, total), ImportText.count(res, added.toLong()))
+        total != null -> res.getString(R.string.record_lastfm_done, scrobbles(res, total))
+        added > 0 -> res.getString(R.string.record_lastfm_done, scrobbles(res, added))
+        else -> res.getString(R.string.record_lastfm_done_none)
+    }
 
     /**
      * LastfmPart.svelte's `idle`: not connected (with what came in before, from whom), connected with nothing in for this name,
@@ -47,8 +57,12 @@ internal object LastfmText {
                 LastfmIdle(res.getString(R.string.record_lastfm_idle_connect), LastfmAction.CONNECT)
             }
         }
+        // Another account than the import's: it starts over for this one, and every earlier account's scrobbles stay
         val mine = mark?.takeIf { it.user == connected }
-            ?: return LastfmIdle(res.getString(R.string.record_lastfm_idle_bring, connected), LastfmAction.BRING)
+            ?: return LastfmIdle(
+                res.getString(if (mark != null) R.string.record_lastfm_idle_bring_beside else R.string.record_lastfm_idle_bring, connected),
+                LastfmAction.BRING,
+            )
         if (!mine.done) {
             return LastfmIdle(
                 res.getString(R.string.record_lastfm_idle_stopped, ImportText.count(res, (mine.next - 1).toLong()), ImportText.count(res, mine.pages.toLong())),

@@ -160,9 +160,12 @@
     <string name="record_lastfm_progress">Strona %1$s z %2$s · %3$s</string>
     <string name="record_lastfm_done">Dodano: %1$s. Odtworzenia, które Spotify lub Stash już miały, policzono raz.</string>
     <string name="record_lastfm_done_none">Od ostatniego razu nie ma nic nowego na Last.fm. Wszystko jest aktualne.</string>
+    <string name="record_lastfm_done_part">Dodano: %1$s, w tym %2$s tym razem. Odtworzenia, które Spotify lub Stash już miały, policzono raz.</string>
+    <string name="record_lastfm_done_none_yet">Na Last.fm nie ma jeszcze scrobbli. Wszystko, co od teraz zescrobblujesz, trafi tu następnym razem.</string>
     <string name="record_lastfm_idle_connect">Wszystkie twoje scrobble na płycie, razem ze Spotify i Stash.</string>
-    <string name="record_lastfm_idle_had">Dodano już %1$s z konta %2$s. Połącz Last.fm, aby dodać nowsze.</string>
+    <string name="record_lastfm_idle_had">Dodano już %1$s z konta %2$s. Połącz Last.fm jako %2$s, aby dodać nowsze.</string>
     <string name="record_lastfm_idle_bring">Dodaj wszystkie scrobble z konta %1$s.</string>
+    <string name="record_lastfm_idle_bring_beside">Dodaj wszystkie scrobble z konta %1$s. Scrobble, które są już na twojej płycie, zostaną.</string>
     <string name="record_lastfm_idle_stopped">Zatrzymano na stronie %1$s z %2$s. Import ruszy dalej od tego miejsca.</string>
     <string name="record_lastfm_idle_done">Dodano już %1$s z konta %2$s, ostatnio %3$s.</string>
     <string name="record_lastfm_connect">Połącz Last.fm</string>
@@ -172,9 +175,9 @@
     <string name="record_lastfm_stop">Zatrzymaj</string>
     <string name="record_lastfm_see">Zobacz swoją płytę</string>
     <string name="record_lastfm_after_spotify">Po trwającym imporcie ze Spotify</string>
-    <string name="record_lastfm_hours_note">Last.fm nie podaje, jak długo słuchano, więc Stash przyjmuje długość każdego utworu, jeśli ją zna.</string>
+    <string name="record_lastfm_hours_note">Last.fm nie podaje, jak długo słuchano, więc Stash liczy długość każdego utworu – ze Spotify, twojej biblioteki albo samego Last.fm.</string>
     <string name="record_lastfm_reconnect_title">Last.fm wylogował Stash</string>
-    <string name="record_lastfm_reconnect_body">Połącz ponownie, a import ruszy dalej od miejsca, w którym się zatrzymał.</string>
+    <string name="record_lastfm_reconnect_body">Połącz ponownie to samo konto, a import ruszy dalej od miejsca, w którym się zatrzymał. Inne konto zaczyna od nowa, a scrobble, które już są, zostaną.</string>
     <string name="record_lastfm_reconnect">Połącz ponownie</string>
     <string name="record_lastfm_busy_title">Last.fm jest przeciążony</string>
     <string name="record_lastfm_busy_body">Kontynuuj później: import ruszy dalej od miejsca, w którym się zatrzymał.</string>

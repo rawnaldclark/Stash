@@ -140,9 +140,12 @@
     <string name="record_lastfm_progress">पेज %2$s पैकी %1$s · %3$s</string>
     <string name="record_lastfm_done">आणले: %1$s. Spotify किंवा Stash कडे आधीच असलेले प्ले एकदाच मोजले.</string>
     <string name="record_lastfm_done_none">मागच्या वेळेपासून Last.fm वर काहीही नवीन नाही. सर्व काही अद्ययावत आहे.</string>
+    <string name="record_lastfm_done_part">आणले: %1$s, त्यापैकी %2$s या वेळी. Spotify किंवा Stash कडे आधीच असलेले प्ले एकदाच मोजले.</string>
+    <string name="record_lastfm_done_none_yet">Last.fm वर अजून एकही scrobble नाही. आतापासून तुम्ही जे scrobble कराल ते पुढच्या वेळी येईल.</string>
     <string name="record_lastfm_idle_connect">तुमचे सर्व scrobble, Spotify आणि Stash सोबत तुमच्या रेकॉर्डवर.</string>
-    <string name="record_lastfm_idle_had">%2$s कडून आणले: %1$s. नवीन आणण्यासाठी Last.fm कनेक्ट करा.</string>
+    <string name="record_lastfm_idle_had">%2$s कडून आणले: %1$s. नवीन आणण्यासाठी %2$s म्हणून Last.fm कनेक्ट करा.</string>
     <string name="record_lastfm_idle_bring">%1$s म्हणून केलेले तुमचे सर्व scrobble आणा.</string>
+    <string name="record_lastfm_idle_bring_beside">%1$s म्हणून केलेले तुमचे सर्व scrobble आणा. तुमच्या रेकॉर्डमध्ये आधीच असलेले scrobble तसेच राहतील.</string>
     <string name="record_lastfm_idle_stopped">पेज %2$s पैकी %1$s वर थांबले. ते तिथूनच पुढे सुरू राहील.</string>
     <string name="record_lastfm_idle_done">%2$s कडून आणले: %1$s, शेवटचे %3$s रोजी.</string>
     <string name="record_lastfm_connect">Last.fm कनेक्ट करा</string>
@@ -152,9 +155,9 @@
     <string name="record_lastfm_stop">थांबवा</string>
     <string name="record_lastfm_see">तुमचा रेकॉर्ड पाहा</string>
     <string name="record_lastfm_after_spotify">आत्ता सुरू असलेल्या Spotify इंपोर्टनंतर</string>
-    <string name="record_lastfm_hours_note">तुम्ही किती वेळ ऐकले हे Last.fm सांगत नाही, म्हणून जिथे माहीत आहे तिथे Stash प्रत्येक गाण्याची लांबी वापरते.</string>
+    <string name="record_lastfm_hours_note">तुम्ही किती वेळ ऐकले हे Last.fm सांगत नाही, म्हणून Stash प्रत्येक गाण्याची लांबी मोजते, Spotify, तुमची लायब्ररी किंवा स्वतः Last.fm वरून.</string>
     <string name="record_lastfm_reconnect_title">Last.fm ने Stash ला साइन आउट केले</string>
-    <string name="record_lastfm_reconnect_body">पुन्हा कनेक्ट करा आणि ते जिथे थांबले तिथूनच पुढे सुरू राहील.</string>
+    <string name="record_lastfm_reconnect_body">तेच खाते पुन्हा कनेक्ट करा आणि ते जिथे थांबले तिथूनच पुढे सुरू राहील. दुसरे खाते सुरुवातीपासून सुरू होते, आणि आधीच आलेले scrobble तसेच राहतात.</string>
     <string name="record_lastfm_reconnect">पुन्हा कनेक्ट करा</string>
     <string name="record_lastfm_busy_title">Last.fm व्यस्त आहे</string>
     <string name="record_lastfm_busy_body">नंतर पुढे सुरू ठेवा: ते जिथे थांबले तिथूनच पुढे सुरू होईल.</string>
