@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 68,
-    "identityHash": "183ff34f84203ee3a46bdf7d8bd60372",
+    "identityHash": "6c783add1f3e29f83e1ac09121f01057",
     "entities": [
       {
         "tableName": "tracks",
@@ -3191,32 +3191,12 @@
           "columnNames": [
             "id"
           ]
-        },
-        "indices": [
-          {
-            "name": "index_record_plays_s",
-            "unique": false,
-            "columnNames": [
-              "s"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_record_plays_s` ON `${TABLE_NAME}` (`s`)"
-          },
-          {
-            "name": "index_record_plays_f",
-            "unique": false,
-            "columnNames": [
-              "f"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_record_plays_f` ON `${TABLE_NAME}` (`f`)"
-          }
-        ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '183ff34f84203ee3a46bdf7d8bd60372')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6c783add1f3e29f83e1ac09121f01057')"
     ]
   }
 }

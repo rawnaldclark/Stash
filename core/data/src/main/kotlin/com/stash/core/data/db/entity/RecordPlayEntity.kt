@@ -2,7 +2,6 @@ package com.stash.core.data.db.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
-import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -17,14 +16,14 @@ import androidx.room.PrimaryKey
  * - [s]: when the play started (epoch ms, UTC); [ms]: how long it played; [f]: the archive's flag bits (CHOSEN 1, DONE 2,
  *   SKIPPED 4, SHUFFLE 8, ACCOUNT 16, REASONS 32, LASTFM 64, ESTIMATED 128, STASH 256).
  *
+ * No index past the primary key: every read is by id (a page at a time) or a whole pass (the import record's counts, the Home
+ * card's albums). A screen that reads them by time adds the index on `s` with its query.
+ *
  * These plays are never Stash's own: they are not in `listening_events`, so they are never scrobbled, never mirrored to another
  * device, never in the "Export for Stash on the web" history, and never count as a play of a song here. Remove import empties
  * the table.
  */
-@Entity(
-    tableName = "record_plays",
-    indices = [Index(value = ["s"]), Index(value = ["f"])],
-)
+@Entity(tableName = "record_plays")
 data class RecordPlayEntity(
     @PrimaryKey @ColumnInfo(name = "id") val id: String,
     @ColumnInfo(name = "t") val t: String,

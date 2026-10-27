@@ -15,7 +15,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * v67 -> v68 (Your record's imported plays): the empty `record_plays` table with its two indexes, and nothing existing changed.
+ * v67 -> v68 (Your record's imported plays): the empty `record_plays` table, keyed by id with no other index, and nothing
+ * existing changed.
  * Walked from 67 and from 66; each run validates every table and index against the exported 68.json.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -45,7 +46,8 @@ class MigrationV67V68Test {
         val indexes = db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'record_plays'").use { c ->
             buildList { while (c.moveToNext()) add(c.getString(0)) }
         }
-        assertTrue(indexes.containsAll(listOf("index_record_plays_s", "index_record_plays_f")))
+        // Only the primary key's own index (SQLite's autoindex for a TEXT key)
+        assertTrue(indexes.all { it.startsWith("sqlite_autoindex_record_plays") })
     }
 
     @Test fun `66 reaches 68`() {

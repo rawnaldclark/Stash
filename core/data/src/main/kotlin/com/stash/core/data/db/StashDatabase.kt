@@ -1814,8 +1814,8 @@ abstract class StashDatabase : RoomDatabase() {
 
         /**
          * v67 -> v68: Your record's imported plays (a Spotify data export), one new, empty table, `record_plays`, keyed by the
-         * play's id and indexed on its start and its flags. Kept apart from `listening_events` on purpose: these plays are never
-         * scrobbled, mirrored or exported as this phone's own. Nothing existing changes.
+         * play's id (no other index: every read is by id or a whole pass). Kept apart from `listening_events` on purpose: these
+         * plays are never scrobbled, mirrored or exported as this phone's own. Nothing existing changes.
          */
         val MIGRATION_67_68 = object : Migration(67, 68) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -1824,8 +1824,6 @@ abstract class StashDatabase : RoomDatabase() {
                         "`id` TEXT NOT NULL, `t` TEXT NOT NULL, `a` TEXT NOT NULL, `al` TEXT, `sid` TEXT, " +
                         "`s` INTEGER NOT NULL, `ms` INTEGER NOT NULL, `f` INTEGER NOT NULL, PRIMARY KEY(`id`))",
                 )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_s` ON `record_plays` (`s`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_f` ON `record_plays` (`f`)")
             }
         }
 
