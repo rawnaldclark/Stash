@@ -249,6 +249,9 @@ class RecordImports internal constructor(
     /** The copy of the files just brought, while it runs. */
     private var copying: Job? = null
 
+    /** The parts copies are streaming or renaming (each deletes its own): every other part is an orphan [clearCopies] removes. */
+    private val liveParts = HashSet<File>()
+
     /** The latest import begun, and the latest the person cancelled (every import up to it). */
     private var epoch = 0L
     private var cancelledThrough = -1L
@@ -298,8 +301,8 @@ class RecordImports internal constructor(
             val current = _state.value
             if (current is ImportState.Working || queued != null || copying?.isActive == true) {
                 null
-            } else if (sources.size > MAX_FILES) {
-                // More files than an export has: refused whole, never a partial import
+            } else if (sources.size + (if (current is ImportState.Preview) files.size else 0) > MAX_FILES) {
+                // More files than an export has (counting a preview's, when these add to it): refused whole, never a partial import
                 ++epoch
                 _state.value = ImportState.Failed(ImportFailure.TOO_BIG)
                 tooMany = true
@@ -423,23 +426,34 @@ class RecordImports internal constructor(
         val copied = ArrayList<PickedFile>()
         try {
             ready.await()
+            // Brought while the app was starting, and a step the app's death left waiting was found meanwhile: it goes first
+            if (synchronized(lock) { !live(e) && (resumeEpoch ?: -1) > e }) {
+                _notes.tryEmit(ImportNote.BUSY)
+                return
+            }
             val had = synchronized(lock) { if (add) files else emptyList() }
             var total = withContext(io) { had.sumOf { it.file.length() } }
             for (src in sources) {
                 val (name, size) = abandonable(e) { src.name to src.size }
                 if (intake.alreadyHave(name, size, had + copied)) continue
-                val part = disk.withLock { withContext(io) { intake.reserve(name) } }
-                val n = streamInto(src, part, intake.maxTotal - total, e)
-                total += n
-                // Kept only while the import is wanted; otherwise its part goes now
-                val copy = withContext(NonCancellable) {
-                    disk.withLock {
-                        withContext(io) {
-                            if (synchronized(lock) { live(e) }) intake.finish(part) else null.also { part.delete() }
-                        }
-                    }
-                } ?: throw ImportCancelled()
-                copied += copy
+                // Reserved whole: a cancel can't land between the part's making and this copy holding it
+                val part = withContext(NonCancellable) {
+                    disk.withLock { withContext(io) { intake.reserve(name).also { synchronized(liveParts) { liveParts += it } } } }
+                }
+                var kept = false
+                try {
+                    total += streamInto(src, part, intake.maxTotal - total, e)
+                    // Kept only while the import is wanted
+                    val copy = withContext(NonCancellable) {
+                        disk.withLock { withContext(io) { if (synchronized(lock) { live(e) }) intake.finish(part) else null } }
+                    } ?: throw ImportCancelled()
+                    kept = true
+                    copied += copy
+                } finally {
+                    // Not kept (cancelled, failed, a rename that failed): the part goes now, and again when a read still running ends
+                    if (!kept) part.delete()
+                    synchronized(liveParts) { liveParts -= part }
+                }
             }
             synchronized(lock) {
                 if (!live(e)) throw ImportCancelled()
@@ -759,9 +773,12 @@ class RecordImports internal constructor(
         _changed.tryEmit(Unit)
     }
 
-    /** The copies go, unless an import begun since [e] has its own there now. */
+    /** The copies go, and any part no copy is working on, unless an import begun since [e] has its own there now. */
     private suspend fun clearCopies(e: Long) = disk.withLock {
-        if (synchronized(lock) { e == epoch }) withContext(io) { intake.clear() }
+        if (synchronized(lock) { e == epoch }) {
+            val live = synchronized(liveParts) { liveParts.toSet() }
+            withContext(io) { intake.clear(live) }
+        }
     }
 
     private fun markUnfinished() {
@@ -813,8 +830,9 @@ class RecordImports internal constructor(
                     disk.withLock { withContext(io) { intake.clearAll() } }
                 } else if (alive && !waits && kept().isNotEmpty()) {
                     // A read the app's death interrupted, its job still to run: under way, so new files don't replace it unseen
+                    // (files brought while the app was starting wait for this check, and then give way with "busy")
                     synchronized(lock) {
-                        if (_state.value == ImportState.Idle && queued == null && copying?.isActive != true) {
+                        if (queued == null) {
                             resumeEpoch = ++epoch
                             _state.value = ImportState.Working(ImportProgress.Open)
                         }

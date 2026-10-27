@@ -142,7 +142,7 @@ class ImportIntakeTest {
         assertThat(ImportIntake.safeName("my_spotify_data.zip")).isEqualTo("my_spotify_data.zip")
     }
 
-    @Test fun `a copy still streaming is a part - never listed, never cleared under it, gone with everything at start`() {
+    @Test fun `a copy still streaming is a part - never listed, cleared only when no copy is working on it`() {
         val dir = tmp.newFolder("files")
         val intake = ImportIntake(dir)
         val done = intake.copy(listOf(source("my_spotify_data.zip", resource("my_spotify_data.zip"))), emptyList())
@@ -153,9 +153,14 @@ class ImportIntakeTest {
         // the next name after both
         val next = intake.reserve("x.json")
         assertThat(next.name).startsWith("part2__")
-        intake.clear()
+        // Parts copies are working on stay; the copies go
+        intake.clear(live = setOf(part, next))
         assertThat(intake.existing()).isEmpty()
         assertThat(part.exists() && next.exists()).isTrue()
+        // A part no copy is working on goes with them
+        intake.clear(live = setOf(part))
+        assertThat(part.exists()).isTrue()
+        assertThat(next.exists()).isFalse()
         intake.clearAll()
         assertThat(dir.listFiles().orEmpty()).isEmpty()
         // a file someone named .part is a copy like any other
@@ -164,7 +169,7 @@ class ImportIntakeTest {
         assertThat(named).hasSize(1)
     }
 
-    @Test fun `an Error while streaming (not only an Exception) leaves no file behind`() {
+    @Test fun `an Error while streaming (not only an Exception) deletes the part`() {
         val dir = tmp.newFolder("files")
         val intake = ImportIntake(dir)
         val broken = IntakeSource("my_spotify_data.zip", null) {
@@ -173,9 +178,9 @@ class ImportIntakeTest {
                 override fun read(b: ByteArray, off: Int, len: Int): Int = throw OutOfMemoryError("test")
             }
         }
-        assertThrows(OutOfMemoryError::class.java) {
-            intake.copy(listOf(source("my_spotify_data (1).zip", resource("my_spotify_data (1).zip")), broken), emptyList())
-        }
+        // The steps RecordImports takes: a part reserved, then streamed
+        val part = intake.reserve("my_spotify_data.zip")
+        assertThrows(OutOfMemoryError::class.java) { intake.stream(broken, part, Long.MAX_VALUE) }
         assertThat(dir.listFiles().orEmpty()).isEmpty()
     }
 

@@ -54,6 +54,8 @@ internal class ImportIntake(
     /** Free space a copy never eats into. */
     private val headroom: Long = HEADROOM,
     private val freeSpace: () -> Long = { dir.usableSpace },
+    /** How a part becomes its copy (a seam for the tests of a rename that fails). */
+    private val rename: (File, File) -> Boolean = File::renameTo,
 ) {
     /** A file named [name] and claiming [size] is one of [have] already (brought twice). */
     fun alreadyHave(name: String?, size: Long?, have: List<PickedFile>): Boolean {
@@ -72,24 +74,26 @@ internal class ImportIntake(
     /**
      * Streams [src] into [part] and returns the bytes copied: past [cap] it throws [ImportTooBig], into the last [headroom] of free
      * space [StorageFull]. [opened] is handed the provider's stream (so a cancel can close it); [checkpoint] runs between blocks
-     * and throws to stop. No lock is held. However it ends, the caller deletes the part unless it is [finish]ed.
+     * and throws to stop. No lock is held. A stream that fails, for any Throwable, deletes its part (closed first); one that
+     * succeeds leaves it to be [finish]ed (or deleted by the caller).
      */
     fun stream(src: IntakeSource, part: File, cap: Long, opened: (InputStream) -> Unit = {}, checkpoint: () -> Unit = {}): Long {
         try {
             val input = src.open() ?: throw IOException("the file couldn't be opened")
             opened(input)
             return input.use { i -> part.outputStream().use { o -> bounded(i, o::write, cap, checkpoint) } }
-        } catch (e: Exception) {
-            if (e is CancellationException || e is StorageFull || e is ImportTooBig) throw e
-            if (freeSpace() < headroom || e.message?.contains("ENOSPC") == true) throw StorageFull()
-            throw e
+        } catch (t: Throwable) {
+            part.delete()
+            if (t !is Exception || t is CancellationException || t is StorageFull || t is ImportTooBig) throw t
+            if (freeSpace() < headroom || t.message?.contains("ENOSPC") == true) throw StorageFull()
+            throw t
         }
     }
 
     /** [part], streamed, as a copy: renamed to its number. Under the import's lock. */
     fun finish(part: File): PickedFile {
         val done = File(dir, part.name.removePrefix(PART))
-        if (!part.renameTo(done)) throw IOException("the copy couldn't be kept")
+        if (!rename(part, done)) throw IOException("the copy couldn't be kept")
         return PickedFile(withExtension(done.name.substringAfter(SEP), done), done)
     }
 
@@ -161,9 +165,9 @@ internal class ImportIntake(
 
     fun delete(files: List<PickedFile>) = files.forEach { it.file.delete() }
 
-    /** Every finished copy gone (a part still streaming is its copy's, which deletes it). Under the lock. */
-    fun clear() {
-        dir.listFiles()?.filter { !it.name.startsWith(PART) }?.forEach { it.deleteRecursively() }
+    /** Every copy gone, and every part but [live] (those a copy is still streaming or renaming; each deletes its own). Under the lock. */
+    fun clear(live: Set<File> = emptySet()) {
+        dir.listFiles()?.filter { it !in live }?.forEach { it.deleteRecursively() }
     }
 
     /** Everything, parts too: at start, when no copy can be running. */

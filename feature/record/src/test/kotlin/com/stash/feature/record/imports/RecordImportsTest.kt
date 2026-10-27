@@ -92,6 +92,8 @@ class RecordImportsTest {
         intake: ImportIntake = ImportIntake(files),
         /** False: the person's Cancel reaches the job only later (WorkManager's cancel is asynchronous). */
         private val cancelStops: Boolean = true,
+        /** When set, the start-up's question to WorkManager waits on it (the app still starting). */
+        startUp: CompletableDeferred<Unit>? = null,
     ) {
         val store = RecordImportStore(prefs)
         val notices = Notices()
@@ -120,7 +122,10 @@ class RecordImportsTest {
                     cancels++
                     if (cancelStops) stop()
                 },
-                jobAlive = { alive },
+                jobAlive = {
+                    startUp?.await()
+                    alive
+                },
                 scope = CoroutineScope(test.backgroundScope.coroutineContext + dispatcher),
                 notices = notices,
                 now = { NOW },
@@ -754,6 +759,72 @@ class RecordImportsTest {
 
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.OTHER))
         assertThat(rig.files.listFiles().orEmpty()).isEmpty()
+    }
+
+    // ── round 4 ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a part no copy is working on is cleared with the copies`() = runTest {
+        val files = tmp.newFolder()
+        val rig = Rig(this, files = files)
+        runCurrent()
+        // Left by a copy that lost it (a cancel as it was reserved, a rename that failed, in an older build)
+        File(files, "part7__orphan.zip").writeText("left behind")
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Done::class.java)
+        assertThat(files.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test fun `a rename that fails leaves no part behind`() = runTest {
+        val files = tmp.newFolder()
+        val rig = Rig(this, files = files, intake = ImportIntake(files, rename = { _, _ -> false }))
+        rig.imports.bringSources(listOf(source(EXTENDED)), shared = false)
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.OTHER))
+        assertThat(files.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test fun `files added to a preview count with its own against the cap`() = runTest {
+        val rig = Rig(this)
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Preview::class.java)
+        // 2 in the preview and 63 more: one past the cap
+        val more = (0 until RecordImports.MAX_FILES - 1).map { i -> IntakeSource("StreamingHistory_music_$i.json", 2) { "[]".byteInputStream() } }
+
+        assertThat(rig.imports.bringSources(more, shared = false)).isNull()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.TOO_BIG))
+        assertThat(rig.launches).isEqualTo(1)
+    }
+
+    @Test fun `files brought while the app starts give way to a read its death left waiting`() = runTest {
+        val files = tmp.newFolder()
+        resource(EXTENDED).copyTo(File(files, "0__$EXTENDED"))
+        resource(ACCOUNT).copyTo(File(files, "1__$ACCOUNT"))
+        val startUp = CompletableDeferred<Unit>()
+        val rig = Rig(this, files = files, runs = false, alive = true, startUp = startUp)
+        val notes = mutableListOf<ImportNote>()
+        backgroundScope.launch { rig.imports.notes.collect { notes += it } }
+        runCurrent()
+        // Shared with Stash while it is still starting: taken for now
+        assertThat(rig.imports.bringSources(listOf(source(ACCOUNT)), shared = true)).isNotNull()
+
+        startUp.complete(Unit)
+        runCurrent()
+
+        assertThat(notes).containsExactly(ImportNote.BUSY)
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Working(ImportProgress.Open))
+        assertThat(rig.launches).isEqualTo(0)
+        assertThat(rig.copies()).hasSize(2)
+        // The job's rerun reads the waiting copies, both zips
+        rig.rerun()
+        runCurrent()
+        assertThat((rig.imports.state.value as ImportState.Preview).preview.plays).isEqualTo(6_086)
     }
 
     private companion object {
