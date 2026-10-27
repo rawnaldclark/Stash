@@ -1,0 +1,244 @@
+[
+ {
+  "name": "no plays: the taste alone",
+  "own": [],
+  "taste": [
+   "Loved Band",
+   "Second Band",
+   "Third"
+  ],
+  "seeds": [
+   "Loved Band",
+   "Second Band",
+   "Third"
+  ],
+  "from": "history"
+ },
+ {
+  "name": "no plays, a taste of ten: eight of them",
+  "own": [],
+  "taste": [
+   "T0",
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6",
+   "T7",
+   "T8",
+   "T9"
+  ],
+  "seeds": [
+   "T0",
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6",
+   "T7"
+  ],
+  "from": "history"
+ },
+ {
+  "name": "a busy listener: the taste keeps three places",
+  "own": [
+   "Here 0",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "Here 5",
+   "Here 6",
+   "Here 7"
+  ],
+  "taste": [
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5"
+  ],
+  "seeds": [
+   "Here 0",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "T1",
+   "T2",
+   "T3"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "a quiet listener: the taste fills the places left",
+  "own": [
+   "Here 0",
+   "Here 1"
+  ],
+  "taste": [
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6",
+   "T7",
+   "T8"
+  ],
+  "seeds": [
+   "Here 0",
+   "Here 1",
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "an artist played here is not counted twice (by the folded primary artist)",
+  "own": [
+   "Ana",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "Here 5",
+   "Here 6",
+   "Here 7"
+  ],
+  "taste": [
+   "ANA feat. Ben",
+   "Ána",
+   "T1",
+   "T2"
+  ],
+  "seeds": [
+   "Ana",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "Here 5",
+   "T1",
+   "T2"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "a short taste: fewer than three",
+  "own": [
+   "Here 0",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "Here 5",
+   "Here 6",
+   "Here 7"
+  ],
+  "taste": [
+   "Only"
+  ],
+  "seeds": [
+   "Here 0",
+   "Here 1",
+   "Here 2",
+   "Here 3",
+   "Here 4",
+   "Here 5",
+   "Here 6",
+   "Only"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "recent and long-run seeds, then the taste",
+  "own": [
+   "Recent",
+   "Older",
+   "Oldest"
+  ],
+  "taste": [
+   "T1",
+   "Older",
+   "T2",
+   "T3",
+   "T4",
+   "T5",
+   "T6"
+  ],
+  "seeds": [
+   "Recent",
+   "Older",
+   "Oldest",
+   "T1",
+   "T2",
+   "T3",
+   "T4",
+   "T5"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "plays only from long ago (past 180 days): no own seeds, the taste alone",
+  "own": [],
+  "taste": [
+   "T1",
+   "T2"
+  ],
+  "seeds": [
+   "T1",
+   "T2"
+  ],
+  "from": "history"
+ },
+ {
+  "name": "an empty taste: the own seeds alone",
+  "own": [
+   "Here"
+  ],
+  "taste": [],
+  "seeds": [
+   "Here"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "a taste whose artists are all played here",
+  "own": [
+   "A",
+   "B"
+  ],
+  "taste": [
+   "a",
+   "B with C"
+  ],
+  "seeds": [
+   "A",
+   "B"
+  ],
+  "from": "plays"
+ },
+ {
+  "name": "an empty artist in the taste",
+  "own": [
+   "Here"
+  ],
+  "taste": [
+   "",
+   "T1"
+  ],
+  "seeds": [
+   "Here",
+   "",
+   "T1"
+  ],
+  "from": "plays"
+ }
+]

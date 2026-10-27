@@ -1,0 +1,798 @@
+[
+ {
+  "name": "a scrobble an own play covers is left out: the same folded title, 180 s before its start to 180 s after its end",
+  "now": 1793102400000,
+  "rows": [
+   {
+    "id": "song|band|1746100620000",
+    "t": "Song",
+    "a": "Band",
+    "s": 1746100620000,
+    "ms": 210000,
+    "f": 192
+   },
+   {
+    "id": "song|band|1746100619999",
+    "t": "Song",
+    "a": "Band",
+    "s": 1746100619999,
+    "ms": 210000,
+    "f": 192
+   },
+   {
+    "id": "song|another band|1746101220000",
+    "t": "SONG!",
+    "a": "Another Band",
+    "s": 1746101220000,
+    "ms": 210000,
+    "f": 64
+   },
+   {
+    "id": "song|band|1746101220001",
+    "t": "Song",
+    "a": "Band",
+    "s": 1746101220001,
+    "ms": 210000,
+    "f": 64
+   },
+   {
+    "id": "song|band|1746100900000",
+    "t": "Song",
+    "a": "Band",
+    "s": 1746100900000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "own": [
+   {
+    "t": "Song",
+    "a": "Band",
+    "s": 1746100800000,
+    "d": 240000
+   }
+  ],
+  "hidden": [],
+  "kept": [],
+  "keep": [],
+  "imported": 3,
+  "bySource": {
+   "spotify": 1,
+   "lastfm": 2,
+   "stash": 0
+  },
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1746100619999,
+   "last": 1746101220001,
+   "plays": 4,
+   "listenedMs": 860000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "song|band",
+     "title": "Song",
+     "artist": "Band",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 860000,
+     "first": 1746100619999,
+     "last": 1746101220001,
+     "peak": 4,
+     "peakAt": 1746100619999,
+     "weight": 0.960507087,
+     "depth": 1.609437912,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2025,
+     "plays": 4,
+     "listenedMs": 860000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 4,
+     "listenedMs": 860000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "song|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "an own play with no length lasts 30 s; one the archive holds by id is counted once (the archive’s)",
+  "now": 1793102400000,
+  "rows": [
+   {
+    "id": "mine|band|1746100800000",
+    "t": "Mine",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 123000,
+    "f": 34
+   },
+   {
+    "id": "short|band|1746101610000",
+    "t": "Short",
+    "a": "Band",
+    "s": 1746101610000,
+    "ms": 210000,
+    "f": 64
+   },
+   {
+    "id": "short|band|1746101610001",
+    "t": "Short",
+    "a": "Band",
+    "s": 1746101610001,
+    "ms": 210000,
+    "f": 64
+   }
+  ],
+  "own": [
+   {
+    "t": "Mine",
+    "a": "Band",
+    "s": 1746100800000,
+    "d": 500000
+   },
+   {
+    "t": "Short",
+    "a": "Band",
+    "s": 1746101400000
+   },
+   {
+    "t": "Short",
+    "a": "Band",
+    "s": 1746101400000,
+    "d": 10000
+   }
+  ],
+  "hidden": [],
+  "kept": [],
+  "keep": [],
+  "imported": 2,
+  "bySource": {
+   "spotify": 1,
+   "lastfm": 1,
+   "stash": 0
+  },
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1746100800000,
+   "last": 1746101610001,
+   "plays": 4,
+   "listenedMs": 393000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "short|band",
+     "title": "Short",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 270000,
+     "first": 1746101400000,
+     "last": 1746101610001,
+     "peak": 3,
+     "peakAt": 1746101400000,
+     "weight": 0.827339316,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "mine|band",
+     "title": "Mine",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 123000,
+     "first": 1746100800000,
+     "last": 1746100800000,
+     "peak": 1,
+     "peakAt": 1746100800000,
+     "weight": 0.413665978,
+     "depth": 0.693147181,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2025,
+     "plays": 4,
+     "listenedMs": 393000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 4,
+     "listenedMs": 393000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "short|band",
+      "mine|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "a scrobble with an own play’s very id: the scrobble is covered and the own play held, so neither counts",
+  "now": 1793102400000,
+  "rows": [
+   {
+    "id": "twin|band|1746100800000",
+    "t": "Twin",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 210000,
+    "f": 64
+   }
+  ],
+  "own": [
+   {
+    "t": "Twin",
+    "a": "Band",
+    "s": 1746100800000,
+    "d": 200000
+   },
+   {
+    "t": "Other",
+    "a": "Band",
+    "s": 1746187200000,
+    "d": 200000,
+    "al": "An Album"
+   }
+  ],
+  "hidden": [],
+  "kept": [],
+  "keep": [],
+  "imported": 0,
+  "bySource": {
+   "spotify": 0,
+   "lastfm": 0,
+   "stash": 0
+  },
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1746187200000,
+   "last": 1746187200000,
+   "plays": 1,
+   "listenedMs": 200000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "other|band",
+     "title": "Other",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1746187200000,
+     "last": 1746187200000,
+     "peak": 1,
+     "peakAt": 1746187200000,
+     "weight": 0.414058678,
+     "depth": 0.693147181,
+     "avoid": false,
+     "album": "An Album"
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2025,
+     "plays": 1,
+     "listenedMs": 200000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 1,
+     "listenedMs": 200000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "other|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "hidden, kept and put back over the archive and the own plays",
+  "now": 1793102400000,
+  "rows": [
+   {
+    "id": "hidden|band|1746100800000",
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "id": "hidden|band|1746187200000",
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1746187200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "id": "hidden|band|1746273600000",
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1746273600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "id": "skipped|band|1746100800000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746187200000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746187200000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746273600000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746273600000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746360000000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746360000000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746446400000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746446400000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746532800000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746532800000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746619200000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746619200000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "skipped|band|1746705600000",
+    "t": "Skipped",
+    "a": "Band",
+    "s": 1746705600000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746100800000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746187200000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746187200000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746273600000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746273600000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746360000000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746360000000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746446400000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746446400000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746532800000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746532800000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746619200000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746619200000,
+    "ms": 1000,
+    "f": 36
+   },
+   {
+    "id": "back|band|1746705600000",
+    "t": "Back",
+    "a": "Band",
+    "s": 1746705600000,
+    "ms": 1000,
+    "f": 36
+   }
+  ],
+  "own": [
+   {
+    "t": "Kept",
+    "a": "Band",
+    "s": 1746187200000,
+    "d": 180000
+   }
+  ],
+  "hidden": [
+   "hidden|band",
+   "kept|band"
+  ],
+  "kept": [
+   "kept|band"
+  ],
+  "keep": [
+   "back|band"
+  ],
+  "imported": 3,
+  "bySource": {
+   "spotify": 3,
+   "lastfm": 0,
+   "stash": 0
+  },
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1746100800000,
+   "last": 1746273600000,
+   "plays": 4,
+   "listenedMs": 780000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "hidden|band",
+     "title": "Hidden",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1746100800000,
+     "last": 1746273600000,
+     "peak": 3,
+     "peakAt": 1746100800000,
+     "weight": 0.828903502,
+     "depth": 1.386294361,
+     "avoid": true
+    },
+    {
+     "key": "kept|band",
+     "title": "Kept",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 180000,
+     "first": 1746187200000,
+     "last": 1746187200000,
+     "peak": 1,
+     "peakAt": 1746187200000,
+     "weight": 0.414058678,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "back|band",
+     "title": "Back",
+     "artist": "Band",
+     "starts": 8,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 8,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": false
+    },
+    {
+     "key": "skipped|band",
+     "title": "Skipped",
+     "artist": "Band",
+     "starts": 8,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 8,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": true
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2025,
+     "plays": 4,
+     "listenedMs": 780000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 4,
+     "listenedMs": 780000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "kept|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "no own plays: the archive as it is",
+  "now": 1793102400000,
+  "rows": [
+   {
+    "id": "alone|band|1746100800000",
+    "t": "Alone",
+    "a": "Band",
+    "s": 1746100800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "id": "scrobble|band|1746104400000",
+    "t": "Scrobble",
+    "a": "Band",
+    "s": 1746104400000,
+    "ms": 210000,
+    "f": 192
+   }
+  ],
+  "own": [],
+  "hidden": [],
+  "kept": [],
+  "keep": [],
+  "imported": 2,
+  "bySource": {
+   "spotify": 1,
+   "lastfm": 1,
+   "stash": 0
+  },
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1746100800000,
+   "last": 1746104400000,
+   "plays": 2,
+   "listenedMs": 410000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "scrobble|band",
+     "title": "Scrobble",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 210000,
+     "first": 1746104400000,
+     "last": 1746104400000,
+     "peak": 1,
+     "peakAt": 1746104400000,
+     "weight": 0.413682333,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "alone|band",
+     "title": "Alone",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1746100800000,
+     "last": 1746100800000,
+     "peak": 1,
+     "peakAt": 1746100800000,
+     "weight": 0.413665978,
+     "depth": 0.693147181,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2025,
+     "plays": 2,
+     "listenedMs": 410000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 2,
+     "listenedMs": 410000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "alone|band",
+      "scrobble|band"
+     ]
+    }
+   ]
+  }
+ }
+]

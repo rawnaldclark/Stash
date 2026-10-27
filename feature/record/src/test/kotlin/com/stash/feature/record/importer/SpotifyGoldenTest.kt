@@ -12,10 +12,18 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import com.stash.core.model.weblink.SongKey
+import com.stash.feature.record.taste.Taste
+import com.stash.feature.record.taste.TasteInput
+import com.stash.feature.record.taste.TasteOptions
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.double
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.security.MessageDigest
 import java.time.ZoneOffset
 
@@ -24,8 +32,10 @@ import java.time.ZoneOffset
  * (`src/test/resources/spotify-export/`, copied from stash-player `docs/spotify-export/fixture/` at 0e2cb03), read and merged
  * here must give what `expected.json` records the web's importer giving, with `now = 2026-10-23T12:00:00Z`: the files and what
  * couldn't be read, the preview, and the archive's plays (their count, the first ids and the SHA-256 of all of them, sorted and
- * joined with `\n`), and the playlists and liked songs it brings into the library (each playlist's songs, the likes). Taste and
- * eras come with the taste port.
+ * joined with `\n`), the playlists and liked songs it brings into the library (each playlist's songs, the likes), and the taste
+ * worked out over the archive with what the commit keeps (the export's likes and playlists) and hides (its hidden songs): its
+ * totals, top 10 weights to 6 places (`toFixed(6)`: the exact double rounded half up), eras, constants, lost, obsessions, the
+ * songs kept out, found, seed artists, years and year tops.
  */
 class SpotifyGoldenTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -134,6 +144,57 @@ class SpotifyGoldenTest {
         val content = SpotifyLibraryImport.content(keys.zip(bundle.playlists) { k, p -> ChosenPlaylist(k, p) }, bundle.likes, NOW)
         assertThat(content.likes.map { it.likedAt }).isEqualTo((0 until 8).map { NOW - it })
         assertThat(content.playlists.map { it.items.size }).containsExactly(9, 8).inOrder()
+    }
+
+    @Test fun `the taste - totals, top weights, eras, lists, the songs kept out, seeds, years and year tops`() = runTest {
+        val (prep, archive, _) = golden(fixture())
+        val bundle = prep.bundle
+        // importer.ts `commit`: kept = the likes and every playlist's songs it brings (all, by default); hidden = its hidden songs
+        val kept = (bundle.likes.map { SongKey.songKey(it.title, it.artist) } + bundle.playlists.flatMap { p -> p.items.map { SongKey.songKey(it.title, it.artist) } }).toSet()
+        val hidden = bundle.hidden.map { SongKey.songKey(it.title, it.artist) }.toSet()
+        val input = TasteInput(emptyList())
+        input.add(archive.plays.values.toList())
+        val t = Taste.compute(input.plays(), TasteOptions(now = NOW, hidden = hidden, kept = kept))
+        val e = expected["taste"]!!.jsonObject
+        fun strings(k: String) = e[k]!!.jsonArray.map { it.jsonPrimitive.content }
+
+        assertThat(t.plays).isEqualTo(e["plays"]!!.jsonPrimitive.int)
+        assertThat(t.listenedMs).isEqualTo(e["listenedMs"]!!.jsonPrimitive.long)
+        assertThat(t.songs.size).isEqualTo(e["songs"]!!.jsonPrimitive.int)
+        assertThat(t.artists).isEqualTo(e["artists"]!!.jsonPrimitive.int)
+        // golden.test.ts: Number(weight.toFixed(6))
+        assertThat(t.songs.take(10).map { it.key to BigDecimal(it.weight).setScale(6, RoundingMode.HALF_UP).toDouble() }).isEqualTo(
+            e["top"]!!.jsonArray.map { it.jsonObject["key"]!!.jsonPrimitive.content to it.jsonObject["weight"]!!.jsonPrimitive.double },
+        )
+        assertThat(t.eras.map { listOf(it.start, it.end, it.artists, it.songs.size) }).isEqualTo(
+            e["eras"]!!.jsonArray.map { it.jsonObject }.map {
+                listOf(it["start"]!!.jsonPrimitive.long, it["end"]!!.jsonPrimitive.long, it["artists"]!!.jsonArray.map { a -> a.jsonPrimitive.content }, it["songs"]!!.jsonPrimitive.int)
+            },
+        )
+        assertThat(t.constants.take(10)).isEqualTo(strings("constants"))
+        assertThat(t.lost.take(10)).isEqualTo(strings("lost"))
+        assertThat(t.obsessions.take(5).map { Triple(it.key, it.n, it.at) }).isEqualTo(
+            e["obsessions"]!!.jsonArray.map { it.jsonObject }.map { Triple(it["key"]!!.jsonPrimitive.content, it["n"]!!.jsonPrimitive.int, it["at"]!!.jsonPrimitive.long) },
+        )
+        assertThat(t.songs.filter { it.avoid }.map { it.key }.sorted()).isEqualTo(strings("avoid"))
+        assertThat(e["found"]).isEqualTo(JsonNull)
+        assertThat(t.found).isNull()
+        assertThat(t.seedArtists.take(10)).isEqualTo(strings("seedArtists"))
+        assertThat(t.years.map { listOf(it.year.toLong(), it.plays.toLong(), it.listenedMs, it.newArtists.toLong()) }).isEqualTo(
+            e["years"]!!.jsonArray.map { it.jsonObject }.map {
+                listOf(it["year"]!!.jsonPrimitive.long, it["plays"]!!.jsonPrimitive.long, it["listenedMs"]!!.jsonPrimitive.long, it["newArtists"]!!.jsonPrimitive.long)
+            },
+        )
+        assertThat(t.yearTops.map { listOf(it.year, it.artists, it.songs.size, it.songs.take(3)) }).isEqualTo(
+            e["yearTops"]!!.jsonArray.map { it.jsonObject }.map {
+                listOf(
+                    it["year"]!!.jsonPrimitive.int,
+                    it["artists"]!!.jsonArray.map { a -> a.jsonPrimitive.content },
+                    it["songs"]!!.jsonPrimitive.int,
+                    it["top"]!!.jsonArray.map { a -> a.jsonPrimitive.content },
+                )
+            },
+        )
     }
 
     @Test fun `plays are written in batches of 5,000`() = runTest {

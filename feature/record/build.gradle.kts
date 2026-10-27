@@ -1,8 +1,13 @@
 plugins {
     id("stash.android.feature")
+    // The taste's body (`record_taste`), written and read as JSON
+    alias(libs.plugins.kotlin.serialization)
 }
 android {
     namespace = "com.stash.feature.record"
+
+    // The taste's vectors, read on the phone too (TasteIcuAndroidTest: ICU's regexes and ART's maths, not the JVM's)
+    sourceSets.getByName("androidTest").assets.srcDir("src/test/resources/taste")
 
     testOptions {
         unitTests {
@@ -40,4 +45,7 @@ dependencies {
     testImplementation(libs.room.runtime)
     // The lengths pass's job: what it asks of WorkManager (its network), against WorkManager's own test runtime
     testImplementation(libs.work.testing)
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
