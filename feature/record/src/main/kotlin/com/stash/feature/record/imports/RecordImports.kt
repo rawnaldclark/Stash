@@ -43,6 +43,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.ZoneId
+import kotlin.coroutines.CoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -122,6 +123,8 @@ class RecordImports internal constructor(
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    /** Where files are copied and looked into (tests run it in place). */
+    private val io: CoroutineContext = Dispatchers.IO,
 ) : YourRecordImports {
 
     @Inject constructor(
@@ -295,9 +298,9 @@ class RecordImports internal constructor(
     private suspend fun prepare(work: Work.Prepare, onProgress: (ImportProgress) -> Unit) {
         val had = synchronized(lock) { if (work.add) files else emptyList() }
         try {
-            val copies = withContext(Dispatchers.IO) { intake.copy(work.sources, had) }
+            val copies = withContext(io) { intake.copy(work.sources, had) }
             if (work.shared) {
-                val export = withContext(Dispatchers.IO) { intake.looksLikeExport(copies, scratch) }
+                val export = withContext(io) { intake.looksLikeExport(copies, scratch) }
                 if (!export) {
                     intake.delete(copies)
                     _notes.tryEmit(ImportNote.NOT_AN_EXPORT)
