@@ -1,0 +1,299 @@
+[
+ {
+  "name": "none yet",
+  "prev": null,
+  "user": "me",
+  "nowS": 100,
+  "held": 0,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0
+  }
+ },
+ {
+  "name": "none yet, but rows another account brought",
+  "prev": null,
+  "user": "me",
+  "nowS": 100,
+  "held": 12,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0,
+   "base": 12
+  }
+ },
+ {
+  "name": "another user’s mark: starts over, theirs the base",
+  "prev": {
+   "user": "them",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": true,
+   "newest": 90,
+   "added": 40,
+   "covered": 0,
+   "at": 0
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 40,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0,
+   "base": 40
+  }
+ },
+ {
+  "name": "another user’s, nothing held",
+  "prev": {
+   "user": "them",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 0,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0
+  }
+ },
+ {
+  "name": "user names compared as written",
+  "prev": {
+   "user": "Me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 3,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0,
+   "base": 3
+  }
+ },
+ {
+  "name": "a whole read that found nothing reads again below now",
+  "prev": {
+   "user": "me",
+   "to": 50,
+   "next": 2,
+   "pages": 0,
+   "done": true,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 50
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 0,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 50
+  }
+ },
+ {
+  "name": "a mark short of the rows it wrote: the archive decides",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 3,
+   "pages": 5,
+   "done": false,
+   "newest": 0,
+   "added": 190,
+   "covered": 0,
+   "at": 0
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 200,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 3,
+   "pages": 5,
+   "done": false,
+   "newest": 0,
+   "added": 200,
+   "covered": 0,
+   "at": 0
+  }
+ },
+ {
+  "name": "over rows Spotify took over since: the archive decides",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": true,
+   "newest": 90,
+   "added": 200,
+   "covered": 0,
+   "at": 0
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 150,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": true,
+   "newest": 90,
+   "added": 150,
+   "covered": 0,
+   "at": 0
+  }
+ },
+ {
+  "name": "beside another account’s rows, the count stays its own",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "base": 40
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 43,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "base": 40
+  }
+ },
+ {
+  "name": "beside another account’s rows, fewer held",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "base": 40
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 10,
+  "out": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 3,
+   "covered": 0,
+   "at": 0,
+   "base": 40
+  }
+ },
+ {
+  "name": "beside, a whole read that found nothing",
+  "prev": {
+   "user": "me",
+   "to": 1714564800,
+   "next": 2,
+   "pages": 0,
+   "done": true,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0,
+   "base": 7
+  },
+  "user": "me",
+  "nowS": 100,
+  "held": 7,
+  "out": {
+   "user": "me",
+   "to": 100,
+   "next": 1,
+   "pages": 0,
+   "done": false,
+   "newest": 0,
+   "added": 0,
+   "covered": 0,
+   "at": 0,
+   "base": 7
+  }
+ }
+]

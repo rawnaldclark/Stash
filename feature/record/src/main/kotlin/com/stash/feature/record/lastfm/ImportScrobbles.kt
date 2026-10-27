@@ -14,13 +14,21 @@ data class LastfmMark(
     val pages: Int,
     /** All of it read. */
     val done: Boolean,
-    /** The newest scrobble kept (epoch s): a top-up reads from just after it. */
+    /** The newest scrobble read (epoch s): a top-up reads from [ImportScrobbles.LATE_S] below it. 0: none yet, so the next run reads the whole history again. */
     val newest: Long,
-    /** Scrobbles kept, and ones another source already had. */
+    /**
+     * This account's scrobbles the archive holds. Alone in the archive (no [base]), it is the archive's Last.fm rows, counted
+     * again at the start of every run, so rows written just before the app died count and rows a Spotify import took over since
+     * don't. Beside another account's rows, which the archive can't tell apart, it is this account's own reads: every scrobble of
+     * a whole read the archive holds (written then or before), and what a top-up adds.
+     */
     val added: Int,
+    /** Scrobbles read that Spotify already had (counted once, as read; a top-up's overlap isn't counted again). */
     val covered: Int,
     /** When it last ran (epoch s, the run's start). */
     val at: Long,
+    /** The Last.fm rows other accounts had brought in when this one's import began (they stay in the record). Set: [added] is counted from reads. */
+    val base: Int? = null,
 )
 
 /** How far a run is (lastfm.ts `LastfmProgress`): the page just read of how many, and the scrobbles kept so far. */
@@ -61,31 +69,39 @@ interface ScrobbleStore : ScrobbleArchive {
     /** [Scrobbles.knownLengths] of the plays kept now. */
     suspend fun knownLengths(): Map<String, Long>
 
+    /** How many scrobbles the archive holds now (lastfm.ts `startMark`'s `held`). */
+    suspend fun held(): Int
+
     /** A page's rows, written. */
     suspend fun add(rows: List<ArchivePlay>)
 
-    /** Every scrobble out; returns how many went. */
+    /** Every scrobble out, and what the lengths pass kept about them; returns how many went. */
     suspend fun deleteScrobbles(): Int
 }
 
 /**
  * Your Last.fm scrobbles into Your record (stash-player `src/lib/spotify/lastfm.ts`, spec §7), page by page, newest first, into
  * the same archive as the Spotify export. Resumable: where it stopped is kept ([LastfmMark]), so a run stopped (by the person,
- * the system, or the app's death) carries on from that page. Once the whole history is in, a top-up reads only what is newer
- * than the newest scrobble kept. Paced to stay well inside Last.fm's limits: one page at a time, [PAGE_GAP_MS] apart, and a
- * busy answer waits [BUSY_WAIT_MS] times the attempt before asking again, [BUSY_TRIES] attempts at most.
+ * the system, or the app's death) carries on from that page. Once the whole history is in, a top-up reads what is newer than
+ * the newest scrobble kept, from [LATE_S] below it (Last.fm takes scrobbles stamped up to two weeks back, from a phone that synced
+ * late). Paced to stay well inside Last.fm's limits: one page at a time, [PAGE_GAP_MS] apart, and a busy answer waits
+ * [BUSY_WAIT_MS] times the attempt before asking again, [BUSY_TRIES] attempts at most. The song lengths come after, in their own
+ * pass ([Lengths]).
  */
 object ImportScrobbles {
     const val PAGE_GAP_MS = 350L
     const val BUSY_WAIT_MS = 10_000L
     const val BUSY_TRIES = 6
 
-    /** A page, asked again while Last.fm is busy (lastfm.ts `patiently`). */
-    private suspend fun patiently(read: PageReader, page: Int, to: Long, from: Long?, wait: Long): HistoryPage {
+    /** lastfm.ts `LATE_S`: how far below the newest scrobble kept a top-up reads (Last.fm takes scrobbles stamped up to 14 days back). */
+    const val LATE_S = 14 * 86_400L
+
+    /** lastfm.ts `patiently`: [ask], asked again while Last.fm is busy (at most [BUSY_TRIES] times, waiting [wait] × the attempt between). */
+    internal suspend fun <T> patiently(wait: Long, ask: suspend () -> T): T {
         var i = 0
         while (true) {
             try {
-                return read.read(page, to, from)
+                return ask()
             } catch (e: LastfmError) {
                 if (e.kind != LastfmFailure.BUSY || i >= BUSY_TRIES - 1) throw e
                 delay(wait * (i + 1))
@@ -95,71 +111,139 @@ object ImportScrobbles {
     }
 
     /**
+     * lastfm.ts `steadily`: a page, asked patiently, and asked again (bounded) while it comes back empty saying the history is
+     * shorter than the run knew ([known] pages): that is Last.fm stumbling as often as a history that shrank. Still so after
+     * [BUSY_TRIES] asks, it is believed.
+     */
+    private suspend fun steadily(read: PageReader, page: Int, to: Long, from: Long?, known: Int, wait: Long): HistoryPage {
+        var p = patiently(wait) { read.read(page, to, from) }
+        var i = 1
+        while (i < BUSY_TRIES && p.plays.isEmpty() && p.pages < known && page <= known) {
+            delay(wait * i)
+            p = patiently(wait) { read.read(page, to, from) }
+            i++
+        }
+        return p
+    }
+
+    /**
+     * lastfm.ts `startMark`, pure: the mark a run starts from. [held]: the Last.fm rows the archive holds now.
+     * - None, or another user's: this user's whole history from the top. Rows held then are other accounts' ([LastfmMark.base]),
+     *   and stay.
+     * - A whole read that found nothing (done, newest 0): the whole history again, below now. There is nothing to top up from, and
+     *   an empty first read (a new account, say) must not leave the import stuck empty.
+     * - Otherwise where it stood; alone in the archive, its count taken again from it ([held]).
+     */
+    fun startMark(prev: LastfmMark?, user: String, nowS: Long, held: Int): LastfmMark {
+        if (prev == null || prev.user != user) {
+            return LastfmMark(user = user, to = nowS, next = 1, pages = 0, done = false, newest = 0, added = 0, covered = 0, at = 0, base = held.takeIf { it > 0 })
+        }
+        val added = if ((prev.base ?: 0) > 0) prev.added else held
+        if (prev.done && prev.newest == 0L) return prev.copy(to = nowS, next = 1, pages = 0, done = false, added = added)
+        return prev.copy(added = added)
+    }
+
+    /** What one page brought: rows written, the page's scrobbles the archive holds now, ones Spotify had, and its newest start. */
+    private class Took(val added: Int, val own: Int, val covered: Int, val newest: Long)
+
+    /**
      * lastfm.ts `importScrobbles`: [user]'s scrobbles into [store], the rest of the whole history, then (or once that's done)
      * what is newer. Each page is planned against the archive as it is and written before the next is asked for; the mark is
-     * saved after its page's plays. The caller holds the archive's write lock for the whole run (nothing else writes meanwhile).
-     * A cancelled coroutine stops at the next page or pause; what was written and marked stays.
+     * saved after every page's plays, in the whole read and in a top-up alike. Only a page at or past Last.fm's last ends a read:
+     * an empty page before it is Last.fm stumbling, which [LastfmPages] answers as busy.
+     *
+     * [library]: the library's song lengths ([Scrobbles.libraryLengths]), for the rows the archive's Spotify plays can't time.
+     * [onStart]: the mark the run starts from, its count taken from the archive (the done line counts from it). The caller holds
+     * the archive's write lock for the whole run (nothing else writes meanwhile). A cancelled coroutine stops at the next page or
+     * pause; what was written and marked stays.
      */
     suspend fun run(
         store: ScrobbleStore,
         read: PageReader,
         user: String,
         nowS: Long,
+        library: Map<String, Long> = emptyMap(),
         progress: (LastfmProgress) -> Unit = {},
+        onStart: (LastfmMark) -> Unit = {},
         gapMs: Long = PAGE_GAP_MS,
         busyMs: Long = BUSY_WAIT_MS,
     ): LastfmMark {
-        val prev = store.mark()
-        var mark = if (prev != null && prev.user == user) {
-            prev
-        } else {
-            LastfmMark(user = user, to = nowS, next = 1, pages = 0, done = false, newest = 0, added = 0, covered = 0, at = 0)
-        }
+        var mark = startMark(store.mark(), user, nowS, store.held())
+        onStart(mark)
         // Known once: scrobbles never count towards a song's length, so the run's own writes can't change them
-        var lengths: Map<String, Long>? = null
-        suspend fun take(plays: List<Scrobble>) {
-            val plan = Scrobbles.plan(store, plays, lengths ?: store.knownLengths().also { lengths = it })
-            store.add(plan.add)
-            mark = mark.copy(
-                added = mark.added + plan.add.size,
-                covered = mark.covered + plan.covered,
-                newest = maxOf(mark.newest, plays.maxOfOrNull { it.uts } ?: mark.newest),
-            )
+        val lengths = Scrobbles.bestLengths(store.knownLengths(), library)
+
+        /**
+         * Writes a page's new plays. At or below [since] a top-up reads again what it read before (the late-scrobble overlap): what
+         * is new there is added, but what Spotify covers there was counted the first time. [own] (only when asked: one more read):
+         * the page's scrobbles the archive holds now, written now or before, each once.
+         */
+        suspend fun take(plays: List<Scrobble>, since: Long = 0, own: Boolean = false): Took {
+            val newer = if (since != 0L) plays.filter { it.uts > since } else plays
+            val older = if (since != 0L) plays.filter { it.uts <= since } else emptyList()
+            // (each plan reads the archive as it is: an empty part isn't planned)
+            val plan = if (newer.isNotEmpty()) Scrobbles.plan(store, newer, lengths) else ScrobblePlan(emptyList(), 0, 0)
+            val add = if (older.isNotEmpty()) plan.add + Scrobbles.plan(store, older, lengths).add else plan.add
+            store.add(add)
+            val held = if (own) store.kept(plays.map { Scrobbles.id(it) }.distinct()).size else 0
+            return Took(add.size, held, plan.covered, maxOf(0L, plays.maxOfOrNull { it.uts } ?: 0L))
         }
 
         // The whole history, from where it stopped (pages are newest first, below a fixed `to`)
         while (!mark.done) {
-            val p = patiently(read, mark.next, mark.to, null, busyMs)
-            take(p.plays)
             val page = mark.next
-            mark = mark.copy(pages = p.pages, next = page + 1, done = p.plays.isEmpty() || page >= p.pages, at = nowS)
+            val p = steadily(read, page, mark.to, null, mark.pages, busyMs)
+            val beside = (mark.base ?: 0) > 0
+            val got = take(p.plays, own = beside)
+            // Beside another account's rows the count is this account's own reads; alone, the archive's (taken at the start) and what is new
+            mark = mark.copy(
+                added = mark.added + if (beside) got.own else got.added,
+                covered = mark.covered + got.covered,
+                newest = maxOf(mark.newest, got.newest),
+                pages = p.pages,
+                next = page + 1,
+                done = page >= p.pages,
+                at = nowS,
+            )
             store.setMark(mark)
             progress(LastfmProgress(page = minOf(page, p.pages), pages = p.pages, added = mark.added))
             if (!mark.done) delay(gapMs)
         }
 
-        // Newer than the newest kept: every page of the window above it, newest first
+        // Newer than the newest kept, and the two weeks below it: every page of that window, newest first
         if (mark.newest != 0L && mark.to < nowS) {
-            val from = mark.newest + 1
+            val since = mark.newest
+            val from = maxOf(1L, since - LATE_S)
+            var newest = since
+            var covered = 0
+            var pages = 0
             var page = 1
             while (true) {
-                val p = patiently(read, page, nowS, from, busyMs)
-                take(p.plays)
+                val p = steadily(read, page, nowS, from, pages, busyMs)
+                pages = maxOf(pages, p.pages)
+                val got = take(p.plays, since)
+                newest = maxOf(newest, got.newest)
+                covered += got.covered
+                // What it added is saved every page; its window (newest, to) and what Spotify covered only once all of it is in, so
+                // a top-up cut short reads the same window again, finds what it wrote kept already, and counts the covered ones once
+                mark = mark.copy(added = mark.added + got.added)
+                store.setMark(mark)
                 progress(LastfmProgress(page = page, pages = p.pages, added = mark.added))
-                if (p.plays.isEmpty() || page >= p.pages) break
+                if (page >= p.pages) break
                 delay(gapMs)
                 page++
             }
-            mark = mark.copy(to = nowS, at = nowS)
+            mark = mark.copy(newest = newest, covered = mark.covered + covered, to = nowS, at = nowS)
             store.setMark(mark)
         }
         return mark
     }
 
     /**
-     * lastfm.ts `removeScrobbles`: every scrobble out of the archive again, and the mark; the export's plays stay. The mark goes
-     * first (the web deletes it after): a removal cut short then leaves rows with no mark, which the next run reads again from
-     * page 1, kept once each, never an "all in" mark over rows that are gone, whose top-up would read only what is newer.
+     * lastfm.ts `removeScrobbles`: every scrobble out of the archive again, the mark and the lengths pass's own; the export's
+     * plays stay. The mark goes first (the web deletes it after): a removal cut short then leaves rows with no mark, which the
+     * next run reads again from page 1, kept once each, never an "all in" mark over rows that are gone, whose top-up would read
+     * only what is newer.
      */
     suspend fun remove(store: ScrobbleStore): Int {
         store.clearMark()

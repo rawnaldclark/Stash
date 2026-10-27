@@ -48,6 +48,8 @@
      "uts": 1714574300
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {
     "other|band": 250000,
     "song|band": 200000
@@ -118,6 +120,8 @@
      "uts": 1714565181
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {
     "edge|band": 200000
    },
@@ -173,6 +177,8 @@
      "uts": 1714564830
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {
     "unicode song|album artist": 200000
    },
@@ -249,6 +255,8 @@
      "uts": 1715467800
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {
     "hit|band": 230000
    },
@@ -318,6 +326,8 @@
      "uts": 1714564860
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {},
    "plan": {
     "add": [
@@ -367,6 +377,8 @@
      "uts": 1714564920
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {},
    "plan": {
     "add": [
@@ -402,6 +414,8 @@
      "uts": 1714564830
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {},
    "plan": {
     "add": [
@@ -448,6 +462,8 @@
      "uts": 1714564801
     }
    ],
+   "library": [],
+   "libraryLengths": {},
    "lengths": {},
    "plan": {
     "add": [
@@ -485,6 +501,251 @@
      }
     ],
     "same": 1,
+    "covered": 0
+   }
+  },
+  {
+   "name": "a finished Spotify play, else the library, else the guess; a scrobble is a listen however short",
+   "have": [
+    {
+     "id": "both|band|1714464800000",
+     "t": "Both",
+     "a": "Band",
+     "s": 1714464800000,
+     "ms": 201000,
+     "f": 34
+    },
+    {
+     "id": "quick|band|1714474800000",
+     "t": "Quick",
+     "a": "Band",
+     "s": 1714474800000,
+     "ms": 12500,
+     "f": 34
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Both",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Library",
+     "a": "Band",
+     "uts": 1714565400
+    },
+    {
+     "t": "Short",
+     "a": "Band",
+     "uts": 1714566000
+    },
+    {
+     "t": "Broken",
+     "a": "Band",
+     "uts": 1714566600
+    },
+    {
+     "t": "Guessed",
+     "a": "Band",
+     "uts": 1714567200
+    },
+    {
+     "t": "Quick",
+     "a": "Band",
+     "uts": 1714567800
+    },
+    {
+     "t": "Second",
+     "a": "Band",
+     "uts": 1714568400
+    },
+    {
+     "t": "Longest",
+     "a": "Band",
+     "uts": 1714569000
+    },
+    {
+     "t": "Tiny",
+     "a": "Band",
+     "uts": 1714569600
+    },
+    {
+     "t": "Frac",
+     "a": "Band",
+     "uts": 1714570200
+    },
+    {
+     "t": "None",
+     "a": "Band",
+     "uts": 1714570800
+    }
+   ],
+   "library": [
+    {
+     "title": "Both",
+     "artist": "Band",
+     "durationMs": 999000
+    },
+    {
+     "title": "Library",
+     "artist": "Band",
+     "durationMs": 187400
+    },
+    {
+     "title": "Library",
+     "artist": "Band",
+     "durationMs": 186000
+    },
+    {
+     "title": "library - 2011 remaster",
+     "artist": "BAND",
+     "durationMs": 187900
+    },
+    {
+     "title": "Short",
+     "artist": "Band",
+     "durationMs": 12000
+    },
+    {
+     "title": "Second",
+     "artist": "Band",
+     "durationMs": 1000
+    },
+    {
+     "title": "Broken",
+     "artist": "Band",
+     "durationMs": 25200000
+    },
+    {
+     "title": "Longest",
+     "artist": "Band",
+     "durationMs": 21600000
+    },
+    {
+     "title": "Tiny",
+     "artist": "Band",
+     "durationMs": 999
+    },
+    {
+     "title": "Frac",
+     "artist": "Band",
+     "durationMs": 200000.5
+    },
+    {
+     "title": "None",
+     "artist": "Band"
+    }
+   ],
+   "libraryLengths": {
+    "both|band": 999000,
+    "frac|band": 200001,
+    "library|band": 187900,
+    "longest|band": 21600000,
+    "second|band": 1000,
+    "short|band": 12000
+   },
+   "lengths": {
+    "both|band": 201000,
+    "frac|band": 200001,
+    "library|band": 187900,
+    "longest|band": 21600000,
+    "quick|band": 12500,
+    "second|band": 1000,
+    "short|band": 12000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "both|band|1714564800000",
+      "t": "Both",
+      "a": "Band",
+      "s": 1714564800000,
+      "ms": 201000,
+      "f": 64
+     },
+     {
+      "id": "library|band|1714565400000",
+      "t": "Library",
+      "a": "Band",
+      "s": 1714565400000,
+      "ms": 187900,
+      "f": 64
+     },
+     {
+      "id": "short|band|1714566000000",
+      "t": "Short",
+      "a": "Band",
+      "s": 1714566000000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "broken|band|1714566600000",
+      "t": "Broken",
+      "a": "Band",
+      "s": 1714566600000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "guessed|band|1714567200000",
+      "t": "Guessed",
+      "a": "Band",
+      "s": 1714567200000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "quick|band|1714567800000",
+      "t": "Quick",
+      "a": "Band",
+      "s": 1714567800000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "second|band|1714568400000",
+      "t": "Second",
+      "a": "Band",
+      "s": 1714568400000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "longest|band|1714569000000",
+      "t": "Longest",
+      "a": "Band",
+      "s": 1714569000000,
+      "ms": 21600000,
+      "f": 64
+     },
+     {
+      "id": "tiny|band|1714569600000",
+      "t": "Tiny",
+      "a": "Band",
+      "s": 1714569600000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "frac|band|1714570200000",
+      "t": "Frac",
+      "a": "Band",
+      "s": 1714570200000,
+      "ms": 200001,
+      "f": 64
+     },
+     {
+      "id": "none|band|1714570800000",
+      "t": "None",
+      "a": "Band",
+      "s": 1714570800000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 0,
     "covered": 0
    }
   }

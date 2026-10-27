@@ -1,0 +1,61 @@
+{
+ "done": [
+  {
+   "added": 0,
+   "total": null,
+   "line": "Nothing new on Last.fm since last time. You’re up to date."
+  },
+  {
+   "added": 1,
+   "total": null,
+   "line": "1 scrobble in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 7660,
+   "total": null,
+   "line": "7,660 scrobbles in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 0,
+   "total": 0,
+   "line": "No scrobbles on Last.fm yet. Anything you scrobble from now on comes in next time."
+  },
+  {
+   "added": 3,
+   "total": 3,
+   "line": "3 scrobbles in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 1,
+   "total": 1,
+   "line": "1 scrobble in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 0,
+   "total": 30060,
+   "line": "30,060 scrobbles in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 7660,
+   "total": 30060,
+   "line": "30,060 scrobbles in, 7,660 of them this time. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 30060,
+   "total": 30060,
+   "line": "30,060 scrobbles in. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 1,
+   "total": 2,
+   "line": "2 scrobbles in, 1 of them this time. Plays Spotify or Stash already had were counted once."
+  },
+  {
+   "added": 5,
+   "total": 3,
+   "line": "3 scrobbles in. Plays Spotify or Stash already had were counted once."
+  }
+ ],
+ "reconnect": "Connect the same account again and it carries on from where it stopped. Another account starts over, and the scrobbles already in stay.",
+ "hours": "Last.fm doesn’t say how long you listened, so Stash counts each song’s length, from Spotify, your library or Last.fm itself."
+}

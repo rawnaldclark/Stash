@@ -25,13 +25,16 @@ data class ImportInfo(
     val lastfm: LastfmMark? = null,
     /** The scrobbles' generation, moved on by every removal: a Last.fm run asked for before one does nothing. */
     val lastfmGeneration: Long = 0,
+    /** Scrobble rows the lengths pass has timed so far (lengths.ts `LengthsMark.timed`); 0 before it has run. */
+    val lengthsTimed: Int = 0,
 )
 
 /**
  * Your record's import meta in this phone's preferences (the `your_record` file the Home card's × already lives in): `asked`,
  * the import record, `pending` (an import's plays are being written: finished on the next start if the app died first),
- * `unfinished` (an import that came to nothing, for the card), `stops` (times the system stopped the import running now) and
- * the Last.fm import's mark. The plays themselves are in the database (`record_plays`).
+ * `unfinished` (an import that came to nothing, for the card), `stops` (times the system stopped the import running now),
+ * the Last.fm import's mark, and the lengths pass's count and time (its songs it couldn't time are in `record_lengths`). The
+ * plays themselves are in the database (`record_plays`).
  */
 @Singleton
 class RecordImportStore internal constructor(private val prefs: SharedPreferences) {
@@ -91,7 +94,17 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         putInt(L_ADDED, m.added)
         putInt(L_COVERED, m.covered)
         putLong(L_AT, m.at)
+        if (m.base != null) putInt(L_BASE, m.base) else remove(L_BASE)
     }
+
+    /** The lengths pass's own count and time ([com.stash.feature.record.lastfm.LengthsMark]'s `timed` and `at`). */
+    fun setLengths(timed: Int, at: Long) = edit {
+        putInt(LEN_TIMED, timed)
+        putLong(LEN_AT, at)
+    }
+
+    /** When the lengths pass last ran (epoch s); null before it has. */
+    val lengthsAt: Long? get() = if (prefs.contains(LEN_AT)) prefs.getLong(LEN_AT, 0) else null
 
     /** The scrobbles' generation now ([ImportInfo.lastfmGeneration]). */
     val lastfmGeneration: Long get() = prefs.getLong(KEY_LASTFM_GENERATION, 0)
@@ -99,8 +112,11 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
     /** A removal: the scrobbles' generation moves on (kept through every removal, never cleared). */
     fun nextLastfmGeneration() = edit { putLong(KEY_LASTFM_GENERATION, lastfmGeneration + 1) }
 
-    /** Remove your Last.fm scrobbles: the mark goes with them. */
-    fun clearLastfm() = edit { LASTFM_KEYS.forEach(::remove) }
+    /** Remove your Last.fm scrobbles: the mark goes with them, and the lengths pass's. */
+    fun clearLastfm() = edit {
+        LASTFM_KEYS.forEach(::remove)
+        LENGTHS_KEYS.forEach(::remove)
+    }
 
     /**
      * Remove import (archive.ts `clear`: every meta but `asked`): the record, the pending mark and the Last.fm import's mark go;
@@ -109,6 +125,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
     fun clearRecord() = edit {
         RECORD_KEYS.forEach(::remove)
         LASTFM_KEYS.forEach(::remove)
+        LENGTHS_KEYS.forEach(::remove)
         remove(KEY_PENDING)
     }
 
@@ -138,6 +155,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         inviteHidden = prefs.getBoolean(KEY_HIDDEN, false),
         unfinished = prefs.getLong(KEY_UNFINISHED, 0L).takeIf { it > 0 },
         lastfmGeneration = prefs.getLong(KEY_LASTFM_GENERATION, 0),
+        lengthsTimed = prefs.getInt(LEN_TIMED, 0),
         lastfm = prefs.getString(L_USER, null)?.let { user ->
             LastfmMark(
                 user = user,
@@ -149,6 +167,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                 added = prefs.getInt(L_ADDED, 0),
                 covered = prefs.getInt(L_COVERED, 0),
                 at = prefs.getLong(L_AT, 0),
+                base = if (prefs.contains(L_BASE)) prefs.getInt(L_BASE, 0) else null,
             )
         },
     )
@@ -182,6 +201,10 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val L_ADDED = "lastfm_added"
         private const val L_COVERED = "lastfm_covered"
         private const val L_AT = "lastfm_at"
-        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT)
+        private const val L_BASE = "lastfm_base"
+        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT, L_BASE)
+        private const val LEN_TIMED = "lengths_timed"
+        private const val LEN_AT = "lengths_at"
+        private val LENGTHS_KEYS = listOf(LEN_TIMED, LEN_AT)
     }
 }

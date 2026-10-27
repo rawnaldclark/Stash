@@ -60,18 +60,50 @@ class LastfmPagesTest {
         assertThat(remote.asked).containsExactly("unsigned me 1", "signed me 1 sk", "signed me 2 sk").inOrder()
     }
 
-    @Test fun `a private profile with no session to sign with is an empty last page, as on the web`() = runTest {
-        val p = reader(Remote({ throw LastFmApiException(17, "Login required") }), LastfmAccount("me", null)).read(3, nowS, null)
-        assertThat(p).isEqualTo(HistoryPage(emptyList(), 3, 0, 0))
+    @Test fun `a private profile with no session to sign with is an empty last page on page 1, busy after it`() = runTest {
+        val remote = Remote({ throw LastFmApiException(17, "Login required") })
+        assertThat(reader(remote, LastfmAccount("me", null)).read(1, nowS, null)).isEqualTo(HistoryPage(emptyList(), 1, 0, 0))
+        assertThat(failure { reader(remote, LastfmAccount("me", null)).read(3, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+        assertThat(remote.asked).containsExactly("unsigned me 1", "unsigned me 3").inOrder()
     }
 
-    @Test fun `no such user is an empty last page`() = runTest {
-        assertThat(reader(Remote({ throw LastFmApiException(6, "User not found") })).read(1, nowS, null).pages).isEqualTo(0)
+    @Test fun `no such user is an empty last page on page 1, past it the history was there a page ago - busy`() = runTest {
+        assertThat(reader(Remote({ throw LastFmApiException(6, "User not found") })).read(1, nowS, null)).isEqualTo(HistoryPage(emptyList(), 1, 0, 0))
+        assertThat(failure { reader(Remote({ throw LastFmApiException(6, "User not found") })).read(2, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+        // The same answered in the body, not thrown
+        val body = Json.parseToJsonElement("""{"error":6,"message":"User not found"}""").jsonObject
+        assertThat(reader(Remote({ body })).read(1, nowS, null).pages).isEqualTo(0)
+        assertThat(failure { reader(Remote({ body })).read(4, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+    }
+
+    @Test fun `a signed page that is 17 past page 1 is busy, not a second signed ask`() = runTest {
+        val remote = Remote({ throw LastFmApiException(17, "Login required") }, { page("Hidden") })
+        val r = reader(remote)
+        r.read(1, nowS, null)
+        remote.signed = { throw LastFmApiException(17, "Login required") }
+        assertThat(failure { r.read(2, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+        assertThat(remote.asked).containsExactly("unsigned me 1", "signed me 1 sk", "signed me 2 sk").inOrder()
+    }
+
+    @Test fun `a page before the last that lists nothing is a stumble - busy`() = runTest {
+        val empty = Json.parseToJsonElement("""{"recenttracks":{"track":[],"@attr":{"page":"2","totalPages":"5","total":"900"}}}""").jsonObject
+        assertThat(failure { reader(Remote({ empty })).read(2, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
+        val last = Json.parseToJsonElement("""{"recenttracks":{"track":[],"@attr":{"page":"5","totalPages":"5","total":"900"}}}""").jsonObject
+        assertThat(reader(Remote({ last })).read(5, nowS, null)).isEqualTo(HistoryPage(emptyList(), 5, 5, 900))
     }
 
     @Test fun `a session Last fm no longer takes is a reconnect`() = runTest {
         val remote = Remote({ throw LastFmApiException(17, "Login required") }, { throw LastFmApiException(9, "Invalid session key") })
         assertThat(failure { reader(remote).read(1, nowS, null) }).isEqualTo(LastfmFailure.RECONNECT)
+        // In the body, as text, on a later page: the same
+        val r = reader(Remote({ throw LastFmApiException(17, "Login required") }, { page("Hidden") }))
+        r.read(1, nowS, null)
+        val body = Json.parseToJsonElement("""{"error":"9","message":"Invalid session key"}""").jsonObject
+        assertThat(failure { reader(Remote({ throw LastFmApiException(17, "x") }, { body })).read(3, nowS, null) }).isEqualTo(LastfmFailure.RECONNECT)
+    }
+
+    @Test fun `error 9 on an unsigned read is busy, as the Worker reads it without a session`() = runTest {
+        assertThat(failure { reader(Remote({ throw LastFmApiException(9, "Invalid session key") })).read(1, nowS, null) }).isEqualTo(LastfmFailure.BUSY)
     }
 
     @Test fun `busy, rate limited, an outage, no connection, a body that isn't a page - all busy`() = runTest {

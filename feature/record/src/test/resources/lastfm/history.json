@@ -2,6 +2,76 @@
  {
   "name": "a page",
   "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Song",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     {
+      "name": "Other",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564740",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450",
+     "perPage": "200",
+     "user": "me"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Other",
+     "a": "Band",
+     "al": "An Album",
+     "uts": 1714564740
+    }
+   ],
+   "page": 1,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "a page, signed",
+  "page": 1,
+  "auth": true,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -70,6 +140,7 @@
  {
   "name": "the song playing now is left out",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -131,6 +202,7 @@
  {
   "name": "nowplaying not the string true",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -181,6 +253,7 @@
  {
   "name": "one track is an object, not a list",
   "page": 2,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -224,6 +297,7 @@
  {
   "name": "no tracks at all",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -245,6 +319,7 @@
  {
   "name": "tracks of the wrong shape",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -302,6 +377,7 @@
  {
   "name": "artist given by name, not #text",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -341,6 +417,7 @@
  {
   "name": "artist as a string",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -378,6 +455,7 @@
  {
   "name": "whitespace runs become one space, trimmed",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -385,7 +463,7 @@
      {
       "name": "  A\t\tSong \n Title ",
       "artist": {
-       "#text": " Band　",
+       "#text": " Band　",
        "mbid": ""
       },
       "album": {
@@ -425,6 +503,7 @@
  {
   "name": "a control character drops the scrobble",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -495,6 +574,7 @@
  {
   "name": "a bidi override drops the scrobble",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -550,6 +630,7 @@
  {
   "name": "words longer than 300 drop it; 300 exactly stays",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -648,6 +729,7 @@
  {
   "name": "an album that is not clean is dropped, the scrobble kept",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -745,6 +827,7 @@
  {
   "name": "times as JavaScript reads them",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -972,6 +1055,7 @@
  {
   "name": "times before 2002 and more than a day ahead are broken rows",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -1068,8 +1152,9 @@
   }
  },
  {
-  "name": "error 6: no such user, an empty last page",
-  "page": 4,
+  "name": "error 6 on page 1: no such user, an empty last page",
+  "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "error": 6,
@@ -1078,14 +1163,29 @@
   "answer": {
    "ok": true,
    "plays": [],
-   "page": 4,
+   "page": 1,
    "pages": 0,
    "total": 0
   }
  },
  {
-  "name": "error 17 as text: a private profile, an empty last page",
+  "name": "error 6 on a later page: try again",
+  "page": 4,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "error": 6,
+   "message": "User not found"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "error 17 as text on page 1: an empty last page",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "error": "17",
@@ -1100,8 +1200,82 @@
   }
  },
  {
+  "name": "error 17 on page 1, signed: an empty last page",
+  "page": 1,
+  "auth": true,
+  "nowS": 1793102400,
+  "body": {
+   "error": 17,
+   "message": "Login: User required to be logged in"
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 1,
+   "pages": 0,
+   "total": 0
+  }
+ },
+ {
+  "name": "error 17 on a later page: try again",
+  "page": 2,
+  "auth": true,
+  "nowS": 1793102400,
+  "body": {
+   "error": 17,
+   "message": "Login: User required to be logged in"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "error 9 signed: reconnect",
+  "page": 3,
+  "auth": true,
+  "nowS": 1793102400,
+  "body": {
+   "error": 9,
+   "message": "Invalid session key - Please re-authenticate"
+  },
+  "answer": {
+   "ok": false,
+   "reconnect": true
+  }
+ },
+ {
+  "name": "error 9 as text, signed: reconnect",
+  "page": 1,
+  "auth": true,
+  "nowS": 1793102400,
+  "body": {
+   "error": "9",
+   "message": "Invalid session key"
+  },
+  "answer": {
+   "ok": false,
+   "reconnect": true
+  }
+ },
+ {
+  "name": "error 9 unsigned: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "error": 9,
+   "message": "Invalid session key"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
   "name": "error 29: try again",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "error": 29,
@@ -1115,6 +1289,7 @@
  {
   "name": "error 8: try again",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "error": "8",
@@ -1126,8 +1301,23 @@
   }
  },
  {
+  "name": "error 26, signed: try again",
+  "page": 1,
+  "auth": true,
+  "nowS": 1793102400,
+  "body": {
+   "error": 26,
+   "message": "Suspended API key"
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
   "name": "error 0 is no error",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "error": 0,
@@ -1176,6 +1366,7 @@
  {
   "name": "no recenttracks: try again",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "something": "else"
@@ -1188,6 +1379,7 @@
  {
   "name": "recenttracks a string: try again",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": "nothing"
@@ -1200,6 +1392,7 @@
  {
   "name": "recenttracks a list: an empty page",
   "page": 3,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": []
@@ -1213,8 +1406,217 @@
   }
  },
  {
+  "name": "a body that is a list: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": [],
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "a body that is null: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": null,
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "a body that is a number: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": 5,
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "nothing listed on a page before the last: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [],
+    "@attr": {
+     "page": "1",
+     "totalPages": "3",
+     "total": "450"
+    }
+   }
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "no track field on a page before the last: try again",
+  "page": 2,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "@attr": {
+     "page": "2",
+     "totalPages": "3",
+     "total": "450"
+    }
+   }
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "only the song playing now, before the last: try again",
+  "page": 1,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Now",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "@attr": {
+       "nowplaying": "true"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "1",
+     "totalPages": "2",
+     "total": "201"
+    }
+   }
+  },
+  "answer": {
+   "ok": false,
+   "retry": true
+  }
+ },
+ {
+  "name": "every row broken on a page before the last: a page with no plays",
+  "page": 2,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [
+     {
+      "name": "Old",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "100",
+       "#text": "01 May 2024, 12:00"
+      }
+     },
+     null,
+     {
+      "name": "Bad\u0007",
+      "artist": {
+       "#text": "Band",
+       "mbid": ""
+      },
+      "album": {
+       "#text": "An Album",
+       "mbid": ""
+      },
+      "date": {
+       "uts": "1714564800",
+       "#text": "01 May 2024, 12:00"
+      }
+     }
+    ],
+    "@attr": {
+     "page": "2",
+     "totalPages": "3",
+     "total": "450"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 2,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "nothing listed on the last page: the end",
+  "page": 3,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [],
+    "@attr": {
+     "page": "3",
+     "totalPages": "3",
+     "total": "450"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 3,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
+  "name": "nothing listed past the last page: the end",
+  "page": 5,
+  "auth": false,
+  "nowS": 1793102400,
+  "body": {
+   "recenttracks": {
+    "track": [],
+    "@attr": {
+     "page": "5",
+     "totalPages": "3",
+     "total": "450"
+    }
+   }
+  },
+  "answer": {
+   "ok": true,
+   "plays": [],
+   "page": 5,
+   "pages": 3,
+   "total": 450
+  }
+ },
+ {
   "name": "paging as text, missing or odd",
   "page": 5,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -1260,6 +1662,7 @@
  {
   "name": "paging as numbers",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -1305,6 +1708,7 @@
  {
   "name": "no @attr",
   "page": 2,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
@@ -1345,6 +1749,7 @@
  {
   "name": "case and accents kept as written",
   "page": 1,
+  "auth": false,
   "nowS": 1793102400,
   "body": {
    "recenttracks": {
