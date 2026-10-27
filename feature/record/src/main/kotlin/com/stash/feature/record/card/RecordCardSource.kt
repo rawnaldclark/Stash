@@ -151,11 +151,11 @@ class RecordCardSource internal constructor(
 
     @Volatile private var importedPart: ImportedPart? = null
 
-    /** The scrobbles' part, by the stamp it was read at and what the plays here covered then ([ScrobbleIndex.fingerprint]). */
+    /** The scrobbles' part, by the stamp it was read at and what the plays here covered then ([ScrobbleIndex.covering]). */
     private class ScrobblePart(
         val stamp: Any,
         val index: ScrobbleIndex,
-        val covered: Long,
+        val covered: ScrobbleIndex.Covering,
         val summary: RecordSummaryBuilder.Partial,
         val albums: List<OwnAlbumTotal>,
     )
@@ -278,10 +278,7 @@ class RecordCardSource internal constructor(
      */
     private suspend fun scrobblesPart(stamp: Any, covers: StashCover): ScrobblePart {
         val had = scrobblePart?.takeIf { it.stamp == stamp }
-        if (had != null) {
-            val fp = had.index.fingerprint(covers)
-            if (fp == had.covered) return had
-        }
+        if (had != null && had.index.covering(covers) == had.covered) return had
         val began = SystemClock.elapsedRealtime()
         val index = if (had == null) ScrobbleIndex.Builder() else null
         val b = RecordSummaryBuilder(uniqueIds = true)
@@ -295,7 +292,7 @@ class RecordCardSource internal constructor(
             }
         }
         val idx = index?.build() ?: had!!.index
-        return ScrobblePart(stamp, idx, idx.fingerprint(covers), b.partial(), albums.totals()).also {
+        return ScrobblePart(stamp, idx, idx.covering(covers), b.partial(), albums.totals()).also {
             scrobblePart = it
             Log.i(TAG, "the card read the scrobbles (${idx.size}, ${idx.size - it.summary.plays} covered here) in ${SystemClock.elapsedRealtime() - began} ms")
         }

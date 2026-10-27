@@ -5,11 +5,12 @@ import java.util.BitSet
 
 /**
  * The archive's scrobbles in brief, for the Home card: each one's title (hashed) and start, sorted, and its id (hashed). Built
- * once per import (a pass over the scrobbles), it answers in memory which of them this phone's plays cover ([fingerprint]), so
+ * once per import (a pass over the scrobbles), it answers in memory which of them this phone's plays cover ([covering]), so
  * a song played here (the card reads again after each) costs a lookup per play, not a pass over a heavy Last.fm history: the
  * scrobbles are read again only when what is covered changed (rare: a song played after a top-up already brought its scrobble).
  *
- * Hashes only tell a change; which scrobbles are covered is always decided on the words ([StashCover]). Three longs a scrobble.
+ * Hashed titles only tell a change; which scrobbles are covered is always decided on the words ([StashCover]). Three longs a
+ * scrobble.
  */
 internal class ScrobbleIndex private constructor(
     private val titles: LongArray,
@@ -19,10 +20,11 @@ internal class ScrobbleIndex private constructor(
     val size: Int get() = titles.size
 
     /**
-     * What [cover] covers here, as one number: the same plays covering the same scrobbles give the same number. (Two different
-     * coverings sharing it is a chance of one in 2^64; then the card keeps the scrobbles' part it had until the next import.)
+     * What [cover] covers here: which positions (by title hash and start) and which skips claim a scrobble's id. Compared whole
+     * ([Covering] is equal only for the same positions and the same ids), so a change is never missed. Only two titles sharing a
+     * 64-bit hash could make one covering look like another, which the words decide later anyway.
      */
-    fun fingerprint(cover: StashCover): Long {
+    fun covering(cover: StashCover): Covering {
         val hit = BitSet(titles.size)
         cover.forEachPlay { title, s, e ->
             val k = StashCover.idHash(title)
@@ -32,8 +34,8 @@ internal class ScrobbleIndex private constructor(
                 i++
             }
         }
-        var h = hit.hashCode().toLong() * 31 + hit.cardinality()
         // A skip here claiming a scrobble's id (both lists sorted: one pass)
+        val claimed = ArrayList<Long>()
         val skips = cover.skipHashes
         var a = 0
         var b = 0
@@ -42,14 +44,17 @@ internal class ScrobbleIndex private constructor(
                 ids[a] < skips[b] -> a++
                 ids[a] > skips[b] -> b++
                 else -> {
-                    h = h * 31 + ids[a]
+                    claimed += ids[a]
                     a++
                     b++
                 }
             }
         }
-        return h
+        return Covering(hit, claimed)
     }
+
+    /** The scrobbles a set of plays covers, by position here, and the ids skips claim (hashed). Equal only when both are. */
+    data class Covering(val positions: BitSet, val claimed: List<Long>)
 
     /** The first position at or after (title [k], start [t]). */
     private fun lowerBound(k: Long, t: Long): Int {
