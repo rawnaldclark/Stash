@@ -183,8 +183,9 @@
     <string name="record_lastfm_other_title">Coś poszło nie tak</string>
     <string name="record_lastfm_other_body">To, co już dotarło, zostaje. Spróbuj ponownie.</string>
     <string name="record_lastfm_working_title">Przenosimy twoje scrobble z Last.fm</string>
-    <string name="record_lastfm_settings_title">Twoja płyta · Last.fm</string>
+    <string name="record_lastfm_settings_title">Importuj z Last.fm</string>
     <string name="record_lastfm_remove">Usuń scrobble z Last.fm</string>
+    <string name="record_lastfm_remove_subtitle">Twoja historia ze Spotify i twoje odtworzenia w Stash zostają.</string>
     <string name="record_lastfm_remove_title">Usunąć scrobble z Last.fm?</string>
     <string name="record_lastfm_remove_body">Znikną z twojej płyty na tym telefonie. Twoja historia ze Spotify i profil na Last.fm zostaną bez zmian.</string>
     <string name="record_lastfm_remove_confirm">Usuń</string>

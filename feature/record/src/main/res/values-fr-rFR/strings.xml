@@ -163,8 +163,9 @@
     <string name="record_lastfm_other_title">Un problème est survenu</string>
     <string name="record_lastfm_other_body">Ce qui est déjà arrivé est conservé. Réessayez.</string>
     <string name="record_lastfm_working_title">Importation de vos scrobbles Last.fm</string>
-    <string name="record_lastfm_settings_title">Votre disque · Last.fm</string>
+    <string name="record_lastfm_settings_title">Importer depuis Last.fm</string>
     <string name="record_lastfm_remove">Supprimer vos scrobbles Last.fm</string>
+    <string name="record_lastfm_remove_subtitle">Votre historique Spotify et vos écoutes dans Stash restent.</string>
     <string name="record_lastfm_remove_title">Supprimer vos scrobbles Last.fm ?</string>
     <string name="record_lastfm_remove_body">Ils quittent votre disque sur ce téléphone. Votre historique Spotify et votre profil Last.fm restent tels quels.</string>
     <string name="record_lastfm_remove_confirm">Supprimer</string>

@@ -120,7 +120,7 @@
     <string name="record_way_spotify_what">전체 기록, 플레이리스트, 좋아요. 로그인 필요 없음.</string>
     <string name="record_way_spotify_time">Spotify가 며칠 안에 이메일로 보냅니다</string>
     <string name="record_way_spotify_waiting">Spotify 기다리는 중 · %1$s에 요청함</string>
-    <string name="record_way_lastfm_what">스크로블한 모든 기록.</string>
+    <string name="record_way_lastfm_what">스크로블링한 모든 기록.</string>
     <string name="record_way_lastfm_time">연결하면 몇 분이면 됩니다</string>
     <string name="record_lastfm_heading">Last.fm 스크로블 추가하기</string>
     <plurals name="record_lastfm_scrobbles">
@@ -130,9 +130,9 @@
     <string name="record_lastfm_progress">%2$s페이지 중 %1$s페이지 · %3$s</string>
     <string name="record_lastfm_done">%1$s를 가져왔습니다. Spotify나 Stash에 이미 있던 재생 기록은 한 번만 집계했습니다.</string>
     <string name="record_lastfm_done_none">지난번 이후 Last.fm에 새 기록이 없습니다. 최신 상태입니다.</string>
-    <string name="record_lastfm_idle_connect">스크로블한 모든 기록이 Spotify, Stash와 함께 나의 레코드에 쌓입니다.</string>
+    <string name="record_lastfm_idle_connect">스크로블링한 모든 기록이 Spotify, Stash와 함께 나의 레코드에 쌓입니다.</string>
     <string name="record_lastfm_idle_had">%2$s 계정에서 %1$s를 가져왔습니다. 새 기록을 가져오려면 Last.fm을 연결하세요.</string>
-    <string name="record_lastfm_idle_bring">%1$s 계정으로 스크로블한 모든 기록을 가져오세요.</string>
+    <string name="record_lastfm_idle_bring">%1$s 계정으로 스크로블링한 모든 기록을 가져오세요.</string>
     <string name="record_lastfm_idle_stopped">%2$s페이지 중 %1$s페이지에서 멈췄습니다. 그 지점부터 이어서 진행됩니다.</string>
     <string name="record_lastfm_idle_done">%2$s 계정에서 %1$s를 가져왔습니다. 마지막으로 가져온 날: %3$s.</string>
     <string name="record_lastfm_connect">Last.fm 연결</string>
@@ -153,8 +153,9 @@
     <string name="record_lastfm_other_title">문제가 발생했습니다</string>
     <string name="record_lastfm_other_body">지금까지 가져온 기록은 유지됩니다. 다시 시도하세요.</string>
     <string name="record_lastfm_working_title">Last.fm 스크로블을 가져오는 중</string>
-    <string name="record_lastfm_settings_title">나의 레코드 · Last.fm</string>
+    <string name="record_lastfm_settings_title">Last.fm에서 가져오기</string>
     <string name="record_lastfm_remove">Last.fm 스크로블 삭제</string>
+    <string name="record_lastfm_remove_subtitle">Spotify 기록과 Stash의 재생 기록은 그대로 유지됩니다.</string>
     <string name="record_lastfm_remove_title">Last.fm 스크로블을 삭제할까요?</string>
     <string name="record_lastfm_remove_body">이 휴대전화의 나의 레코드에서 삭제됩니다. Spotify 기록과 Last.fm 프로필은 그대로 유지됩니다.</string>
     <string name="record_lastfm_remove_confirm">삭제</string>

@@ -163,8 +163,9 @@
     <string name="record_lastfm_other_title">May nangyaring mali</string>
     <string name="record_lastfm_other_body">Mananatili ang mga nakapasok na. Subukan ulit.</string>
     <string name="record_lastfm_working_title">Idinadagdag ang mga Last.fm scrobble mo</string>
-    <string name="record_lastfm_settings_title">Ang record mo · Last.fm</string>
+    <string name="record_lastfm_settings_title">I-import mula sa Last.fm</string>
     <string name="record_lastfm_remove">Alisin ang mga Last.fm scrobble mo</string>
+    <string name="record_lastfm_remove_subtitle">Mananatili ang Spotify history mo at ang mga play mo sa Stash.</string>
     <string name="record_lastfm_remove_title">Alisin ang mga Last.fm scrobble mo?</string>
     <string name="record_lastfm_remove_body">Aalis ang mga ito sa record mo sa phone na ito. Mananatili ang Spotify history mo at ang Last.fm profile mo.</string>
     <string name="record_lastfm_remove_confirm">Alisin</string>

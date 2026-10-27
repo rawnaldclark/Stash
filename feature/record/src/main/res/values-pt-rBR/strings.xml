@@ -163,8 +163,9 @@
     <string name="record_lastfm_other_title">Algo deu errado</string>
     <string name="record_lastfm_other_body">O que já chegou fica. Tente de novo.</string>
     <string name="record_lastfm_working_title">Trazendo seus scrobbles do Last.fm</string>
-    <string name="record_lastfm_settings_title">Seu disco · Last.fm</string>
+    <string name="record_lastfm_settings_title">Importar do Last.fm</string>
     <string name="record_lastfm_remove">Remover seus scrobbles do Last.fm</string>
+    <string name="record_lastfm_remove_subtitle">Seu histórico do Spotify e suas reproduções no Stash ficam.</string>
     <string name="record_lastfm_remove_title">Remover seus scrobbles do Last.fm?</string>
     <string name="record_lastfm_remove_body">Eles saem do seu disco neste celular. Seu histórico do Spotify e seu perfil do Last.fm continuam como estão.</string>
     <string name="record_lastfm_remove_confirm">Remover</string>
