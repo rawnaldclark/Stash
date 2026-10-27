@@ -78,6 +78,41 @@ interface RecordPlayDao {
     @Query("SELECT t, a, MAX(ms) AS ms FROM record_plays WHERE (f & $DONE) != 0 AND (f & $LASTFM) = 0 GROUP BY t, a")
     suspend fun doneLengths(): List<SongLength>
 
+    /** The scrobbles the archive holds (lastfm.ts `startMark`'s `held`: alone in the archive, the import's count). */
+    @Query("SELECT COUNT(*) FROM record_plays WHERE (f & $LASTFM) != 0")
+    suspend fun scrobbleCount(): Int
+
+    /** One spelling of the scrobbles still guessed: the words as written, and how many rows have them. */
+    data class Guessed(val t: String, val a: String, val n: Int)
+
+    /**
+     * The scrobbles still guessed ([LASTFM] and [ESTIMATED]: no length known when they came in), by the words as written: what the
+     * lengths pass plans from (lengths.ts `guessedBySong`, which keys these by song key, folded by the caller). One pass over the
+     * table, never its rows in memory.
+     */
+    @Query("SELECT t, a, COUNT(*) AS n FROM record_plays WHERE (f & $GUESSED) = $GUESSED GROUP BY t, a")
+    suspend fun guessed(): List<Guessed>
+
+    /**
+     * lengths.ts `timed`, for one spelling: every guessed scrobble with the words [t] and [a] plays [ms] and is guessed no more;
+     * its id stays (it has no `ms` in it). [from] and [until] are `"<folded title>|"` and `"<folded title>}"`, as for [playsIn]:
+     * a range on the primary key, so only that title's rows are read. Returns how many rows it timed.
+     */
+    @Query(
+        """
+        UPDATE record_plays SET ms = :ms, f = f & ~$ESTIMATED
+        WHERE id >= :from AND id < :until AND t = :t AND a = :a AND (f & $GUESSED) = $GUESSED
+        """,
+    )
+    suspend fun time(from: String, until: String, t: String, a: String, ms: Long): Int
+
+    /** One spelling for [timeAll]: its words, and the range of ids its rows lie in ([time]). */
+    data class Spelling(val t: String, val a: String, val from: String, val until: String)
+
+    /** [time] for every spelling of one song, in one step. Returns how many rows it timed. */
+    @Transaction
+    suspend fun timeAll(spellings: List<Spelling>, ms: Long): Int = spellings.sumOf { time(it.from, it.until, it.t, it.a, ms) }
+
     /** Remove your Last.fm scrobbles: every scrobble goes, the other plays stay. Returns how many went. */
     @Query("DELETE FROM record_plays WHERE (f & $LASTFM) != 0")
     suspend fun deleteScrobbles(): Int
@@ -169,5 +204,11 @@ interface RecordPlayDao {
 
         /** plays.ts `F_LASTFM`: a Last.fm scrobble. */
         const val LASTFM = 64
+
+        /** plays.ts `F_ESTIMATED`: its `ms` is a guess, not the song's length. */
+        const val ESTIMATED = 128
+
+        /** A scrobble still guessed: [LASTFM] and [ESTIMATED]. */
+        const val GUESSED = LASTFM or ESTIMATED
     }
 }

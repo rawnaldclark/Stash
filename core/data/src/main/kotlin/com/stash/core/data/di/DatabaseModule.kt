@@ -153,4 +153,8 @@ object DatabaseModule {
     /** Your record's imported plays (`record_plays`): a Spotify export, kept apart from this phone's own history. */
     @Provides
     fun provideRecordPlayDao(db: StashDatabase): com.stash.core.data.db.dao.RecordPlayDao = db.recordPlayDao()
+
+    /** Your record's lengths pass: the songs it couldn't time (`record_lengths`). */
+    @Provides
+    fun provideRecordLengthDao(db: StashDatabase): com.stash.core.data.db.dao.RecordLengthDao = db.recordLengthDao()
 }

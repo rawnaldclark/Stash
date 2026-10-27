@@ -403,6 +403,35 @@ interface WebLibraryExportDao {
     @Query("SELECT COALESCE(MAX(id), 0) FROM tracks")
     fun tracksWritten(): Flow<Long>
 
+    /** A song's words as a library track has them, and the longest length any track with those words has. */
+    data class LibraryLength(
+        @ColumnInfo(name = "title") val title: String,
+        @ColumnInfo(name = "artist") val artist: String,
+        @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    )
+
+    /**
+     * The library's song lengths, for a Last.fm scrobble's length in Your record (plays.ts `libraryLengths`, spec §7 step 2: the
+     * web reads its likes, playlists and plays). The longest `duration_ms` by title and artist as written, of the tracks the
+     * library holds: liked, in a playlist (any kind: a mix's song lasts as long as anywhere else; never one taken out), on the
+     * phone, or played here. Kept to 1 s to 6 h, as the web keeps them: a length outside is broken. Grouped in the database, one
+     * row per spelling; the caller folds them by song key.
+     */
+    @Query(
+        """
+        SELECT t.title AS title, t.artist AS artist, MAX(t.duration_ms) AS duration_ms FROM tracks t
+        WHERE t.duration_ms BETWEEN 1000 AND 21600000
+          AND (
+              t.stash_liked_at IS NOT NULL
+              OR t.is_downloaded = 1
+              OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id AND pt.removed_at IS NULL)
+              OR EXISTS (SELECT 1 FROM listening_events e WHERE e.track_id = t.id)
+          )
+        GROUP BY t.title, t.artist
+        """,
+    )
+    suspend fun libraryLengths(): List<LibraryLength>
+
     companion object {
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
         const val GUESS_MS = 210_000L

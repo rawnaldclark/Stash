@@ -117,8 +117,9 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
         com.stash.core.data.db.entity.RecordPlayEntity::class,
+        com.stash.core.data.db.entity.RecordLengthEntity::class,
     ],
-    version = 68,
+    version = 69,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -183,6 +184,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun listeningHistoryDao(): com.stash.core.data.db.dao.ListeningHistoryDao
 
     abstract fun recordPlayDao(): com.stash.core.data.db.dao.RecordPlayDao
+
+    abstract fun recordLengthDao(): com.stash.core.data.db.dao.RecordLengthDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1828,6 +1831,19 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v68 -> v69: Your record's lengths pass keeps the songs it couldn't time (`record_lengths`, keyed by song key): Last.fm
+         * had no length for them, or their ask kept failing, and when. Empty to begin with; nothing else changes.
+         */
+        val MIGRATION_68_69 = object : Migration(68, 69) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_lengths` (" +
+                        "`key` TEXT NOT NULL, `kind` INTEGER NOT NULL, `at` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+                )
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1932,6 +1948,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_65_66,
                 MIGRATION_66_67,
                 MIGRATION_67_68,
+                MIGRATION_68_69,
             )
         }
     }
