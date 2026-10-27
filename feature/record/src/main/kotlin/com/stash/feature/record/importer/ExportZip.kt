@@ -38,7 +38,8 @@ internal class ExportEntry(
  *
  * Against hostile files, beyond the web's own checks: a central directory larger than [MAX_DIRECTORY] is refused, so are
  * directory records whose data overlap (a zip bomb's way of making one compressed block count many times), and every directory
- * record and every byte inflated to [scratch] counts against the import's [budget].
+ * record (once its directory is read and checked) and every byte inflated to [scratch] counts against the import's [budget], and
+ * so does every zip opened (each holds a file open).
  *
  * One instance per import: [sniff] (the intake's look inside) and [entries] (the read) share what they opened, so a zip inside
  * a zip is inflated once.
@@ -53,8 +54,9 @@ internal class ExportZip(
     /** Each picked file's source, by its path. */
     private val tops = HashMap<String, Source>()
 
-    /** Each source's directory, read once (and counted against the budget once). */
+    /** Each source's directory, read once (and counted against the budget once); one that couldn't be read, its error. */
     private val listed = HashMap<Source, List<Raw>>()
+    private val unlisted = HashMap<Source, ZipError>()
 
     /** Each zip inside a zip, opened once; [failed] holds the ones that couldn't be. */
     private val inner = HashMap<Raw, Source>()
@@ -81,6 +83,7 @@ internal class ExportZip(
         temps.clear()
         tops.clear()
         listed.clear()
+        unlisted.clear()
         inner.clear()
         failed.clear()
     }
@@ -157,6 +160,7 @@ internal class ExportZip(
     }
 
     private fun top(file: File): Source = tops.getOrPut(file.absolutePath) {
+        budget.zip()
         val raf = RandomAccessFile(file, "r")
         open += raf
         Source(raf, 0, raf.length())
@@ -215,7 +219,16 @@ internal class ExportZip(
         }
     }
 
-    private fun list(src: Source, prefix: String): List<Raw> = listed.getOrPut(src) { readDirectory(src, prefix) }
+    private fun list(src: Source, prefix: String): List<Raw> {
+        listed[src]?.let { return it }
+        unlisted[src]?.let { throw it }
+        return try {
+            readDirectory(src, prefix).also { listed[src] = it }
+        } catch (e: ZipError) {
+            unlisted[src] = e
+            throw e
+        }
+    }
 
     private fun readDirectory(src: Source, prefix: String): List<Raw> {
         if (src.size < 22) throw ZipError("not a zip")
@@ -240,7 +253,6 @@ internal class ExportZip(
         }
         if (count > MAX_ENTRIES || cdOff + cdSize > src.size) throw ZipError("broken zip")
         if (cdSize > MAX_DIRECTORY) throw ZipError("central directory too large")
-        budget.entries(count.toInt())
         val cd = src.bytes(cdOff, cdOff + cdSize)
 
         val all = ArrayList<Raw>(count.toInt())
@@ -276,6 +288,9 @@ internal class ExportZip(
             all += Raw(src, prefix + name, flags, method, csize, usize, loc)
         }
         refuseOverlaps(all)
+        // Counted once the directory has been read and checked: a broken one (a 22-byte file claiming 20,000 records) is
+        // unreadable, never charged to the import
+        budget.entries(all.size)
         // Folders have no data to read
         return all.filter { !it.name.endsWith('/') }
     }
@@ -295,6 +310,7 @@ internal class ExportZip(
 
     /** A deflated zip inside a zip, inflated to a scratch file (the web inflates it into memory; a phone shouldn't), counted. */
     private fun inflateToFile(input: InputStream): Source {
+        budget.zip()
         scratch.mkdirs()
         val f = File.createTempFile("nested", ".zip", scratch)
         temps += f

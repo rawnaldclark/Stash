@@ -132,6 +132,40 @@ class ExportZipTest {
         assertThrows(ImportTooBig::class.java) { importer.read(f, NOW, zip = zip(ImportBudget(maxInflated = 100))) }
     }
 
+    /** A bare end record claiming [records] records, with no directory at all: 22 bytes. */
+    private fun claiming(records: Int): ByteArray = java.nio.ByteBuffer.allocate(22).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        .putInt(0x06054b50).putShort(0).putShort(0).putShort(records.toShort()).putShort(records.toShort()).putInt(0).putInt(0).putShort(0)
+        .array()
+
+    @Test fun `broken zips claiming thousands of records are unreadable, never charged to the import`() {
+        val files = (1..3).map { PickedFile("my_spotify_data_$it.zip", file(claiming(20_000), "claim$it.zip")) }
+        val bundle = SpotifyImporter(MemoryArchive(), tmp.newFolder(), ZoneOffset.UTC).read(files, NOW, zip = zip(ImportBudget()))
+        assertThat(bundle.unreadable).isEqualTo(3)
+    }
+
+    @Test fun `a zip that wouldn't open is read once - the look inside and the read share the answer`() {
+        val good = TestZip.build(listOf(TestZip.entry("Spotify Account Data/StreamingHistory_music_0.json", "[]")))
+        // The directory record's signature broken, the file otherwise the same length
+        val cen = (0 until good.size - 3).first { good[it] == 0x50.toByte() && good[it + 1] == 0x4b.toByte() && good[it + 2] == 1.toByte() && good[it + 3] == 2.toByte() }
+        val broken = good.copyOf().also { it[cen + 2] = 9 }
+        val f = file(broken)
+        zip().use { z ->
+            assertThat(z.sniff(f, "x!/")).isFalse()
+            // Mended behind its back: the reader keeps its first answer rather than reading the directory again
+            f.writeBytes(good)
+            assertThrows(ZipError::class.java) { z.entries(f, "x!/") }
+        }
+        zip().use { z -> assertThat(z.entries(f, "x!/")).hasSize(1) }
+    }
+
+    @Test fun `more zips than an import opens is too big - each one holds a file open`() {
+        val inner = TestZip.build(listOf(TestZip.entry("a.txt", "a")))
+        val outer = TestZip.build((1..5).map { TestZip.Entry("n$it.zip", inner, deflate = true) })
+        // The file itself and five inflated inside it
+        zip(ImportBudget(maxZips = 6)).use { z -> assertThat(z.entries(file(outer), "x!/")).hasSize(5) }
+        zip(ImportBudget(maxZips = 5)).use { z -> assertThrows(ImportTooBig::class.java) { z.entries(file(outer), "x!/") } }
+    }
+
     @Test fun `the look inside reads the outer names first and opens an inner zip only when they hold none`() {
         val inner = TestZip.build(listOf(TestZip.entry("Spotify Extended Streaming History/Streaming_History_Audio_2024.json", history)))
         // An export's names outside: the deflated inner zip is never inflated to look

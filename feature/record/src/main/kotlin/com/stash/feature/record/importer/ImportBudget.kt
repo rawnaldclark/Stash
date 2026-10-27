@@ -18,6 +18,7 @@ class StorageFull : IOException("no room for the import's files")
  * - [maxInflated]: bytes read out of the export's JSON files once inflated.
  * - [maxRows]: rows read (plays, playlist items, library songs).
  * - [maxScratch]: bytes of zips inside zips inflated to disk, and never so many that less than [SCRATCH_HEADROOM] stays free.
+ * - [maxZips]: zips opened (the files brought, and zips inside them inflated to disk): each holds a file open.
  *
  * One per import, used on the job's own thread.
  */
@@ -26,6 +27,7 @@ class ImportBudget(
     private val maxInflated: Long = MAX_INFLATED,
     private val maxRows: Long = MAX_ROWS,
     private val maxScratch: Long = MAX_SCRATCH,
+    private val maxZips: Int = MAX_ZIPS,
     /** Free space where the scratch files go (asked as they grow). */
     private val freeSpace: () -> Long = { Long.MAX_VALUE },
 ) {
@@ -33,6 +35,7 @@ class ImportBudget(
     private var inflated = 0L
     private var rows = 0L
     private var scratch = 0L
+    private var zips = 0
 
     fun entries(n: Int) {
         entries += n
@@ -46,6 +49,10 @@ class ImportBudget(
 
     fun row() {
         if (++rows > maxRows) throw ImportTooBig("rows")
+    }
+
+    fun zip() {
+        if (++zips > maxZips) throw ImportTooBig("zips")
     }
 
     fun scratch(n: Long) {
@@ -66,6 +73,9 @@ class ImportBudget(
 
         /** 1 GiB of zips inside zips on disk (Spotify's inner zip is the compressed export: tens of MB). */
         const val MAX_SCRATCH = 1L shl 30
+
+        /** Zips opened in one import (a real export: two, and the zip inside the Extended one). */
+        const val MAX_ZIPS = 256
 
         /** Free space a scratch file never eats into. */
         const val SCRATCH_HEADROOM = 64L shl 20
