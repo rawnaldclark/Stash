@@ -163,7 +163,26 @@ class RecordHostTest {
         assertThat(page.seqs()).hasSize(5)
     }
 
-    @Test fun `a page that stops acknowledging gets the rest once the wait is over`() = runTest {
+    @Test fun `a page that has acked is waited for however long - one slow ack never turns the window off`() = runTest {
+        val h = Harness(this, rows(10))
+        val page = Page(acks = false)
+        h.say(hello, page)
+        runCurrent()
+        h.say(ack(0), page)
+        runCurrent()
+        assertThat(page.seqs()).containsExactly(0, 1, 2).inOrder()
+
+        // The renderer in the background, slow to answer: no burst, however long it takes
+        advanceTimeBy(RecordHost.ARCHIVE_ACK_WAIT_MS * 4)
+        runCurrent()
+        assertThat(page.seqs()).hasSize(3)
+
+        h.say(ack(1), page)
+        runCurrent()
+        assertThat(page.seqs()).containsExactly(0, 1, 2, 3).inOrder()
+    }
+
+    @Test fun `a page that never acks (one that doesn't speak acks) gets the rest once the wait is over`() = runTest {
         val h = Harness(this, rows(10))
         val page = Page(acks = false)
         h.say(hello, page)

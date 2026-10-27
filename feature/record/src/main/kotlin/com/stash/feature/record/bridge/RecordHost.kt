@@ -74,7 +74,7 @@ interface RecordSaveSink {
  *   At most [ARCHIVE_WINDOW] chunks are out unacknowledged (the page answers each with `stash:archive-ack {seq}`): a heavy
  *   listener's record is 20 chunks of 3 MB, which the WebView would otherwise hold all at once. An ack counts only against a
  *   chunk of the stream sending now that is still unacknowledged (acks carry no stream, so a stale one moves the window by one
- *   at most); a page that stops acking for [ARCHIVE_ACK_WAIT_MS] gets the rest without waiting.
+ *   at most). Only a page that hasn't acked once in [ARCHIVE_ACK_WAIT_MS] gets the rest without waiting; one that has is waited for.
  * - `stash:ready`: the theme again (the web sends it on load and on ready). `stash:counts`: logged (the source switches are
  *   phase 4).
  * - `stash:play`: "Playing …" at once (the record covers the mini player), and the songs to [RecordPlayer], which outlives
@@ -140,7 +140,10 @@ class RecordHost(
         val unacked = HashSet<Int>()
         var room: CompletableDeferred<Unit>? = null
 
-        /** The page stopped acking: the rest goes without waiting. */
+        /** An ack has come on this stream: the page speaks acks, so a slow one is waited for, however long. */
+        var acked = false
+
+        /** The page never acked: the rest goes without waiting. */
         var blind = false
     }
 
@@ -220,6 +223,7 @@ class RecordHost(
             is RecordAsk.ArchiveAck -> window?.let { w ->
                 // Only a chunk of this stream still out: a stale ack, or one twice, moves nothing
                 if (w.unacked.remove(ask.seq)) {
+                    w.acked = true
                     w.room?.complete(Unit)
                     w.room = null
                 }
@@ -331,14 +335,23 @@ class RecordHost(
         }
     }
 
-    /** Waits until fewer than [ARCHIVE_WINDOW] of [w]'s chunks are out unacknowledged (or the page stopped acking). */
+    /**
+     * Waits until fewer than [ARCHIVE_WINDOW] of [w]'s chunks are out unacknowledged. A page that has acked on this stream is
+     * waited for however long it takes (a renderer in the background is slow, and a burst then is what the window prevents; a
+     * new hello or the page going ends the stream). Only a page that hasn't acked once in [ARCHIVE_ACK_WAIT_MS] (one that doesn't
+     * speak acks) gets the rest without waiting.
+     */
     private suspend fun awaitRoom(w: Window) {
         while (true) {
-            val wait = withContext(main) {
-                if (w.blind || w.unacked.size < ARCHIVE_WINDOW) null else (w.room ?: CompletableDeferred<Unit>().also { w.room = it })
+            val (wait, acked) = withContext(main) {
+                if (w.blind || w.unacked.size < ARCHIVE_WINDOW) null else (w.room ?: CompletableDeferred<Unit>().also { w.room = it }) to w.acked
             } ?: return
-            if (withTimeoutOrNull(ARCHIVE_ACK_WAIT_MS) { wait.await() } == null) {
-                Log.w(TAG, "the record stopped acknowledging the archive; the rest goes without waiting")
+            if (acked) {
+                wait.await()
+                continue
+            }
+            if (withTimeoutOrNull(ARCHIVE_ACK_WAIT_MS) { wait.await() } == null && !withContext(main) { w.acked }) {
+                Log.w(TAG, "the record hasn't acknowledged the archive; the rest goes without waiting")
                 withContext(main) { w.blind = true }
                 return
             }
@@ -385,7 +398,7 @@ class RecordHost(
         /** `stash:archive` chunks out unacknowledged, at most (the fork's app.ts acks each one). */
         const val ARCHIVE_WINDOW = 2
 
-        /** A page that hasn't acknowledged a chunk this long after is taken as not acking: the rest goes without waiting. */
+        /** A page that hasn't acked a single chunk this long after is taken as one that doesn't: the rest goes without waiting. */
         const val ARCHIVE_ACK_WAIT_MS = 30_000L
 
         /** Back closes the record when the page hasn't answered it (`stash:backed` or `stash:close`) this long after. */
