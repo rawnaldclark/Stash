@@ -60,7 +60,6 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private val EXPORT_TYPES = setOf("application/zip", "application/x-zip-compressed", "application/json")
 
         /** [pendingDeepLink] prefix for a shared-track link; the link (long, or short `/t/{id}`) follows. */
         const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
@@ -310,23 +309,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * A zip or JSON file opened with Stash (Files' "Open with") or shared to it: Your record's import, which copies it in at once
-     * (the grant to read it is this Activity's and can lapse), looks inside, and opens its sheet only for a Spotify export; any
-     * other file is answered "That isn't a Spotify export". True when the intent was that (and is taken, so a recreation doesn't
-     * bring it in twice); a share mixing audio and an export hands the audio to the local import below.
+     * A Spotify export in a share that reached this window rather than [RecordIntakeActivity] (a share of mixed types, `*` `/` `*`,
+     * matches the audio filters too): Your record's import, which copies it in at once while this Activity's grant holds, looks
+     * inside and says in its sheet whether it's an export. Content URIs only. True when the intent held one (and is taken, so a
+     * recreation doesn't bring it in twice); the audio in the same share goes to the local import below.
      */
     private fun handleRecordImportIntent(intent: Intent?): Boolean {
-        if (intent == null) return false
-        val all: List<Uri> = when (intent.action) {
-            Intent.ACTION_VIEW -> listOfNotNull(intent.data?.takeIf { it.scheme == "content" })
-            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
-            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty().toList()
-            else -> emptyList()
-        }
-        val exports = all.filter { isExportType(runCatching { contentResolver.getType(it) }.getOrNull() ?: intent.type) }
+        if (intent == null || intent.action == Intent.ACTION_VIEW) return false
+        val (exports, rest) = RecordIntake.split(intent, contentResolver)
         if (exports.isEmpty()) return false
         recordImports.bringShared(exports)
-        val rest = all - exports.toSet()
         if (rest.isNotEmpty()) localImportCoordinator.start(rest)
         // Taken: a configuration change replays the Activity's intent, and must not bring the files in again
         setIntent(Intent(intent).apply {
@@ -336,10 +328,6 @@ class MainActivity : AppCompatActivity() {
         })
         return true
     }
-
-    /** The types the manifest offers Your record's import for: Spotify's zips (either name a phone gives them) and JSON. */
-    private fun isExportType(type: String?): Boolean =
-        type != null && type.substringBefore(';').trim().lowercase() in EXPORT_TYPES
 
     /**
      * Reads [CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET] from the
