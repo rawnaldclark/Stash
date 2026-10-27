@@ -5,6 +5,11 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +17,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,7 +41,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +92,7 @@ fun RecordScreen(
 ) {
     val close by rememberUpdatedState(onClose)
     val snackbar = remember { SnackbarHostState() }
+    val screenScope = rememberCoroutineScope()
     val resources = LocalContext.current.resources
     val say: suspend (RecordNote) -> Unit = { note ->
         // Not awaited by what calls it: a close right behind a line still closes
@@ -136,11 +146,35 @@ fun RecordScreen(
                 action = stringResource(R.string.record_open_again) to viewModel::reopen,
                 onClose = close,
             )
-            else -> AndroidView(
-                factory = { context -> viewModel.webView(context) },
-                onRelease = { viewModel.letGo(it) },
-                modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
-            )
+            else -> {
+                val switches by viewModel.switches.collectAsStateWithLifecycle()
+                // The bar's last switches stay drawn while it folds away
+                val shown = remember { mutableStateOf(switches) }
+                switches?.let { shown.value = it }
+                Column(Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = switches != null,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        shown.value?.let { s ->
+                            RecordSourceBar(
+                                switches = s,
+                                onFlip = { src -> if (s.isLast(src)) screenScope.launch { say(RecordNote.OneSourceStays) } else viewModel.flip(src) },
+                                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
+                            )
+                        }
+                    }
+                    AndroidView(
+                        factory = { context -> viewModel.webView(context) },
+                        onRelease = { viewModel.letGo(it) },
+                        modifier = Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(
+                            // Under the bar the status bar is the bar's, not the page's
+                            if (switches != null) WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal) else WindowInsets.safeDrawing,
+                        ),
+                    )
+                }
+            }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
     }

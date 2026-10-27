@@ -34,6 +34,9 @@ sealed interface RecordNote {
 
     /** A file was ready to share while Stash was in the background, and the record closed before it came back. */
     data object ShareDropped : RecordNote
+
+    /** The one source with plays left on was tapped: it stays on (the web's tooltip on that switch). */
+    data object OneSourceStays : RecordNote
 }
 
 /** [note] in the app's language. */
@@ -48,4 +51,5 @@ fun RecordNote.text(res: Resources): String = when (this) {
     RecordNote.SaveFailed -> res.getString(R.string.record_note_save_failed)
     RecordNote.TooManySaves -> res.getString(R.string.record_note_too_many_saves)
     RecordNote.ShareDropped -> res.getString(R.string.record_note_share_dropped)
+    RecordNote.OneSourceStays -> res.getString(R.string.record_source_one_stays)
 }

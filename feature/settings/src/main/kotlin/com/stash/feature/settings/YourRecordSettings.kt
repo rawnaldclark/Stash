@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.record.YourRecordImportState
 import com.stash.core.data.record.YourRecordImports
 import com.stash.feature.settings.components.SettingsGroupCard
@@ -43,8 +44,14 @@ enum class YourRecordNote { REMOVED, REMOVE_BUSY, REMOVE_FAILED, SHOWN }
  * The work is feature:record's ([YourRecordImports]).
  */
 @HiltViewModel
-class YourRecordSettingsViewModel @Inject constructor(private val imports: YourRecordImports) : ViewModel() {
+class YourRecordSettingsViewModel @Inject constructor(
+    private val imports: YourRecordImports,
+    lastFmCredentials: LastFmCredentials,
+) : ViewModel() {
     val state: StateFlow<YourRecordImportState> = imports.settings
+
+    /** This build can reach Last.fm: Your record's Last.fm row shows (the web shows it only where the server has Last.fm). */
+    val lastfmConfigured: Boolean = lastFmCredentials.isConfigured
 
     private val _removing = MutableStateFlow(false)
     val removing: StateFlow<Boolean> = _removing.asStateFlow()
@@ -79,10 +86,11 @@ class YourRecordSettingsViewModel @Inject constructor(private val imports: YourR
 /**
  * The rows, as a section of Library & Storage (the app's place closest to the web's "Your library"): Your record (once
  * something was imported; opens it), Import from Spotify or Bring a newer copy (the import sheet), Remove imported history
- * (confirmed first), and Show on Home (only when the invitation was hidden and nothing is imported).
+ * (confirmed first), Show on Home (only when the invitation was hidden and nothing is imported), and last Your record's Last.fm
+ * row ([lastfmRow], feature:record's own, which the app hands over: connect, bring the scrobbles in, newer ones, remove them).
  */
 @Composable
-fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenRecord: (() -> Unit)?) {
+fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenRecord: (() -> Unit)?, lastfmRow: (@Composable () -> Unit)? = null) {
     val s by viewModel.state.collectAsStateWithLifecycle()
     val removing by viewModel.removing.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -107,7 +115,8 @@ fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenReco
         rows += {
             SettingsNavRow(
                 title = stringResource(R.string.settings_your_record_open),
-                subtitle = pluralStringResource(R.plurals.settings_your_record_summary, s.spotifyPlays, String.format(locale, "%,d", s.spotifyPlays)),
+                // What Spotify brought (Last.fm's row says what it brought)
+                subtitle = if (s.spotifyPlays > 0) pluralStringResource(R.plurals.settings_your_record_summary, s.spotifyPlays, String.format(locale, "%,d", s.spotifyPlays)) else null,
                 onClick = onOpenRecord,
             )
         }
@@ -136,6 +145,7 @@ fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenReco
             )
         }
     }
+    if (lastfmRow != null && viewModel.lastfmConfigured) rows += lastfmRow
     SettingsGroupCard(rows = rows)
 
     if (confirming) {

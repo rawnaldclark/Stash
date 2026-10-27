@@ -490,7 +490,11 @@ fun StashScaffold(
 
     // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
     // shared with Stash, Settings). A finished import opens the record.
-    RecordImportHost(onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } })
+    RecordImportHost(
+        onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } },
+        // Last.fm not connected: the app's own sign-in, on Accounts & Sync
+        onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
+    )
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {

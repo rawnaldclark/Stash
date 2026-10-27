@@ -9,17 +9,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
-import com.stash.feature.record.archive.ImportedArchive
 import com.stash.feature.record.archive.OwnArchive
-import com.stash.feature.record.archive.StackedArchive
+import com.stash.feature.record.archive.RecordArchive
+import com.stash.feature.record.archive.RecordSource
+import com.stash.feature.record.archive.RecordSources
+import com.stash.feature.record.archive.RecordSourcesStore
+import com.stash.feature.record.archive.SourceCounts
+import com.stash.feature.record.archive.SourcesOn
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.bridge.RecordEvent
 import com.stash.feature.record.bridge.RecordHost
 import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.bridge.RecordSaves
+import com.stash.feature.record.bridge.RecordSourceSwitch
+import com.stash.feature.record.card.RecordCardSource
 import com.stash.feature.record.bridge.text
 import com.stash.feature.record.imports.RecordImports
+import com.stash.feature.record.lastfm.RecordLastfm
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,10 +34,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
+
+/** The switches over the record: a switch for each source with plays (two or more), which are on, and each one's listens. */
+data class SourceSwitches(val sources: List<RecordSource>, val on: SourcesOn, val counts: SourceCounts) {
+    /** [s] is the one source with plays still on: it stays on (record.ts `toggleSource` refuses it). */
+    fun isLast(s: RecordSource): Boolean = on[s] && sources.count { on[it] } == 1
+}
 
 /**
  * The record's screen: its [RecordHost] (the bridge's app side) and its WebView, both kept for as long as the screen is open.
@@ -48,6 +64,9 @@ class RecordViewModel @Inject constructor(
     art: RecordArt,
     playback: RecordPlayback,
     private val files: RecordFiles,
+    private val sourcesStore: RecordSourcesStore,
+    lastfm: RecordLastfm,
+    card: RecordCardSource,
     @ApplicationContext private val app: Context,
 ) : ViewModel() {
     private val _events = MutableSharedFlow<RecordEvent>(extraBufferCapacity = 8)
@@ -61,21 +80,56 @@ class RecordViewModel @Inject constructor(
     private val saves = RecordSaves(File(app.cacheDir, SAVES_DIR), files)
 
     /**
-     * The record's archive: the imported plays (a Spotify export), then this phone's own, in the bridge's 20k chunks. The page
-     * keeps the first row of an id; the two never share one (they are different players).
+     * What each source brings: the Home card's last count at first (the same rows, so the switches show as the record opens),
+     * then the count of the archive as it goes out, then the page's own.
+     */
+    private val counts = MutableStateFlow(card.counts)
+
+    /**
+     * The record's archive ([RecordArchive]: the Spotify export, this phone's own plays, then the Last.fm scrobbles they don't
+     * cover), in the bridge's 20k chunks, and the sources the page shows (the choice kept on this phone).
      */
     private val host = RecordHost(
         scope = viewModelScope,
-        archive = StackedArchive(listOf(ImportedArchive(imported), OwnArchive(plays))),
+        archive = RecordArchive(imported, OwnArchive(plays)),
         covers = { songs, retry, onBatch -> art.covers(songs, retry, onBatch) },
         player = playback,
         saves = saves,
         events = { e -> if (e == RecordEvent.Import) imports.openSheet() else _events.tryEmit(e) },
+        sources = object : RecordSourceSwitch {
+            override fun chosen(): SourcesOn = sourcesStore.on.value
+
+            override fun counted(counts: SourceCounts) {
+                this@RecordViewModel.counts.value = counts
+            }
+        },
     )
 
+    /**
+     * The switches over the record (stash-player `src/routes/spotify/+page.svelte`): one per source with plays, shown only with
+     * two or more; null otherwise, and until the archive has gone out.
+     */
+    val switches: StateFlow<SourceSwitches?> = combine(counts, sourcesStore.on) { c, on ->
+        val here = RecordSources.present(c)
+        if (c == null || here.size < 2) null else SourceSwitches(here, RecordSources.shown(on, c), c)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     init {
-        // An import written or removed while the record is open: the page presses itself again from the new archive
+        // An import written or removed while the record is open, or scrobbles a top-up brought: the page presses itself again
         viewModelScope.launch { imports.archiveChanged.collect { host.reload() } }
+        // Opening Your record tops Last.fm up, quietly (at most hourly, once the whole history is in)
+        lastfm.topUp()
+    }
+
+    /**
+     * [s]'s switch flipped (record.ts `toggleSource` on what the record shows now): kept on this phone, and the record shows it.
+     * The one source with plays left on stays on.
+     */
+    fun flip(s: RecordSource) {
+        val c = counts.value ?: return
+        val next = RecordSources.toggle(RecordSources.shown(sourcesStore.on.value, c), s, c) ?: return
+        sourcesStore.set(next)
+        host.sourcesChanged()
     }
 
     /** A poster or a video ready for the share sheet, for the screen to open while it is started. */

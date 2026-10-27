@@ -3,6 +3,9 @@ package com.stash.feature.record.bridge
 import android.os.SystemClock
 import android.util.Log
 import com.stash.feature.record.archive.RecordArchiveSource
+import com.stash.feature.record.archive.RecordSources
+import com.stash.feature.record.archive.SourceCounts
+import com.stash.feature.record.archive.SourcesOn
 import com.stash.feature.record.art.ArtSong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -45,6 +48,25 @@ fun interface RecordCovers {
     suspend fun covers(songs: List<ArtSong>, retry: CoroutineScope, onBatch: (List<String?>) -> Unit): List<String?>
 }
 
+/**
+ * The record's source switches as the host sees them (stash-player `src/routes/spotify/+page.svelte`'s sources): the choice kept
+ * on this phone, and what each source brings once it is known. Called on the main thread.
+ */
+interface RecordSourceSwitch {
+    /** The sources chosen on this phone. */
+    fun chosen(): SourcesOn
+
+    /** What each source brings: counted as the archive went out, then the page's own count (`stash:counts`). */
+    fun counted(counts: SourceCounts)
+
+    /** Every source shown, nothing kept (a host with no switches). */
+    object All : RecordSourceSwitch {
+        override fun chosen() = SourcesOn.ALL_ON
+
+        override fun counted(counts: SourceCounts) = Unit
+    }
+}
+
 /** Takes the record's files (`stash:save` chunks), in order ([RecordSaves]). */
 interface RecordSaveSink {
     /** Takes [chunk], calling [appended] once it is in the file; what to tell the listener once a file is done, else null. */
@@ -75,8 +97,12 @@ interface RecordSaveSink {
  *   listener's record is 20 chunks of 3 MB, which the WebView would otherwise hold all at once. An ack counts only against a
  *   chunk of the stream sending now that is still unacknowledged (acks carry no stream, so a stale one moves the window by one
  *   at most). Only a page that hasn't acked once in [ARCHIVE_ACK_WAIT_MS] gets the rest without waiting; one that has is waited for.
- * - `stash:ready`: the theme again (the web sends it on load and on ready). `stash:counts`: logged (the source switches are
- *   phase 4).
+ * - `stash:ready`: the theme again (the web sends it on load and on ready).
+ * - The sources ([RecordSourceSwitch]): the archive's listens are counted by source as its chunks go out, and just before the
+ *   last one the page is told which sources to show (`stash:sources`, the choice kept on this phone held to the sources there
+ *   are: record.ts `shownSources`), so it presses the record once, with the right ones. The web sends it after the first
+ *   `stash:ready`, which presses the record twice when the choice isn't every source. `stash:counts` (the page's own count,
+ *   which agrees) and a switch flipped ([sourcesChanged]) send it again, only when it changed: the page presses again for each.
  * - `stash:play`: "Playing …" at once (the record covers the mini player), and the songs to [RecordPlayer], which outlives
  *   the screen: back right after a tap still plays.
  * - `stash:art`: covers looked up here ([RecordCovers]), handed back by the record's own names as each batch lands, then the
@@ -101,6 +127,7 @@ class RecordHost(
     private val player: RecordPlayer,
     private val saves: RecordSaveSink,
     private val events: (RecordEvent) -> Unit,
+    private val sources: RecordSourceSwitch = RecordSourceSwitch.All,
     private val main: CoroutineContext = Dispatchers.Main.immediate,
     private val background: CoroutineContext = Dispatchers.Default,
     private val chunkSize: Int = CHUNK_ROWS,
@@ -149,6 +176,12 @@ class RecordHost(
 
     private var window: Window? = null
     private var light = false
+
+    /** What each source brings, once known (the archive last sent, or the page's own count). On [main]. */
+    private var counts: SourceCounts? = null
+
+    /** What the page that said hello was last told to show; a page starts with every source. On [main]. */
+    private var told: SourcesOn = SourcesOn.ALL_ON
     /** When the back still waiting for the page's answer was pressed; null when none is. */
     private var backAsked: Long? = null
     private var backWait: Job? = null
@@ -209,7 +242,15 @@ class RecordHost(
                 Log.i(TAG, "the record is ready: ${ask.plays} plays")
                 from.post(RecordMessages.theme(light))
             }
-            is RecordAsk.Counts -> Log.i(TAG, "the record's sources: spotify ${ask.spotify}, stash ${ask.stash}, lastfm ${ask.lastfm}")
+            is RecordAsk.Counts -> {
+                Log.i(TAG, "the record's sources: spotify ${ask.spotify}, stash ${ask.stash}, lastfm ${ask.lastfm}")
+                val c = SourceCounts(ask.spotify, ask.stash, ask.lastfm)
+                if (c != counts) {
+                    counts = c
+                    sources.counted(c)
+                }
+                if (from === current) tell(from)
+            }
             is RecordAsk.Play -> play(ask)
             is RecordAsk.Art -> art(ask, from)
             RecordAsk.Import -> events(RecordEvent.Import)
@@ -258,6 +299,19 @@ class RecordHost(
         current?.post(RecordMessages.RELOAD)
     }
 
+    /** The person flipped a switch (the choice is kept already): the page shows the sources it leaves on. */
+    fun sourcesChanged() {
+        current?.let(::tell)
+    }
+
+    /** Tells [page] the sources to show, held to the sources there are, when that changed. On [main]. */
+    private fun tell(page: RecordPort) {
+        val shown = RecordSources.shown(sources.chosen(), counts)
+        if (shown == told) return
+        told = shown
+        page.post(RecordMessages.sources(shown))
+    }
+
     /** The app's theme; the record hears of a change at once, and of the theme with every hello and ready. */
     fun setTheme(light: Boolean) {
         if (this.light == light) return
@@ -277,6 +331,7 @@ class RecordHost(
         stream = null
         window = null
         current = null
+        told = SourcesOn.ALL_ON
         hellos++
         unresponsive = false
         backWait = null
@@ -298,6 +353,8 @@ class RecordHost(
     private fun hello(ask: RecordAsk.Hello, from: RecordPort) {
         if (ask.v != RecordMessages.PROTOCOL) Log.w(TAG, "the record speaks bridge v${ask.v}; this app speaks v${RecordMessages.PROTOCOL}")
         stream?.cancel()
+        // Another page (a first one, or one loaded again): it starts with every source shown
+        if (from !== current) told = SourcesOn.ALL_ON
         current = from
         unresponsive = false
         val mine = ++hellos
@@ -306,14 +363,21 @@ class RecordHost(
         stream = pageScope().launch {
             var seq = 0
             var sent = 0
+            val counter = RecordSources.Counter()
             try {
                 withContext(background) {
                     archive.stream(chunkSize) { rows, last ->
                         val s = seq++
+                        rows.forEach(counter::add)
                         val message = RecordMessages.archive(rows, s, last)
                         awaitRoom(w)
                         withContext(main) {
                             if (mine == hellos) {
+                                if (last) {
+                                    // Before the last chunk: the page presses the record once, with the sources it should show
+                                    counts = counter.counts().also(sources::counted)
+                                    tell(from)
+                                }
                                 w.unacked += s
                                 from.post(message)
                             }

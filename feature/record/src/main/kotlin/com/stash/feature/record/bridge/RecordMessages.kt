@@ -2,6 +2,7 @@ package com.stash.feature.record.bridge
 
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.archive.JsText
+import com.stash.feature.record.archive.SourcesOn
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -226,6 +227,10 @@ object RecordMessages {
 
     /** The archive changed (an import written or removed): the record says hello again and is pressed from the new rows. */
     const val RELOAD = "{\"type\":\"stash:reload\"}"
+
+    /** `stash:sources {on}` (record.ts `bridge.sources`): which sources the record shows; it presses again for a change. */
+    fun sources(on: SourcesOn): String =
+        "{\"type\":\"stash:sources\",\"on\":{\"spotify\":${on.spotify},\"stash\":${on.stash},\"lastfm\":${on.lastfm}}}"
 
     /** `stash:save-ack {id, seq}`: chunk [seq] of file [id] is in the file; the page may send more (it keeps two in flight). */
     fun saveAck(id: String, seq: Int): String = buildString(id.length + 48) {

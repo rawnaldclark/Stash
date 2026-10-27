@@ -288,11 +288,12 @@ private fun HideButton(onHide: () -> Unit, label: String = stringResource(R.stri
     }
 }
 
-/** The sources that can come in today, as small chips (HomeCard.svelte's `rc-chips`): Spotify's export and Stash's own plays. */
+/** The sources that can come in, as small chips (HomeCard.svelte's `rc-chips`): Spotify's export, Last.fm, Stash's own plays. */
 @Composable
 private fun SourceChips() {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.clearAndSetSemantics { }) {
-        for (name in listOf(stringResource(R.string.record_source_spotify), stringResource(R.string.record_source_stash))) {
+        val names = listOf(R.string.record_source_spotify, R.string.record_source_lastfm, R.string.record_source_stash)
+        for (name in names.map { stringResource(it) }) {
             Text(
                 name,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),

@@ -91,6 +91,33 @@ class RecordSummaryBuilder(private val uniqueIds: Boolean = false) {
         first = seed.first
     }
 
+    /**
+     * Starts from several sources' [Partial]s at once, as if their rows had been read together (no id is in two of them: the
+     * record's sources never share one once the scrobbles a play here covers are out). An artist in more than one keeps its
+     * time summed and its least (end, id).
+     */
+    constructor(seeds: List<Partial>) : this() {
+        for (seed in seeds) {
+            for ((name, ms, firstAt) in seed.artists) {
+                val a = artists[name]
+                if (a == null) {
+                    artists[name] = Artist(name, ms, firstAt.first, firstAt.second)
+                } else {
+                    a.ms += ms
+                    if (firstAt.first < a.firstEnd || (firstAt.first == a.firstEnd && firstAt.second < a.firstId)) {
+                        a.firstEnd = firstAt.first
+                        a.firstId = firstAt.second
+                    }
+                }
+            }
+            plays += seed.plays
+            streams += seed.streams
+            ownStreams += seed.ownStreams
+            totalMs += seed.totalMs
+            if (seed.first < first) first = seed.first
+        }
+    }
+
     /** What the rows added so far came to ([Partial]), to keep. */
     fun partial(): Partial = Partial(
         artists = artists.values.map { Triple(it.name, it.ms, it.firstEnd to it.firstId) },

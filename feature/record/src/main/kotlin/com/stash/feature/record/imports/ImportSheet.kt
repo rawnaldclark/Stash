@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +30,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +48,13 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +85,8 @@ import com.stash.feature.record.card.RecordArtwork
 import com.stash.feature.record.card.RecordCard
 import com.stash.feature.record.importer.ImportPreview
 import com.stash.feature.record.importer.ImportProgress
+import com.stash.feature.record.lastfm.RecordLastfm
+import com.stash.feature.record.lastfm.RecordLastfmPart
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashPurple
 import com.stash.core.ui.theme.StashTheme
@@ -83,9 +96,12 @@ import javax.inject.Inject
 /** Where Spotify lets you ask for your data (both packages are on this page): service.ts `SPOTIFY_PRIVACY_URL`. */
 const val SPOTIFY_PRIVACY_URL = "https://www.spotify.com/account/privacy/"
 
-/** The sheet's and the intake's way to the import service ([RecordImports], one for the app). */
+/** The sheet's and the intake's way to the import service ([RecordImports], one for the app), and to Last.fm's ([RecordLastfm]). */
 @HiltViewModel
-class RecordImportViewModel @Inject constructor(val imports: RecordImports) : ViewModel()
+class RecordImportViewModel @Inject constructor(val imports: RecordImports, val lastfm: RecordLastfm) : ViewModel()
+
+/** The ways into Your record, as the sheet shows them (open.ts `Way`; Stash's own plays are in the record already). */
+enum class ImportWay { SPOTIFY, LASTFM }
 
 /** The file types the picker offers: Spotify's zips (as either type a phone may name them) and loose JSON files. */
 internal val IMPORT_TYPES = arrayOf("application/zip", "application/x-zip-compressed", "application/json")
@@ -95,14 +111,17 @@ internal val IMPORT_TYPES = arrayOf("application/zip", "application/x-zip-compre
  * itself, Settings. One flow from three ways in (the Home card, the record's "Bring your Spotify", a zip opened or shared with
  * Stash), placed once by the app's scaffold.
  *
- * The steps: how it works (ask Spotify, wait for the emails, open the zip with Stash, or choose it here); honest progress while
- * the files are read, the year of the plays counting up; what they hold before anything is written; and a kind word when a file
- * can't be used. The sheet can be closed at any time: an import running goes on (the Home card shows how far it is). A finished
- * import says what it brought and, when the sheet was open, opens the record ([onOpenRecord]).
+ * The steps: the ways in as equal choices (Spotify's export, Last.fm's scrobbles where the app can reach Last.fm), each opening
+ * its own: Spotify's (ask Spotify, wait for the emails, open the zip with Stash, or choose it here) and Last.fm's
+ * ([RecordLastfmPart]: connect through the app's own sign-in, [onConnectLastfm], then bring the scrobbles in). Then honest
+ * progress while the files are read, the year of the plays counting up; what they hold before anything is written; and a kind
+ * word when a file can't be used. The sheet can be closed at any time: an import running goes on (the Home card shows how far it
+ * is, Last.fm's notification how far that is). A finished import says what it brought and, when the sheet was open, opens the
+ * record ([onOpenRecord]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecordImportHost(onOpenRecord: () -> Unit, viewModel: RecordImportViewModel = hiltViewModel()) {
+fun RecordImportHost(onOpenRecord: () -> Unit, onConnectLastfm: () -> Unit = {}, viewModel: RecordImportViewModel = hiltViewModel()) {
     val imports = viewModel.imports
     val open by imports.sheetOpen.collectAsStateWithLifecycle()
     val state by imports.state.collectAsStateWithLifecycle()
@@ -138,6 +157,8 @@ fun RecordImportHost(onOpenRecord: () -> Unit, viewModel: RecordImportViewModel 
     }
     if (!open) return
     val pick = { picker.launch(IMPORT_TYPES) }
+    // The way whose steps show (none at first, as on the web: two equal choices)
+    var way by rememberSaveable { mutableStateOf<ImportWay?>(null) }
     ModalBottomSheet(
         onDismissRequest = imports::closeSheet,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -162,6 +183,18 @@ fun RecordImportHost(onOpenRecord: () -> Unit, viewModel: RecordImportViewModel 
                             asked = info.asked,
                             onAsk = imports::markAsked,
                             onPick = pick,
+                            way = way,
+                            onWay = { way = if (way == it) null else it },
+                            lastfm = viewModel.lastfm.configured,
+                            onConnectLastfm = {
+                                imports.closeSheet()
+                                onConnectLastfm()
+                            },
+                            onSeeRecord = {
+                                imports.closeSheet()
+                                viewModel.lastfm.reset()
+                                onOpenRecord()
+                            },
                         )
                         Step.WORKING -> (state as? ImportState.Working)?.let { Working(it.progress, onCancel = imports::cancel) }
                         Step.PREVIEW -> (state as? ImportState.Preview)?.let {
@@ -188,17 +221,111 @@ private fun ImportState.step(): Step = when (this) {
 
 // ── how it works ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HowItWorks(asked: Long?, onAsk: () -> Unit, onPick: () -> Unit) {
-    val uri = LocalUriHandler.current
+private fun HowItWorks(
+    asked: Long?,
+    onAsk: () -> Unit,
+    onPick: () -> Unit,
+    way: ImportWay?,
+    onWay: (ImportWay) -> Unit,
+    lastfm: Boolean,
+    onConnectLastfm: () -> Unit,
+    onSeeRecord: () -> Unit,
+) {
     val res = LocalContext.current.resources
     RecordArtwork(sleeve = null, label = null, modifier = Modifier.clearAndSetSemantics { })
     Spacer(Modifier.height(14.dp))
     Heading(stringResource(R.string.record_invite_title))
     Spacer(Modifier.height(6.dp))
     Body(stringResource(R.string.record_import_intro))
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(16.dp))
+    // The ways in, equal choices (ImportFlow.svelte `ways`); one opens its steps under them
+    WayCard(
+        icon = Icons.Rounded.Download,
+        name = stringResource(R.string.record_source_spotify),
+        what = stringResource(R.string.record_way_spotify_what),
+        time = if (asked != null) stringResource(R.string.record_way_spotify_waiting, ImportText.shortDate(res, asked)) else stringResource(R.string.record_way_spotify_time),
+        waiting = asked != null,
+        open = way == ImportWay.SPOTIFY,
+        onClick = { onWay(ImportWay.SPOTIFY) },
+    )
+    if (lastfm) {
+        Spacer(Modifier.height(8.dp))
+        WayCard(
+            icon = Icons.Rounded.History,
+            name = stringResource(R.string.record_source_lastfm),
+            what = stringResource(R.string.record_way_lastfm_what),
+            time = stringResource(R.string.record_way_lastfm_time),
+            waiting = false,
+            open = way == ImportWay.LASTFM,
+            onClick = { onWay(ImportWay.LASTFM) },
+        )
+    }
+    when (way) {
+        ImportWay.SPOTIFY -> {
+            Spacer(Modifier.height(18.dp))
+            SpotifySteps(asked, onAsk, onPick)
+        }
+        ImportWay.LASTFM -> {
+            Spacer(Modifier.height(16.dp))
+            RecordLastfmPart(settings = false, onConnect = onConnectLastfm, onSeeRecord = onSeeRecord)
+        }
+        null -> Unit
+    }
+    Spacer(Modifier.height(16.dp))
+    Private(stringResource(R.string.record_import_private))
+}
+
+/** One way in (ImportFlow.svelte's `spe-way`): its mark, its name, what it brings, how long it takes; it opens its steps. */
+@Composable
+private fun WayCard(icon: ImageVector, name: String, what: String, time: String, waiting: Boolean, open: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, if (open) StashPurple else StashTheme.extendedColors.glassBorder, shape)
+            .background(if (open) StashPurple.copy(alpha = 0.08f) else Color.Transparent)
+            .clickable(role = Role.Button, onClick = onClick)
+            // aria-expanded: TalkBack says which way it opens
+            .semantics(mergeDescendants = true) {
+                if (open) collapse { onClick(); true } else expand { onClick(); true }
+            }
+            .padding(14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            Modifier.size(34.dp).clip(CircleShape).background(StashPurple.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = StashPurple, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(what, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (waiting) Icons.Rounded.Check else Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    tint = if (waiting) StashTheme.extendedColors.success else StashTheme.extendedColors.textTertiary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(time, style = MaterialTheme.typography.bodySmall, color = StashTheme.extendedColors.textTertiary)
+            }
+        }
+    }
+}
+
+/** Spotify's steps: ask for your data, the emails, open the zip with Stash (or choose it here). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SpotifySteps(asked: Long?, onAsk: () -> Unit, onPick: () -> Unit) {
+    val uri = LocalUriHandler.current
+    val res = LocalContext.current.resources
     StepRow(1, stringResource(R.string.record_import_ask_title)) {
         val account = stringResource(R.string.record_import_account_data)
         val extended = stringResource(R.string.record_import_extended_history)
@@ -235,8 +362,6 @@ private fun HowItWorks(asked: Long?, onAsk: () -> Unit, onPick: () -> Unit) {
         Spacer(Modifier.height(6.dp))
         Small(stringResource(R.string.record_import_each))
     }
-    Spacer(Modifier.height(16.dp))
-    Private(stringResource(R.string.record_import_private))
 }
 
 /** One numbered step: its number in a ring, its title, then what to do. */
