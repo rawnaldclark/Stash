@@ -414,7 +414,7 @@ private fun StashNavGraph(
                 onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } },
                 // Not connected: the app's own Last.fm sign-in, on Accounts & Sync
                 yourRecordLastfm = {
-                    com.stash.feature.record.lastfm.RecordLastfmSettingsRow(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })
+                    com.stash.feature.record.lastfm.recordLastfmSettingsRows(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })
                 },
             )
         }

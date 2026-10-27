@@ -87,10 +87,15 @@ class YourRecordSettingsViewModel @Inject constructor(
  * The rows, as a section of Library & Storage (the app's place closest to the web's "Your library"): Your record (once
  * something was imported; opens it), Import from Spotify or Bring a newer copy (the import sheet), Remove imported history
  * (confirmed first), Show on Home (only when the invitation was hidden and nothing is imported), and last Your record's Last.fm
- * row ([lastfmRow], feature:record's own, which the app hands over: connect, bring the scrobbles in, newer ones, remove them).
+ * rows ([lastfmRows], feature:record's own, which the app hands over: Import from Last.fm, with its status and its action, and
+ * Remove your Last.fm scrobbles once some came in).
  */
 @Composable
-fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenRecord: (() -> Unit)?, lastfmRow: (@Composable () -> Unit)? = null) {
+fun YourRecordSettingsSection(
+    viewModel: YourRecordSettingsViewModel,
+    onOpenRecord: (() -> Unit)?,
+    lastfmRows: (@Composable () -> List<@Composable () -> Unit>)? = null,
+) {
     val s by viewModel.state.collectAsStateWithLifecycle()
     val removing by viewModel.removing.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -145,7 +150,7 @@ fun YourRecordSettingsSection(viewModel: YourRecordSettingsViewModel, onOpenReco
             )
         }
     }
-    if (lastfmRow != null && viewModel.lastfmConfigured) rows += lastfmRow
+    if (lastfmRows != null && viewModel.lastfmConfigured) rows += lastfmRows()
     SettingsGroupCard(rows = rows)
 
     if (confirming) {

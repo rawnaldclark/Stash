@@ -268,7 +268,7 @@ private fun HowItWorks(
         }
         ImportWay.LASTFM -> {
             Spacer(Modifier.height(16.dp))
-            RecordLastfmPart(settings = false, onConnect = onConnectLastfm, onSeeRecord = onSeeRecord)
+            RecordLastfmPart(onConnect = onConnectLastfm, onSeeRecord = onSeeRecord)
         }
         null -> Unit
     }

@@ -203,8 +203,8 @@ fun SettingsLibraryStorageScreen(
     onNavigateToWebLink: (() -> Unit)? = null,
     /** Your record, full screen (its Settings rows open it once something was imported); null where it can't be opened. */
     onOpenRecord: (() -> Unit)? = null,
-    /** Your record's Last.fm row (feature:record's, handed over by the app so Settings needs no dependency on it). */
-    yourRecordLastfm: (@Composable () -> Unit)? = null,
+    /** Your record's Last.fm rows (feature:record's, handed over by the app so Settings needs no dependency on it). */
+    yourRecordLastfm: (@Composable () -> List<@Composable () -> Unit>)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
     webImport: WebLibraryImportViewModel = hiltViewModel(),

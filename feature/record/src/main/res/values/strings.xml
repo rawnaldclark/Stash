@@ -165,7 +165,7 @@
     <string name="record_way_spotify_waiting">Waiting for Spotify · asked %1$s</string>
     <string name="record_way_lastfm_what">Everything you’ve scrobbled.</string>
     <string name="record_way_lastfm_time">Minutes, once you connect</string>
-    <!-- Last.fm in Your record (stash-player LastfmPart.svelte and lastfm.ts): in the import sheet and as a row in Settings. A "scrobble" is Last.fm's word for one play it recorded; use the word Last.fm uses in this language. -->
+    <!-- Last.fm in Your record (stash-player LastfmPart.svelte and lastfm.ts): in the import sheet and as a row in Settings. A "scrobble" is Last.fm's word for one play it recorded. Translators: use the word the app already uses for it in this language (Settings' and Accounts & Sync's Last.fm strings); where it has none, the word Last.fm's own site uses in this language; where Last.fm has no site in this language, keep the English "scrobble" in Latin letters, as Last.fm's own apps do. -->
     <string name="record_lastfm_heading">Add your Last.fm scrobbles</string>
     <!-- %1$s: how many, formatted with separators ("48,210"). -->
     <plurals name="record_lastfm_scrobbles">
@@ -211,8 +211,11 @@
     <!-- The notification while the scrobbles come in. -->
     <string name="record_lastfm_working_title">Bringing in your Last.fm scrobbles</string>
     <!-- Settings › Library & Storage › Your record: Last.fm's row, and removing the scrobbles again. -->
-    <string name="record_lastfm_settings_title">Your record · Last.fm</string>
+    <!-- The row's title, beside "Import from Spotify" in the same group. -->
+    <string name="record_lastfm_settings_title">Import from Last.fm</string>
     <string name="record_lastfm_remove">Remove your Last.fm scrobbles</string>
+    <!-- Under the remove row's title, as "Remove imported history" has its own line. -->
+    <string name="record_lastfm_remove_subtitle">Your Spotify history and your plays in Stash stay.</string>
     <string name="record_lastfm_remove_title">Remove your Last.fm scrobbles?</string>
     <string name="record_lastfm_remove_body">They leave your record on this phone. Your Spotify history and your Last.fm profile stay as they are.</string>
     <string name="record_lastfm_remove_confirm">Remove</string>
