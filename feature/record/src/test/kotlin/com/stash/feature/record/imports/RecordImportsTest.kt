@@ -644,17 +644,21 @@ class RecordImportsTest {
         assertThat(rig.store.info.value.record).isNull()
     }
 
-    @Test fun `a Cancel while a system stop is being counted - the step isn't queued again, and new files are taken`() = runTest {
+    @Test fun `a Cancel while a system stop is being counted - the step is neither queued again nor taken up by the job's rerun`() = runTest {
         val prefs = MemoryPrefs()
-        val rig = Rig(this, archive = GatedArchive(MemoryArchive(), from = 2, gate = CompletableDeferred()), prefs = prefs)
+        val archive = GatedArchive(MemoryArchive(), from = 2, gate = CompletableDeferred())
+        // WorkManager's cancel is asynchronous: the rerun can start before it lands
+        val rig = Rig(this, archive = archive, prefs = prefs, cancelStops = false)
         rig.imports.bringSources(fixture(), shared = false)
         runCurrent()
         rig.imports.confirm()
         runCurrent()
-        // The Cancel lands just as the stop is written down
+        val applies = archive.applies
+        // The Cancel lands just as the stop is written down, with WorkManager's rerun of the stopped job already on its way
         prefs.onCommit = { keys ->
             if ("import_stops" in keys) {
                 prefs.onCommit = null
+                rig.rerun()
                 rig.imports.cancel()
             }
         }
@@ -662,6 +666,9 @@ class RecordImportsTest {
         rig.stop()
         runCurrent()
 
+        // Nothing more is written for the cancelled import, and the next files are taken
+        assertThat(archive.applies).isEqualTo(applies)
+        assertThat(rig.store.pending).isNull()
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
         assertThat(rig.imports.bringSources(listOf(source(ACCOUNT)), shared = false)).isNotNull()
     }

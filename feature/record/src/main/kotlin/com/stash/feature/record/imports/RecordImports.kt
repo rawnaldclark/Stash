@@ -521,20 +521,15 @@ class RecordImports internal constructor(
 
     /**
      * Nothing queued: the job ran again after the app died. A save it was writing goes on (from the copies it kept); a read it
-     * was doing is done again from the copies, to its preview. A failed import's copies wait for the person's Try again. The
-     * step's import is claimed under the lock, so files brought meanwhile are turned away rather than mixed in.
+     * was doing is done again from the copies, to its preview. Only a step marked as waiting is taken up ([markResuming] at
+     * start, which a Cancel clears): a run of the job after a Cancel, before the Cancel's clean-up has caught up, takes up nothing.
      */
     private suspend fun resumed(): Work? {
         val e = synchronized(lock) {
             if (queued != null || copying?.isActive == true) return null
-            val waiting = resumeEpoch
+            val waiting = resumeEpoch ?: return null
             resumeEpoch = null
-            when {
-                waiting != null -> waiting.takeIf { it == epoch && it > cancelledThrough } ?: return null
-                _state.value == ImportState.Idle ->
-                    (++epoch).also { _state.value = ImportState.Working(ImportProgress.Open, saving = store.pending != null) }
-                else -> return null
-            }
+            waiting.takeIf { live(it) } ?: return null
         }
         if (store.pending != null) return Work.Commit(e)
         val kept = if (store.info.value.unfinished == null) kept() else emptyList()
