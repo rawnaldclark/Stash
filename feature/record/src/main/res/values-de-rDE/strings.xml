@@ -216,4 +216,26 @@
     <string name="record_source_one_stays">Eine Quelle bleibt immer an</string>
     <string name="record_intake_not_export">Das ist kein Spotify-Export</string>
     <string name="record_intake_busy">Gerade läuft ein Import. Füge die Datei danach hinzu.</string>
+    <string name="record_import_taste">Dein Geschmack wird ermittelt…</string>
+    <string name="record_in_mixes_title">Deine Platte in Mixes nutzen</string>
+    <string name="record_in_mixes_subtitle">Daily Discover setzt auf die Künstler, die du seit Jahren liebst, und lässt die Songs weg, die du überspringst. Aus, richtet er sich nach dem, was du hier hörst.</string>
+    <string name="record_kept_out_title">Aus deinen Mixes gelassen (%1$s)</string>
+    <string name="record_kept_out_on">Songs, die du auf Spotify ausgeblendet hast oder immer wieder überspringst, bleiben aus deinen Mixes. Hol einen zurück, und er kann in deinen nächsten Mixes laufen.</string>
+    <string name="record_kept_out_off">Diese bleiben aus den Mixes deiner Platte. Hol einen zurück, und er kann dort wieder laufen.</string>
+    <string name="record_kept_out_empty">Gerade nichts: Jeder Song deiner Platte kann in deinen Mixes laufen.</string>
+    <string name="record_kept_out_show">Songs zeigen</string>
+    <string name="record_kept_out_hide">Songs ausblenden</string>
+    <string name="record_kept_out_more">Mehr zeigen</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Auf Spotify ausgeblendet</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">%1$s von %2$s Mal übersprungen</item>
+        <item quantity="other">%1$s von %2$s Mal übersprungen</item>
+    </plurals>
+    <string name="record_kept_out_interlude">Ein Interlude, das du überspringst</string>
+    <string name="record_kept_out_put_back">Zurückholen</string>
+    <string name="record_kept_out_putting_back">Wird zurückgeholt…</string>
+    <string name="record_kept_out_put_back_label">%1$s von %2$s zurückholen</string>
+    <string name="record_kept_out_put_back_done">%1$s kann in deinen nächsten Mixes laufen</string>
+    <string name="record_kept_out_put_back_failed">Konnte gerade nicht zurückgeholt werden. Versuch es noch einmal.</string>
 </resources>

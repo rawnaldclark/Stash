@@ -68,6 +68,7 @@ class RecordViewModel @Inject constructor(
     lastfm: RecordLastfm,
     card: RecordCardSource,
     @ApplicationContext private val app: Context,
+    taste: com.stash.feature.record.taste.RecordTaste,
 ) : ViewModel() {
     private val _events = MutableSharedFlow<RecordEvent>(extraBufferCapacity = 8)
 
@@ -119,6 +120,8 @@ class RecordViewModel @Inject constructor(
         viewModelScope.launch { imports.archiveChanged.collect { host.reload() } }
         // Opening Your record tops Last.fm up, quietly (at most hourly, once the whole history is in)
         lastfm.topUp()
+        // ...and works the taste out again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
+        taste.daily()
     }
 
     /**

@@ -41,6 +41,9 @@ sealed interface ImportProgress {
 
     /** Bringing the playlists and liked songs into the library: [done] of [total] songs matched. */
     data class Library(val done: Int, val total: Int) : ImportProgress
+
+    /** Working out the taste from the whole record (importer.ts `{ step: 'taste' }`). */
+    data object Taste : ImportProgress
 }
 
 /**

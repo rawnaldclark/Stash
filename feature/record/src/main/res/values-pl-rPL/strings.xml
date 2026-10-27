@@ -248,4 +248,28 @@
     <string name="record_source_one_stays">Jedno źródło zawsze zostaje włączone</string>
     <string name="record_intake_not_export">To nie jest eksport ze Spotify</string>
     <string name="record_intake_busy">Trwa import. Dodaj plik, gdy się zakończy.</string>
+    <string name="record_import_taste">Ustalanie Twojego gustu…</string>
+    <string name="record_in_mixes_title">Używaj swojej płyty w mixach</string>
+    <string name="record_in_mixes_subtitle">Daily Discover opiera się na artystach, których kochasz od lat, i pomija utwory, które przewijasz. Wyłączony kieruje się tym, czego słuchasz tutaj.</string>
+    <string name="record_kept_out_title">Pominięte w Twoich mixach (%1$s)</string>
+    <string name="record_kept_out_on">Utwory ukryte na Spotify lub ciągle przewijane nie trafiają do Twoich mixów. Przywróć któryś, a będzie mógł zagrać w Twoich następnych mixach.</string>
+    <string name="record_kept_out_off">Te nie trafiają do mixów Twojej płyty. Przywróć któryś, a znów będzie mógł w nich zagrać.</string>
+    <string name="record_kept_out_empty">Na razie nic: każdy utwór z Twojej płyty może zagrać w Twoich mixach.</string>
+    <string name="record_kept_out_show">Pokaż utwory</string>
+    <string name="record_kept_out_hide">Ukryj utwory</string>
+    <string name="record_kept_out_more">Pokaż więcej</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Ukryty na Spotify</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">Przewinięty %1$s z %2$s razy</item>
+        <item quantity="few">Przewinięty %1$s z %2$s razy</item>
+        <item quantity="many">Przewinięty %1$s z %2$s razy</item>
+        <item quantity="other">Przewinięty %1$s z %2$s razy</item>
+    </plurals>
+    <string name="record_kept_out_interlude">Interludium, które przewijasz</string>
+    <string name="record_kept_out_put_back">Przywróć</string>
+    <string name="record_kept_out_putting_back">Przywracanie…</string>
+    <string name="record_kept_out_put_back_label">Przywróć %1$s – %2$s</string>
+    <string name="record_kept_out_put_back_done">%1$s może zagrać w Twoich następnych mixach</string>
+    <string name="record_kept_out_put_back_failed">Nie udało się teraz przywrócić. Spróbuj ponownie.</string>
 </resources>

@@ -216,4 +216,26 @@
     <string name="record_source_one_stays">یک منبع همیشه روشن می‌ماند</string>
     <string name="record_intake_not_export">این خروجی Spotify نیست</string>
     <string name="record_intake_busy">وارد کردنی در حال انجام است. وقتی تمام شد، فایل را بیاورید.</string>
+    <string name="record_import_taste">در حال شناختن سلیقهٔ شما…</string>
+    <string name="record_in_mixes_title">استفاده از صفحهٔ شما در میکس‌ها</string>
+    <string name="record_in_mixes_subtitle">Daily Discover به هنرمندانی تکیه می‌کند که سال‌هاست دوستشان دارید، و آهنگ‌هایی را که رد می‌کنید کنار می‌گذارد. خاموش، بر اساس آنچه اینجا گوش می‌دهید پیش می‌رود.</string>
+    <string name="record_kept_out_title">کنار گذاشته از میکس‌های شما (%1$s)</string>
+    <string name="record_kept_out_on">آهنگ‌هایی که در Spotify پنهان کرده‌اید یا مدام ردشان می‌کنید از میکس‌هایتان بیرون می‌مانند. یکی را برگردانید تا در میکس‌های بعدی‌تان پخش شود.</string>
+    <string name="record_kept_out_off">این‌ها از میکس‌های صفحهٔ شما بیرون می‌مانند. یکی را برگردانید تا دوباره در آن‌ها پخش شود.</string>
+    <string name="record_kept_out_empty">فعلاً هیچ: هر آهنگی از صفحهٔ شما می‌تواند در میکس‌هایتان پخش شود.</string>
+    <string name="record_kept_out_show">نمایش آهنگ‌ها</string>
+    <string name="record_kept_out_hide">پنهان کردن آهنگ‌ها</string>
+    <string name="record_kept_out_more">بیشتر</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">در Spotify پنهان‌شده</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">%1$s بار از %2$s بار رد شده</item>
+        <item quantity="other">%1$s بار از %2$s بار رد شده</item>
+    </plurals>
+    <string name="record_kept_out_interlude">میان‌پرده‌ای که رد می‌کنید</string>
+    <string name="record_kept_out_put_back">برگرداندن</string>
+    <string name="record_kept_out_putting_back">در حال برگرداندن…</string>
+    <string name="record_kept_out_put_back_label">برگرداندن %1$s از %2$s</string>
+    <string name="record_kept_out_put_back_done">%1$s می‌تواند در میکس‌های بعدی‌تان پخش شود</string>
+    <string name="record_kept_out_put_back_failed">الان برگردانده نشد. دوباره امتحان کنید.</string>
 </resources>

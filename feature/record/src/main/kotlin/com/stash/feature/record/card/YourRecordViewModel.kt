@@ -37,7 +37,13 @@ class YourRecordViewModel @Inject constructor(
     source: RecordCardSource,
     private val art: RecordArt,
     private val imports: RecordImports,
+    taste: com.stash.feature.record.taste.RecordTaste,
 ) : ViewModel() {
+    init {
+        // Home opened: the taste again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
+        taste.daily()
+    }
+
     private val covers = MutableStateFlow(Covers())
 
     /** The covers found for the view whose albums and artists make [key]. */

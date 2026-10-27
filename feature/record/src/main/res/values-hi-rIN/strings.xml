@@ -216,4 +216,26 @@
     <string name="record_source_one_stays">एक स्रोत हमेशा चालू रहता है</string>
     <string name="record_intake_not_export">यह Spotify एक्सपोर्ट नहीं है</string>
     <string name="record_intake_busy">एक इंपोर्ट चल रहा है। उसके पूरा होने पर इसे लाएँ।</string>
+    <string name="record_import_taste">आपकी पसंद समझी जा रही है…</string>
+    <string name="record_in_mixes_title">मिक्स में अपना रिकॉर्ड इस्तेमाल करें</string>
+    <string name="record_in_mixes_subtitle">Daily Discover उन कलाकारों पर टिका है जिन्हें आप सालों से पसंद करते हैं, और उन गानों को छोड़ देता है जिन्हें आप स्किप करते हैं। बंद होने पर, यह आपके यहाँ सुने गानों पर चलता है।</string>
+    <string name="record_kept_out_title">आपके मिक्स से बाहर रखे गए (%1$s)</string>
+    <string name="record_kept_out_on">जिन गानों को आपने Spotify पर छिपाया या जिन्हें आप बार-बार स्किप करते हैं, वे आपके मिक्स से बाहर रहते हैं। किसी को वापस लाएँ और वह आपके अगले मिक्स में बज सकेगा।</string>
+    <string name="record_kept_out_off">ये आपके रिकॉर्ड के मिक्स से बाहर रहते हैं। किसी को वापस लाएँ और वह उनमें फिर से बज सकेगा।</string>
+    <string name="record_kept_out_empty">अभी कुछ नहीं: आपके रिकॉर्ड का हर गाना आपके मिक्स में बज सकता है।</string>
+    <string name="record_kept_out_show">गाने दिखाएँ</string>
+    <string name="record_kept_out_hide">गाने छिपाएँ</string>
+    <string name="record_kept_out_more">और दिखाएँ</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Spotify पर छिपाया गया</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">%2$s में से %1$s बार स्किप किया</item>
+        <item quantity="other">%2$s में से %1$s बार स्किप किया</item>
+    </plurals>
+    <string name="record_kept_out_interlude">एक इंटरल्यूड जिसे आप स्किप करते हैं</string>
+    <string name="record_kept_out_put_back">वापस लाएँ</string>
+    <string name="record_kept_out_putting_back">वापस लाया जा रहा है…</string>
+    <string name="record_kept_out_put_back_label">%2$s का %1$s वापस लाएँ</string>
+    <string name="record_kept_out_put_back_done">%1$s आपके अगले मिक्स में बज सकता है</string>
+    <string name="record_kept_out_put_back_failed">अभी इसे वापस नहीं लाया जा सका। दोबारा कोशिश करें।</string>
 </resources>

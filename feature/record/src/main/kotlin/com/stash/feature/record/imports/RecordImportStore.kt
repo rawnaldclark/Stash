@@ -178,6 +178,16 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
             prefs.edit().apply { if (v > 0) putInt(KEY_NETWORK_HOLDS, v) else remove(KEY_NETWORK_HOLDS) }.apply()
         }
 
+    /**
+     * The local day ("2026-10-27") the taste was last worked out again for Home or the record opening (ui/spotify/shared.ts
+     * `dailyRefresh`'s mark): at most once a day.
+     */
+    var tasteDay: String?
+        get() = prefs.getString(KEY_TASTE_DAY, null)
+        set(v) {
+            prefs.edit().apply { if (v == null) remove(KEY_TASTE_DAY) else putString(KEY_TASTE_DAY, v) }.apply()
+        }
+
     /** The lengths pass's own count and time ([com.stash.feature.record.lastfm.LengthsMark]'s `timed` and `at`). */
     fun setLengths(timed: Int, at: Long) = edit {
         putInt(LEN_TIMED, timed)
@@ -342,6 +352,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
                 ImportScrobbles.SkippedPage(page, to, f[2].toLongOrNull(), at)
             }.orEmpty()
         private const val KEY_BUDGET = "lengths_lookups"
+        private const val KEY_TASTE_DAY = "taste_day"
         private const val KEY_NETWORK_HOLDS = "lengths_network_holds"
         private const val LEN_TIMED = "lengths_timed"
         private const val LEN_AT = "lengths_at"

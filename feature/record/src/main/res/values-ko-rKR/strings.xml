@@ -200,4 +200,25 @@
     <string name="record_source_one_stays">소스 하나는 항상 켜져 있습니다</string>
     <string name="record_intake_not_export">Spotify 내보내기 파일이 아닙니다</string>
     <string name="record_intake_busy">가져오기가 진행 중입니다. 완료된 후 가져오세요.</string>
+    <string name="record_import_taste">취향을 분석하는 중…</string>
+    <string name="record_in_mixes_title">믹스에 나의 레코드 사용</string>
+    <string name="record_in_mixes_subtitle">Daily Discover가 오랫동안 좋아해 온 아티스트를 중심으로 구성되고, 건너뛰는 곡은 빠집니다. 끄면 여기서 듣는 음악을 기준으로 만들어집니다.</string>
+    <string name="record_kept_out_title">믹스에서 제외됨 (%1$s)</string>
+    <string name="record_kept_out_on">Spotify에서 숨겼거나 계속 건너뛰는 곡은 믹스에서 제외됩니다. 다시 넣으면 다음 믹스부터 재생될 수 있습니다.</string>
+    <string name="record_kept_out_off">이 곡들은 나의 레코드 믹스에서 제외됩니다. 다시 넣으면 그 믹스에서 다시 재생될 수 있습니다.</string>
+    <string name="record_kept_out_empty">지금은 없습니다. 나의 레코드의 모든 곡이 믹스에서 재생될 수 있습니다.</string>
+    <string name="record_kept_out_show">곡 보기</string>
+    <string name="record_kept_out_hide">곡 숨기기</string>
+    <string name="record_kept_out_more">더 보기</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Spotify에서 숨김</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="other">%2$s번 중 %1$s번 건너뜀</item>
+    </plurals>
+    <string name="record_kept_out_interlude">건너뛰는 인터루드</string>
+    <string name="record_kept_out_put_back">다시 넣기</string>
+    <string name="record_kept_out_putting_back">다시 넣는 중…</string>
+    <string name="record_kept_out_put_back_label">%2$s의 %1$s 다시 넣기</string>
+    <string name="record_kept_out_put_back_done">%1$s 곡이 다음 믹스부터 재생될 수 있습니다</string>
+    <string name="record_kept_out_put_back_failed">지금은 다시 넣을 수 없습니다. 다시 시도하세요.</string>
 </resources>

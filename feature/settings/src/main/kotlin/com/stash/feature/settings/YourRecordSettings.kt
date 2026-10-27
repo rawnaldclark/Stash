@@ -88,13 +88,15 @@ class YourRecordSettingsViewModel @Inject constructor(
  * something was imported; opens it), Import from Spotify or Bring a newer copy (the import sheet), Remove imported history
  * (confirmed first), Show on Home (only when the invitation was hidden and nothing is imported), and last Your record's Last.fm
  * rows ([lastfmRows], feature:record's own, which the app hands over: Import from Last.fm, with its status and its action, and
- * Remove your Last.fm scrobbles once some came in).
+ * Remove your Last.fm scrobbles once some came in), and then the record's rows for the mixes ([inMixesRows], feature:record's
+ * too: "Use your record in mixes" and "Kept out of your mixes", once something was imported).
  */
 @Composable
 fun YourRecordSettingsSection(
     viewModel: YourRecordSettingsViewModel,
     onOpenRecord: (() -> Unit)?,
     lastfmRows: (@Composable () -> List<@Composable () -> Unit>)? = null,
+    inMixesRows: (@Composable () -> List<@Composable () -> Unit>)? = null,
 ) {
     val s by viewModel.state.collectAsStateWithLifecycle()
     val removing by viewModel.removing.collectAsStateWithLifecycle()
@@ -151,6 +153,7 @@ fun YourRecordSettingsSection(
         }
     }
     if (lastfmRows != null && viewModel.lastfmConfigured) rows += lastfmRows()
+    if (inMixesRows != null && s.imported) rows += inMixesRows()
     SettingsGroupCard(rows = rows)
 
     if (confirming) {

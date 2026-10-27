@@ -20,6 +20,9 @@ import com.stash.feature.record.importer.Prepared
 import com.stash.feature.record.importer.RecordArchiveStore
 import com.stash.feature.record.importer.SpotifyImporter
 import com.stash.feature.record.importer.StorageFull
+import com.stash.feature.record.taste.RecordTaste
+import com.stash.feature.record.taste.TasteHooks
+import com.stash.core.model.weblink.SongKey
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -175,6 +178,10 @@ class RecordImports internal constructor(
     private val startLengths: () -> Unit = {},
     /** Where the playlists, liked songs and hidden songs go (the library, `record_hidden`). */
     private val library: RecordLibrary = RecordLibrary.None,
+    /** The taste, worked out again under the write lock after each change to the record ([RecordTaste]). */
+    private val taste: TasteHooks = TasteHooks.None,
+    /** At start, once the imports are ready: an import with no taste yet gets one ([RecordTaste.ensure]). */
+    private val ensureTaste: suspend () -> Unit = {},
 ) : YourRecordImports {
 
     @Inject constructor(
@@ -187,6 +194,7 @@ class RecordImports internal constructor(
         /** Lazy: the lengths pass reads the import record and the changes from here. */
         lengths: dagger.Lazy<com.stash.feature.record.lastfm.RecordLengths>,
         library: RecordLibrary,
+        taste: RecordTaste,
     ) : this(
         store = store,
         archive = DaoArchiveStore(dao, lengthDao),
@@ -205,6 +213,8 @@ class RecordImports internal constructor(
         pauseLengths = { lengths.get().pause() },
         startLengths = { lengths.get().start() },
         library = library,
+        taste = taste,
+        ensureTaste = taste::ensure,
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
@@ -288,6 +298,16 @@ class RecordImports internal constructor(
         // A save the app's death interrupted shows as one at once (and turns new files away) until the job takes it up again
         if (store.pending != null) markResuming(saving = true)
         scope.launch { start() }
+        scope.launch {
+            ready.await()
+            try {
+                ensureTaste()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "the taste's start-up check failed: ${e.javaClass.simpleName}")
+            }
+        }
     }
 
     // ── what the screens call ───────────────────────────────────────────────────────────────────────────────────────
@@ -447,6 +467,8 @@ class RecordImports internal constructor(
                 store.nextLastfmGeneration()
                 archive.clear()
                 library.clearHidden()
+                // The taste and the songs put back go with the import (archive.ts `clear`)
+                taste.clearLocked(keep = true)
                 store.clearRecord()
             }
         }.await()
@@ -734,7 +756,12 @@ class RecordImports internal constructor(
                     onProgress(p)
                 }
             }
-            // 4. The record, and `pending` cleared with it in one write: steps 1 to 3 are safe to run again, this one is the end
+            // 4. The taste, the songs this import brings kept (importer.ts `keptNow`): worked out before the record, as on the web
+            checkpoint(job, work)
+            publish(work, ImportState.Working(ImportProgress.Taste, saving = true))
+            onProgress(ImportProgress.Taste)
+            taste.refreshLocked(kept = keptBy(playlists, likes), importing = true)
+            // 5. The record, and `pending` cleared with it in one write: steps 1 to 4 are safe to run again, this one is the end
             storeRecord(added = 1, playlists = playlists.size, likes = likes.size, finish = true)
             Triple(r, playlists.size, liked)
         }
@@ -899,7 +926,10 @@ class RecordImports internal constructor(
      * After a Last.fm run, under the write lock it holds: the import record over the archive as it is now. Scrobbles alone make
      * one, so Your record opens on them (service.ts `runLastfm`: an import counted only when there was no record yet).
      */
-    internal suspend fun recordAfterScrobbles() = storeRecord(added = if (store.info.value.record == null) 1 else 0)
+    internal suspend fun recordAfterScrobbles() {
+        storeRecord(added = if (store.info.value.record == null) 1 else 0)
+        taste.refreshLocked()
+    }
 
     /**
      * After Remove your Last.fm scrobbles, under the write lock: with nothing left, the record goes (Last.fm was all there was;
@@ -907,11 +937,14 @@ class RecordImports internal constructor(
      */
     internal suspend fun recordAfterScrobblesRemoved() {
         if (archive.count() == 0) {
-            // The scrobbles were all there was: no record, and no songs hidden on Spotify either (the playlists and likes stay)
+            // The scrobbles were all there was: no record, and no songs hidden on Spotify, no taste nor songs put back either (the
+            // playlists and likes stay)
             library.clearHidden()
+            taste.clearLocked(keep = true)
             store.clearRecord()
         } else if (store.info.value.record != null) {
             storeRecord(added = 0)
+            taste.refreshLocked()
         }
     }
 
@@ -920,7 +953,9 @@ class RecordImports internal constructor(
      * it is now, when there is one (service.ts `timeSongs`'s `storeRecord`, no import counted).
      */
     internal suspend fun recordAfterLengths() {
-        if (store.info.value.record != null) storeRecord(added = 0)
+        if (store.info.value.record == null) return
+        storeRecord(added = 0)
+        taste.refreshLocked()
     }
 
     /** The scrobbles changed (a run brought some, or they were removed): an open record presses itself again. */
@@ -931,9 +966,16 @@ class RecordImports internal constructor(
     /** importer.ts `finishPending`: an import that stopped after writing plays gets its record now. Under [writes]. */
     private suspend fun finishPending() {
         if (store.pending == null) return
-        if (archive.count() > 0) storeRecord(added = if (store.info.value.record == null) 1 else 0)
+        if (archive.count() > 0) {
+            storeRecord(added = if (store.info.value.record == null) 1 else 0)
+            taste.refreshLocked()
+        }
         store.setPending(null)
     }
+
+    /** The song keys a commit brings into the library (the chosen playlists' songs and the liked songs): kept by the taste. */
+    private fun keptBy(playlists: List<ChosenPlaylist>, likes: List<com.stash.core.data.record.ExportSong>): List<String> =
+        likes.map { SongKey.songKey(it.title, it.artist) } + playlists.flatMap { p -> p.playlist.items.map { SongKey.songKey(it.title, it.artist) } }
 
     /**
      * At start: with no job running, the scratch a dead one left goes; a commit the app's death interrupted is taken up again (its

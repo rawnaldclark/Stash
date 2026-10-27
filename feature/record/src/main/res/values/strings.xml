@@ -280,4 +280,32 @@
     <!-- A file shared or opened with Stash that holds no Spotify export (a toast). -->
     <string name="record_intake_not_export">That isn’t a Spotify export</string>
     <string name="record_intake_busy">An import is running. Bring it in when that’s done.</string>
+    <!-- Your record’s taste (phase 5b): the import sheet’s step, and Settings › Your record’s "Use your record in mixes" (owner decision D2) and "Kept out of your mixes" (D1), in the web’s words (RecordInMixes.svelte, years.ts whyLine). -->
+    <string name="record_import_taste">Working out your taste…</string>
+    <string name="record_in_mixes_title">Use your record in mixes</string>
+    <string name="record_in_mixes_subtitle">Daily Discover leans on the artists you’ve loved for years, and leaves out the songs you skip. Off, it goes by what you play here.</string>
+    <!-- %1$s: how many songs ("1,204"). -->
+    <string name="record_kept_out_title">Kept out of your mixes (%1$s)</string>
+    <string name="record_kept_out_on">Songs you hid on Spotify or keep skipping stay out of your mixes. Put one back and it can play in your next mixes.</string>
+    <string name="record_kept_out_off">These stay out of your record’s mixes. Put one back and it can play in them again.</string>
+    <string name="record_kept_out_empty">Nothing right now: every song in your record can play in your mixes.</string>
+    <string name="record_kept_out_show">Show the songs</string>
+    <string name="record_kept_out_hide">Hide the songs</string>
+    <string name="record_kept_out_more">Show more</string>
+    <!-- A kept-out song’s line: %1$s its artist, %2$s why (record_kept_out_hidden, record_kept_out_skipped, record_kept_out_interlude). -->
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Hidden on Spotify</string>
+    <!-- %1$s skips of %2$s starts; the quantity is the starts (always 6 or more). -->
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">Skipped %1$s of %2$s times</item>
+        <item quantity="other">Skipped %1$s of %2$s times</item>
+    </plurals>
+    <string name="record_kept_out_interlude">An interlude you skip</string>
+    <string name="record_kept_out_put_back">Put back</string>
+    <string name="record_kept_out_putting_back">Putting back…</string>
+    <!-- Read out for Put back: %1$s the song, %2$s its artist. -->
+    <string name="record_kept_out_put_back_label">Put back %1$s by %2$s</string>
+    <!-- A toast after Put back: %1$s the song. -->
+    <string name="record_kept_out_put_back_done">%1$s can play in your next mixes</string>
+    <string name="record_kept_out_put_back_failed">Couldn’t put it back just now. Try again.</string>
 </resources>

@@ -280,4 +280,30 @@
     <string name="record_source_one_stays">يبقى مصدر واحد مفعّلًا دائمًا</string>
     <string name="record_intake_not_export">هذا ليس ملف تصدير من Spotify</string>
     <string name="record_intake_busy">يجري استيراد الآن. أضف الملف عند انتهائه.</string>
+    <string name="record_import_taste">جارٍ استخلاص ذوقك…</string>
+    <string name="record_in_mixes_title">استخدم أسطوانتك في المزيجات</string>
+    <string name="record_in_mixes_subtitle">يعتمد Daily Discover على الفنانين الذين أحببتهم لسنوات، ويستبعد الأغاني التي تتخطاها. عند إيقافه، يعتمد على ما تشغّله هنا.</string>
+    <string name="record_kept_out_title">مستبعدة من مزيجاتك (%1$s)</string>
+    <string name="record_kept_out_on">الأغاني التي أخفيتها على Spotify أو تتخطاها باستمرار تبقى خارج مزيجاتك. أعد إحداها وستُشغَّل في مزيجاتك القادمة.</string>
+    <string name="record_kept_out_off">هذه تبقى خارج مزيجات أسطوانتك. أعد إحداها وستُشغَّل فيها من جديد.</string>
+    <string name="record_kept_out_empty">لا شيء الآن: كل أغنية في أسطوانتك يمكن أن تُشغَّل في مزيجاتك.</string>
+    <string name="record_kept_out_show">اعرض الأغاني</string>
+    <string name="record_kept_out_hide">أخفِ الأغاني</string>
+    <string name="record_kept_out_more">اعرض المزيد</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">مخفية على Spotify</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="zero">تخطيتها %1$s من %2$s مرة</item>
+        <item quantity="one">تخطيتها %1$s من %2$s مرة</item>
+        <item quantity="two">تخطيتها %1$s من %2$s مرة</item>
+        <item quantity="few">تخطيتها %1$s من %2$s مرات</item>
+        <item quantity="many">تخطيتها %1$s من %2$s مرة</item>
+        <item quantity="other">تخطيتها %1$s من %2$s مرة</item>
+    </plurals>
+    <string name="record_kept_out_interlude">فاصل موسيقي تتخطاه</string>
+    <string name="record_kept_out_put_back">أعِدها</string>
+    <string name="record_kept_out_putting_back">جارٍ الإرجاع…</string>
+    <string name="record_kept_out_put_back_label">أعِد %1$s لـ %2$s</string>
+    <string name="record_kept_out_put_back_done">يمكن تشغيل %1$s في مزيجاتك القادمة</string>
+    <string name="record_kept_out_put_back_failed">تعذر إرجاعها الآن. حاول مجددًا.</string>
 </resources>

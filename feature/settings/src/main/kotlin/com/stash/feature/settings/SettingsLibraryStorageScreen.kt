@@ -205,6 +205,8 @@ fun SettingsLibraryStorageScreen(
     onOpenRecord: (() -> Unit)? = null,
     /** Your record's Last.fm rows (feature:record's, handed over by the app so Settings needs no dependency on it). */
     yourRecordLastfm: (@Composable () -> List<@Composable () -> Unit>)? = null,
+    /** Your record's rows for the mixes (feature:record's: "Use your record in mixes", "Kept out of your mixes"). */
+    yourRecordInMixes: (@Composable () -> List<@Composable () -> Unit>)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
     webImport: WebLibraryImportViewModel = hiltViewModel(),
@@ -377,7 +379,7 @@ fun SettingsLibraryStorageScreen(
         }
 
         // -- Your record: a Spotify export brought in, a newer copy, removing it, the Home card's invitation --
-        YourRecordSettingsSection(yourRecord, onOpenRecord, yourRecordLastfm)
+        YourRecordSettingsSection(yourRecord, onOpenRecord, yourRecordLastfm, yourRecordInMixes)
 
         // -- Cloud folders (Dropbox / OneDrive; only once an account is connected) --
         com.stash.feature.settings.cloud.CloudFoldersSection(

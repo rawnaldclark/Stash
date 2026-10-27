@@ -248,4 +248,28 @@
     <string name="record_source_one_stays">Один источник всегда остаётся включённым</string>
     <string name="record_intake_not_export">Это не экспорт Spotify</string>
     <string name="record_intake_busy">Идёт импорт. Добавьте файл, когда он закончится.</string>
+    <string name="record_import_taste">Определяем ваш вкус…</string>
+    <string name="record_in_mixes_title">Использовать пластинку в миксах</string>
+    <string name="record_in_mixes_subtitle">Daily Discover опирается на артистов, которых вы любите годами, и обходит треки, которые вы пропускаете. Если выключить, он ориентируется на то, что вы слушаете здесь.</string>
+    <string name="record_kept_out_title">Не попадают в ваши миксы (%1$s)</string>
+    <string name="record_kept_out_on">Треки, скрытые в Spotify или постоянно пропускаемые, не попадают в ваши миксы. Верните трек, и он сможет звучать в следующих миксах.</string>
+    <string name="record_kept_out_off">Эти треки не попадают в миксы вашей пластинки. Верните трек, и он снова сможет в них звучать.</string>
+    <string name="record_kept_out_empty">Сейчас ничего: любой трек вашей пластинки может звучать в ваших миксах.</string>
+    <string name="record_kept_out_show">Показать треки</string>
+    <string name="record_kept_out_hide">Скрыть треки</string>
+    <string name="record_kept_out_more">Показать ещё</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Скрыт в Spotify</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">Пропущен %1$s из %2$s раза</item>
+        <item quantity="few">Пропущен %1$s из %2$s раз</item>
+        <item quantity="many">Пропущен %1$s из %2$s раз</item>
+        <item quantity="other">Пропущен %1$s из %2$s раза</item>
+    </plurals>
+    <string name="record_kept_out_interlude">Интерлюдия, которую вы пропускаете</string>
+    <string name="record_kept_out_put_back">Вернуть</string>
+    <string name="record_kept_out_putting_back">Возвращаем…</string>
+    <string name="record_kept_out_put_back_label">Вернуть %1$s, %2$s</string>
+    <string name="record_kept_out_put_back_done">%1$s сможет звучать в следующих миксах</string>
+    <string name="record_kept_out_put_back_failed">Сейчас не удалось вернуть. Попробуйте снова.</string>
 </resources>

@@ -17,8 +17,8 @@ internal object ImportText {
 
     /**
      * years.ts `progressOf`'s line: opening, reading (the file being read, of all), saving (plays written, of all), then the
-     * playlists and liked songs (their songs matched, of all). While a file is read it is counted, so the first one reads "1 of
-     * 7" (the web counts files once they are done).
+     * playlists and liked songs (their songs matched, of all), then the taste. While a file is read it is counted, so the first one
+     * reads "1 of 7" (the web counts files once they are done).
      */
     fun progressLine(res: Resources, p: ImportProgress): String = when (p) {
         ImportProgress.Open -> res.getString(R.string.record_import_opening)
@@ -31,6 +31,7 @@ internal object ImportText {
         is ImportProgress.Library ->
             if (p.total > 0) res.getString(R.string.record_import_library, count(res, p.done.toLong()), count(res, p.total.toLong()))
             else res.getString(R.string.record_import_library_start)
+        ImportProgress.Taste -> res.getString(R.string.record_import_taste)
     }
 
     /** How far along, 0 to 1 (bytes read, plays written, or the library's songs matched); null when there is no measure yet. */
@@ -39,6 +40,7 @@ internal object ImportText {
         is ImportProgress.Read -> p.part.takeIf { p.total > 0 }
         is ImportProgress.Write -> if (p.total > 0) p.done.toFloat() / p.total else null
         is ImportProgress.Library -> if (p.total > 0) p.done.toFloat() / p.total else null
+        ImportProgress.Taste -> null
     }
 
     /** years.ts `count`: "48,210" in the app's language. */

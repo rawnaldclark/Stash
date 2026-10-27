@@ -216,4 +216,27 @@
     <string name="record_source_one_stays">Una fuente siempre queda activada</string>
     <string name="record_intake_not_export">Eso no es una exportación de Spotify</string>
     <string name="record_intake_busy">Hay una importación en curso. Añádelo cuando termine.</string>
+    <string name="record_import_taste">Calculando tu gusto…</string>
+    <string name="record_in_mixes_title">Usar tu disco en los mixes</string>
+    <string name="record_in_mixes_subtitle">Daily Discover se apoya en los artistas que te encantan desde hace años y deja fuera las canciones que saltas. Desactivado, se guía por lo que escuchas aquí.</string>
+    <string name="record_kept_out_title">Fuera de tus mixes (%1$s)</string>
+    <string name="record_kept_out_on">Las canciones que ocultaste en Spotify o que sigues saltando se quedan fuera de tus mixes. Recupera una y podrá sonar en tus próximos mixes.</string>
+    <string name="record_kept_out_off">Estas se quedan fuera de los mixes de tu disco. Recupera una y podrá volver a sonar en ellos.</string>
+    <string name="record_kept_out_empty">Nada por ahora: cualquier canción de tu disco puede sonar en tus mixes.</string>
+    <string name="record_kept_out_show">Ver las canciones</string>
+    <string name="record_kept_out_hide">Ocultar las canciones</string>
+    <string name="record_kept_out_more">Ver más</string>
+    <string name="record_kept_out_row">%1$s · %2$s</string>
+    <string name="record_kept_out_hidden">Oculta en Spotify</string>
+    <plurals name="record_kept_out_skipped">
+        <item quantity="one">Saltada %1$s de %2$s vez</item>
+        <item quantity="many">Saltada %1$s de %2$s veces</item>
+        <item quantity="other">Saltada %1$s de %2$s veces</item>
+    </plurals>
+    <string name="record_kept_out_interlude">Un interludio que saltas</string>
+    <string name="record_kept_out_put_back">Recuperar</string>
+    <string name="record_kept_out_putting_back">Recuperando…</string>
+    <string name="record_kept_out_put_back_label">Recuperar %1$s de %2$s</string>
+    <string name="record_kept_out_put_back_done">%1$s puede sonar en tus próximos mixes</string>
+    <string name="record_kept_out_put_back_failed">No se ha podido recuperar ahora. Vuelve a intentarlo.</string>
 </resources>

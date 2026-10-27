@@ -1,5 +1,8 @@
 package com.stash.feature.record.imports
 
+import kotlinx.coroutines.sync.withLock
+import com.stash.feature.record.taste.TasteHooks
+import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.RecordFlags
 import com.stash.feature.record.lastfm.LastfmMark
 
@@ -113,6 +116,18 @@ class RecordImportsTest {
         private val liked = HashSet<Pair<String, String>>()
     }
 
+    /** The taste as the imports drive it ([TasteHooks]): each call into [events], with what a commit keeps. */
+    private class FakeTaste(val events: MutableList<String> = mutableListOf()) : TasteHooks {
+        val kept = mutableListOf<Collection<String>>()
+        override suspend fun refreshLocked(kept: Collection<String>, importing: Boolean) {
+            events += if (importing) "taste (importing)" else "taste"
+            this.kept += kept
+        }
+        override suspend fun clearLocked(keep: Boolean) {
+            events += if (keep) "clear taste and put back" else "clear taste"
+        }
+    }
+
     /** An archive that says when the plays are written ([events]). */
     private class LoggedArchive(val inner: MemoryArchive, private val events: MutableList<String>) : RecordArchiveStore by inner {
         override suspend fun apply(add: List<ArchivePlay>, drop: List<String>) {
@@ -144,6 +159,8 @@ class RecordImportsTest {
         val writes: RecordWrites = RecordWrites(),
         /** Where the playlists, likes and hidden songs go. */
         val library: RecordLibrary = RecordLibrary.None,
+        /** The taste, worked out again under the write lock. */
+        val taste: TasteHooks = TasteHooks.None,
     ) {
         /** Times Remove import stopped the Last.fm job. */
         var lastfmCancels = 0
@@ -191,6 +208,7 @@ class RecordImportsTest {
                 pauseLengths = { lengths += "pause"; timing },
                 startLengths = { lengths += "start" },
                 library = library,
+                taste = taste,
             )
         }
 
@@ -321,6 +339,65 @@ class RecordImportsTest {
         assertThat(listOf(after.imports, after.playlists, after.likes)).containsExactly(2, 3, 8).inOrder()
         // The hidden songs are a set: the same one again is still one
         assertThat(library.hidden.keys).hasSize(1)
+    }
+
+    @Test fun `the commit works the taste out after the library and before the record, the songs it brings kept`() = runTest {
+        val events = mutableListOf<String>()
+        val taste = FakeTaste(events)
+        val library = FakeLibrary(events = events)
+        val rig = Rig(this, archive = LoggedArchive(MemoryArchive(), events), library = library, taste = taste)
+        val prefs = rig.prefs
+        prefs.onCommit = { keys -> if ("import_count" in keys) events += "record" }
+        val progress = mutableListOf<ImportProgress>()
+        rig.onProgress = { progress += it }
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+
+        rig.imports.confirm(ImportChoice(playlists = setOf(1), likes = true))
+        runCurrent()
+
+        assertThat(events).containsExactly("plays", "hidden", "library", "taste (importing)", "record").inOrder()
+        // importer.ts `keptNow`: the chosen playlist's songs and the liked songs, by song key
+        val (playlists, likes, _) = library.writes.single()
+        assertThat(likes).hasSize(8)
+        val want = likes.map { SongKey.songKey(it.title, it.artist) } + playlists.single().playlist.items.map { SongKey.songKey(it.title, it.artist) }
+        assertThat(taste.kept.single().toList()).isEqualTo(want)
+        assertThat(progress).contains(ImportProgress.Taste)
+    }
+
+    @Test fun `the taste goes with Remove import, and with the scrobbles when they were all there was`() = runTest {
+        val events = mutableListOf<String>()
+        val rig = Rig(this, library = FakeLibrary(events = events), taste = FakeTaste(events))
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        events.clear()
+
+        // Plays left after the scrobbles went: the record and the taste again
+        rig.writes.mutex.withLock { rig.imports.recordAfterScrobblesRemoved() }
+        assertThat(events).containsExactly("taste")
+        // After a Last.fm run and a slice of the lengths pass too
+        events.clear()
+        rig.writes.mutex.withLock {
+            rig.imports.recordAfterScrobbles()
+            rig.imports.recordAfterLengths()
+        }
+        assertThat(events).containsExactly("taste", "taste").inOrder()
+
+        events.clear()
+        assertThat(rig.imports.removeImport()).isTrue()
+        runCurrent()
+        assertThat(events).containsExactly("clear hidden", "clear taste and put back").inOrder()
+
+        // Nothing left at all (the scrobbles were the record): no hidden songs, no taste, no songs put back
+        events.clear()
+        rig.writes.mutex.withLock { rig.imports.recordAfterScrobblesRemoved() }
+        assertThat(events).containsExactly("clear hidden", "clear taste and put back").inOrder()
+        // With no record, a lengths slice works nothing out
+        events.clear()
+        rig.writes.mutex.withLock { rig.imports.recordAfterLengths() }
+        assertThat(events).isEmpty()
     }
 
     @Test fun `a commit the app's death interrupted brings in what was chosen, its likes timed from when it began`() = runTest {

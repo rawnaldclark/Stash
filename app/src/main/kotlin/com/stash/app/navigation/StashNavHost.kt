@@ -416,6 +416,8 @@ private fun StashNavGraph(
                 yourRecordLastfm = {
                     com.stash.feature.record.lastfm.recordLastfmSettingsRows(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })
                 },
+                // "Use your record in mixes" and "Kept out of your mixes" (owner decisions D2, D1)
+                yourRecordInMixes = { com.stash.feature.record.taste.recordInMixesSettingsRows() },
             )
         }
         composable<WebLinkRoute> {
