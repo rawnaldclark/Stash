@@ -125,6 +125,24 @@ class RecordCardTest {
         assertThat(RecordCard.stateOf(summary(streams = 0), emptyList(), unfinished.copy(state = reading))).isEqualTo(RecordCardState.Importing(ImportProgress.Open))
     }
 
+    @Test fun `what the import alone decides is the same card whatever the plays, and nothing else is decided without them`() {
+        val cases = listOf(
+            CardImport(unfinished = true),
+            CardImport(imported = true, unfinished = true, state = ImportState.Failed(ImportFailure.TOO_BIG)),
+            CardImport(state = ImportState.Working(ImportProgress.Open)),
+            CardImport(imported = true, inviteHidden = true, state = ImportState.Preview(preview, 1)),
+        )
+        for (c in cases) {
+            val alone = RecordCard.importOnly(c)
+            assertThat(alone).isNotNull()
+            assertThat(alone).isEqualTo(RecordCard.stateOf(summary(streams = 6_086, artists = listOf("A")), emptyList(), c))
+        }
+        // The record, the invitation, waiting for Spotify: those need the plays
+        assertThat(RecordCard.importOnly(CardImport(imported = true))).isNull()
+        assertThat(RecordCard.importOnly(CardImport())).isNull()
+        assertThat(RecordCard.importOnly(CardImport(asked = 1, state = ImportState.Done(1, 1)))).isNull()
+    }
+
     @Test fun `hours, at least 1 once anything played, and counts with separators`() {
         assertThat(RecordCard.count(48_210)).isEqualTo("48,210")
         assertThat(RecordCard.count(48_210, Locale.GERMANY)).isEqualTo("48.210")

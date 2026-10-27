@@ -108,6 +108,16 @@ object RecordCard {
         }
     }
 
+    /**
+     * The card when the import alone decides it (on its way, a preview waiting, or didn't finish): [stateOf] picks those before
+     * anything that reads the plays, so it's shown at once, never after the history is read (a heavy one takes a while).
+     * Null otherwise.
+     */
+    fun importOnly(import: CardImport): RecordCardState? =
+        if (import.state.busy || import.unfinished) stateOf(NO_PLAYS, emptyList(), import) else null
+
+    private val NO_PLAYS = RecordSummary(plays = 0, streams = 0, totalMs = 0, first = null, topArtists = emptyList())
+
     /** The card from the record's own numbers, and the sleeve from the albums played most. */
     fun viewOf(summary: RecordSummary, albums: List<OwnAlbumTotal>): CardView = CardView(
         listenedMs = summary.totalMs,

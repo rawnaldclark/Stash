@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.feature.record.art.ArtSong
 import com.stash.feature.record.art.RecordArt
+import com.stash.feature.record.imports.ImportInfo
+import com.stash.feature.record.imports.ImportState
 import com.stash.feature.record.imports.RecordImports
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -17,7 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -39,16 +43,36 @@ class YourRecordViewModel @Inject constructor(
     /** The covers found for the view whose albums and artists make [key]. */
     private data class Covers(val key: String = "", val albums: List<String?> = emptyList(), val artists: List<String?> = emptyList())
 
+    private fun cardImport(info: ImportInfo, st: ImportState) =
+        CardImport(info.record != null, info.asked, info.inviteHidden, st, info.unfinished != null)
+
+    /** The last card worked out from the history: where a new subscription starts (Home back after a while: no gap, no flicker). */
+    @Volatile private var lastBase: RecordCardState? = null
+
     /** The card before its covers: worked out off the main thread, and its covers asked for as soon as it is known. */
     private val base = combine(source.data, imports.info, imports.state) { data, info, st ->
-        RecordCard.stateOf(data.summary, data.albums, CardImport(info.record != null, info.asked, info.inviteHidden, st, info.unfinished != null))
+        RecordCard.stateOf(data.summary, data.albums, cardImport(info, st))
     }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
-        .onEach { if (it is RecordCardState.Record) askCovers(it.view) }
+        .onEach {
+            lastBase = it
+            if (it is RecordCardState.Record) askCovers(it.view)
+        }
 
-    /** Null until the history is read: Home shows nothing rather than a card that changes its mind. */
-    val state: StateFlow<RecordCardState?> = combine(base, covers) { s, c ->
+    /** What the import alone decides (on its way, a preview waiting, didn't finish): never waits for the history. */
+    private val importOnly = combine(imports.info, imports.state) { info, st -> RecordCard.importOnly(cardImport(info, st)) }
+
+    /**
+     * Null until the history is read (Home shows nothing rather than a card that changes its mind), unless the import alone
+     * decides the card: that is shown at once.
+     */
+    val state: StateFlow<RecordCardState?> = combine(
+        base.map<RecordCardState, RecordCardState?> { it }.onStart { emit(lastBase) },
+        importOnly,
+        covers,
+    ) { b, io, c ->
+        val s = io ?: b ?: return@combine null
         if (s !is RecordCardState.Record) return@combine s
         val view = s.view
         val mine = c.key == coverKey(view)

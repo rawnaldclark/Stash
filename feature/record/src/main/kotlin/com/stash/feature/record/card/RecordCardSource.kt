@@ -151,14 +151,19 @@ class RecordCardSource internal constructor(
     private suspend fun read(stamp: Any): CardData? = try {
         val importedStamp = (stamp as? Pair<*, *>)?.second ?: Unit
         // The imported plays' part, read again only when they changed (they come first, as the record has them)
+        val began = SystemClock.elapsedRealtime()
         val part = importedPart?.takeIf { it.stamp == importedStamp } ?: run {
             // record_plays is keyed by id: no set of ids to hold while it's read
             val b = RecordSummaryBuilder(uniqueIds = true)
             imported.stream(CHUNK) { rows, _ -> rows.forEach(b::add) }
-            ImportedPart(importedStamp, b.partial(), importedAlbums()).also { importedPart = it }
+            ImportedPart(importedStamp, b.partial(), importedAlbums()).also {
+                importedPart = it
+                Log.i(TAG, "the card read the imported plays (${it.summary.plays}) in ${SystemClock.elapsedRealtime() - began} ms")
+            }
         }
         val summary = RecordSummaryBuilder(part.summary)
         archive.stream(CHUNK) { rows, _ -> rows.forEach(summary::add) }
+        Log.i(TAG, "the card read the history in ${SystemClock.elapsedRealtime() - began} ms")
         // The album played last first, whichever source it's in (an album's spelling is the one seen first)
         CardData(summary.build(), (albums() + part.albums).sortedByDescending { it.lastAt })
     } catch (e: CancellationException) {
