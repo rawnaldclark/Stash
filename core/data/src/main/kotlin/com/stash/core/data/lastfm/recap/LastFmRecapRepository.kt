@@ -72,8 +72,8 @@ class LastFmRecapException(val reason: Reason, cause: Throwable? = null) : Excep
  * which store Last.fm's answers in the shared `lastfm_cache` table like every other catalog
  * look-up in the app — catalog data, never listening data.
  *
- * **Last.fm's rate rules.** Every request goes through one [LastFmRecapPacer], at least
- * [REQUEST_INTERVAL_MS] apart (under Last.fm's 5 per second); a signed fallback is its own paced
+ * **Last.fm's rate rules.** Every request goes through one [LastFmRecapPacer] (the app's one [LastFmHistoryPacer], shared
+ * with Your record's Last.fm import), at least [REQUEST_INTERVAL_MS] apart (under Last.fm's 5 per second); a signed fallback is its own paced
  * request. History reads retry transient failures (errors 8, 11, 16, HTTP 5xx, timeouts) along
  * [BACKOFF_MS]; a rate limit waits until the client's breaker for those keys reopens
  * ([LastFmRecapRemote.busyWaitMs]) rather than retrying into it. The optional look-ups (song
@@ -95,18 +95,21 @@ class LastFmRecapRepository internal constructor(
     /** Monotonic clock for the pacer. */
     elapsedMs: () -> Long,
     private val io: CoroutineDispatcher,
+    /** The pace shared with every other bulk history read ([LastFmHistoryPacer]); its own in tests. */
+    pacer: LastFmRecapPacer? = null,
 ) {
     @Inject
-    constructor(api: LastFmApiClient, store: LastFmRecapStore, artistGenreDao: ArtistGenreDao) : this(
+    constructor(api: LastFmApiClient, store: LastFmRecapStore, artistGenreDao: ArtistGenreDao, history: LastFmHistoryPacer) : this(
         remote = LastFmRecapApiRemote(api),
         store = store,
         genreRows = { artistGenreDao.observeAll().first() },
         nowMs = System::currentTimeMillis,
         elapsedMs = SystemClock::elapsedRealtime,
         io = Dispatchers.IO,
+        pacer = history.pacer,
     )
 
-    private val pacer = LastFmRecapPacer(REQUEST_INTERVAL_MS, elapsedMs)
+    private val pacer = pacer ?: LastFmRecapPacer(REQUEST_INTERVAL_MS, elapsedMs)
 
     /** Serialises the store's read-modify-write of each file. Network calls happen outside it. */
     private val storeLock = Mutex()

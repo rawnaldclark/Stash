@@ -485,6 +485,58 @@ suspend fun updateNowPlaying(
     }
 
     /**
+     * One page of [username]'s scrobbles as Last.fm wrote it, for Your record's Last.fm import, which reads every field by the
+     * web player's own rules (stash-player `worker/lastfm-history.ts`) rather than [LastFmRecentTracksParser]'s. Newest first,
+     * up to [toSec] and, when given, from [fromSec] (UNIX seconds): a whole history fixes `to` for the run so new scrobbles don't
+     * shift its pages, and a top-up reads only what is newer. The same request as [getUserRecentTracks]: unsigned, on the bulk
+     * read keys, direct to Last.fm (never the Stash proxy, never cached). Read-only.
+     *
+     * @throws LastFmApiException Last.fm's `{ error }` answer (17: a profile that hides its listening; 6: no such user).
+     * @throws LastFmRateLimitedException HTTP 429, or every read key's breaker open.
+     * @throws LastFmHttpException any other HTTP failure.
+     * @throws java.io.IOException no connection.
+     */
+    suspend fun userRecentTracksJson(
+        username: String,
+        fromSec: Long?,
+        toSec: Long,
+        page: Int,
+        limit: Int = 200,
+    ): JsonObject = unsignedGet(historyParams(username, fromSec, toSec, page, limit), keys = recapReadKeys)
+
+    /**
+     * [userRecentTracksJson] signed with the connected account's own [sessionKey], for a profile that hides its listening
+     * (unsigned reads answer error 17): Last.fm shows a user their own history with their session. A POST, so the session key
+     * stays out of every URL. Only ever for the session's own username. Read-only.
+     *
+     * @throws LastFmApiException Last.fm's `{ error }` answer (9: the session is no longer valid).
+     */
+    suspend fun userRecentTracksSignedJson(
+        sessionKey: String,
+        username: String,
+        fromSec: Long?,
+        toSec: Long,
+        page: Int,
+        limit: Int = 200,
+    ): JsonObject = signedReadPost(historyParams(username, fromSec, toSec, page, limit) + ("sk" to sessionKey))
+
+    private fun historyParams(username: String, fromSec: Long?, toSec: Long, page: Int, limit: Int): Map<String, String> =
+        sortedMapOf(
+            "method" to "user.getRecentTracks",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+            "to" to toSec.toString(),
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+        ).apply { if (fromSec != null) put("from", fromSec.toString()) }
+
+    /**
+     * Whether this build can connect to Last.fm at all (an API key and its secret, as Settings' Last.fm card asks): Your record
+     * offers its Last.fm part only then, as the web shows it only where the server has Last.fm set up.
+     */
+    val isConfigured: Boolean get() = credentials.isConfigured
+
+    /**
      * A signed read sent as a POST form (secrets stay out of the URL), with Last.fm's
      * `{ error, message }` kept as a [LastFmApiException] and rate limits recorded on the primary
      * key's breaker (the only key a session is valid with).

@@ -46,6 +46,42 @@ interface RecordPlayDao {
     @Query("SELECT * FROM record_plays WHERE id > :after ORDER BY id LIMIT :limit")
     suspend fun pageAfter(after: String, limit: Int): List<RecordPlayEntity>
 
+    /**
+     * [pageAfter] for one kind of row: the Last.fm scrobbles ([scrobbles] true) or every other play. The record reads the two
+     * apart, with this phone's own plays between them, so the scrobbles a play made here covers can be left out as they pass.
+     */
+    @Query("SELECT * FROM record_plays WHERE id > :after AND ((f & $LASTFM) != 0) = :scrobbles ORDER BY id LIMIT :limit")
+    suspend fun pageAfterOf(after: String, scrobbles: Boolean, limit: Int): List<RecordPlayEntity>
+
+    /** Of [ids] (at most [SQLITE_BIND_LIMIT]), the ones kept already. */
+    @Query("SELECT id FROM record_plays WHERE id IN (:ids)")
+    suspend fun keptIds(ids: List<String>): List<String>
+
+    /** A kept play's start and time played. */
+    data class Span(val s: Long, val ms: Long)
+
+    /**
+     * The plays that aren't scrobbles whose id lies in [from, until): with `from = "<folded title>|"` and `until = "<folded
+     * title>}"` (`}` follows `|`), every such play of that title, since an id is `fold(title)|fold(artist)|start` and a folded
+     * title has no `|`. A range on the primary key, so it reads only that title's rows.
+     */
+    @Query("SELECT s, ms FROM record_plays WHERE id >= :from AND id < :until AND (f & $LASTFM) = 0")
+    suspend fun playsIn(from: String, until: String): List<Span>
+
+    /** A song's words and the longest time a play of it ran. */
+    data class SongLength(val t: String, val a: String, val ms: Long)
+
+    /**
+     * The longest play that ran to its end ([DONE]), by the words as written, of every song that isn't a scrobble: what a
+     * scrobble's length is taken from (plays.ts `knownLengths`, which keys these by song key, folded by the caller).
+     */
+    @Query("SELECT t, a, MAX(ms) AS ms FROM record_plays WHERE (f & $DONE) != 0 AND (f & $LASTFM) = 0 GROUP BY t, a")
+    suspend fun doneLengths(): List<SongLength>
+
+    /** Remove your Last.fm scrobbles: every scrobble goes, the other plays stay. Returns how many went. */
+    @Query("DELETE FROM record_plays WHERE (f & $LASTFM) != 0")
+    suspend fun deleteScrobbles(): Int
+
     /** What a merge needs of a kept play: its id, title, start, time played and flags (never the artist, album or Spotify id). */
     data class KeptRow(val id: String, val t: String, val s: Long, val ms: Long, val f: Int)
 
@@ -108,8 +144,30 @@ interface RecordPlayDao {
     )
     suspend fun albumTotals(): List<OwnAlbumTotal>
 
+    /**
+     * [albumTotals] of the plays that aren't scrobbles (the Spotify export's): the Home card adds the scrobbles' albums itself,
+     * leaving out the ones a play made here covers, and each only while its source is switched on.
+     */
+    @Query(
+        """
+        SELECT a AS artist, al AS album, MAX(t) AS title, NULL AS album_art_url, COUNT(*) AS plays,
+               SUM(ms) AS listened_ms, MIN(s) AS first_at, MAX(s) AS last_at
+        FROM record_plays
+        WHERE al IS NOT NULL AND al != '' AND ms >= $LISTEN_MS AND (f & $LASTFM) = 0
+        GROUP BY a, al
+        ORDER BY last_at DESC, a ASC, al ASC
+        """,
+    )
+    suspend fun albumTotalsWithoutScrobbles(): List<OwnAlbumTotal>
+
     companion object {
         /** A listen, not a skip: 30 s or more (plays.ts `LISTEN_MS`). */
         const val LISTEN_MS = 30_000L
+
+        /** plays.ts `F_DONE`: the play ran to its end. */
+        const val DONE = 2
+
+        /** plays.ts `F_LASTFM`: a Last.fm scrobble. */
+        const val LASTFM = 64
     }
 }
