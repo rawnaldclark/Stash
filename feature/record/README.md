@@ -11,11 +11,12 @@ the app feeds it this phone's plays, and a play tapped in it plays in Stash.
 | `https://appassets.androidplatform.net/record/embed.html?embed=stash-app` | `src/main/assets/record/` | the fork's `dist/embed.html` and `dist/assets/` |
 | `https://appassets.androidplatform.net/fonts/` | `src/main/assets/record-fonts/` | Inter and Space Grotesk (theme.css loads them from the site root), with their OFL licences |
 
-**Bundled build:** stash-on-record `6273409` ("feat(stash): stash:save waits for the app: two chunks unacked at most, given up
-after 15 s without an ack"), 1,518,748 bytes, plus 65,663 bytes of fonts. The page at this commit takes the app's rows up to
-24 h, keeps the first row per id, sorts them by id, sends `stash:save` chunks two unacknowledged at a time (the app answers
-each with `stash:save-ack`, and hears `stash:save-abort` when the page gives up), and answers every `stash:back` with
-`stash:backed` or `stash:close`.
+**Bundled build:** stash-on-record `35fe50f` ("feat(stash): in the app, the record acks each archive chunk (stash:archive-ack), so
+the app keeps two in flight"), 1,518,856 bytes, plus 65,663 bytes of fonts. The page at this commit takes the app's rows up to
+24 h, keeps the first row per id, sorts them by id, acks each `stash:archive` chunk (`stash:archive-ack {seq}`, the last one too,
+and a stale stream's chunk as well, though it drops it: the app keeps at most two chunks unacknowledged), sends `stash:save`
+chunks two unacknowledged at a time (the app answers each with `stash:save-ack`, and hears `stash:save-abort` when the page gives
+up), and answers every `stash:back` with `stash:backed` or `stash:close`.
 
 The Home card's parity fixture (`src/test/resources/parity/`, `card-parity.rows.json` and `card-parity.expect.json`) is the
 fork's `src/stash/fixtures/` at the same commit, byte for byte: refresh it with the build when the page's logic changes.
