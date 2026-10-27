@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">दूसरी फ़ाइल चुनें</string>
     <string name="record_error_try_again">दोबारा कोशिश करें</string>
     <string name="record_error_back">वापस</string>
-    <plurals name="record_done">
-        <item quantity="one">%1$s प्ले लाया गया</item>
-        <item quantity="other">%1$s प्ले लाए गए</item>
+    <string name="record_done_brought">जोड़ा गया: %1$s</string>
+    <string name="record_done_two">%1$s और %2$s</string>
+    <string name="record_done_three">%1$s, %2$s और %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s प्ले</item>
+        <item quantity="other">%1$s प्ले</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s प्लेलिस्ट</item>
+        <item quantity="other">%1$s प्लेलिस्ट</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s पसंद किया गया गाना</item>
+        <item quantity="other">%1$s पसंद किए गए गाने</item>
     </plurals>
     <string name="record_done_nothing">आपका रिकॉर्ड अप टू डेट है</string>
     <string name="record_way_spotify_what">आपका पूरा इतिहास, प्लेलिस्ट और लाइक। साइन-इन की ज़रूरत नहीं।</string>

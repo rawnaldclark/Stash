@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">Choisir un autre fichier</string>
     <string name="record_error_try_again">Réessayer</string>
     <string name="record_error_back">Retour</string>
-    <plurals name="record_done">
-        <item quantity="one">%1$s écoute importée</item>
-        <item quantity="other">%1$s écoutes importées</item>
+    <string name="record_done_brought">Importé : %1$s</string>
+    <string name="record_done_two">%1$s et %2$s</string>
+    <string name="record_done_three">%1$s, %2$s et %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s écoute</item>
+        <item quantity="other">%1$s écoutes</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s playlist</item>
+        <item quantity="other">%1$s playlists</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s titre aimé</item>
+        <item quantity="other">%1$s titres aimés</item>
     </plurals>
     <string name="record_done_nothing">Votre disque est à jour</string>
     <string name="record_way_spotify_what">Tout votre historique, vos playlists et vos J’aime. Aucune connexion requise.</string>

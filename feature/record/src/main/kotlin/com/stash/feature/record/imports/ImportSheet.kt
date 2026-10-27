@@ -146,7 +146,7 @@ fun RecordImportHost(onOpenRecord: () -> Unit, onConnectLastfm: () -> Unit = {},
     // Done: what came in, then the record (when the sheet was open to see it), and the sheet back to its start
     LaunchedEffect(state) {
         val done = state as? ImportState.Done ?: return@LaunchedEffect
-        Toast.makeText(context, ImportText.doneLine(context.resources, done.listens), Toast.LENGTH_LONG).show()
+        Toast.makeText(context, ImportText.doneLine(context.resources, done.listens, done.playlists, done.likes), Toast.LENGTH_LONG).show()
         val wasOpen = imports.sheetOpen.value
         imports.closeSheet()
         imports.reset()

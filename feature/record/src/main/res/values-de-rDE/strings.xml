@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">Andere Datei auswählen</string>
     <string name="record_error_try_again">Erneut versuchen</string>
     <string name="record_error_back">Zurück</string>
-    <plurals name="record_done">
-        <item quantity="one">%1$s Wiedergabe importiert</item>
-        <item quantity="other">%1$s Wiedergaben importiert</item>
+    <string name="record_done_brought">Übernommen: %1$s</string>
+    <string name="record_done_two">%1$s und %2$s</string>
+    <string name="record_done_three">%1$s, %2$s und %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s Wiedergabe</item>
+        <item quantity="other">%1$s Wiedergaben</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s Playlist</item>
+        <item quantity="other">%1$s Playlists</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s Lieblingssong</item>
+        <item quantity="other">%1$s Lieblingssongs</item>
     </plurals>
     <string name="record_done_nothing">Deine Platte ist auf dem neuesten Stand</string>
     <string name="record_way_spotify_what">Dein ganzer Verlauf, Playlists und Likes. Ohne Anmeldung.</string>

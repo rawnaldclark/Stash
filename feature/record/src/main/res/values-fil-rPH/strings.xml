@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">Pumili ng ibang file</string>
     <string name="record_error_try_again">Subukan ulit</string>
     <string name="record_error_back">Bumalik</string>
-    <plurals name="record_done">
-        <item quantity="one">Naidagdag ang %1$s play</item>
-        <item quantity="other">Naidagdag ang %1$s na play</item>
+    <string name="record_done_brought">Naidagdag: %1$s</string>
+    <string name="record_done_two">%1$s at %2$s</string>
+    <string name="record_done_three">%1$s, %2$s at %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s na play</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s playlist</item>
+        <item quantity="other">%1$s na playlist</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s nagustuhang kanta</item>
+        <item quantity="other">%1$s na nagustuhang kanta</item>
     </plurals>
     <string name="record_done_nothing">Updated na ang record mo</string>
     <string name="record_way_spotify_what">Ang buong history mo, mga playlist at like. Walang sign-in.</string>

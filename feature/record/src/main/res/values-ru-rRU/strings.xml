@@ -167,11 +167,26 @@
     <string name="record_error_choose_another">Выбрать другой файл</string>
     <string name="record_error_try_again">Повторить</string>
     <string name="record_error_back">Назад</string>
-    <plurals name="record_done">
-        <item quantity="one">Добавлено %1$s прослушивание</item>
-        <item quantity="few">Добавлено %1$s прослушивания</item>
-        <item quantity="many">Добавлено %1$s прослушиваний</item>
-        <item quantity="other">Добавлено %1$s прослушивания</item>
+    <string name="record_done_brought">Добавлено: %1$s</string>
+    <string name="record_done_two">%1$s и %2$s</string>
+    <string name="record_done_three">%1$s, %2$s и %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s прослушивание</item>
+        <item quantity="few">%1$s прослушивания</item>
+        <item quantity="many">%1$s прослушиваний</item>
+        <item quantity="other">%1$s прослушивания</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s плейлист</item>
+        <item quantity="few">%1$s плейлиста</item>
+        <item quantity="many">%1$s плейлистов</item>
+        <item quantity="other">%1$s плейлиста</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s любимый трек</item>
+        <item quantity="few">%1$s любимых трека</item>
+        <item quantity="many">%1$s любимых треков</item>
+        <item quantity="other">%1$s любимого трека</item>
     </plurals>
     <string name="record_done_nothing">Ваша пластинка актуальна</string>
     <string name="record_way_spotify_what">Вся история, плейлисты и лайки. Без входа в аккаунт.</string>

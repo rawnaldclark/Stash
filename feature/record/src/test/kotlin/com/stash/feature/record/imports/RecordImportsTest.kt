@@ -101,13 +101,16 @@ class RecordImportsTest {
             events += "clear hidden"
             hidden.clear()
         }
-        override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit) {
+        override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit): Int {
             events += "library"
             writes += Triple(playlists, likes, now)
             // A batch at a time, as the importer tells it
             val total = playlists.sumOf { it.playlist.items.size } + likes.size
             for (done in listOf(0, total / 2, total)) progress(done, total)
+            // Every like new the first time, none after
+            return likes.count { liked.add(it.title to it.artist) }
         }
+        private val liked = HashSet<Pair<String, String>>()
     }
 
     /** An archive that says when the plays are written ([events]). */
@@ -220,7 +223,7 @@ class RecordImportsTest {
         rig.imports.confirm()
         runCurrent()
 
-        assertThat(rig.imports.state.value).isEqualTo(ImportState.Done(listens = 6_086, recordPlays = 6_086))
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Done(listens = 6_086, recordPlays = 6_086, playlists = 2))
         assertThat(memory.plays).hasSize(6_814)
         val record = rig.store.info.value.record!!
         assertThat(listOf(record.imports, record.plays, record.bySource?.spotify, record.firstAt, record.lastAt)).containsExactly(1, 6_086, 6_086, NOW, NOW).inOrder()
@@ -297,10 +300,11 @@ class RecordImportsTest {
         val record = rig.store.info.value.record!!
         assertThat(listOf(record.imports, record.playlists, record.likes)).containsExactly(1, 1, 0).inOrder()
         assertThat(rig.store.pending).isNull()
-        assertThat(rig.store.pendingChoice).isEqualTo(ImportChoice.ALL)
+        assertThat(rig.store.pendingChoice).isEqualTo(ImportChoice.PLAYS_ONLY)
         // The library step shows as itself, in the sheet and the notification
         assertThat(progress.filterIsInstance<ImportProgress.Library>().last()).isEqualTo(ImportProgress.Library(8, 8))
-        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Done::class.java)
+        // The word after it: the plays, and the one playlist (no likes chosen)
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Done(listens = 6_086, recordPlays = 6_086, playlists = 1, likes = 0))
 
         // A second import counts what it brings on top: everything this time
         rig.imports.reset()
@@ -311,6 +315,8 @@ class RecordImportsTest {
         val second = library.writes.last()
         assertThat(second.first.map { it.key }).containsExactly("Road trip#0", "Glass Harbor era#0").inOrder()
         assertThat(second.second).hasSize(8)
+        // No new plays: the word after it says the playlists and the songs newly liked, never "up to date"
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Done(listens = 0, recordPlays = 6_086, playlists = 2, likes = 8))
         val after = rig.store.info.value.record!!
         assertThat(listOf(after.imports, after.playlists, after.likes)).containsExactly(2, 3, 8).inOrder()
         // The hidden songs are a set: the same one again is still one
@@ -345,7 +351,26 @@ class RecordImportsTest {
         }
         store.setPending(null)
         assertThat(store.pending).isNull()
-        assertThat(store.pendingChoice).isEqualTo(ImportChoice.ALL)
+        assertThat(store.pendingChoice).isEqualTo(ImportChoice.PLAYS_ONLY)
+    }
+
+    @Test fun `a commit an earlier build left pending, with no choice kept, brings its plays and no playlist or like`() = runTest {
+        // Phase 4 wrote the pending mark alone
+        val prefs = MemoryPrefs()
+        prefs.map["import_pending_at"] = NOW - 1_000
+        val files = tmp.newFolder()
+        resource(EXTENDED).copyTo(File(files, "0__$EXTENDED"))
+        resource(ACCOUNT).copyTo(File(files, "1__$ACCOUNT"))
+        val library = FakeLibrary()
+
+        val rig = Rig(this, prefs = prefs, files = files, library = library)
+        runCurrent()
+
+        assertThat((rig.archive as MemoryArchive).plays).hasSize(6_814)
+        assertThat(library.writes).isEmpty()
+        val record = rig.store.info.value.record!!
+        assertThat(listOf(record.imports, record.playlists, record.likes)).containsExactly(1, 0, 0).inOrder()
+        assertThat(rig.store.pending).isNull()
     }
 
     @Test fun `the preview marks the playlists the library holds already, and that the likes would download`() = runTest {

@@ -181,10 +181,21 @@
     <string name="record_error_choose_another">Choose another file</string>
     <string name="record_error_try_again">Try again</string>
     <string name="record_error_back">Back</string>
-    <!-- After an import (a toast): %1$s is the new plays, formatted with separators. -->
-    <plurals name="record_done">
-        <item quantity="one">Brought in %1$s play</item>
-        <item quantity="other">Brought in %1$s plays</item>
+    <!-- After an import (a toast): what it brought, in parts joined as a list ("Brought in 6,086 plays, 2 playlists and 9 liked songs"); each %1$s a number formatted with separators. -->
+    <string name="record_done_brought">Brought in %1$s</string>
+    <string name="record_done_two">%1$s and %2$s</string>
+    <string name="record_done_three">%1$s, %2$s and %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s plays</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s playlist</item>
+        <item quantity="other">%1$s playlists</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s liked song</item>
+        <item quantity="other">%1$s liked songs</item>
     </plurals>
     <string name="record_done_nothing">Your record is up to date</string>
     <!-- The import sheet's ways in (ImportFlow.svelte `ways`): two equal choices, each opening its own steps. -->

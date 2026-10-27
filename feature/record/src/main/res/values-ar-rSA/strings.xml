@@ -191,13 +191,32 @@
     <string name="record_error_choose_another">اختيار ملف آخر</string>
     <string name="record_error_try_again">إعادة المحاولة</string>
     <string name="record_error_back">رجوع</string>
-    <plurals name="record_done">
-        <item quantity="zero">تم استيراد %1$s تشغيل</item>
-        <item quantity="one">تم استيراد %1$s تشغيل</item>
-        <item quantity="two">تم استيراد %1$s تشغيلين</item>
-        <item quantity="few">تم استيراد %1$s تشغيلات</item>
-        <item quantity="many">تم استيراد %1$s تشغيلًا</item>
-        <item quantity="other">تم استيراد %1$s تشغيل</item>
+    <string name="record_done_brought">تم استيراد: %1$s</string>
+    <string name="record_done_two">%1$s و%2$s</string>
+    <string name="record_done_three">%1$s، %2$s و%3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="zero">%1$s تشغيل</item>
+        <item quantity="one">%1$s تشغيل</item>
+        <item quantity="two">%1$s تشغيلان</item>
+        <item quantity="few">%1$s تشغيلات</item>
+        <item quantity="many">%1$s تشغيلًا</item>
+        <item quantity="other">%1$s تشغيل</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="zero">%1$s قائمة تشغيل</item>
+        <item quantity="one">%1$s قائمة تشغيل</item>
+        <item quantity="two">%1$s قائمتا تشغيل</item>
+        <item quantity="few">%1$s قوائم تشغيل</item>
+        <item quantity="many">%1$s قائمة تشغيل</item>
+        <item quantity="other">%1$s قائمة تشغيل</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="zero">%1$s أغنية أعجبتك</item>
+        <item quantity="one">%1$s أغنية أعجبتك</item>
+        <item quantity="two">%1$s أغنيتان أعجبتاك</item>
+        <item quantity="few">%1$s أغانٍ أعجبتك</item>
+        <item quantity="many">%1$s أغنية أعجبتك</item>
+        <item quantity="other">%1$s أغنية أعجبتك</item>
     </plurals>
     <string name="record_done_nothing">أسطوانتك محدّثة</string>
     <string name="record_way_spotify_what">سجلك الكامل وقوائم التشغيل والإعجابات. دون تسجيل دخول.</string>

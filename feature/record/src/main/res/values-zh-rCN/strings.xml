@@ -131,8 +131,17 @@
     <string name="record_error_choose_another">选择其他文件</string>
     <string name="record_error_try_again">重试</string>
     <string name="record_error_back">返回</string>
-    <plurals name="record_done">
-        <item quantity="other">已导入 %1$s 次播放</item>
+    <string name="record_done_brought">已导入：%1$s</string>
+    <string name="record_done_two">%1$s和%2$s</string>
+    <string name="record_done_three">%1$s、%2$s和%3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="other">%1$s 次播放</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="other">%1$s 个歌单</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="other">%1$s 首已点赞的歌曲</item>
     </plurals>
     <string name="record_done_nothing">你的唱片已是最新</string>
     <string name="record_way_spotify_what">你的完整记录、歌单和点赞。无需登录。</string>

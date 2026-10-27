@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">Escolher outro arquivo</string>
     <string name="record_error_try_again">Tentar novamente</string>
     <string name="record_error_back">Voltar</string>
-    <plurals name="record_done">
-        <item quantity="one">%1$s reprodução importada</item>
-        <item quantity="other">%1$s reproduções importadas</item>
+    <string name="record_done_brought">Importado: %1$s</string>
+    <string name="record_done_two">%1$s e %2$s</string>
+    <string name="record_done_three">%1$s, %2$s e %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s reprodução</item>
+        <item quantity="other">%1$s reproduções</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s playlist</item>
+        <item quantity="other">%1$s playlists</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s música curtida</item>
+        <item quantity="other">%1$s músicas curtidas</item>
     </plurals>
     <string name="record_done_nothing">Seu disco está em dia</string>
     <string name="record_way_spotify_what">Todo o seu histórico, playlists e curtidas. Sem login.</string>

@@ -28,9 +28,9 @@ interface RecordLibrary {
 
     /**
      * [playlists] and [likes] into the library, the liked songs timed from [now] down; [progress] is told the songs matched so
-     * far of all and may throw to stop. Safe to run again: nothing is added twice.
+     * far of all and may throw to stop. Safe to run again: nothing is added twice. Returns how many songs were newly liked.
      */
-    suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit)
+    suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit): Int
 
     /** No library: the preview marks nothing, and nothing is written. */
     object None : RecordLibrary {
@@ -42,13 +42,17 @@ interface RecordLibrary {
 
         override suspend fun clearHidden() = Unit
 
-        override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit) = Unit
+        override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit) = 0
     }
 
     companion object {
         /**
          * importer.ts `commit`'s hidden set: each song under its song key (the same song across its remasters: `songKey`), the
          * first spelling of each kept.
+         *
+         * Phase 5b: these keys come from today's `ArtText.keyTitle` (Kotlin's `IGNORE_CASE` and `\d`, not JavaScript's ASCII-only
+         * `/i` and `\d`). When 5b moves `songKey` to ASCII-only classes, its migration (v71) must work every `record_hidden` key
+         * out again from the stored `t` and `a`, or a hidden song keyed the old way stops matching.
          */
         fun hiddenRows(songs: List<ExportSong>): List<RecordHiddenEntity> =
             songs.map { RecordHiddenEntity(Scrobbles.songKey(it.title, it.artist), it.title, it.artist) }.distinctBy { it.key }
@@ -70,7 +74,6 @@ class DaoRecordLibrary @Inject constructor(
 
     override suspend fun clearHidden() = hidden.clear()
 
-    override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit) {
-        spotify.write(playlists, likes, now, progress)
-    }
+    override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit): Int =
+        spotify.write(playlists, likes, now, progress).likesAdded
 }

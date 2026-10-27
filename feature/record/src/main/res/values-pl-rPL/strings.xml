@@ -167,11 +167,26 @@
     <string name="record_error_choose_another">Wybierz inny plik</string>
     <string name="record_error_try_again">Spróbuj ponownie</string>
     <string name="record_error_back">Wstecz</string>
-    <plurals name="record_done">
-        <item quantity="one">Dodano %1$s odtworzenie</item>
-        <item quantity="few">Dodano %1$s odtworzenia</item>
-        <item quantity="many">Dodano %1$s odtworzeń</item>
-        <item quantity="other">Dodano %1$s odtworzenia</item>
+    <string name="record_done_brought">Zaimportowano: %1$s</string>
+    <string name="record_done_two">%1$s i %2$s</string>
+    <string name="record_done_three">%1$s, %2$s i %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s odtworzenie</item>
+        <item quantity="few">%1$s odtworzenia</item>
+        <item quantity="many">%1$s odtworzeń</item>
+        <item quantity="other">%1$s odtworzenia</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s playlista</item>
+        <item quantity="few">%1$s playlisty</item>
+        <item quantity="many">%1$s playlist</item>
+        <item quantity="other">%1$s playlisty</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s polubiony utwór</item>
+        <item quantity="few">%1$s polubione utwory</item>
+        <item quantity="many">%1$s polubionych utworów</item>
+        <item quantity="other">%1$s polubionego utworu</item>
     </plurals>
     <string name="record_done_nothing">Twoja płyta jest aktualna</string>
     <string name="record_way_spotify_what">Cała historia, playlisty i polubienia. Bez logowania.</string>

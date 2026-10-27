@@ -143,9 +143,20 @@
     <string name="record_error_choose_another">انتخاب فایل دیگر</string>
     <string name="record_error_try_again">تلاش دوباره</string>
     <string name="record_error_back">بازگشت</string>
-    <plurals name="record_done">
-        <item quantity="one">%1$s پخش وارد شد</item>
-        <item quantity="other">%1$s پخش وارد شد</item>
+    <string name="record_done_brought">وارد شد: %1$s</string>
+    <string name="record_done_two">%1$s و %2$s</string>
+    <string name="record_done_three">%1$s، %2$s و %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="one">%1$s پخش</item>
+        <item quantity="other">%1$s پخش</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="one">%1$s فهرست پخش</item>
+        <item quantity="other">%1$s فهرست پخش</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="one">%1$s آهنگ پسندیده</item>
+        <item quantity="other">%1$s آهنگ پسندیده</item>
     </plurals>
     <string name="record_done_nothing">صفحهٔ شما به‌روز است</string>
     <string name="record_way_spotify_what">کل سابقهٔ شما، فهرست‌های پخش و پسندها. بدون ورود به حساب.</string>

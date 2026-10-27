@@ -131,8 +131,17 @@
     <string name="record_error_choose_another">다른 파일 선택</string>
     <string name="record_error_try_again">다시 시도</string>
     <string name="record_error_back">뒤로</string>
-    <plurals name="record_done">
-        <item quantity="other">재생 기록 %1$s회를 가져왔습니다</item>
+    <string name="record_done_brought">가져옴: %1$s</string>
+    <string name="record_done_two">%1$s, %2$s</string>
+    <string name="record_done_three">%1$s, %2$s, %3$s</string>
+    <plurals name="record_done_plays">
+        <item quantity="other">재생 %1$s회</item>
+    </plurals>
+    <plurals name="record_done_playlists">
+        <item quantity="other">플레이리스트 %1$s개</item>
+    </plurals>
+    <plurals name="record_done_likes">
+        <item quantity="other">좋아요 표시한 곡 %1$s곡</item>
     </plurals>
     <string name="record_done_nothing">나의 레코드가 최신 상태입니다</string>
     <string name="record_way_spotify_what">전체 기록, 플레이리스트, 좋아요. 로그인 필요 없음.</string>

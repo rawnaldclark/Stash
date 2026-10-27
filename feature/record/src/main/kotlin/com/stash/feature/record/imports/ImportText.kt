@@ -66,8 +66,23 @@ internal object ImportText {
         return if (a == b) a else res.getString(R.string.record_preview_span, a, b)
     }
 
-    /** years.ts `doneLine`, for the plays this import brought: "Brought in 6,086 plays", or "Your record is up to date". */
-    fun doneLine(res: Resources, listens: Int): String =
-        if (listens > 0) res.getQuantityString(R.plurals.record_done, listens, count(res, listens.toLong()))
-        else res.getString(R.string.record_done_nothing)
+    /**
+     * years.ts `doneLine`: what this import brought, "Brought in 6,086 plays, 2 playlists and 9 liked songs" (the new listens, the
+     * playlists chosen, the songs newly liked; an import of playlists alone says those), or "Your record is up to date".
+     */
+    fun doneLine(res: Resources, listens: Int, playlists: Int = 0, likes: Int = 0): String {
+        val parts = listOfNotNull(
+            listens.takeIf { it > 0 }?.let { res.getQuantityString(R.plurals.record_done_plays, it, count(res, it.toLong())) },
+            playlists.takeIf { it > 0 }?.let { res.getQuantityString(R.plurals.record_done_playlists, it, count(res, it.toLong())) },
+            likes.takeIf { it > 0 }?.let { res.getQuantityString(R.plurals.record_done_likes, it, count(res, it.toLong())) },
+        )
+        // years.ts `names`: "a", "a and b", "a, b and c"
+        val list = when (parts.size) {
+            0 -> return res.getString(R.string.record_done_nothing)
+            1 -> parts[0]
+            2 -> res.getString(R.string.record_done_two, parts[0], parts[1])
+            else -> res.getString(R.string.record_done_three, parts[0], parts[1], parts[2])
+        }
+        return res.getString(R.string.record_done_brought, list)
+    }
 }

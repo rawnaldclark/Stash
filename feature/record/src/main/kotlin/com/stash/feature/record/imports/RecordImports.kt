@@ -93,8 +93,11 @@ sealed interface ImportState {
 
     data class Failed(val reason: ImportFailure, val saving: Boolean = false) : ImportState
 
-    /** Written: [listens] new listens; [recordPlays], the record's listens in all. */
-    data class Done(val listens: Int, val recordPlays: Int) : ImportState
+    /**
+     * Written: [listens] new listens; [recordPlays], the record's listens in all; [playlists] and [likes], what it brought the
+     * library (the playlists chosen, the songs newly liked).
+     */
+    data class Done(val listens: Int, val recordPlays: Int, val playlists: Int = 0, val likes: Int = 0) : ImportState
 
     /** Opening, reading, saving, or a preview waiting: an import on its way (the Home card says so). */
     val busy: Boolean get() = this is Working || this is Preview
@@ -703,7 +706,7 @@ class RecordImports internal constructor(
         // The lengths pass lets go of the lock for the commit, and carries on after it (the export may time some songs now)
         val timing = pauseLengths()
         val choice = work.choice
-        val result = writes.withLock {
+        val written = writes.withLock {
             checkpoint(job, work)
             // A commit taken up again keeps the time it began: the liked songs it brings keep the times it gave them
             val at = store.pending ?: now()
@@ -721,9 +724,10 @@ class RecordImports internal constructor(
             val keys = SpotifyLibraryImport.playlistKeys(prep.bundle.playlists)
             val playlists = prep.bundle.playlists.indices.filter(choice::takes).map { ChosenPlaylist(keys[it], prep.bundle.playlists[it]) }
             val likes = if (choice.likes) prep.bundle.likes else emptyList()
+            var liked = 0
             if (playlists.isNotEmpty() || likes.isNotEmpty()) {
                 checkpoint(job, work)
-                library.write(playlists, likes, at) { done, total ->
+                liked = library.write(playlists, likes, at) { done, total ->
                     checkpoint(job, work)
                     val p = ImportProgress.Library(done, total)
                     publish(work, ImportState.Working(p, saving = true))
@@ -732,8 +736,9 @@ class RecordImports internal constructor(
             }
             // 4. The record, and `pending` cleared with it in one write: steps 1 to 3 are safe to run again, this one is the end
             storeRecord(added = 1, playlists = playlists.size, likes = likes.size, finish = true)
-            r
+            Triple(r, playlists.size, liked)
         }
+        val (result, playlistsIn, likesIn) = written
         if (timing || store.info.value.lastfm != null) startLengths()
         val mine = synchronized(lock) {
             live(work).also {
@@ -748,7 +753,7 @@ class RecordImports internal constructor(
         store.clearStops()
         clearUnfinished()
         Log.i(TAG, "import written: ${result.listens} new listens, ${result.written} plays, ${result.dropped} dropped")
-        publish(work, ImportState.Done(result.listens, store.info.value.record?.plays ?: 0))
+        publish(work, ImportState.Done(result.listens, store.info.value.record?.plays ?: 0, playlistsIn, likesIn))
         _changed.tryEmit(Unit)
     }
 
