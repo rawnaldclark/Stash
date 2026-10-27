@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -313,10 +314,18 @@ private fun PreviewStep(p: ImportPreview, onImport: () -> Unit, onCancel: () -> 
     }
     Spacer(Modifier.height(16.dp))
     val hours = RecordCard.hours(p.listenedMs)
+    val figures = listOf(ImportText.count(res, hours), ImportText.count(res, p.years.toLong()), ImportText.count(res, p.plays.toLong()))
+    // Each a third of the sheet's width: all three step down together when the longest ("330,827") wouldn't fit
+    val longest = figures.maxOf { it.length }
+    val size = when {
+        longest <= 5 -> MaterialTheme.typography.headlineSmall
+        longest <= 7 -> MaterialTheme.typography.titleLarge
+        else -> MaterialTheme.typography.titleMedium
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Figure(ImportText.count(res, hours), pluralStringResource(R.plurals.record_preview_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), Modifier.weight(1f))
-        Figure(ImportText.count(res, p.years.toLong()), pluralStringResource(R.plurals.record_preview_years, p.years), Modifier.weight(1f))
-        Figure(ImportText.count(res, p.plays.toLong()), pluralStringResource(R.plurals.record_preview_plays, p.plays), Modifier.weight(1f))
+        Figure(figures[0], pluralStringResource(R.plurals.record_preview_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), size, Modifier.weight(1f))
+        Figure(figures[1], pluralStringResource(R.plurals.record_preview_years, p.years), size, Modifier.weight(1f))
+        Figure(figures[2], pluralStringResource(R.plurals.record_preview_plays, p.plays), size, Modifier.weight(1f))
     }
     if (p.same > 0) {
         Spacer(Modifier.height(12.dp))
@@ -361,9 +370,9 @@ private fun PreviewStep(p: ImportPreview, onImport: () -> Unit, onCancel: () -> 
     Private(stringResource(R.string.record_preview_private))
 }
 
-/** One of the preview's three big figures: the number, set large, and its word under it. */
+/** One of the preview's three big figures: the number, set large ([size]), and its word under it. */
 @Composable
-private fun Figure(n: String, word: String, modifier: Modifier = Modifier) {
+private fun Figure(n: String, word: String, size: TextStyle, modifier: Modifier = Modifier) {
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
@@ -372,12 +381,6 @@ private fun Figure(n: String, word: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 12.dp, vertical = 12.dp)
             .semantics(mergeDescendants = true) { },
     ) {
-        // A third of the sheet's width: a long number ("330,827") steps down a size or two instead of being cut
-        val size = when {
-            n.length <= 5 -> MaterialTheme.typography.headlineSmall
-            n.length <= 7 -> MaterialTheme.typography.titleLarge
-            else -> MaterialTheme.typography.titleMedium
-        }
         Text(
             n,
             style = size.copy(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold),
