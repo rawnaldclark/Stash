@@ -707,7 +707,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             unblocked
         } else {
             val out = trackDao.getByIds(unblocked).filter { taste.avoids(it.title, it.artist) }.mapTo(HashSet()) { it.id }
-            if (out.isNotEmpty()) Log.i(TAG, "'${recipe.name}': avoided ${out.size} finds (your record)")
+            Log.i(TAG, "'${recipe.name}': your record avoided ${out.size} of ${unblocked.size} finds")
             unblocked.filter { it !in out }
         }
         Log.i(
@@ -851,6 +851,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
                     .ifEmpty { trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT) }
             blendRecentFirst(recentArtists, affinityArtists, TOP_ARTISTS_LIMIT)
         }
+        if (strategy == MixSeedStrategy.ARTIST_SIMILAR && taste == null) Log.i(TAG, "'${recipe.name}': seeds $seedArtists")
 
         // v0.9.20 PR 8: seedTracks gets the same fallback chain as
         // seedArtists (persona > local events > library top-by-LFM-playcount),

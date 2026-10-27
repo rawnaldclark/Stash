@@ -147,7 +147,7 @@ class MixGenerator @Inject constructor(
             pool00
         } else {
             pool00.filterNot { taste.avoids(it.title, it.artist) }.also { kept ->
-                if (kept.size < pool00.size) Log.i(TAG, "'${recipe.name}': avoided ${pool00.size - kept.size} library songs (your record)")
+                Log.i(TAG, "'${recipe.name}': your record avoided ${pool00.size - kept.size} of ${pool00.size} library songs")
             }
         }
 
@@ -183,6 +183,7 @@ class MixGenerator @Inject constructor(
         pool = filterByEra(pool, recipe)
         pool = filterByMood(pool, recipe)
 
+        Log.i(TAG, "'${recipe.name}': library pool ${pool.size} of ${rawPool.size} downloaded${if (taste != null) " (with your record)" else ""}")
         if (pool.isEmpty()) return emptyList()
 
         // Step 6: score + sort.
@@ -571,7 +572,7 @@ class MixGenerator @Inject constructor(
                 seedArtist = cand.seedArtist,
             )
         }
-        if (avoided > 0) Log.i(TAG, "'${recipe.name}': avoided $avoided discovery candidates (your record)")
+        if (taste != null) Log.i(TAG, "'${recipe.name}': your record avoided $avoided of ${similarArtistSuggestions.size} discovery candidates")
         if (toInsert.isNotEmpty()) discoveryQueueDao.insertAllIfNew(toInsert)
     }
 

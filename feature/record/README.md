@@ -160,3 +160,36 @@ sources and the switches](#the-sources-and-the-switches)), and the Home card is 
   one unit. The fixture has none.
 - `ExportZipTest`, `ImportIntakeTest`, `RecordImportsTest`: hostile files (Zip64, encrypted, larger than it says, overlapping
   records, the budgets), the intake's bounds, resume from a half-written archive, a system stop against a Cancel, failures.
+
+## Your taste, and your mixes
+
+The web player's taste (stash-player `src/lib/spotify/taste.ts`, `importer.ts` `refreshTaste`, `mix-taste.ts`, `kept-out.ts`,
+`discover/mix.ts`, `discover/record-switch.ts`, spec `docs/spotify-export.md` §4) on the phone: the whole record becomes a taste,
+and the taste feeds Stash's mixes.
+
+| Where | What |
+|---|---|
+| core:model `weblink/SongKey.kt` (`bareTitle`, `songKey`), `Credits.kt`, `JsString.kt` | song-key.ts and station.ts `primaryArtist`, shared with the art and the mixes: JavaScript's classes spelled out (`/i` without `u` folds ASCII only, `\d` is `[0-9]`, `\s` its own set, `$` is `\z`), so ICU, the JVM and V8 agree |
+| `taste/Taste.kt` | `computeTaste` and `findEras`, rule for rule: one play order (start, title, artist in UTF-16 units, length), sums and cosines in insertion order, `round9` half up, `StrictMath` log1p and pow, `INTERLUDE` with an ASCII word boundary |
+| `taste/TasteInput.kt` | `refreshTaste`'s rows, a page at a time: `record_plays`, minus the scrobbles this phone's plays cover (same folded title, 180 s, the taste's spans `max(30 s, length)`), plus this phone's plays as `f = 0`, `ms = max(30 s, length)` unless the archive holds their id |
+| `taste/RecordTaste.kt`, `RecordTasteWorker.kt` | the taste worked out under the record's write lock, only while there is an import: a commit (its own step in the sheet, the songs it brings kept, before its record), an interrupted import's end, a Last.fm run, the scrobbles' removal, a lengths slice that timed songs, start with no taste, once a local day on Home or the record, and the daily job. Kept = liked songs and the own playlists' songs; hidden = `record_hidden`; never kept out = the songs put back. The first taste asks for Daily Discover when it is empty |
+| `taste/TasteRows.kt` | where it is kept (core:data, DB v71): `record_taste_songs` (a row a song, its rank), `record_taste` (the rest as JSON: totals, eras, lists, years, top and seed artists), `record_taste_keep` (put back) |
+| core:data `record/RecordMixTaste.kt` | the one seam the mixes read, once a run: `MixTaste(artists, avoid, weights)`, null with no taste or with the switch off; avoid = the stored avoid minus the songs put back, at once, a put-back song given its weight (weight ÷ the top weight of every song) |
+| core:data `mix/MixGenerator.kt`, `sync/workers/StashMixRefreshWorker.kt` | with a taste: avoided songs out of every recipe's library pool, its discovery queue and its linked finds; affinity `max(own, 0.6·w)`; Daily Discover's seeds the web's blend (the taste's artists keep `max(3, 8 − own)` places; with no own seeds the taste alone, before the library's top artists). With none, every path is the one before (the existing suites pass unmodified). The blocklist is never used for this: it deletes |
+| `taste/RecordInMixes.kt`, `RecordInMixesPart.kt` | Settings › Your record (owner decisions D2, D1): "Use your record in mixes" (on by default; a flip makes today's Daily Discover again once, 1.5 s after the last) and "Kept out of your mixes (N)" with the web's reasons and words, 50 a page, and Put back (one write under the lock, only with an import) |
+
+Remove import clears the taste and the songs put back with the plays; removing the Last.fm scrobbles does too only when they
+were all there was. The songs put back survive a newer import.
+
+### Its tests
+
+- `TasteVectorsTest`: cases crafted around every rule (remasters, KELVIN SIGN and LONG S, Arabic-Indic digits, word boundaries,
+  astral characters, mode ties, songs only ever started, an artist that folds to "", an era cosine of exactly 0.4 after round9,
+  quiet months, gaps of 3 and 4 months, the era's longest, lead ties, same-lead joins, a 14-day peak, UTC year edges, kept
+  against hidden against put back), run through the web's own code by `scripts/taste-vectors.ts` (`src/test/resources/taste/`;
+  the run is in its header): every field of the taste with doubles compared exactly, `mixTasteOf`, `seedArtists`' blend,
+  `refreshTaste`, `keptOut` and `whyKeptOut`, and the words.
+- `TasteIcuAndroidTest` (on a phone): the same words and every taste on ICU and ART.
+- `SpotifyGoldenTest`'s taste block (top 10 weights to 6 places, `BigDecimal.setScale(6, HALF_UP)`), `TasteWordsTest` (the
+  English against RecordInMixes.svelte as the file is), `RecordTasteTest` (a real database), `RecordInMixesTest`, and in core:data
+  `MixGeneratorTasteTest`, `StashMixRefreshWorkerTasteTest`, `RoomRecordMixTasteTest` and `MigrationV70V71Test`.
