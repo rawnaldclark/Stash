@@ -53,13 +53,19 @@ class RecordHostSourcesTest {
         row(1, 0), row(2, RecordFlags.REASONS, ms = 29_999), row(3, RecordFlags.STASH), row(4, RecordFlags.STASH), row(5, RecordFlags.STASH), row(6, RecordFlags.LASTFM),
     )
 
-    private inner class Harness(val test: TestScope, choice: SourcesOn, rows: List<ArchivePlay> = archive) {
+    private inner class Harness(
+        val test: TestScope,
+        choice: SourcesOn,
+        rows: List<ArchivePlay> = archive,
+        /** The archive as it is at each hello (it can change between two). */
+        rowsOf: () -> List<ArchivePlay> = { rows },
+    ) {
         val switch = Switch(choice)
         private val dispatcher = StandardTestDispatcher(test.testScheduler)
         val host = RecordHost(
             scope = test.backgroundScope,
             archive = RecordArchiveSource { size, emit ->
-                val chunks = rows.chunked(size)
+                val chunks = rowsOf().chunked(size)
                 chunks.forEachIndexed { i, c -> emit(c, i == chunks.lastIndex) }
             },
             covers = { songs, _, _ -> songs.map { null } },
@@ -76,6 +82,12 @@ class RecordHostSourcesTest {
             chunkSize = 2,
             now = { test.testScheduler.currentTime },
         )
+
+        fun sayTo(raw: String, port: RecordPort) {
+            host.onMessage(raw, port)
+            test.runCurrent()
+            test.advanceUntilIdle()
+        }
 
         fun say(raw: String, page: Page) {
             page.host = host
@@ -132,6 +144,60 @@ class RecordHostSourcesTest {
         // the page says hello again (an import changed the archive): it still shows what it was told
         h.say(hello, page)
         assertThat(page.sources()).hasSize(1)
+    }
+
+    /** One frame's reply proxy: what it was sent. */
+    private class Proxy {
+        var host: RecordHost? = null
+        val sent = mutableListOf<String>()
+        fun sources() = sent.filter { it.startsWith("{\"type\":\"stash:sources\"") }
+    }
+
+    /** A port as the WebView hands one over: a new wrapper with every message, over the frame's one proxy (equal by it). */
+    private data class Wrapped(val proxy: Proxy) : RecordPort {
+        override fun post(message: String) {
+            proxy.sent += message
+            if (message.startsWith("{\"type\":\"stash:archive\"")) {
+                val seq = Json.parseToJsonElement(message).jsonObject["seq"]!!.jsonPrimitive.int
+                proxy.host?.onMessage("""{"type":"stash:archive-ack","seq":$seq}""", Wrapped(proxy))
+            }
+        }
+    }
+
+    @Test fun `a reload from the same page, each message in a new wrapper, keeps what it was told and tells it what changed`() = runTest {
+        // Last.fm alone is on; then the scrobbles are removed while the record is open
+        var rows = archive
+        val h = Harness(this, SourcesOn(spotify = false, stash = false, lastfm = true), rowsOf = { rows })
+        val proxy = Proxy().also { it.host = h.host }
+        h.sayTo(hello, Wrapped(proxy))
+        assertThat(proxy.sources()).containsExactly(sources(spotify = false, stash = false, lastfm = true))
+        rows = archive.filter { it.f and RecordFlags.LASTFM == 0 }
+        h.host.reload()
+        h.sayTo(hello, Wrapped(proxy))
+        // No source with plays left on: the page, still showing Last.fm alone, is told to show them all
+        assertThat(proxy.sources()).containsExactly(
+            sources(spotify = false, stash = false, lastfm = true),
+            sources(spotify = true, stash = true, lastfm = true),
+        ).inOrder()
+    }
+
+    @Test fun `the page's own count, in a new wrapper over the same page, re-tells it`() = runTest {
+        val h = Harness(this, SourcesOn(stash = false))
+        val proxy = Proxy().also { it.host = h.host }
+        h.sayTo(hello, Wrapped(proxy))
+        assertThat(proxy.sources()).containsExactly(sources(spotify = true, stash = false, lastfm = true))
+        // The page counts no Spotify or Last.fm plays any more (an import removed meanwhile): with Stash off, nothing is on
+        h.sayTo("""{"type":"stash:counts","counts":{"spotify":0,"stash":3,"lastfm":0}}""", Wrapped(proxy))
+        assertThat(proxy.sources().last()).isEqualTo(sources(spotify = true, stash = true, lastfm = true))
+    }
+
+    @Test fun `a hello over another proxy is another page, which starts with every source`() = runTest {
+        val h = Harness(this, SourcesOn(lastfm = false))
+        val first = Proxy().also { it.host = h.host }
+        h.sayTo(hello, Wrapped(first))
+        val second = Proxy().also { it.host = h.host }
+        h.sayTo(hello, Wrapped(second))
+        assertThat(second.sources()).containsExactly(sources(spotify = true, stash = true, lastfm = false))
     }
 
     @Test fun `a new page starts with every source, so it is told again`() = runTest {

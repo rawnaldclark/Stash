@@ -21,7 +21,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
 
-/** Where the host's messages go: one page's reply proxy (the frame that sent the message). Called on the main thread only. */
+/**
+ * Where the host's messages go: one page's reply proxy (the frame that sent the message). Called on the main thread only.
+ *
+ * Two ports are the same page when they are equal (`==`), never by identity: the WebView hands each message over in a new
+ * wrapper around the frame's one reply proxy, so equality must look through it (the app's port is a data class of the proxy).
+ * A `stash:reload` says hello again from the same document, which keeps what it was told; a page loaded again is another proxy.
+ */
 interface RecordPort {
     fun post(message: String)
 }
@@ -249,7 +255,7 @@ class RecordHost(
                     counts = c
                     sources.counted(c)
                 }
-                if (from === current) tell(from)
+                if (from == current) tell(from)
             }
             is RecordAsk.Play -> play(ask)
             is RecordAsk.Art -> art(ask, from)
@@ -354,7 +360,7 @@ class RecordHost(
         if (ask.v != RecordMessages.PROTOCOL) Log.w(TAG, "the record speaks bridge v${ask.v}; this app speaks v${RecordMessages.PROTOCOL}")
         stream?.cancel()
         // Another page (a first one, or one loaded again): it starts with every source shown
-        if (from !== current) told = SourcesOn.ALL_ON
+        if (from != current) told = SourcesOn.ALL_ON
         current = from
         unresponsive = false
         val mine = ++hellos

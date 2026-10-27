@@ -49,8 +49,12 @@ internal fun recordAssetLoader(context: Context): WebViewAssetLoader {
 /** True when this phone's WebView can carry the bridge (Android System WebView 74 or newer). */
 internal fun bridgeSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
 
-/** A reply proxy as the host's port. */
-private class ProxyPort(private val proxy: JavaScriptReplyProxy) : RecordPort {
+/**
+ * A reply proxy as the host's port, equal to another over the same proxy: every message of one frame's document comes with the
+ * same [JavaScriptReplyProxy] (AndroidX keeps one peer per proxy), but in a new wrapper, so the host tells a page saying hello
+ * again (`stash:reload`) from a page loaded anew by comparing these.
+ */
+private data class ProxyPort(private val proxy: JavaScriptReplyProxy) : RecordPort {
     override fun post(message: String) = proxy.postMessage(message)
 }
 
