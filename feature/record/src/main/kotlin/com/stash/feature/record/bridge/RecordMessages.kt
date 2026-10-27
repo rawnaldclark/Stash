@@ -53,6 +53,12 @@ sealed interface RecordAsk {
 
     /** The record closed what it had open after `stash:back` (it says `stash:close` instead when nothing was). */
     data object Backed : RecordAsk
+
+    /**
+     * The page dealt with `stash:archive` chunk [seq] (the done one too; and a chunk of a stream a newer hello replaced, though
+     * it dropped it). Only a whole number from 0.
+     */
+    data class ArchiveAck(val seq: Int) : RecordAsk
 }
 
 /**
@@ -115,6 +121,7 @@ object RecordMessages {
             "stash:save" -> save(m)
             "stash:save-abort" -> m.string("id")?.takeIf { it.isNotEmpty() && it.length <= MAX_SAVE_ID }?.let { RecordAsk.SaveAbort(it) }
             "stash:backed" -> RecordAsk.Backed
+            "stash:archive-ack" -> m.number("seq")?.takeIf { it >= 0 && it == Math.floor(it) && it <= Int.MAX_VALUE }?.let { RecordAsk.ArchiveAck(it.toInt()) }
             else -> null
         }
     }
