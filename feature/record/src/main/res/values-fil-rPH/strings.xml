@@ -59,6 +59,7 @@
     <string name="record_import_choose">Pumili ng mga file</string>
     <string name="record_import_each">Idagdag ang bawat isa pagdating nito.</string>
     <string name="record_import_private">Binabasa ng Stash ang file sa phone na ito. Walang ina-upload.</string>
+    <string name="record_import_private_lastfm">Galing sa Last.fm ang mga scrobble mo. Hinahanap ang haba ng mga kanta gamit ang pangalan ng kanta.</string>
     <string name="record_import_working_title">Idinadagdag ang pakikinig mo</string>
     <string name="record_import_opening">Binubuksan ang mga file mo…</string>
     <string name="record_import_reading_one">Binabasa ang file mo…</string>

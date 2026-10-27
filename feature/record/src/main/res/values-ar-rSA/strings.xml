@@ -71,6 +71,7 @@
     <string name="record_import_choose">اختيار الملفات</string>
     <string name="record_import_each">أضف كل ملف فور وصوله.</string>
     <string name="record_import_private">يقرأ Stash الملف على هذا الهاتف. لا يُرفع أي شيء.</string>
+    <string name="record_import_private_lastfm">تأتي الـ scrobbles الخاصة بك من Last.fm. ويُبحث عن أطوال الأغاني باسم الأغنية.</string>
     <string name="record_import_working_title">جارٍ جلب سجل استماعك</string>
     <string name="record_import_opening">جارٍ فتح ملفاتك…</string>
     <string name="record_import_reading_one">جارٍ قراءة ملفك…</string>

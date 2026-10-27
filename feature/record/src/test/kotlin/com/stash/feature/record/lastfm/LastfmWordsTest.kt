@@ -36,6 +36,11 @@ class LastfmWordsTest {
         }
     }
 
+    @Test fun `the sheet's line with Last fm open says where the scrobbles and the lengths come from, as the web's does`() {
+        // stash-player ImportFlow.svelte, with Last.fm open (no file there)
+        assertThat(res.getString(R.string.record_import_private_lastfm)).isEqualTo("Your scrobbles come from Last.fm. Song lengths are looked up by song name.")
+    }
+
     @Test fun `the reconnect line and the hours note`() {
         assertThat(res.getString(R.string.record_lastfm_reconnect_body)).isEqualTo(words["reconnect"]!!.jsonPrimitive.content)
         assertThat(res.getString(R.string.record_lastfm_hours_note)).isEqualTo(words["hours"]!!.jsonPrimitive.content)

@@ -59,6 +59,7 @@
     <string name="record_import_choose">फाइल्स निवडा</string>
     <string name="record_import_each">प्रत्येक फाइल आल्यावर आणा.</string>
     <string name="record_import_private">Stash ही फाइल याच फोनवर वाचते. काहीही अपलोड होत नाही.</string>
+    <string name="record_import_private_lastfm">तुमचे scrobble Last.fm वरून येतात. गाण्यांची लांबी गाण्याच्या नावाने शोधली जाते.</string>
     <string name="record_import_working_title">तुमचा ऐकण्याचा इतिहास आणत आहोत</string>
     <string name="record_import_opening">तुमच्या फाइल्स उघडत आहोत…</string>
     <string name="record_import_reading_one">तुमची फाइल वाचत आहोत…</string>

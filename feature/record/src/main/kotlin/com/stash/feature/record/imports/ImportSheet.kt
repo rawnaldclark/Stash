@@ -272,8 +272,19 @@ private fun HowItWorks(
         }
         null -> Unit
     }
-    Spacer(Modifier.height(16.dp))
-    Private(stringResource(R.string.record_import_private))
+    // What leaves the phone, for the way open: a file is read here; Last.fm's scrobbles come from Last.fm, and the songs' lengths
+    // are asked by name. Nothing open, nothing to say yet.
+    when (way) {
+        ImportWay.SPOTIFY -> {
+            Spacer(Modifier.height(16.dp))
+            Private(stringResource(R.string.record_import_private))
+        }
+        ImportWay.LASTFM -> {
+            Spacer(Modifier.height(16.dp))
+            Private(stringResource(R.string.record_import_private_lastfm))
+        }
+        null -> Unit
+    }
 }
 
 /** One way in (ImportFlow.svelte's `spe-way`): its mark, its name, what it brings, how long it takes; it opens its steps. */

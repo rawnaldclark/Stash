@@ -59,6 +59,7 @@
     <string name="record_import_choose">Escolher arquivos</string>
     <string name="record_import_each">Adicione cada um assim que chegar.</string>
     <string name="record_import_private">O Stash lê o arquivo neste celular. Nada é enviado.</string>
+    <string name="record_import_private_lastfm">Seus scrobbles vêm do Last.fm. A duração das músicas é buscada pelo nome.</string>
     <string name="record_import_working_title">Trazendo seu histórico</string>
     <string name="record_import_opening">Abrindo seus arquivos…</string>
     <string name="record_import_reading_one">Lendo seu arquivo…</string>

@@ -65,6 +65,7 @@
     <string name="record_import_choose">Wybierz pliki</string>
     <string name="record_import_each">Dodawaj każdy, gdy tylko przyjdzie.</string>
     <string name="record_import_private">Stash odczytuje plik na tym telefonie. Nic nie jest wysyłane.</string>
+    <string name="record_import_private_lastfm">Twoje scrobble pochodzą z Last.fm. Długości utworów są wyszukiwane po ich nazwie.</string>
     <string name="record_import_working_title">Przenosimy twoją historię słuchania</string>
     <string name="record_import_opening">Otwieranie plików…</string>
     <string name="record_import_reading_one">Odczytywanie pliku…</string>

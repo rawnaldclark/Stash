@@ -78,6 +78,8 @@
     <string name="record_import_choose">Choose files</string>
     <string name="record_import_each">Bring each one as it arrives.</string>
     <string name="record_import_private">Stash reads the file on this phone. Nothing is uploaded.</string>
+    <!-- Under the import sheet with Last.fm open, where there is no file: where the scrobbles come from, and that song lengths are looked up by the songs' names. -->
+    <string name="record_import_private_lastfm">Your scrobbles come from Last.fm. Song lengths are looked up by song name.</string>
     <!-- The import sheet: reading and saving, with the year of the plays read so far counting up beneath. -->
     <string name="record_import_working_title">Bringing in your listening</string>
     <string name="record_import_opening">Opening your files…</string>

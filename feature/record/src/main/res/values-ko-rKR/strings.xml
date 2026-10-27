@@ -56,6 +56,7 @@
     <string name="record_import_choose">파일 선택</string>
     <string name="record_import_each">도착하는 대로 하나씩 가져오세요.</string>
     <string name="record_import_private">Stash는 이 휴대전화에서 파일을 읽습니다. 아무것도 업로드되지 않습니다.</string>
+    <string name="record_import_private_lastfm">스크로블 기록은 Last.fm에서 가져옵니다. 곡 길이는 곡 이름으로 찾습니다.</string>
     <string name="record_import_working_title">청취 기록을 가져오는 중</string>
     <string name="record_import_opening">파일을 여는 중…</string>
     <string name="record_import_reading_one">파일을 읽는 중…</string>

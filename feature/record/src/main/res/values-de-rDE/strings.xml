@@ -59,6 +59,7 @@
     <string name="record_import_choose">Dateien auswählen</string>
     <string name="record_import_each">Füge jede hinzu, sobald sie da ist.</string>
     <string name="record_import_private">Stash liest die Datei auf diesem Handy. Nichts wird hochgeladen.</string>
+    <string name="record_import_private_lastfm">Deine Scrobbel-Einträge kommen von Last.fm. Songlängen werden über den Songnamen nachgeschlagen.</string>
     <string name="record_import_working_title">Dein Hörverlauf kommt dazu</string>
     <string name="record_import_opening">Deine Dateien werden geöffnet…</string>
     <string name="record_import_reading_one">Deine Datei wird gelesen…</string>

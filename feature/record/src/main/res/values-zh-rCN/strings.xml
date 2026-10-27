@@ -56,6 +56,7 @@
     <string name="record_import_choose">选择文件</string>
     <string name="record_import_each">每收到一个就添加一个。</string>
     <string name="record_import_private">Stash 在这部手机上读取文件。不会上传任何内容。</string>
+    <string name="record_import_private_lastfm">你的音乐记录来自 Last.fm。歌曲时长按歌名查找。</string>
     <string name="record_import_working_title">正在导入你的收听记录</string>
     <string name="record_import_opening">正在打开你的文件…</string>
     <string name="record_import_reading_one">正在读取你的文件…</string>
