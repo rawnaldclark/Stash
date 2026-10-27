@@ -2482,6 +2482,14 @@
     "Playlist2.json",
     "YourLibrary.json"
    ],
+   "choose": {
+    "playlists": [
+     1,
+     3,
+     9
+    ],
+    "likes": false
+   },
    "expected": {
     "files": {
      "extended": 0,
@@ -2989,6 +2997,10 @@
     "Playlist1.json",
     "YourLibrary.json"
    ],
+   "choose": {
+    "playlists": [],
+    "likes": true
+   },
    "expected": {
     "files": {
      "extended": 0,

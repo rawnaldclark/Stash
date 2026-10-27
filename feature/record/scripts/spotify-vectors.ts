@@ -526,7 +526,7 @@ for (const c of await cases()) {
 		for (const f of fs) writeFileSync(join(dir, sub, f.name), f.bytes);
 		return fs.map((f) => f.name);
 	};
-	index.push({ name: c.name, before: names(c.before, 'before'), files: names(c.files, 'files'), expected: await run(c) });
+	index.push({ name: c.name, before: names(c.before, 'before'), files: names(c.files, 'files'), ...(c.choose ? { choose: c.choose } : {}), expected: await run(c) });
 }
 writeFileSync(join(out, 'cases.json'), JSON.stringify({ now: NOW, cases: index }, null, 1) + '\n');
 const already = alreadyCases();

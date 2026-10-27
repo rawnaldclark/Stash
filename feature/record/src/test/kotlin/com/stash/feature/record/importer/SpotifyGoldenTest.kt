@@ -1,6 +1,8 @@
 package com.stash.feature.record.importer
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.record.ChosenPlaylist
+import com.stash.core.data.record.SpotifyLibraryImport
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -22,7 +24,8 @@ import java.time.ZoneOffset
  * (`src/test/resources/spotify-export/`, copied from stash-player `docs/spotify-export/fixture/` at 0e2cb03), read and merged
  * here must give what `expected.json` records the web's importer giving, with `now = 2026-10-23T12:00:00Z`: the files and what
  * couldn't be read, the preview, and the archive's plays (their count, the first ids and the SHA-256 of all of them, sorted and
- * joined with `\n`). Taste, eras, playlists and likes come with the taste port.
+ * joined with `\n`), and the playlists and liked songs it brings into the library (each playlist's songs, the likes). Taste and
+ * eras come with the taste port.
  */
 class SpotifyGoldenTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -108,11 +111,29 @@ class SpotifyGoldenTest {
         val result = importer.commit(again)
 
         assertThat(again.preview.plays).isEqualTo(0)
-        assertThat(again.preview.anything).isFalse()
+        // Nothing to listen back to, but the playlists and likes can still come in (service.ts `choose`: a preview, not "nothing new")
+        assertThat(again.preview.anything).isTrue()
         assertThat(again.preview.same).isGreaterThan(0)
         assertThat(result.written).isEqualTo(0)
         assertThat(result.dropped).isEqualTo(0)
         assertThat(archive.sortedIds()).isEqualTo(before)
+    }
+
+    @Test fun `the playlists and liked songs it brings`() = runTest {
+        val (prep, _, _) = golden(fixture())
+        val bundle = prep.bundle
+        // expected.json: "Road trip" 9 and "Glass Harbor era" 8, likes 8
+        assertThat(bundle.playlists.map { it.name to it.items.size }).isEqualTo(
+            expected["playlists"]!!.jsonArray.map { it.jsonObject["name"]!!.jsonPrimitive.content to it.jsonObject["items"]!!.jsonPrimitive.int },
+        )
+        assertThat(bundle.likes).hasSize(expected["likes"]!!.jsonPrimitive.int)
+        assertThat(bundle.hidden).hasSize(expected["preview"]!!.jsonObject["hidden"]!!.jsonPrimitive.int)
+        // Each playlist known by its place in the export, the likes in Spotify's order a millisecond apart
+        val keys = SpotifyLibraryImport.playlistKeys(bundle.playlists)
+        assertThat(keys).containsExactly("Road trip#0", "Glass Harbor era#0").inOrder()
+        val content = SpotifyLibraryImport.content(keys.zip(bundle.playlists) { k, p -> ChosenPlaylist(k, p) }, bundle.likes, NOW)
+        assertThat(content.likes.map { it.likedAt }).isEqualTo((0 until 8).map { NOW - it })
+        assertThat(content.playlists.map { it.items.size }).containsExactly(9, 8).inOrder()
     }
 
     @Test fun `plays are written in batches of 5,000`() = runTest {

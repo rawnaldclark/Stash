@@ -4,7 +4,12 @@ import com.stash.feature.record.archive.RecordFlags
 import com.stash.feature.record.lastfm.LastfmMark
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.entity.RecordHiddenEntity
+import com.stash.core.data.record.ChosenPlaylist
+import com.stash.core.data.record.ExportPlaylist
+import com.stash.core.data.record.ExportSong
 import com.stash.feature.record.archive.ArchivePlay
+import com.stash.feature.record.importer.ImportChoice
 import com.stash.feature.record.importer.ArchiveListens
 import com.stash.feature.record.importer.ImportProgress
 import com.stash.feature.record.importer.KeptPlay
@@ -78,6 +83,41 @@ class RecordImportsTest {
         }
     }
 
+    /** The library as the imports drive it ([RecordLibrary]): what it was asked, in order, into [events]. */
+    private class FakeLibrary(
+        val already: Set<Int> = emptySet(),
+        val download: Boolean = false,
+        val events: MutableList<String> = mutableListOf(),
+    ) : RecordLibrary {
+        val hidden = LinkedHashMap<String, RecordHiddenEntity>()
+        val writes = mutableListOf<Triple<List<ChosenPlaylist>, List<ExportSong>, Long>>()
+        override suspend fun alreadyHere(playlists: List<ExportPlaylist>): Set<Int> = already
+        override suspend fun likesDownload(): Boolean = download
+        override suspend fun addHidden(songs: List<ExportSong>) {
+            events += "hidden"
+            RecordLibrary.hiddenRows(songs).forEach { hidden.putIfAbsent(it.key, it) }
+        }
+        override suspend fun clearHidden() {
+            events += "clear hidden"
+            hidden.clear()
+        }
+        override suspend fun write(playlists: List<ChosenPlaylist>, likes: List<ExportSong>, now: Long, progress: (done: Int, total: Int) -> Unit) {
+            events += "library"
+            writes += Triple(playlists, likes, now)
+            // A batch at a time, as the importer tells it
+            val total = playlists.sumOf { it.playlist.items.size } + likes.size
+            for (done in listOf(0, total / 2, total)) progress(done, total)
+        }
+    }
+
+    /** An archive that says when the plays are written ([events]). */
+    private class LoggedArchive(val inner: MemoryArchive, private val events: MutableList<String>) : RecordArchiveStore by inner {
+        override suspend fun apply(add: List<ArchivePlay>, drop: List<String>) {
+            if (events.lastOrNull() != "plays") events += "plays"
+            inner.apply(add, drop)
+        }
+    }
+
     /** An archive whose writes run the phone out of memory. */
     private class OutOfMemoryArchive(val inner: MemoryArchive = MemoryArchive()) : RecordArchiveStore by inner {
         override suspend fun apply(add: List<ArchivePlay>, drop: List<String>) = throw OutOfMemoryError("test")
@@ -99,6 +139,8 @@ class RecordImportsTest {
         startUp: CompletableDeferred<Unit>? = null,
         /** The archive's write lock, shared with the Last.fm import. */
         val writes: RecordWrites = RecordWrites(),
+        /** Where the playlists, likes and hidden songs go. */
+        val library: RecordLibrary = RecordLibrary.None,
     ) {
         /** Times Remove import stopped the Last.fm job. */
         var lastfmCancels = 0
@@ -145,6 +187,7 @@ class RecordImportsTest {
                 cancelLastfm = { lastfmCancels++ },
                 pauseLengths = { lengths += "pause"; timing },
                 startLengths = { lengths += "start" },
+                library = library,
             )
         }
 
@@ -192,7 +235,7 @@ class RecordImportsTest {
         assertThat(rig.notices.shown).isEqualTo(0)
     }
 
-    @Test fun `the same files again - nothing new, nothing written`() = runTest {
+    @Test fun `the same files again - no new plays but the playlists and likes can still come in, and plays alone are nothing new`() = runTest {
         val rig = Rig(this)
         rig.imports.bringSources(fixture(), shared = false)
         runCurrent()
@@ -200,7 +243,18 @@ class RecordImportsTest {
         runCurrent()
         rig.imports.reset()
 
+        // The Account zip holds the playlists and liked songs: a preview with nothing to listen back to (service.ts `choose`)
         rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        val again = rig.imports.state.value as ImportState.Preview
+        assertThat(again.preview.plays).isEqualTo(0)
+        assertThat(again.preview.same).isGreaterThan(0)
+        assertThat(again.preview.playlists.map { it.name }).containsExactly("Road trip", "Glass Harbor era").inOrder()
+        assertThat(again.preview.likes).isEqualTo(8)
+        rig.imports.reset()
+
+        // The Extended zip alone holds plays only: nothing new
+        rig.imports.bringSources(listOf(source(EXTENDED)), shared = false)
         runCurrent()
 
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Failed(ImportFailure.NOTHING_NEW))
@@ -209,6 +263,130 @@ class RecordImportsTest {
         // An answer about the files, not something that went wrong: no "didn't finish"
         assertThat(rig.store.info.value.unfinished).isNull()
         assertThat(rig.notices.shown).isEqualTo(0)
+    }
+
+    @Test fun `the commit - the plays, the hidden songs, the chosen playlists and likes, then the record with pending cleared in one write`() = runTest {
+        val events = mutableListOf<String>()
+        val prefs = MemoryPrefs()
+        val library = FakeLibrary(events = events)
+        val rig = Rig(this, archive = LoggedArchive(MemoryArchive(), events), prefs = prefs, library = library)
+        // The record's write: pending is already gone in that same write (never a record beside a pending mark, nor the reverse)
+        var pendingAtRecord: Boolean? = null
+        prefs.onCommit = { keys ->
+            if ("import_count" in keys) {
+                events += "record"
+                pendingAtRecord = prefs.map.containsKey("import_pending_at") || prefs.map.containsKey("import_pending_playlists")
+            }
+        }
+        val progress = mutableListOf<ImportProgress>()
+        rig.onProgress = { progress += it }
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+
+        // The second playlist only, no liked songs
+        rig.imports.confirm(ImportChoice(playlists = setOf(1), likes = false))
+        runCurrent()
+
+        assertThat(events).containsExactly("plays", "hidden", "library", "record").inOrder()
+        assertThat(pendingAtRecord).isFalse()
+        val (playlists, likes, at) = library.writes.single()
+        assertThat(playlists.map { it.key to it.playlist.items.size }).containsExactly("Glass Harbor era#0" to 8)
+        assertThat(likes).isEmpty()
+        assertThat(at).isEqualTo(NOW)
+        assertThat(library.hidden.keys).hasSize(1)
+        val record = rig.store.info.value.record!!
+        assertThat(listOf(record.imports, record.playlists, record.likes)).containsExactly(1, 1, 0).inOrder()
+        assertThat(rig.store.pending).isNull()
+        assertThat(rig.store.pendingChoice).isEqualTo(ImportChoice.ALL)
+        // The library step shows as itself, in the sheet and the notification
+        assertThat(progress.filterIsInstance<ImportProgress.Library>().last()).isEqualTo(ImportProgress.Library(8, 8))
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Done::class.java)
+
+        // A second import counts what it brings on top: everything this time
+        rig.imports.reset()
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        val second = library.writes.last()
+        assertThat(second.first.map { it.key }).containsExactly("Road trip#0", "Glass Harbor era#0").inOrder()
+        assertThat(second.second).hasSize(8)
+        val after = rig.store.info.value.record!!
+        assertThat(listOf(after.imports, after.playlists, after.likes)).containsExactly(2, 3, 8).inOrder()
+        // The hidden songs are a set: the same one again is still one
+        assertThat(library.hidden.keys).hasSize(1)
+    }
+
+    @Test fun `a commit the app's death interrupted brings in what was chosen, its likes timed from when it began`() = runTest {
+        val prefs = MemoryPrefs()
+        val files = tmp.newFolder()
+        resource(EXTENDED).copyTo(File(files, "0__$EXTENDED"))
+        resource(ACCOUNT).copyTo(File(files, "1__$ACCOUNT"))
+        RecordImportStore(prefs).setPending(NOW - 1_000, ImportChoice(playlists = setOf(0), likes = true))
+        val library = FakeLibrary()
+
+        val rig = Rig(this, prefs = prefs, files = files, library = library)
+        runCurrent()
+
+        val (playlists, likes, at) = library.writes.single()
+        assertThat(playlists.map { it.key }).containsExactly("Road trip#0")
+        assertThat(likes).hasSize(8)
+        assertThat(at).isEqualTo(NOW - 1_000)
+        val record = rig.store.info.value.record!!
+        assertThat(listOf(record.imports, record.playlists, record.likes)).containsExactly(1, 1, 8).inOrder()
+        assertThat(rig.store.pending).isNull()
+    }
+
+    @Test fun `the choice is kept beside pending, an empty one and all of it too`() {
+        val store = RecordImportStore(MemoryPrefs())
+        for (c in listOf(ImportChoice(setOf(3, 0, 12), likes = false), ImportChoice(emptySet(), likes = true), ImportChoice.ALL)) {
+            store.setPending(NOW, c)
+            assertThat(store.pendingChoice).isEqualTo(c)
+        }
+        store.setPending(null)
+        assertThat(store.pending).isNull()
+        assertThat(store.pendingChoice).isEqualTo(ImportChoice.ALL)
+    }
+
+    @Test fun `the preview marks the playlists the library holds already, and that the likes would download`() = runTest {
+        val rig = Rig(this, library = FakeLibrary(already = setOf(0), download = true))
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+
+        val p = (rig.imports.state.value as ImportState.Preview).preview
+        assertThat(p.playlists.map { it.name to it.already }).containsExactly("Road trip" to true, "Glass Harbor era" to false).inOrder()
+        assertThat(p.likesDownload).isTrue()
+        // Nothing is written by a preview
+        assertThat((rig.archive as MemoryArchive).plays).isEmpty()
+    }
+
+    @Test fun `a cancel while the library is written - the plays keep their record, no playlist is counted, pending goes`() = runTest {
+        val library = FakeLibrary()
+        val rig = Rig(this, library = library)
+        rig.onProgress = { if (it is ImportProgress.Library) rig.imports.cancel() }
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+
+        assertThat(library.writes).hasSize(1)
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
+        val record = rig.store.info.value.record!!
+        assertThat(listOf(record.imports, record.playlists, record.likes)).containsExactly(1, 0, 0).inOrder()
+        assertThat(rig.store.pending).isNull()
+        assertThat((rig.archive as MemoryArchive).plays).hasSize(6_814)
+    }
+
+    @Test fun `removing the scrobbles when they were all there was takes the hidden songs too`() = runTest {
+        val library = FakeLibrary()
+        val rig = Rig(this, library = library)
+        library.hidden["x|y"] = RecordHiddenEntity("x|y", "X", "Y")
+        rig.store.setRecord(SpotifyImporter.record(null, ArchiveListens(0, 0, 0, null, null), null, null, NOW, 1))
+
+        rig.imports.recordAfterScrobblesRemoved()
+
+        assertThat(library.hidden).isEmpty()
+        assertThat(rig.store.info.value.record).isNull()
     }
 
     @Test fun `account data first, then the extended zip - the second adds the rest and takes the account twins' place`() = runTest {
@@ -231,19 +409,21 @@ class RecordImportsTest {
         assertThat(rig.store.info.value.record!!.plays).isEqualTo(6_086)
     }
 
-    @Test fun `remove clears the plays and the record, keeps when Spotify was asked and the card's x`() = runTest {
-        val rig = Rig(this)
+    @Test fun `remove clears the plays, the hidden songs and the record, keeps when Spotify was asked and the card's x`() = runTest {
+        val rig = Rig(this, library = FakeLibrary())
         rig.imports.markAsked()
         rig.imports.hideInvite()
         rig.imports.bringSources(fixture(), shared = false)
         runCurrent()
         rig.imports.confirm()
         runCurrent()
+        assertThat((rig.library as FakeLibrary).hidden).isNotEmpty()
 
         assertThat(rig.imports.removeImport()).isTrue()
 
         assertThat((rig.archive as MemoryArchive).plays).isEmpty()
         assertThat(rig.store.info.value.record).isNull()
+        assertThat((rig.library as FakeLibrary).hidden).isEmpty()
         assertThat(rig.store.info.value.asked).isEqualTo(NOW)
         assertThat(rig.store.info.value.inviteHidden).isTrue()
         assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
