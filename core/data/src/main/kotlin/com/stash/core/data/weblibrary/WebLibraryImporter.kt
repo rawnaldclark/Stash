@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.room.withTransaction
+import com.stash.core.common.TrackCanonical
+import com.stash.core.data.blocklist.BlocklistKey
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -241,7 +243,20 @@ class WebLibraryImporter internal constructor(
     /** The matched rows of [songs], null for one that can't be held here or that this phone blocked. [ticks]: told each batch. */
     private suspend fun rows(songs: List<WireSong>, ticks: Ticks? = null): List<TrackEntity?> {
         val blocklist = database.trackBlocklistDao()
-        return matcher.matchAll(songs, onBatch = { ticks?.add(it) }).map { t ->
+        // A song this phone blocked is left out before it is matched. Blocking deleted its row, so matching it would make a new
+        // one, stored under its strict words because its usual key is blocked (canonicalWordsForSave), and the check on the
+        // row below would then miss it (`queen|don t stop me now` is not `queen|don't stop me now`), and leave a row behind
+        val wanted = songs.map { s ->
+            s.takeUnless {
+                blocklist.isBlocked(
+                    BlocklistKey.fromStoredCanonicals(TrackCanonical.artist(it.artist), TrackCanonical.title(it.title)),
+                    it.spotifyId?.let { id -> "spotify:track:$id" },
+                    it.youtubeId,
+                )
+            }
+        }
+        return matcher.matchAll(wanted, onBatch = { ticks?.add(it) }).map { t ->
+            // The row it matched may be blocked under its own words or ids
             t?.takeUnless { blocklist.isBlocked("${it.canonicalArtist}|${it.canonicalTitle}", it.spotifyUri, it.youtubeId) }
         }
     }
