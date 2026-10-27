@@ -411,7 +411,7 @@ class RecordImports internal constructor(
         try {
             when (work) {
                 is Work.Read -> read(work, onProgress)
-                is Work.Commit -> commit(onProgress)
+                is Work.Commit -> commit(work, onProgress)
             }
         } catch (c: CancellationException) {
             withContext(NonCancellable) { stopped(work) }
@@ -458,29 +458,36 @@ class RecordImports internal constructor(
             // A new import (not more files for a preview): any copies an earlier one kept go, and so does its "didn't finish"
             if (work.kept.isEmpty()) {
                 disk.withLock {
-                    if (synchronized(lock) { work.epoch == epoch }) {
+                    if (synchronized(lock) { live(work) }) {
                         withContext(io) { intake.delete(intake.existing().filter { f -> all.none { it.file == f.file } }) }
                     }
                 }
                 clearUnfinished()
             }
             synchronized(lock) {
-                files = all
-                prepared = null
+                if (live(work)) {
+                    files = all
+                    prepared = null
+                }
             }
-            _state.value = ImportState.Working(ImportProgress.Open)
+            publish(work, ImportState.Working(ImportProgress.Open))
             val prep = importer.prepare(all, now(), checkpoint = { job.ensureActive() }, zip = zip) { p ->
-                _state.value = ImportState.Working(p)
+                publish(work, ImportState.Working(p))
                 onProgress(p)
             }
+            // Planning the merge has no checkpoint: a Cancel during it ends here, and its preview is never shown
+            job.ensureActive()
             store.clearStops()
             if (prep.preview.anything) {
-                synchronized(lock) { prepared = prep }
-                _state.value = ImportState.Preview(prep.preview, all.size)
+                synchronized(lock) {
+                    if (live(work)) {
+                        prepared = prep
+                        _state.value = ImportState.Preview(prep.preview, all.size)
+                    }
+                }
             } else {
                 val reason = nothingIn(prep.preview)
-                _state.value = ImportState.Failed(reason)
-                if (reason.unfinished) markUnfinished()
+                if (publish(work, ImportState.Failed(reason)) && reason.unfinished) markUnfinished()
             }
         }
     }
@@ -490,32 +497,32 @@ class RecordImports internal constructor(
         disk.withLock { withContext(io) { intake.delete(work.copies) } }
         val kept = synchronized(lock) { prepared?.takeIf { work.kept.isNotEmpty() } }
         if (kept != null) {
-            _state.value = ImportState.Preview(kept.preview, work.kept.size)
-            _notes.tryEmit(ImportNote.NOT_AN_EXPORT)
+            if (publish(work, ImportState.Preview(kept.preview, work.kept.size))) _notes.tryEmit(ImportNote.NOT_AN_EXPORT)
         } else {
-            _state.value = ImportState.Failed(ImportFailure.NOT_EXPORT)
+            publish(work, ImportState.Failed(ImportFailure.NOT_EXPORT))
         }
     }
 
-    private suspend fun commit(onProgress: (ImportProgress) -> Unit) {
+    private suspend fun commit(work: Work.Commit, onProgress: (ImportProgress) -> Unit) {
         val job = currentCoroutineContext().job
         val prep = synchronized(lock) { prepared } ?: run {
             // The app died after the preview or mid-write: read the kept copies again (the merge is planned afresh anyway)
             val kept = withContext(io) { intake.existing() }
             if (kept.isEmpty()) {
                 writes.withLock { finishPending() }
-                _state.value = ImportState.Idle
+                publish(work, ImportState.Idle)
                 return
             }
-            synchronized(lock) { files = kept }
-            _state.value = ImportState.Working(ImportProgress.Open, saving = true)
+            synchronized(lock) { if (live(work)) files = kept }
+            publish(work, ImportState.Working(ImportProgress.Open, saving = true))
             importer.prepare(kept, now(), checkpoint = { job.ensureActive() }) { onProgress(it) }
         }
         val result = writes.withLock {
+            job.ensureActive()
             store.setPending(now())
-            _state.value = ImportState.Working(ImportProgress.Write(0, 0), saving = true)
+            publish(work, ImportState.Working(ImportProgress.Write(0, 0), saving = true))
             val r = importer.commit(prep, checkpoint = { job.ensureActive() }) { p ->
-                _state.value = ImportState.Working(p, saving = true)
+                publish(work, ImportState.Working(p, saving = true))
                 onProgress(p)
             }
             storeRecord(added = 1)
@@ -523,16 +530,29 @@ class RecordImports internal constructor(
             r
         }
         val e = synchronized(lock) {
-            prepared = null
-            files = emptyList()
+            if (live(work)) {
+                prepared = null
+                files = emptyList()
+            }
             epoch
         }
         clearCopies(e)
         store.clearStops()
         clearUnfinished()
         Log.i(TAG, "import written: ${result.listens} new listens, ${result.written} plays, ${result.dropped} dropped")
-        _state.value = ImportState.Done(result.listens, store.info.value.record?.plays ?: 0)
+        publish(work, ImportState.Done(result.listens, store.info.value.record?.plays ?: 0))
         _changed.tryEmit(Unit)
+    }
+
+    /** [work]'s import is the latest and wasn't cancelled. Under [lock]. */
+    private fun live(work: Work): Boolean = work.epoch == epoch && work.epoch > cancelledThrough
+
+    /**
+     * Shows [s] for [work]'s import, unless the person cancelled it or another import has begun since: a step stopped by a
+     * Cancel can still report once before it reaches its next checkpoint, and must not bring back what the Cancel closed.
+     */
+    private fun publish(work: Work, s: ImportState): Boolean = synchronized(lock) {
+        live(work).also { if (it) _state.value = s }
     }
 
     // ── how it ends early ───────────────────────────────────────────────────────────────────────────────────────────
@@ -603,6 +623,7 @@ class RecordImports internal constructor(
                     prepared = null
                     files = emptyList()
                     queued = null
+                    if (_state.value is ImportState.Working) _state.value = ImportState.Idle
                 }
             }
         }

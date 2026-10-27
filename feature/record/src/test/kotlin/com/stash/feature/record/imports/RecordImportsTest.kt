@@ -3,17 +3,20 @@ package com.stash.feature.record.imports
 import com.google.common.truth.Truth.assertThat
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.importer.ImportProgress
+import com.stash.feature.record.importer.KeptPlay
 import com.stash.feature.record.importer.MemoryArchive
 import com.stash.feature.record.importer.RecordArchiveStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -455,6 +458,34 @@ class RecordImportsTest {
         queued.rerun()
         runCurrent()
         assertThat(queued.imports.state.value).isInstanceOf(ImportState.Preview::class.java)
+    }
+
+    @Test fun `a cancel while the merge is planned (no checkpoint there) - its preview never shows, the sheet stays at its start`() = runTest {
+        // Planning the merge reads the archive with no checkpoint: here it waits on a gate nothing can cancel, as a long plan would
+        val gate = CompletableDeferred<Unit>()
+        val memory = MemoryArchive()
+        val archive = object : RecordArchiveStore by memory {
+            override suspend fun forEachPage(block: (List<KeptPlay>) -> Unit) {
+                withContext(NonCancellable) { gate.await() }
+                memory.forEachPage(block)
+            }
+        }
+        val rig = Rig(this, archive = archive)
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Working::class.java)
+
+        rig.imports.cancel()
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+
+        assertThat(rig.imports.state.value).isEqualTo(ImportState.Idle)
+        assertThat(rig.copies()).isEmpty()
+        // and the next import is its own
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        assertThat(rig.imports.state.value).isInstanceOf(ImportState.Preview::class.java)
     }
 
     @Test fun `stopped by the system again and again, the import is given up as unfinished, its copies kept for a try again`() = runTest {
