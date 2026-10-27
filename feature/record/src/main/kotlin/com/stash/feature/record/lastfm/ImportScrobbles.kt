@@ -156,10 +156,13 @@ object ImportScrobbles {
         return mark
     }
 
-    /** lastfm.ts `removeScrobbles`: every scrobble out of the archive again, and the mark; the export's plays stay. */
+    /**
+     * lastfm.ts `removeScrobbles`: every scrobble out of the archive again, and the mark; the export's plays stay. The mark goes
+     * first (the web deletes it after): a removal cut short then leaves rows with no mark, which the next run reads again from
+     * page 1, kept once each, never an "all in" mark over rows that are gone, whose top-up would read only what is newer.
+     */
     suspend fun remove(store: ScrobbleStore): Int {
-        val n = store.deleteScrobbles()
         store.clearMark()
-        return n
+        return store.deleteScrobbles()
     }
 }

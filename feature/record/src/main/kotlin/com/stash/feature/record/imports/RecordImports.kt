@@ -163,6 +163,8 @@ class RecordImports internal constructor(
     private val io: CoroutineContext = Dispatchers.IO,
     /** The archive's one writer at a time, shared with the Last.fm import ([com.stash.feature.record.lastfm.RecordLastfm]). */
     private val writeLock: RecordWrites = RecordWrites(),
+    /** Stops the Last.fm job, queued or stopped (WorkManager's cancelUniqueWork), so a removal can't be undone by it. */
+    private val cancelLastfm: () -> Unit = {},
 ) : YourRecordImports {
 
     @Inject constructor(
@@ -185,6 +187,7 @@ class RecordImports internal constructor(
         notices = ImportNotifications(context),
         ownPackage = context.packageName,
         writeLock = writeLock,
+        cancelLastfm = { com.stash.feature.record.lastfm.RecordLastfmWorker.cancel(context) },
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
@@ -414,10 +417,17 @@ class RecordImports internal constructor(
      */
     override suspend fun removeImport(): Boolean {
         if (_state.value is ImportState.Working || writeLock.lastfmRunning.value) return false
-        writes.withLock {
-            archive.clear()
-            store.clearRecord()
-        }
+        // In the app's scope, off the main thread: leaving Settings mid-way can't cut it in two
+        scope.async(io + NonCancellable) {
+            writes.withLock {
+                // A Last.fm job queued or stopped would bring the scrobbles back: it goes, and one that slips through finds its
+                // generation gone
+                cancelLastfm()
+                store.nextLastfmGeneration()
+                archive.clear()
+                store.clearRecord()
+            }
+        }.await()
         if (_state.value !is ImportState.Working) reset()
         _changed.tryEmit(Unit)
         return true

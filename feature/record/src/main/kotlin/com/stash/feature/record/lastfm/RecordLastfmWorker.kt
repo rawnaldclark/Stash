@@ -27,9 +27,10 @@ import kotlinx.coroutines.launch
 /**
  * Runs Your record's Last.fm import ([RecordLastfm.run]) as a job, so a whole history (100,000 scrobbles is 500 pages, paced)
  * goes on when the person leaves the screen or the app. A run asked for on screen is a foreground job with a quiet notification
- * saying how far it is; a top-up is quiet and runs as a plain job, unless the person asks to watch it. One at a time (`KEEP`: a
- * run asked for while one goes is that run). The person's Stop ([cancel]) ends it for good; a run the system stops, or one the
- * app's death cut short, runs again by itself (WorkManager) and carries on from its mark.
+ * saying how far it is; a top-up is quiet and runs as a plain job, unless the person asks to watch it. One at a time: a run
+ * asked for while one is finishing waits behind it (`APPEND_OR_REPLACE`), never lost. The person's Stop ([cancel]) ends it for
+ * good; a run the system stops, or one the app's death cut short, runs again by itself (WorkManager) and carries on from its
+ * mark. The job carries what it was asked for ([LastfmAsk]: the account and the scrobbles' generation).
  */
 @HiltWorker
 class RecordLastfmWorker @AssistedInject constructor(
@@ -44,7 +45,12 @@ class RecordLastfmWorker @AssistedInject constructor(
     override suspend fun getForegroundInfo(): ForegroundInfo = foregroundInfo(null)
 
     override suspend fun doWork(): Result = coroutineScope {
-        val quiet = inputData.getBoolean(KEY_QUIET, false)
+        val ask = LastfmAsk(
+            quiet = inputData.getBoolean(KEY_QUIET, false),
+            user = inputData.getString(KEY_USER).orEmpty(),
+            generation = inputData.getLong(KEY_GENERATION, -1),
+        )
+        val quiet = ask.quiet
         if (!quiet) promote(null)
         // The notification follows the run at most once a second (the latest progress wins); a quiet run gets one only once
         // the person asks to watch it
@@ -56,7 +62,7 @@ class RecordLastfmWorker @AssistedInject constructor(
             }
         }
         try {
-            lastfm.run(quiet) { updates.trySend(it) }
+            lastfm.run(ask) { updates.trySend(it) }
         } finally {
             notifier.cancel()
         }
@@ -105,16 +111,26 @@ class RecordLastfmWorker @AssistedInject constructor(
     companion object {
         private const val TAG = "YourRecord"
         private const val NAME = "record-lastfm"
+        /**
+         * A run asked for while one goes waits behind it. Not `KEEP`: a run asked for after the last one's end but before its job
+         * returned went to that finishing job, which never ran it ("Asking Last.fm…" for good).
+         */
+        internal val POLICY = ExistingWorkPolicy.APPEND_OR_REPLACE
+
         private const val KEY_QUIET = "quiet"
+        private const val KEY_USER = "user"
+        private const val KEY_GENERATION = "generation"
         private const val NOTIFICATION_ID = 9482
         private const val NOTIFY_EVERY_MS = 1_000L
 
-        /** A run ([quiet]: a top-up), unless one is queued or going already. */
-        fun start(context: Context, quiet: Boolean) {
+        /** The run [ask]ed for, after the one finishing if there is one. */
+        fun start(context: Context, ask: LastfmAsk) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 NAME,
-                ExistingWorkPolicy.KEEP,
-                OneTimeWorkRequestBuilder<RecordLastfmWorker>().setInputData(workDataOf(KEY_QUIET to quiet)).build(),
+                POLICY,
+                OneTimeWorkRequestBuilder<RecordLastfmWorker>()
+                    .setInputData(workDataOf(KEY_QUIET to ask.quiet, KEY_USER to ask.user, KEY_GENERATION to ask.generation))
+                    .build(),
             )
         }
 

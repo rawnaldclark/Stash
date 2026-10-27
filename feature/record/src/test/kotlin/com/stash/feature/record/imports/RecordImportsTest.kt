@@ -100,6 +100,8 @@ class RecordImportsTest {
         /** The archive's write lock, shared with the Last.fm import. */
         val writes: RecordWrites = RecordWrites(),
     ) {
+        /** Times Remove import stopped the Last.fm job. */
+        var lastfmCancels = 0
         val store = RecordImportStore(prefs)
         val notices = Notices()
         var launches = 0
@@ -137,6 +139,7 @@ class RecordImportsTest {
                 zone = ZoneOffset.UTC,
                 io = dispatcher,
                 writeLock = writes,
+                cancelLastfm = { lastfmCancels++ },
             )
         }
 
@@ -254,6 +257,16 @@ class RecordImportsTest {
         assertThat(rig.imports.removeImport()).isTrue()
         assertThat(rig.store.info.value.lastfm).isNull()
         assertThat(rig.imports.settings.value.importing).isFalse()
+    }
+
+    @Test fun `remove import stops the Last fm job and moves the scrobbles' generation on, so a job run again does nothing`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        val before = rig.store.lastfmGeneration
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.lastfmCancels).isEqualTo(1)
+        assertThat(rig.store.lastfmGeneration).isEqualTo(before + 1)
+        assertThat(rig.store.info.value.lastfmGeneration).isEqualTo(before + 1)
     }
 
     @Test fun `scrobbles alone make an import record, with them all removed and nothing else, it goes`() = runTest {

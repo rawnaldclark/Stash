@@ -23,6 +23,8 @@ data class ImportInfo(
     val unfinished: Long? = null,
     /** Where the Last.fm import stands (archive.ts meta `lastfm`); null: never brought in, or removed. */
     val lastfm: LastfmMark? = null,
+    /** The scrobbles' generation, moved on by every removal: a Last.fm run asked for before one does nothing. */
+    val lastfmGeneration: Long = 0,
 )
 
 /**
@@ -91,6 +93,12 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         putLong(L_AT, m.at)
     }
 
+    /** The scrobbles' generation now ([ImportInfo.lastfmGeneration]). */
+    val lastfmGeneration: Long get() = prefs.getLong(KEY_LASTFM_GENERATION, 0)
+
+    /** A removal: the scrobbles' generation moves on (kept through every removal, never cleared). */
+    fun nextLastfmGeneration() = edit { putLong(KEY_LASTFM_GENERATION, lastfmGeneration + 1) }
+
     /** Remove your Last.fm scrobbles: the mark goes with them. */
     fun clearLastfm() = edit { LASTFM_KEYS.forEach(::remove) }
 
@@ -129,6 +137,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         },
         inviteHidden = prefs.getBoolean(KEY_HIDDEN, false),
         unfinished = prefs.getLong(KEY_UNFINISHED, 0L).takeIf { it > 0 },
+        lastfmGeneration = prefs.getLong(KEY_LASTFM_GENERATION, 0),
         lastfm = prefs.getString(L_USER, null)?.let { user ->
             LastfmMark(
                 user = user,
@@ -163,6 +172,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val R_PLAYLISTS = "import_playlists"
         private const val R_LIKES = "import_likes"
         private val RECORD_KEYS = listOf(R_FIRST_AT, R_LAST_AT, R_IMPORTS, R_PLAYS, R_SPOTIFY, R_LASTFM, R_STASH, R_FIRST, R_LAST, R_PLAYLISTS, R_LIKES)
+        private const val KEY_LASTFM_GENERATION = "lastfm_generation"
         private const val L_USER = "lastfm_user"
         private const val L_TO = "lastfm_to"
         private const val L_NEXT = "lastfm_next"
