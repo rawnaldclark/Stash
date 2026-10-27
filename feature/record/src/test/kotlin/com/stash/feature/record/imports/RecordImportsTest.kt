@@ -102,6 +102,9 @@ class RecordImportsTest {
     ) {
         /** Times Remove import stopped the Last.fm job. */
         var lastfmCancels = 0
+        /** The lengths pass as the imports drive it; [timing]: one was running when it was stopped. */
+        val lengths = mutableListOf<String>()
+        var timing = false
         val store = RecordImportStore(prefs)
         val notices = Notices()
         var launches = 0
@@ -140,6 +143,8 @@ class RecordImportsTest {
                 io = dispatcher,
                 writeLock = writes,
                 cancelLastfm = { lastfmCancels++ },
+                pauseLengths = { lengths += "pause"; timing },
+                startLengths = { lengths += "start" },
             )
         }
 
@@ -267,6 +272,44 @@ class RecordImportsTest {
         assertThat(rig.lastfmCancels).isEqualTo(1)
         assertThat(rig.store.lastfmGeneration).isEqualTo(before + 1)
         assertThat(rig.store.info.value.lastfmGeneration).isEqualTo(before + 1)
+    }
+
+    @Test fun `a commit lets the lengths pass go first, and starts it after once Last fm is in or one was running`() = runTest {
+        // No Last.fm, nothing running: stopped first all the same, nothing after
+        val rig = Rig(this)
+        rig.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        rig.imports.confirm()
+        runCurrent()
+        assertThat(rig.lengths).containsExactly("pause")
+
+        // Last.fm brought in: the export may time some of its songs now
+        val withLastfm = Rig(this)
+        withLastfm.store.setLastfm(LastfmMark("me", 1, 2, 1, true, 5, 10, 0, 1))
+        withLastfm.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        withLastfm.imports.confirm()
+        runCurrent()
+        assertThat(withLastfm.lengths).containsExactly("pause", "start").inOrder()
+
+        // A pass was running (its scrobbles came from somewhere): it carries on after
+        val running = Rig(this)
+        running.timing = true
+        running.imports.bringSources(fixture(), shared = false)
+        runCurrent()
+        running.imports.confirm()
+        runCurrent()
+        assertThat(running.lengths).containsExactly("pause", "start").inOrder()
+    }
+
+    @Test fun `remove import stops the lengths pass first, and nothing starts it after`() = runTest {
+        val rig = Rig(this)
+        runCurrent()
+        rig.store.setLengths(timed = 3, at = 5)
+        assertThat(rig.imports.removeImport()).isTrue()
+        assertThat(rig.lengths).containsExactly("pause")
+        assertThat(rig.store.lengthsAt).isNull()
+        assertThat(rig.store.info.value.lengthsTimed).isEqualTo(0)
     }
 
     @Test fun `scrobbles alone make an import record, with them all removed and nothing else, it goes`() = runTest {

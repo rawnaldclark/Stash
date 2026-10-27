@@ -2,7 +2,9 @@ package com.stash.feature.record.lastfm
 
 import android.content.Context
 import android.util.Log
+import com.stash.core.data.db.dao.RecordLengthDao
 import com.stash.core.data.db.dao.RecordPlayDao
+import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.lastfm.recap.LastFmHistoryPacer
@@ -45,8 +47,11 @@ sealed interface LastfmState {
     /** Reading; [progress] null until Last.fm has said how many pages there are ("Asking Last.fm…"). */
     data class Working(val progress: LastfmProgress?) : LastfmState
 
-    /** A run finished: [added] scrobbles came in. */
-    data class Done(val added: Int) : LastfmState
+    /**
+     * A run finished (service.ts `done`): [added] the scrobbles this run brought in; [total], when this run read the whole history
+     * (or the rest of it, carrying on), every scrobble the import holds, so the done line counts the whole import.
+     */
+    data class Done(val added: Int, val total: Int? = null) : LastfmState
 
     data class Failed(val reason: LastfmFailure) : LastfmState
 }
@@ -68,6 +73,8 @@ sealed interface LastfmState {
  *   Spotify import works. The job goes with them, and a job that slips through finds its generation gone ([LastfmAsk]).
  *
  * A run holds the archive's write lock ([RecordWrites]) from its first page to its import record, as the web holds its lock.
+ * The lengths pass ([RecordLengths]) lets go of the lock for it, and times the songs after it: after every run that finished or
+ * stopped short, but not after the person's Stop or a session that ended.
  */
 @Singleton
 class RecordLastfm internal constructor(
@@ -107,18 +114,29 @@ class RecordLastfm internal constructor(
     private val now: () -> Long = System::currentTimeMillis,
     private val gapMs: Long = ImportScrobbles.PAGE_GAP_MS,
     private val busyMs: Long = ImportScrobbles.BUSY_WAIT_MS,
+    /** The library's song lengths ([Scrobbles.libraryLengths]), for the rows Spotify's plays can't time. */
+    private val library: suspend () -> Map<String, Long> = { emptyMap() },
+    /** The lengths pass: stopped (waited for) before a run or a removal takes the lock... */
+    private val pauseLengths: suspend () -> Boolean = { false },
+    /** ...started after a run... */
+    private val startLengths: () -> Unit = {},
+    /** ...and stopped by the person's Stop. */
+    private val stopLengths: () -> Unit = {},
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
         dao: RecordPlayDao,
+        lengthDao: RecordLengthDao,
+        own: WebLibraryExportDao,
         store: RecordImportStore,
         imports: RecordImports,
         writes: RecordWrites,
         session: LastFmSessionPreference,
         api: LastFmApiClient,
         pacer: LastFmHistoryPacer,
+        lengths: RecordLengths,
     ) : this(
-        newStore = { DaoScrobbleStore(dao, store) },
+        newStore = { DaoScrobbleStore(dao, store, lengthDao) },
         markNow = { store.info.value.lastfm },
         markFlow = store.info.map { it.lastfm },
         accountFlow = session.session.map { it?.let { s -> LastfmAccount(s.username, s.sessionKey) } }.distinctUntilChanged(),
@@ -135,6 +153,10 @@ class RecordLastfm internal constructor(
         generation = { store.lastfmGeneration },
         nextGeneration = store::nextLastfmGeneration,
         generations = store.info.map { it.lastfmGeneration },
+        library = { RecordLengths.libraryLengths(own) },
+        pauseLengths = lengths::pause,
+        startLengths = lengths::start,
+        stopLengths = lengths::stop,
     )
 
     /** Where the import stands, for the screens. */
@@ -220,9 +242,10 @@ class RecordLastfm internal constructor(
         }
     }
 
-    /** service.ts `stopLastfm`: the run stops at the next page or pause; it carries on from there next time. */
+    /** service.ts `stopLastfm`: the run stops at the next page or pause; it carries on from there next time. The lengths pass stops too. */
     fun stop() {
         cancelJob()
+        stopLengths()
         synchronized(lock) {
             // A run the job hadn't taken up yet never will: idle now (one under way says so as it ends)
             if (running && !started) idleLocked()
@@ -248,6 +271,8 @@ class RecordLastfm internal constructor(
     suspend fun remove(): Boolean {
         if (synchronized(lock) { running && started } || spotifyBusy()) return false
         return scope.async(io + NonCancellable) {
+            // The lengths pass lets go of the lock first (service.ts `removeLastfm`)
+            pauseLengths()
             writes.mutex.withLock {
                 dropQueued()
                 val store = newStore()
@@ -290,8 +315,12 @@ class RecordLastfm internal constructor(
             a
         }
         var before: LastfmMark? = null
+        // The mark the run started from, its count taken from the archive (the done line counts from it)
+        var start: LastfmMark? = null
         // The run took the archive (and read the mark then): what it wrote may change the record
         var took = false
+        // The lengths pass times what came in after it: not after a Stop, nor once the session has ended
+        var timeAfter = false
         var outcome: LastfmState = LastfmState.Idle
         try {
             val acc = accountFlow.first() ?: throw LastfmError(LastfmFailure.RECONNECT)
@@ -299,6 +328,8 @@ class RecordLastfm internal constructor(
                 Log.i(TAG, "Last.fm: asked for another account than the one connected now; nothing read")
                 return
             }
+            // The lengths pass lets go of the lock for the run, and starts again after it
+            pauseLengths()
             val m = writes.mutex.withLock {
                 if (generation() != ask.generation) {
                     Log.i(TAG, "Last.fm: the scrobbles were removed since this run was asked for; nothing read")
@@ -310,16 +341,22 @@ class RecordLastfm internal constructor(
                 try {
                     val nowS = now() / 1000
                     val reader = LastfmPages(remote, acc.name, account = { accountFlow.first() }, nowS = { now() / 1000 })
-                    val m = ImportScrobbles.run(newStore(), reader, acc.name, nowS, progress = { report(it, onProgress) }, gapMs = gapMs, busyMs = busyMs)
+                    val m = ImportScrobbles.run(
+                        newStore(), reader, acc.name, nowS, library = library(), progress = { report(it, onProgress) }, onStart = { start = it },
+                        gapMs = gapMs, busyMs = busyMs,
+                    )
                     recordAfter()
                     m
                 } finally {
                     writes.setLastfmRunning(false)
                 }
             } ?: return
-            val had = before?.takeIf { it.user == acc.name }?.added ?: 0
-            Log.i(TAG, "Last.fm: ${m.added - had} scrobbles in (${m.added} in all, ${m.covered} another source had), page ${m.next - 1} of ${m.pages}")
-            outcome = LastfmState.Done(m.added - had)
+            // A run that read the whole history (or carried on with it) says the whole import; a top-up, what it brought
+            val from = start
+            val added = maxOf(0, m.added - (from?.added ?: 0))
+            Log.i(TAG, "Last.fm: $added scrobbles in (${m.added} in all, ${m.covered} another source had), page ${m.next - 1} of ${m.pages}")
+            outcome = LastfmState.Done(added, total = m.added.takeIf { from != null && !from.done })
+            timeAfter = true
         } catch (e: CancellationException) {
             // Stopped: by the person (it carries on next time), or by the system (the job runs again by itself)
             Log.i(TAG, "Last.fm stopped at page ${(markNow()?.next ?: 1) - 1}")
@@ -327,9 +364,11 @@ class RecordLastfm internal constructor(
         } catch (e: LastfmError) {
             Log.w(TAG, "Last.fm stopped short: ${e.kind}")
             outcome = LastfmState.Failed(e.kind)
+            timeAfter = took && e.kind != LastfmFailure.RECONNECT
         } catch (e: Exception) {
             Log.w(TAG, "Last.fm failed: ${e.javaClass.simpleName}", e)
             outcome = LastfmState.Failed(LastfmFailure.OTHER)
+            timeAfter = took
         } finally {
             synchronized(lock) {
                 running = false
@@ -342,6 +381,7 @@ class RecordLastfm internal constructor(
                 val after = markNow()
                 if (after?.added != was?.added || after?.covered != was?.covered || after?.user != was?.user) changed()
             }
+            if (timeAfter) startLengths()
         }
     }
 

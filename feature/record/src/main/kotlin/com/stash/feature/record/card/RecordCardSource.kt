@@ -121,10 +121,13 @@ class RecordCardSource internal constructor(
     /** The sources the record's switches leave on (kept on this phone). */
     private val sources: StateFlow<SourcesOn> = MutableStateFlow(SourcesOn.ALL_ON),
     /**
-     * A Last.fm run is writing (a page every second or so, for minutes): the imported part is held as it was and read once the
-     * run is over, never again after every page (the web's card, too, changes when its run ends).
+     * A Last.fm run is writing (a page every second or so, for minutes), or the lengths pass is (a song's rows at a time, for as
+     * long as it takes): the imported part is held as it was and read once the writing is over, never again after every page or
+     * song (the web's card, too, changes when its run ends, and as its lengths pass shows what it timed)...
      */
     private val importsPaused: Flow<Boolean> = flowOf(false),
+    /** ...except each time the lengths pass shows what it timed (this moves on): then it is read again. */
+    private val importsShown: Flow<Int> = flowOf(0),
     /** Where the history is read and summed: off the main thread, one thing at a time. */
     work: CoroutineContext = Dispatchers.Default.limitedParallelism(1),
     private val now: () -> Long = SystemClock::elapsedRealtime,
@@ -141,7 +144,8 @@ class RecordCardSource internal constructor(
         importedAlbums = imported::albumTotalsWithoutScrobbles,
         scrobbles = KindArchive(imported, scrobbles = true),
         sources = sources.on,
-        importsPaused = writes.lastfmRunning,
+        importsPaused = combine(writes.lastfmRunning, writes.lengthsRunning) { lastfm, lengths -> lastfm || lengths },
+        importsShown = writes.lengthsShown,
     )
 
     @Volatile private var kept: Pair<Any, CardParts>? = null
@@ -201,7 +205,7 @@ class RecordCardSource internal constructor(
             }
         }
 
-        val history = combine(stamps, heldWhile(importedStamps, importsPaused)) { own, plays -> own to plays }.distinctUntilChanged()
+        val history = combine(stamps, heldWhile(importedStamps, importsPaused, importsShown)) { own, plays -> own to plays }.distinctUntilChanged()
         merge(history.map { Change.History(it) }, tracks.drop(1).map { Change.Tracks }).collect { change ->
             when (change) {
                 is Change.History -> {
@@ -261,13 +265,30 @@ class RecordCardSource internal constructor(
         null
     }
 
-    /** [stamps] as they come, except while [paused]: then the one before stays (the first is taken whatever, so Home has a card). */
-    private fun heldWhile(stamps: Flow<Any>, paused: Flow<Boolean>): Flow<Any> = flow {
+    /** A held stamp the lengths pass asked to show ([importsShown]): another value, so the plays are read again whatever the stamp. */
+    private data class Shown(val n: Int, val stamp: Any)
+
+    /**
+     * [stamps] as they come, except while [paused]: then the one before stays (the first is taken whatever, so Home has a card),
+     * until [shown] moves on, which reads the plays as they are then. (Not the stamp of that moment: the database's own may come
+     * a moment after the pass's word.)
+     */
+    private fun heldWhile(stamps: Flow<Any>, paused: Flow<Boolean>, shown: Flow<Int>): Flow<Any> = flow {
         var held: Any? = null
-        combine(stamps, paused) { s, p -> s to p }.collect { (s, p) ->
-            if (!p || held == null) {
-                held = s
-                emit(s)
+        var seen: Int? = null
+        combine(stamps, paused, shown) { s, p, w -> Triple(s, p, w) }.collect { (s, p, w) ->
+            val moved = seen != null && w != seen
+            seen = w
+            when {
+                !p || held == null -> {
+                    held = s
+                    emit(s)
+                }
+                moved -> {
+                    val h = Shown(w, s)
+                    held = h
+                    emit(h)
+                }
             }
         }
     }.distinctUntilChanged()

@@ -39,7 +39,10 @@ object RecordFlags {
     /** A Last.fm scrobble: when it started, never how long it played. */
     const val LASTFM = 64
 
-    /** Its `ms` is the song's length or a guess ([GUESS_MS]), not time played. */
+    /**
+     * Its `ms` is a guess, not time played: on a scrobble, [GUESS_MS], until the lengths pass finds the song's length
+     * ([com.stash.feature.record.lastfm.Lengths]); on a phone play, the song's length or that guess.
+     */
     const val ESTIMATED = 128
 
     /** A play made in Stash on the phone: the record's Stash source. */

@@ -1,12 +1,13 @@
 package com.stash.feature.record.lastfm
 
+import androidx.work.ExistingWorkPolicy
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.data.lastfm.LastFmRateLimitedException
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.archive.RecordFlags
 import com.stash.feature.record.imports.RecordWrites
 import kotlinx.coroutines.CompletableDeferred
-import androidx.work.ExistingWorkPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -16,9 +17,15 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.Test
 
 /** Your Last.fm scrobbles coming in: the service's runs, as the sheet and Settings see them. */
@@ -60,6 +67,8 @@ class RecordLastfmTest {
         var cancels = 0
         var nowMs = nowS * 1000
         val generation = MutableStateFlow(0L)
+        /** The lengths pass as the service drives it: stopped before a run or a removal, started after a run, stopped by Stop. */
+        val lengths = mutableListOf<String>()
         /** The store a run or a removal gets (a test can hand over one that waits). */
         var storeFor: () -> ScrobbleStore = { store }
         val lastfm = RecordLastfm(
@@ -84,6 +93,9 @@ class RecordLastfmTest {
             now = { nowMs },
             gapMs = 0,
             busyMs = 0,
+            pauseLengths = { lengths += "pause"; false },
+            startLengths = { lengths += "start" },
+            stopLengths = { lengths += "stop" },
         )
 
         init {
@@ -104,7 +116,8 @@ class RecordLastfmTest {
         // What the screens show as each page lands (the notification hears the same)
         val shown = mutableListOf<LastfmState>()
         h.run(false) { shown += h.lastfm.state.value }
-        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(450))
+        // A whole read: the whole import, all of it this time
+        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(450, total = 450))
         assertThat(shown).containsExactly(
             LastfmState.Working(LastfmProgress(1, 3, 200)),
             LastfmState.Working(LastfmProgress(2, 3, 400)),
@@ -135,7 +148,8 @@ class RecordLastfmTest {
         h.lastfm.bringIn()
         h.run(false)
         assertThat(h.remote.asked).containsExactly(2, 3).inOrder()
-        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(250))
+        // Carried on: the whole import, and this run's part of it
+        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(250, total = 450))
         assertThat(h.store.rows).hasSize(450)
     }
 
@@ -204,8 +218,11 @@ class RecordLastfmTest {
         h.run(false)
         assertThat(h.store.mark!!.user).isEqualTo("someone else")
         assertThat(h.remote.asked).containsExactly(1)
-        // the scrobbles came in already (same words, same times): kept once, and the count is this account's own
-        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(0))
+        // the scrobbles came in already (same words, same times): kept once, the first account's the base, and the count this
+        // account's own reads (lastfm.ts: each scrobble of a whole read the archive holds)
+        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(5, total = 5))
+        assertThat(h.store.mark!!.base).isEqualTo(5)
+        assertThat(h.store.rows).hasSize(5)
     }
 
     @Test fun `busy six times stops short and says so, a quiet run says nothing`() = runTest {
@@ -362,9 +379,11 @@ class RecordLastfmTest {
         held.complete(Unit)
         writer.join()
         run.join()
-        // The whole history read again from page 1, every scrobble kept already: none new, never a negative count (the mark
-        // read before the run took the archive said 450, which made it -450)
-        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(0))
+        // The whole history read again from page 1, every scrobble kept already, never a negative count (the mark read before
+        // the run took the archive said 450, which made it -450). With no mark the rows held are another account's for all it
+        // knows (startMark: the base), so the count is this read's own: all 450
+        assertThat(h.lastfm.state.value).isEqualTo(LastfmState.Done(450, total = 450))
+        assertThat(h.store.rows).hasSize(450)
     }
 
     @Test fun `a run asked for one account does nothing for another connected since`() = runTest {
@@ -397,5 +416,144 @@ class RecordLastfmTest {
     @Test fun `a run asked for while one finishes waits behind it, never dropped`() {
         // KEEP gave a run asked for after the last one's end, before its job returned, to the finishing job, which never ran it
         assertThat(RecordLastfmWorker.POLICY).isEqualTo(ExistingWorkPolicy.APPEND_OR_REPLACE)
+    }
+
+    // ── the lengths pass around a run ────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `the lengths pass lets go of the lock for a run, and times what came in after it`() = runTest {
+        val h = Harness(this, songs = 450)
+        h.lastfm.bringIn()
+        h.run(false)
+        assertThat(h.lengths).containsExactly("pause", "start").inOrder()
+        // A quiet top-up too, even one that finds nothing
+        h.lengths.clear()
+        h.nowMs += 2 * 3_600_000L
+        h.lastfm.topUp()
+        runCurrent()
+        h.run(true)
+        assertThat(h.lengths).containsExactly("pause", "start").inOrder()
+    }
+
+    @Test fun `stopped short the pass still times what came in, not after a reconnect, a Stop, or a run that did nothing`() = runTest {
+        val busy = Harness(this, songs = 450)
+        busy.remote.fail = { throw LastFmRateLimitedException("HTTP 429") }
+        busy.lastfm.bringIn()
+        busy.run(false)
+        assertThat(busy.lastfm.state.value).isEqualTo(LastfmState.Failed(LastfmFailure.BUSY))
+        assertThat(busy.lengths).containsExactly("pause", "start").inOrder()
+
+        // The account gone under the run: a reconnect
+        val gone = Harness(this, songs = 450)
+        gone.remote.gate[2] = CompletableDeferred()
+        gone.lastfm.bringIn()
+        val run = launch { gone.run(false) }
+        runCurrent()
+        gone.account.value = null
+        gone.remote.gate[2]!!.complete(Unit)
+        run.join()
+        assertThat(gone.lastfm.state.value).isEqualTo(LastfmState.Failed(LastfmFailure.RECONNECT))
+        assertThat(gone.lengths).containsExactly("pause")
+
+        // The person's Stop: the pass stops too, and doesn't start after
+        val stopped = Harness(this, songs = 450)
+        stopped.remote.gate[2] = CompletableDeferred()
+        stopped.lastfm.bringIn()
+        val job = launch { stopped.run(false) }
+        runCurrent()
+        stopped.lastfm.stop()
+        job.cancel()
+        advanceUntilIdle()
+        assertThat(stopped.lengths).containsExactly("pause", "stop").inOrder()
+
+        // Asked for another account than the one connected now: nothing read, nothing paused or started
+        val other = Harness(this, songs = 5)
+        other.lastfm.run(LastfmAsk(false, "someone else", 0))
+        assertThat(other.lengths).isEmpty()
+    }
+
+    @Test fun `removing the scrobbles stops the pass first`() = runTest {
+        val h = Harness(this, songs = 5)
+        h.lastfm.bringIn()
+        h.run(false)
+        h.lengths.clear()
+        assertThat(h.lastfm.remove()).isTrue()
+        assertThat(h.lengths).containsExactly("pause")
+    }
+
+    // ── the web's service, run for run (service.json, from lastfm-vectors.ts) ───────────────────────────────────────────
+
+    /**
+     * Last.fm as service.json's runs fake it, behind the app's client: a profile that keeps its listening private (so every page
+     * reads signed), the vector's scrobbles newest first, and its odd pages (busy: a rate limit; reconnect: error 9 on the signed
+     * read, a session Last.fm no longer takes).
+     */
+    private class VectorRemote : LastfmRemote {
+        var all: List<Scrobble> = emptyList()
+        val fails = mutableListOf<Pair<Int, Pair<String, IntArray>>>()
+
+        override suspend fun page(user: String, from: Long?, to: Long, page: Int): JsonObject =
+            throw com.stash.core.data.lastfm.LastFmApiException(17, "Login required")
+
+        override suspend fun signedPage(sessionKey: String, user: String, from: Long?, to: Long, page: Int): JsonObject {
+            fails.firstOrNull { it.first == page && it.second.second[0] > 0 }?.let { (_, f) ->
+                f.second[0]--
+                when (f.first) {
+                    "busy" -> throw LastFmRateLimitedException("HTTP 429")
+                    "reconnect" -> throw com.stash.core.data.lastfm.LastFmApiException(9, "Invalid session key")
+                    else -> throw com.stash.core.data.lastfm.LastFmHttpException(404, "HTTP 404")
+                }
+            }
+            val window = all.filter { it.uts <= to && (from == null || it.uts >= from) }.sortedByDescending { it.uts }
+            val pages = (window.size + 199) / 200
+            val tracks = window.drop((page - 1) * 200).take(200).joinToString(",") { s ->
+                """{"name":${Json.encodeToString(String.serializer(), s.t)},"artist":{"#text":${Json.encodeToString(String.serializer(), s.a)}},"date":{"uts":"${s.uts}"}}"""
+            }
+            return Json.parseToJsonElement("""{"recenttracks":{"track":[$tracks],"@attr":{"page":"$page","totalPages":"$pages","total":"${window.size}"}}}""").jsonObject
+        }
+    }
+
+    @Test fun `each run says what the web's service says`() = runTest {
+        val cases = Json.parseToJsonElement(requireNotNull(javaClass.getResource("/lastfm/service.json")).readText()).jsonArray
+        assertThat(cases.size).isAtLeast(5)
+        for (c in cases.map { it.jsonObject }) {
+            val name = c["name"]!!.jsonPrimitive.content
+            val remote = VectorRemote()
+            val store = MemoryScrobbleStore()
+            val account = MutableStateFlow<LastfmAccount?>(null)
+            var nowMs = 0L
+            val lastfm = RecordLastfm(
+                newStore = { store }, markNow = { store.mark }, markFlow = flow { emit(store.mark) }, accountFlow = account,
+                configured = true, remote = remote, writes = RecordWrites(), spotifyBusy = { false }, recordAfter = {}, recordAfterRemoved = {},
+                changed = {}, launch = {}, cancelJob = {}, scope = backgroundScope, generation = { 0 }, nextGeneration = {},
+                generations = MutableStateFlow(0L), io = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler), now = { nowMs },
+                gapMs = 0, busyMs = 0,
+            )
+            for ((i, r) in c["runs"]!!.jsonArray.map { it.jsonObject }.withIndex()) {
+                val at = "$name, run ${i + 1}"
+                val user = r["user"]!!.jsonPrimitive.content
+                account.value = LastfmAccount(user, "sk")
+                runCurrent()
+                nowMs = r["nowS"]!!.jsonPrimitive.long * 1000
+                remote.all = r["scrobbles"]!!.jsonArray.map { it.jsonObject }.map {
+                    Scrobble(it["t"]!!.jsonPrimitive.content, it["a"]!!.jsonPrimitive.content, null, it["uts"]!!.jsonPrimitive.long)
+                }
+                remote.fails.clear()
+                r["fails"]!!.jsonArray.map { it.jsonObject }.forEach {
+                    remote.fails += it["page"]!!.jsonPrimitive.int to (it["kind"]!!.jsonPrimitive.content to intArrayOf(it["times"]!!.jsonPrimitive.int))
+                }
+                lastfm.bringIn()
+                lastfm.run(LastfmAsk(false, user, 0))
+                val st = r["state"]!!.jsonObject
+                val want = when (st["step"]!!.jsonPrimitive.content) {
+                    "done" -> LastfmState.Done(st["added"]!!.jsonPrimitive.int, (st["total"] as? JsonPrimitive)?.int)
+                    else -> LastfmState.Failed(LastfmFailure.valueOf(st["reason"]!!.jsonPrimitive.content.uppercase()))
+                }
+                assertWithMessage("$at: state").that(lastfm.state.value).isEqualTo(want)
+                val m = r["mark"]!!.jsonObject
+                assertWithMessage("$at: added").that(store.mark!!.added).isEqualTo(m["added"]!!.jsonPrimitive.int)
+                assertWithMessage("$at: base").that(store.mark!!.base).isEqualTo((m["base"] as? JsonPrimitive)?.int)
+                lastfm.reset()
+            }
+        }
     }
 }

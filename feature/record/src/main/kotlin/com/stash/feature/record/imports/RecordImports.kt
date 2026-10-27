@@ -3,6 +3,7 @@ package com.stash.feature.record.imports
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.stash.core.data.db.dao.RecordLengthDao
 import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.record.YourRecordImportState
@@ -165,17 +166,24 @@ class RecordImports internal constructor(
     private val writeLock: RecordWrites = RecordWrites(),
     /** Stops the Last.fm job, queued or stopped (WorkManager's cancelUniqueWork), so a removal can't be undone by it. */
     private val cancelLastfm: () -> Unit = {},
+    /** Stops the lengths pass and waits for it to let go of the lock (service.ts `pauseLengths`); whether one was running. */
+    private val pauseLengths: suspend () -> Boolean = { false },
+    /** Starts the lengths pass (service.ts `timeSongs`). */
+    private val startLengths: () -> Unit = {},
 ) : YourRecordImports {
 
     @Inject constructor(
         @ApplicationContext context: Context,
         store: RecordImportStore,
         dao: RecordPlayDao,
+        lengthDao: RecordLengthDao,
         own: WebLibraryExportDao,
         writeLock: RecordWrites,
+        /** Lazy: the lengths pass reads the import record and the changes from here. */
+        lengths: dagger.Lazy<com.stash.feature.record.lastfm.RecordLengths>,
     ) : this(
         store = store,
-        archive = DaoArchiveStore(dao),
+        archive = DaoArchiveStore(dao, lengthDao),
         ownSpan = { own.ownFirstPlayAt() to own.ownLastPlayAt() },
         intake = ImportIntake(File(context.noBackupFilesDir, "record-import/files")),
         scratch = File(context.noBackupFilesDir, "record-import/scratch"),
@@ -188,6 +196,8 @@ class RecordImports internal constructor(
         ownPackage = context.packageName,
         writeLock = writeLock,
         cancelLastfm = { com.stash.feature.record.lastfm.RecordLastfmWorker.cancel(context) },
+        pauseLengths = { lengths.get().pause() },
+        startLengths = { lengths.get().start() },
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
@@ -419,6 +429,8 @@ class RecordImports internal constructor(
         if (_state.value is ImportState.Working || writeLock.lastfmRunning.value) return false
         // In the app's scope, off the main thread: leaving Settings mid-way can't cut it in two
         scope.async(io + NonCancellable) {
+            // The lengths pass lets go of the lock first (service.ts `remove`)
+            pauseLengths()
             writes.withLock {
                 // A Last.fm job queued or stopped would bring the scrobbles back: it goes, and one that slips through finds its
                 // generation gone
@@ -659,6 +671,8 @@ class RecordImports internal constructor(
             publish(work, ImportState.Working(ImportProgress.Open, saving = true))
             importer.prepare(kept, now(), checkpoint = { checkpoint(job, work) }) { onProgress(it) }
         }
+        // The lengths pass lets go of the lock for the commit, and carries on after it (the export may time some songs now)
+        val timing = pauseLengths()
         val result = writes.withLock {
             checkpoint(job, work)
             store.setPending(now())
@@ -671,6 +685,7 @@ class RecordImports internal constructor(
             store.setPending(null)
             r
         }
+        if (timing || store.info.value.lastfm != null) startLengths()
         val mine = synchronized(lock) {
             live(work).also {
                 if (it) {
@@ -835,6 +850,14 @@ class RecordImports internal constructor(
      */
     internal suspend fun recordAfterScrobblesRemoved() {
         if (archive.count() == 0) store.clearRecord() else if (store.info.value.record != null) storeRecord(added = 0)
+    }
+
+    /**
+     * After a slice of the lengths pass that timed songs, under the write lock it holds: the import record over the archive as
+     * it is now, when there is one (service.ts `timeSongs`'s `storeRecord`, no import counted).
+     */
+    internal suspend fun recordAfterLengths() {
+        if (store.info.value.record != null) storeRecord(added = 0)
     }
 
     /** The scrobbles changed (a run brought some, or they were removed): an open record presses itself again. */
