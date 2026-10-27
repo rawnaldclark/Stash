@@ -740,7 +740,7 @@
     <string name="settings_your_record_remove">Usuń zaimportowaną historię</string>
     <string name="settings_your_record_remove_subtitle">Twoja płyta wraca do odtworzeń w Stash.</string>
     <string name="settings_your_record_remove_title">Usunąć zaimportowaną historię?</string>
-    <string name="settings_your_record_remove_body">Wszystko, co trafiło na twoją płytę ze Spotify, zostanie usunięte z tego telefonu. Twoje odtworzenia w Stash zostają.</string>
+    <string name="settings_your_record_remove_body">Wszystko, co trafiło na twoją płytę ze Spotify i Last.fm, zostanie usunięte z tego telefonu. Twoje odtworzenia w Stash zostają.</string>
     <string name="settings_your_record_remove_confirm">Usuń</string>
     <string name="settings_your_record_cancel">Anuluj</string>
     <string name="settings_your_record_removed">Usunięto zaimportowaną historię.</string>

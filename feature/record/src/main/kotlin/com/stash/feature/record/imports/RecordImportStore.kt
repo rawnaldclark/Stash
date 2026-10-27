@@ -3,6 +3,7 @@ package com.stash.feature.record.imports
 import android.content.Context
 import android.content.SharedPreferences
 import com.stash.feature.record.importer.ImportRecord
+import com.stash.feature.record.lastfm.LastfmMark
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,13 +21,15 @@ data class ImportInfo(
     val inviteHidden: Boolean = false,
     /** When an import last came to nothing (it failed, or the system stopped it for good): the card says so until it's dismissed or tried again. */
     val unfinished: Long? = null,
+    /** Where the Last.fm import stands (archive.ts meta `lastfm`); null: never brought in, or removed. */
+    val lastfm: LastfmMark? = null,
 )
 
 /**
  * Your record's import meta in this phone's preferences (the `your_record` file the Home card's × already lives in): `asked`,
  * the import record, `pending` (an import's plays are being written: finished on the next start if the app died first),
- * `unfinished` (an import that came to nothing, for the card) and `stops` (times the system stopped the import running now).
- * The plays themselves are in the database (`record_plays`).
+ * `unfinished` (an import that came to nothing, for the card), `stops` (times the system stopped the import running now) and
+ * the Last.fm import's mark. The plays themselves are in the database (`record_plays`).
  */
 @Singleton
 class RecordImportStore internal constructor(private val prefs: SharedPreferences) {
@@ -75,9 +78,29 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         putInt(R_LIKES, r.likes)
     }
 
-    /** Remove import: the record and the pending mark go; when Spotify was asked, and the card's ×, stay. */
+    /** Where the Last.fm import stands, after a page or a top-up. */
+    fun setLastfm(m: LastfmMark) = edit {
+        putString(L_USER, m.user)
+        putLong(L_TO, m.to)
+        putInt(L_NEXT, m.next)
+        putInt(L_PAGES, m.pages)
+        putBoolean(L_DONE, m.done)
+        putLong(L_NEWEST, m.newest)
+        putInt(L_ADDED, m.added)
+        putInt(L_COVERED, m.covered)
+        putLong(L_AT, m.at)
+    }
+
+    /** Remove your Last.fm scrobbles: the mark goes with them. */
+    fun clearLastfm() = edit { LASTFM_KEYS.forEach(::remove) }
+
+    /**
+     * Remove import (archive.ts `clear`: every meta but `asked`): the record, the pending mark and the Last.fm import's mark go;
+     * when Spotify was asked, and the card's ×, stay.
+     */
     fun clearRecord() = edit {
         RECORD_KEYS.forEach(::remove)
+        LASTFM_KEYS.forEach(::remove)
         remove(KEY_PENDING)
     }
 
@@ -106,6 +129,19 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         },
         inviteHidden = prefs.getBoolean(KEY_HIDDEN, false),
         unfinished = prefs.getLong(KEY_UNFINISHED, 0L).takeIf { it > 0 },
+        lastfm = prefs.getString(L_USER, null)?.let { user ->
+            LastfmMark(
+                user = user,
+                to = prefs.getLong(L_TO, 0),
+                next = prefs.getInt(L_NEXT, 1),
+                pages = prefs.getInt(L_PAGES, 0),
+                done = prefs.getBoolean(L_DONE, false),
+                newest = prefs.getLong(L_NEWEST, 0),
+                added = prefs.getInt(L_ADDED, 0),
+                covered = prefs.getInt(L_COVERED, 0),
+                at = prefs.getLong(L_AT, 0),
+            )
+        },
     )
 
     companion object {
@@ -127,5 +163,15 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val R_PLAYLISTS = "import_playlists"
         private const val R_LIKES = "import_likes"
         private val RECORD_KEYS = listOf(R_FIRST_AT, R_LAST_AT, R_IMPORTS, R_PLAYS, R_SPOTIFY, R_LASTFM, R_STASH, R_FIRST, R_LAST, R_PLAYLISTS, R_LIKES)
+        private const val L_USER = "lastfm_user"
+        private const val L_TO = "lastfm_to"
+        private const val L_NEXT = "lastfm_next"
+        private const val L_PAGES = "lastfm_pages"
+        private const val L_DONE = "lastfm_done"
+        private const val L_NEWEST = "lastfm_newest"
+        private const val L_ADDED = "lastfm_added"
+        private const val L_COVERED = "lastfm_covered"
+        private const val L_AT = "lastfm_at"
+        private val LASTFM_KEYS = listOf(L_USER, L_TO, L_NEXT, L_PAGES, L_DONE, L_NEWEST, L_ADDED, L_COVERED, L_AT)
     }
 }

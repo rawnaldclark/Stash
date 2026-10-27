@@ -748,7 +748,7 @@
     <string name="settings_your_record_remove">Remove imported history</string>
     <string name="settings_your_record_remove_subtitle">Your record goes back to your plays in Stash.</string>
     <string name="settings_your_record_remove_title">Remove your imported history?</string>
-    <string name="settings_your_record_remove_body">Everything brought in for your record from Spotify is deleted from this phone. Your plays in Stash stay.</string>
+    <string name="settings_your_record_remove_body">Everything brought in for your record, from Spotify and Last.fm, is deleted from this phone. Your plays in Stash stay.</string>
     <string name="settings_your_record_remove_confirm">Remove</string>
     <string name="settings_your_record_cancel">Cancel</string>
     <string name="settings_your_record_removed">Removed your imported history.</string>

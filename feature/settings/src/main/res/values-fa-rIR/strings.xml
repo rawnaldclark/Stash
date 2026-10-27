@@ -676,7 +676,7 @@
     <string name="settings_your_record_remove">حذف سابقهٔ واردشده</string>
     <string name="settings_your_record_remove_subtitle">صفحهٔ شما به پخش‌هایتان در Stash برمی‌گردد.</string>
     <string name="settings_your_record_remove_title">سابقهٔ واردشده حذف شود؟</string>
-    <string name="settings_your_record_remove_body">هر چه از Spotify برای صفحهٔ شما آورده شده، از این گوشی حذف می‌شود. پخش‌های شما در Stash می‌مانند.</string>
+    <string name="settings_your_record_remove_body">هر چه از Spotify و Last.fm برای صفحهٔ شما آورده شده، از این گوشی حذف می‌شود. پخش‌های شما در Stash می‌مانند.</string>
     <string name="settings_your_record_remove_confirm">حذف</string>
     <string name="settings_your_record_cancel">لغو</string>
     <string name="settings_your_record_removed">سابقهٔ واردشده حذف شد.</string>

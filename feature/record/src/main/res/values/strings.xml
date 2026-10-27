@@ -16,9 +16,9 @@
     <string name="record_since">since %1$d · %2$s</string>
     <string name="record_most_played">Most played: %1$s</string>
     <string name="record_open">Open your record</string>
-    <!-- The invitation before there is a record: the sources that can come in today (Spotify's export, and Stash's own plays). -->
+    <!-- The invitation before there is a record: the sources that can come in (Spotify's export, Last.fm's scrobbles, Stash's own plays). -->
     <string name="record_invite_title">Press your record</string>
-    <string name="record_invite_body">Every year you’ve listened, in one place: from Spotify or Stash.</string>
+    <string name="record_invite_body">Every year you’ve listened, in one place: from Spotify, Last.fm or Stash.</string>
     <string name="record_invite_start">Get started</string>
     <string name="record_invite_hide">Hide Press your record</string>
     <string name="record_close">Close</string>
@@ -49,18 +49,20 @@
     <!-- The record's sources, as chips on the invitation: brand names, never translated. -->
     <string name="record_source_spotify" translatable="false">Spotify</string>
     <string name="record_source_stash" translatable="false">Stash</string>
+    <string name="record_source_lastfm" translatable="false">Last.fm</string>
     <string name="record_waiting_title">Waiting for Spotify</string>
     <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
-    <string name="record_waiting_body">Asked %1$s. When the email comes, open the zip with Stash.</string>
+    <string name="record_waiting_body">Asked %1$s. Last.fm can come in meanwhile.</string>
     <string name="record_waiting_bring">Bring the zip</string>
-    <string name="record_waiting_how">How it works</string>
+    <!-- Opens the import sheet, which has the Spotify steps and Last.fm's. -->
+    <string name="record_waiting_how">Other ways</string>
     <string name="record_pressing_title">Pressing your record</string>
     <string name="record_pressing_open">Open</string>
     <string name="record_ready_title">Ready to press</string>
     <string name="record_ready_body">Nothing is saved until you import.</string>
     <string name="record_ready_review">Review</string>
     <!-- The import sheet: how it works (three steps). -->
-    <string name="record_import_intro">Every year you’ve listened, in one place. Your plays in Stash are here already; bring your Spotify history to go back to your first song.</string>
+    <string name="record_import_intro">Every year you’ve listened, in one place. Your plays in Stash are here already: start with Spotify or Last.fm, and add the other whenever you like.</string>
     <string name="record_import_ask_title">Ask Spotify for your data</string>
     <!-- %1$s and %2$s: Spotify's own names for its two downloads (record_import_account_data, record_import_extended_history), set in bold. Use the names Spotify's privacy page shows in this language. -->
     <string name="record_import_ask_body">On Spotify’s privacy page, tick both: %1$s (about 5 days: playlists, likes and your last year) and %2$s (up to 30 days: everything, since your first song).</string>
@@ -156,6 +158,74 @@
         <item quantity="other">Brought in %1$s plays</item>
     </plurals>
     <string name="record_done_nothing">Your record is up to date</string>
+    <!-- The import sheet's ways in (ImportFlow.svelte `ways`): two equal choices, each opening its own steps. -->
+    <string name="record_way_spotify_what">Your whole history, playlists and likes. No sign-in.</string>
+    <string name="record_way_spotify_time">Spotify emails it in a few days</string>
+    <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
+    <string name="record_way_spotify_waiting">Waiting for Spotify · asked %1$s</string>
+    <string name="record_way_lastfm_what">Everything you’ve scrobbled.</string>
+    <string name="record_way_lastfm_time">Minutes, once you connect</string>
+    <!-- Last.fm in Your record (stash-player LastfmPart.svelte and lastfm.ts): in the import sheet and as a row in Settings. A "scrobble" is Last.fm's word for one play it recorded; use the word Last.fm uses in this language. -->
+    <string name="record_lastfm_heading">Add your Last.fm scrobbles</string>
+    <!-- %1$s: how many, formatted with separators ("48,210"). -->
+    <plurals name="record_lastfm_scrobbles">
+        <item quantity="one">%1$s scrobble</item>
+        <item quantity="other">%1$s scrobbles</item>
+    </plurals>
+    <!-- Before Last.fm has said how many pages there are. -->
+    <string name="record_lastfm_asking">Asking Last.fm…</string>
+    <!-- Progress: %1$s is the page just read, %2$s the pages in all (each formatted with separators), %3$s the scrobbles so far (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <string name="record_lastfm_progress">Page %1$s of %2$s · %3$s</string>
+    <!-- After a run: %1$s is the scrobbles it brought (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <string name="record_lastfm_done">%1$s in. Plays Spotify or Stash already had were counted once.</string>
+    <string name="record_lastfm_done_none">Nothing new on Last.fm since last time. You’re up to date.</string>
+    <!-- Not connected to Last.fm, nothing brought in yet. -->
+    <string name="record_lastfm_idle_connect">Everything you’ve scrobbled, stacked on your record with Spotify and Stash.</string>
+    <!-- Not connected any more: %1$s is the scrobbles brought in before (record_lastfm_scrobbles), %2$s the Last.fm name they came from. -->
+    <string name="record_lastfm_idle_had">%1$s in from %2$s. Connect Last.fm to bring in newer ones.</string>
+    <!-- Connected: %1$s is the Last.fm name. -->
+    <string name="record_lastfm_idle_bring">Bring in everything you’ve scrobbled as %1$s.</string>
+    <!-- A run that stopped part way: %1$s is the last page read, %2$s the pages in all. -->
+    <string name="record_lastfm_idle_stopped">Stopped at page %1$s of %2$s. It carries on from there.</string>
+    <!-- All of it in: %1$s the scrobbles (record_lastfm_scrobbles), %2$s the Last.fm name, %3$s the day it last ran ("Oct 21"). -->
+    <string name="record_lastfm_idle_done">%1$s in from %2$s, last brought in %3$s.</string>
+    <string name="record_lastfm_connect">Connect Last.fm</string>
+    <string name="record_lastfm_bring">Bring them in</string>
+    <string name="record_lastfm_carry_on">Carry on</string>
+    <string name="record_lastfm_newer">Bring in newer</string>
+    <string name="record_lastfm_stop">Stop</string>
+    <string name="record_lastfm_see">See your record</string>
+    <!-- Why the button waits: the Spotify import is writing. -->
+    <string name="record_lastfm_after_spotify">After the Spotify import running now</string>
+    <string name="record_lastfm_hours_note">Last.fm doesn’t say how long you listened, so Stash uses each song’s length where it knows it.</string>
+    <!-- Each way a run can stop short: a title, a line, and (for the session) the button. -->
+    <string name="record_lastfm_reconnect_title">Last.fm signed Stash out</string>
+    <string name="record_lastfm_reconnect_body">Connect again and it carries on from where it stopped.</string>
+    <string name="record_lastfm_reconnect">Reconnect</string>
+    <string name="record_lastfm_busy_title">Last.fm is busy</string>
+    <string name="record_lastfm_busy_body">Carry on later: it picks up from where it stopped.</string>
+    <string name="record_lastfm_unavailable_title">Last.fm isn’t answering</string>
+    <string name="record_lastfm_unavailable_body">Try again in a while. What came in so far stays.</string>
+    <string name="record_lastfm_other_title">Something went wrong</string>
+    <string name="record_lastfm_other_body">What came in so far stays. Try again.</string>
+    <!-- The notification while the scrobbles come in. -->
+    <string name="record_lastfm_working_title">Bringing in your Last.fm scrobbles</string>
+    <!-- Settings › Library & Storage › Your record: Last.fm's row, and removing the scrobbles again. -->
+    <string name="record_lastfm_settings_title">Your record · Last.fm</string>
+    <string name="record_lastfm_remove">Remove your Last.fm scrobbles</string>
+    <string name="record_lastfm_remove_title">Remove your Last.fm scrobbles?</string>
+    <string name="record_lastfm_remove_body">They leave your record on this phone. Your Spotify history and your Last.fm profile stay as they are.</string>
+    <string name="record_lastfm_remove_confirm">Remove</string>
+    <string name="record_lastfm_removing">Removing…</string>
+    <string name="record_lastfm_cancel">Cancel</string>
+    <string name="record_lastfm_removed">Removed your Last.fm scrobbles. Your Spotify history stays.</string>
+    <string name="record_lastfm_remove_failed">Couldn’t remove them just now. Try again.</string>
+    <string name="record_lastfm_remove_busy">An import is running. Remove them when that’s done.</string>
+    <!-- The switches over the record (stash-player record.ts): one per source with plays, shown with two or more; one always stays on. -->
+    <string name="record_sources_label">Sources in your record</string>
+    <!-- Read out for a switch: %1$s is the source (Spotify, Stash, Last.fm), %2$s its plays (record_plays: "12,345 plays"). -->
+    <string name="record_source_described">%1$s, %2$s</string>
+    <string name="record_source_one_stays">One source stays on</string>
     <!-- A file shared or opened with Stash that holds no Spotify export (a toast). -->
     <string name="record_intake_not_export">That isn’t a Spotify export</string>
     <string name="record_intake_busy">An import is running. Bring it in when that’s done.</string>

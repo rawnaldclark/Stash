@@ -676,7 +676,7 @@
     <string name="settings_your_record_remove">Alisin ang na-import na history</string>
     <string name="settings_your_record_remove_subtitle">Babalik ang record mo sa mga play mo sa Stash.</string>
     <string name="settings_your_record_remove_title">Alisin ang na-import mong history?</string>
-    <string name="settings_your_record_remove_body">Buburahin sa phone na ito ang lahat ng idinagdag mula sa Spotify para sa record mo. Mananatili ang mga play mo sa Stash.</string>
+    <string name="settings_your_record_remove_body">Buburahin sa phone na ito ang lahat ng idinagdag mula sa Spotify at Last.fm para sa record mo. Mananatili ang mga play mo sa Stash.</string>
     <string name="settings_your_record_remove_confirm">Alisin</string>
     <string name="settings_your_record_cancel">Kanselahin</string>
     <string name="settings_your_record_removed">Inalis ang na-import mong history.</string>

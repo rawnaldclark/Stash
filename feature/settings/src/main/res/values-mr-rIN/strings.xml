@@ -676,7 +676,7 @@
     <string name="settings_your_record_remove">इंपोर्ट केलेला इतिहास काढा</string>
     <string name="settings_your_record_remove_subtitle">तुमचा रेकॉर्ड पुन्हा Stash मधील तुमच्या प्लेवर येईल.</string>
     <string name="settings_your_record_remove_title">तुमचा इंपोर्ट केलेला इतिहास काढायचा?</string>
-    <string name="settings_your_record_remove_body">Spotify मधून तुमच्या रेकॉर्डसाठी आणलेले सर्व काही या फोनवरून हटवले जाईल. Stash मधील तुमचे प्ले राहतील.</string>
+    <string name="settings_your_record_remove_body">Spotify आणि Last.fm मधून तुमच्या रेकॉर्डसाठी आणलेले सर्व काही या फोनवरून हटवले जाईल. Stash मधील तुमचे प्ले राहतील.</string>
     <string name="settings_your_record_remove_confirm">काढा</string>
     <string name="settings_your_record_cancel">रद्द करा</string>
     <string name="settings_your_record_removed">तुमचा इंपोर्ट केलेला इतिहास काढला.</string>

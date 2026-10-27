@@ -676,7 +676,7 @@
     <string name="settings_your_record_remove">Importierten Verlauf entfernen</string>
     <string name="settings_your_record_remove_subtitle">Deine Platte besteht dann wieder aus deinen Wiedergaben in Stash.</string>
     <string name="settings_your_record_remove_title">Importierten Verlauf entfernen?</string>
-    <string name="settings_your_record_remove_body">Alles, was von Spotify für deine Platte übernommen wurde, wird von diesem Telefon gelöscht. Deine Wiedergaben in Stash bleiben.</string>
+    <string name="settings_your_record_remove_body">Alles, was von Spotify und Last.fm für deine Platte übernommen wurde, wird von diesem Telefon gelöscht. Deine Wiedergaben in Stash bleiben.</string>
     <string name="settings_your_record_remove_confirm">Entfernen</string>
     <string name="settings_your_record_cancel">Abbrechen</string>
     <string name="settings_your_record_removed">Dein importierter Verlauf wurde entfernt.</string>

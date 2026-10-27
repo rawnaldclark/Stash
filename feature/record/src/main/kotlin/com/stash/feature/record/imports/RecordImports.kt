@@ -161,6 +161,8 @@ class RecordImports internal constructor(
     private val zone: ZoneId = ZoneId.systemDefault(),
     /** Where files are copied and looked into (tests run it in place). */
     private val io: CoroutineContext = Dispatchers.IO,
+    /** The archive's one writer at a time, shared with the Last.fm import ([com.stash.feature.record.lastfm.RecordLastfm]). */
+    private val writeLock: RecordWrites = RecordWrites(),
 ) : YourRecordImports {
 
     @Inject constructor(
@@ -168,6 +170,7 @@ class RecordImports internal constructor(
         store: RecordImportStore,
         dao: RecordPlayDao,
         own: WebLibraryExportDao,
+        writeLock: RecordWrites,
     ) : this(
         store = store,
         archive = DaoArchiveStore(dao),
@@ -181,6 +184,7 @@ class RecordImports internal constructor(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         notices = ImportNotifications(context),
         ownPackage = context.packageName,
+        writeLock = writeLock,
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
@@ -209,18 +213,18 @@ class RecordImports internal constructor(
     /** The imported plays changed (an import written, or removed): an open record presses itself again. */
     val archiveChanged: SharedFlow<Unit> = _changed.asSharedFlow()
 
-    override val settings: StateFlow<YourRecordImportState> = combine(store.info, _state) { i, s ->
+    override val settings: StateFlow<YourRecordImportState> = combine(store.info, _state, writeLock.lastfmRunning) { i, s, lastfm ->
         YourRecordImportState(
             loaded = true,
             imported = i.record != null,
             spotifyPlays = i.record?.let { it.bySource?.spotify ?: it.plays } ?: 0,
-            importing = s is ImportState.Working,
+            importing = s is ImportState.Working || lastfm,
             inviteHidden = i.inviteHidden,
         )
     }.stateIn(scope, SharingStarted.Eagerly, YourRecordImportState())
 
-    /** One commit or removal at a time. */
-    private val writes = Mutex()
+    /** One commit or removal at a time, and never during a Last.fm run ([RecordWrites]). */
+    private val writes = writeLock.mutex
 
     /** One change to the copies at a time (a copy, the copies an import no longer needs deleted, all of them cleared). */
     private val disk = Mutex()
@@ -403,9 +407,13 @@ class RecordImports internal constructor(
 
     override fun showInvite() = store.setInviteHidden(false)
 
-    /** Remove import (spec §5.4): every imported play and the import record go; when Spotify was asked stays. */
+    /**
+     * Remove import (spec §5.4): every imported play (the Spotify export's and the Last.fm scrobbles), the import record and the
+     * Last.fm import's mark go; when Spotify was asked stays. Refused while an import runs, a Last.fm run too (the web would wait
+     * for its lock, minutes for a long history; here it says so at once).
+     */
     override suspend fun removeImport(): Boolean {
-        if (_state.value is ImportState.Working) return false
+        if (_state.value is ImportState.Working || writeLock.lastfmRunning.value) return false
         writes.withLock {
             archive.clear()
             store.clearRecord()
@@ -803,6 +811,25 @@ class RecordImports internal constructor(
     private suspend fun storeRecord(added: Int) {
         val (ownFirst, ownLast) = ownSpan()
         store.setRecord(SpotifyImporter.record(store.info.value.record, archive.listens(), ownFirst, ownLast, now(), added))
+    }
+
+    /**
+     * After a Last.fm run, under the write lock it holds: the import record over the archive as it is now. Scrobbles alone make
+     * one, so Your record opens on them (service.ts `runLastfm`: an import counted only when there was no record yet).
+     */
+    internal suspend fun recordAfterScrobbles() = storeRecord(added = if (store.info.value.record == null) 1 else 0)
+
+    /**
+     * After Remove your Last.fm scrobbles, under the write lock: with nothing left, the record goes (Last.fm was all there was;
+     * when Spotify was asked stays), else it is counted again (service.ts `removeLastfm`).
+     */
+    internal suspend fun recordAfterScrobblesRemoved() {
+        if (archive.count() == 0) store.clearRecord() else if (store.info.value.record != null) storeRecord(added = 0)
+    }
+
+    /** The scrobbles changed (a run brought some, or they were removed): an open record presses itself again. */
+    internal fun archiveWasChanged() {
+        _changed.tryEmit(Unit)
     }
 
     /** importer.ts `finishPending`: an import that stopped after writing plays gets its record now. Under [writes]. */
