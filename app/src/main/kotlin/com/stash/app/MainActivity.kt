@@ -42,21 +42,19 @@ import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
-import com.stash.feature.record.imports.RecordImports
 import com.stash.feature.record.imports.RecordIntake
+import com.stash.feature.record.imports.RecordShareRouter
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -109,9 +107,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
 
-    /** Your record's import: a Spotify data export opened or shared with Stash goes there (after a look inside). */
+    /** Your record's routing of a mixed share: a Spotify export in it goes to the import, the rest to the local import. */
     @Inject
-    lateinit var recordImports: RecordImports
+    lateinit var recordShareRouter: RecordShareRouter
 
     @Inject
     lateinit var listenTogether: ListenTogetherController
@@ -312,31 +310,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * A Spotify export in a share that reached this window rather than Your record's intake screen (a share of mixed types,
-     * `*` `/` `*`, matches the audio filters too): the files' types are looked up off the main thread (a call into the app that
-     * has them), the export goes to Your record's import (it copies it at once, while this window's grant holds) and the rest to
-     * the local import below. True when the intent was taken that way (and is cleared, so a recreation doesn't bring it in
-     * twice). Shares typed as audio, and the audio the intake screen forwards here, go straight to [handleShareIntent], as ever.
+     * A share that reached this window rather than Your record's intake screen and may hold a Spotify export (a share of mixed
+     * types, `*` `/` `*`, matches the audio filters too): routed by [recordShareRouter] in the app's scope, so a recreation of this
+     * window halfway can't drop it (the window's grant to the files survives a recreation). The export goes to Your record's
+     * import; the rest, or the whole share when nothing in it is an export, to the local import as ever. True when the intent was
+     * taken that way (and is cleared, so a recreation doesn't bring it in twice). Shares typed as audio, and the audio the intake
+     * screen forwards here, go straight to [handleShareIntent].
      */
     private fun handleRecordImportIntent(intent: Intent?): Boolean {
         if (intent == null || intent.action == Intent.ACTION_VIEW) return false
         if (intent.getBooleanExtra(RecordIntake.EXTRA_FORWARDED, false) || !RecordIntake.mayHoldExport(intent.type)) return false
-        val uris = RecordIntake.urisOf(intent, packageName)
-        if (uris.isEmpty()) return false
-        val original = Intent(intent)
-        lifecycleScope.launch {
-            val exports = withContext(Dispatchers.IO) {
-                RecordIntake.split(uris, original.type) { runCatching { contentResolver.getType(it) }.getOrNull() }.first
-            }
-            if (exports.isEmpty()) {
-                // No export after all: the share goes the way it always has, every file of it
-                handleShareIntent(original)
-                return@launch
-            }
-            recordImports.bringShared(exports)
-            val rest = shareUris(original) - exports.toSet()
-            if (rest.isNotEmpty()) localImportCoordinator.start(rest)
-        }
+        val candidates = RecordIntake.urisOf(intent, packageName)
+        if (candidates.isEmpty()) return false
+        // The local import's own start (a singleton): nothing here holds this window once it's gone
+        recordShareRouter.route(intent.type, RecordIntake.streamsOf(intent), candidates, localImportCoordinator::start)
         // Taken: a configuration change replays the Activity's intent, and must not bring the files in again
         setIntent(Intent(intent).apply {
             action = Intent.ACTION_MAIN

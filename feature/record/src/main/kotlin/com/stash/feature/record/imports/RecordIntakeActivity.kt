@@ -28,7 +28,7 @@ class RecordIntakeActivity : ComponentActivity() {
         // Touches go to the app underneath while the copy finishes (this window is see-through and lasts a moment)
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         model.take(intent)
-        lifecycleScope.launch { model.starts.collect { startActivity(it) } }
+        lifecycleScope.launch { model.starts.collect { RecordIntake.startSafely(it, ::startActivity) } }
         lifecycleScope.launch {
             model.done.first { it }
             finish()
