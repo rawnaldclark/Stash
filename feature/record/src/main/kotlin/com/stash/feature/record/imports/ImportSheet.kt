@@ -372,11 +372,18 @@ private fun Figure(n: String, word: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 12.dp, vertical = 12.dp)
             .semantics(mergeDescendants = true) { },
     ) {
+        // A third of the sheet's width: a long number ("330,827") steps down a size or two instead of being cut
+        val size = when {
+            n.length <= 5 -> MaterialTheme.typography.headlineSmall
+            n.length <= 7 -> MaterialTheme.typography.titleLarge
+            else -> MaterialTheme.typography.titleMedium
+        }
         Text(
             n,
-            style = MaterialTheme.typography.headlineSmall.copy(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold),
+            style = size.copy(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
+            softWrap = false,
             overflow = TextOverflow.Ellipsis,
         )
         Text(word, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)

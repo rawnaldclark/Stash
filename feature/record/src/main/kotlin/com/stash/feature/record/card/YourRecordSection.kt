@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -209,7 +211,8 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, mod
                 line,
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.86f),
-                maxLines = 1,
+                // "since 2016 · 330,827 plays": a heavy history's count takes a second line rather than losing its end
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             if (view.topArtist != null && mostPlayed != null) {
@@ -309,6 +312,7 @@ private fun CardButton(text: String, onClick: () -> Unit) {
  * "Waiting for Spotify" (HomeCard.svelte, once they asked): when they asked, and the zip straight in when the email comes
  * (Bring the zip: the files picked go into the sheet), or the steps again (How it works). The × hides it as the invitation's does.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WaitingCard(askedAt: Long, onBring: (List<android.net.Uri>) -> Unit, onHow: () -> Unit, onHide: () -> Unit, modifier: Modifier = Modifier) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> onBring(uris) }
@@ -338,9 +342,8 @@ private fun WaitingCard(askedAt: Long, onBring: (List<android.net.Uri>) -> Unit,
                 modifier = Modifier.clearAndSetSemantics { },
             )
             Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 CardButton(stringResource(R.string.record_waiting_bring)) { picker.launch(IMPORT_TYPES) }
-                Spacer(Modifier.width(4.dp))
                 TextButton(onClick = onHow, contentPadding = PaddingValues(horizontal = 10.dp), modifier = Modifier.height(34.dp)) {
                     Text(stringResource(R.string.record_waiting_how), color = Color.White.copy(alpha = 0.86f), style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
                 }
@@ -412,7 +415,7 @@ private fun InviteCard(onOpen: () -> Unit, onHide: () -> Unit, modifier: Modifie
                 body,
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f),
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clearAndSetSemantics { },
             )
