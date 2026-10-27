@@ -489,9 +489,15 @@ fun StashScaffold(
     PlayerMessagesToaster()
 
     // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
-    // shared with Stash, Settings). A finished import opens the record.
+    // shared with Stash, Settings). A finished import opens the record, unless it is showing already (its own "Bring your
+    // Spotify"): navigating to it again, even single-top, handed its one WebView to a second host and the RenderThread
+    // overflowed its stack drawing it (SIGSEGV on the rig, every import finished over the open record).
     RecordImportHost(
-        onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } },
+        onOpenRecord = {
+            if (navController.currentDestination?.hasRoute<YourRecordRoute>() != true) {
+                navController.navigate(YourRecordRoute) { launchSingleTop = true }
+            }
+        },
         // Last.fm not connected: the app's own sign-in, on Accounts & Sync
         onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
     )
