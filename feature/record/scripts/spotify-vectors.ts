@@ -2,11 +2,16 @@
  * Parity vectors for the app's Spotify import (feature/record `importer/`): small exports crafted around every rule of the web's
  * reader and merge (stash-player `src/lib/spotify/`), run through the web's own `openFiles`, `prepare` and `commit`, with what
  * they gave written beside them. The app's `SpotifyVectorsTest` reads the same files and must give the same: files, unreadable,
- * the preview and every archive row (id, words, start, time played, flags).
+ * the preview, every archive row (id, words, start, time played, flags), and the library half (phase 5a): the export's
+ * playlists, liked songs and hidden songs as read (`bundle`), the playlists and likes a commit hands the library with each
+ * playlist's `name#n` (`commit`, with the case's `choose`), the hidden set it keeps (`archive.get('hidden')`) and what the
+ * service's `libraryData` makes of them (`library`). `already.json`: the preview's "Already in your library" (`alreadyIn`).
  *
- * Run from this repository's root (TZ=UTC: a time with no offset is local time to JavaScript, and the test reads it as UTC):
- *   PLAYER=../stash-web/player-spotify
- *   $PLAYER/node_modules/.bin/esbuild feature/record/scripts/spotify-vectors.ts --bundle --platform=node --format=esm \
+ * Run from this repository's root (TZ=UTC: a time with no offset is local time to JavaScript, and the test reads it as UTC),
+ * against a stash-player checkout with its node_modules (read only); phase 5a's vectors come from stash-player PR #27
+ * (`fix/record-library-import`, 7242ef7):
+ *   PLAYER=../stash-web/player-record-lastfm
+ *   NODE_PATH=$PLAYER/node_modules $PLAYER/node_modules/.bin/esbuild feature/record/scripts/spotify-vectors.ts --bundle --platform=node --format=esm \
  *     --alias:@player=$PLAYER/src/lib --outfile=build/spotify-vectors.mjs
  *   TZ=UTC node build/spotify-vectors.mjs feature/record/src/test/resources/spotify-export/vectors
  */
@@ -14,10 +19,12 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { memoryArchive } from '@player/spotify/archive';
 import { zipOf } from '@player/spotify/fixture';
-import { commit, openFiles, prepare } from '@player/spotify/importer';
+import { alreadyIn, commit, openFiles, prepare, type HavePlaylist } from '@player/spotify/importer';
+import { libraryData } from '@player/spotify/service';
 
 type F = { name: string; bytes: Uint8Array };
-type Case = { name: string; before?: F[]; files: F[] };
+/** `choose`: the commit's choice (the preview's ticks): the playlists kept by index, and the liked songs on or off. */
+type Case = { name: string; before?: F[]; files: F[]; choose?: { playlists?: number[]; likes?: boolean } };
 
 const NOW = Date.parse('2026-10-23T12:00:00Z');
 const enc = new TextEncoder();
@@ -298,6 +305,108 @@ async function cases(): Promise<Case[]> {
 		'YourLibrary.json',
 		`{"tracks":[{"artist":"A","track":"Liked"}],"bannedTracks":[{"artist":"A","track":"Hidden"},{"artist":"","track":"No artist"},null,[],"x"],"tracks":{"artist":"A","track":"Not a list"}}`
 	);
+	const tr = (trackName: unknown, o: Record<string, unknown> = {}) => ({ track: { trackName, artistName: 'Band', albumName: 'LP', trackUri: null, ...o }, episode: null, audiobook: null, localTrack: null });
+	const local = (uri: unknown, o: Record<string, unknown> = {}) => ({ track: null, episode: null, audiobook: null, localTrack: { uri }, ...o });
+	const listOne = text(
+		'Playlist1.json',
+		JSON.stringify({
+			playlists: [
+				{
+					name: 'Chill',
+					description: ' Sunday\u0000mornings ',
+					lastModifiedDate: '2024-01-01',
+					numberOfFollowers: 3,
+					items: [
+						{ ...tr('Slow', { trackUri: `spotify:track:${SID}` }), addedDate: '2023-04-01' },
+						{ track: null, episode: { episodeName: 'E', showName: 'S', episodeUri: 'spotify:episode:x' }, audiobook: null, localTrack: null, addedDate: '2023-04-02' },
+						{ track: null, episode: null, audiobook: { audiobookName: 'A book', audiobookUri: 'spotify:audiobook:x' }, localTrack: null },
+						{ track: null, episode: null, audiobook: null, localTrack: null, addedDate: '2023-04-03' },
+						{ ...tr('Dated'), addedDate: '2023-04-01T10:20:30Z' },
+						{ ...tr('Offset'), addedDate: '2023-04-01T12:00:00+02:00' },
+						{ ...tr('No zone'), addedDate: '2023-04-01T12:00:00' },
+						{ ...tr('Fraction'), addedDate: '2023-04-01T12:00:00.123456Z' },
+						{ ...tr('Month only'), addedDate: '2023-04' },
+						{ ...tr('Year only'), addedDate: '2023' },
+						{ ...tr('February 30'), addedDate: '2023-02-30' },
+						{ ...tr('Hour 24'), addedDate: '2023-04-01T24:00:00Z' },
+						{ ...tr('Not a date'), addedDate: 'not a date' },
+						{ ...tr('Number date'), addedDate: 1680000000000 },
+						{ ...tr('Empty date'), addedDate: '' },
+						{ ...tr('Null date'), addedDate: null },
+						{ ...tr('Link uri', { trackUri: `https://open.spotify.com/track/${SID}?si=1` }) },
+						{ ...tr('Bad uri', { trackUri: 'spotify:track:short' }) },
+						{ ...tr('  Spaced\t', { artistName: ' Band ', albumName: '   ' }) },
+						{ ...tr('Slow') },
+						{ track: { artistName: 'No title' } },
+						{ track: { trackName: 'No artist', artistName: '' } },
+						{ track: { trackName: 5, artistName: 'Band' } },
+						{ ...local('spotify:local:My+Band:Demo+Tape:Garage+Song:184'), addedDate: '2023-05-01' },
+						local('spotify:local:100%25+Band:Album%2B:A%2BB+%26+C:200'),
+						local('spotify:local:Band:Al%E0%A4%A:Malformed+album:200'),
+						local('spotify:local:Band:Album:Bad%ZZtitle:200'),
+						local('spotify:local:Band:Album:Cut%E0%A4:200'),
+						local('spotify:local:%F0%9F%98%80:Album:Emoji+artist:200'),
+						local('spotify:local:%ED%A0%80:Album:Surrogate+artist:200'),
+						local('spotify:local:Band::No+album:200'),
+						local('spotify:local:Band:Album:Only+three'),
+						local('spotify:local:Band:Album'),
+						local('spotify:local:+:Album:Blank+artist:1'),
+						local(`spotify:track:${SID}`),
+						local(42),
+						{ track: null, localTrack: 'spotify:local:A:B:C:1' },
+						{ ...tr('Both'), localTrack: { uri: 'spotify:local:L:L:Local+loses:1' } },
+						{ track: 'a string', localTrack: { uri: 'spotify:local:L:L:String+track:1' } },
+						{ track: [], localTrack: { uri: 'spotify:local:L:L:Array+track:1' } },
+						null,
+						'item'
+					]
+				},
+				{ name: 'Chill', items: [tr('Second chill')] },
+				{ name: 'Road', items: [] },
+				{ name: 'Chill', items: [tr('Third chill')] },
+				{ name: 'x'.repeat(99) + '\u{1F600} and more', items: [tr('In a long one')] },
+				{ name: 'ä'.repeat(120), items: [tr('In a long one'), tr('In a long one')] },
+				{ name: 'No items field' },
+				{ name: 'Items not a list', items: { track: 1 } },
+				{ name: '  ', items: [tr('Nameless')] },
+				{ name: 5, items: [] },
+				null,
+				[]
+			]
+		})
+	);
+	const listTwo = text('Playlist2.json', JSON.stringify({ playlists: [{ name: 'Chill', items: [tr('Fourth chill, in the second file')] }, { name: 'road', items: [tr('Lower case road')] }] }));
+	const yourLibrary = text(
+		'YourLibrary.json',
+		JSON.stringify({
+			tracks: [
+				{ artist: 'Band', album: 'LP', track: 'Liked one', uri: `spotify:track:${SID}` },
+				{ artist: 'Band', album: 'LP', track: 'Hidden and liked', uri: 'spotify:track:0123456789abcdefghijCD' },
+				{ artist: 'Band', track: 'Liked one' },
+				{ artist: '', track: 'No artist' },
+				{ artist: 'Band' },
+				null,
+				5,
+				[],
+				{ artist: 'Other', track: 'Old Friend - 2011 Remaster' },
+				{ artist: 'Other', album: '  ', track: ' Spaces\u0007 ', uri: `https://open.spotify.com/track/${SID}` },
+				{ artist: 'Other', track: 'Bad uri', uri: 'spotify:episode:0123456789abcdefghijAB' }
+			],
+			albums: [{ artist: 'Band', album: 'LP', uri: 'spotify:album:x' }],
+			shows: [],
+			episodes: [],
+			bannedTracks: [
+				{ artist: 'Band', track: 'Hidden and liked' },
+				{ artist: 'Band', track: 'Never Again (Remastered)' },
+				{ artist: 'BAND', track: 'never again' },
+				{ artist: 'Band', track: 'Never Again - 2015 Remaster', album: 'Best of' },
+				{ track: 'No artist' },
+				'x'
+			],
+			bannedArtists: [{ name: 'Someone' }]
+		})
+	);
+	const libraryOnlyLikes = text('YourLibrary.json', JSON.stringify({ tracks: [{ artist: 'Band', track: 'Just a like' }] }));
 	const later = (o: Record<string, unknown>) => ext({ ...o });
 	const older = [later({ ts: '2021-01-01T10:00:00Z', master_metadata_track_name: 'Old one' }), later({ ts: '2021-01-02T10:00:00Z', master_metadata_track_name: 'Old two' })];
 	const newer = [...older, later({ ts: '2021-01-03T10:00:00Z', master_metadata_track_name: 'New three' }), later({ ts: '2021-01-04T10:00:00Z', master_metadata_track_name: 'New four', ms_played: 5000 })];
@@ -328,22 +437,80 @@ async function cases(): Promise<Case[]> {
 		{ name: 'not-an-export', files: [{ name: 'my_spotify_data.zip', bytes: await zipOf([text('ReadMe.pdf', '%PDF'), json('Userdata.json', { a: 1 })]) }] },
 		{ name: 'only-broken', files: [text('Streaming_History_Audio_2023.json', '[{')] },
 		{ name: 'a-newer-export', before: [json('endsong_0.json', older)], files: [json('endsong_0.json', newer)] },
-		{ name: 'the-same-again', before: [json('endsong_0.json', newer)], files: [json('endsong_0.json', newer)] }
+		{ name: 'the-same-again', before: [json('endsong_0.json', newer)], files: [json('endsong_0.json', newer)] },
+		// The library half: two playlist files (name#n runs across them), a library with likes and hidden songs, a few plays
+		{ name: 'library-all', files: [json('StreamingHistory_music_0.json', twinsAcc.slice(0, 2)), listOne, listTwo, yourLibrary] },
+		// A chosen subset: the second and fourth "Chill" stay Chill#1 and Chill#2, and the likes are left out
+		{ name: 'library-chosen', files: [listOne, listTwo, yourLibrary], choose: { playlists: [1, 3, 9], likes: false } },
+		{ name: 'library-none-chosen', files: [listOne, yourLibrary], choose: { playlists: [], likes: true } },
+		// In a zip, as Spotify sends it; a newer import's hidden songs add to those kept
+		{ name: 'library-in-a-zip', before: [yourLibrary], files: [{ name: 'my_spotify_data.zip', bytes: await zipOf([listTwo, libraryOnlyLikes]) }] },
+		{ name: 'library-only-likes', files: [libraryOnlyLikes] }
 	];
 }
+
+/** A song as the vectors write it: every field, null when it has none (JSON keeps no undefined). */
+const songOut = (s: { title: string; artist: string; album?: string; sid?: string; addedAt?: number }) => ({ title: s.title, artist: s.artist, album: s.album ?? null, sid: s.sid ?? null, addedAt: s.addedAt ?? null });
 
 async function run(c: Case) {
 	const archive = memoryArchive();
 	if (c.before) await commit(await prepare(await openFiles(c.before), archive, { now: NOW }), archive, { now: NOW });
 	try {
 		const prep = await prepare(await openFiles(c.files), archive, { now: NOW });
-		await commit(prep, archive, { now: NOW });
+		// Read before the commit, which lets the plays go
+		const bundle = {
+			playlists: prep.bundle.playlists.map((p) => ({ name: p.name, description: p.description ?? null, items: p.items.map(songOut) })),
+			likes: prep.bundle.likes.map(songOut),
+			hidden: prep.bundle.hidden.map(songOut)
+		};
+		const r = await commit(prep, archive, { now: NOW, ...(c.choose ?? {}) });
 		const rows = (await archive.all()).sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).map((r) => [r.id, r.t, r.a, r.al ?? null, r.sid ?? null, r.s, r.ms, r.f]);
 		const { phone: _phone, ...preview } = prep.preview;
-		return { files: prep.bundle.files, unreadable: prep.bundle.unreadable, preview, rows };
+		let n = 0;
+		const lib = libraryData(r, {}, [], NOW, () => `id${++n}`);
+		const library = {
+			// Each chosen playlist by its name#n (the id the service gives it is the web's own)
+			playlists: lib.data.playlists.map((p, i) => ({ key: r.playlists[i]!.key, name: p.name, items: p.items.map((it) => ({ title: it.title, artist: it.artist, album: it.album ?? null, addedAt: it.addedAt })) })),
+			likes: lib.data.likes.map((l) => ({ title: l.item.title, artist: l.item.artist, album: l.item.album ?? null, likedAt: l.likedAt })),
+			keys: Object.keys(lib.ids)
+		};
+		const commitOut = { playlists: r.playlists.map((p) => ({ key: p.key, name: p.name, songs: p.items.length })), likes: r.likes.map(songOut), record: { playlists: r.record.playlists, likes: r.record.likes } };
+		return { files: prep.bundle.files, unreadable: prep.bundle.unreadable, preview, rows, bundle, commit: commitOut, hidden: (await archive.get('hidden')) ?? [], library };
 	} catch (e) {
 		return { error: (e as Error).name };
 	}
+}
+
+/** importer.ts `alreadyIn`, case by case: the preview's "Already in your library" (owner decision D3). */
+function alreadyCases() {
+	const pl = (name: string, titles: string[], artist = 'Band') => ({ name, items: titles.map((title) => ({ title, artist })) });
+	const isrc = (name: string, songs: [string, string, string | null][]) => ({ name, items: songs.map(([title, artist, i]) => ({ title, artist, ...(i ? { isrc: i } : {}) })) });
+	const cases: { name: string; p: HavePlaylist; have: HavePlaylist[] }[] = [
+		{ name: 'all its songs', p: pl('Road trip', ['A', 'B', 'C']), have: [pl('Road trip', ['A', 'B', 'C'])] },
+		{ name: 'exactly half', p: pl('Road trip', ['A', 'B', 'C', 'D']), have: [pl('Road trip', ['D', 'B'])] },
+		{ name: 'under half', p: pl('Road trip', ['A', 'B', 'C', 'D']), have: [pl('Road trip', ['A'])] },
+		{ name: 'odd, one short', p: pl('Odd', ['A', 'B', 'C']), have: [pl('Odd', ['A'])] },
+		{ name: 'odd, enough', p: pl('Odd', ['A', 'B', 'C']), have: [pl('Odd', ['C', 'A', 'X', 'Y', 'Z'])] },
+		{ name: 'another name', p: pl('Road trip', ['A']), have: [pl('Road trips', ['A'])] },
+		{ name: 'case, accents and punctuation fold', p: pl('R\u00f6ad  Trip!', ['A']), have: [pl('road trip', ['A'])] },
+		{ name: 'a featuring credit folds away', p: pl('Summer (feat. Friends)', ['A']), have: [pl('summer', ['A'])] },
+		{ name: 'other brackets are the name', p: pl('Summer (2019)', ['A']), have: [pl('Summer', ['A'])] },
+		{ name: 'full-width and ligatures', p: pl('\ufb01ve \uff2d\uff49\uff58', ['A']), have: [pl('five mix', ['A'])] },
+		{ name: 'names that fold to nothing', p: pl('\u{1F525}\u{1F525}', ['A']), have: [pl('\u{1F495}', ['A'])] },
+		{ name: 'empty, same name', p: pl('Empty', []), have: [pl('empty', [])] },
+		{ name: 'empty, nothing here', p: pl('Empty', []), have: [] },
+		{ name: 'nothing here', p: pl('Road trip', ['A']), have: [] },
+		{ name: 'a song twice needs two copies', p: pl('Mix', ['A', 'A', 'A', 'B']), have: [pl('Mix', ['A'])] },
+		{ name: 'a song twice, two copies', p: pl('Mix', ['A', 'A', 'A', 'B']), have: [pl('Mix', ['A', 'A'])] },
+		{ name: 'words fold', p: pl('Mix', ['Caf\u00e9 (feat. X)', 'B']), have: [isrc('Mix', [['cafe', 'BAND', null]])] },
+		{ name: 'an ISRC here still pairs by words', p: pl('Mix', ['A', 'B']), have: [isrc('Mix', [['a', 'band', 'USX1'], ['b', 'band', 'USX2']])] },
+		{ name: 'another artist is another song', p: pl('Mix', ['A', 'B']), have: [pl('Mix', ['A', 'B'], 'Other')] },
+		{ name: 'version words are the song', p: pl('Mix', ['Song (Live)', 'Other']), have: [pl('Mix', ['Song'])] },
+		{ name: 'two of the name, the second holds enough', p: pl('Mix', ['A', 'B']), have: [pl('Mix', []), pl('mix', ['B'])] },
+		{ name: 'two of the name, neither enough', p: pl('Mix', ['A', 'B', 'C']), have: [pl('Mix', ['A']), pl('Mix', ['B'])] },
+		{ name: 'held songs in another order', p: pl('Mix', ['A', 'B', 'C', 'D']), have: [pl('Mix', ['D', 'C', 'Q'])] }
+	];
+	return cases.map((c) => ({ ...c, expect: alreadyIn(c.p, c.have) }));
 }
 
 const out = process.argv[2];
@@ -362,4 +529,6 @@ for (const c of await cases()) {
 	index.push({ name: c.name, before: names(c.before, 'before'), files: names(c.files, 'files'), expected: await run(c) });
 }
 writeFileSync(join(out, 'cases.json'), JSON.stringify({ now: NOW, cases: index }, null, 1) + '\n');
-console.log(`${index.length} cases written to ${out}`);
+const already = alreadyCases();
+writeFileSync(join(out, 'already.json'), JSON.stringify(already, null, 1) + '\n');
+console.log(`${index.length} cases and ${already.length} already-in cases written to ${out}`);

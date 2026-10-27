@@ -66,6 +66,8 @@
     <string name="record_import_reading">Lecture de vos fichiers : %1$d sur %2$d</string>
     <string name="record_import_saving">Enregistrement de vos écoutes : %1$s sur %2$s</string>
     <string name="record_import_saving_start">Enregistrement…</string>
+    <string name="record_import_library">Ajout de vos playlists et J’aime : %1$s sur %2$s titres</string>
+    <string name="record_import_library_start">Ajout de vos playlists et J’aime…</string>
     <string name="record_import_year">Lecture de %1$d</string>
     <string name="record_import_channel">Votre disque</string>
     <string name="record_preview_title">Voici votre Spotify</string>
@@ -88,13 +90,33 @@
     </plurals>
     <string name="record_preview_account_title">Seule votre dernière année est là</string>
     <string name="record_preview_account_body">Tout votre historique arrive dans l’autre e-mail, Historique de streaming étendu. Ajoutez ce zip ici quand il arrivera.</string>
-    <string name="record_preview_also">Contient aussi</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d titre</item>
         <item quantity="other">%1$d titres</item>
     </plurals>
     <string name="record_preview_liked">Titres aimés</string>
-    <string name="record_preview_later">Vos playlists et titres aimés arriveront dans votre bibliothèque avec une prochaine mise à jour. Gardez le zip.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">La %1$s écoute de ce fichier est déjà là.</item>
+        <item quantity="other">Les %1$s écoutes de ce fichier sont déjà là.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">La %1$s écoute de ces fichiers est déjà là.</item>
+        <item quantity="other">Les %1$s écoutes de ces fichiers sont déjà là.</item>
+    </plurals>
+    <string name="record_preview_no_plays">Ce fichier ne contient aucune écoute.</string>
+    <string name="record_preview_still">Vos playlists et vos J’aime peuvent quand même arriver.</string>
+    <string name="record_preview_playlists">Playlists</string>
+    <string name="record_preview_picked">%1$d sur %2$d</string>
+    <string name="record_preview_already">Déjà dans votre bibliothèque</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s titre, ajouté à vos J’aime</item>
+        <item quantity="other">%1$s titres, ajoutés à vos J’aime</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Vos titres aimés se téléchargent sur ce téléphone</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">Ce titre sera aussi téléchargé.</item>
+        <item quantity="other">Ces %1$s titres seront aussi téléchargés.</item>
+    </plurals>
     <string name="record_preview_import">Importer</string>
     <string name="record_preview_cancel">Annuler</string>
     <string name="record_preview_add">Ajouter un autre fichier</string>
@@ -103,8 +125,7 @@
     <string name="record_error_nothing_new_body">Rien de nouveau dedans. Quand vous aurez une copie plus récente, ajoutez-la.</string>
     <string name="record_error_not_export_title">Ce n’est pas un export Spotify</string>
     <string name="record_error_not_export_body">Ajoutez le zip de l’e-mail de Spotify tel quel (son nom commence par « my_spotify_data »).</string>
-    <string name="record_error_no_plays_title">Rien de nouveau à réécouter</string>
-    <string name="record_error_no_plays_body">Ce fichier ne contient aucune écoute. Ses playlists et titres aimés arriveront avec une prochaine mise à jour.</string>
+    <string name="record_preview_nothing_title">Rien de nouveau à réécouter</string>
     <string name="record_error_unreadable_title">Ce zip ne s’est pas ouvert</string>
     <string name="record_error_unreadable_body">Son téléchargement n’est peut-être pas terminé. Téléchargez-le à nouveau depuis l’e-mail de Spotify et ajoutez la nouvelle copie.</string>
     <string name="record_error_storage_title">Ce téléphone n’a plus de place</string>

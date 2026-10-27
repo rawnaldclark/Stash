@@ -63,6 +63,8 @@
     <string name="record_import_reading">파일을 읽는 중: %2$d개 중 %1$d개</string>
     <string name="record_import_saving">재생 기록 저장 중: %2$s회 중 %1$s회</string>
     <string name="record_import_saving_start">저장 중…</string>
+    <string name="record_import_library">플레이리스트와 좋아요 추가 중: %2$s곡 중 %1$s곡</string>
+    <string name="record_import_library_start">플레이리스트와 좋아요 추가 중…</string>
     <string name="record_import_year">%1$d년 읽는 중</string>
     <string name="record_import_channel">나의 레코드</string>
     <string name="record_preview_title">나의 Spotify</string>
@@ -81,12 +83,28 @@
     </plurals>
     <string name="record_preview_account_title">최근 1년만 있습니다</string>
     <string name="record_preview_account_body">전체 기록은 다른 이메일인 확장된 스트리밍 기록으로 옵니다. 도착하면 그 zip 파일을 여기로 가져오세요.</string>
-    <string name="record_preview_also">함께 들어 있는 항목</string>
     <plurals name="record_preview_songs">
         <item quantity="other">%1$d곡</item>
     </plurals>
     <string name="record_preview_liked">좋아요 표시한 곡</string>
-    <string name="record_preview_later">플레이리스트와 좋아요 표시한 곡은 이후 업데이트에서 라이브러리에 추가됩니다. zip 파일을 보관하세요.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="other">이 파일의 재생 기록 %1$s회는 모두 이미 여기 있습니다.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="other">이 파일들의 재생 기록 %1$s회는 모두 이미 여기 있습니다.</item>
+    </plurals>
+    <string name="record_preview_no_plays">이 파일에는 재생 기록이 없습니다.</string>
+    <string name="record_preview_still">플레이리스트와 좋아요는 그래도 가져올 수 있습니다.</string>
+    <string name="record_preview_playlists">플레이리스트</string>
+    <string name="record_preview_picked">%2$d개 중 %1$d개</string>
+    <string name="record_preview_already">이미 라이브러리에 있음</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="other">%1$s곡, 좋아요에 추가됨</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">좋아요 표시한 곡은 이 휴대폰에 다운로드됩니다</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="other">이 %1$s곡도 다운로드됩니다.</item>
+    </plurals>
     <string name="record_preview_import">가져오기</string>
     <string name="record_preview_cancel">취소</string>
     <string name="record_preview_add">다른 파일 추가</string>
@@ -95,8 +113,7 @@
     <string name="record_error_nothing_new_body">새로운 내용이 없습니다. 더 최신 사본이 생기면 그것을 가져오세요.</string>
     <string name="record_error_not_export_title">Spotify 내보내기 파일이 아닙니다</string>
     <string name="record_error_not_export_body">Spotify 이메일로 받은 zip 파일을 그대로 가져오세요(파일 이름이 “my_spotify_data”로 시작합니다).</string>
-    <string name="record_error_no_plays_title">다시 들을 새 기록이 없습니다</string>
-    <string name="record_error_no_plays_body">이 파일에는 재생 기록이 없습니다. 파일의 플레이리스트와 좋아요 표시한 곡은 이후 업데이트에서 추가됩니다.</string>
+    <string name="record_preview_nothing_title">다시 들을 새 기록이 없습니다</string>
     <string name="record_error_unreadable_title">zip 파일이 열리지 않았습니다</string>
     <string name="record_error_unreadable_body">다운로드가 끝나지 않았을 수 있습니다. Spotify 이메일에서 다시 다운로드한 후 새 사본을 가져오세요.</string>
     <string name="record_error_storage_title">휴대전화 저장 공간이 부족합니다</string>

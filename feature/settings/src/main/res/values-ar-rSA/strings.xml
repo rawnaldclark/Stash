@@ -804,7 +804,7 @@
     <string name="settings_your_record_remove">إزالة السجل المستورد</string>
     <string name="settings_your_record_remove_subtitle">تعود أسطوانتك إلى تشغيلاتك في Stash.</string>
     <string name="settings_your_record_remove_title">هل تريد إزالة سجلك المستورد؟</string>
-    <string name="settings_your_record_remove_body">يُحذف من هذا الهاتف كل ما أُضيف إلى أسطوانتك من Spotify وLast.fm. تبقى تشغيلاتك في Stash.</string>
+    <string name="settings_your_record_remove_body">يُحذف من هذا الهاتف كل ما أُضيف إلى أسطوانتك من Spotify وLast.fm. تبقى تشغيلاتك في Stash. وتبقى في مكتبتك قوائم التشغيل والأغاني التي أعجبتك التي استوردتها.</string>
     <string name="settings_your_record_remove_confirm">إزالة</string>
     <string name="settings_your_record_cancel">إلغاء</string>
     <string name="settings_your_record_removed">تمت إزالة سجلك المستورد.</string>

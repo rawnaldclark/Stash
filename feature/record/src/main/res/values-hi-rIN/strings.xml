@@ -66,6 +66,8 @@
     <string name="record_import_reading">आपकी फ़ाइलें पढ़ी जा रही हैं: %2$d में से %1$d</string>
     <string name="record_import_saving">आपके प्ले सेव हो रहे हैं: %2$s में से %1$s</string>
     <string name="record_import_saving_start">सेव हो रहा है…</string>
+    <string name="record_import_library">आपकी प्लेलिस्ट और लाइक जोड़े जा रहे हैं: %2$s में से %1$s गाने</string>
+    <string name="record_import_library_start">आपकी प्लेलिस्ट और लाइक जोड़े जा रहे हैं…</string>
     <string name="record_import_year">%1$d पढ़ रहे हैं</string>
     <string name="record_import_channel">आपका रिकॉर्ड</string>
     <string name="record_preview_title">यह रहा आपका Spotify</string>
@@ -88,13 +90,33 @@
     </plurals>
     <string name="record_preview_account_title">यहाँ सिर्फ़ आपका पिछला साल है</string>
     <string name="record_preview_account_body">आपका पूरा इतिहास दूसरे ईमेल, विस्तारित स्ट्रीमिंग इतिहास, में आता है। वह zip आने पर उसे यहाँ लाएँ।</string>
-    <string name="record_preview_also">इसमें यह भी है</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d गाना</item>
         <item quantity="other">%1$d गाने</item>
     </plurals>
     <string name="record_preview_liked">पसंद किए गए गाने</string>
-    <string name="record_preview_later">आपकी प्लेलिस्ट और पसंद किए गए गाने बाद के अपडेट में आपकी लाइब्रेरी में आएँगे। zip रखे रहें।</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">इस फ़ाइल का %1$s प्ले पहले से यहाँ है।</item>
+        <item quantity="other">इस फ़ाइल के सभी %1$s प्ले पहले से यहाँ हैं।</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">इन फ़ाइलों का %1$s प्ले पहले से यहाँ है।</item>
+        <item quantity="other">इन फ़ाइलों के सभी %1$s प्ले पहले से यहाँ हैं।</item>
+    </plurals>
+    <string name="record_preview_no_plays">इस फ़ाइल में कोई प्ले नहीं है।</string>
+    <string name="record_preview_still">आपकी प्लेलिस्ट और लाइक फिर भी आ सकते हैं।</string>
+    <string name="record_preview_playlists">प्लेलिस्ट</string>
+    <string name="record_preview_picked">%2$d में से %1$d</string>
+    <string name="record_preview_already">पहले से आपकी लाइब्रेरी में है</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s गाना, आपके लाइक में जोड़ा जाएगा</item>
+        <item quantity="other">%1$s गाने, आपके लाइक में जोड़े जाएँगे</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">पसंद किए गए गाने इस फ़ोन पर डाउनलोड होते हैं</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">यह गाना भी डाउनलोड होगा।</item>
+        <item quantity="other">ये %1$s गाने भी डाउनलोड होंगे।</item>
+    </plurals>
     <string name="record_preview_import">इंपोर्ट करें</string>
     <string name="record_preview_cancel">रद्द करें</string>
     <string name="record_preview_add">एक और फ़ाइल जोड़ें</string>
@@ -103,8 +125,7 @@
     <string name="record_error_nothing_new_body">इसमें कुछ नया नहीं है। जब आपके पास नई कॉपी हो, तो वह लाएँ।</string>
     <string name="record_error_not_export_title">यह Spotify एक्सपोर्ट नहीं है</string>
     <string name="record_error_not_export_body">Spotify के ईमेल वाला zip जैसा आया था वैसा ही लाएँ (उसका नाम “my_spotify_data” से शुरू होता है)।</string>
-    <string name="record_error_no_plays_title">दोबारा सुनने के लिए कुछ नया नहीं</string>
-    <string name="record_error_no_plays_body">इस फ़ाइल में कोई प्ले नहीं है। इसकी प्लेलिस्ट और पसंद किए गए गाने बाद के अपडेट में आएँगे।</string>
+    <string name="record_preview_nothing_title">दोबारा सुनने के लिए कुछ नया नहीं</string>
     <string name="record_error_unreadable_title">वह zip नहीं खुला</string>
     <string name="record_error_unreadable_body">हो सकता है वह पूरा डाउनलोड न हुआ हो। Spotify के ईमेल से उसे फिर से डाउनलोड करें और नई कॉपी लाएँ।</string>
     <string name="record_error_storage_title">इस फ़ोन में जगह नहीं बची</string>

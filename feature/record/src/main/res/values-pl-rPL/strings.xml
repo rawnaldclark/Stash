@@ -72,6 +72,8 @@
     <string name="record_import_reading">Odczytywanie plików: %1$d z %2$d</string>
     <string name="record_import_saving">Zapisywanie odtworzeń: %1$s z %2$s</string>
     <string name="record_import_saving_start">Zapisywanie…</string>
+    <string name="record_import_library">Dodawanie playlist i polubień: %1$s z %2$s utworów</string>
+    <string name="record_import_library_start">Dodawanie playlist i polubień…</string>
     <string name="record_import_year">Odczytywanie: %1$d</string>
     <string name="record_import_channel">Twoja płyta</string>
     <string name="record_preview_title">Oto twój Spotify</string>
@@ -102,7 +104,6 @@
     </plurals>
     <string name="record_preview_account_title">Masz tu tylko ostatni rok</string>
     <string name="record_preview_account_body">Cała historia przyjdzie w drugim e-mailu, Rozszerzona historia streamingu. Dodaj ten plik zip tutaj, gdy przyjdzie.</string>
-    <string name="record_preview_also">Jest tu też</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d utwór</item>
         <item quantity="few">%1$d utwory</item>
@@ -110,7 +111,36 @@
         <item quantity="other">%1$d utworu</item>
     </plurals>
     <string name="record_preview_liked">Polubione utwory</string>
-    <string name="record_preview_later">Twoje playlisty i polubione utwory trafią do biblioteki w jednej z kolejnych aktualizacji. Zachowaj plik zip.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">%1$s odtworzenie z tego pliku już tu jest.</item>
+        <item quantity="few">Wszystkie %1$s odtworzenia z tego pliku już tu są.</item>
+        <item quantity="many">Wszystkie %1$s odtworzeń z tego pliku już tu jest.</item>
+        <item quantity="other">Wszystkie %1$s odtworzenia z tego pliku już tu są.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">%1$s odtworzenie z tych plików już tu jest.</item>
+        <item quantity="few">Wszystkie %1$s odtworzenia z tych plików już tu są.</item>
+        <item quantity="many">Wszystkie %1$s odtworzeń z tych plików już tu jest.</item>
+        <item quantity="other">Wszystkie %1$s odtworzenia z tych plików już tu są.</item>
+    </plurals>
+    <string name="record_preview_no_plays">W tym pliku nie ma odtworzeń.</string>
+    <string name="record_preview_still">Twoje playlisty i polubienia mogą i tak tu trafić.</string>
+    <string name="record_preview_playlists">Playlisty</string>
+    <string name="record_preview_picked">%1$d z %2$d</string>
+    <string name="record_preview_already">Już w twojej bibliotece</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s utwór, dodany do polubionych</item>
+        <item quantity="few">%1$s utwory, dodane do polubionych</item>
+        <item quantity="many">%1$s utworów, dodanych do polubionych</item>
+        <item quantity="other">%1$s utworu, dodane do polubionych</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Polubione utwory są pobierane na ten telefon</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">Ten utwór też zostanie pobrany.</item>
+        <item quantity="few">Te %1$s utwory też zostaną pobrane.</item>
+        <item quantity="many">Tych %1$s utworów też zostanie pobranych.</item>
+        <item quantity="other">Te %1$s utworu też zostaną pobrane.</item>
+    </plurals>
     <string name="record_preview_import">Importuj</string>
     <string name="record_preview_cancel">Anuluj</string>
     <string name="record_preview_add">Dodaj kolejny plik</string>
@@ -119,8 +149,7 @@
     <string name="record_error_nothing_new_body">Nie ma w nim nic nowego. Gdy będziesz mieć nowszą kopię, dodaj ją.</string>
     <string name="record_error_not_export_title">To nie jest eksport ze Spotify</string>
     <string name="record_error_not_export_body">Dodaj plik zip z e-maila od Spotify w niezmienionej postaci (jego nazwa zaczyna się od „my_spotify_data”).</string>
-    <string name="record_error_no_plays_title">Nie ma tu nic nowego do posłuchania</string>
-    <string name="record_error_no_plays_body">W tym pliku nie ma odtworzeń. Jego playlisty i polubione utwory trafią tu w jednej z kolejnych aktualizacji.</string>
+    <string name="record_preview_nothing_title">Nie ma tu nic nowego do posłuchania</string>
     <string name="record_error_unreadable_title">Nie udało się otworzyć pliku zip</string>
     <string name="record_error_unreadable_body">Możliwe, że nie pobrał się do końca. Pobierz go ponownie z e-maila od Spotify i dodaj nową kopię.</string>
     <string name="record_error_storage_title">Na tym telefonie brakuje miejsca</string>

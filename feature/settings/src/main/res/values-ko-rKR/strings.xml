@@ -644,7 +644,7 @@
     <string name="settings_your_record_remove">가져온 기록 삭제</string>
     <string name="settings_your_record_remove_subtitle">나의 레코드가 Stash의 재생 기록으로 돌아갑니다.</string>
     <string name="settings_your_record_remove_title">가져온 기록을 삭제할까요?</string>
-    <string name="settings_your_record_remove_body">Spotify와 Last.fm에서 나의 레코드로 가져온 모든 항목이 이 휴대폰에서 삭제됩니다. Stash의 재생 기록은 그대로 유지됩니다.</string>
+    <string name="settings_your_record_remove_body">Spotify와 Last.fm에서 나의 레코드로 가져온 모든 항목이 이 휴대폰에서 삭제됩니다. Stash의 재생 기록은 그대로 유지됩니다. 가져온 플레이리스트와 좋아요 표시한 곡은 라이브러리에 그대로 남습니다.</string>
     <string name="settings_your_record_remove_confirm">삭제</string>
     <string name="settings_your_record_cancel">취소</string>
     <string name="settings_your_record_removed">가져온 기록을 삭제했습니다.</string>

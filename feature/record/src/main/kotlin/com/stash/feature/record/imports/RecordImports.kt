@@ -6,8 +6,11 @@ import android.util.Log
 import com.stash.core.data.db.dao.RecordLengthDao
 import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
+import com.stash.core.data.record.ChosenPlaylist
+import com.stash.core.data.record.SpotifyLibraryImport
 import com.stash.core.data.record.YourRecordImportState
 import com.stash.core.data.record.YourRecordImports
+import com.stash.feature.record.importer.ImportChoice
 import com.stash.feature.record.importer.ImportPreview
 import com.stash.feature.record.importer.ImportProgress
 import com.stash.feature.record.importer.ImportTooBig
@@ -55,16 +58,13 @@ import kotlin.coroutines.CoroutineContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Why an import came to nothing (service.ts `SpotifyState` error reasons, and [NO_PLAYS] and [TOO_BIG], the app's own). */
+/** Why an import came to nothing (service.ts `SpotifyState` error reasons, and [TOO_BIG], the app's own). */
 enum class ImportFailure {
     /** None of the files is a file of a Spotify export. */
     NOT_EXPORT,
 
-    /** An export, every play of it here already (spec §5.5: never called "not an export"). */
+    /** An export, every play of it here already, and no playlists or liked songs in it (spec §5.5: never called "not an export"). */
     NOTHING_NEW,
-
-    /** An export with playlists or liked songs and no plays: those come in with a later update. */
-    NO_PLAYS,
 
     /** A zip that wouldn't open, or files that couldn't be read. */
     UNREADABLE,
@@ -170,6 +170,8 @@ class RecordImports internal constructor(
     private val pauseLengths: suspend () -> Boolean = { false },
     /** Starts the lengths pass (service.ts `timeSongs`). */
     private val startLengths: () -> Unit = {},
+    /** Where the playlists, liked songs and hidden songs go (the library, `record_hidden`). */
+    private val library: RecordLibrary = RecordLibrary.None,
 ) : YourRecordImports {
 
     @Inject constructor(
@@ -181,6 +183,7 @@ class RecordImports internal constructor(
         writeLock: RecordWrites,
         /** Lazy: the lengths pass reads the import record and the changes from here. */
         lengths: dagger.Lazy<com.stash.feature.record.lastfm.RecordLengths>,
+        library: RecordLibrary,
     ) : this(
         store = store,
         archive = DaoArchiveStore(dao, lengthDao),
@@ -198,6 +201,7 @@ class RecordImports internal constructor(
         cancelLastfm = { com.stash.feature.record.lastfm.RecordLastfmWorker.cancel(context) },
         pauseLengths = { lengths.get().pause() },
         startLengths = { lengths.get().start() },
+        library = library,
     )
 
     private val importer = SpotifyImporter(archive, scratch, zone)
@@ -255,7 +259,8 @@ class RecordImports internal constructor(
          */
         class Read(val kept: List<PickedFile>, val copies: List<PickedFile>, val shared: Boolean, override val epoch: Long) : Work
 
-        class Commit(override val epoch: Long) : Work
+        /** [choice]: what the person chose to bring into the library (the playlists ticked, the liked songs or not). */
+        class Commit(override val epoch: Long, val choice: ImportChoice) : Work
     }
 
     private val lock = Any()
@@ -336,11 +341,11 @@ class RecordImports internal constructor(
         return copy
     }
 
-    /** Imports what the preview showed. */
-    fun confirm() {
+    /** Imports what the preview showed: its plays, and the playlists and liked songs of [choice]. */
+    fun confirm(choice: ImportChoice = ImportChoice.ALL) {
         synchronized(lock) {
             if (_state.value !is ImportState.Preview) return
-            queued = Work.Commit(epoch)
+            queued = Work.Commit(epoch, choice)
             _state.value = ImportState.Working(ImportProgress.Write(0, 0), saving = true)
         }
         launch()
@@ -421,9 +426,10 @@ class RecordImports internal constructor(
     override fun showInvite() = store.setInviteHidden(false)
 
     /**
-     * Remove import (spec §5.4): every imported play (the Spotify export's and the Last.fm scrobbles), the import record and the
-     * Last.fm import's mark go; when Spotify was asked stays. Refused while an import runs, a Last.fm run too (the web would wait
-     * for its lock, minutes for a long history; here it says so at once).
+     * Remove import (spec §5.4): every imported play (the Spotify export's and the Last.fm scrobbles), the songs hidden on
+     * Spotify, the import record and the Last.fm import's mark go; when Spotify was asked stays, and so do the playlists and liked
+     * songs an import brought (they are the library's: the same export again finds them by their `name#n`). Refused while an
+     * import runs, a Last.fm run too (the web would wait for its lock, minutes for a long history; here it says so at once).
      */
     override suspend fun removeImport(): Boolean {
         if (_state.value is ImportState.Working || writeLock.lastfmRunning.value) return false
@@ -437,6 +443,7 @@ class RecordImports internal constructor(
                 cancelLastfm()
                 store.nextLastfmGeneration()
                 archive.clear()
+                library.clearHidden()
                 store.clearRecord()
             }
         }.await()
@@ -575,7 +582,7 @@ class RecordImports internal constructor(
             resumeEpoch = null
             waiting.takeIf { live(it) } ?: return null
         }
-        if (store.pending != null) return Work.Commit(e)
+        if (store.pending != null) return Work.Commit(e, store.pendingChoice)
         val kept = if (store.info.value.unfinished == null) kept() else emptyList()
         if (kept.isEmpty()) {
             publishAt(e, ImportState.Idle)
@@ -625,11 +632,13 @@ class RecordImports internal constructor(
                 }
             }
             publish(work, ImportState.Working(ImportProgress.Open))
-            val prep = importer.prepare(all, now(), checkpoint = { checkpoint(job, work) }, zip = zip) { p ->
+            val read = importer.prepare(all, now(), checkpoint = { checkpoint(job, work) }, zip = zip) { p ->
                 publish(work, ImportState.Working(p))
                 onProgress(p)
             }
             // Planning the merge has no checkpoint: a Cancel during it ends here, and its preview is never shown
+            job.ensureActive()
+            val prep = marked(read)
             job.ensureActive()
             store.clearStops()
             if (prep.preview.anything) {
@@ -657,6 +666,26 @@ class RecordImports internal constructor(
         }
     }
 
+    /**
+     * [prep] with what the library says of it: the playlists it holds already, each marked (owner decision D3: they start
+     * unticked), and whether the liked songs would download. A library that can't be read marks nothing (they all start ticked).
+     */
+    private suspend fun marked(prep: Prepared): Prepared {
+        val p = prep.preview
+        if (p.playlists.isEmpty() && p.likes == 0) return prep
+        return try {
+            val already = if (p.playlists.isEmpty()) emptySet() else library.alreadyHere(prep.bundle.playlists)
+            val download = p.likes > 0 && library.likesDownload()
+            val playlists = p.playlists.mapIndexed { i, c -> if (i in already) c.copy(already = true) else c }
+            Prepared(p.copy(playlists = playlists, likesDownload = download), prep.bundle, prep.files)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "the library couldn't be compared with the export: ${e.javaClass.simpleName}")
+            prep
+        }
+    }
+
     private suspend fun commit(work: Work.Commit, onProgress: (ImportProgress) -> Unit) {
         val job = currentCoroutineContext().job
         val prep = synchronized(lock) { prepared } ?: run {
@@ -673,16 +702,36 @@ class RecordImports internal constructor(
         }
         // The lengths pass lets go of the lock for the commit, and carries on after it (the export may time some songs now)
         val timing = pauseLengths()
+        val choice = work.choice
         val result = writes.withLock {
             checkpoint(job, work)
-            store.setPending(now())
+            // A commit taken up again keeps the time it began: the liked songs it brings keep the times it gave them
+            val at = store.pending ?: now()
+            store.setPending(at, choice)
             publish(work, ImportState.Working(ImportProgress.Write(0, 0), saving = true))
+            // 1. The plays
             val r = importer.commit(prep, checkpoint = { checkpoint(job, work) }) { p ->
                 publish(work, ImportState.Working(p, saving = true))
                 onProgress(p)
             }
-            storeRecord(added = 1)
-            store.setPending(null)
+            // 2. The songs hidden on Spotify, added to those kept
+            checkpoint(job, work)
+            library.addHidden(prep.bundle.hidden)
+            // 3. The playlists chosen (each known by its place in the whole export) and the liked songs, into the library
+            val keys = SpotifyLibraryImport.playlistKeys(prep.bundle.playlists)
+            val playlists = prep.bundle.playlists.indices.filter(choice::takes).map { ChosenPlaylist(keys[it], prep.bundle.playlists[it]) }
+            val likes = if (choice.likes) prep.bundle.likes else emptyList()
+            if (playlists.isNotEmpty() || likes.isNotEmpty()) {
+                checkpoint(job, work)
+                library.write(playlists, likes, at) { done, total ->
+                    checkpoint(job, work)
+                    val p = ImportProgress.Library(done, total)
+                    publish(work, ImportState.Working(p, saving = true))
+                    onProgress(p)
+                }
+            }
+            // 4. The record, and `pending` cleared with it in one write: steps 1 to 3 are safe to run again, this one is the end
+            storeRecord(added = 1, playlists = playlists.size, likes = likes.size, finish = true)
             r
         }
         if (timing || store.info.value.lastfm != null) startLengths()
@@ -824,18 +873,21 @@ class RecordImports internal constructor(
         notices.clear()
     }
 
-    /** service.ts `choose`'s word for files that add nothing (and [ImportFailure.NO_PLAYS], the app's own). */
+    /** service.ts `choose`'s word for files that add nothing (no new plays, no playlists, no liked songs). */
     private fun nothingIn(p: ImportPreview): ImportFailure = when {
         p.same > 0 || p.overlap > 0 -> ImportFailure.NOTHING_NEW
         p.unreadable > 0 -> ImportFailure.UNREADABLE
-        p.playlists.isNotEmpty() || p.likes > 0 -> ImportFailure.NO_PLAYS
         else -> ImportFailure.NOT_EXPORT
     }
 
-    /** The import record over the archive as it is now ([added] imports on top of the last one's count). Under [writes]. */
-    private suspend fun storeRecord(added: Int) {
+    /**
+     * The import record over the archive as it is now ([added] imports, and the [playlists] and [likes] brought into the library,
+     * on top of the last one's counts). [finish]: a commit's end, `pending` cleared in the same write. Under [writes].
+     */
+    private suspend fun storeRecord(added: Int, playlists: Int = 0, likes: Int = 0, finish: Boolean = false) {
         val (ownFirst, ownLast) = ownSpan()
-        store.setRecord(SpotifyImporter.record(store.info.value.record, archive.listens(), ownFirst, ownLast, now(), added))
+        val record = SpotifyImporter.record(store.info.value.record, archive.listens(), ownFirst, ownLast, now(), added, playlists, likes)
+        if (finish) store.finishCommit(record) else store.setRecord(record)
     }
 
     /**
@@ -849,7 +901,13 @@ class RecordImports internal constructor(
      * when Spotify was asked stays), else it is counted again (service.ts `removeLastfm`).
      */
     internal suspend fun recordAfterScrobblesRemoved() {
-        if (archive.count() == 0) store.clearRecord() else if (store.info.value.record != null) storeRecord(added = 0)
+        if (archive.count() == 0) {
+            // The scrobbles were all there was: no record, and no songs hidden on Spotify either (the playlists and likes stay)
+            library.clearHidden()
+            store.clearRecord()
+        } else if (store.info.value.record != null) {
+            storeRecord(added = 0)
+        }
     }
 
     /**
@@ -928,4 +986,7 @@ class RecordImports internal constructor(
 internal abstract class RecordImportsModule {
     @Binds
     abstract fun yourRecordImports(imports: RecordImports): YourRecordImports
+
+    @Binds
+    abstract fun recordLibrary(library: DaoRecordLibrary): RecordLibrary
 }

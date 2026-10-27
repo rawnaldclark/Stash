@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,12 +37,16 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -83,6 +88,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.record.R
 import com.stash.feature.record.card.RecordArtwork
 import com.stash.feature.record.card.RecordCard
+import com.stash.feature.record.importer.ImportChoice
 import com.stash.feature.record.importer.ImportPreview
 import com.stash.feature.record.importer.ImportProgress
 import com.stash.feature.record.lastfm.RecordLastfm
@@ -198,7 +204,7 @@ fun RecordImportHost(onOpenRecord: () -> Unit, onConnectLastfm: () -> Unit = {},
                         )
                         Step.WORKING -> (state as? ImportState.Working)?.let { Working(it.progress, onCancel = imports::cancel) }
                         Step.PREVIEW -> (state as? ImportState.Preview)?.let {
-                            PreviewStep(it.preview, onImport = imports::confirm, onCancel = imports::reset, onAdd = pick)
+                            PreviewStep(it.preview, it.files, onImport = imports::confirm, onCancel = imports::reset, onAdd = pick)
                         }
                         Step.FAILED -> (state as? ImportState.Failed)?.let {
                             FailedStep(it, onPick = pick, onAgain = imports::again, onBack = imports::reset)
@@ -447,64 +453,117 @@ private fun Working(progress: ImportProgress, onCancel: () -> Unit) {
 
 // ── the preview ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * What the files hold, before anything is written (ImportFlow.svelte's preview): the plays they add (or that every play is here
+ * already), then each playlist with its tick and the liked songs with their switch. A playlist the library holds already starts
+ * unticked and says so (owner decision D3); one tap brings it in anyway. Import waits until something is chosen.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PreviewStep(p: ImportPreview, onImport: () -> Unit, onCancel: () -> Unit, onAdd: () -> Unit) {
+private fun PreviewStep(p: ImportPreview, files: Int, onImport: (ImportChoice) -> Unit, onCancel: () -> Unit, onAdd: () -> Unit) {
     val res = LocalContext.current.resources
-    Heading(stringResource(R.string.record_preview_title))
-    ImportText.span(res, p.first, p.last)?.let {
+    // The playlists left out: to start, those already in the library (a new preview, another file added, starts again from its own)
+    var off by rememberSaveable(p) { mutableStateOf(p.playlists.indices.filter { p.playlists[it].already }.toIntArray()) }
+    var likes by rememberSaveable(p) { mutableStateOf(true) }
+    val picked = p.playlists.size - off.size
+    val nothing = p.plays == 0 && p.phone == 0 && picked == 0 && !(likes && p.likes > 0)
+    val all = p.plays + p.phone
+    Heading(stringResource(if (all > 0) R.string.record_preview_title else R.string.record_preview_nothing_title))
+    if (all > 0) {
+        ImportText.span(res, p.first, p.last)?.let {
+            Spacer(Modifier.height(4.dp))
+            Body(it)
+        }
+        Spacer(Modifier.height(16.dp))
+        val hours = RecordCard.hours(p.listenedMs)
+        val figures = listOf(ImportText.count(res, hours), ImportText.count(res, p.years.toLong()), ImportText.count(res, p.plays.toLong()))
+        // Each a third of the sheet's width: all three step down together when the longest ("330,827") wouldn't fit
+        val longest = figures.maxOf { it.length }
+        val size = when {
+            longest <= 5 -> MaterialTheme.typography.headlineSmall
+            longest <= 7 -> MaterialTheme.typography.titleLarge
+            else -> MaterialTheme.typography.titleMedium
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Figure(figures[0], pluralStringResource(R.plurals.record_preview_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), size, Modifier.weight(1f))
+            Figure(figures[1], pluralStringResource(R.plurals.record_preview_years, p.years), size, Modifier.weight(1f))
+            Figure(figures[2], pluralStringResource(R.plurals.record_preview_plays, p.plays), size, Modifier.weight(1f))
+        }
+        if (p.same > 0) {
+            Spacer(Modifier.height(12.dp))
+            Body(pluralStringResource(R.plurals.record_preview_here, p.same, ImportText.count(res, p.same.toLong())))
+        }
+    } else {
+        // No new plays: what is here already (or that there are none), and that the playlists and likes can still come in
         Spacer(Modifier.height(4.dp))
-        Body(it)
-    }
-    Spacer(Modifier.height(16.dp))
-    val hours = RecordCard.hours(p.listenedMs)
-    val figures = listOf(ImportText.count(res, hours), ImportText.count(res, p.years.toLong()), ImportText.count(res, p.plays.toLong()))
-    // Each a third of the sheet's width: all three step down together when the longest ("330,827") wouldn't fit
-    val longest = figures.maxOf { it.length }
-    val size = when {
-        longest <= 5 -> MaterialTheme.typography.headlineSmall
-        longest <= 7 -> MaterialTheme.typography.titleLarge
-        else -> MaterialTheme.typography.titleMedium
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Figure(figures[0], pluralStringResource(R.plurals.record_preview_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()), size, Modifier.weight(1f))
-        Figure(figures[1], pluralStringResource(R.plurals.record_preview_years, p.years), size, Modifier.weight(1f))
-        Figure(figures[2], pluralStringResource(R.plurals.record_preview_plays, p.plays), size, Modifier.weight(1f))
-    }
-    if (p.same > 0) {
-        Spacer(Modifier.height(12.dp))
-        Body(pluralStringResource(R.plurals.record_preview_here, p.same, ImportText.count(res, p.same.toLong())))
+        val here = when {
+            p.same > 0 -> pluralStringResource(
+                if (files == 1) R.plurals.record_preview_all_here_file else R.plurals.record_preview_all_here_files,
+                p.same,
+                ImportText.count(res, p.same.toLong()),
+            )
+            else -> stringResource(R.string.record_preview_no_plays)
+        }
+        val still = if (p.playlists.isNotEmpty() || p.likes > 0) " " + stringResource(R.string.record_preview_still) else ""
+        Body(here + still)
     }
     if (!p.extended && p.plays > 0) {
         Spacer(Modifier.height(14.dp))
         Callout(stringResource(R.string.record_preview_account_title), stringResource(R.string.record_preview_account_body))
     }
-    if (p.playlists.isNotEmpty() || p.likes > 0) {
+    if (p.playlists.isNotEmpty()) {
         Spacer(Modifier.height(16.dp))
-        Text(
-            stringResource(R.string.record_preview_also),
-            style = MaterialTheme.typography.labelMedium,
-            color = StashTheme.extendedColors.textTertiary,
-            modifier = Modifier.semantics { heading() },
-        )
+        Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { heading() }, verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.record_preview_playlists),
+                style = MaterialTheme.typography.labelMedium,
+                color = StashTheme.extendedColors.textTertiary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                stringResource(R.string.record_preview_picked, picked, p.playlists.size),
+                style = MaterialTheme.typography.labelMedium,
+                color = StashTheme.extendedColors.textTertiary,
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Column(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(StashTheme.extendedColors.glassBackground)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+                .border(1.dp, StashTheme.extendedColors.glassBorder, RoundedCornerShape(12.dp)),
         ) {
-            for (pl in p.playlists) ListLine(pl.name, pluralStringResource(R.plurals.record_preview_songs, pl.songs, pl.songs))
-            if (p.likes > 0) ListLine(stringResource(R.string.record_preview_liked), pluralStringResource(R.plurals.record_preview_songs, p.likes, p.likes))
+            p.playlists.forEachIndexed { i, pl ->
+                val on = i !in off
+                PlaylistTick(
+                    name = pl.name,
+                    songs = pluralStringResource(R.plurals.record_preview_songs, pl.songs, pl.songs),
+                    already = pl.already,
+                    on = on,
+                    onToggle = { off = if (on) off + i else off.filter { it != i }.toIntArray() },
+                )
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        Small(stringResource(R.string.record_preview_later))
+    }
+    if (p.likes > 0) {
+        Spacer(Modifier.height(12.dp))
+        LikesSwitch(pluralStringResource(R.plurals.record_preview_liked_added, p.likes, ImportText.count(res, p.likes.toLong())), likes) { likes = it }
+        // Liked Songs is kept on this phone: what comes in downloads too, so it is said before it happens
+        if (likes && p.likesDownload) {
+            Spacer(Modifier.height(10.dp))
+            Callout(
+                stringResource(R.string.record_preview_liked_download_title),
+                pluralStringResource(R.plurals.record_preview_liked_download, p.likes, ImportText.count(res, p.likes.toLong())),
+            )
+        }
     }
     Spacer(Modifier.height(20.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Button(onClick = onImport, enabled = p.anything, colors = ButtonDefaults.buttonColors(containerColor = StashPurple, contentColor = Color.White)) {
+        Button(
+            onClick = { onImport(ImportChoice(playlists = if (off.isEmpty()) null else p.playlists.indices.filterTo(LinkedHashSet()) { it !in off }, likes = likes)) },
+            enabled = !nothing,
+            colors = ButtonDefaults.buttonColors(containerColor = StashPurple, contentColor = Color.White),
+        ) {
             Text(stringResource(R.string.record_preview_import))
         }
         OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.record_preview_cancel)) }
@@ -512,6 +571,60 @@ private fun PreviewStep(p: ImportPreview, onImport: () -> Unit, onCancel: () -> 
     }
     Spacer(Modifier.height(12.dp))
     Private(stringResource(R.string.record_preview_private))
+}
+
+/** One playlist of the preview (ImportFlow.svelte's `spf-row`): its tick, its name (and "Already in your library"), its songs. */
+@Composable
+private fun PlaylistTick(name: String, songs: String, already: Boolean, on: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = on, role = Role.Checkbox, onValueChange = { onToggle() })
+            .padding(start = 4.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = on, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = StashPurple), modifier = Modifier.padding(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (already) {
+                Text(
+                    stringResource(R.string.record_preview_already),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(songs, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+/** The liked songs and their switch (ImportFlow.svelte's `spf-likes`): "Liked songs", how many, added to your likes. */
+@Composable
+private fun LikesSwitch(detail: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, StashTheme.extendedColors.glassBorder, shape)
+            .toggleable(value = on, role = Role.Switch, onValueChange = onChange)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                stringResource(R.string.record_preview_liked),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(16.dp))
+        Switch(checked = on, onCheckedChange = null, colors = SwitchDefaults.colors(checkedTrackColor = StashPurple))
+    }
 }
 
 /** One of the preview's three big figures: the number, set large ([size]), and its word under it. */
@@ -534,15 +647,6 @@ private fun Figure(n: String, word: String, size: TextStyle, modifier: Modifier 
             overflow = TextOverflow.Ellipsis,
         )
         Text(word, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-    }
-}
-
-@Composable
-private fun ListLine(name: String, detail: String) {
-    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }, verticalAlignment = Alignment.CenterVertically) {
-        Text(name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Spacer(Modifier.width(12.dp))
-        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 
@@ -600,7 +704,6 @@ internal fun failureWords(f: ImportState.Failed): Pair<Int, Int> {
     return when (f.reason) {
         ImportFailure.NOTHING_NEW -> R.string.record_error_nothing_new_title to R.string.record_error_nothing_new_body
         ImportFailure.NOT_EXPORT -> R.string.record_error_not_export_title to R.string.record_error_not_export_body
-        ImportFailure.NO_PLAYS -> R.string.record_error_no_plays_title to R.string.record_error_no_plays_body
         ImportFailure.UNREADABLE -> R.string.record_error_unreadable_title to R.string.record_error_unreadable_body
         ImportFailure.STORAGE -> R.string.record_error_storage_title to R.string.record_error_storage_body
         ImportFailure.TOO_BIG -> R.string.record_error_too_big_title to R.string.record_error_too_big_body

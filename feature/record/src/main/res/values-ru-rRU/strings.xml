@@ -72,6 +72,8 @@
     <string name="record_import_reading">Читаем файлы: %1$d из %2$d</string>
     <string name="record_import_saving">Сохраняем прослушивания: %1$s из %2$s</string>
     <string name="record_import_saving_start">Сохраняем…</string>
+    <string name="record_import_library">Добавляем плейлисты и лайки: %1$s из %2$s треков</string>
+    <string name="record_import_library_start">Добавляем плейлисты и лайки…</string>
     <string name="record_import_year">Читаем: %1$d</string>
     <string name="record_import_channel">Ваша пластинка</string>
     <string name="record_preview_title">Вот ваш Spotify</string>
@@ -102,7 +104,6 @@
     </plurals>
     <string name="record_preview_account_title">Здесь только последний год</string>
     <string name="record_preview_account_body">Вся история придёт в другом письме, «Расширенная история прослушиваний». Добавьте этот zip-архив сюда, когда он придёт.</string>
-    <string name="record_preview_also">Ещё здесь</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d песня</item>
         <item quantity="few">%1$d песни</item>
@@ -110,7 +111,36 @@
         <item quantity="other">%1$d песни</item>
     </plurals>
     <string name="record_preview_liked">Любимые треки</string>
-    <string name="record_preview_later">Ваши плейлисты и любимые треки появятся в медиатеке в одном из следующих обновлений. Сохраните zip-архив.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">%1$s прослушивание из этого файла уже здесь.</item>
+        <item quantity="few">Все %1$s прослушивания из этого файла уже здесь.</item>
+        <item quantity="many">Все %1$s прослушиваний из этого файла уже здесь.</item>
+        <item quantity="other">Все %1$s прослушивания из этого файла уже здесь.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">%1$s прослушивание из этих файлов уже здесь.</item>
+        <item quantity="few">Все %1$s прослушивания из этих файлов уже здесь.</item>
+        <item quantity="many">Все %1$s прослушиваний из этих файлов уже здесь.</item>
+        <item quantity="other">Все %1$s прослушивания из этих файлов уже здесь.</item>
+    </plurals>
+    <string name="record_preview_no_plays">В этом файле нет прослушиваний.</string>
+    <string name="record_preview_still">Плейлисты и лайки всё равно можно добавить.</string>
+    <string name="record_preview_playlists">Плейлисты</string>
+    <string name="record_preview_picked">%1$d из %2$d</string>
+    <string name="record_preview_already">Уже в вашей медиатеке</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s трек, добавится в лайки</item>
+        <item quantity="few">%1$s трека, добавятся в лайки</item>
+        <item quantity="many">%1$s треков, добавятся в лайки</item>
+        <item quantity="other">%1$s трека, добавятся в лайки</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Любимые треки скачиваются на этот телефон</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">%1$s трек тоже скачается.</item>
+        <item quantity="few">%1$s трека тоже скачаются.</item>
+        <item quantity="many">%1$s треков тоже скачаются.</item>
+        <item quantity="other">%1$s трека тоже скачаются.</item>
+    </plurals>
     <string name="record_preview_import">Импортировать</string>
     <string name="record_preview_cancel">Отмена</string>
     <string name="record_preview_add">Добавить ещё файл</string>
@@ -119,8 +149,7 @@
     <string name="record_error_nothing_new_body">В нём нет ничего нового. Когда появится более новая копия, добавьте её.</string>
     <string name="record_error_not_export_title">Это не экспорт Spotify</string>
     <string name="record_error_not_export_body">Добавьте zip-архив из письма Spotify как есть (его имя начинается с «my_spotify_data»).</string>
-    <string name="record_error_no_plays_title">Нет новых прослушиваний</string>
-    <string name="record_error_no_plays_body">В этом файле нет прослушиваний. Его плейлисты и любимые треки появятся в одном из следующих обновлений.</string>
+    <string name="record_preview_nothing_title">Нет новых прослушиваний</string>
     <string name="record_error_unreadable_title">Этот zip-архив не открылся</string>
     <string name="record_error_unreadable_body">Возможно, он скачался не полностью. Скачайте его снова из письма Spotify и добавьте новую копию.</string>
     <string name="record_error_storage_title">На телефоне закончилось место</string>

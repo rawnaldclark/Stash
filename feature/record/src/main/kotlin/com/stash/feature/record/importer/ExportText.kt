@@ -1,5 +1,6 @@
 package com.stash.feature.record.importer
 
+import com.stash.core.data.record.ExportSong
 import com.stash.feature.record.archive.PhoneRows
 import java.util.regex.Pattern
 
@@ -69,15 +70,20 @@ internal object ExportText {
     }
 
     /**
-     * export.ts `localSong`, as far as the preview needs it: whether `spotify:local:Artist:Album:Title:Seconds` (each part
-     * URL-encoded, `+` a space) names a song, that is a title and an artist left after cleaning.
+     * export.ts `localSong`: the song `spotify:local:Artist:Album:Title:Seconds` names (a local file in a playlist; each part
+     * URL-encoded, `+` a space, then cleaned like `str`), or null when it names no title or no artist. A part that won't decode
+     * (`decodeURIComponent` throws) is no part: no album, or no song.
      */
-    fun isLocalSong(uri: String?): Boolean {
-        if (uri == null || !uri.startsWith(LOCAL)) return false
+    fun localSong(uri: String?): ExportSong? {
+        if (uri == null || !uri.startsWith(LOCAL)) return null
         val parts = uri.substring(LOCAL.length).split(':')
-        if (parts.size < 3) return false
+        if (parts.size < 3) return null
         fun dec(s: String?): String? = decodeUriComponent((s ?: "").replace('+', ' '))?.let(::str)
-        return dec(parts.getOrNull(2)) != null && dec(parts.getOrNull(0)) != null
+        val artist = dec(parts[0])
+        val album = dec(parts[1])
+        val title = dec(parts[2])
+        if (title == null || artist == null) return null
+        return ExportSong(title, artist, album)
     }
 
     private const val LOCAL = "spotify:local:"

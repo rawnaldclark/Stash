@@ -676,7 +676,7 @@
     <string name="settings_your_record_remove">Remover histórico importado</string>
     <string name="settings_your_record_remove_subtitle">Seu disco volta às suas reproduções no Stash.</string>
     <string name="settings_your_record_remove_title">Remover seu histórico importado?</string>
-    <string name="settings_your_record_remove_body">Tudo o que foi trazido do Spotify e do Last.fm para seu disco é apagado deste telefone. Suas reproduções no Stash ficam.</string>
+    <string name="settings_your_record_remove_body">Tudo o que foi trazido do Spotify e do Last.fm para seu disco é apagado deste telefone. Suas reproduções no Stash ficam. As playlists e músicas curtidas que você trouxe ficam na sua biblioteca.</string>
     <string name="settings_your_record_remove_confirm">Remover</string>
     <string name="settings_your_record_cancel">Cancelar</string>
     <string name="settings_your_record_removed">Seu histórico importado foi removido.</string>

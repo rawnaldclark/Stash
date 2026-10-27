@@ -83,6 +83,7 @@ class RecordImportWorker @AssistedInject constructor(
         }
         val part = (p as? ImportProgress.Read)?.part?.let { (it * 100).toInt() }
             ?: (p as? ImportProgress.Write)?.takeIf { it.total > 0 }?.let { it.done * 100 / it.total }
+            ?: (p as? ImportProgress.Library)?.takeIf { it.total > 0 }?.let { it.done * 100 / it.total }
         val notification = NotificationCompat.Builder(context, ImportNotifications.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(context.getString(R.string.record_import_working_title))

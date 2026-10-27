@@ -2,6 +2,8 @@ package com.stash.feature.record.importer
 
 import android.util.Log
 import com.stash.feature.record.archive.PhoneRows
+import com.stash.core.data.record.ExportPlaylist
+import com.stash.core.data.record.ExportSong
 import com.stash.feature.record.archive.RecordFlags
 import com.stash.feature.record.importer.JsonPull.Token
 import kotlinx.coroutines.CancellationException
@@ -12,8 +14,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 
-/** A playlist of an export, as far as the preview counts it: its name and how many songs it holds (export.ts `ExportPlaylist`). */
-data class ExportPlaylistCount(val name: String, val songs: Int)
+/**
+ * A playlist of an export as the preview shows it (importer.ts `Preview.playlists`): its name, how many songs it holds, and
+ * whether the library holds it already ([already], owner decision D3: it starts unticked).
+ */
+data class ExportPlaylistCount(val name: String, val songs: Int, val already: Boolean = false)
 
 /** What was read and what wasn't (export.ts `ExportBundle.files`): files read by kind, and the ones left alone. */
 data class ExportFileCounts(
@@ -29,14 +34,15 @@ data class ExportFileCounts(
     val found: Int get() = extended + account + playlists + library + stash
 }
 
-/** An export, read (export.ts `ExportBundle`): its plays, its playlists' and libraries' counts, and what couldn't be read. */
+/** An export, read (export.ts `ExportBundle`): its plays, its playlists, Liked Songs and hidden songs, and what couldn't be read. */
 internal class ExportBundle(
     val plays: ExportPlays,
-    val playlists: List<ExportPlaylistCount>,
-    /** Liked Songs (YourLibrary.json `tracks`). */
-    val likes: Int,
+    /** In the export's order, every playlist file's in turn (`name#n` counts over them all). */
+    val playlists: List<ExportPlaylist>,
+    /** Liked Songs (YourLibrary.json `tracks`), as Spotify lists them: newest first. */
+    val likes: List<ExportSong>,
     /** Songs hidden on Spotify (YourLibrary.json `bannedTracks`). */
-    val hidden: Int,
+    val hidden: List<ExportSong>,
     val files: ExportFileCounts,
     val unreadable: Int,
 )
@@ -54,7 +60,9 @@ internal fun interface ReadProgress {
  *   out; a `ts` that doesn't parse, falls before 2006 or more than two days after [now], or an `ms_played` that is missing, below
  *   0 or above 6 h makes the row unreadable. `startedAt = endedAt − ms`.
  * - **Account data** (`accountRow`): `endTime` read as UTC to the minute (`Date.UTC`'s arithmetic), no id, no reasons.
- * - **Playlists and the library**: only counted (the preview's numbers); bringing them into the library is a later step.
+ * - **Playlists and the library** (`playlistsFile`, `libraryFile`): each playlist's songs (a track with a title and an artist, or
+ *   a local file that names one; episodes and audiobooks left out) with the time each was added; Liked Songs and the songs hidden
+ *   on Spotify.
  * - A row that isn't an object is unreadable; an array (an object to JavaScript, with no fields) is no song.
  *
  * `JSON.parse` reads a file whole, so a file that turns out not to be JSON halfway through gave the web no rows at all: its
@@ -71,9 +79,9 @@ internal class ExportReader(
 ) {
     private val plays = ExportPlays()
     private var unreadable = 0
-    private val playlists = ArrayList<ExportPlaylistCount>()
-    private var likes = 0
-    private var hidden = 0
+    private val playlists = ArrayList<ExportPlaylist>()
+    private val likes = ArrayList<ExportSong>()
+    private val hidden = ArrayList<ExportSong>()
     private var latestYear: Int? = null
     private var rowsSinceCheck = 0
 
@@ -94,7 +102,7 @@ internal class ExportReader(
         progress?.onRead(0, wanted.size, 0, totalBytes, null)
         for ((n, f) in wanted.withIndex()) {
             val kind = ExportText.kindOf(f.name)
-            val mark = Mark(plays.size, unreadable, playlists.size, likes, hidden)
+            val mark = Mark(plays.size, unreadable, playlists.size, likes.size, hidden.size)
             val fileStart = doneBytes
             try {
                 f.open().use { raw ->
@@ -135,8 +143,8 @@ internal class ExportReader(
         return ExportBundle(
             plays = plays,
             playlists = playlists.toList(),
-            likes = likes,
-            hidden = hidden,
+            likes = likes.toList(),
+            hidden = hidden.toList(),
             files = ExportFileCounts(extended, account, playlistFiles, library, stash = 0, ignored = entries.size - wanted.size - broken),
             unreadable = unreadable,
         )
@@ -147,10 +155,14 @@ internal class ExportReader(
         fun restore() {
             this@ExportReader.plays.truncate(plays)
             this@ExportReader.unreadable = unreadable
-            while (this@ExportReader.playlists.size > playlists) this@ExportReader.playlists.removeAt(this@ExportReader.playlists.lastIndex)
-            this@ExportReader.likes = likes
-            this@ExportReader.hidden = hidden
+            this@ExportReader.playlists.truncate(playlists)
+            this@ExportReader.likes.truncate(likes)
+            this@ExportReader.hidden.truncate(hidden)
         }
+    }
+
+    private fun <T> ArrayList<T>.truncate(n: Int) {
+        while (size > n) removeAt(lastIndex)
     }
 
     // ── history ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -324,11 +336,11 @@ internal class ExportReader(
         )
     }
 
-    // ── playlists and the library (counted) ─────────────────────────────────────────────────────────────────────────
+    // ── playlists and the library ───────────────────────────────────────────────────────────────────────────────────
 
     /** export.ts `playlistsFile`: `{ playlists: [...] }`, the last `playlists` key counting; anything else is one unreadable. */
     private fun playlistsFile(j: JsonPull) {
-        var found: Pair<List<ExportPlaylistCount>, Int>? = null
+        var found: Pair<List<ExportPlaylist>, Int>? = null
         if (j.peek() == Token.BEGIN_OBJECT) {
             j.beginObject()
             while (j.hasNext()) {
@@ -350,31 +362,34 @@ internal class ExportReader(
     }
 
     /** The playlists of one `playlists` array, and how many of them had no name (each one unreadable). */
-    private fun readPlaylists(j: JsonPull): Pair<List<ExportPlaylistCount>, Int> {
-        val out = ArrayList<ExportPlaylistCount>()
+    private fun readPlaylists(j: JsonPull): Pair<List<ExportPlaylist>, Int> {
+        val out = ArrayList<ExportPlaylist>()
         var nameless = 0
         j.beginArray()
         while (j.hasNext()) {
             budget.row()
             if (j.peek() != Token.BEGIN_OBJECT) {
+                // null, a scalar or an array: no name (export.ts `!o || !name`)
                 j.skipValue()
                 nameless++
                 continue
             }
             var name: String? = null
-            var songs = 0
+            var description: String? = null
+            var items: List<ExportSong> = emptyList()
             j.beginObject()
             while (j.hasNext()) {
                 val key = j.nextName()
                 if (j.truncated) { j.skipValue(); continue }
                 when (key) {
                     "name" -> name = text(j)
-                    "items" -> songs = if (j.peek() == Token.BEGIN_ARRAY) countItems(j) else { j.skipValue(); 0 }
+                    "description" -> description = text(j)
+                    "items" -> items = if (j.peek() == Token.BEGIN_ARRAY) readItems(j) else { j.skipValue(); emptyList() }
                     else -> j.skipValue()
                 }
             }
             j.endObject()
-            if (name == null) nameless++ else out += ExportPlaylistCount(name, songs)
+            if (name == null) nameless++ else out += ExportPlaylist(name, description, items)
         }
         j.endArray()
         return out to nameless
@@ -383,9 +398,13 @@ internal class ExportReader(
     /** How a playlist item's `track` (or `localTrack`) reads to JavaScript: an object, a truthy other value, or a falsy one. */
     private enum class Shape { OBJECT, TRUTHY, FALSY }
 
-    /** Songs among a playlist's items: a track with a title and an artist, or a local file that names one (episodes left out). */
-    private fun countItems(j: JsonPull): Int {
-        var n = 0
+    /**
+     * A playlist's songs (export.ts `playlistsFile`'s items): a `track` object with a title and an artist, else (no object there)
+     * a `localTrack` object whose `uri` names a local file's song; with its `addedDate` read by `Date.parse` when it is a string.
+     * Episodes, audiobooks and anything else are left out, never an error.
+     */
+    private fun readItems(j: JsonPull): List<ExportSong> {
+        val out = ArrayList<ExportSong>()
         j.beginArray()
         while (j.hasNext()) {
             budget.row()
@@ -394,9 +413,10 @@ internal class ExportReader(
                 continue
             }
             var track = Shape.FALSY
-            var trackSong = false
+            var trackSong: ExportSong? = null
             var local = Shape.FALSY
-            var localSong = false
+            var localSong: ExportSong? = null
+            var added: Raw? = null
             j.beginObject()
             while (j.hasNext()) {
                 val key = j.nextName()
@@ -404,21 +424,24 @@ internal class ExportReader(
                 when (key) {
                     "track" -> {
                         track = shape(j)
-                        trackSong = if (track == Shape.OBJECT) songObject(j, "trackName", "artistName") else false
+                        trackSong = if (track == Shape.OBJECT) trackObject(j) else null
                     }
                     "localTrack" -> {
                         local = shape(j)
-                        localSong = if (local == Shape.OBJECT) localObject(j) else false
+                        localSong = if (local == Shape.OBJECT) localObject(j) else null
                     }
+                    "addedDate" -> added = raw(j, MAX_TS)
                     else -> j.skipValue()
                 }
             }
             j.endObject()
-            val song = if (track == Shape.OBJECT) trackSong else local == Shape.OBJECT && localSong
-            if (song) n++
+            val song = (if (track == Shape.OBJECT) trackSong else if (local == Shape.OBJECT) localSong else null) ?: continue
+            // export.ts `dateMs`: a string Date.parse reads, else none (a number, an empty string, words)
+            val at = added?.takeIf { !it.long }?.let { JsDate.parse(it.head, zone) }?.takeIf { it.isFinite() }?.toLong()
+            out += if (at != null) song.copy(addedAt = at) else song
         }
         j.endArray()
-        return n
+        return out
     }
 
     /** The next value's [Shape]; an object or array is left to read, anything else is consumed. */
@@ -430,33 +453,38 @@ internal class ExportReader(
         else -> { j.skipValue(); Shape.FALSY }
     }
 
-    /** An object (or array) at the reader: whether its [titleKey] and [artistKey] both clean to words. */
-    private fun songObject(j: JsonPull, titleKey: String, artistKey: String): Boolean {
+    /** A playlist item's `track` object (or array, which names nothing): its song when its title and artist clean to words. */
+    private fun trackObject(j: JsonPull): ExportSong? {
         if (j.peek() == Token.BEGIN_ARRAY) {
             j.skipValue()
-            return false
+            return null
         }
         var title: String? = null
         var artist: String? = null
+        var album: String? = null
+        var uri: Raw? = null
         j.beginObject()
         while (j.hasNext()) {
             val key = j.nextName()
             when {
                 j.truncated -> j.skipValue()
-                key == titleKey -> title = text(j)
-                key == artistKey -> artist = text(j)
+                key == "trackName" -> title = text(j)
+                key == "artistName" -> artist = text(j)
+                key == "albumName" -> album = text(j)
+                key == "trackUri" -> uri = raw(j, MAX_URI)
                 else -> j.skipValue()
             }
         }
         j.endObject()
-        return title != null && artist != null
+        if (title == null || artist == null) return null
+        return ExportSong(title, artist, album, uri?.let { ExportText.sidOf(it.head) })
     }
 
-    /** A `localTrack` object (or array): whether its `uri` is a local file that names a song (export.ts `localSong`). */
-    private fun localObject(j: JsonPull): Boolean {
+    /** A `localTrack` object (or array): the song its `uri` names (export.ts `localSong`), or none. */
+    private fun localObject(j: JsonPull): ExportSong? {
         if (j.peek() == Token.BEGIN_ARRAY) {
             j.skipValue()
-            return false
+            return null
         }
         var uri: Raw? = null
         j.beginObject()
@@ -465,15 +493,15 @@ internal class ExportReader(
             if (!j.truncated && key == "uri") uri = raw(j, MAX_LOCAL_URI) else j.skipValue()
         }
         j.endObject()
-        return ExportText.isLocalSong(uri?.head)
+        return ExportText.localSong(uri?.head)
     }
 
     /** export.ts `libraryFile`: Liked Songs (`tracks`) and hidden songs (`bannedTracks`), the last of each key counting. */
     private fun libraryFile(j: JsonPull) {
         when (j.peek()) {
             Token.BEGIN_OBJECT -> {
-                var l = 0
-                var h = 0
+                var l: List<ExportSong> = emptyList()
+                var h: List<ExportSong> = emptyList()
                 j.beginObject()
                 while (j.hasNext()) {
                     val key = j.nextName()
@@ -495,25 +523,44 @@ internal class ExportReader(
         }
     }
 
-    /** export.ts `pick`: the songs of a list (each with a track and an artist); 0 for anything that isn't a list. */
-    private fun librarySongs(j: JsonPull): Int {
+    /** export.ts `pick`: the songs of a list (each with a track and an artist, `libSong`); none for anything that isn't a list. */
+    private fun librarySongs(j: JsonPull): List<ExportSong> {
         if (j.peek() != Token.BEGIN_ARRAY) {
             j.skipValue()
-            return 0
+            return emptyList()
         }
-        var n = 0
+        val out = ArrayList<ExportSong>()
         j.beginArray()
         while (j.hasNext()) {
             budget.row()
             // libSong: an object with a track and an artist; null, an array or a scalar is no song (and nothing wrong)
-            if (j.peek() == Token.BEGIN_OBJECT) {
-                if (songObject(j, "track", "artist")) n++
-            } else {
-                j.skipValue()
-            }
+            if (j.peek() == Token.BEGIN_OBJECT) libSong(j)?.let(out::add) else j.skipValue()
         }
         j.endArray()
-        return n
+        return out
+    }
+
+    /** export.ts `libSong`: `track`, `artist`, `album` and the id in `uri`. */
+    private fun libSong(j: JsonPull): ExportSong? {
+        var title: String? = null
+        var artist: String? = null
+        var album: String? = null
+        var uri: Raw? = null
+        j.beginObject()
+        while (j.hasNext()) {
+            val key = j.nextName()
+            when {
+                j.truncated -> j.skipValue()
+                key == "track" -> title = text(j)
+                key == "artist" -> artist = text(j)
+                key == "album" -> album = text(j)
+                key == "uri" -> uri = raw(j, MAX_URI)
+                else -> j.skipValue()
+            }
+        }
+        j.endObject()
+        if (title == null || artist == null) return null
+        return ExportSong(title, artist, album, uri?.let { ExportText.sidOf(it.head) })
     }
 
     /** Counts the bytes read from an entry against the [budget], telling [onBytes] every [STEP] (the honest progress bar). */

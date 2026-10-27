@@ -78,6 +78,8 @@
     <string name="record_import_reading">جارٍ قراءة ملفاتك: %1$d من %2$d</string>
     <string name="record_import_saving">جارٍ حفظ تشغيلاتك: %1$s من %2$s</string>
     <string name="record_import_saving_start">جارٍ الحفظ…</string>
+    <string name="record_import_library">جارٍ إضافة قوائم تشغيلك وإعجاباتك: %1$s من %2$s أغنية</string>
+    <string name="record_import_library_start">جارٍ إضافة قوائم تشغيلك وإعجاباتك…</string>
     <string name="record_import_year">جارٍ قراءة %1$d</string>
     <string name="record_import_channel">أسطوانتك</string>
     <string name="record_preview_title">هذا هو Spotify الخاص بك</string>
@@ -116,7 +118,6 @@
     </plurals>
     <string name="record_preview_account_title">آخر عام لك فقط موجود هنا</string>
     <string name="record_preview_account_body">سجلك الكامل يصل في البريد الإلكتروني الآخر، سجل البث الموسّع. أضف ملف zip هذا هنا عند وصوله.</string>
-    <string name="record_preview_also">يتضمن أيضًا</string>
     <plurals name="record_preview_songs">
         <item quantity="zero">%1$d أغنية</item>
         <item quantity="one">%1$d أغنية</item>
@@ -126,7 +127,44 @@
         <item quantity="other">%1$d أغنية</item>
     </plurals>
     <string name="record_preview_liked">الأغاني التي أعجبتك</string>
-    <string name="record_preview_later">ستصل قوائم تشغيلك والأغاني التي أعجبتك إلى مكتبتك في تحديث لاحق. احتفظ بملف zip.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="zero">%1$s من التشغيلات في هذا الملف موجودة هنا بالفعل.</item>
+        <item quantity="one">%1$s تشغيل في هذا الملف موجود هنا بالفعل.</item>
+        <item quantity="two">%1$s تشغيلان في هذا الملف موجودان هنا بالفعل.</item>
+        <item quantity="few">كل %1$s تشغيلات في هذا الملف موجودة هنا بالفعل.</item>
+        <item quantity="many">كل %1$s تشغيلًا في هذا الملف موجودة هنا بالفعل.</item>
+        <item quantity="other">كل %1$s تشغيل في هذا الملف موجودة هنا بالفعل.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="zero">%1$s من التشغيلات في هذه الملفات موجودة هنا بالفعل.</item>
+        <item quantity="one">%1$s تشغيل في هذه الملفات موجود هنا بالفعل.</item>
+        <item quantity="two">%1$s تشغيلان في هذه الملفات موجودان هنا بالفعل.</item>
+        <item quantity="few">كل %1$s تشغيلات في هذه الملفات موجودة هنا بالفعل.</item>
+        <item quantity="many">كل %1$s تشغيلًا في هذه الملفات موجودة هنا بالفعل.</item>
+        <item quantity="other">كل %1$s تشغيل في هذه الملفات موجودة هنا بالفعل.</item>
+    </plurals>
+    <string name="record_preview_no_plays">لا توجد تشغيلات في هذا الملف.</string>
+    <string name="record_preview_still">لا يزال بإمكان قوائم تشغيلك وإعجاباتك أن تصل.</string>
+    <string name="record_preview_playlists">قوائم التشغيل</string>
+    <string name="record_preview_picked">%1$d من %2$d</string>
+    <string name="record_preview_already">موجودة في مكتبتك بالفعل</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="zero">%1$s أغنية، تُضاف إلى إعجاباتك</item>
+        <item quantity="one">%1$s أغنية، تُضاف إلى إعجاباتك</item>
+        <item quantity="two">%1$s أغنيتان، تُضافان إلى إعجاباتك</item>
+        <item quantity="few">%1$s أغانٍ، تُضاف إلى إعجاباتك</item>
+        <item quantity="many">%1$s أغنية، تُضاف إلى إعجاباتك</item>
+        <item quantity="other">%1$s أغنية، تُضاف إلى إعجاباتك</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">الأغاني التي أعجبتك تُنزَّل على هذا الهاتف</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="zero">ستُنزَّل %1$s من الأغاني أيضًا.</item>
+        <item quantity="one">ستُنزَّل هذه الأغنية أيضًا.</item>
+        <item quantity="two">ستُنزَّل هاتان الأغنيتان أيضًا.</item>
+        <item quantity="few">ستُنزَّل هذه الأغاني الـ%1$s أيضًا.</item>
+        <item quantity="many">ستُنزَّل هذه الـ%1$s أغنية أيضًا.</item>
+        <item quantity="other">ستُنزَّل هذه الـ%1$s أغنية أيضًا.</item>
+    </plurals>
     <string name="record_preview_import">استيراد</string>
     <string name="record_preview_cancel">إلغاء</string>
     <string name="record_preview_add">إضافة ملف آخر</string>
@@ -135,8 +173,7 @@
     <string name="record_error_nothing_new_body">لا جديد فيه. عندما تكون لديك نسخة أحدث، أضفها.</string>
     <string name="record_error_not_export_title">هذا ليس ملف تصدير من Spotify</string>
     <string name="record_error_not_export_body">أضف ملف zip من بريد Spotify كما وصل (يبدأ اسمه بـ «my_spotify_data»).</string>
-    <string name="record_error_no_plays_title">لا جديد للاستماع إليه مجددًا</string>
-    <string name="record_error_no_plays_body">لا توجد تشغيلات في هذا الملف. ستصل قوائم التشغيل والأغاني التي أعجبتك فيه في تحديث لاحق.</string>
+    <string name="record_preview_nothing_title">لا جديد للاستماع إليه مجددًا</string>
     <string name="record_error_unreadable_title">لم يُفتح ملف zip هذا</string>
     <string name="record_error_unreadable_body">ربما لم يكتمل تنزيله. نزّله مجددًا من بريد Spotify وأضف النسخة الجديدة.</string>
     <string name="record_error_storage_title">نفدت مساحة هذا الهاتف</string>

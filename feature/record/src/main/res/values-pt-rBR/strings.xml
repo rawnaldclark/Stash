@@ -66,6 +66,8 @@
     <string name="record_import_reading">Lendo seus arquivos: %1$d de %2$d</string>
     <string name="record_import_saving">Salvando suas reproduções: %1$s de %2$s</string>
     <string name="record_import_saving_start">Salvando…</string>
+    <string name="record_import_library">Adicionando suas playlists e curtidas: %1$s de %2$s músicas</string>
+    <string name="record_import_library_start">Adicionando suas playlists e curtidas…</string>
     <string name="record_import_year">Lendo %1$d</string>
     <string name="record_import_channel">Seu disco</string>
     <string name="record_preview_title">Aqui está seu Spotify</string>
@@ -88,13 +90,33 @@
     </plurals>
     <string name="record_preview_account_title">Só seu último ano está aqui</string>
     <string name="record_preview_account_body">Seu histórico completo vem no outro e-mail, Histórico de streaming estendido. Adicione esse zip aqui quando chegar.</string>
-    <string name="record_preview_also">Também tem</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d música</item>
         <item quantity="other">%1$d músicas</item>
     </plurals>
     <string name="record_preview_liked">Músicas curtidas</string>
-    <string name="record_preview_later">Suas playlists e músicas curtidas chegam à sua biblioteca em uma atualização futura. Guarde o zip.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">A %1$s reprodução deste arquivo já está aqui.</item>
+        <item quantity="other">Todas as %1$s reproduções deste arquivo já estão aqui.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">A %1$s reprodução destes arquivos já está aqui.</item>
+        <item quantity="other">Todas as %1$s reproduções destes arquivos já estão aqui.</item>
+    </plurals>
+    <string name="record_preview_no_plays">Não há reproduções neste arquivo.</string>
+    <string name="record_preview_still">Suas playlists e curtidas ainda podem entrar.</string>
+    <string name="record_preview_playlists">Playlists</string>
+    <string name="record_preview_picked">%1$d de %2$d</string>
+    <string name="record_preview_already">Já está na sua biblioteca</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s música, adicionada às suas curtidas</item>
+        <item quantity="other">%1$s músicas, adicionadas às suas curtidas</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Suas músicas curtidas são baixadas neste celular</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">Esta música também vai ser baixada.</item>
+        <item quantity="other">Estas %1$s músicas também vão ser baixadas.</item>
+    </plurals>
     <string name="record_preview_import">Importar</string>
     <string name="record_preview_cancel">Cancelar</string>
     <string name="record_preview_add">Adicionar outro arquivo</string>
@@ -103,8 +125,7 @@
     <string name="record_error_nothing_new_body">Não há nada novo nele. Quando tiver uma cópia mais recente, adicione essa.</string>
     <string name="record_error_not_export_title">Isso não é uma exportação do Spotify</string>
     <string name="record_error_not_export_body">Adicione o zip do e-mail do Spotify do jeito que veio (o nome começa com “my_spotify_data”).</string>
-    <string name="record_error_no_plays_title">Nada novo para ouvir de novo</string>
-    <string name="record_error_no_plays_body">Não há reproduções neste arquivo. As playlists e músicas curtidas dele chegam em uma atualização futura.</string>
+    <string name="record_preview_nothing_title">Nada novo para ouvir de novo</string>
     <string name="record_error_unreadable_title">Esse zip não abriu</string>
     <string name="record_error_unreadable_body">Talvez o download não tenha terminado. Baixe de novo pelo e-mail do Spotify e adicione a nova cópia.</string>
     <string name="record_error_storage_title">Este celular está sem espaço</string>

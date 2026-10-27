@@ -66,6 +66,8 @@
     <string name="record_import_reading">Leyendo tus archivos: %1$d de %2$d</string>
     <string name="record_import_saving">Guardando tus reproducciones: %1$s de %2$s</string>
     <string name="record_import_saving_start">Guardando…</string>
+    <string name="record_import_library">Añadiendo tus listas y Me gusta: %1$s de %2$s canciones</string>
+    <string name="record_import_library_start">Añadiendo tus listas y Me gusta…</string>
     <string name="record_import_year">Leyendo %1$d</string>
     <string name="record_import_channel">Tu disco</string>
     <string name="record_preview_title">Aquí está tu Spotify</string>
@@ -88,13 +90,33 @@
     </plurals>
     <string name="record_preview_account_title">Solo está tu último año</string>
     <string name="record_preview_account_body">Tu historial completo llega en el otro correo, Historial de reproducción ampliado. Añade ese zip aquí cuando llegue.</string>
-    <string name="record_preview_also">También incluye</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d canción</item>
         <item quantity="other">%1$d canciones</item>
     </plurals>
     <string name="record_preview_liked">Canciones que te gustan</string>
-    <string name="record_preview_later">Tus listas y canciones que te gustan llegarán a tu biblioteca con una próxima actualización. Guarda el zip.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">La %1$s reproducción de este archivo ya está aquí.</item>
+        <item quantity="other">Las %1$s reproducciones de este archivo ya están aquí.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">La %1$s reproducción de estos archivos ya está aquí.</item>
+        <item quantity="other">Las %1$s reproducciones de estos archivos ya están aquí.</item>
+    </plurals>
+    <string name="record_preview_no_plays">No hay reproducciones en este archivo.</string>
+    <string name="record_preview_still">Tus listas y Me gusta pueden llegar igualmente.</string>
+    <string name="record_preview_playlists">Listas</string>
+    <string name="record_preview_picked">%1$d de %2$d</string>
+    <string name="record_preview_already">Ya está en tu biblioteca</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s canción, añadida a tus Me gusta</item>
+        <item quantity="other">%1$s canciones, añadidas a tus Me gusta</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Tus canciones que te gustan se descargan en este teléfono</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">Esta canción también se descargará.</item>
+        <item quantity="other">Estas %1$s canciones también se descargarán.</item>
+    </plurals>
     <string name="record_preview_import">Importar</string>
     <string name="record_preview_cancel">Cancelar</string>
     <string name="record_preview_add">Añadir otro archivo</string>
@@ -103,8 +125,7 @@
     <string name="record_error_nothing_new_body">No tiene nada nuevo. Cuando tengas una copia más reciente, añade esa.</string>
     <string name="record_error_not_export_title">Eso no es una exportación de Spotify</string>
     <string name="record_error_not_export_body">Añade el zip del correo de Spotify tal como llegó (su nombre empieza por «my_spotify_data»).</string>
-    <string name="record_error_no_plays_title">Nada nuevo que volver a escuchar</string>
-    <string name="record_error_no_plays_body">No hay reproducciones en este archivo. Sus listas y canciones que te gustan llegarán con una próxima actualización.</string>
+    <string name="record_preview_nothing_title">Nada nuevo que volver a escuchar</string>
     <string name="record_error_unreadable_title">Ese zip no se abrió</string>
     <string name="record_error_unreadable_body">Puede que no terminara de descargarse. Vuelve a descargarlo desde el correo de Spotify y añade la copia nueva.</string>
     <string name="record_error_storage_title">Este móvil no tiene espacio</string>

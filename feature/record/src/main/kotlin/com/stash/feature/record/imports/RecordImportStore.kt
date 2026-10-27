@@ -2,6 +2,7 @@ package com.stash.feature.record.imports
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.stash.feature.record.importer.ImportChoice
 import com.stash.feature.record.importer.ImportRecord
 import com.stash.feature.record.lastfm.ImportScrobbles
 import com.stash.feature.record.lastfm.LastfmMark
@@ -32,7 +33,8 @@ data class ImportInfo(
 
 /**
  * Your record's import meta in this phone's preferences (the `your_record` file the Home card's × already lives in): `asked`,
- * the import record, `pending` (an import's plays are being written: finished on the next start if the app died first),
+ * the import record, `pending` (an import's plays are being written: finished on the next start if the app died first) with
+ * what the person chose to bring into the library ([pendingChoice]: the same is brought in when it is taken up again),
  * `unfinished` (an import that came to nothing, for the card), `stops` (times the system stopped the import running now),
  * the Last.fm import's mark, and the lengths pass's count and time (its songs it couldn't time are in `record_lengths`). The
  * plays themselves are in the database (`record_plays`).
@@ -51,8 +53,32 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
 
     fun setInviteHidden(hidden: Boolean) = edit { putBoolean(KEY_HIDDEN, hidden) }
 
-    fun setPending(at: Long?) {
-        prefs.edit().apply { if (at == null) remove(KEY_PENDING) else putLong(KEY_PENDING, at) }.commit()
+    /** A commit starts writing at [at] with [choice] (null: none under way any more, and its choice goes with it). */
+    fun setPending(at: Long?, choice: ImportChoice = ImportChoice.ALL) {
+        prefs.edit().apply {
+            if (at == null) {
+                PENDING_KEYS.forEach(::remove)
+            } else {
+                putLong(KEY_PENDING, at)
+                putChoice(choice)
+            }
+        }.commit()
+    }
+
+    /** What the commit under way brings into the library (all of it, for a commit written before the choice was kept). */
+    val pendingChoice: ImportChoice
+        get() {
+            val likes = prefs.getBoolean(KEY_CHOICE_LIKES, true)
+            val playlists = prefs.getString(KEY_CHOICE_PLAYLISTS, null)?.let { s ->
+                if (s.isEmpty()) emptySet() else s.split(',').mapNotNullTo(LinkedHashSet()) { it.toIntOrNull() }
+            }
+            return ImportChoice(playlists, likes)
+        }
+
+    private fun SharedPreferences.Editor.putChoice(c: ImportChoice) {
+        putBoolean(KEY_CHOICE_LIKES, c.likes)
+        // The playlists' indexes, ',' between (an empty text: none; no key: all)
+        if (c.playlists == null) remove(KEY_CHOICE_PLAYLISTS) else putString(KEY_CHOICE_PLAYLISTS, c.playlists.sorted().joinToString(","))
     }
 
     /** Times the system stopped the import running now (a stopped job runs again; past a few, the import is given up). */
@@ -70,7 +96,15 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         edit { if (at == null) remove(KEY_UNFINISHED) else putLong(KEY_UNFINISHED, at) }
     }
 
-    fun setRecord(r: ImportRecord) = edit {
+    fun setRecord(r: ImportRecord) = edit { putRecord(r) }
+
+    /** A commit's end (importer.ts `commit`'s last steps): its record written and `pending` cleared in one write. */
+    fun finishCommit(r: ImportRecord) = edit {
+        putRecord(r)
+        PENDING_KEYS.forEach(::remove)
+    }
+
+    private fun SharedPreferences.Editor.putRecord(r: ImportRecord) {
         putLong(R_FIRST_AT, r.firstAt)
         putLong(R_LAST_AT, r.lastAt)
         putInt(R_IMPORTS, r.imports)
@@ -169,7 +203,7 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         RECORD_KEYS.forEach(::remove)
         LASTFM_KEYS.forEach(::remove)
         LENGTHS_KEYS.forEach(::remove)
-        remove(KEY_PENDING)
+        PENDING_KEYS.forEach(::remove)
     }
 
     private fun edit(block: SharedPreferences.Editor.() -> Unit) {
@@ -236,6 +270,9 @@ class RecordImportStore internal constructor(private val prefs: SharedPreference
         private const val KEY_HIDDEN = "invite_hidden"
         private const val KEY_ASKED = "spotify_asked_at"
         private const val KEY_PENDING = "import_pending_at"
+        private const val KEY_CHOICE_PLAYLISTS = "import_pending_playlists"
+        private const val KEY_CHOICE_LIKES = "import_pending_likes"
+        private val PENDING_KEYS = listOf(KEY_PENDING, KEY_CHOICE_PLAYLISTS, KEY_CHOICE_LIKES)
         private const val KEY_STOPS = "import_stops"
         private const val KEY_UNFINISHED = "import_unfinished_at"
         private const val R_FIRST_AT = "import_first_at"

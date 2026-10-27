@@ -16,8 +16,9 @@ internal object ImportText {
     private fun locale(res: Resources): Locale = res.configuration.locales[0] ?: Locale.getDefault()
 
     /**
-     * years.ts `progressOf`'s line: opening, reading (the file being read, of all), saving (plays written, of all). While a
-     * file is read it is counted, so the first one reads "1 of 7" (the web counts files once they are done).
+     * years.ts `progressOf`'s line: opening, reading (the file being read, of all), saving (plays written, of all), then the
+     * playlists and liked songs (their songs matched, of all). While a file is read it is counted, so the first one reads "1 of
+     * 7" (the web counts files once they are done).
      */
     fun progressLine(res: Resources, p: ImportProgress): String = when (p) {
         ImportProgress.Open -> res.getString(R.string.record_import_opening)
@@ -27,13 +28,17 @@ internal object ImportText {
         is ImportProgress.Write ->
             if (p.total > 0) res.getString(R.string.record_import_saving, count(res, p.done.toLong()), count(res, p.total.toLong()))
             else res.getString(R.string.record_import_saving_start)
+        is ImportProgress.Library ->
+            if (p.total > 0) res.getString(R.string.record_import_library, count(res, p.done.toLong()), count(res, p.total.toLong()))
+            else res.getString(R.string.record_import_library_start)
     }
 
-    /** How far along, 0 to 1 (bytes read, or plays written); null when there is no measure yet. */
+    /** How far along, 0 to 1 (bytes read, plays written, or the library's songs matched); null when there is no measure yet. */
     fun part(p: ImportProgress): Float? = when (p) {
         ImportProgress.Open -> null
         is ImportProgress.Read -> p.part.takeIf { p.total > 0 }
         is ImportProgress.Write -> if (p.total > 0) p.done.toFloat() / p.total else null
+        is ImportProgress.Library -> if (p.total > 0) p.done.toFloat() / p.total else null
     }
 
     /** years.ts `count`: "48,210" in the app's language. */

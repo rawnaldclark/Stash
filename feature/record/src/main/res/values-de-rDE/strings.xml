@@ -66,6 +66,8 @@
     <string name="record_import_reading">Deine Dateien werden gelesen: %1$d von %2$d</string>
     <string name="record_import_saving">Deine Wiedergaben werden gespeichert: %1$s von %2$s</string>
     <string name="record_import_saving_start">Wird gespeichert…</string>
+    <string name="record_import_library">Deine Playlists und Likes kommen dazu: %1$s von %2$s Songs</string>
+    <string name="record_import_library_start">Deine Playlists und Likes kommen dazu…</string>
     <string name="record_import_year">%1$d wird gelesen</string>
     <string name="record_import_channel">Deine Platte</string>
     <string name="record_preview_title">Das ist dein Spotify</string>
@@ -88,13 +90,33 @@
     </plurals>
     <string name="record_preview_account_title">Hier ist nur dein letztes Jahr</string>
     <string name="record_preview_account_body">Dein ganzer Verlauf kommt mit der anderen E-Mail, Erweiterter Streamingverlauf. Füge diese Zip-Datei hier hinzu, sobald sie da ist.</string>
-    <string name="record_preview_also">Außerdem enthalten</string>
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d Song</item>
         <item quantity="other">%1$d Songs</item>
     </plurals>
     <string name="record_preview_liked">Lieblingssongs</string>
-    <string name="record_preview_later">Deine Playlists und Lieblingssongs kommen mit einem späteren Update in deine Bibliothek. Behalte die Zip-Datei.</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">Die %1$s Wiedergabe in dieser Datei ist schon da.</item>
+        <item quantity="other">Alle %1$s Wiedergaben in dieser Datei sind schon da.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">Die %1$s Wiedergabe in diesen Dateien ist schon da.</item>
+        <item quantity="other">Alle %1$s Wiedergaben in diesen Dateien sind schon da.</item>
+    </plurals>
+    <string name="record_preview_no_plays">In dieser Datei sind keine Wiedergaben.</string>
+    <string name="record_preview_still">Deine Playlists und Likes können trotzdem dazukommen.</string>
+    <string name="record_preview_playlists">Playlists</string>
+    <string name="record_preview_picked">%1$d von %2$d</string>
+    <string name="record_preview_already">Schon in deiner Bibliothek</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s Song, zu deinen Likes hinzugefügt</item>
+        <item quantity="other">%1$s Songs, zu deinen Likes hinzugefügt</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">Lieblingssongs werden auf dieses Telefon geladen</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">Dieser Song wird auch heruntergeladen.</item>
+        <item quantity="other">Diese %1$s Songs werden auch heruntergeladen.</item>
+    </plurals>
     <string name="record_preview_import">Importieren</string>
     <string name="record_preview_cancel">Abbrechen</string>
     <string name="record_preview_add">Weitere Datei hinzufügen</string>
@@ -103,8 +125,7 @@
     <string name="record_error_nothing_new_body">Darin ist nichts Neues. Wenn du eine neuere Kopie hast, füge die hinzu.</string>
     <string name="record_error_not_export_title">Das ist kein Spotify-Export</string>
     <string name="record_error_not_export_body">Füge die Zip-Datei aus der E-Mail von Spotify unverändert hinzu (ihr Name beginnt mit „my_spotify_data“).</string>
-    <string name="record_error_no_plays_title">Nichts Neues zum Nachhören</string>
-    <string name="record_error_no_plays_body">In dieser Datei sind keine Wiedergaben. Ihre Playlists und Lieblingssongs kommen mit einem späteren Update.</string>
+    <string name="record_preview_nothing_title">Nichts Neues zum Nachhören</string>
     <string name="record_error_unreadable_title">Die Zip-Datei ließ sich nicht öffnen</string>
     <string name="record_error_unreadable_body">Vielleicht wurde sie nicht ganz heruntergeladen. Lade sie erneut aus der E-Mail von Spotify herunter und füge die neue Kopie hinzu.</string>
     <string name="record_error_storage_title">Auf diesem Handy ist kein Platz mehr</string>

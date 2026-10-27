@@ -89,6 +89,9 @@
     <!-- %1$s of %2$s plays saved, each already formatted with separators ("12,000 of 48,210"). -->
     <string name="record_import_saving">Saving your plays: %1$s of %2$s</string>
     <string name="record_import_saving_start">Saving…</string>
+    <!-- Bringing the playlists and liked songs into the library: %1$s of %2$s songs matched, each formatted with separators. -->
+    <string name="record_import_library">Adding your playlists and likes: %1$s of %2$s songs</string>
+    <string name="record_import_library_start">Adding your playlists and likes…</string>
     <!-- Read out for the year counting up: %1$d is the year of the plays read so far. -->
     <string name="record_import_year">Reading %1$d</string>
     <!-- The notification channel for the import while it runs. -->
@@ -117,15 +120,40 @@
     </plurals>
     <string name="record_preview_account_title">Only your last year is here</string>
     <string name="record_preview_account_body">Your whole history comes in the other email, Extended streaming history. Bring that zip here when it arrives.</string>
-    <!-- The playlists and liked songs the files hold: shown, and brought into the library by a later update. -->
-    <string name="record_preview_also">Also in it</string>
     <!-- One playlist's songs ("Road trip · 9 songs"). -->
     <plurals name="record_preview_songs">
         <item quantity="one">%1$d song</item>
         <item quantity="other">%1$d songs</item>
     </plurals>
     <string name="record_preview_liked">Liked songs</string>
-    <string name="record_preview_later">Your playlists and liked songs come into your library with a later update. Keep the zip.</string>
+    <!-- No new plays in the files: every one is here already (%1$s, formatted with separators), in one file or in several. -->
+    <plurals name="record_preview_all_here_file">
+        <item quantity="one">The play in this file is already here.</item>
+        <item quantity="other">All %1$s plays in this file are already here.</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="one">The play in these files is already here.</item>
+        <item quantity="other">All %1$s plays in these files are already here.</item>
+    </plurals>
+    <string name="record_preview_no_plays">There are no plays in this file.</string>
+    <!-- After the line above, when the files hold playlists or liked songs. -->
+    <string name="record_preview_still">Your playlists and likes can still come in.</string>
+    <!-- The playlists the files hold, each with a tick: their heading, and how many are ticked of all ("3 of 12"). -->
+    <string name="record_preview_playlists">Playlists</string>
+    <string name="record_preview_picked">%1$d of %2$d</string>
+    <!-- Under a playlist the library holds already (same name, most of its songs): it starts unticked; a tap brings it in anyway. -->
+    <string name="record_preview_already">Already in your library</string>
+    <!-- Under "Liked songs", beside its switch: %1$s songs, formatted with separators. -->
+    <plurals name="record_preview_liked_added">
+        <item quantity="one">%1$s song, added to your likes</item>
+        <item quantity="other">%1$s songs, added to your likes</item>
+    </plurals>
+    <!-- When Stash's Liked Songs playlist is kept on the phone (its Download switch): the liked songs brought in download too. -->
+    <string name="record_preview_liked_download_title">Liked Songs downloads to this phone</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="one">This song will download too.</item>
+        <item quantity="other">These %1$s songs will download too.</item>
+    </plurals>
     <string name="record_preview_import">Import</string>
     <string name="record_preview_cancel">Cancel</string>
     <string name="record_preview_add">Add another file</string>
@@ -135,8 +163,7 @@
     <string name="record_error_nothing_new_body">Nothing new in it. When you have a newer copy, bring that one.</string>
     <string name="record_error_not_export_title">That isn’t a Spotify export</string>
     <string name="record_error_not_export_body">Bring the zip from Spotify’s email as it came (its name starts with “my_spotify_data”).</string>
-    <string name="record_error_no_plays_title">Nothing new to listen back to</string>
-    <string name="record_error_no_plays_body">There are no plays in this file. Its playlists and liked songs come in with a later update.</string>
+    <string name="record_preview_nothing_title">Nothing new to listen back to</string>
     <string name="record_error_unreadable_title">That zip didn’t open</string>
     <string name="record_error_unreadable_body">It may not have finished downloading. Download it again from Spotify’s email and bring the new copy.</string>
     <string name="record_error_storage_title">This phone is out of room</string>

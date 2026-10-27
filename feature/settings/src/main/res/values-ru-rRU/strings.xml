@@ -742,7 +742,7 @@
     <string name="settings_your_record_remove">Удалить импортированную историю</string>
     <string name="settings_your_record_remove_subtitle">Пластинка вернётся к вашим прослушиваниям в Stash.</string>
     <string name="settings_your_record_remove_title">Удалить импортированную историю?</string>
-    <string name="settings_your_record_remove_body">Всё, что было добавлено на пластинку из Spotify и Last.fm, будет удалено с этого телефона. Ваши прослушивания в Stash останутся.</string>
+    <string name="settings_your_record_remove_body">Всё, что было добавлено на пластинку из Spotify и Last.fm, будет удалено с этого телефона. Ваши прослушивания в Stash останутся. Добавленные плейлисты и любимые треки останутся в медиатеке.</string>
     <string name="settings_your_record_remove_confirm">Удалить</string>
     <string name="settings_your_record_cancel">Отменить</string>
     <string name="settings_your_record_removed">Импортированная история удалена.</string>

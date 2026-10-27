@@ -38,6 +38,23 @@ sealed interface ImportProgress {
 
     /** Saving: [done] of [total] plays written. */
     data class Write(val done: Int, val total: Int) : ImportProgress
+
+    /** Bringing the playlists and liked songs into the library: [done] of [total] songs matched. */
+    data class Library(val done: Int, val total: Int) : ImportProgress
+}
+
+/**
+ * What the person chose in the preview (the web's `commit` options): [playlists], the indexes of the export's playlists to bring
+ * into the library (null: all of them); [likes], its liked songs or not. Kept with `pending`, so a commit taken up again after the
+ * app's death brings in the same.
+ */
+data class ImportChoice(val playlists: Set<Int>? = null, val likes: Boolean = true) {
+    /** Whether the export's playlist [i] comes in. */
+    fun takes(i: Int): Boolean = playlists == null || i in playlists
+
+    companion object {
+        val ALL = ImportChoice()
+    }
 }
 
 /**
@@ -65,9 +82,11 @@ data class ImportPreview(
     /** Plays from Stash on the phone this import adds: the app's own plays are already in the record, so always 0. */
     val phone: Int,
     val unreadable: Int,
+    /** Stash's Liked Songs is kept on this phone: the liked songs brought in would download too (the preview says so). */
+    val likesDownload: Boolean = false,
 ) {
-    /** It adds something to listen back to. */
-    val anything: Boolean get() = plays > 0 || phone > 0
+    /** It brings something: plays to listen back to, or playlists or liked songs for the library (service.ts `choose`). */
+    val anything: Boolean get() = plays > 0 || phone > 0 || playlists.isNotEmpty() || likes > 0
 }
 
 /** What [SpotifyImporter.prepare] read, waiting for [SpotifyImporter.commit]: the export itself, never a plan. */
@@ -157,9 +176,9 @@ internal class SpotifyImporter(
             first = first,
             last = last,
             years = years.size,
-            playlists = bundle.playlists,
-            likes = bundle.likes,
-            hidden = bundle.hidden,
+            playlists = bundle.playlists.map { ExportPlaylistCount(it.name, it.items.size) },
+            likes = bundle.likes.size,
+            hidden = bundle.hidden.size,
             extended = bundle.files.extended > 0,
             phone = 0,
             unreadable = bundle.unreadable,
@@ -257,10 +276,20 @@ internal class SpotifyImporter(
 
         /**
          * archive.ts's import record over the archive as it is now (importer.ts `storeRecord`), [added] imports on top of [prev]'s
-         * count. The first and last listen are the archive's and this phone's own plays' together ([ownFirst], [ownLast]): taste
-         * counts both (an own play is always a listen there).
+         * count, and the [playlists] and [likes] this import brought into the library on top of its. The first and last listen are
+         * the archive's and this phone's own plays' together ([ownFirst], [ownLast]): taste counts both (an own play is always a
+         * listen there).
          */
-        fun record(prev: ImportRecord?, listens: ArchiveListens, ownFirst: Long?, ownLast: Long?, now: Long, added: Int): ImportRecord {
+        fun record(
+            prev: ImportRecord?,
+            listens: ArchiveListens,
+            ownFirst: Long?,
+            ownLast: Long?,
+            now: Long,
+            added: Int,
+            playlists: Int = 0,
+            likes: Int = 0,
+        ): ImportRecord {
             val firsts = listOfNotNull(listens.first, ownFirst)
             val lasts = listOfNotNull(listens.last, ownLast)
             return ImportRecord(
@@ -271,8 +300,8 @@ internal class SpotifyImporter(
                 bySource = ImportRecord.BySource(listens.spotify, listens.lastfm, listens.stash),
                 first = firsts.minOrNull() ?: 0,
                 last = lasts.maxOrNull() ?: 0,
-                playlists = prev?.playlists ?: 0,
-                likes = prev?.likes ?: 0,
+                playlists = (prev?.playlists ?: 0) + playlists,
+                likes = (prev?.likes ?: 0) + likes,
             )
         }
     }

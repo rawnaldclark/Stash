@@ -63,6 +63,8 @@
     <string name="record_import_reading">正在读取你的文件：第 %1$d 个，共 %2$d 个</string>
     <string name="record_import_saving">正在保存你的播放记录：%1$s / %2$s</string>
     <string name="record_import_saving_start">正在保存…</string>
+    <string name="record_import_library">正在添加你的歌单和点赞：%1$s / %2$s 首歌曲</string>
+    <string name="record_import_library_start">正在添加你的歌单和点赞…</string>
     <string name="record_import_year">正在读取 %1$d 年</string>
     <string name="record_import_channel">你的唱片</string>
     <string name="record_preview_title">这是你的 Spotify</string>
@@ -81,12 +83,28 @@
     </plurals>
     <string name="record_preview_account_title">这里只有你最近一年的记录</string>
     <string name="record_preview_account_body">你的完整记录在另一封邮件“扩展的流媒体播放记录”中。收到后把那个 zip 文件添加到这里。</string>
-    <string name="record_preview_also">其中还有</string>
     <plurals name="record_preview_songs">
         <item quantity="other">%1$d 首歌曲</item>
     </plurals>
     <string name="record_preview_liked">已点赞的歌曲</string>
-    <string name="record_preview_later">你的歌单和已点赞的歌曲会在之后的更新中加入你的音乐库。请保留 zip 文件。</string>
+    <plurals name="record_preview_all_here_file">
+        <item quantity="other">这个文件里的 %1$s 次播放都已在这里。</item>
+    </plurals>
+    <plurals name="record_preview_all_here_files">
+        <item quantity="other">这些文件里的 %1$s 次播放都已在这里。</item>
+    </plurals>
+    <string name="record_preview_no_plays">这个文件里没有播放记录。</string>
+    <string name="record_preview_still">你的歌单和点赞仍然可以导入。</string>
+    <string name="record_preview_playlists">歌单</string>
+    <string name="record_preview_picked">%1$d / %2$d</string>
+    <string name="record_preview_already">已在你的音乐库中</string>
+    <plurals name="record_preview_liked_added">
+        <item quantity="other">%1$s 首歌曲，将加入你的点赞</item>
+    </plurals>
+    <string name="record_preview_liked_download_title">已点赞的歌曲会下载到这部手机</string>
+    <plurals name="record_preview_liked_download">
+        <item quantity="other">这 %1$s 首歌曲也会下载。</item>
+    </plurals>
     <string name="record_preview_import">导入</string>
     <string name="record_preview_cancel">取消</string>
     <string name="record_preview_add">添加其他文件</string>
@@ -95,8 +113,7 @@
     <string name="record_error_nothing_new_body">里面没有新内容。有更新的副本时，再添加那个。</string>
     <string name="record_error_not_export_title">这不是 Spotify 导出文件</string>
     <string name="record_error_not_export_body">请添加 Spotify 邮件中的原始 zip 文件（文件名以“my_spotify_data”开头）。</string>
-    <string name="record_error_no_plays_title">没有新的可回听内容</string>
-    <string name="record_error_no_plays_body">这个文件里没有播放记录。其中的歌单和已点赞的歌曲会在之后的更新中加入。</string>
+    <string name="record_preview_nothing_title">没有新的可回听内容</string>
     <string name="record_error_unreadable_title">那个 zip 文件打不开</string>
     <string name="record_error_unreadable_body">它可能没有下载完。请从 Spotify 的邮件重新下载，然后添加新的副本。</string>
     <string name="record_error_storage_title">这部手机空间不足</string>

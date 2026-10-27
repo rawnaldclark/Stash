@@ -644,7 +644,7 @@
     <string name="settings_your_record_remove">移除导入的记录</string>
     <string name="settings_your_record_remove_subtitle">你的唱片将恢复为你在 Stash 的播放记录。</string>
     <string name="settings_your_record_remove_title">要移除导入的记录吗？</string>
-    <string name="settings_your_record_remove_body">从 Spotify 和 Last.fm 导入到你的唱片中的所有内容都会从这部手机上删除。你在 Stash 的播放记录会保留。</string>
+    <string name="settings_your_record_remove_body">从 Spotify 和 Last.fm 导入到你的唱片中的所有内容都会从这部手机上删除。你在 Stash 的播放记录会保留。你导入的歌单和已点赞的歌曲会保留在音乐库中。</string>
     <string name="settings_your_record_remove_confirm">移除</string>
     <string name="settings_your_record_cancel">取消</string>
     <string name="settings_your_record_removed">已移除导入的记录。</string>
