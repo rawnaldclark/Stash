@@ -66,6 +66,8 @@ internal class ExportReader(
     private val zone: ZoneId = ZoneId.systemDefault(),
     /** Throws when the reading should stop (the import was cancelled). */
     private val checkpoint: () -> Unit = {},
+    /** The import's ceilings: bytes inflated and rows read count against it, and it throws [ImportTooBig] past them. */
+    private val budget: ImportBudget = ImportBudget(),
 ) {
     private val plays = ExportPlays()
     private var unreadable = 0
@@ -96,7 +98,7 @@ internal class ExportReader(
             val fileStart = doneBytes
             try {
                 f.open().use { raw ->
-                    val counted = Counting(raw) { read ->
+                    val counted = Counting(raw, budget) { read ->
                         doneBytes = fileStart + read
                         progress?.onRead(n, wanted.size, doneBytes, totalBytes, latestYear)
                     }
@@ -116,6 +118,10 @@ internal class ExportReader(
                     ExportKind.IGNORE -> Unit
                 }
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: ImportTooBig) {
+                throw e // the whole import is refused, not one file
+            } catch (e: StorageFull) {
                 throw e
             } catch (e: Exception) {
                 // Not JSON (or not readable at all): the web's JSON.parse would have thrown before a single row
@@ -159,6 +165,7 @@ internal class ExportReader(
         }
         j.beginArray()
         while (j.hasNext()) {
+            budget.row()
             if (kind == ExportKind.EXTENDED) extendedRow(j) else accountRow(j)
             if (++rowsSinceCheck >= CHECK_EVERY) {
                 rowsSinceCheck = 0
@@ -348,6 +355,7 @@ internal class ExportReader(
         var nameless = 0
         j.beginArray()
         while (j.hasNext()) {
+            budget.row()
             if (j.peek() != Token.BEGIN_OBJECT) {
                 j.skipValue()
                 nameless++
@@ -380,6 +388,7 @@ internal class ExportReader(
         var n = 0
         j.beginArray()
         while (j.hasNext()) {
+            budget.row()
             if (j.peek() != Token.BEGIN_OBJECT) {
                 j.skipValue()
                 continue
@@ -495,6 +504,7 @@ internal class ExportReader(
         var n = 0
         j.beginArray()
         while (j.hasNext()) {
+            budget.row()
             // libSong: an object with a track and an artist; null, an array or a scalar is no song (and nothing wrong)
             if (j.peek() == Token.BEGIN_OBJECT) {
                 if (songObject(j, "track", "artist")) n++
@@ -506,8 +516,8 @@ internal class ExportReader(
         return n
     }
 
-    /** Counts the bytes read from an entry, telling [onBytes] every [STEP] (the honest progress bar). */
-    private class Counting(input: InputStream, private val onBytes: (Long) -> Unit) : FilterInputStream(input) {
+    /** Counts the bytes read from an entry against the [budget], telling [onBytes] every [STEP] (the honest progress bar). */
+    private class Counting(input: InputStream, private val budget: ImportBudget, private val onBytes: (Long) -> Unit) : FilterInputStream(input) {
         private var n = 0L
         private var told = 0L
 
@@ -516,6 +526,7 @@ internal class ExportReader(
         override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { if (it > 0) count(it.toLong()) }
 
         private fun count(k: Long) {
+            budget.inflated(k)
             n += k
             if (n - told >= STEP) {
                 told = n

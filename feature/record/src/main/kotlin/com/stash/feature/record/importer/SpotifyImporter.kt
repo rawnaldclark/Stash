@@ -121,9 +121,16 @@ internal class SpotifyImporter(
      * Reads [files] (zips opened, nested ones too; loose `.json` files as they are) and plans the merge. Throws [NotAnExport]
      * when none of them is a file of an export.
      */
-    suspend fun prepare(files: List<PickedFile>, now: Long, checkpoint: () -> Unit = {}, progress: (ImportProgress) -> Unit = {}): Prepared {
+    suspend fun prepare(
+        files: List<PickedFile>,
+        now: Long,
+        checkpoint: () -> Unit = {},
+        /** The zips as the intake's look inside opened them (what it inflated is read, not inflated again); this call closes it. */
+        zip: ExportZip? = null,
+        progress: (ImportProgress) -> Unit = {},
+    ): Prepared {
         progress(ImportProgress.Open)
-        val bundle = read(files, now, checkpoint, progress)
+        val bundle = read(files, now, checkpoint, zip, progress)
         if (bundle.files.found == 0) throw NotAnExport()
         val plan = PlanMerge.plan(archive, bundle.plays)
         val plays = bundle.plays
@@ -160,14 +167,28 @@ internal class SpotifyImporter(
         return Prepared(preview, bundle, files)
     }
 
-    /** The files read into an export (zips' scratch files gone once read). */
-    fun read(files: List<PickedFile>, now: Long, checkpoint: () -> Unit = {}, progress: (ImportProgress) -> Unit = {}): ExportBundle =
-        ExportZip(scratch).use { zip ->
-            val entries = openFiles(files, zip)
-            ExportReader(now, zone, checkpoint).read(entries) { done, total, bytes, totalBytes, year ->
+    /**
+     * The files read into an export, under one [ImportBudget] for the whole import (zips' scratch files gone once read). [zip]:
+     * the intake's, with its budget and what it opened; a fresh one otherwise.
+     */
+    fun read(
+        files: List<PickedFile>,
+        now: Long,
+        checkpoint: () -> Unit = {},
+        zip: ExportZip? = null,
+        progress: (ImportProgress) -> Unit = {},
+    ): ExportBundle {
+        val z = zip ?: newZip()
+        return z.use {
+            val entries = openFiles(files, it)
+            ExportReader(now, zone, checkpoint, it.budget).read(entries) { done, total, bytes, totalBytes, year ->
                 progress(ImportProgress.Read(done, total, if (totalBytes > 0) (bytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f, year))
             }
         }
+    }
+
+    /** A zip reader for one import, its budget measured against the scratch folder's free space. */
+    fun newZip(): ExportZip = ExportZip(scratch, ImportBudget(freeSpace = { scratch.apply { mkdirs() }.usableSpace }))
 
     /**
      * Writes what [prep] read: the merge planned again against the archive now, written in batches of [BATCH] (each its own

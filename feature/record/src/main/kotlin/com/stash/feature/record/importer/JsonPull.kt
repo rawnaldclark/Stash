@@ -96,28 +96,51 @@ internal class JsonPull(private val reader: Reader) {
         return out.toString()
     }
 
-    /** A number value, as JavaScript reads it (IEEE double, correctly rounded). */
+    /**
+     * A number value, as JavaScript reads it (IEEE double, correctly rounded). One longer than [MAX_NUMBER] characters (no real
+     * field is: a time played is a dozen digits) is read to its end, checked against the grammar, and comes out NaN, so the row
+     * holding it is unreadable: the reader never builds a string a hostile file's digits make as long as it likes.
+     */
     fun nextNumber(): Double {
         expect(Token.NUMBER)
         val s = StringBuilder(24)
-        if (peekChar() == '-'.code) s.append(take())
+        return if (scanNumber(s)) s.toString().toDouble() else Double.NaN
+    }
+
+    /** A number skipped: its grammar checked, nothing built. */
+    private fun skipNumber() {
+        scanNumber(null)
+    }
+
+    /** Reads a number by the JSON grammar into [into] (when given); false when it ran past [MAX_NUMBER] (what was kept is cut). */
+    private fun scanNumber(into: StringBuilder?): Boolean {
+        var n = 0L // a Long: a hostile literal can run past an Int before the import's byte budget stops it
+        fun keep() {
+            val c = take()
+            if (into != null && n < MAX_NUMBER) into.append(c)
+            n++
+        }
+        fun digits() {
+            while (peekChar() in '0'.code..'9'.code) keep()
+        }
+        if (peekChar() == '-'.code) keep()
         when (val c = peekChar()) {
-            '0'.code -> s.append(take())
-            in '1'.code..'9'.code -> digits(s)
+            '0'.code -> keep()
+            in '1'.code..'9'.code -> digits()
             else -> fail("a number expected, not ${describe(c)}")
         }
         if (peekChar() == '.'.code) {
-            s.append(take())
+            keep()
             if (peekChar() !in '0'.code..'9'.code) fail("a digit expected after '.'")
-            digits(s)
+            digits()
         }
         if (peekChar() == 'e'.code || peekChar() == 'E'.code) {
-            s.append(take())
-            if (peekChar() == '+'.code || peekChar() == '-'.code) s.append(take())
+            keep()
+            if (peekChar() == '+'.code || peekChar() == '-'.code) keep()
             if (peekChar() !in '0'.code..'9'.code) fail("a digit expected in the exponent")
-            digits(s)
+            digits()
         }
-        return s.toString().toDouble()
+        return n <= MAX_NUMBER
     }
 
     fun nextBoolean(): Boolean = when (peek()) {
@@ -138,7 +161,7 @@ internal class JsonPull(private val reader: Reader) {
                 Token.END_ARRAY -> { endArray(); open-- }
                 Token.END_OBJECT -> { endObject(); open-- }
                 Token.NAME, Token.STRING -> { peeked = null; skipString() }
-                Token.NUMBER -> nextNumber()
+                Token.NUMBER -> { peeked = null; skipNumber() }
                 Token.TRUE, Token.FALSE, Token.NULL -> peeked = null
                 Token.END -> fail("the text ended inside a value")
             }
@@ -281,10 +304,6 @@ internal class JsonPull(private val reader: Reader) {
 
     // ── characters ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private fun digits(s: StringBuilder) {
-        while (peekChar() in '0'.code..'9'.code) s.append(take())
-    }
-
     private fun take(): Char = buf[pos++]
 
     /** The next character without consuming it, or -1 at the end of the text. */
@@ -324,6 +343,9 @@ internal class JsonPull(private val reader: Reader) {
     companion object {
         /** Deeper than this is refused (a Spotify file is four deep). */
         const val MAX_DEPTH = 10_000
+
+        /** The longest number literal read as a number (1,100 characters: far past any double's digits). */
+        const val MAX_NUMBER = 1_100
 
         /** The longest member name read; longer ones are none this reader's callers look for. */
         const val MAX_NAME = 256

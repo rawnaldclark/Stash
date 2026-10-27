@@ -166,6 +166,29 @@ class JsonPullTest {
         assertThrows(JsonSyntaxError::class.java) { JsonPull(StringReader(deep)).skipValue() }
     }
 
+    @Test fun `a number past 1,100 characters is read to its end but comes out NaN (its row unreadable), skipping one builds nothing`() {
+        fun number(text: String): Double = JsonPull(StringReader("[$text]")).run {
+            beginArray()
+            nextNumber().also {
+                endArray()
+                endDocument()
+            }
+        }
+        val longest = "1" + "0".repeat(JsonPull.MAX_NUMBER - 1)
+        assertEquals(Double.POSITIVE_INFINITY, number(longest), 0.0) // what JavaScript reads it as
+        assertEquals(Double.NaN, number(longest + "0"), 0.0)
+        assertEquals(Double.NaN, number("-0." + "1".repeat(5_000) + "e-3"), 0.0)
+        // The grammar is still checked to the end of it
+        assertThrows(JsonSyntaxError::class.java) { number("1".repeat(5_000) + ".") }
+        // Skipped (a field nobody reads): a hostile file's 2 MB of digits, and the next value is there
+        val j = JsonPull(StringReader("[" + "9".repeat(2_000_000) + ",7]"))
+        j.beginArray()
+        j.skipValue()
+        assertEquals(7.0, j.nextNumber(), 0.0)
+        j.endArray()
+        j.endDocument()
+    }
+
     @Test fun `a long file is read through a small buffer`() {
         val rows = (0 until 20_000).joinToString(",", "[", "]") { "{\"i\":$it,\"pad\":\"${"x".repeat(20)}\"}" }
         val j = JsonPull(StringReader(rows))

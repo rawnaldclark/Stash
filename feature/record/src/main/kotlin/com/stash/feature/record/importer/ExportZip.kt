@@ -35,22 +35,57 @@ internal class ExportEntry(
  * entry is a stream, a zip stored inside a zip is read in place, and one deflated inside is inflated to a file in [scratch]
  * (deleted by [close]), never into memory. Encrypted entries and other methods are refused; CRCs aren't checked (a damaged
  * deflate stream fails by itself, and the JSON reader after it refuses garbage).
+ *
+ * Against hostile files, beyond the web's own checks: a central directory larger than [MAX_DIRECTORY] is refused, so are
+ * directory records whose data overlap (a zip bomb's way of making one compressed block count many times), and every directory
+ * record and every byte inflated to [scratch] counts against the import's [budget].
+ *
+ * One instance per import: [sniff] (the intake's look inside) and [entries] (the read) share what they opened, so a zip inside
+ * a zip is inflated once.
  */
-internal class ExportZip(private val scratch: File) : Closeable {
+internal class ExportZip(
+    private val scratch: File,
+    val budget: ImportBudget = ImportBudget(freeSpace = { scratch.usableSpace }),
+) : Closeable {
     private val open = ArrayList<RandomAccessFile>()
     private val temps = ArrayList<File>()
 
+    /** Each picked file's source, by its path. */
+    private val tops = HashMap<String, Source>()
+
+    /** Each source's directory, read once (and counted against the budget once). */
+    private val listed = HashMap<Source, List<Raw>>()
+
+    /** Each zip inside a zip, opened once; [failed] holds the ones that couldn't be. */
+    private val inner = HashMap<Raw, Source>()
+    private val failed = HashSet<Raw>()
+
     /** Every file in [file] (nested zips opened), contents unread. Throws [ZipError] when it isn't a readable zip. */
-    fun entries(file: File, prefix: String): List<ExportEntry> = entriesOf(fileSource(file), prefix, 0)
+    fun entries(file: File, prefix: String): List<ExportEntry> = expand(top(file), prefix, 0)
+
+    /**
+     * Whether [file] holds a file of an export, by the names in it: its own directory first, and a zip inside it only when its own
+     * names hold none (Spotify's Extended zip is a zip inside a zip), each under the import's budget. False for a zip that can't be
+     * opened. What it opens stays open for [entries].
+     */
+    fun sniff(file: File, prefix: String): Boolean = try {
+        sniffIn(top(file), prefix, 0)
+    } catch (e: ZipError) {
+        false
+    }
 
     override fun close() {
         open.forEach { runCatching { it.close() } }
         open.clear()
         temps.forEach { it.delete() }
         temps.clear()
+        tops.clear()
+        listed.clear()
+        inner.clear()
+        failed.clear()
     }
 
-    /** Bytes to read from: a file, or part of one (a zip stored inside a zip). */
+    /** Bytes to read from: a file, or part of one (a zip stored inside a zip). Compared by identity. */
     private class Source(val raf: RandomAccessFile, val start: Long, val size: Long) {
         fun bytes(from: Long, to: Long): ByteArray {
             val end = minOf(to, size)
@@ -92,13 +127,97 @@ internal class ExportZip(private val scratch: File) : Closeable {
         }
     }
 
-    private fun fileSource(file: File): Source {
-        val raf = RandomAccessFile(file, "r")
-        open += raf
-        return Source(raf, 0, raf.length())
+    /** One directory record: where its data is and how to read it. Compared by identity. */
+    private inner class Raw(
+        val src: Source,
+        val name: String,
+        val flags: Int,
+        val method: Int,
+        val csize: Long,
+        val usize: Long,
+        val loc: Long,
+    ) {
+        /** Where the data starts: after the local header's own name and extra (their lengths can differ from the central copy's). */
+        fun dataStart(): Long {
+            if (flags and 1 != 0) throw ZipError("encrypted zip")
+            val lh = src.bytes(loc, loc + 30)
+            if (lh.size < 30 || u32(lh, 0) != LOC) throw ZipError("broken zip")
+            return loc + 30 + u16(lh, 26) + u16(lh, 28)
+        }
+
+        fun read(): InputStream {
+            if (usize > MAX_ENTRY) throw ZipError("entry too large")
+            val start = dataStart()
+            return when (method) {
+                0 -> src.stream(start, csize)
+                8 -> inflating(src.stream(start, csize), usize)
+                else -> throw ZipError("unsupported zip method")
+            }
+        }
     }
 
-    private fun entriesOf(src: Source, prefix: String, depth: Int): List<ExportEntry> {
+    private fun top(file: File): Source = tops.getOrPut(file.absolutePath) {
+        val raf = RandomAccessFile(file, "r")
+        open += raf
+        Source(raf, 0, raf.length())
+    }
+
+    private fun sniffIn(src: Source, prefix: String, depth: Int): Boolean {
+        val raws = list(src, prefix)
+        if (raws.any { ExportText.kindOf(it.name) != ExportKind.IGNORE }) return true
+        if (depth >= MAX_DEPTH) return false
+        for (r in raws) {
+            if (!ExportText.isZipName(r.name)) continue
+            val s = innerOf(r) ?: continue
+            val found = try {
+                sniffIn(s, "${r.name}!/", depth + 1)
+            } catch (e: ZipError) {
+                false
+            }
+            if (found) return true
+        }
+        return false
+    }
+
+    private fun expand(src: Source, prefix: String, depth: Int): List<ExportEntry> {
+        val out = ArrayList<ExportEntry>()
+        for (r in list(src, prefix)) {
+            if (depth < MAX_DEPTH && ExportText.isZipName(r.name)) {
+                // A zip inside: its own entries instead of it (Spotify's export zip, or a folder of them zipped again)
+                val nested = innerOf(r)?.let { s ->
+                    try {
+                        expand(s, "${r.name}!/", depth + 1)
+                    } catch (e: ZipError) {
+                        null
+                    }
+                }
+                out += nested ?: listOf(ExportEntry(r.name, r.usize, broken = true, opener = r::read))
+                continue
+            }
+            out += ExportEntry(r.name, r.usize, opener = r::read)
+        }
+        return out
+    }
+
+    /** A zip inside a zip, opened once: read in place when stored, inflated to a scratch file when deflated; null when it can't be. */
+    private fun innerOf(r: Raw): Source? {
+        inner[r]?.let { return it }
+        if (r in failed) return null
+        return try {
+            (if (r.method == 0) r.src.within(r.dataStart(), r.csize) else inflateToFile(r.read())).also { inner[r] = it }
+        } catch (e: ImportTooBig) {
+            throw e
+        } catch (e: StorageFull) {
+            throw e
+        } catch (e: IOException) {
+            failed += r
+            null
+        }
+    }
+
+    private fun list(src: Source, prefix: String): List<Raw> = listed.getOrPut(src) { readDirectory(src, prefix) }
+
+    private fun readDirectory(src: Source, prefix: String): List<Raw> {
         if (src.size < 22) throw ZipError("not a zip")
         // The end record is in the last 22 + 65,535 bytes (its comment is at most 64 KiB)
         val tailStart = maxOf(0L, src.size - (22 + 0xffff))
@@ -120,10 +239,11 @@ internal class ExportZip(private val scratch: File) : Closeable {
             cdOff = u64(rec, 48)
         }
         if (count > MAX_ENTRIES || cdOff + cdSize > src.size) throw ZipError("broken zip")
+        if (cdSize > MAX_DIRECTORY) throw ZipError("central directory too large")
+        budget.entries(count.toInt())
         val cd = src.bytes(cdOff, cdOff + cdSize)
 
-        class Raw(val name: String, val flags: Int, val method: Int, val csize: Long, val usize: Long, val loc: Long)
-        val raws = ArrayList<Raw>()
+        val all = ArrayList<Raw>(count.toInt())
         var p = 0
         for (i in 0 until count) {
             if (p + 46 > cd.size || u32(cd, p) != CEN) throw ZipError("broken zip")
@@ -153,50 +273,45 @@ internal class ExportZip(private val scratch: File) : Closeable {
                 x += 4 + len
             }
             p = xEnd + commentLen
-            if (name.endsWith('/')) continue // a folder
-            raws += Raw(prefix + name, flags, method, csize, usize, loc)
+            all += Raw(src, prefix + name, flags, method, csize, usize, loc)
         }
-
-        val out = ArrayList<ExportEntry>(raws.size)
-        for (r in raws) {
-            // Where the data starts: after the local header's own name and extra (their lengths can differ from the central copy's)
-            val dataStart = {
-                if (r.flags and 1 != 0) throw ZipError("encrypted zip")
-                val lh = src.bytes(r.loc, r.loc + 30)
-                if (lh.size < 30 || u32(lh, 0) != LOC) throw ZipError("broken zip")
-                r.loc + 30 + u16(lh, 26) + u16(lh, 28)
-            }
-            val read = {
-                if (r.usize > MAX_ENTRY) throw ZipError("entry too large")
-                val start = dataStart()
-                when (r.method) {
-                    0 -> src.stream(start, r.csize)
-                    8 -> inflating(src.stream(start, r.csize), r.usize)
-                    else -> throw ZipError("unsupported zip method")
-                }
-            }
-            if (depth < MAX_DEPTH && ExportText.isZipName(r.name)) {
-                // A zip inside: its own entries instead of it (Spotify's export zip, or a folder of them zipped again)
-                try {
-                    val inner = if (r.method == 0) src.within(dataStart(), r.csize) else inflateToFile(read())
-                    out += entriesOf(inner, "${r.name}!/", depth + 1)
-                } catch (e: Exception) {
-                    out += ExportEntry(r.name, r.usize, broken = true, opener = read)
-                }
-                continue
-            }
-            out += ExportEntry(r.name, r.usize, opener = read)
-        }
-        return out
+        refuseOverlaps(all)
+        // Folders have no data to read
+        return all.filter { !it.name.endsWith('/') }
     }
 
-    /** A deflated zip inside a zip, inflated to a scratch file (the web inflates it into memory; a phone shouldn't). */
+    /**
+     * Directory records whose data overlap are refused: each record's local header and data (at least 30 bytes, then the
+     * compressed bytes) must end before the next record's local header starts. A real zip's entries follow one another; a zip
+     * bomb points many records at one compressed block so it inflates many times over.
+     */
+    private fun refuseOverlaps(records: List<Raw>) {
+        val byStart = records.sortedBy { it.loc }
+        for (i in 1 until byStart.size) {
+            val prev = byStart[i - 1]
+            if (byStart[i].loc < prev.loc + 30 + prev.csize) throw ZipError("overlapping entries")
+        }
+    }
+
+    /** A deflated zip inside a zip, inflated to a scratch file (the web inflates it into memory; a phone shouldn't), counted. */
     private fun inflateToFile(input: InputStream): Source {
         scratch.mkdirs()
         val f = File.createTempFile("nested", ".zip", scratch)
         temps += f
-        input.use { i -> f.outputStream().use { o -> i.copyTo(o, 64 * 1024) } }
-        return fileSource(f)
+        input.use { i ->
+            f.outputStream().use { o ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = i.read(buf)
+                    if (n < 0) break
+                    budget.scratch(n.toLong())
+                    o.write(buf, 0, n)
+                }
+            }
+        }
+        val raf = RandomAccessFile(f, "r")
+        open += raf
+        return Source(raf, 0, raf.length())
     }
 
     /**
@@ -243,7 +358,14 @@ internal class ExportZip(private val scratch: File) : Closeable {
         /** Zips inside zips, at most this deep (zip.ts `MAX_DEPTH`). */
         const val MAX_DEPTH = 3
 
-        private const val MAX_ENTRIES = 20_000
+        /** Records in one zip's directory (zip.ts `MAX_ENTRIES`). */
+        const val MAX_ENTRIES = 20_000
+
+        /**
+         * The largest central directory read: 32 MiB, room for 20,000 records with names of over a kilobyte each (a real export's
+         * directory is a few KB).
+         */
+        const val MAX_DIRECTORY = 32L shl 20
 
         private const val EOCD = 0x06054b50L
         private const val EOCD64_LOCATOR = 0x07064b50L
