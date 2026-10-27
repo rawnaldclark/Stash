@@ -61,32 +61,39 @@ flipped, or the page's own `stash:counts`, sends it again only when it changed.
 
 ## Your Last.fm scrobbles
 
-The web player's Last.fm import (stash-player `src/lib/spotify/lastfm.ts`, `plays.ts`, `service.ts`, `worker/lastfm-history.ts`,
-spec §7) on the phone, reading the connected account (Settings › Accounts & Sync) straight from Last.fm through the app's one
-client, never the Stash proxy:
+The web player's Last.fm import (stash-player `src/lib/spotify/lastfm.ts`, `lengths.ts`, `plays.ts`, `service.ts`,
+`worker/lastfm-history.ts`, spec §7) on the phone, reading the connected account (Settings › Accounts & Sync) straight from
+Last.fm through the app's one client, never the Stash proxy; the song lengths after it, through the proxy only:
 
 | Where | What |
 |---|---|
-| `lastfm/LastfmHistory.kt` | the Worker's reading of a `user.getRecentTracks` page: clean words, the now-playing row out, times 2002 to a day ahead, 6 and 17 an empty last page, anything else "try again" |
-| `lastfm/PlanScrobbles.kt` | `planScrobbles`, `knownLengths`, `coveredBy`: a scrobble's row (`textKey|uts·1000`, LASTFM; the longest done Spotify play of the song key, else 210,000 ms marked ESTIMATED), left out when kept already or a Spotify play covers it |
-| `lastfm/ImportScrobbles.kt` | the resumable run and its mark (user, a fixed `to`, the next page, done, newest), the top-up from `newest + 1`, 350 ms between pages, a busy page asked again 10 s times the attempt (6 at most) |
-| `lastfm/LastfmPages.kt` | a page from Last.fm: unsigned, as the web reads; a private profile reads itself with its own session key (beyond the web, where it reads as empty); a session Last.fm no longer takes, or an account changed under the run, is a reconnect |
-| `lastfm/RecordLastfm.kt`, `RecordLastfmWorker.kt` | service.ts's Last.fm half: bring in, carry on, top up (hourly at most, on opening the record), stop, remove; a foreground job with a notification, run again by WorkManager after a system stop or the app's death, from its mark; the archive's write lock (`imports/RecordWrites.kt`, shared with the Spotify import) held for the run. A job carries what it was asked for (`LastfmAsk`: the account and the scrobbles' generation) and does nothing for another; both removals cancel the job and move the generation on, so none can bring the scrobbles back |
+| `lastfm/LastfmHistory.kt` | the Worker's reading of a `user.getRecentTracks` page: clean words, the now-playing row out, times 2002 to a day ahead; 6 and 17 on page 1 an empty last page, after it "try again"; a page before the last that lists nothing "try again"; 9 on a signed read a reconnect; anything else "try again" |
+| `lastfm/PlanScrobbles.kt` | `planScrobbles`, `knownLengths`, `libraryLengths`, `bestLengths`, `scrobbleMs`, `coveredBy`: a scrobble's row (`textKey|uts·1000`, LASTFM; its song's length from a finished Spotify play, else the library's longest, never under 30 s; else 210,000 ms marked ESTIMATED), left out when kept already or a Spotify play covers it |
+| `lastfm/ImportScrobbles.kt` | the resumable run and its mark (user, a fixed `to`, the next page, done, newest, the count, `base`): where a run starts (`startMark`: another account's rows the base; a read that found nothing read again; the count taken again from the archive), only a page at or past the last ending a read, an empty page claiming fewer pages asked again 6 times, the top-up from 14 days below the newest (its window moved only once all of it is in), the mark saved every page; 350 ms between pages, a busy page asked again 10 s times the attempt (6 at most) |
+| `lastfm/LastfmPages.kt` | a page from Last.fm: unsigned on the recap's read keys; a private profile reads itself with its own session key (the web always reads signed); a session Last.fm no longer takes, or an account changed under the run, is a reconnect |
+| `lastfm/RecordLastfm.kt`, `RecordLastfmWorker.kt` | service.ts's Last.fm half: bring in, carry on, top up (hourly at most, on opening the record), stop, remove; the done line's count (`added`, and the whole import as `total` when the run read it); a foreground job with a notification, run again by WorkManager after a system stop or the app's death, from its mark; the archive's write lock (`imports/RecordWrites.kt`, shared with the Spotify import) held for the run. A job carries what it was asked for (`LastfmAsk`: the account and the scrobbles' generation) and does nothing for another; both removals cancel the job and move the generation on, so none can bring the scrobbles back |
+| `lastfm/Lengths.kt` | lengths.ts: the scrobbles still guessed, planned by spelling (`guessedBySong`, `planLengths`: Spotify or library lengths that came later first, then Last.fm's, most played first) and a slice (`fill`: up to 200 asks or 20 s, a miss kept 30 days, a failure a day, 3 failures in a row stop it) |
+| `lastfm/RecordLengths.kt`, `RecordLengthsWorker.kt` | service.ts `timeSongs`: the pass in slices under the write lock, as a quiet job; stopped first by a Last.fm run, a Spotify commit or a removal; started after a run and after a commit once Last.fm is in; the import record, the Home card and an open record read again after the first slice that timed songs, then every 2 minutes at most, and at the end. Its lengths come from `LastFmRecapRepository.songLength` (track.getInfo through the proxy only) |
 | `lastfm/LastfmPart.kt` | LastfmPart.svelte: in the import sheet (its second way in), and as Settings' rows in the Your record group ("Import from Last.fm" with its status and its action, "Remove your Last.fm scrobbles"; handed to Settings by the app); not connected, it goes to the app's own Last.fm sign-in |
 
-The scrobbles go to `record_plays` with the LASTFM flag, beside the export's plays (no schema change); the mark is kept with the
-import record in the `your_record` preferences. Remove import clears it too. Scrobbles alone make an import record. The pace is
-the Last.fm recap's (`LastFmHistoryPacer`, shared), so the two never ask faster than Last.fm allows together.
+The scrobbles go to `record_plays` with the LASTFM flag, beside the export's plays; the mark is kept with the import record in
+the `your_record` preferences, with the lengths pass's count and time; the songs the pass couldn't time are in `record_lengths`
+(DB v69). Remove import clears them too. Scrobbles alone make an import record. The pace is the Last.fm recap's
+(`LastFmHistoryPacer`, shared), so the two never ask faster than Last.fm allows together.
 
 ### Its tests
 
 - `LastfmVectorsTest`: cases run through the web's own code by `scripts/lastfm-vectors.ts` (`src/test/resources/lastfm/`),
-  compared field by field: Last.fm's answers, plans, coverings, whole runs (asks, progress, mark, rows) and the switch rules.
-  The run, against a stash-player checkout with its `node_modules` (read only), is in the script's header.
+  compared field by field: Last.fm's answers (signed and not), plans with library lengths, coverings, whole runs (asks,
+  progress, the mark they start from, the mark, rows), `startMark`, the lengths pass (plans, slices: asks, saves, rows) and
+  the switch rules. The run, against a stash-player checkout with its `node_modules` (read only), is in the script's header.
+- `LastfmWordsTest`: the English done line, reconnect line and hours note against the web's (`words.json`).
 - `SourcesParityTest`: the page's `card-parity-sources` fixture: the scrobbles left out, the counts, and the record and the
   Home card for all eight switch states.
-- `LastfmPagesTest`, `RecordLastfmTest`, `RecordHostSourcesTest`, `StashCoverTest`: the reader's answers, the service's runs
-  (stop and carry on, top-up, another account, busy, reconnect, the Spotify import first, remove), `stash:sources`, the 180 s edges.
+- `LastfmPagesTest`, `RecordLastfmTest` (with the web service's done states, `service.json`), `RecordLengthsTest`,
+  `DaoLengthsStoreTest`, `RecordHostSourcesTest`, `StashCoverTest`: the reader's answers, the service's runs (stop and carry on,
+  top-up, another account, busy, reconnect, the Spotify import first, remove, the pass around them), the pass's slices and
+  refreshes, the database's own slice, `stash:sources`, the 180 s edges.
 
 ## Covers
 

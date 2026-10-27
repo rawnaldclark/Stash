@@ -18,7 +18,7 @@
  *
  * Run from this repository's root, against a stash-player checkout with its node_modules (read only):
  *   PLAYER=../stash-web/player-record-lastfm
- *   $PLAYER/node_modules/.bin/esbuild feature/record/scripts/lastfm-vectors.ts --bundle --platform=node --format=esm \
+ *   NODE_PATH=$PLAYER/node_modules $PLAYER/node_modules/.bin/esbuild feature/record/scripts/lastfm-vectors.ts --bundle --platform=node --format=esm \
  *     --alias:@player=$PLAYER/src/lib --alias:@worker=$PLAYER/worker --outfile=build/lastfm-vectors.mjs
  *   node build/lastfm-vectors.mjs feature/record/src/test/resources/lastfm
  */
