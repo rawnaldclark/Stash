@@ -17,7 +17,7 @@ import com.stash.feature.record.archive.ScrobbleIndex
 import com.stash.feature.record.archive.SourceCounts
 import com.stash.feature.record.archive.SourcesOn
 import com.stash.feature.record.archive.StashCover
-import com.stash.feature.record.archive.toArchivePlay
+import com.stash.feature.record.imports.RecordWrites
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -119,12 +120,17 @@ class RecordCardSource internal constructor(
     private val scrobbles: RecordArchiveSource = RecordArchiveSource { _, emit -> emit(emptyList(), true) },
     /** The sources the record's switches leave on (kept on this phone). */
     private val sources: StateFlow<SourcesOn> = MutableStateFlow(SourcesOn.ALL_ON),
+    /**
+     * A Last.fm run is writing (a page every second or so, for minutes): the imported part is held as it was and read once the
+     * run is over, never again after every page (the web's card, too, changes when its run ends).
+     */
+    private val importsPaused: Flow<Boolean> = flowOf(false),
     /** Where the history is read and summed: off the main thread, one thing at a time. */
     work: CoroutineContext = Dispatchers.Default.limitedParallelism(1),
     private val now: () -> Long = SystemClock::elapsedRealtime,
 ) {
     @Inject
-    constructor(dao: WebLibraryExportDao, imported: RecordPlayDao, sources: RecordSourcesStore) : this(
+    constructor(dao: WebLibraryExportDao, imported: RecordPlayDao, sources: RecordSourcesStore, writes: RecordWrites) : this(
         stamps = dao.ownHistoryStamp(),
         tracks = dao.tracksWritten(),
         archive = OwnArchive(dao),
@@ -135,6 +141,7 @@ class RecordCardSource internal constructor(
         importedAlbums = imported::albumTotalsWithoutScrobbles,
         scrobbles = KindArchive(imported, scrobbles = true),
         sources = sources.on,
+        importsPaused = writes.lastfmRunning,
     )
 
     @Volatile private var kept: Pair<Any, CardParts>? = null
@@ -194,7 +201,7 @@ class RecordCardSource internal constructor(
             }
         }
 
-        val history = combine(stamps, importedStamps) { own, plays -> own to plays }.distinctUntilChanged()
+        val history = combine(stamps, heldWhile(importedStamps, importsPaused)) { own, plays -> own to plays }.distinctUntilChanged()
         merge(history.map { Change.History(it) }, tracks.drop(1).map { Change.Tracks }).collect { change ->
             when (change) {
                 is Change.History -> {
@@ -253,6 +260,17 @@ class RecordCardSource internal constructor(
         Log.w(TAG, "the card's plays couldn't be read: ${e.javaClass.simpleName}")
         null
     }
+
+    /** [stamps] as they come, except while [paused]: then the one before stays (the first is taken whatever, so Home has a card). */
+    private fun heldWhile(stamps: Flow<Any>, paused: Flow<Boolean>): Flow<Any> = flow {
+        var held: Any? = null
+        combine(stamps, paused) { s, p -> s to p }.collect { (s, p) ->
+            if (!p || held == null) {
+                held = s
+                emit(s)
+            }
+        }
+    }.distinctUntilChanged()
 
     /**
      * The scrobbles' part: kept while the imported plays and what this phone's plays cover are as they were; else read again,

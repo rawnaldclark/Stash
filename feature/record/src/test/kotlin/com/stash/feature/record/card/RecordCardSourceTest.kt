@@ -105,6 +105,45 @@ class RecordCardSourceTest {
         assertThat(listOf(ownReads, importedReads)).containsExactly(3, 2).inOrder()
     }
 
+    @Test fun `while a Last fm run writes, the imported part is held, and read once when it ends`() = runTest {
+        val importedStamp = MutableStateFlow(10)
+        val paused = MutableStateFlow(true)
+        var importedReads = 0
+        val source = RecordCardSource(
+            stamps = MutableStateFlow(stamp(1)),
+            tracks = MutableStateFlow(0L),
+            archive = RecordArchiveSource { _, emit -> emit(listOf(row(0)), true) },
+            albums = { emptyList() },
+            scope = backgroundScope,
+            work = StandardTestDispatcher(testScheduler),
+            now = { testScheduler.currentTime },
+            importedStamps = importedStamp,
+            scrobbles = RecordArchiveSource { _, emit ->
+                importedReads++
+                emit((0 until importedStamp.value).map { ArchivePlay("s$it|x|$it", "S$it", "Band", s = 9_000L + it, ms = 210_000, f = 64 or 128) }, true)
+            },
+            importsPaused = paused,
+        )
+        val seen = mutableListOf<Int>()
+        backgroundScope.launch { source.data.collect { seen += it.summary.plays } }
+        runCurrent()
+        // Home opened during a run: a card at once, from what is there
+        assertThat(seen.last()).isEqualTo(11)
+        // pages written: nothing read again
+        for (n in listOf(20, 30, 40)) {
+            importedStamp.value = n
+            advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+            runCurrent()
+        }
+        assertThat(importedReads).isEqualTo(1)
+        // the run ends: one read, of all of it
+        paused.value = false
+        advanceTimeBy(RecordCardSource.SETTLE_MS + 100)
+        runCurrent()
+        assertThat(importedReads).isEqualTo(2)
+        assertThat(seen.last()).isEqualTo(41)
+    }
+
     @Test fun `a history that can't be read keeps what the card had`() = runTest {
         val stamps = MutableStateFlow(stamp(1))
         var fail = false
