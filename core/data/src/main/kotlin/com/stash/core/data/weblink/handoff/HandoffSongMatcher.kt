@@ -143,15 +143,19 @@ class HandoffSongMatcher @Inject constructor(
         rowsWithWordsOf(song).firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
 
     /**
-     * Every row with [song]'s canonical words, oldest first. A blank key would load every local import, so a song whose canonical
-     * words are blank (a title that is only brackets, "(Intro)") is looked up by its exact words instead: matched by nothing else,
-     * it got a new row each time it came (a Spotify export's liked "(Intro)" and the same "(Intro)" in a playlist were two rows).
+     * Every row with [song]'s canonical words, oldest first. A blank key would load every local import, so it names no row. A song
+     * whose canonical words are blank (a title that is only brackets, "(Intro)") is looked up by its exact words instead only when
+     * nothing else can find it: it has no ISRC, Spotify or YouTube id (a local file in a Spotify playlist), or it is the mirror's
+     * phone-only song (found by its words, never made; [SongKey.sameSong] still holds it to its ISRC). Otherwise it got a new row
+     * each time it came (a Spotify export's liked local "(Intro)" and the same one in a playlist were two rows). One with an id is
+     * found by that id or made anew: two different "(Intro)"s by one artist, each with its own Spotify id, stay two songs.
      */
     private suspend fun rowsWithWordsOf(song: WireSong): List<TrackEntity> {
         val title = TrackCanonical.title(song.title)
         val artist = TrackCanonical.artist(song.artist)
         if (TrackCanonical.isBlankKey(title, artist)) {
-            if (song.title.isBlank() || song.artist.isBlank()) return emptyList()
+            val hasId = !song.isrc.isNullOrBlank() || !song.spotifyId.isNullOrBlank() || !song.youtubeId.isNullOrBlank()
+            if ((hasId && !song.phoneOnly) || song.title.isBlank() || song.artist.isBlank()) return emptyList()
             return trackDao.findAllByExactWords(song.title, song.artist)
         }
         return trackDao.findAllByCanonicalIdentity(title, artist)
