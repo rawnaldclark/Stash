@@ -8,6 +8,8 @@ android {
         unitTests {
             // android.util.Log in the host and the ViewModels returns defaults instead of throwing "not mocked".
             isReturnDefaultValues = true
+            // Robolectric (the import written through a real Room database) boots on the merged resources
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -30,4 +32,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
+    // The golden export written through a real (in-memory) Room database, as core/data's DAO tests run it
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation(libs.room.runtime)
 }

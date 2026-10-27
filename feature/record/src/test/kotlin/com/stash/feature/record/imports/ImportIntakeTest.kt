@@ -1,19 +1,28 @@
 package com.stash.feature.record.imports
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.feature.record.importer.ExportZip
+import com.stash.feature.record.importer.ImportBudget
+import com.stash.feature.record.importer.ImportTooBig
 import com.stash.feature.record.importer.PickedFile
+import com.stash.feature.record.importer.StorageFull
+import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
  * The intake: files brought (picked, shared, opened with Stash) copied into the app's storage with the names the person saw, and
- * the sniff a shared file goes through before the import takes it (names inside, nested zips too, nothing inflated).
+ * the sniff a shared file goes through before the import takes it (names inside, nested zips too, nothing inflated), and the
+ * copy's bounds: only the bytes read count (never the size a provider claims), and a copy stops at the import's ceiling or
+ * before the phone's last free space, leaving nothing behind.
  */
 class ImportIntakeTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -62,7 +71,7 @@ class ImportIntakeTest {
     @Test fun `the sniff - Spotify's names inside a zip, nested too, or a loose file Spotify names`() {
         val intake = ImportIntake(tmp.newFolder("files"))
         val scratch = tmp.newFolder("scratch")
-        fun sniff(name: String, f: File) = intake.looksLikeExport(listOf(PickedFile(name, f)), scratch)
+        fun sniff(name: String, f: File) = ExportZip(scratch, ImportBudget()).use { intake.looksLikeExport(listOf(PickedFile(name, f)), it) }
 
         assertThat(sniff("my_spotify_data.zip", resource("my_spotify_data.zip"))).isTrue() // a zip inside a zip
         assertThat(sniff("my_spotify_data (1).zip", resource("my_spotify_data (1).zip"))).isTrue()
@@ -72,6 +81,65 @@ class ImportIntakeTest {
         assertThat(sniff("broken.zip", file("broken.zip", "PK not really".toByteArray()))).isFalse()
         assertThat(sniff("Streaming_History_Video_2022.json", file("v.json", "[]".toByteArray()))).isFalse()
         assertThat(scratch.listFiles().orEmpty()).isEmpty()
+    }
+
+    /** A provider's file that never ends (what a `/dev/zero` behind a content URI would be). */
+    private fun endless(claim: Long?) = IntakeSource("my_spotify_data.zip", claim) {
+        object : InputStream() {
+            override fun read(): Int = 0
+            override fun read(b: ByteArray, off: Int, len: Int): Int = len.also { b.fill(0, off, off + len) }
+        }
+    }
+
+    @Test fun `a file that never ends stops at the import's ceiling, whatever size it claims, and leaves nothing`() {
+        val dir = tmp.newFolder("files")
+        val intake = ImportIntake(dir, maxTotal = 1L shl 20)
+        assertThrows(ImportTooBig::class.java) { intake.copy(listOf(endless(claim = 10)), emptyList()) }
+        assertThrows(ImportTooBig::class.java) { intake.copy(listOf(endless(claim = null)), emptyList()) }
+        assertThat(dir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test fun `a copy stops before the phone's last free space, and every copy of that call goes with it`() {
+        val dir = tmp.newFolder("files")
+        // 1 MiB free past the headroom, less what's been written (a disk)
+        val intake = ImportIntake(dir, headroom = 8L shl 20, freeSpace = { (9L shl 20) - dir.listFiles().orEmpty().sumOf { it.length() } })
+        val ok = source("my_spotify_data (1).zip", resource("my_spotify_data (1).zip"))
+        assertThrows(StorageFull::class.java) { intake.copy(listOf(ok, endless(claim = 100)), emptyList()) }
+        assertThat(dir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test fun `the bytes read are what count, never the size a provider claims`() {
+        val intake = ImportIntake(tmp.newFolder("files"))
+        val real = resource("my_spotify_data.zip")
+        val copy = intake.copy(listOf(IntakeSource("my_spotify_data.zip", 12) { real.inputStream() }), emptyList()).single()
+        assertThat(copy.file.length()).isEqualTo(real.length())
+        // The ceiling counts the copies the import has already
+        val small = ImportIntake(tmp.newFolder("files2"), maxTotal = real.length() + 10)
+        val first = small.copy(listOf(source("my_spotify_data.zip", real)), emptyList())
+        assertThrows(ImportTooBig::class.java) { small.copy(listOf(source("my_spotify_data (1).zip", resource("my_spotify_data (1).zip"))), first) }
+    }
+
+    @Test fun `a cancel during the copy stops it between blocks and leaves no file`() {
+        val dir = tmp.newFolder("files")
+        val intake = ImportIntake(dir)
+        var blocks = 0
+        assertThrows(CancellationException::class.java) {
+            intake.copy(listOf(endless(claim = null)), emptyList()) { if (++blocks > 3) throw CancellationException("cancelled") }
+        }
+        assertThat(dir.listFiles().orEmpty()).isEmpty()
+    }
+
+    @Test fun `a name is cut by its UTF-8 bytes, never through a character, its extension kept`() {
+        val cjk = "我的音乐数据".repeat(30) + ".zip" // 180 characters, 540 bytes before the extension
+        val cut = ImportIntake.safeName(cjk)
+        assertThat(cut.toByteArray(Charsets.UTF_8).size).isAtMost(200)
+        assertThat(cut).endsWith(".zip")
+        assertThat(cjk).startsWith(cut.removeSuffix(".zip"))
+        val emoji = "🎵".repeat(80) + ".json" // 4 bytes each
+        val cut2 = ImportIntake.safeName(emoji)
+        assertThat(cut2.toByteArray(Charsets.UTF_8).size).isAtMost(200)
+        assertThat(cut2.removeSuffix(".json").length % 2).isEqualTo(0) // whole pairs only
+        assertThat(ImportIntake.safeName("my_spotify_data.zip")).isEqualTo("my_spotify_data.zip")
     }
 
     @Test fun `clear lets every copy go`() {
