@@ -42,6 +42,7 @@ import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
+import com.stash.feature.record.imports.RecordImports
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
@@ -59,6 +60,8 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     companion object {
+        private val EXPORT_TYPES = setOf("application/zip", "application/x-zip-compressed", "application/json")
+
         /** [pendingDeepLink] prefix for a shared-track link; the link (long, or short `/t/{id}`) follows. */
         const val DEEP_LINK_SHARED_TRACK_PREFIX = "shared_track:"
 
@@ -103,6 +106,10 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var localImportCoordinator: LocalImportCoordinator
+
+    /** Your record's import: a Spotify data export opened or shared with Stash goes there (after a look inside). */
+    @Inject
+    lateinit var recordImports: RecordImports
 
     @Inject
     lateinit var listenTogether: ListenTogetherController
@@ -288,7 +295,7 @@ class MainActivity : AppCompatActivity() {
         // replay the original intent, and the nav back stack is already restored.
         val relaunch = savedInstanceState != null ||
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (!relaunch) {
+        if (!relaunch && !handleRecordImportIntent(intent)) {
             handleShareIntent(intent)
             handleDeepLinkIntent(intent)
         }
@@ -297,9 +304,42 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (handleRecordImportIntent(intent)) return
         handleShareIntent(intent)
         handleDeepLinkIntent(intent)
     }
+
+    /**
+     * A zip or JSON file opened with Stash (Files' "Open with") or shared to it: Your record's import, which copies it in at once
+     * (the grant to read it is this Activity's and can lapse), looks inside, and opens its sheet only for a Spotify export; any
+     * other file is answered "That isn't a Spotify export". True when the intent was that (and is taken, so a recreation doesn't
+     * bring it in twice); a share mixing audio and an export hands the audio to the local import below.
+     */
+    private fun handleRecordImportIntent(intent: Intent?): Boolean {
+        if (intent == null) return false
+        val all: List<Uri> = when (intent.action) {
+            Intent.ACTION_VIEW -> listOfNotNull(intent.data?.takeIf { it.scheme == "content" })
+            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty().toList()
+            else -> emptyList()
+        }
+        val exports = all.filter { isExportType(runCatching { contentResolver.getType(it) }.getOrNull() ?: intent.type) }
+        if (exports.isEmpty()) return false
+        recordImports.bringShared(exports)
+        val rest = all - exports.toSet()
+        if (rest.isNotEmpty()) localImportCoordinator.start(rest)
+        // Taken: a configuration change replays the Activity's intent, and must not bring the files in again
+        setIntent(Intent(intent).apply {
+            action = Intent.ACTION_MAIN
+            data = null
+            removeExtra(Intent.EXTRA_STREAM)
+        })
+        return true
+    }
+
+    /** The types the manifest offers Your record's import for: Spotify's zips (either name a phone gives them) and JSON. */
+    private fun isExportType(type: String?): Boolean =
+        type != null && type.substringBefore(';').trim().lowercase() in EXPORT_TYPES
 
     /**
      * Reads [CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET] from the

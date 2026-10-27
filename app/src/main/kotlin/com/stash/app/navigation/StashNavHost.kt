@@ -411,6 +411,7 @@ private fun StashNavGraph(
                 } else {
                     null
                 },
+                onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } },
             )
         }
         composable<WebLinkRoute> {

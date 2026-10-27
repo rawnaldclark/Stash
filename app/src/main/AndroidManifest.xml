@@ -108,6 +108,27 @@
                 <data android:mimeType="audio/*" />
             </intent-filter>
             <!--
+                Your record: a Spotify data export (its zips, or a loose JSON file) opened with Stash from Files or an email, or
+                shared to it. MainActivity hands it to the import, which looks at the names inside before taking it: anything
+                else is told "That isn't a Spotify export". Content URIs only (a file:// URI can't cross apps any more).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <!--
                 Legacy stash://track share links: open the shared-track card.
             -->
             <intent-filter>

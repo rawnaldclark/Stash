@@ -201,10 +201,13 @@ fun SettingsLibraryStorageScreen(
     modifier: Modifier = Modifier,
     /** Link Stash on the web (spec 2026-10-10 link-sync §2.1); null while the feature is switched off (release builds). */
     onNavigateToWebLink: (() -> Unit)? = null,
+    /** Your record, full screen (its Settings rows open it once something was imported); null where it can't be opened. */
+    onOpenRecord: (() -> Unit)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
     webImport: WebLibraryImportViewModel = hiltViewModel(),
     listeningHistory: ListeningHistorySettingsViewModel = hiltViewModel(),
+    yourRecord: YourRecordSettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val webExportState by webExport.state.collectAsStateWithLifecycle()
@@ -370,6 +373,9 @@ fun SettingsLibraryStorageScreen(
                 onDismiss = { showListeningHistory = false },
             )
         }
+
+        // -- Your record: a Spotify export brought in, a newer copy, removing it, the Home card's invitation --
+        YourRecordSettingsSection(yourRecord, onOpenRecord)
 
         // -- Cloud folders (Dropbox / OneDrive; only once an account is connected) --
         com.stash.feature.settings.cloud.CloudFoldersSection(

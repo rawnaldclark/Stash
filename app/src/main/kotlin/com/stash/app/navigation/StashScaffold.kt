@@ -47,6 +47,7 @@ import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import com.stash.feature.nowplaying.sheet.PlayerSheetBackHandler
 import com.stash.feature.nowplaying.sheet.PlayerSheetMath
 import com.stash.feature.nowplaying.sheet.PlayerSheetOverlay
+import com.stash.feature.record.imports.RecordImportHost
 import com.stash.feature.nowplaying.sheet.rememberPlayerSheetState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -486,6 +487,10 @@ fun StashScaffold(
 
     // The player's confirmations ("Playing next", "Saved to …"), once, wherever they come from.
     PlayerMessagesToaster()
+
+    // Your record's import sheet, over whatever is showing (Home's card, the record's "Bring your Spotify", a zip opened or
+    // shared with Stash, Settings). A finished import opens the record.
+    RecordImportHost(onOpenRecord = { navController.navigate(YourRecordRoute) { launchSingleTop = true } })
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
