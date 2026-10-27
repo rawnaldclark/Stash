@@ -41,6 +41,18 @@ interface TrackBlocklistDao {
         youtubeId: String?,
     ): Boolean
 
+    /** [isBlocked] by the ids alone: a song whose canonical words are blank names no key (its words would block every such title). */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM track_blocklist
+            WHERE (spotify_uri IS NOT NULL AND spotify_uri = :spotifyUri)
+               OR (youtube_id  IS NOT NULL AND youtube_id  = :youtubeId)
+        )
+        """
+    )
+    suspend fun isIdBlocked(spotifyUri: String?, youtubeId: String?): Boolean
+
     @Query("SELECT canonical_key FROM track_blocklist")
     suspend fun getAllKeys(): List<String>
 

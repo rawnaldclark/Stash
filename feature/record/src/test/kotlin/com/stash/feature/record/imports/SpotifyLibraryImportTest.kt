@@ -217,7 +217,7 @@ class SpotifyLibraryImportTest {
     }
 
     @Test fun `a blocked song whose strict words differ from its key stays out, and leaves no row behind`() = runTest {
-        // "Don't Stop Me Now": its usual key is `queen|don t stop me now`, its strict words `don't stop me now`
+        // "Don't Stop Me Now": its usual key is `queen|don't stop me now`, its strict words `don t stop me now`
         val song = ExportSong("Don't Stop Me Now", "Queen", sid = "7hQJA50XrCWABAu5v6QZ4i")
         val other = ExportSong("Bohemian Rhapsody", "Queen")
         db.trackBlocklistDao().insert(
@@ -236,6 +236,25 @@ class SpotifyLibraryImportTest {
         // Only the song brought in has a row: none was made for the blocked one
         assertThat(count("SELECT COUNT(*) FROM tracks")).isEqualTo(tracks + 1)
         assertThat(count("SELECT COUNT(*) FROM tracks WHERE title = 'Don''t Stop Me Now'")).isEqualTo(0)
+    }
+
+    @Test fun `blocking one title of only brackets leaves the artist's others be, and a blocked id still keeps one out`() = runTest {
+        // "(Intro)" by Band blocked: its key is the artist alone (`band|`), as every title of only brackets by Band
+        db.trackBlocklistDao().insert(
+            TrackBlocklistEntity(
+                canonicalKey = BlocklistKey.fromStoredCanonicals(TrackCanonical.artist("Band"), TrackCanonical.title("(Intro)")),
+                artist = "Band", title = "(Intro)", spotifyUri = "spotify:track:0123456789abcdefghijIN", blockedAt = NOW, blockedFrom = "OTHER",
+            ),
+        )
+        val outro = ExportSong("[Outro]", "Band")
+        val intro = ExportSong("(Intro)", "Band", sid = "0123456789abcdefghijIN")
+
+        library.write(chosen(listOf(ExportPlaylist("Brackets", items = listOf(outro, intro, ExportSong("Real", "Band"))))), emptyList(), NOW) { _, _ -> }
+
+        val pl = imported().single()
+        // "[Outro]" comes in; the blocked "(Intro)", known by its Spotify id, stays out
+        assertThat(db.playlistDao().getCrossRefsForPlaylist(pl.id).sortedBy { it.position }.map { db.trackDao().getById(it.trackId)!!.title })
+            .containsExactly("[Outro]", "Real").inOrder()
     }
 
     @Test fun `a blocked Spotify id stays out too`() = runTest {

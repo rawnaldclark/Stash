@@ -246,14 +246,18 @@ class WebLibraryImporter internal constructor(
         // A song this phone blocked is left out before it is matched. Blocking deleted its row, so matching it would make a new
         // one, stored under its strict words because its usual key is blocked (canonicalWordsForSave), and the check on the
         // row below would then miss it (`queen|don t stop me now` is not `queen|don't stop me now`), and leave a row behind
+        // A song whose loose words are blank ("(Intro)") is checked by its ids alone: its words' key ("x|") would name every
+        // title by that artist that is only brackets, so blocking one "(Intro)" would drop every "[Outro]" too
         val wanted = songs.map { s ->
-            s.takeUnless {
-                blocklist.isBlocked(
-                    BlocklistKey.fromStoredCanonicals(TrackCanonical.artist(it.artist), TrackCanonical.title(it.title)),
-                    it.spotifyId?.let { id -> "spotify:track:$id" },
-                    it.youtubeId,
-                )
+            val title = TrackCanonical.title(s.title)
+            val artist = TrackCanonical.artist(s.artist)
+            val spotifyUri = s.spotifyId?.let { id -> "spotify:track:$id" }
+            val blocked = if (TrackCanonical.isBlankKey(title, artist)) {
+                blocklist.isIdBlocked(spotifyUri, s.youtubeId)
+            } else {
+                blocklist.isBlocked(BlocklistKey.fromStoredCanonicals(artist, title), spotifyUri, s.youtubeId)
             }
+            s.takeUnless { blocked }
         }
         return matcher.matchAll(wanted, onBatch = { ticks?.add(it) }).map { t ->
             // The row it matched may be blocked under its own words or ids
