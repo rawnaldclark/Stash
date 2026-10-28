@@ -309,4 +309,106 @@
     <!-- A toast after Put back: %1$s the song. -->
     <string name="record_kept_out_put_back_done">%1$s can play in your next mixes</string>
     <string name="record_kept_out_put_back_failed">Couldn’t put it back just now. Try again.</string>
+    <!-- Your record's history mixes (phase 5c): the web's words (stash-player src/lib/spotify/mixes.ts, src/lib/ui/spotify/mix.ts,
+         MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte), character for character in English (’ · –). -->
+    <!-- An era across two years: %1$s and %2$s are each a month and year ("June 2022 – March 2023"). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <!-- An era within one year, by its middle month: %1$d the year ("Early 2018", "Mid 2018", "Late 2018"). -->
+    <string name="record_mix_early">Early %1$d</string>
+    <string name="record_mix_mid">Mid %1$d</string>
+    <string name="record_mix_late">Late %1$d</string>
+    <!-- Two parts of a line: an era's lead and its time ("Radiohead · Late 2016"), its time and its artists, a mix's songs and length. -->
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <!-- A list of artists: "A & B"; with more, the others joined by record_mix_comma first ("A, B & C"). -->
+    <string name="record_mix_and">%1$s &amp; %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">The ones that stayed</string>
+    <string name="record_mix_constants_sub">Songs you’ve kept coming back to, year after year</string>
+    <string name="record_mix_lost">Rediscover</string>
+    <string name="record_mix_lost_sub">Favourites you haven’t heard in a while</string>
+    <string name="record_mix_repeat">On repeat, back then</string>
+    <string name="record_mix_repeat_sub">The songs you couldn’t stop playing</string>
+    <string name="record_mix_started">How it started</string>
+    <string name="record_mix_started_sub">The first song you played by each of your favourite artists</string>
+    <!-- %1$d: a year ("Your 2019"); the year still going: "Your 2026 so far". -->
+    <string name="record_mix_year">Your %1$d</string>
+    <string name="record_mix_year_so_far">Your %1$d so far</string>
+    <!-- %1$s: an artist ("Your Radiohead"); %1$d: the year their first song was played. -->
+    <string name="record_mix_artist">Your %1$s</string>
+    <string name="record_mix_artist_sub">The songs you’ve played most, since %1$d</string>
+    <string name="record_mix_week">This week, years ago</string>
+    <!-- %1$s: a month's name, %2$d the day, %3$d the one year it comes from ("Around October 28, 2019"). -->
+    <string name="record_mix_week_one_year">Around %1$s %2$d, %3$d</string>
+    <!-- %1$s: a month's name, %2$d the day, %3$d how many past years (always 2 or more; the web says "years" for any number). -->
+    <plurals name="record_mix_week_years">
+        <item quantity="one">Around %1$s %2$d, in %3$d past years</item>
+        <item quantity="other">Around %1$s %2$d, in %3$d past years</item>
+    </plurals>
+    <!-- About how long a mix plays, to five minutes. -->
+    <string name="record_mix_about_min">about %1$d min</string>
+    <string name="record_mix_about_hr">about %1$d hr</string>
+    <string name="record_mix_about_hr_min">about %1$d hr %2$d min</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <!-- The Mixes tab's cards (mix.ts card): the small line above, the line under the big words, the foot. -->
+    <!-- %1$s: an era's other artists ("with Slayer & Deftones"). -->
+    <string name="record_mix_card_with">with %1$s</string>
+    <!-- %1$d: the lead artist's share of the era, in percent ("34% of what you played"). -->
+    <string name="record_mix_card_share">%1$d%% of what you played</string>
+    <string name="record_mix_card_constants">Year after year</string>
+    <!-- %1$s: the mix's line (record_mix_constants_sub), %2$d the most years one of its songs was played in (3 or more from a real
+         taste; the web says "years" for any number). -->
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s, up to %2$d years</item>
+        <item quantity="other">%1$s, up to %2$d years</item>
+    </plurals>
+    <string name="record_mix_card_repeat">Obsessions</string>
+    <!-- %1$s: a song, %2$d its plays inside two weeks (12 or more; the web says "plays" for any number), %3$s the month and year
+         ("Ivy: 31 plays in two weeks, June 2022"). -->
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: %2$d plays in two weeks, %3$s</item>
+        <item quantity="other">%1$s: %2$d plays in two weeks, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">Today in your years</string>
+    <string name="record_mix_card_year_now">This year so far</string>
+    <string name="record_mix_card_year">Your year</string>
+    <!-- %1$s: whole hours, already formatted ("412 hours of listening"). -->
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s hour of listening</item>
+        <item quantity="other">%1$s hours of listening</item>
+    </plurals>
+    <string name="record_mix_card_started">Where it began</string>
+    <!-- %1$s and %3$s: the first and the latest favourite artist found, %2$d and %4$d the years ("From Radiohead in 2009 to Mitski in 2021"). -->
+    <string name="record_mix_card_from_to">From %1$s in %2$d to %3$s in %4$d</string>
+    <string name="record_mix_card_lost">Lost favourites</string>
+    <!-- Home's shelf ("From your record") and the record's Mixes tab. -->
+    <string name="record_mixes_shelf">From your record</string>
+    <string name="record_mixes_show_all">Show all</string>
+    <!-- Read out for a mix's card: %1$s its title. -->
+    <string name="record_mixes_open">Open %1$s</string>
+    <string name="record_mix_play_label">Play %1$s</string>
+    <string name="record_mix_shuffle_label">Shuffle %1$s</string>
+    <!-- The record screen's two tabs. -->
+    <string name="record_tab_record">The record</string>
+    <string name="record_tab_mixes">Mixes</string>
+    <string name="record_mixes_from_years">Mixes from your years</string>
+    <string name="record_mixes_your_years">Your years</string>
+    <!-- The Mixes tab with no import (the app's own words: the web's also offer the phone's history from the Stash app). -->
+    <string name="record_mixes_none">They’re made from years of listening. Bring your Spotify history or your Last.fm scrobbles, and they show up here.</string>
+    <string name="record_mixes_none_action">Bring your listening</string>
+    <!-- A mix's page. -->
+    <string name="record_mix_eyebrow">Mix from your record</string>
+    <string name="record_mix_play">Play</string>
+    <string name="record_mix_shuffle">Shuffle</string>
+    <string name="record_mix_save">Save as playlist</string>
+    <string name="record_mix_saving">Saving…</string>
+    <!-- %1$s: the playlist just saved. -->
+    <string name="record_mix_open_saved">Open “%1$s”</string>
+    <string name="record_mix_saved">Saved “%1$s” to your playlists</string>
+    <string name="record_mix_save_failed">Couldn’t save it just now. Try again.</string>
+    <string name="record_mix_gone">That mix isn’t in your record any more: mixes change as your listening does.</string>
+    <string name="record_mix_gone_back">Back to Your record</string>
+    <string name="record_mix_back">Back</string>
 </resources>
