@@ -73,7 +73,8 @@ class ArtLookupTest {
         // the first exact "Frank Ocean" with a picture (the feat. credits and "Frank Ocean (IT)" are other artists)
         assertThat(found).isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/882155c08dc31d6464d6d580083c968c/500x500-000000-80-0-0.jpg"))
         assertThat(up.asked.single()).contains("/search/artist")
-        assertThat(q(up.asked[0])).isEqualTo("artist:\"Frank Ocean\"")
+        // the name as free text (Deezer's artist:"…" leaves the artist out of its own search)
+        assertThat(q(up.asked[0])).isEqualTo("Frank Ocean")
     }
 
     @Test fun `a song Deezer's track search doesn't find goes to Apple, sized 600`() = runTest {

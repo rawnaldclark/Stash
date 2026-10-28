@@ -157,7 +157,10 @@ class ArtLookup(
 
     /** An artist's picture on Deezer (Apple's search has none): the same name first, else one that starts the same. */
     private suspend fun artistPicture(s: ArtSong): Found {
-        val q = "artist:\"${ArtText.primary(s.artist)}\""
+        // The name as free text: Deezer's `artist:"…"` on /search/artist leaves the artist out today (28 Oct 2026: "Daft Punk",
+        // "Björk", "Nirvana", "The Cure" and "Nina Simone" all came back without themselves, so other artists' pictures or none
+        // showed), as its track search did (the song step's free text). The web Worker (worker/art.ts) still sends the old query.
+        val q = ArtText.primary(s.artist)
         val body = when (val r = deezer("$DEEZER/search/artist?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
             is Dz.No -> return r.found
             is Dz.Ok -> r.body
