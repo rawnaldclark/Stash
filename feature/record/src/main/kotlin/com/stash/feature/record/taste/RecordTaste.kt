@@ -193,9 +193,13 @@ class RecordTaste internal constructor(
         input = null
         val playCount = all!!.size
         sample()
-        val kept = MixTaste.libraryKeys(library)
+        val lib = MixTaste.libraryNow(library)
+        val kept = lib.keys
         kept += extra
-        val opts = TasteOptions(now = now(), hidden = hidden.keys().toHashSet(), kept = kept, putBack = tastes.keepKeys().toHashSet())
+        val opts = TasteOptions(
+            now = now(), hidden = hidden.keys().toHashSet(), kept = kept, putBack = tastes.keepKeys().toHashSet(),
+            keptSpotifyIds = lib.spotifyIds,
+        )
         val read = System.nanoTime()
         currentCoroutineContext().ensureActive()
         val taste = Taste.compute(all!!, opts)
@@ -256,7 +260,11 @@ class RecordTaste internal constructor(
      */
     suspend fun keptOut(): List<KeptOutSong> = withContext(io) {
         if (tastes.computedAt() == null) return@withContext emptyList()
-        KeptOut.of(tastes.avoided(), hidden.keys().toHashSet(), tastes.keepKeys().toHashSet() + MixTaste.libraryKeys(library))
+        val avoided = tastes.avoided()
+        // In the library now (#715: never kept out): by its words, or by a Spotify id one of its rows carries (a Like by that id
+        // lands on a synced row whose words aren't the history's)
+        val inLibrary = MixTaste.libraryNow(library).keptOf(avoided.map { it.key to it.sid })
+        KeptOut.of(avoided, hidden.keys().toHashSet(), tastes.keepKeys().toHashSet() + inLibrary)
     }
 
     /**

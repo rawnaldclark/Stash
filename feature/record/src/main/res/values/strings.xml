@@ -456,4 +456,6 @@
     <string name="record_song_added_to_playlist">Added to %1$s</string>
     <string name="record_song_playlist_failed">Couldn’t add to playlist</string>
     <string name="record_song_radio_failed">Couldn’t start a radio from this. Try again in a moment.</string>
+    <!-- A blocked song refused (Search's own words, "Can't add a blocked track"). -->
+    <string name="record_song_blocked">Can’t add a blocked track</string>
 </resources>

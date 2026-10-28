@@ -184,6 +184,28 @@ class RecordTasteTest {
         assertThat(db.recordTasteDao().avoided().map { it.key }).containsExactly("hidden song|band")
     }
 
+    @Test fun `a song liked through a synced row whose words aren't the history's leaves the list at once, and the next taste keeps it`() = runBlocking<Unit> {
+        seed()
+        // always skipped, played with its Spotify id
+        db.recordPlayDao().put((0 until 8).map { row("Synced Away", "Artist Z", T0 + it * DAY + 3_600_000, 2_000, skipped).copy(sid = "sidZ").toEntity() })
+        imported()
+        taste.refresh()
+        val key = SongKey.songKey("Synced Away", "Artist Z")
+        assertThat(taste.keptOut().map { it.key }).contains(key)
+        // liked through the row Spotify's sync made, under the catalog's credit: another song by its words, the same by its id
+        db.trackDao().insert(
+            TrackEntity(
+                title = "Synced Away", artist = "Artist Z, Guest", spotifyUri = "spotify:track:sidZ", canonicalTitle = "synced away",
+                canonicalArtist = "artist z guest", stashLikedAt = 9,
+            ),
+        )
+        assertThat(taste.keptOut().map { it.key }).doesNotContain(key)
+        // and the next taste counts it kept: never kept out, never lost
+        now += DAY
+        taste.refresh()
+        assertThat(db.recordTasteDao().avoided().map { it.key }).doesNotContain(key)
+    }
+
     @Test fun `Settings shown again reads the list afresh - a song liked elsewhere is gone from it`() = runBlocking<Unit> {
         kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.Dispatchers.Unconfined)
         try {

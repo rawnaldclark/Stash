@@ -447,4 +447,5 @@
     <string name="record_song_added_to_playlist">أُضيفت إلى %1$s</string>
     <string name="record_song_playlist_failed">تعذّرت الإضافة إلى قائمة التشغيل</string>
     <string name="record_song_radio_failed">تعذّر بدء راديو من هذه الأغنية. حاول مرة أخرى بعد قليل.</string>
+    <string name="record_song_blocked">لا يمكن إضافة أغنية محظورة</string>
 </resources>

@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.util.Log
 import com.stash.core.data.db.dao.RecordPlayDao
+import com.stash.core.data.db.dao.TrackBlocklistDao
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.db.dao.RecordTasteDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.model.weblink.SongIndex
@@ -23,6 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -57,6 +63,10 @@ class MixesNow(
     val day: Long,
     /** Every song of the library here (likes, then the own playlists' songs), as "Not in your Stash yet" looks them up. */
     private val library: SongIndex<Boolean> = SongIndex(),
+    /** The Spotify ids the library's rows carry (a song of the history by that id is in the library: [HistoryMixes.notInLibrary]). */
+    private val spotifyIds: Set<String> = emptySet(),
+    /** Blocked songs, never in Top songs or "Not in your Stash yet". */
+    private val blocked: BlockedSongs = BlockedSongs.NONE,
 ) {
     /** Home's few today (mixes.ts `homePicks`). */
     val picks: List<HistoryMix> by lazy { HistoryMixes.homePicks(all, week, day) }
@@ -70,13 +80,21 @@ class MixesNow(
     /** Top artists: the first 10, each with the mix it opens, else none (the row plays their songs). */
     val artists: List<HistoryMixes.ArtistRow> by lazy { HistoryMixes.topArtists(taste) }
 
-    /** Top songs, as the web plays them (their words). */
-    val tops: List<MixSong> by lazy { HistoryMixes.topSongs(taste).map(HistoryMixes::songItem) }
+    private val isBlocked: (SongStat) -> Boolean = { blocked.has(it.title, it.artist, it.sid) }
 
-    /** "Not in your Stash yet": the lost favourites the library here doesn't hold, as the web plays them (their words). */
+    /** Top songs, as the web plays them (their words); a blocked song left out. */
+    val tops: List<MixSong> by lazy { HistoryMixes.topSongs(taste, skip = isBlocked).map(HistoryMixes::songItem) }
+
+    /**
+     * "Not in your Stash yet": the lost favourites the library here doesn't hold (by their words, or by a Spotify id one of its rows
+     * carries), as the web plays them (their words); a blocked song left out.
+     */
     val lost: List<MixSong> by lazy {
-        HistoryMixes.notInLibrary(taste.lost, taste.songs.associateBy { it.key }, library).map(HistoryMixes::songItem)
+        HistoryMixes.notInLibrary(taste.lost, taste.songs.associateBy { it.key }, library, spotifyIds, isBlocked).map(HistoryMixes::songItem)
     }
+
+    /** The taste's songs the lists leave out as blocked (a debug build writes them with what it made). */
+    val blockedKeys: List<String> by lazy { taste.songs.filter(isBlocked).map { it.key } }
 
     /** The songs a Top artists row with no mix plays ([HistoryMixes.artistSongs], 50 at most). */
     fun artistSongs(key: String): List<MixSong> = HistoryMixes.artistSongs(taste, key).map(HistoryMixes::songItem)
@@ -111,6 +129,10 @@ class RecordMixes internal constructor(
     private val libraryStampNow: suspend () -> Any = { Any() },
     /** The songs liked in Stash now (`stash_liked_at`: [likes]). */
     private val stashLikes: suspend () -> List<LibrarySong> = { emptyList() },
+    /** The blocklist now ([BlockedSongs]). */
+    private val blocked: suspend () -> BlockedSongs = { BlockedSongs.NONE },
+    /** Something new each time the blocklist changes (a song blocked leaves the lists at once). */
+    blockedChanges: Flow<Any> = flowOf(Unit),
     /** A debug build writes what it made, for the web's code to be run over the same taste and rows. */
     private val dump: (suspend (String) -> Unit)? = null,
     private val io: CoroutineContext = Dispatchers.IO,
@@ -119,6 +141,8 @@ class RecordMixes internal constructor(
         tastes: RecordTasteDao,
         plays: RecordPlayDao,
         library: WebLibraryExportDao,
+        blocklist: TrackBlocklistDao,
+        matcher: TrackMatcher,
         @ApplicationContext context: Context,
     ) : this(
         tastes = tastes,
@@ -128,6 +152,8 @@ class RecordMixes internal constructor(
         libraryStamp = library.libraryStamp(),
         libraryStampNow = { library.libraryStampNow() },
         stashLikes = { library.stashLikes().map(::songOf) },
+        blocked = { BlockedSongs.of(blocklist.observeAll().first(), matcher) },
+        blockedChanges = blocklist.observeCount(),
         dump = if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             { text -> File(context.filesDir, DUMP_FILE).writeText(text) }
         } else {
@@ -144,7 +170,7 @@ class RecordMixes internal constructor(
      * again (a song liked since plays from your copy and is never kept out), as the web's follow its library. A mix's page doesn't:
      * liking a song there doesn't reshuffle the list under you.
      */
-    val libraryChanges: Flow<Any> = libraryStamp.distinctUntilChanged()
+    val libraryChanges: Flow<Any> = combine(libraryStamp, blockedChanges) { stamp, block -> stamp to block }.distinctUntilChanged()
 
     private val lock = Mutex()
     private var cachedTaste: Taste? = null
@@ -161,6 +187,8 @@ class RecordMixes internal constructor(
         val keys: Set<String>,
         val have: Have,
         val index: SongIndex<Boolean>,
+        /** The Spotify ids its rows carry. */
+        val spotifyIds: Set<String>,
     )
 
     private suspend fun libraryNow(): Library {
@@ -174,16 +202,31 @@ class RecordMixes internal constructor(
             keys = keys,
             have = HistoryMixes.haveIndex(songs),
             index = HistoryMixes.libraryIndex(songs),
+            spotifyIds = songs.mapNotNullTo(HashSet()) { it.spotifyId },
         ).also { lock.withLock { cachedLibrary = it } }
     }
 
     /**
-     * The songs liked in Stash now (a heart: Now Playing's own, `stash_liked_at`), by `sameSong` as the web's `L.isLiked` finds
-     * them, again whenever the library's stamp moves (a Stash like moves it): the hearts of the Mixes tab's and a mix page's rows follow a like at once, while a mix
-     * page's list stays as it was made. A song only in a Liked Songs playlist synced from Spotify isn't one: its heart, as Now
-     * Playing's, is empty, and a tap likes it in Stash (never on Spotify).
+     * The songs liked in Stash now ([Likes]: a heart, Now Playing's own, `stash_liked_at`), again whenever the library's stamp moves
+     * (a Stash like moves it): the hearts of the Mixes tab's and a mix page's rows follow a like at once, while a mix page's list
+     * stays as it was made. A song only in a Liked Songs playlist synced from Spotify isn't one: its heart, as Now Playing's, is
+     * empty, and a tap likes it in Stash (never on Spotify). A read that fails keeps the hearts as they were; the database's own
+     * flow failing ends them (the screen stays), never the app.
      */
-    val likes: Flow<Have> = libraryChanges.map { HistoryMixes.haveIndex(stashLikes()) }.flowOn(io)
+    val likes: Flow<Likes> = libraryChanges
+        .map {
+            try {
+                Likes(stashLikes())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "the liked songs couldn't be read: ${e.javaClass.simpleName}")
+                null
+            }
+        }
+        .filterNotNull()
+        .flowOn(io)
+        .catch { e -> Log.w(TAG, "the liked songs stopped: ${e.javaClass.simpleName}") }
 
     private var dumped: String? = null
 
@@ -214,6 +257,8 @@ class RecordMixes internal constructor(
         val lib = library.songs
         val putBack = HashSet<String>(tastes.keepKeys())
         putBack += library.keys
+        // A song of the history whose Spotify id is on a row of the library is in it (#715: never kept out), whatever its words
+        if (library.spotifyIds.isNotEmpty()) for (s in stored.songs) if (s.sid != null && s.sid in library.spotifyIds) putBack += s.key
         val t = HistoryMixes.putBackIn(stored, putBack)
         val have = library.have
         val all = HistoryMixes.historyMixes(t, have, words)
@@ -230,7 +275,7 @@ class RecordMixes internal constructor(
             null
         }
         val day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
-        MixesNow(t, all, week, day, library.index).also { m -> dump?.let { write(it, m, lib, rows, now) } }
+        MixesNow(t, all, week, day, library.index, library.spotifyIds, blocked()).also { m -> dump?.let { write(it, m, lib, rows, now) } }
     }
 
     /**
@@ -285,7 +330,7 @@ class RecordMixes internal constructor(
                 put("now", now)
                 put("day", m.day)
                 put("taste", tasteJson(m.taste))
-                put("have", JsonArray(lib.map { l -> buildJsonObject { put("title", l.title); put("artist", l.artist); l.album?.let { put("album", it) }; l.isrc?.let { put("isrc", it) }; put("durationMs", l.durationMs) } }))
+                put("have", JsonArray(lib.map { l -> buildJsonObject { put("title", l.title); put("artist", l.artist); l.album?.let { put("album", it) }; l.isrc?.let { put("isrc", it) }; put("durationMs", l.durationMs); l.spotifyId?.let { put("spotifyId", it) } } }))
                 put("rows", JsonArray(rows?.rows.orEmpty().map { r -> buildJsonArray { add(r.id); add(r.t); add(r.a); add(r.al); add(r.sid); add(r.s); add(r.ms); add(r.f) } }))
                 put("picks", JsonArray(m.picks.map { JsonPrimitive(it.id) }))
                 put("mixes", JsonArray(m.all.map(mixJson)))
@@ -305,6 +350,7 @@ class RecordMixes internal constructor(
                 )
                 put("tops", JsonArray(m.tops.map { JsonPrimitive(it.songKey) }))
                 put("lost", JsonArray(m.lost.map { JsonPrimitive(it.songKey) }))
+                put("blocked", JsonArray(m.blockedKeys.map(::JsonPrimitive)))
             }
             dump(text.toString())
             Log.d(TAG, "Your record's mixes: ${m.all.size} and this week ${m.week != null}; Home today ${m.picks.map { it.id }}; not in your Stash yet ${m.lost.size}")
@@ -367,7 +413,7 @@ class RecordMixes internal constructor(
         /** A library row as the mixes know it. */
         internal fun songOf(c: WebLibraryExportDao.SongColumns) = LibrarySong(
             c.id, c.title, c.artist, c.album.takeIf { it.isNotEmpty() }, c.isrc?.takeIf { it.isNotEmpty() }, c.durationMs,
-            c.albumArtUrl?.takeIf { it.isNotBlank() },
+            c.albumArtUrl?.takeIf { it.isNotBlank() }, HistoryMixes.spotifyIdOf(c.spotifyUri),
         )
 
         /** The UTC date of [t] as days since 1970. */

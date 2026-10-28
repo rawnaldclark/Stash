@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import java.util.concurrent.ConcurrentHashMap
 import com.stash.core.model.weblink.SongIdentity
 import com.stash.core.model.weblink.SongRef
 import com.stash.core.ui.components.LocalPostToCommunity
@@ -61,6 +62,7 @@ import com.stash.core.ui.util.formatDuration
 import com.stash.feature.record.R
 import com.stash.feature.record.bridge.RecordSong
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -76,44 +78,55 @@ internal fun MixSong.recordSong(cover: String?): RecordSong =
     RecordSong(title = title, artist = artist, album = album, sid = sid, trackId = lib?.trackId, cover = cover)
 
 /**
- * Which hearts are filled (the web's `L.isLiked`: the songs liked in Stash, [RecordMixes.likes]), with a tap shown at once: a
- * tap's answer is kept until the likes say the same (so a heart never blinks back while the like is written), and dropped if
- * the like couldn't be written (the heart goes back, and the screen says so).
+ * Which hearts are filled ([RecordMixes.likes]: the songs liked in Stash, by their words or by the Spotify id their rows carry),
+ * with a tap shown at once: a tap's answer is kept until the likes say the same (so a heart never blinks back while the like is
+ * written), and dropped if the like couldn't be written (the heart goes back, and the screen says so). A song's taps are written
+ * one after another: a second tap waits for the first. An unlike takes out every row liked in Stash that is the song, and the row
+ * the song's last like landed on even before the likes know it.
  */
-internal class RowLikes(private val scope: CoroutineScope, private val actions: RecordSongActions, likes: Flow<Have>) {
+internal class RowLikes(private val scope: CoroutineScope, private val actions: RecordSongActions, likes: Flow<Likes>) {
     /** Taps on their way, by the song's item key: the song and the heart it asked for. */
-    private val pending = MutableStateFlow<Map<String, Pair<SongIdentity, Boolean>>>(emptyMap())
+    private val pending = MutableStateFlow<Map<String, Pair<MixSong, Boolean>>>(emptyMap())
 
-    @Volatile private var index: Have? = null
+    @Volatile private var current: Likes = Likes.NONE
+
+    /** The row each song's last like landed on (by item key), until an unlike takes it out. */
+    private val landed = ConcurrentHashMap<String, Long>()
+
+    /** Each song's last tap, still being written (by item key): the next waits for it. */
+    private val writing = ConcurrentHashMap<String, Job>()
 
     /** What the hearts show now. */
-    class Hearts(private val index: Have?, private val pending: Map<String, Pair<SongIdentity, Boolean>>) {
-        fun liked(s: MixSong): Boolean = pending[s.key]?.second ?: (index?.has(s.identity()) == true)
+    class Hearts(private val likes: Likes, private val pending: Map<String, Pair<MixSong, Boolean>>) {
+        fun liked(s: MixSong): Boolean = pending[s.key]?.second ?: likes.has(s)
     }
 
     val hearts: Flow<Hearts> = combine(
-        likes.onEach { idx ->
-            index = idx
+        likes.onEach { l ->
+            current = l
             // A tap the likes now agree with is the likes' again
-            pending.update { p -> p.filterValues { (ref, want) -> idx.has(ref) != want } }
+            pending.update { p -> p.filterValues { (song, want) -> l.has(song) != want } }
         },
         pending,
-    ) { idx, p -> Hearts(idx, p) }
+    ) { l, p -> Hearts(l, p) }
 
     /** Like or unlike [s] (as its heart shows now, [liked]), its cover kept on a row made for it. */
     fun toggle(s: MixSong, liked: Boolean, cover: String?) {
-        val ref = s.identity()
         val want = !liked
-        pending.update { it + (s.key to (ref to want)) }
-        scope.launch {
+        pending.update { it + (s.key to (s to want)) }
+        val before = writing[s.key]
+        val job = scope.launch {
+            before?.join()
             val ok = if (want) {
-                actions.like(s.recordSong(cover)).await()
+                actions.like(s.recordSong(cover)).await()?.also { landed[s.key] = it } != null
             } else {
-                // Every row of the song liked in Stash (one, almost always)
-                actions.unlike(listOfNotNull(index?.find(ref)?.trackId ?: s.lib?.trackId)).await()
+                actions.unlike((current.rowsOf(s) + listOfNotNull(landed.remove(s.key))).distinct()).await()
             }
-            if (!ok) pending.update { it - s.key }
+            // Gone back to what the likes say, unless a later tap asked otherwise
+            if (!ok) pending.update { p -> if (p[s.key]?.second == want) p - s.key else p }
         }
+        writing[s.key] = job
+        job.invokeOnCompletion { writing.remove(s.key, job) }
     }
 }
 
@@ -155,6 +168,8 @@ internal fun RecordSongRow(
     onMenu: () -> Unit,
     modifier: Modifier = Modifier,
     gutter: Dp = 20.dp,
+    /** On the heart (a focus requester: "Not in your Stash yet" moves focus to the next row's heart after a Like). */
+    heartModifier: Modifier = Modifier,
 ) {
     val more = stringResource(R.string.record_song_more, song.title)
     Row(
@@ -194,7 +209,7 @@ internal fun RecordSongRow(
             Spacer(Modifier.width(8.dp))
             Text(formatDuration(length), style = MaterialTheme.typography.bodySmall, color = colors.faint)
         }
-        RecordLikeButton(liked, onLike, unlikedTint = colors.sub)
+        RecordLikeButton(liked, onLike, unlikedTint = colors.sub, modifier = heartModifier)
     }
 }
 

@@ -322,4 +322,5 @@
     <string name="record_song_added_to_playlist">已添加到 %1$s</string>
     <string name="record_song_playlist_failed">无法添加到歌单</string>
     <string name="record_song_radio_failed">无法从这首歌开启电台，请稍后再试。</string>
+    <string name="record_song_blocked">无法添加已屏蔽的歌曲</string>
 </resources>

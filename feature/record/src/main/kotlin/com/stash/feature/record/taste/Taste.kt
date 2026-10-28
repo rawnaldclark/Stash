@@ -37,6 +37,11 @@ data class TasteOptions(
     val kept: Set<String> = emptySet(),
     val putBack: Set<String> = emptySet(),
     val era: EraParams = EraParams(),
+    /**
+     * The app's own: the Spotify ids the library's rows carry. A song whose Spotify id is one of them is kept as [kept] keeps it
+     * (a Like by that id can land on a synced row whose words aren't the history's). The web has none: empty, the web's rules.
+     */
+    val keptSpotifyIds: Set<String> = emptySet(),
 )
 
 /** taste.ts `SongStat`. */
@@ -378,7 +383,7 @@ private class Computation(private val opts: TasteOptions) {
                 0.0
             }
             val rate = if (s.starts > 0) s.skips.toDouble() / s.starts else 0.0
-            val never = s.key in opts.kept || s.key in opts.putBack
+            val never = s.key in opts.kept || s.key in opts.putBack || (s.sid != null && s.sid in opts.keptSpotifyIds)
             val avoid = !never && (
                 s.key in opts.hidden ||
                     (s.starts >= Taste.AVOID_STARTS && rate >= Taste.AVOID_RATE) ||
@@ -416,7 +421,10 @@ private class Computation(private val opts: TasteOptions) {
             .take(Taste.LIST_MAX).map { it.key }
 
         // Lost: loved, not heard for a year, and not in your library here.
-        val lost = songs.filter { !it.avoid && it.plays >= Taste.LOST_PLAYS && now - it.last >= Taste.LOST_AFTER && it.key !in opts.kept }
+        val lost = songs.filter {
+            !it.avoid && it.plays >= Taste.LOST_PLAYS && now - it.last >= Taste.LOST_AFTER && it.key !in opts.kept &&
+                (it.sid == null || it.sid !in opts.keptSpotifyIds)
+        }
             .sortedWith { a, b -> if (a.depth != b.depth) b.depth.compareTo(a.depth) else a.key.compareTo(b.key) }
             .take(Taste.LIST_MAX).map { it.key }
 

@@ -347,4 +347,5 @@
     <string name="record_song_added_to_playlist">به %1$s اضافه شد</string>
     <string name="record_song_playlist_failed">افزودن به فهرست پخش ممکن نشد</string>
     <string name="record_song_radio_failed">شروع رادیو از این آهنگ ممکن نشد. کمی بعد دوباره امتحان کنید.</string>
+    <string name="record_song_blocked">افزودن آهنگ مسدودشده ممکن نیست</string>
 </resources>

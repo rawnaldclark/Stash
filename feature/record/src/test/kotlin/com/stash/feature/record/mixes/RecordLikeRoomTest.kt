@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.common.TrackCanonical
+import com.stash.core.data.blocklist.BlocklistKey
+import com.stash.core.data.db.entity.TrackBlocklistEntity
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RecordTasteEntity
@@ -90,11 +93,11 @@ class RecordLikeRoomTest {
         weight = 1.0, depth = 1.0, avoid = false,
     )
 
-    private suspend fun seed() {
-        val songs = listOf(stat("Lost 01", "sid01"), stat("Lost 02", null), stat("Lost 03", "sid03"))
+    private suspend fun seed(avoided: SongStat? = null) {
+        val songs = listOf(stat("Lost 01", "sid01"), stat("Lost 02", null), stat("Lost 03", "sid03")) + listOfNotNull(avoided)
         val t = Taste(
             computedAt = 1_700_000_000_000, first = 1_577_836_800_000, last = 1_700_000_000_000, plays = 36, listenedMs = 0, artists = 1,
-            songs = songs, eras = emptyList(), constants = emptyList(), lost = songs.map { it.key }, obsessions = emptyList(), found = null,
+            songs = songs, eras = emptyList(), constants = emptyList(), lost = songs.filter { !it.avoid }.map { it.key }, obsessions = emptyList(), found = null,
             years = emptyList(), topArtists = emptyList(), seedArtists = emptyList(), yearTops = emptyList(),
         )
         db.recordTasteDao().replace(RecordTasteEntity(v = t.v, computedAt = t.computedAt, body = TasteRows.body(t)), TasteRows.songs(t))
@@ -110,9 +113,30 @@ class RecordLikeRoomTest {
             libraryStamp = dao.libraryStamp(),
             libraryStampNow = { dao.libraryStampNow() },
             stashLikes = { dao.stashLikes().map(RecordMixes::songOf) },
+            blocked = { BlockedSongs.of(db.trackBlocklistDao().observeAll().first(), TrackMatcher()) },
             io = EmptyCoroutineContext,
         )
     }
+
+    /** BlocklistGuard.isBlocked over this database (its words' key, its Spotify id). */
+    private val isBlocked: suspend (String, String, String?) -> Boolean = { title, artist, uri ->
+        db.trackBlocklistDao().isBlocked(BlocklistKey.of(artist, title, TrackMatcher()), uri, null)
+    }
+
+    /** A row a Spotify sync made: the song under the catalog's credit, with its Spotify id (never liked yet). */
+    private suspend fun synced(title: String, artist: String, sid: String): Long = db.trackDao().insert(
+        TrackEntity(
+            title = title, artist = artist, spotifyUri = "spotify:track:$sid", isStreamable = true, source = MusicSource.SPOTIFY,
+            canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist(artist),
+        ),
+    )
+
+    private suspend fun block(title: String, artist: String, sid: String? = null) = db.trackBlocklistDao().insert(
+        TrackBlocklistEntity(
+            canonicalKey = BlocklistKey.of(artist, title, TrackMatcher()), artist = artist, title = title,
+            spotifyUri = sid?.let { "spotify:track:$it" }, blockedAt = 1L, blockedFrom = "TEST",
+        ),
+    )
 
     private fun count(sql: String): Int = db.query(sql, null).use { it.moveToFirst(); it.getInt(0) }
 
@@ -124,7 +148,7 @@ class RecordLikeRoomTest {
         assertThat(before.map { it.title }).containsExactly("Lost 01", "Lost 02", "Lost 03").inOrder()
         val downloadsBefore = count("SELECT COUNT(*) FROM download_queue")
 
-        assertThat(actions.like(before[2].recordSong("https://cdn/lost3.jpg")).await()).isTrue()
+        assertThat(actions.like(before[2].recordSong("https://cdn/lost3.jpg")).await()).isNotNull()
 
         // Liked Songs (Stash's own) holds it: a stream-only row, the history's Spotify id and the cover kept on it
         val likedSongs = db.playlistDao().findBySourceId("stash_liked_songs")!!
@@ -140,12 +164,12 @@ class RecordLikeRoomTest {
         assertThat(queued).isEqualTo(0)
         // it leaves "Not in your Stash yet", and its heart is filled
         assertThat(mixes.now(words)!!.lost.map { it.title }).containsExactly("Lost 01", "Lost 02").inOrder()
-        assertThat(mixes.likes.first().has(before[2].identity())).isTrue()
+        assertThat(mixes.likes.first().has(before[2])).isTrue()
 
         // Unlike: out of Liked Songs, back on the list
         assertThat(actions.unlike(listOf(row.id)).await()).isTrue()
         assertThat(mixes.now(words)!!.lost.map { it.title }).containsExactly("Lost 01", "Lost 02", "Lost 03").inOrder()
-        assertThat(mixes.likes.first().has(before[2].identity())).isFalse()
+        assertThat(mixes.likes.first().has(before[2])).isFalse()
     }
 
     @Test fun `a song with no Spotify id is liked by its words, once`() = runTest(UnconfinedTestDispatcher()) {
@@ -153,8 +177,8 @@ class RecordLikeRoomTest {
         val mixes = mixes()
         val actions = testSongActions(rows = match::rows, like = liked::add, scope = backgroundScope)
         val two = mixes.now(words)!!.lost[1]
-        assertThat(actions.like(two.recordSong(null)).await()).isTrue()
-        assertThat(actions.like(two.recordSong(null)).await()).isTrue()
+        assertThat(actions.like(two.recordSong(null)).await()).isNotNull()
+        assertThat(actions.like(two.recordSong(null)).await()).isNotNull()
         assertThat(count("SELECT COUNT(*) FROM tracks WHERE title = 'Lost 02'")).isEqualTo(1)
         assertThat(count("SELECT COUNT(*) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id WHERE p.type = 'STASH_LIKED'")).isEqualTo(1)
         assertThat(mixes.now(words)!!.lost.map { it.title }).containsExactly("Lost 01", "Lost 03").inOrder()
@@ -168,6 +192,53 @@ class RecordLikeRoomTest {
         val mixes = mixes()
         val now = mixes.now(words)!!
         assertThat(now.lost.map { it.title }).containsExactly("Lost 02", "Lost 03").inOrder()
-        assertThat(mixes.likes.first().has(com.stash.core.model.weblink.SongRef("Lost 01", "Lost Band"))).isFalse()
+        assertThat(mixes.likes.first().has(HistoryMixes.songItem(stat("Lost 01", "sid01")))).isFalse()
+    }
+
+    @Test fun `a Like by Spotify id lands on a synced row with other words - its heart fills and stays, it leaves the list, Unlike brings it back`() = runTest(UnconfinedTestDispatcher()) {
+        seed()
+        // Spotify's sync keeps the catalog's credit ("Lost Band, Guest Star"), where the history says "Lost Band"
+        val syncedId = synced("Lost 03", "Lost Band, Guest Star", "sid03")
+        val mixes = mixes()
+        val actions = testSongActions(rows = match::rows, like = liked::add, unlike = liked::remove, isBlocked = isBlocked, scope = backgroundScope)
+        val lost3 = mixes.now(words)!!.lost.single { it.title == "Lost 03" }
+
+        assertThat(actions.like(lost3.recordSong(null)).await()).isEqualTo(syncedId)
+        // the like is the synced row's (found by the Spotify id), no second row made by the history's words
+        assertThat(db.trackDao().getById(syncedId)!!.stashLikedAt).isNotNull()
+        assertThat(count("SELECT COUNT(*) FROM tracks WHERE title = 'Lost 03'")).isEqualTo(1)
+        // its heart is filled (the likes know the song by the Spotify id), and it left "Not in your Stash yet"
+        val likes = mixes.likes.first()
+        assertThat(likes.has(lost3)).isTrue()
+        assertThat(mixes.now(words)!!.lost.map { it.title }).containsExactly("Lost 01", "Lost 02").inOrder()
+        // Unlike takes every row of the song out (here the synced one): back on the list, heart empty
+        assertThat(likes.rowsOf(lost3)).containsExactly(syncedId)
+        assertThat(actions.unlike(likes.rowsOf(lost3)).await()).isTrue()
+        assertThat(mixes.likes.first().has(lost3)).isFalse()
+        assertThat(mixes.now(words)!!.lost.map { it.title }).containsExactly("Lost 01", "Lost 02", "Lost 03").inOrder()
+    }
+
+    @Test fun `#715 - a kept-out song liked through a synced row with other words is kept out no more`() = runTest(UnconfinedTestDispatcher()) {
+        seed(avoided = stat("Skipped Song", "sidS").copy(avoid = true))
+        val mixes = mixes()
+        val key = SongKey.songKey("Skipped Song", "Lost Band")
+        assertThat(mixes.now(words)!!.taste.songs.single { it.key == key }.avoid).isTrue()
+        // liked, through the row Spotify's sync made under another credit
+        liked.add(synced("Skipped Song", "Lost Band & Friends", "sidS"))
+        assertThat(mixes.now(words)!!.taste.songs.single { it.key == key }.avoid).isFalse()
+    }
+
+    @Test fun `blocked songs are in neither list - by their words or their Spotify id - and a Like refuses one, making no row`() = runTest(UnconfinedTestDispatcher()) {
+        seed()
+        block("Lost 02", "Lost Band")
+        block("Something Else", "Nobody", sid = "sid01")
+        val now = mixes().now(words)!!
+        assertThat(now.lost.map { it.title }).containsExactly("Lost 03")
+        assertThat(now.tops.map { it.title }).containsExactly("Lost 03")
+        val actions = testSongActions(rows = match::rows, like = liked::add, isBlocked = isBlocked, scope = backgroundScope)
+        val tracksBefore = count("SELECT COUNT(*) FROM tracks")
+        assertThat(actions.like(HistoryMixes.songItem(stat("Lost 02", null)).recordSong(null)).await()).isNull()
+        assertThat(actions.like(HistoryMixes.songItem(stat("Lost 01", "sid01")).recordSong(null)).await()).isNull()
+        assertThat(count("SELECT COUNT(*) FROM tracks")).isEqualTo(tracksBefore)
     }
 }

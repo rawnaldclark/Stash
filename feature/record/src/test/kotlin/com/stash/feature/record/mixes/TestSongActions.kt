@@ -10,7 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
-/** [RecordSongActions] over seams: by default no song has a row, and nothing is done. */
+/** [RecordSongActions] over seams: by default no song has a row, none is blocked, no session is on, and nothing is done. */
 internal fun testSongActions(
     rows: suspend (List<RecordSong>) -> List<Track?> = { songs -> songs.map { null } },
     like: suspend (Long) -> Unit = {},
@@ -20,7 +20,13 @@ internal fun testSongActions(
     startRadio: suspend (RadioSeed.Song) -> RadioStartResult = { RadioStartResult.Started },
     addToPlaylist: suspend (Long, Long) -> Unit = { _, _ -> },
     createPlaylist: suspend (String) -> Long = { 1L },
+    deletePlaylist: suspend (Long) -> Unit = {},
     playlists: Flow<List<Playlist>> = flowOf(emptyList()),
+    isBlocked: suspend (title: String, artist: String, spotifyUri: String?) -> Boolean = { _, _, _ -> false },
+    inListenTogether: () -> Boolean = { false },
     toast: (SongLine) -> Unit = {},
     scope: CoroutineScope = CoroutineScope(SupervisorJob()),
-) = RecordSongActions(rows, like, unlike, addNext, addToQueue, startRadio, addToPlaylist, createPlaylist, playlists, toast, scope)
+) = RecordSongActions(
+    rows, like, unlike, addNext, addToQueue, startRadio, addToPlaylist, createPlaylist, deletePlaylist, playlists, isBlocked,
+    inListenTogether, toast, scope,
+)

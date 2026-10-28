@@ -397,4 +397,5 @@
     <string name="record_song_added_to_playlist">Добавлено в «%1$s»</string>
     <string name="record_song_playlist_failed">Не удалось добавить в плейлист</string>
     <string name="record_song_radio_failed">Не удалось запустить радио по этой песне. Попробуйте ещё раз чуть позже.</string>
+    <string name="record_song_blocked">Нельзя добавить заблокированную песню</string>
 </resources>

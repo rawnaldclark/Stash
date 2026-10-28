@@ -347,4 +347,5 @@
     <string name="record_song_added_to_playlist">Zu %1$s hinzugefügt</string>
     <string name="record_song_playlist_failed">Konnte nicht zur Playlist hinzugefügt werden</string>
     <string name="record_song_radio_failed">Radio konnte nicht gestartet werden. Versuch es gleich noch mal.</string>
+    <string name="record_song_blocked">Ein blockierter Song kann nicht hinzugefügt werden</string>
 </resources>

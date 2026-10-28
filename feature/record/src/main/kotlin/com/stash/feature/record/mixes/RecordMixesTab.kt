@@ -52,6 +52,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -131,6 +134,11 @@ internal fun RecordMixesTab(
     }
     var menuFor by remember { mutableStateOf<MenuSong?>(null) }
     var lostShown by rememberSaveable { mutableIntStateOf(HistoryMixes.LOST_PAGE) }
+    // After a Like in "Not in your Stash yet" the row leaves, and focus goes on to the next row's heart, else the list's heading
+    // (the web's lostClick): the row it was at, the hearts' focus by song key, the heading's
+    var likedAt by remember { mutableStateOf<Int?>(null) }
+    val lostHearts = remember { HashMap<String, FocusRequester>() }
+    val lostHead = remember { FocusRequester() }
     Box(modifier) {
         when (val s = state) {
             null -> Unit
@@ -144,6 +152,21 @@ internal fun RecordMixesTab(
             is RecordMixesTabViewModel.State.Mixes -> {
                 // A song liked here leaves "Not in your Stash yet" at once (the list is the lost favourites minus your library, live)
                 val lost = remember(s.lost, hearts) { s.lost.filterNot { hearts?.liked(it) == true } }
+                LaunchedEffect(lost) {
+                    val at = likedAt ?: return@LaunchedEffect
+                    likedAt = null
+                    val next = lost.getOrNull(at)?.let { lostHearts[it.songKey] } ?: lostHead
+                    try {
+                        next.requestFocus()
+                    } catch (e: IllegalStateException) {
+                        // That row isn't laid out (scrolled away): the heading, if it is
+                        try {
+                            lostHead.requestFocus()
+                        } catch (e2: IllegalStateException) {
+                            Log.d("YourRecord", "no row to move focus to after a like")
+                        }
+                    }
+                }
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
@@ -171,14 +194,19 @@ internal fun RecordMixesTab(
                         item(key = "tops-end") { Spacer(Modifier.height(24.dp)) }
                     }
                     if (lost.isNotEmpty()) {
-                        item(key = "lost") { LostHead(lost.size, onPlay = { viewModel.playLost(lost, 0) }) }
+                        item(key = "lost") { LostHead(lost.size, onPlay = { viewModel.playLost(lost, 0) }, headFocus = lostHead) }
                         itemsIndexed(lost.take(lostShown), key = { _, t -> "lost:" + t.songKey }) { i, t ->
+                            val heart = lostHearts.getOrPut(t.songKey) { FocusRequester() }
                             RecordSongRow(
                                 song = t, cover = null, number = null, square = RowSquare.TINT_PLAY, liked = false,
                                 colors = RowColorsOf.Record, gutter = 16.dp,
                                 onPlay = { viewModel.playLost(lost, i) },
-                                onLike = { viewModel.toggleLike(t, false) },
+                                onLike = {
+                                    likedAt = i
+                                    viewModel.toggleLike(t, false)
+                                },
                                 onMenu = { menuFor = menuSong(t, null, i) },
+                                heartModifier = Modifier.focusRequester(heart),
                             )
                         }
                         if (lost.size > lostShown) {
@@ -252,7 +280,7 @@ private fun ArtistRow(rank: Int, a: RecordMixesTabViewModel.ArtistCard, onOpen: 
 
 /** "Not in your Stash yet"'s head: its title, how many and what to do, and a round Play for them all. */
 @Composable
-private fun LostHead(n: Int, onPlay: () -> Unit) {
+private fun LostHead(n: Int, onPlay: () -> Unit, headFocus: FocusRequester) {
     val context = LocalContext.current
     val locales = LocalConfiguration.current.locales
     val w = remember(locales) { ResourceMixWords(context) }
@@ -264,7 +292,7 @@ private fun LostHead(n: Int, onPlay: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            SectionTitle(stringResource(R.string.record_mixes_lost), Modifier.padding(bottom = 2.dp))
+            SectionTitle(stringResource(R.string.record_mixes_lost), Modifier.padding(bottom = 2.dp).focusRequester(headFocus).focusable())
             Text(w.lostLine(n), style = TextStyle(fontSize = 14.sp, lineHeight = 20.sp), color = StashTextSecondary)
         }
         Box(

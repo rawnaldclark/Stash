@@ -77,14 +77,30 @@ class MixTaste(
          * The library here by song key, read now (service.ts `kept`, mix-taste.ts `keptKeys`): the liked songs and every song of the
          * listener's own playlists (as Library shows them). Never kept out of a mix, at once; the next taste counts them kept.
          */
-        suspend fun libraryKeys(library: WebLibraryExportDao): HashSet<String> {
-            val out = HashSet<String>()
-            for (l in library.likes()) out += SongKey.songKey(l.track.title, l.track.artist)
-            for (p in library.playlists()) {
-                for (i in library.playlistItems(p.id, Int.MAX_VALUE)) out += SongKey.songKey(i.track.title, i.track.artist)
+        suspend fun libraryKeys(library: WebLibraryExportDao): HashSet<String> = libraryNow(library).keys
+
+        /**
+         * The library here now ([libraryKeys]) with the Spotify ids its rows carry: a row a Spotify sync made can name a song
+         * otherwise than the history does ("A, B" where the history says "A"), and a Like by the history's Spotify id lands on
+         * it, so a song of the taste whose Spotify id is on a row is in the library too ([LibraryNow.keptOf]).
+         */
+        suspend fun libraryNow(library: WebLibraryExportDao): LibraryNow {
+            val keys = HashSet<String>()
+            val ids = HashSet<String>()
+            fun add(c: WebLibraryExportDao.SongColumns) {
+                keys += SongKey.songKey(c.title, c.artist)
+                spotifyIdOf(c.spotifyUri)?.let { ids += it }
             }
-            return out
+            for (l in library.likes()) add(l.track)
+            for (p in library.playlists()) for (i in library.playlistItems(p.id, Int.MAX_VALUE)) add(i.track)
+            return LibraryNow(keys, ids)
         }
+
+        /** The Spotify id of a row's `spotify_uri` ("spotify:track:…"), else null. */
+        fun spotifyIdOf(uri: String?): String? =
+            uri?.takeIf { it.startsWith(SPOTIFY_TRACK) }?.substring(SPOTIFY_TRACK.length)?.takeIf { it.isNotEmpty() }
+
+        private const val SPOTIFY_TRACK = "spotify:track:"
 
         fun blendSeeds(own: List<String>, taste: List<String>): List<String> {
             val ownKeys = own.mapTo(HashSet()) { SongKey.fold(Credits.primary(it)) }
@@ -92,6 +108,19 @@ class MixTaste(
             val keep = minOf(fromTaste.size, maxOf(TASTE_SEEDS, SEEDS_MAX - own.size))
             return own.take(SEEDS_MAX - keep) + fromTaste.take(keep)
         }
+    }
+}
+
+/**
+ * The library here now, as the taste reads it: its songs' keys by their words ([keys]), and the Spotify ids its rows carry
+ * ([spotifyIds]).
+ */
+class LibraryNow(val keys: HashSet<String>, val spotifyIds: Set<String>) {
+    /** [keys], and the taste's songs ([songs]: key and Spotify id) whose Spotify id is on a row of the library. */
+    fun keptOf(songs: Iterable<Pair<String, String?>>): HashSet<String> {
+        val out = HashSet(keys)
+        if (spotifyIds.isNotEmpty()) for ((key, sid) in songs) if (sid != null && sid in spotifyIds) out += key
+        return out
     }
 }
 
@@ -126,7 +155,13 @@ class RoomRecordMixTaste @Inject constructor(
     private val switch: RecordInMixesPreference,
     private val library: WebLibraryExportDao,
 ) : RecordMixTaste {
-    private class Cached(val computedAt: Long, val songs: List<MixTaste.Companion.Song>, val artists: List<String>)
+    private class Cached(
+        val computedAt: Long,
+        val songs: List<MixTaste.Companion.Song>,
+        val artists: List<String>,
+        /** Each song's key and Spotify id, for the library's rows that carry one. */
+        val sids: List<Pair<String, String?>>,
+    )
 
     @Volatile private var cached: Cached? = null
 
@@ -140,10 +175,13 @@ class RoomRecordMixTaste @Inject constructor(
         val at = dao.computedAt() ?: return null
         val c = cached?.takeIf { it.computedAt == at } ?: run {
             val snap = dao.snapshot() ?: return null
-            Cached(snap.computedAt, snap.songs.map { MixTaste.Companion.Song(it.key, it.weight, it.avoid) }, seedArtistsOf(snap.body))
-                .also { cached = it }
+            Cached(
+                snap.computedAt, snap.songs.map { MixTaste.Companion.Song(it.key, it.weight, it.avoid) }, seedArtistsOf(snap.body),
+                snap.songs.filter { it.sid != null }.map { it.key to it.sid },
+            ).also { cached = it }
         }
-        return MixTaste.of(c.songs, c.artists, dao.keepKeys().toHashSet(), MixTaste.libraryKeys(library))
+        // In the library now: by its words, or by a Spotify id one of its rows carries (a Like by that id, a synced row)
+        return MixTaste.of(c.songs, c.artists, dao.keepKeys().toHashSet(), MixTaste.libraryNow(library).keptOf(c.sids))
     }
 
     companion object {

@@ -347,4 +347,5 @@
     <string name="record_song_added_to_playlist">Idinagdag sa %1$s</string>
     <string name="record_song_playlist_failed">Hindi maidagdag sa playlist</string>
     <string name="record_song_radio_failed">Hindi makapagsimula ng radio mula rito. Subukan ulit maya-maya.</string>
+    <string name="record_song_blocked">Hindi maidagdag ang naka-block na kanta</string>
 </resources>

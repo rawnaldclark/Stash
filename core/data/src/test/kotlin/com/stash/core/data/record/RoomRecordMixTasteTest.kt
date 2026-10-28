@@ -84,6 +84,21 @@ class RoomRecordMixTasteTest {
         assertEquals(mapOf("never again|artist y" to 1.0, "b|band" to 0.5, "c|band" to 0.25), t.weights)
     }
 
+    @Test fun `a song liked through a synced row whose words aren't the history's (its Spotify id) is never kept out, at once`() = runTest {
+        store(1, "[]", song("teardrop|massive attack", 0, 4.0, avoid = true).copy(sid = "sidT"), song("b|band", 1, 2.0))
+        assertEquals(setOf("teardrop|massive attack"), seam.current()!!.avoid)
+        // Spotify's sync keeps the catalog's credit: by its words this is another song, by its Spotify id the same
+        db.trackDao().insert(
+            TrackEntity(
+                title = "Teardrop", artist = "Massive Attack, Elizabeth Fraser", spotifyUri = "spotify:track:sidT",
+                canonicalTitle = "teardrop", canonicalArtist = "massive attack elizabeth fraser", stashLikedAt = 9,
+            ),
+        )
+        val t = seam.current()!!
+        assertEquals(emptySet<String>(), t.avoid)
+        assertEquals(mapOf("teardrop|massive attack" to 1.0, "b|band" to 0.5), t.weights)
+    }
+
     @Test fun `the switch off is no taste, on again the taste`() = runTest {
         store(1, "[]", song("a|band", 0, 1.0))
         switch.setEnabled(false)

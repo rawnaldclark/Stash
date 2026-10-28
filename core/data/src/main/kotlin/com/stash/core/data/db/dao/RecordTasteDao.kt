@@ -60,9 +60,11 @@ interface RecordTasteDao {
         @ColumnInfo(name = "key") val key: String,
         @ColumnInfo(name = "weight") val weight: Double,
         @ColumnInfo(name = "avoid") val avoid: Boolean,
+        /** The history's Spotify id for the song, when it has one. */
+        @ColumnInfo(name = "sid") val sid: String? = null,
     )
 
-    @Query("SELECT `key`, weight, avoid FROM record_taste_songs")
+    @Query("SELECT `key`, weight, avoid, sid FROM record_taste_songs")
     suspend fun mixRows(): List<MixRow>
 
     /** One taste as the mixes read it: when it was worked out, its body and its songs, read together. */

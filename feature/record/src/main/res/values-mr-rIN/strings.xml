@@ -347,4 +347,5 @@
     <string name="record_song_added_to_playlist">%1$s मध्ये जोडले</string>
     <string name="record_song_playlist_failed">प्लेलिस्टमध्ये जोडता आले नाही</string>
     <string name="record_song_radio_failed">या गाण्यावरून रेडिओ सुरू करता आला नाही. थोड्या वेळाने पुन्हा प्रयत्न करा.</string>
+    <string name="record_song_blocked">ब्लॉक केलेले गाणे जोडता येत नाही</string>
 </resources>
