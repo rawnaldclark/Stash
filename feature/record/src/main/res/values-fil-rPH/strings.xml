@@ -218,7 +218,7 @@
     <string name="record_intake_busy">May import na tumatakbo. Idagdag ito kapag tapos na iyon.</string>
     <string name="record_import_taste">Inaalam ang panlasa mo…</string>
     <string name="record_in_mixes_title">Gamitin ang record mo sa mga mix</string>
-    <string name="record_in_mixes_subtitle">Nakasandal ang Daily Discover sa mga artist na matagal mo nang mahal, at iniiwan ang mga kantang nilalaktawan mo. Kapag naka-off, sinusundan nito ang pinapatugtog mo rito.</string>
+    <string name="record_in_mixes_subtitle">Nakasandal ang mga mix mo, ang Daily Discover at ang mga Stash Mix mo, sa mga artist na matagal mo nang mahal, at iniiwan ang mga kantang nilalaktawan mo. Kapag naka-off, sinusundan nila ang pinapatugtog mo rito.</string>
     <string name="record_kept_out_title">Hindi isinasama sa mga mix mo (%1$s)</string>
     <string name="record_kept_out_on">Hindi isinasama sa mga mix mo ang mga kantang itinago mo sa Spotify o lagi mong nilalaktawan. Ibalik ang isa at puwede itong tumugtog sa mga susunod mong mix.</string>
     <string name="record_kept_out_off">Hindi ito isinasama sa mga mix ng record mo. Ibalik ang isa at puwede ulit itong tumugtog doon.</string>

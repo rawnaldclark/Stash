@@ -218,7 +218,7 @@
     <string name="record_intake_busy">एक इंपोर्ट सुरू आहे. ते पूर्ण झाल्यावर ही फाइल आणा.</string>
     <string name="record_import_taste">तुमची आवड समजून घेत आहोत…</string>
     <string name="record_in_mixes_title">मिक्समध्ये तुमचा रेकॉर्ड वापरा</string>
-    <string name="record_in_mixes_subtitle">Daily Discover तुम्हाला वर्षानुवर्षे आवडणाऱ्या कलाकारांवर भर देतो, आणि तुम्ही स्किप करता ती गाणी वगळतो. बंद असताना, तो तुम्ही इथे ऐकता त्यानुसार चालतो.</string>
+    <string name="record_in_mixes_subtitle">तुमचे मिक्स, Daily Discover आणि तुमचे Stash Mixes, तुम्हाला वर्षानुवर्षे आवडणाऱ्या कलाकारांवर भर देतात, आणि तुम्ही स्किप करता ती गाणी वगळतात. बंद असताना, ते तुम्ही इथे ऐकता त्यानुसार चालतात.</string>
     <string name="record_kept_out_title">तुमच्या मिक्समधून वगळलेली (%1$s)</string>
     <string name="record_kept_out_on">तुम्ही Spotify वर लपवलेली किंवा सतत स्किप करता ती गाणी तुमच्या मिक्सबाहेर राहतात. एखादे परत आणा आणि ते तुमच्या पुढच्या मिक्समध्ये वाजू शकेल.</string>
     <string name="record_kept_out_off">ही तुमच्या रेकॉर्डच्या मिक्सबाहेर राहतात. एखादे परत आणा आणि ते त्यांत पुन्हा वाजू शकेल.</string>

@@ -31,7 +31,11 @@ class TasteWordsTest {
 
     @Test fun `the switch, the list's lines and its buttons`() {
         assertThat(res.getString(R.string.record_in_mixes_title)).isEqualTo(said("switch"))
-        assertThat(res.getString(R.string.record_in_mixes_subtitle)).isEqualTo(said("switchLine"))
+        // The app's own line: every Stash Mix takes the record here, not only Daily Discover as on the web
+        assertThat(said("switchLine")).startsWith("Daily Discover leans on")
+        assertThat(res.getString(R.string.record_in_mixes_subtitle)).isEqualTo(
+            "Your mixes, Daily Discover and your Stash Mixes, lean on the artists you’ve loved for years and leave out the songs you skip. Off, they go by what you play here.",
+        )
         assertThat(res.getString(R.string.record_kept_out_title, "1,204")).isEqualTo("${said("title")}1,204)")
         assertThat(res.getString(R.string.record_kept_out_on)).isEqualTo(said("on"))
         assertThat(res.getString(R.string.record_kept_out_off)).isEqualTo(said("off"))

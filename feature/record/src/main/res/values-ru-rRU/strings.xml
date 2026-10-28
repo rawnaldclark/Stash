@@ -250,7 +250,7 @@
     <string name="record_intake_busy">Идёт импорт. Добавьте файл, когда он закончится.</string>
     <string name="record_import_taste">Определяем ваш вкус…</string>
     <string name="record_in_mixes_title">Использовать пластинку в миксах</string>
-    <string name="record_in_mixes_subtitle">Daily Discover опирается на артистов, которых вы любите годами, и обходит треки, которые вы пропускаете. Если выключить, он ориентируется на то, что вы слушаете здесь.</string>
+    <string name="record_in_mixes_subtitle">Ваши миксы, Daily Discover и Stash-миксы, опираются на артистов, которых вы любите годами, и обходят треки, которые вы пропускаете. Если выключить, они ориентируются на то, что вы слушаете здесь.</string>
     <string name="record_kept_out_title">Не попадают в ваши миксы (%1$s)</string>
     <string name="record_kept_out_on">Треки, скрытые в Spotify или постоянно пропускаемые, не попадают в ваши миксы. Верните трек, и он сможет звучать в следующих миксах.</string>
     <string name="record_kept_out_off">Эти треки не попадают в миксы вашей пластинки. Верните трек, и он снова сможет в них звучать.</string>

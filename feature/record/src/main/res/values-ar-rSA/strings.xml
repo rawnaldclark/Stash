@@ -282,7 +282,7 @@
     <string name="record_intake_busy">يجري استيراد الآن. أضف الملف عند انتهائه.</string>
     <string name="record_import_taste">جارٍ استخلاص ذوقك…</string>
     <string name="record_in_mixes_title">استخدم أسطوانتك في المزيجات</string>
-    <string name="record_in_mixes_subtitle">يعتمد Daily Discover على الفنانين الذين أحببتهم لسنوات، ويستبعد الأغاني التي تتخطاها. عند إيقافه، يعتمد على ما تشغّله هنا.</string>
+    <string name="record_in_mixes_subtitle">تعتمد مزيجاتك، Daily Discover ومزيجات Stash، على الفنانين الذين أحببتهم لسنوات، وتستبعد الأغاني التي تتخطاها. عند إيقافه، تعتمد على ما تشغّله هنا.</string>
     <string name="record_kept_out_title">مستبعدة من مزيجاتك (%1$s)</string>
     <string name="record_kept_out_on">الأغاني التي أخفيتها على Spotify أو تتخطاها باستمرار تبقى خارج مزيجاتك. أعد إحداها وستُشغَّل في مزيجاتك القادمة.</string>
     <string name="record_kept_out_off">هذه تبقى خارج مزيجات أسطوانتك. أعد إحداها وستُشغَّل فيها من جديد.</string>

@@ -250,7 +250,7 @@
     <string name="record_intake_busy">Trwa import. Dodaj plik, gdy się zakończy.</string>
     <string name="record_import_taste">Ustalanie Twojego gustu…</string>
     <string name="record_in_mixes_title">Używaj swojej płyty w mixach</string>
-    <string name="record_in_mixes_subtitle">Daily Discover opiera się na artystach, których kochasz od lat, i pomija utwory, które przewijasz. Wyłączony kieruje się tym, czego słuchasz tutaj.</string>
+    <string name="record_in_mixes_subtitle">Twoje mixy, Daily Discover i Twoje Stash Mixy, opierają się na artystach, których kochasz od lat, i pomijają utwory, które przewijasz. Wyłączone kierują się tym, czego słuchasz tutaj.</string>
     <string name="record_kept_out_title">Pominięte w Twoich mixach (%1$s)</string>
     <string name="record_kept_out_on">Utwory ukryte na Spotify lub ciągle przewijane nie trafiają do Twoich mixów. Przywróć któryś, a będzie mógł zagrać w Twoich następnych mixach.</string>
     <string name="record_kept_out_off">Te nie trafiają do mixów Twojej płyty. Przywróć któryś, a znów będzie mógł w nich zagrać.</string>

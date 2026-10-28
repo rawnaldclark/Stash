@@ -218,7 +218,7 @@
     <string name="record_intake_busy">Gerade läuft ein Import. Füge die Datei danach hinzu.</string>
     <string name="record_import_taste">Dein Geschmack wird ermittelt…</string>
     <string name="record_in_mixes_title">Deine Platte in Mixes nutzen</string>
-    <string name="record_in_mixes_subtitle">Daily Discover setzt auf die Künstler, die du seit Jahren liebst, und lässt die Songs weg, die du überspringst. Aus, richtet er sich nach dem, was du hier hörst.</string>
+    <string name="record_in_mixes_subtitle">Deine Mixes, Daily Discover und deine Stash-Mixes, setzen auf die Künstler, die du seit Jahren liebst, und lassen die Songs weg, die du überspringst. Aus, richten sie sich nach dem, was du hier hörst.</string>
     <string name="record_kept_out_title">Aus deinen Mixes gelassen (%1$s)</string>
     <string name="record_kept_out_on">Songs, die du auf Spotify ausgeblendet hast oder immer wieder überspringst, bleiben aus deinen Mixes. Hol einen zurück, und er kann in deinen nächsten Mixes laufen.</string>
     <string name="record_kept_out_off">Diese bleiben aus den Mixes deiner Platte. Hol einen zurück, und er kann dort wieder laufen.</string>

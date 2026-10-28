@@ -283,7 +283,8 @@
     <!-- Your record’s taste (phase 5b): the import sheet’s step, and Settings › Your record’s "Use your record in mixes" (owner decision D2) and "Kept out of your mixes" (D1), in the web’s words (RecordInMixes.svelte, years.ts whyLine). -->
     <string name="record_import_taste">Working out your taste…</string>
     <string name="record_in_mixes_title">Use your record in mixes</string>
-    <string name="record_in_mixes_subtitle">Daily Discover leans on the artists you’ve loved for years, and leaves out the songs you skip. Off, it goes by what you play here.</string>
+    <!-- The app’s own words (the web’s say "Daily Discover leans on…": only Daily Discover takes the record there; here every Stash Mix does). -->
+    <string name="record_in_mixes_subtitle">Your mixes, Daily Discover and your Stash Mixes, lean on the artists you’ve loved for years and leave out the songs you skip. Off, they go by what you play here.</string>
     <!-- %1$s: how many songs ("1,204"). -->
     <string name="record_kept_out_title">Kept out of your mixes (%1$s)</string>
     <string name="record_kept_out_on">Songs you hid on Spotify or keep skipping stay out of your mixes. Put one back and it can play in your next mixes.</string>

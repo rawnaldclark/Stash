@@ -202,7 +202,7 @@
     <string name="record_intake_busy">正在导入中。完成后再添加。</string>
     <string name="record_import_taste">正在分析你的口味…</string>
     <string name="record_in_mixes_title">在混音中使用你的唱片</string>
-    <string name="record_in_mixes_subtitle">Daily Discover 会侧重你多年来喜爱的艺人，并略过你常跳过的歌曲。关闭后，它会根据你在这里听的内容来生成。</string>
+    <string name="record_in_mixes_subtitle">你的混音（Daily Discover 和你的 Stash 混音）会侧重你多年来喜爱的艺人，并略过你常跳过的歌曲。关闭后，它们会根据你在这里听的内容来生成。</string>
     <string name="record_kept_out_title">未放入你的混音 (%1$s)</string>
     <string name="record_kept_out_on">你在 Spotify 上隐藏或总是跳过的歌曲不会出现在你的混音中。放回一首，它就能出现在你接下来的混音里。</string>
     <string name="record_kept_out_off">这些歌曲不会出现在你唱片的混音中。放回一首，它就能再次出现在其中。</string>

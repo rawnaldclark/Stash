@@ -218,7 +218,7 @@
     <string name="record_intake_busy">Uma importação está em andamento. Adicione quando ela terminar.</string>
     <string name="record_import_taste">Calculando seu gosto…</string>
     <string name="record_in_mixes_title">Usar seu disco nos mixes</string>
-    <string name="record_in_mixes_subtitle">O Daily Discover se apoia nos artistas que você ama há anos e deixa de fora as músicas que você pula. Desligado, ele segue o que você ouve aqui.</string>
+    <string name="record_in_mixes_subtitle">Seus mixes, o Daily Discover e seus Stash Mixes, se apoiam nos artistas que você ama há anos e deixam de fora as músicas que você pula. Desligado, eles seguem o que você ouve aqui.</string>
     <string name="record_kept_out_title">Fora dos seus mixes (%1$s)</string>
     <string name="record_kept_out_on">Músicas que você ocultou no Spotify ou vive pulando ficam fora dos seus mixes. Traga uma de volta e ela pode tocar nos seus próximos mixes.</string>
     <string name="record_kept_out_off">Estas ficam fora dos mixes do seu disco. Traga uma de volta e ela pode tocar neles de novo.</string>
