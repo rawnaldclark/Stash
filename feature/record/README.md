@@ -233,6 +233,17 @@ Adapted on purpose:
   history song lacks), no Download (nothing of the record downloads unasked), no Go to artist or album (the web's needs a source's
   ids). The web's Like is a row of its menu too; here it is the heart alone.
 - A Top artists row that plays shows no mark, one that opens shows a faint chevron (the web's on a phone, where there is no hover).
+- **A song is also a library row by its Spotify id** (`LibrarySong.spotifyId`, from `spotify_uri`): a Like by the history's id can
+  land on a row a Spotify sync made under the catalog's credit ("Sia, Sean Paul" where the history says "Sia"), and that row is the
+  song for its heart (`Likes`), "Not in your Stash yet", an unlike (every Stash-liked row of the song goes: by words, ISRC copy or
+  id), and #715's "kept" at read time (the mixes' put-back set, `RoomRecordMixTaste` via `MixRow.sid`, the Kept-out list) and in
+  the next taste (`TasteOptions.keptSpotifyIds`, empty on the web's vectors). The web's library has no such rows.
+- **Blocked songs** (BlocklistGuard's rule: the words' canonical key, or the Spotify id) are never in Top songs or "Not in your
+  Stash yet", and Like and the menu refuse one before any row is made, as Search does ("Can't add a blocked track").
+- An artist's picture is the Worker's `pickArtist`: of the hits whose folded name (NFKD, marks removed, lower case, non-letters to
+  one space, trimmed; "The" kept) is the name asked (the first credit, cut at `,` `;` feat. ft. featuring with, never `&`), the one
+  with the most `nb_fan`; Deezer's placeholder or a picture this app won't load is none, never a namesake's (key `ar3:`). The app
+  takes only https covers on Deezer's and Apple's hosts, a narrower check than the web's https alone.
 
 ### Its tests
 
@@ -251,6 +262,9 @@ Adapted on purpose:
   guest credits; a remaster that stays; kept, hidden, skipped, put back and liked songs; past the page of 50), with their lines.
   The page's own <script> lines (the 10s, the 50, the library, the play-or-open rule) are ported in the script, which checks them
   against the file.
+- `HistoryMixesVectorsTest`'s pictures (`artists.json`: 38 cases through the Worker's own `artistSearch` and `pickArtist`: Queen,
+  Sia, Muse, Joji, boygenius, Low, The Band, Bush, ties, fans that aren't numbers, accents both ways, Mø, "The", near names, the
+  placeholder, http). The lists now run the web's own `mixesLists`, `lostSongs`, `artistLine` and `libraryOf` (ui/spotify/mix.ts).
 - `RecordSongActionsTest` (Like makes or finds the row then likes that row and nothing else; a failure says so; the menu's actions
   on the row; the hearts at once, kept until the likes agree, back on a failure) and `RecordLikeRoomTest` (on a real database: a
   lost song liked gets a stream-only row with its Spotify id and cover, joins Stash's Liked Songs, leaves the list, its heart
