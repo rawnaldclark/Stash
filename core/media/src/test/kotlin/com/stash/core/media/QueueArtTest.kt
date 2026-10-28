@@ -14,4 +14,11 @@ class QueueArtTest {
         assertThat(filled.map { it.albumArtUrl }).containsExactly("https://one", "https://own", null, null, "https://one").inOrder()
         assertThat(QueueArt.fill(queue, emptyMap())).isSameInstanceAs(queue)
     }
+
+    @Test fun `neighbours go as one replace`() {
+        assertThat(QueueArt.runs(listOf(12, 2, 3, 9, 4, 11))).containsExactly(2..4, 9..9, 11..12).inOrder()
+        assertThat(QueueArt.runs(listOf(0))).containsExactly(0..0)
+        assertThat(QueueArt.runs(emptyList())).isEmpty()
+        assertThat(QueueArt.runs((0 until 50).toList())).containsExactly(0..49)
+    }
 }

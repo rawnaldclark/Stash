@@ -1440,28 +1440,23 @@ class PlayerRepositoryImpl @Inject constructor(
         withContext(Dispatchers.Main.immediate) {
             // The rows Up next shows (the logical queue), then the player's items: the playing one is the notification's
             currentQueueTracks = QueueArt.fill(currentQueueTracks, arts)
-            // Under shuffle, the play order as it is, put back once after every replace (replaceMediaItemKeepingShuffle's rule)
-            val walk = shuffleWalk(controller)?.takeUnless { w -> w.withIndex().all { (i, v) -> i == v } }
-            var replaced = 0
+            val withArt = HashMap<Int, MediaItem>()
             for (i in 0 until controller.mediaItemCount) {
                 val item = controller.getMediaItemAt(i)
                 val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 } ?: item.mediaId.toLongOrNull() ?: continue
                 val art = arts[id] ?: continue
                 if (item.mediaMetadata.artworkUri != null) continue
-                // Metadata only (the same media, its Play next tag kept): the playing item goes on without a break
-                val withArt = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
-                controller.replaceMediaItem(i, withArt)
-                replaced++
+                // Metadata only: the same media (its URI, its Play next tag), so the player updates it in place (every
+                // source here takes a metadata-only change, ResolveFirstMediaSource included): the playing song goes on,
+                // the others keep their preparation, the shuffle order is untouched
+                withArt[i] = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
             }
-            if (replaced > 0 && walk != null) {
-                controller.sendCustomCommand(
-                    SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
-                    Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, walk.toIntArray()) },
-                )
-            }
+            // Neighbours in one call: each call is a timeline change (and a queue refresh for Android Auto)
+            val runs = QueueArt.runs(withArt.keys)
+            for (run in runs) controller.replaceMediaItems(run.first, run.last + 1, run.map { withArt.getValue(it) })
             timelineDirty = true
             updateState(controller)
-            Log.d(TAG, "learnArtwork: ${arts.size} covers, $replaced player items")
+            Log.d(TAG, "learnArtwork: ${arts.size} covers, ${withArt.size} player items in ${runs.size} replaces")
         }
     }
 

@@ -16,10 +16,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -71,6 +80,8 @@ class RecordPlayback internal constructor(
     private val lookCovers: suspend (List<ArtSong>, CoroutineScope, (List<String?>) -> Unit) -> List<String?> = { songs, _, _ -> songs.map { null } },
     /** Covers found after the queue was set, by row: kept on rows that have none, and put on the queue ([PlayerRepository.learnArtwork]). */
     private val learn: suspend (Map<Long, String>) -> Unit = {},
+    /** Which record play holds the queue now (its "Playing from" label), else null: a Play elsewhere ends this one's lookups. */
+    private val queuedFrom: Flow<String?> = flow { awaitCancellation() },
 ) : RecordPlayer {
     @Inject
     constructor(
@@ -100,6 +111,7 @@ class RecordPlayback internal constructor(
             }
             player.learnArtwork(arts)
         },
+        queuedFrom = player.playerState.map { (it.source as? PlaybackSource.Listening)?.label }.distinctUntilChanged(),
     )
 
     private val _notes = MutableSharedFlow<RecordNote>(extraBufferCapacity = 4)
@@ -129,7 +141,7 @@ class RecordPlayback internal constructor(
                         if (shuffle) setQueue(shuffled(plan.tracks), 0, from) else setQueue(plan.tracks, plan.startIndex, from)
                         // ...and the rest as they are found: on the rows and the queue (the playing one too), never a blank cover
                         try {
-                            learnLater(rows, arts)
+                            learnLater(rows, arts, from)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -148,10 +160,20 @@ class RecordPlayback internal constructor(
         }
     }
 
-    /** The covers of [rows] that have none, looked up after the queue is set and learnt batch by batch ([learn]). */
-    private suspend fun learnLater(rows: List<Track?>, arts: List<ArtSong>) = coroutineScope {
+    /**
+     * The covers of [rows] that have none, looked up after the queue is set and learnt batch by batch ([learn]), while the queue
+     * is still this play's ([from]): once another Play has taken it, nothing more is looked up for it.
+     */
+    private suspend fun learnLater(rows: List<Track?>, arts: List<ArtSong>, from: String) = coroutineScope {
         val bare = rows.indices.filter { i -> rows[i]?.let { it.albumArtUrl.isNullOrBlank() && it.albumArtPath.isNullOrBlank() } == true }
         if (bare.isEmpty()) return@coroutineScope
+        val lookups = this
+        val watch = launch {
+            // Ours once the player shows it, then anything else (null included: a queue that isn't a record play's)
+            queuedFrom.dropWhile { it != from }.map { it != from }.firstOrNull { it } ?: return@launch
+            Log.d(TAG, "the queue went to another play: its covers aren't looked up any more")
+            lookups.cancel()
+        }
         val told = HashMap<Long, String>()
         fun fresh(urls: List<String?>): Map<Long, String> {
             val out = HashMap<Long, String>()
@@ -163,6 +185,13 @@ class RecordPlayback internal constructor(
         }
         val last = lookCovers(bare.map { arts[it] }, this) { sofar -> fresh(sofar).takeIf { it.isNotEmpty() }?.let { launch { learn(it) } } }
         fresh(last).takeIf { it.isNotEmpty() }?.let { learn(it) }
+        // The later asks (the retry) and their covers are children too: watched until the last one ends
+        while (true) {
+            val others = coroutineContext.job.children.filter { it !== watch }.toList()
+            if (others.isEmpty()) break
+            others.forEach { it.join() }
+        }
+        watch.cancel()
     }
 
     private fun say(note: RecordNote) {

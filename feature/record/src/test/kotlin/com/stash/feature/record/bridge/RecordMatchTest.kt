@@ -5,6 +5,11 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.model.Track
 import com.stash.feature.record.mixes.RecordMixSaver
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -155,5 +160,65 @@ class RecordMatchTest {
         playback.play(listOf(RecordSong("Gone", "A")), 0, "x")
         runCurrent()
         assertThat(looked).isFalse()
+    }
+
+    @Test fun `a Play elsewhere takes the queue - this play's covers aren't looked up any more`() = runTest {
+        val queued = MutableStateFlow<String?>("Something else")
+        var asking = false
+        var stopped = false
+        var learnt = 0
+        val playback = RecordPlayback(
+            match = { songs -> songs.mapIndexed { i, s -> Track(id = i + 1L, title = s.title, artist = s.artist, dateAdded = 0) } },
+            setQueue = { _, _, from -> queued.value = from },
+            online = { true },
+            toast = {},
+            scope = backgroundScope,
+            lookCovers = { _, _, _ ->
+                asking = true
+                try {
+                    awaitCancellation()
+                } finally {
+                    stopped = true
+                }
+            },
+            learn = { learnt++ },
+            queuedFrom = queued,
+        )
+        playback.play(listOf(RecordSong("Late", "A")), 0, "Your 2019")
+        runCurrent()
+        assertThat(asking).isTrue()
+        assertThat(stopped).isFalse() // the queue is this play's: the lookups go on
+        queued.value = null // a playlist's Play
+        runCurrent()
+        assertThat(stopped).isTrue()
+        assertThat(learnt).isEqualTo(0)
+    }
+
+    @Test fun `while the queue is this play's, the late covers are learnt and the lookups end`() = runTest {
+        val queued = MutableStateFlow<String?>(null)
+        val learnt = mutableMapOf<Long, String>()
+        val playback = RecordPlayback(
+            match = { songs -> songs.mapIndexed { i, s -> Track(id = i + 1L, title = s.title, artist = s.artist, dateAdded = 0) } },
+            setQueue = { _, _, from -> queued.value = from },
+            online = { true },
+            toast = {},
+            scope = backgroundScope,
+            lookCovers = { songs, retry, onBatch ->
+                // the later ask (the 15 s retry) in the scope it was given
+                retry.launch {
+                    delay(15_000)
+                    onBatch(songs.map { "https://found/late" })
+                }
+                songs.map { null }
+            },
+            learn = { learnt += it },
+            queuedFrom = queued,
+        )
+        playback.play(listOf(RecordSong("Late", "A")), 0, "Your 2019")
+        runCurrent()
+        assertThat(learnt).isEmpty()
+        advanceTimeBy(16_000)
+        runCurrent()
+        assertThat(learnt).containsExactly(1L, "https://found/late")
     }
 }
