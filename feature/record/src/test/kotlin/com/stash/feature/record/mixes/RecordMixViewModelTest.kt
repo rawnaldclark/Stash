@@ -192,4 +192,10 @@ class RecordMixViewModelTest {
         assertThat(saves.playlistOf("week", RecordMixSaves.contentsOf(a.reversed()))).isNull()
         assertThat(saves.playlistOf("year:2026", RecordMixSaves.contentsOf(a))).isNull()
     }
+
+    @Test fun `the contents follow the songs, not their item keys - a song matched to your row since is the same song`() {
+        val stray = MixSong(title = "One", artist = "Band", album = null, key = "one|band", songKey = SongKey.songKey("One", "Band"))
+        val matched = stray.copy(key = "isrc:GBAYE0000001") // the same song, found in the library since
+        assertThat(RecordMixSaves.contentsOf(listOf(matched))).isEqualTo(RecordMixSaves.contentsOf(listOf(stray)))
+    }
 }

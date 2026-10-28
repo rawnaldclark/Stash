@@ -94,9 +94,12 @@ class RecordMixSaves internal constructor(private val prefs: SharedPreferences) 
         /** Between two keys in what is hashed (a character no key holds). */
         private const val SEPARATOR = "\u0000"
 
-        /** A mix's songs in brief: a hash of their keys, in order (the same songs in another order are another mix to save). */
+        /**
+         * A mix's songs in brief: a hash of their taste keys ([MixSong.songKey]), in order (the same songs in another order are
+         * another mix to save). Never the item's key, which turns into the library row's (`isrc:…`) once a song is matched.
+         */
         fun contentsOf(items: List<MixSong>): String {
-            val d = MessageDigest.getInstance("SHA-256").digest(items.joinToString(SEPARATOR) { it.key }.toByteArray(Charsets.UTF_8))
+            val d = MessageDigest.getInstance("SHA-256").digest(items.joinToString(SEPARATOR) { it.songKey }.toByteArray(Charsets.UTF_8))
             return d.take(12).joinToString("") { "%02x".format(it) }
         }
     }

@@ -274,6 +274,9 @@ class RecordMixesTabViewModel @Inject constructor(
     /** The mixes as made, for Play (their songs and the covers found so far). */
     private var made: Map<String, Pair<HistoryMix, List<String?>>> = emptyMap()
 
+    /** Each mix's covers as last found, with the songs they were found for (by mix id): a card made again keeps them. */
+    private val lastCovers = java.util.concurrent.ConcurrentHashMap<String, Pair<List<String>, List<String?>>>()
+
     /** The words, in the screen's language (by its tags): set by [RecordMixesTab]. */
     private val wordsIn = MutableStateFlow<Pair<String, MixWords>?>(null)
 
@@ -299,7 +302,11 @@ class RecordMixesTabViewModel @Inject constructor(
                 }
                 val (tab, years) = now.tab
                 val all = tab + years
-                val covers = all.map { m -> m.items.map { it.lib?.art } }.toMutableList()
+                // A card made again (the tab shown again, the library changed) keeps the covers it had for the same songs
+                val covers = all.map { m ->
+                    val had = lastCovers[m.id]?.takeIf { it.first == m.items.map { s -> s.key } }?.second
+                    m.items.mapIndexed { j, s -> s.lib?.art ?: had?.getOrNull(j) }
+                }.toMutableList()
                 // Every card's words (How it started's walks every song of the taste): off the main thread
                 val words = withContext(Dispatchers.Default) {
                     val stats = now.taste.songs.associateBy { it.key }
@@ -313,10 +320,12 @@ class RecordMixesTabViewModel @Inject constructor(
                 send(state())
                 for ((i, m) in all.withIndex()) {
                     try {
-                        covers[i] = mixCovers(art, m.items, albums = 4, retry = this) { sofar ->
-                            covers[i] = sofar
+                        val found = mixCovers(art, m.items, albums = 4, retry = this) { sofar ->
+                            covers[i] = sofar.mapIndexed { j, u -> u ?: covers[i].getOrNull(j) }
                             trySend(state())
                         }
+                        covers[i] = found.mapIndexed { j, u -> u ?: covers[i].getOrNull(j) }
+                        lastCovers[m.id] = m.items.map { it.key } to covers[i]
                         send(state())
                     } catch (e: CancellationException) {
                         throw e
