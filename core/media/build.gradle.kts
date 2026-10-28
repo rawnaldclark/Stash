@@ -84,4 +84,7 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     // MockK — pure JVM mocking for EqMigrationTest.
     testImplementation(libs.mockk)
+    // Media3's own fakes (a real ExoPlayer on a fake clock): ResolveFirstMediaSourcePlayerTest.
+    testImplementation("androidx.media3:media3-test-utils:${libs.versions.media3.get()}")
+    testImplementation("androidx.media3:media3-test-utils-robolectric:${libs.versions.media3.get()}")
 }
