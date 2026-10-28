@@ -1440,16 +1440,24 @@ class PlayerRepositoryImpl @Inject constructor(
         withContext(Dispatchers.Main.immediate) {
             // The rows Up next shows (the logical queue), then the player's items: the playing one is the notification's
             currentQueueTracks = QueueArt.fill(currentQueueTracks, arts)
+            // Under shuffle, the play order as it is, put back once after every replace (replaceMediaItemKeepingShuffle's rule)
+            val walk = shuffleWalk(controller)?.takeUnless { w -> w.withIndex().all { (i, v) -> i == v } }
             var replaced = 0
             for (i in 0 until controller.mediaItemCount) {
                 val item = controller.getMediaItemAt(i)
                 val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 } ?: item.mediaId.toLongOrNull() ?: continue
                 val art = arts[id] ?: continue
                 if (item.mediaMetadata.artworkUri != null) continue
-                // Metadata only: the same media, so the playing item goes on without a break
+                // Metadata only (the same media, its Play next tag kept): the playing item goes on without a break
                 val withArt = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
-                replaceMediaItemKeepingShuffle(controller, i, withArt)
+                controller.replaceMediaItem(i, withArt)
                 replaced++
+            }
+            if (replaced > 0 && walk != null) {
+                controller.sendCustomCommand(
+                    SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+                    Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, walk.toIntArray()) },
+                )
             }
             timelineDirty = true
             updateState(controller)
