@@ -5,6 +5,7 @@ import android.content.MutableContextWrapper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.RecordPlayDao
@@ -69,7 +70,26 @@ class RecordViewModel @Inject constructor(
     card: RecordCardSource,
     @ApplicationContext private val app: Context,
     taste: com.stash.feature.record.taste.RecordTaste,
+    private val savedState: SavedStateHandle,
+    private val tabs: RecordTabStore,
 ) : ViewModel() {
+    private val _tab = MutableStateFlow(
+        RecordTab.of(savedState.get<String>(SHOWN)) ?: RecordTab.of(savedState.get<String>(TAB_ARG)) ?: tabs.last,
+    )
+
+    /**
+     * The tab shown: the one the way in asked for (Home's Show all: the Mixes), else the one picked last on this phone (the web's
+     * `stash.spotify.tab`); kept across a recreation.
+     */
+    val tab: StateFlow<RecordTab> = _tab.asStateFlow()
+
+    /** A tab picked: shown, and kept for next time. */
+    fun pick(t: RecordTab) {
+        _tab.value = t
+        savedState[SHOWN] = t.key
+        tabs.last = t
+    }
+
     private val _events = MutableSharedFlow<RecordEvent>(extraBufferCapacity = 8)
 
     /** Close, and lines for the listener. */
@@ -221,8 +241,14 @@ class RecordViewModel @Inject constructor(
         wrapper = null
     }
 
-    private companion object {
+    companion object {
         /** Where the record's files are put together before they are saved or shared (cacheDir). */
-        const val SAVES_DIR = "record-saves"
+        private const val SAVES_DIR = "record-saves"
+
+        /** The route's argument (YourRecordRoute's `tab`): the tab to open on ([RecordTab.key]), or none. */
+        const val TAB_ARG = "tab"
+
+        /** The tab shown, kept across a recreation. */
+        private const val SHOWN = "record_tab_shown"
     }
 }

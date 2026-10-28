@@ -35,6 +35,8 @@ import com.stash.feature.listening.stats.ListeningStatsScreen
 import com.stash.feature.listening.top.TopScreen
 import com.stash.feature.record.RecordScreen
 import com.stash.feature.record.card.YourRecordSection
+import com.stash.feature.record.mixes.RecordMixScreen
+import com.stash.feature.record.mixes.RecordMixesSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -201,6 +203,12 @@ private fun StashNavGraph(
                 yourRecordSection = {
                     // A double tap opens one record, not two
                     YourRecordSection(onOpen = { navController.openRecord() })
+                },
+                recordMixesSection = {
+                    RecordMixesSection(
+                        onOpenMix = { id -> navController.navigate(RecordMixRoute(id)) { launchSingleTop = true } },
+                        onShowAll = { navController.openRecord(mixes = true) },
+                    )
                 },
             )
         }
@@ -584,7 +592,21 @@ private fun StashNavGraph(
         // Full screen over everything (StashScaffold hides the bottom chrome on this route). Pops only while the record is
         // the top entry: its close racing a back must not pop Home as well.
         composable<YourRecordRoute> { entry ->
-            RecordScreen(onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() })
+            RecordScreen(
+                onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenMix = { id ->
+                    if (navController.currentBackStackEntry === entry) navController.navigate(RecordMixRoute(id)) { launchSingleTop = true }
+                },
+            )
+        }
+
+        // A mix of Your record: a normal screen with the mini player (only the record itself is full screen)
+        composable<RecordMixRoute> { entry ->
+            RecordMixScreen(
+                onBack = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                onOpenRecord = { if (navController.currentBackStackEntry === entry) navController.openRecord(mixes = true) },
+            )
         }
 
         // Full screen over everything (StashScaffold hides the bottom chrome on this route).

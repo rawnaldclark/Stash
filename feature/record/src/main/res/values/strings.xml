@@ -337,12 +337,13 @@
     <string name="record_mix_artist">Your %1$s</string>
     <string name="record_mix_artist_sub">The songs you’ve played most, since %1$d</string>
     <string name="record_mix_week">This week, years ago</string>
-    <!-- %1$s: a month's name, %2$d the day, %3$d the one year it comes from ("Around October 28, 2019"). -->
-    <string name="record_mix_week_one_year">Around %1$s %2$d, %3$d</string>
-    <!-- %1$s: a month's name, %2$d the day, %3$d how many past years (always 2 or more; the web says "years" for any number). -->
+    <!-- %1$s: today's day of the year as the language writes it ("October 28", "28. Oktober", "10月28日"), %2$d the one past year
+         it comes from ("Around October 28, 2019"). -->
+    <string name="record_mix_week_one_year">Around %1$s, %2$d</string>
+    <!-- %1$s: today's day of the year (as above), %2$d how many past years (always 2 or more; the web says "years" for any number). -->
     <plurals name="record_mix_week_years">
-        <item quantity="one">Around %1$s %2$d, in %3$d past years</item>
-        <item quantity="other">Around %1$s %2$d, in %3$d past years</item>
+        <item quantity="one">Around %1$s, in %2$d past years</item>
+        <item quantity="other">Around %1$s, in %2$d past years</item>
     </plurals>
     <!-- About how long a mix plays, to five minutes. -->
     <string name="record_mix_about_min">about %1$d min</string>

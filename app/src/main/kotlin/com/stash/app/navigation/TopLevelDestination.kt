@@ -79,19 +79,26 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0, val source: String = "stash")
 
 /**
- * Your record (feature:record): the bundled record from Stash on the web, in a WebView. Full screen like [RecapRoute]: the
- * scaffold hides the mini player and the tab bar.
+ * Your record (feature:record): the bundled record from Stash on the web, in a WebView, and its Mixes tab. Full screen like
+ * [RecapRoute]: the scaffold hides the mini player and the tab bar. [tab]: the tab to open on ("mixes": Home's Show all), else the
+ * one picked last (RecordViewModel reads it by this name).
  */
-@Serializable data object YourRecordRoute
+@Serializable data class YourRecordRoute(val tab: String? = null)
+
+/** One of Your record's history mixes ("era:1693526400000", "year:2018", "week"): a normal screen, the mini player stays. */
+@Serializable data class RecordMixRoute(val id: String)
 
 /**
- * Opens Your record, from anywhere (Home's card, Settings, a finished import), and never again over itself: an import finished
- * over the record (its own "Bring your Spotify") has nothing to open. Navigating to it again replaced its back-stack entry in
- * place, which crashed the app while the NavHost was the Haze source (StashScaffold now keeps the source off the NavHost).
+ * Opens Your record, from anywhere (Home's card and shelf, Settings, a finished import, a mix's page), and never again over itself:
+ * an import finished over the record (its own "Bring your Spotify") has nothing to open, and a mix opened from the record goes back
+ * to that one. Navigating to it again replaced its back-stack entry in place, which crashed the app while the NavHost was the Haze
+ * source (StashScaffold now keeps the source off the NavHost). [mixes]: on its Mixes tab (a record already open keeps its own).
  */
-fun NavController.openRecord() {
+fun NavController.openRecord(mixes: Boolean = false) {
     if (currentDestination?.hasRoute<YourRecordRoute>() == true) return
-    navigate(YourRecordRoute) { launchSingleTop = true }
+    // Under a mix opened from it: that record, as it was
+    if (popBackStack<YourRecordRoute>(inclusive = false)) return
+    navigate(YourRecordRoute(tab = if (mixes) "mixes" else null)) { launchSingleTop = true }
 }
 
 @Serializable

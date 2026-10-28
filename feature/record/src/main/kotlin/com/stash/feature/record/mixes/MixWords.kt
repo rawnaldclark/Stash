@@ -3,8 +3,9 @@ package com.stash.feature.record.mixes
 import android.content.res.Resources
 import com.stash.feature.record.R
 import com.stash.feature.record.imports.ImportText
-import java.time.Month
-import java.time.format.TextStyle
+import android.text.format.DateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -101,12 +102,18 @@ class ResourceMixWords(private val res: Resources) : MixWords {
     override fun artistSub(since: Int) = s(R.string.record_mix_artist_sub, since)
     override val weekTitle: String get() = s(R.string.record_mix_week)
 
-    /** A month's name as a date says it ("October"; in Russian or Polish the form a date takes, "октября"). */
-    private fun month(month0: Int) = Month.of(month0 + 1).getDisplayName(TextStyle.FULL, locale)
+    /**
+     * A day of the year as the language writes it: "October 28" in English (the web's, whatever the English region), "28.
+     * Oktober", "28 октября", "10月28日" (the locale's own month and day, `MMMMd`). Read on a leap year, so 29 February is one.
+     */
+    private fun monthDay(month0: Int, day: Int): String {
+        val pattern = if (locale.language == "en") "MMMM d" else DateFormat.getBestDateTimePattern(locale, "MMMMd")
+        return DateTimeFormatter.ofPattern(pattern, locale).format(LocalDate.of(2000, month0 + 1, day))
+    }
 
-    override fun weekOneYear(month0: Int, day: Int, year: Int) = s(R.string.record_mix_week_one_year, month(month0), day, year)
+    override fun weekOneYear(month0: Int, day: Int, year: Int) = s(R.string.record_mix_week_one_year, monthDay(month0, day), year)
     override fun weekYears(month0: Int, day: Int, years: Int) =
-        res.getQuantityString(R.plurals.record_mix_week_years, years, month(month0), day, years)
+        res.getQuantityString(R.plurals.record_mix_week_years, years, monthDay(month0, day), years)
 
     override fun about(minutes: Int): String = when {
         minutes < 60 -> s(R.string.record_mix_about_min, minutes)
