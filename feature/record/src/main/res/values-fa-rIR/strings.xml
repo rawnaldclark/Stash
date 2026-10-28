@@ -317,4 +317,34 @@
     <string name="record_mix_gone_back">بازگشت به صفحهٔ شما</string>
     <string name="record_mix_failed">الان نمی‌شود صفحهٔ شما را خواند.</string>
     <string name="record_mix_back">بازگشت</string>
+    <string name="record_mixes_top_artists">پرشنونده‌ترین هنرمندان</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s ساعت</item>
+        <item quantity="other">%1$s ساعت</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s بار پخش</item>
+        <item quantity="other">%1$s بار پخش</item>
+    </plurals>
+    <string name="record_mixes_artist_open">باز کردن پرپخش‌ترین آهنگ‌های %1$s</string>
+    <string name="record_mixes_artist_play">پخش پرپخش‌ترین آهنگ‌های %1$s</string>
+    <string name="record_mixes_top_songs">پرپخش‌ترین آهنگ‌ها</string>
+    <string name="record_mixes_lost">هنوز در Stash شما نیست</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d آهنگ که دوستش داشتید و یک سال است گوشش نداده‌اید. برای نگه داشتنش، آن را بپسندید.</item>
+        <item quantity="other">%1$d آهنگ که دوستشان داشتید و یک سال است گوششان نداده‌اید. برای نگه داشتن، یکی را بپسندید.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">پخش «هنوز در Stash شما نیست» (%1$s)</string>
+    <string name="record_mixes_show_more">نمایش بیشتر</string>
+    <string name="record_song_more">گزینه‌های بیشتر برای %1$s</string>
+    <string name="record_song_like">پسندیدن</string>
+    <string name="record_song_unlike">لغو پسند</string>
+    <string name="record_like_failed">افزودن به آهنگ‌های پسندیده ممکن نشد</string>
+    <string name="record_unlike_failed">حذف از آهنگ‌های پسندیده ممکن نشد</string>
+    <string name="record_song_playing_next">پخش بعدی</string>
+    <string name="record_song_added_to_queue">به صف اضافه شد</string>
+    <string name="record_song_queue_failed">افزودن به صف ممکن نشد</string>
+    <string name="record_song_added_to_playlist">به %1$s اضافه شد</string>
+    <string name="record_song_playlist_failed">افزودن به فهرست پخش ممکن نشد</string>
+    <string name="record_song_radio_failed">شروع رادیو از این آهنگ ممکن نشد. کمی بعد دوباره امتحان کنید.</string>
 </resources>

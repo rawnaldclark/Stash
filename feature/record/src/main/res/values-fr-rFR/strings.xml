@@ -318,4 +318,34 @@
     <string name="record_mix_gone_back">Retour à votre disque</string>
     <string name="record_mix_failed">Impossible de lire votre disque pour le moment.</string>
     <string name="record_mix_back">Retour</string>
+    <string name="record_mixes_top_artists">Artistes les plus écoutés</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s heure</item>
+        <item quantity="other">%1$s heures</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s écoute</item>
+        <item quantity="other">%1$s écoutes</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Ouvrir vos titres les plus écoutés de %1$s</string>
+    <string name="record_mixes_artist_play">Écouter vos titres les plus écoutés de %1$s</string>
+    <string name="record_mixes_top_songs">Titres les plus écoutés</string>
+    <string name="record_mixes_lost">Pas encore dans votre Stash</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d titre que vous avez adoré et pas écouté depuis un an. Aimez-le pour le garder.</item>
+        <item quantity="other">%1$d titres que vous avez adorés et pas écoutés depuis un an. Aimez-en un pour le garder.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">Écouter « Pas encore dans votre Stash » (%1$s)</string>
+    <string name="record_mixes_show_more">Afficher plus</string>
+    <string name="record_song_more">Plus d’options pour %1$s</string>
+    <string name="record_song_like">J’aime</string>
+    <string name="record_song_unlike">Je n’aime plus</string>
+    <string name="record_like_failed">Impossible d’ajouter à vos titres aimés</string>
+    <string name="record_unlike_failed">Impossible de retirer de vos titres aimés</string>
+    <string name="record_song_playing_next">À écouter ensuite</string>
+    <string name="record_song_added_to_queue">Ajouté à la file d’attente</string>
+    <string name="record_song_queue_failed">Impossible d’ajouter à la file d’attente</string>
+    <string name="record_song_added_to_playlist">Ajouté à %1$s</string>
+    <string name="record_song_playlist_failed">Impossible d’ajouter à la playlist</string>
+    <string name="record_song_radio_failed">Impossible de lancer une radio à partir de ce titre. Réessayez dans un instant.</string>
 </resources>

@@ -35,7 +35,10 @@ class MixWordsLocalesTest {
             w.weekOneYear(1, 29, 2024), w.about(5), w.about(60), w.about(170), w.cardWith("A & B"), w.cardShare(34), w.cardConstants, w.cardRepeat,
             w.cardWeek, w.cardYearNow, w.cardYear, w.cardStarted, w.cardFromTo("Radiohead", 2009, "Mitski", 2021), w.cardLost, w.number(2019),
         ) + counts.flatMap { n ->
-            listOf(w.weekYears(9, 28, n), w.songs(n), w.cardUpToYears("Sub", n), w.cardObsession("Ivy", n, "June 2022"), w.cardHours(n.toLong()))
+            listOf(
+                w.weekYears(9, 28, n), w.songs(n), w.cardUpToYears("Sub", n), w.cardObsession("Ivy", n, "June 2022"), w.cardHours(n.toLong()),
+                w.artistLine(n * 3_600_000L, n), w.lostLine(n),
+            )
         }
     }
 
@@ -87,6 +90,8 @@ class MixWordsLocalesTest {
             assertWithMessage(tag).that(w.songs(0)).isEqualTo(english.songs(0))
             assertWithMessage(tag).that(w.songs(1)).isEqualTo(english.songs(1))
             assertWithMessage(tag).that(w.cardHours(1_204)).isEqualTo("1,204 hours of listening")
+            assertWithMessage(tag).that(w.artistLine(1_204 * 3_600_000L, 9_021)).isEqualTo("1,204 hours · 9,021 plays")
+            assertWithMessage(tag).that(w.lostLine(12)).isEqualTo("12 songs you loved and haven’t played in a year. Like one to keep it.")
             assertWithMessage(tag).that(w.number(2019)).isEqualTo(english.number(2019))
         }
     }

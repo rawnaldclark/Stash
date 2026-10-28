@@ -361,4 +361,40 @@
     <string name="record_mix_gone_back">Wróć do swojej płyty</string>
     <string name="record_mix_failed">Nie udało się teraz odczytać Twojej płyty.</string>
     <string name="record_mix_back">Wstecz</string>
+    <string name="record_mixes_top_artists">Najczęściej słuchani wykonawcy</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s godzina</item>
+        <item quantity="few">%1$s godziny</item>
+        <item quantity="many">%1$s godzin</item>
+        <item quantity="other">%1$s godziny</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s odtworzenie</item>
+        <item quantity="few">%1$s odtworzenia</item>
+        <item quantity="many">%1$s odtworzeń</item>
+        <item quantity="other">%1$s odtworzenia</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Otwórz swoje najczęściej słuchane utwory: %1$s</string>
+    <string name="record_mixes_artist_play">Odtwórz swoje najczęściej słuchane utwory: %1$s</string>
+    <string name="record_mixes_top_songs">Najczęściej słuchane utwory</string>
+    <string name="record_mixes_lost">Jeszcze nie w Twoim Stashu</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d ulubiony utwór, którego nie słuchasz od roku. Polub go, aby go zachować.</item>
+        <item quantity="few">%1$d ulubione utwory, których nie słuchasz od roku. Polub jeden, aby go zachować.</item>
+        <item quantity="many">%1$d ulubionych utworów, których nie słuchasz od roku. Polub jeden, aby go zachować.</item>
+        <item quantity="other">%1$d ulubionego utworu, którego nie słuchasz od roku. Polub go, aby go zachować.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">Odtwórz „Jeszcze nie w Twoim Stashu” (%1$s)</string>
+    <string name="record_mixes_show_more">Pokaż więcej</string>
+    <string name="record_song_more">Więcej opcji: %1$s</string>
+    <string name="record_song_like">Polub</string>
+    <string name="record_song_unlike">Cofnij polubienie</string>
+    <string name="record_like_failed">Nie udało się dodać do polubionych utworów</string>
+    <string name="record_unlike_failed">Nie udało się usunąć z polubionych utworów</string>
+    <string name="record_song_playing_next">Zagra jako następny</string>
+    <string name="record_song_added_to_queue">Dodano do kolejki</string>
+    <string name="record_song_queue_failed">Nie udało się dodać do kolejki</string>
+    <string name="record_song_added_to_playlist">Dodano do: %1$s</string>
+    <string name="record_song_playlist_failed">Nie udało się dodać do playlisty</string>
+    <string name="record_song_radio_failed">Nie udało się włączyć radia z tego utworu. Spróbuj ponownie za chwilę.</string>
 </resources>

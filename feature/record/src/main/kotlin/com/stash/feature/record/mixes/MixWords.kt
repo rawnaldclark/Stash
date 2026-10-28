@@ -77,6 +77,14 @@ interface MixWords {
 
     /** A year as a card's big words ("2019"). */
     fun number(n: Int): String
+
+    // ── the rest of the Mixes tab (routes/spotify/+page.svelte) ──
+
+    /** A Top artists row's line: years.ts `hoursLabel` and `count` plays, "412 hours · 9,021 plays" (the web: "plays" for any number). */
+    fun artistLine(listenedMs: Long, plays: Int): String
+
+    /** "Not in your Stash yet"'s line: "12 songs you loved and haven’t played in a year. Like one to keep it." */
+    fun lostLine(songs: Int): String
 }
 
 /**
@@ -171,4 +179,15 @@ class ResourceMixWords(context: Context) : MixWords {
     override fun cardFromTo(a: String, aYear: Int, b: String, bYear: Int) = s(R.string.record_mix_card_from_to, a, aYear, b, bYear)
     override val cardLost: String get() = s(R.string.record_mix_card_lost)
     override fun number(n: Int): String = String.format(locale, "%d", n)
+
+    override fun artistLine(listenedMs: Long, plays: Int): String {
+        val hours = HistoryMixes.hours(listenedMs)
+        return s(
+            R.string.record_mix_dot,
+            q(R.plurals.record_mixes_artist_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), RecordCard.count(hours, locale)),
+            q(R.plurals.record_mixes_artist_plays, plays, RecordCard.count(plays.toLong(), locale)),
+        )
+    }
+
+    override fun lostLine(songs: Int) = q(R.plurals.record_mixes_lost_line, songs, songs)
 }

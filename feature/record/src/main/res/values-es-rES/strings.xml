@@ -318,4 +318,34 @@
     <string name="record_mix_gone_back">Volver a tu disco</string>
     <string name="record_mix_failed">No se ha podido leer tu disco ahora.</string>
     <string name="record_mix_back">Atrás</string>
+    <string name="record_mixes_top_artists">Artistas más escuchados</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s hora</item>
+        <item quantity="other">%1$s horas</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s reproducción</item>
+        <item quantity="other">%1$s reproducciones</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Abrir tus canciones más escuchadas de %1$s</string>
+    <string name="record_mixes_artist_play">Reproducir tus canciones más escuchadas de %1$s</string>
+    <string name="record_mixes_top_songs">Canciones más escuchadas</string>
+    <string name="record_mixes_lost">Aún no en tu Stash</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d canción que te encantaba y que no has escuchado en un año. Dale me gusta para guardarla.</item>
+        <item quantity="other">%1$d canciones que te encantaban y que no has escuchado en un año. Dale me gusta a una para guardarla.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">Reproducir «Aún no en tu Stash» (%1$s)</string>
+    <string name="record_mixes_show_more">Mostrar más</string>
+    <string name="record_song_more">Más opciones para %1$s</string>
+    <string name="record_song_like">Me gusta</string>
+    <string name="record_song_unlike">Ya no me gusta</string>
+    <string name="record_like_failed">No se pudo añadir a tus canciones que te gustan</string>
+    <string name="record_unlike_failed">No se pudo quitar de tus canciones que te gustan</string>
+    <string name="record_song_playing_next">Sonará a continuación</string>
+    <string name="record_song_added_to_queue">Añadida a la cola</string>
+    <string name="record_song_queue_failed">No se pudo añadir a la cola</string>
+    <string name="record_song_added_to_playlist">Añadida a %1$s</string>
+    <string name="record_song_playlist_failed">No se pudo añadir a la playlist</string>
+    <string name="record_song_radio_failed">No se pudo iniciar una radio con esta canción. Inténtalo de nuevo en un momento.</string>
 </resources>

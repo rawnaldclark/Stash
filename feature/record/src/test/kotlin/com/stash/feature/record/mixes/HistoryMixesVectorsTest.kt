@@ -157,6 +157,107 @@ class HistoryMixesVectorsTest {
         assertThat(liked).containsAtLeast("isrc:GBXYZ0000001", "old friend 2011 remaster|evergreen")
     }
 
+    /** A song of the Mixes tab's lists as the web wrote it (toItem: its words' key, title, artist, album). */
+    private fun itemSame(why: String, s: MixSong, want: JsonObject) {
+        assertWithMessage("$why: key").that(s.key).isEqualTo(want["key"]!!.jsonPrimitive.content)
+        assertWithMessage("$why: title").that(s.title).isEqualTo(want["title"]!!.jsonPrimitive.content)
+        assertWithMessage("$why: artist").that(s.artist).isEqualTo(want["artist"]!!.jsonPrimitive.content)
+        assertWithMessage("$why: album").that(s.album).isEqualTo(want["album"]?.jsonPrimitive?.content)
+    }
+
+    @Test fun `Top artists, Top songs and Not in your Stash yet - the lists, the play or open rule, the lines`() {
+        val all = read("lists.json").jsonObject
+        val cases = all["cases"]!!.jsonArray.map { it.jsonObject }
+        assertThat(cases.size).isAtLeast(12)
+        var artists = 0
+        var lost = 0
+        for (c in cases) {
+            val name = c["name"]!!.jsonPrimitive.content
+            val have = libs(c["have"])
+            val t = asRead(tasteIn(c), strings(c["keep"]), have)
+
+            val rows = HistoryMixes.topArtists(t)
+            val made = HistoryMixes.historyMixes(t, null, words).map { it.id }
+            val wantArtists = c["artists"]!!.jsonArray.map { it.jsonObject }
+            assertWithMessage("$name: top artists").that(rows.map { it.artist.key }).isEqualTo(wantArtists.map { it["key"]!!.jsonPrimitive.content })
+            for ((r, w) in rows.zip(wantArtists)) {
+                val why = "$name / ${r.artist.name}"
+                assertWithMessage("$why: name").that(r.artist.name).isEqualTo(w["name"]!!.jsonPrimitive.content)
+                assertWithMessage("$why: line").that(words.artistLine(r.artist.listenedMs, r.artist.plays)).isEqualTo(w["line"]!!.jsonPrimitive.content)
+                assertWithMessage("$why: opens").that(r.mixId).isEqualTo((w["mixId"] as? JsonPrimitive)?.contentOrNull)
+                // the row's mix is the one historyMixes makes; with none, the row plays the artist's songs
+                if (r.mixId != null) {
+                    assertWithMessage("$why: its mix").that(made).contains(r.mixId)
+                    assertWithMessage("$why: plays").that(w["plays"]).isEqualTo(JsonNull)
+                } else {
+                    assertWithMessage("$why: plays").that(HistoryMixes.artistSongs(t, r.artist.key).map { it.key }).isEqualTo(strings(w["plays"]))
+                }
+                artists++
+            }
+
+            val tops = HistoryMixes.topSongs(t).map(HistoryMixes::songItem)
+            val wantTops = c["tops"]!!.jsonArray.map { it.jsonObject }
+            assertWithMessage("$name: top songs").that(tops.map { it.songKey }).isEqualTo(wantTops.map { it["key"]!!.jsonPrimitive.content })
+            for ((s, w) in tops.zip(wantTops)) itemSame("$name / top ${s.songKey}", s, w["item"]!!.jsonObject)
+
+            val stats = t.songs.associateBy { it.key }
+            val notIn = HistoryMixes.notInLibrary(t.lost, stats, HistoryMixes.libraryIndex(have)).map(HistoryMixes::songItem)
+            val wantLost = c["lost"]!!.jsonArray.map { it.jsonObject }
+            assertWithMessage("$name: not in your Stash yet").that(notIn.map { it.songKey }).isEqualTo(wantLost.map { it["key"]!!.jsonPrimitive.content })
+            for ((s, w) in notIn.zip(wantLost)) itemSame("$name / lost ${s.songKey}", s, w["item"]!!.jsonObject)
+            lost += notIn.size
+            assertWithMessage("$name: its line").that(words.lostLine(notIn.size)).isEqualTo(c["lostLine"]!!.jsonPrimitive.content)
+            assertWithMessage("$name: its Play").that(res.getString(R.string.record_mixes_lost_play, words.songs(notIn.size))).isEqualTo(c["lostPlay"]!!.jsonPrimitive.content)
+        }
+        assertThat(artists).isAtLeast(50)
+        assertThat(lost).isAtLeast(400)
+    }
+
+    @Test fun `the lists' cases cover what they say they do`() {
+        val cases = read("lists.json").jsonObject["cases"]!!.jsonArray.map { it.jsonObject }.associateBy { it["name"]!!.jsonPrimitive.content }
+        fun case(part: String) = cases.entries.single { it.key.contains(part) }.value
+        fun lostTitles(part: String) = case(part)["lost"]!!.jsonArray.map { it.jsonObject["item"]!!.jsonObject["title"]!!.jsonPrimitive.content }
+        fun opens(part: String, artist: String) = case(part)["artists"]!!.jsonArray.map { it.jsonObject }.single { it["name"]!!.jsonPrimitive.content == artist }["mixId"]
+        // 7 songs play, 8 open; a song put back or liked makes the 8th; only the first 10
+        assertThat(opens("8 songs open", "Seven Ways")).isEqualTo(JsonNull)
+        assertThat(opens("8 songs open", "Eight Fold")).isEqualTo(JsonPrimitive("artist:eight fold"))
+        assertThat(opens("a song put back counts", "Seven Ways")).isEqualTo(JsonPrimitive("artist:seven ways"))
+        assertThat(opens("a liked song counts", "Seven Ways")).isEqualTo(JsonPrimitive("artist:seven ways"))
+        assertThat(case("8 songs open")["artists"]!!.jsonArray).hasSize(10)
+        // the library by words, ISRC, the second of two ISRC twins and guest credits leaves; a remaster stays; kept never lost
+        val before = lostTitles("nothing in the library, 60")
+        val minus = lostTitles("the library by words")
+        assertThat(before).containsAtLeast("By Words", "By Isrc", "Twin B", "Guest Song", "Guest Title", "Remaster Song - 2011 Remaster")
+        assertThat(before).containsNoneOf("Kept Song", "Hidden Song", "Skipped Song", "Recent", "Seven Plays")
+        assertThat(minus).containsNoneOf("By Words", "By Isrc", "Twin B", "Guest Song", "Guest Title")
+        assertThat(minus).contains("Remaster Song - 2011 Remaster")
+        assertThat(lostTitles("liked since")).containsNoneOf("Lost 03", "Lost 07")
+        assertThat(lostTitles("put back are lost")).containsAtLeast("Hidden Song", "Skipped Song")
+        assertThat(lostTitles("put back, then liked")).doesNotContain("Hidden Song")
+        // past the page of 50
+        assertThat(before.size).isGreaterThan(HistoryMixes.LOST_PAGE)
+    }
+
+    @Test fun `the rest of the Mixes tab says what the web says`() {
+        val w = read("lists.json").jsonObject
+        fun said(part: String, k: String) = w[part]!!.jsonObject[k]!!.jsonPrimitive.content
+        assertThat(">${res.getString(R.string.record_mixes_top_artists)}</h2>").isEqualTo(said("page", ">Top artists</h2>"))
+        assertThat(">${res.getString(R.string.record_mixes_top_songs)}</h2>").isEqualTo(said("page", ">Top songs</h2>"))
+        assertThat(">${res.getString(R.string.record_mixes_lost)}</h2>").isEqualTo(said("page", ">Not in your Stash yet</h2>"))
+        assertThat(">${res.getString(R.string.record_mixes_show_more)}</button>").isEqualTo(said("page", ">Show more</button>"))
+        assertThat("aria-label=\"${res.getString(R.string.record_mixes_artist_open, "{a.name}")}\"").isEqualTo(said("page", "aria-label=\"Open your most played songs by {a.name}\""))
+        assertThat("aria-label=\"${res.getString(R.string.record_mixes_artist_play, "{a.name}")}\"").isEqualTo(said("page", "aria-label=\"Play your most played songs by {a.name}\""))
+        assertThat("aria-label=\"${res.getString(R.string.record_mixes_lost_play, "{songs(lost.length)}")}\"").isEqualTo(said("page", "aria-label=\"Play the {songs(lost.length)} not in your Stash yet\""))
+        assertThat(res.getQuantityString(R.plurals.record_mixes_lost_line, 2, 2).removePrefix("2 songs"))
+            .isEqualTo(said("page", "{songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.").removePrefix("{songs(lost.length)}"))
+        assertThat("aria-label=\"${res.getString(R.string.record_song_more, "{item.title}")}\"").isEqualTo(said("row", "aria-label=\"More for {item.title}\""))
+        assertThat("liked ? '${res.getString(R.string.record_song_unlike)}' : '${res.getString(R.string.record_song_like)}'").isEqualTo(said("like", "liked ? 'Unlike' : 'Like'"))
+        // the page's own numbers, as this port has them
+        assertThat(said("page", "const LOST_PAGE = 50;")).contains("${HistoryMixes.LOST_PAGE}")
+        assertThat(said("page", "topSongs(taste, 10).map((s) => toItem(s, now))")).contains("${HistoryMixes.TOP_SONGS}")
+        assertThat(said("page", "taste?.topArtists.slice(0, 10) ?? []")).contains("${HistoryMixes.TOP_ARTISTS}")
+    }
+
     @Test fun `weekMix - the windows, the counts, the first spelling, the words`() {
         val cases = read("week.json").jsonArray.map { it.jsonObject }
         assertThat(cases.size).isAtLeast(10)

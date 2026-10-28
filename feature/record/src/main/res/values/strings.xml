@@ -416,4 +416,44 @@
     <string name="record_mix_gone_back">Back to Your record</string>
     <string name="record_mix_failed">Your record couldn’t be read just now.</string>
     <string name="record_mix_back">Back</string>
+    <!-- The rest of the Mixes tab (phase 5d): Top artists, Top songs and "Not in your Stash yet" (stash-player
+         routes/spotify/+page.svelte, TrackRow.svelte, LikeButton.svelte), character for character in English (’ ·). -->
+    <string name="record_mixes_top_artists">Top artists</string>
+    <!-- A Top artists row's line ("412 hours · 9,021 plays"): whole hours listened, already formatted... -->
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s hour</item>
+        <item quantity="other">%1$s hours</item>
+    </plurals>
+    <!-- ...and plays, already formatted (the web says "plays" for any number). -->
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s plays</item>
+        <item quantity="other">%1$s plays</item>
+    </plurals>
+    <!-- Read out for a Top artists row: %1$s the artist. The row opens their mix; with too few songs for one, it plays them. -->
+    <string name="record_mixes_artist_open">Open your most played songs by %1$s</string>
+    <string name="record_mixes_artist_play">Play your most played songs by %1$s</string>
+    <string name="record_mixes_top_songs">Top songs</string>
+    <string name="record_mixes_lost">Not in your Stash yet</string>
+    <!-- Under "Not in your Stash yet": %1$d how many songs it lists. -->
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d song you loved and haven’t played in a year. Like one to keep it.</item>
+        <item quantity="other">%1$d songs you loved and haven’t played in a year. Like one to keep it.</item>
+    </plurals>
+    <!-- Read out for the list's Play: %1$s how many songs ("12 songs"). -->
+    <string name="record_mixes_lost_play">Play the %1$s not in your Stash yet</string>
+    <string name="record_mixes_show_more">Show more</string>
+    <!-- A song row: read out for its long press (the song menu), %1$s the song; its heart. -->
+    <string name="record_song_more">More for %1$s</string>
+    <string name="record_song_like">Like</string>
+    <string name="record_song_unlike">Unlike</string>
+    <!-- What a row's Like and its menu came to (the app's own words, as Now Playing and Search say them). -->
+    <string name="record_like_failed">Couldn’t add to Liked Songs</string>
+    <string name="record_unlike_failed">Couldn’t remove from Liked Songs</string>
+    <string name="record_song_playing_next">Playing next</string>
+    <string name="record_song_added_to_queue">Added to queue</string>
+    <string name="record_song_queue_failed">Couldn’t add to queue</string>
+    <!-- %1$s: the playlist (the web's song menu says "Added to {name}"). -->
+    <string name="record_song_added_to_playlist">Added to %1$s</string>
+    <string name="record_song_playlist_failed">Couldn’t add to playlist</string>
+    <string name="record_song_radio_failed">Couldn’t start a radio from this. Try again in a moment.</string>
 </resources>

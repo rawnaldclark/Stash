@@ -15,6 +15,10 @@
  * - rotation.json: `rotation` and `homePicks` for every day 0..n+1, with "this week" and without.
  * - words.json: `eraWhen`, `andList` and `aboutLength` edges, and the English of the mix page, Home's shelf and the Mixes tab
  *   (MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte, read as the files are).
+ * - lists.json: the rest of the Mixes tab (routes/spotify/+page.svelte): Top artists (the first 10, each with the mix it opens,
+ *   else the songs it plays: `artistMix`, `artistSongs`), Top songs (years.ts `topSongs`) and "Not in your Stash yet" (years.ts
+ *   `notInLibrary` over the taste's `lost`: library copies by words, ISRC, a twin ISRC, guest credits; a remaster; kept, hidden,
+ *   skipped, put back and liked songs), with their lines; the page's own <script> lines are ported here, held to the file.
  *
  * Run from this repository's root, against a stash-player checkout with its node_modules (read only), at the live commit:
  *   PLAYER=../stash-web/player-upi
@@ -31,6 +35,7 @@ import { commit, openFiles, prepare } from '@player/spotify/importer';
 import {
 	andList,
 	artistMix,
+	artistSongs,
 	eraWhen,
 	firstSongs,
 	haveIndex,
@@ -42,8 +47,11 @@ import {
 	type HistoryMix
 } from '@player/spotify/mixes';
 import { F_DONE, F_LASTFM, F_REASONS, F_SKIPPED, playId, type ArchivePlay } from '@player/spotify/plays';
+import { toItem } from '@player/spotify/service';
 import { artistKey, computeTaste, songKey, type SongStat, type Taste, type TastePlay } from '@player/spotify/taste';
+import { songs } from '@player/ui/format';
 import { aboutLength, card, mixHeading, mixLine } from '@player/ui/spotify/mix';
+import { count, hoursLabel, notInLibrary, statsOf, topSongs } from '@player/ui/spotify/years';
 
 const out = process.argv[2];
 const player = process.argv[3];
@@ -513,4 +521,176 @@ write('words.json', {
 	])
 });
 
-console.log(`history ${historyOut.length}, week ${weekOut.length}, rotation ${rotationOut.length}: written to ${out}`);
+// ── lists.json ──────────────────────────────────────────────────────────────────────────────────────────────────────
+//
+// The rest of the Mixes tab (routes/spotify/+page.svelte): Top artists (each opening its mix, or playing with too few songs),
+// Top songs and "Not in your Stash yet". The lists are years.ts's and mixes.ts's own (topSongs, notInLibrary, statsOf,
+// artistMix, artistSongs), imported here; what the page does with them in its <script> can't be imported, so these lines are
+// a port of it, held to the page as the file is (pageWords below):
+//   const tops = $derived(taste ? topSongs(taste, 10).map((s) => toItem(s, now)) : []);
+//   const artists = $derived(taste?.topArtists.slice(0, 10) ?? []);
+//   const library = $derived([...L.likes, ...L.playlists.flatMap((p) => p.items)]);
+//   const lost = $derived(taste ? notInLibrary(taste.lost, stats, library).map((s) => toItem(s, now)) : []);
+//   const playArtist = (key: string) => taste && play(artistSongs(taste, key).map((s) => toItem(s, now)));
+//   const artistMixId = $derived(new Map(taste ? artists.map((a) => [a.key, artistMix(taste!, a)?.id]) : []));
+//   <i>{hoursLabel(a.listenedMs)} · {count(a.plays)} plays</i>
+//   {songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.
+//   aria-label="Play the {songs(lost.length)} not in your Stash yet"
+// The taste is service.ts `taste()`'s (asRead: put back, the library's songs no longer kept out), as the page reads it.
+
+/** The page's `library`: the likes, then every playlist's songs, each a library item as the web keeps it. */
+type ListsCase = { name: string; taste: Taste; keep?: string[]; have?: Lib[] };
+const lists: ListsCase[] = [];
+const LISTS_NOW = Date.UTC(2026, 9, 28, 12);
+
+lists.push({ name: 'the golden fixture, its playlists and liked songs the library', taste: committed.taste, have: fixtureLib });
+lists.push({ name: 'the golden fixture, nothing in the library', taste: committed.taste });
+
+// Top artists: 8 songs open their mix, 7 play; an avoided song doesn't count (put back, it does); songs never listened to don't;
+// a credit with a guest is the artist's; an artist the taste has no songs for plays nothing; the first 10 only; the hours and
+// plays as the page says them (1 hour from half an hour on, "1 plays", thousands with commas)
+{
+	const songs = [
+		...songsOf(8, 'Eight Fold', 'Fold', (i) => ({ plays: 20 - (i % 3) })),
+		...songsOf(8, 'Seven Ways', 'Way', (i) => ({ avoid: i === 0 })),
+		...songsOf(7, 'Just Seven', 'Seven', (i) => ({ plays: 30 - i })),
+		...songsOf(55, 'Many Hands', 'Hand', (i) => ({ plays: 5 + (i % 9) })),
+		...songsOf(9, 'Zero Plays', 'Zero', (i) => ({ plays: i < 2 ? 0 : 3 })),
+		...songsOf(8, 'Feat Artist feat. Guest', 'Feat'),
+		...Array.from({ length: 6 }, (_, a) => songsOf(8, `Also ${a}`, `Also ${a}`)).flat()
+	];
+	const topArtists = [
+		top('Eight Fold', 1, 0),
+		top('Seven Ways', 12_345, 1_799_999),
+		top('Just Seven', 2, 1_800_000),
+		top('Many Hands', 9_021, 1_234 * HOUR),
+		top('Zero Plays', 40, 5_400_000),
+		top('Feat Artist', 41, HOUR),
+		top('Nobody Here', 3, 2 * HOUR),
+		...Array.from({ length: 6 }, (_, a) => top(`Also ${a}`, 40 - a, (30 - a) * HOUR))
+	];
+	const t = taste({ songs, topArtists });
+	lists.push({ name: 'Top artists: 8 songs open their mix, 7 play; the first 10; their hours and plays', taste: t });
+	lists.push({ name: 'Top artists: a song put back counts again, so Seven Ways opens', taste: t, keep: [songs[8]!.key] });
+	lists.push({ name: 'Top artists: a liked song counts again, so Seven Ways opens', taste: t, have: [{ title: 'Way 1', artist: 'Seven Ways' }] });
+}
+
+// Top songs: most played first, ties by key, a song only ever started left out, an avoided song still in (topSongs doesn't skip
+// them), 10 at most; and a taste with fewer
+{
+	const songs = [
+		stat('Bravo', 'Ties', { plays: 50 }),
+		stat('Alpha', 'Ties', { plays: 50 }),
+		stat('Charlie', 'Ties', { plays: 50 }),
+		stat('Skipped A Lot', 'Avoided', { plays: 49, avoid: true }),
+		stat('Started Only', 'Never', { plays: 0, starts: 99 }),
+		...Array.from({ length: 9 }, (_, i) => stat(`Song ${i}`, 'Many', { plays: 40 - i })),
+		stat('One Play', 'Last', { plays: 1 })
+	];
+	lists.push({ name: 'Top songs: most played, ties by key, an avoided song in, a song only started out, 10 at most', taste: taste({ songs }) });
+	lists.push({ name: 'Top songs: a taste with three songs played', taste: taste({ songs: [stat('A', 'X', { plays: 3 }), stat('B', 'X', { plays: 0 }), stat('C', 'Y', { plays: 7 }), stat('D', 'Z', { plays: 7 })] }) });
+}
+
+// "Not in your Stash yet": the taste's own lost list (computeTaste, as the import works it out), minus the library by the song's
+// words: a copy by its words, with an ISRC, one of two copies sharing an ISRC under other words, a guest credit and a feat. title
+// folded away; a remaster in the history isn't the plain title in the library (words, not song keys); kept songs never lost;
+// hidden and skipped songs not lost until put back; 60 songs, past the page of 50
+{
+	const plays: TastePlay[] = [];
+	const two = Date.UTC(2024, 3, 1);
+	const listen = (t: string, a: string, n: number, at = two, al?: string) => {
+		for (let i = 0; i < n; i++) plays.push({ t, a, s: at + i * DAY, ms: 200_000, f: FULL, ...(al ? { al } : {}) });
+	};
+	const skip = (t: string, a: string, n: number, at: number) => {
+		for (let i = 0; i < n; i++) plays.push({ t, a, s: at + i * HOUR, ms: 5_000, f: F_REASONS | F_SKIPPED });
+	};
+	for (let i = 0; i < 60; i++) listen(`Lost ${String(i).padStart(2, '0')}`, 'Lost Band', 8 + (i % 5), two + i * 3_600_000, i % 4 ? 'Faded' : undefined);
+	listen('By Words', 'Lost Band', 12);
+	listen('By Isrc', 'Lost Band', 12);
+	listen('Twin B', 'Lost Band', 12);
+	listen('Guest Song', 'Lost Band', 12);
+	listen('Guest Title', 'Lost Band', 12);
+	listen('Remaster Song - 2011 Remaster', 'Lost Band', 12);
+	listen('Kept Song', 'Lost Band', 12);
+	listen('Hidden Song', 'Lost Band', 12);
+	listen('Skipped Song', 'Lost Band', 10);
+	skip('Skipped Song', 'Lost Band', 40, Date.UTC(2024, 6, 1));
+	listen('Recent', 'Lost Band', 12, Date.UTC(2026, 6, 1));
+	listen('Seven Plays', 'Lost Band', 7);
+	const hidden = new Set([songKey('Hidden Song', 'Lost Band')]);
+	const kept = new Set([songKey('Kept Song', 'Lost Band')]);
+	const putBack = new Set([songKey('Hidden Song', 'Lost Band'), songKey('Skipped Song', 'Lost Band')]);
+	const library: Lib[] = [
+		{ title: 'By Words', artist: 'Lost Band' },
+		{ title: 'By Isrc', artist: 'Lost Band', isrc: 'GBLOST000001' },
+		{ title: 'Twin A', artist: 'Lost Band', isrc: 'GBTWIN000001' },
+		{ title: 'Twin B', artist: 'Lost Band', isrc: 'GBTWIN000001' },
+		{ title: 'Guest Song', artist: 'Lost Band (feat. Someone)' },
+		{ title: 'Guest Title (feat. Someone)', artist: 'Lost Band' },
+		{ title: 'Remaster Song', artist: 'Lost Band' },
+		{ title: 'Kept Song', artist: 'Lost Band' }
+	];
+	const before = computeTaste(plays, { now: LISTS_NOW, hidden, kept });
+	const after = computeTaste(plays, { now: LISTS_NOW, hidden, kept, putBack });
+	lists.push({ name: 'Not in your Stash yet: nothing in the library, 60 lost songs and more', taste: before });
+	lists.push({ name: 'Not in your Stash yet: the library by words, ISRC, a twin ISRC, guest credits; a remaster stays', taste: before, have: library });
+	lists.push({ name: 'Not in your Stash yet: a song liked since leaves the list at once', taste: before, have: [...library, { title: 'Lost 03', artist: 'Lost Band', album: 'Faded' }, { title: 'Lost 07', artist: 'lost band' }] });
+	lists.push({ name: 'Not in your Stash yet: a hidden and a skipped song put back are lost favourites too', taste: after, keep: [...putBack], have: library });
+	lists.push({ name: 'Not in your Stash yet: put back, then liked: it leaves the list', taste: after, keep: [...putBack], have: [...library, { title: 'Hidden Song', artist: 'Lost Band' }] });
+}
+
+const listsItem = (s: SongStat) => itemJson(toItem(s, 0));
+const listsOut = lists.map((c) => {
+	const t = asRead(c.taste, c.keep ?? [], c.have ?? []);
+	const library = (c.have ?? []).map(libItem);
+	const stats = statsOf(t);
+	const artists = t.topArtists.slice(0, 10);
+	const lost = notInLibrary(t.lost, stats, library);
+	return {
+		name: c.name,
+		taste: c.taste === committed.taste ? 'fixture' : tasteJson(c.taste),
+		keep: c.keep ?? [],
+		have: c.have ?? [],
+		artists: artists.map((a) => {
+			const mixId = artistMix(t, a)?.id ?? null;
+			return {
+				key: a.key,
+				name: a.name,
+				line: `${hoursLabel(a.listenedMs)} · ${count(a.plays)} plays`,
+				mixId,
+				// what the row plays when it has no mix (playArtist: artistSongs, 50 at most)
+				plays: mixId ? null : artistSongs(t, a.key).map((s) => s.key)
+			};
+		}),
+		tops: topSongs(t, 10).map((s) => ({ key: s.key, item: listsItem(s) })),
+		lost: lost.map((s) => ({ key: s.key, item: listsItem(s) })),
+		lostLine: `${songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.`,
+		lostPlay: `Play the ${songs(lost.length)} not in your Stash yet`
+	};
+});
+write('lists.json', {
+	cases: listsOut,
+	// The page's words and lines this port follows, each in the file as it is
+	page: wordsOf('src/routes/spotify/+page.svelte', [
+		'>Top artists</h2>',
+		'>Top songs</h2>',
+		'>Not in your Stash yet</h2>',
+		'{songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.',
+		'aria-label="Play the {songs(lost.length)} not in your Stash yet"',
+		'>Show more</button>',
+		'aria-label="Open your most played songs by {a.name}"',
+		'aria-label="Play your most played songs by {a.name}"',
+		'<i>{hoursLabel(a.listenedMs)} · {count(a.plays)} plays</i>',
+		'const LOST_PAGE = 50;',
+		'topSongs(taste, 10).map((s) => toItem(s, now))',
+		'taste?.topArtists.slice(0, 10) ?? []',
+		'[...L.likes, ...L.playlists.flatMap((p) => p.items)]',
+		'notInLibrary(taste.lost, stats, library).map((s) => toItem(s, now))',
+		'artistSongs(taste, key).map((s) => toItem(s, now))',
+		'artistMix(taste!, a)?.id'
+	]),
+	row: wordsOf('src/lib/ui/TrackRow.svelte', ['aria-label="More for {item.title}"', '<LikeButton {item} class="tr-h" />']),
+	like: wordsOf('src/lib/ui/LikeButton.svelte', ["liked ? 'Unlike' : 'Like'"])
+});
+
+console.log(`history ${historyOut.length}, week ${weekOut.length}, rotation ${rotationOut.length}, lists ${listsOut.length}: written to ${out}`);

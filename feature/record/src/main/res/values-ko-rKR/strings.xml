@@ -295,4 +295,31 @@
     <string name="record_mix_gone_back">나의 레코드로 돌아가기</string>
     <string name="record_mix_failed">지금은 나의 레코드를 읽을 수 없어요.</string>
     <string name="record_mix_back">뒤로</string>
+    <string name="record_mixes_top_artists">많이 들은 아티스트</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="other">%1$s시간</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="other">%1$s회 재생</item>
+    </plurals>
+    <string name="record_mixes_artist_open">%1$s의 가장 많이 들은 곡 열기</string>
+    <string name="record_mixes_artist_play">%1$s의 가장 많이 들은 곡 재생</string>
+    <string name="record_mixes_top_songs">많이 들은 곡</string>
+    <string name="record_mixes_lost">아직 Stash에 없는 곡</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="other">좋아했지만 1년 동안 듣지 않은 곡 %1$d곡. 좋아요를 눌러 간직하세요.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">‘아직 Stash에 없는 곡’ 재생(%1$s)</string>
+    <string name="record_mixes_show_more">더 보기</string>
+    <string name="record_song_more">%1$s 옵션 더보기</string>
+    <string name="record_song_like">좋아요</string>
+    <string name="record_song_unlike">좋아요 취소</string>
+    <string name="record_like_failed">좋아요 표시한 곡에 추가하지 못했습니다</string>
+    <string name="record_unlike_failed">좋아요 표시한 곡에서 삭제하지 못했습니다</string>
+    <string name="record_song_playing_next">다음에 재생</string>
+    <string name="record_song_added_to_queue">대기열에 추가했습니다</string>
+    <string name="record_song_queue_failed">대기열에 추가하지 못했습니다</string>
+    <string name="record_song_added_to_playlist">%1$s에 추가했습니다</string>
+    <string name="record_song_playlist_failed">플레이리스트에 추가하지 못했습니다</string>
+    <string name="record_song_radio_failed">이 곡으로 라디오를 시작하지 못했습니다. 잠시 후 다시 시도하세요.</string>
 </resources>

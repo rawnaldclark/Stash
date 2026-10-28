@@ -295,4 +295,31 @@
     <string name="record_mix_gone_back">返回你的唱片</string>
     <string name="record_mix_failed">现在无法读取你的唱片。</string>
     <string name="record_mix_back">返回</string>
+    <string name="record_mixes_top_artists">最常听的艺人</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="other">%1$s 小时</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="other">%1$s 次播放</item>
+    </plurals>
+    <string name="record_mixes_artist_open">打开你最常听的 %1$s 的歌</string>
+    <string name="record_mixes_artist_play">播放你最常听的 %1$s 的歌</string>
+    <string name="record_mixes_top_songs">最常听的歌曲</string>
+    <string name="record_mixes_lost">还不在你的 Stash 里</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="other">%1$d 首你曾经喜爱、但已一年没听的歌。点赞一首就能留下它。</item>
+    </plurals>
+    <string name="record_mixes_lost_play">播放“还不在你的 Stash 里”（%1$s）</string>
+    <string name="record_mixes_show_more">显示更多</string>
+    <string name="record_song_more">%1$s 的更多选项</string>
+    <string name="record_song_like">点赞</string>
+    <string name="record_song_unlike">取消点赞</string>
+    <string name="record_like_failed">无法加入你喜欢的歌曲</string>
+    <string name="record_unlike_failed">无法从你喜欢的歌曲中移除</string>
+    <string name="record_song_playing_next">下一首播放</string>
+    <string name="record_song_added_to_queue">已加入播放队列</string>
+    <string name="record_song_queue_failed">无法加入播放队列</string>
+    <string name="record_song_added_to_playlist">已添加到 %1$s</string>
+    <string name="record_song_playlist_failed">无法添加到歌单</string>
+    <string name="record_song_radio_failed">无法从这首歌开启电台，请稍后再试。</string>
 </resources>

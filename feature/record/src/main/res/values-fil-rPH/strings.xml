@@ -317,4 +317,34 @@
     <string name="record_mix_gone_back">Bumalik sa record mo</string>
     <string name="record_mix_failed">Hindi mabasa ang record mo ngayon.</string>
     <string name="record_mix_back">Bumalik</string>
+    <string name="record_mixes_top_artists">Mga nangungunang artist</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s oras</item>
+        <item quantity="other">%1$s na oras</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s pagtugtog</item>
+        <item quantity="other">%1$s na pagtugtog</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Buksan ang mga kanta ni %1$s na pinakamadalas mong pinatugtog</string>
+    <string name="record_mixes_artist_play">I-play ang mga kanta ni %1$s na pinakamadalas mong pinatugtog</string>
+    <string name="record_mixes_top_songs">Mga nangungunang kanta</string>
+    <string name="record_mixes_lost">Wala pa sa Stash mo</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d kantang minahal mo at isang taon mo nang hindi pinapatugtog. I-like ito para itago.</item>
+        <item quantity="other">%1$d na kantang minahal mo at isang taon mo nang hindi pinapatugtog. Mag-like ng isa para itago ito.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">I-play ang “Wala pa sa Stash mo” (%1$s)</string>
+    <string name="record_mixes_show_more">Ipakita pa</string>
+    <string name="record_song_more">Higit pa para sa %1$s</string>
+    <string name="record_song_like">I-like</string>
+    <string name="record_song_unlike">I-unlike</string>
+    <string name="record_like_failed">Hindi maidagdag sa mga ni-like mong kanta</string>
+    <string name="record_unlike_failed">Hindi maalis sa mga ni-like mong kanta</string>
+    <string name="record_song_playing_next">Susunod na tutugtog</string>
+    <string name="record_song_added_to_queue">Idinagdag sa queue</string>
+    <string name="record_song_queue_failed">Hindi maidagdag sa queue</string>
+    <string name="record_song_added_to_playlist">Idinagdag sa %1$s</string>
+    <string name="record_song_playlist_failed">Hindi maidagdag sa playlist</string>
+    <string name="record_song_radio_failed">Hindi makapagsimula ng radio mula rito. Subukan ulit maya-maya.</string>
 </resources>

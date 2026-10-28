@@ -317,4 +317,34 @@
     <string name="record_mix_gone_back">Zurück zu deiner Platte</string>
     <string name="record_mix_failed">Deine Platte konnte gerade nicht gelesen werden.</string>
     <string name="record_mix_back">Zurück</string>
+    <string name="record_mixes_top_artists">Top-Künstler</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s Stunde</item>
+        <item quantity="other">%1$s Stunden</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s Wiedergabe</item>
+        <item quantity="other">%1$s Wiedergaben</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Deine meistgehörten Songs von %1$s öffnen</string>
+    <string name="record_mixes_artist_play">Deine meistgehörten Songs von %1$s abspielen</string>
+    <string name="record_mixes_top_songs">Top-Songs</string>
+    <string name="record_mixes_lost">Noch nicht in deinem Stash</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d Song, den du geliebt und seit einem Jahr nicht gehört hast. Markiere ihn mit „Gefällt mir“, um ihn zu behalten.</item>
+        <item quantity="other">%1$d Songs, die du geliebt und seit einem Jahr nicht gehört hast. Markiere einen mit „Gefällt mir“, um ihn zu behalten.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">„Noch nicht in deinem Stash“ abspielen (%1$s)</string>
+    <string name="record_mixes_show_more">Mehr anzeigen</string>
+    <string name="record_song_more">Mehr zu %1$s</string>
+    <string name="record_song_like">Gefällt mir</string>
+    <string name="record_song_unlike">Gefällt mir nicht mehr</string>
+    <string name="record_like_failed">Konnte nicht zu deinen Lieblingssongs hinzugefügt werden</string>
+    <string name="record_unlike_failed">Konnte nicht aus deinen Lieblingssongs entfernt werden</string>
+    <string name="record_song_playing_next">Wird als Nächstes gespielt</string>
+    <string name="record_song_added_to_queue">Zur Warteschlange hinzugefügt</string>
+    <string name="record_song_queue_failed">Konnte nicht zur Warteschlange hinzugefügt werden</string>
+    <string name="record_song_added_to_playlist">Zu %1$s hinzugefügt</string>
+    <string name="record_song_playlist_failed">Konnte nicht zur Playlist hinzugefügt werden</string>
+    <string name="record_song_radio_failed">Radio konnte nicht gestartet werden. Versuch es gleich noch mal.</string>
 </resources>

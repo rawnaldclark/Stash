@@ -405,4 +405,46 @@
     <string name="record_mix_gone_back">العودة إلى أسطوانتك</string>
     <string name="record_mix_failed">تعذّرت قراءة أسطوانتك الآن.</string>
     <string name="record_mix_back">رجوع</string>
+    <string name="record_mixes_top_artists">أكثر الفنانين استماعًا</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="zero">%1$s ساعة</item>
+        <item quantity="one">%1$s ساعة</item>
+        <item quantity="two">%1$s ساعتان</item>
+        <item quantity="few">%1$s ساعات</item>
+        <item quantity="many">%1$s ساعة</item>
+        <item quantity="other">%1$s ساعة</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="zero">%1$s تشغيل</item>
+        <item quantity="one">%1$s تشغيل</item>
+        <item quantity="two">%1$s تشغيلان</item>
+        <item quantity="few">%1$s تشغيلات</item>
+        <item quantity="many">%1$s تشغيلًا</item>
+        <item quantity="other">%1$s تشغيل</item>
+    </plurals>
+    <string name="record_mixes_artist_open">افتح أكثر أغاني %1$s التي استمعت إليها</string>
+    <string name="record_mixes_artist_play">شغّل أكثر أغاني %1$s التي استمعت إليها</string>
+    <string name="record_mixes_top_songs">أكثر الأغاني استماعًا</string>
+    <string name="record_mixes_lost">ليست في Stash بعد</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="zero">%1$d أغنية أحببتها ولم تستمع إليها منذ عام. أعجب بواحدة لتحتفظ بها.</item>
+        <item quantity="one">%1$d أغنية أحببتها ولم تستمع إليها منذ عام. أعجب بها لتحتفظ بها.</item>
+        <item quantity="two">%1$d أغنيتان أحببتهما ولم تستمع إليهما منذ عام. أعجب بواحدة لتحتفظ بها.</item>
+        <item quantity="few">%1$d أغانٍ أحببتها ولم تستمع إليها منذ عام. أعجب بواحدة لتحتفظ بها.</item>
+        <item quantity="many">%1$d أغنية أحببتها ولم تستمع إليها منذ عام. أعجب بواحدة لتحتفظ بها.</item>
+        <item quantity="other">%1$d أغنية أحببتها ولم تستمع إليها منذ عام. أعجب بواحدة لتحتفظ بها.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">شغّل «ليست في Stash بعد» (%1$s)</string>
+    <string name="record_mixes_show_more">عرض المزيد</string>
+    <string name="record_song_more">المزيد لـ %1$s</string>
+    <string name="record_song_like">إعجاب</string>
+    <string name="record_song_unlike">إلغاء الإعجاب</string>
+    <string name="record_like_failed">تعذّرت الإضافة إلى الأغاني التي أعجبتك</string>
+    <string name="record_unlike_failed">تعذّرت الإزالة من الأغاني التي أعجبتك</string>
+    <string name="record_song_playing_next">ستُشغَّل تاليًا</string>
+    <string name="record_song_added_to_queue">أُضيفت إلى قائمة الانتظار</string>
+    <string name="record_song_queue_failed">تعذّرت الإضافة إلى قائمة الانتظار</string>
+    <string name="record_song_added_to_playlist">أُضيفت إلى %1$s</string>
+    <string name="record_song_playlist_failed">تعذّرت الإضافة إلى قائمة التشغيل</string>
+    <string name="record_song_radio_failed">تعذّر بدء راديو من هذه الأغنية. حاول مرة أخرى بعد قليل.</string>
 </resources>

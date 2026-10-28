@@ -361,4 +361,40 @@
     <string name="record_mix_gone_back">Назад к пластинке</string>
     <string name="record_mix_failed">Сейчас не получилось прочитать вашу пластинку.</string>
     <string name="record_mix_back">Назад</string>
+    <string name="record_mixes_top_artists">Топ исполнителей</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s час</item>
+        <item quantity="few">%1$s часа</item>
+        <item quantity="many">%1$s часов</item>
+        <item quantity="other">%1$s часа</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s прослушивание</item>
+        <item quantity="few">%1$s прослушивания</item>
+        <item quantity="many">%1$s прослушиваний</item>
+        <item quantity="other">%1$s прослушивания</item>
+    </plurals>
+    <string name="record_mixes_artist_open">Открыть ваши самые прослушиваемые песни: %1$s</string>
+    <string name="record_mixes_artist_play">Включить ваши самые прослушиваемые песни: %1$s</string>
+    <string name="record_mixes_top_songs">Топ песен</string>
+    <string name="record_mixes_lost">Ещё не в вашем Stash</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d любимая песня, которую вы не слушали уже год. Поставьте лайк, чтобы сохранить её.</item>
+        <item quantity="few">%1$d любимые песни, которые вы не слушали уже год. Поставьте лайк одной из них, чтобы сохранить её.</item>
+        <item quantity="many">%1$d любимых песен, которые вы не слушали уже год. Поставьте лайк одной из них, чтобы сохранить её.</item>
+        <item quantity="other">%1$d любимой песни, которую вы не слушали уже год. Поставьте лайк, чтобы сохранить её.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">Включить «Ещё не в вашем Stash» (%1$s)</string>
+    <string name="record_mixes_show_more">Показать ещё</string>
+    <string name="record_song_more">Ещё для «%1$s»</string>
+    <string name="record_song_like">Нравится</string>
+    <string name="record_song_unlike">Убрать лайк</string>
+    <string name="record_like_failed">Не удалось добавить в понравившиеся</string>
+    <string name="record_unlike_failed">Не удалось убрать из понравившихся</string>
+    <string name="record_song_playing_next">Будет следующей</string>
+    <string name="record_song_added_to_queue">Добавлено в очередь</string>
+    <string name="record_song_queue_failed">Не удалось добавить в очередь</string>
+    <string name="record_song_added_to_playlist">Добавлено в «%1$s»</string>
+    <string name="record_song_playlist_failed">Не удалось добавить в плейлист</string>
+    <string name="record_song_radio_failed">Не удалось запустить радио по этой песне. Попробуйте ещё раз чуть позже.</string>
 </resources>

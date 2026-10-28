@@ -317,4 +317,34 @@
     <string name="record_mix_gone_back">तुमच्या रेकॉर्डकडे परत</string>
     <string name="record_mix_failed">आत्ता तुमचा रेकॉर्ड वाचता आला नाही.</string>
     <string name="record_mix_back">मागे</string>
+    <string name="record_mixes_top_artists">सर्वाधिक ऐकलेले कलाकार</string>
+    <plurals name="record_mixes_artist_hours">
+        <item quantity="one">%1$s तास</item>
+        <item quantity="other">%1$s तास</item>
+    </plurals>
+    <plurals name="record_mixes_artist_plays">
+        <item quantity="one">%1$s वेळा वाजवले</item>
+        <item quantity="other">%1$s वेळा वाजवले</item>
+    </plurals>
+    <string name="record_mixes_artist_open">%1$s यांची तुम्ही सर्वाधिक वाजवलेली गाणी उघडा</string>
+    <string name="record_mixes_artist_play">%1$s यांची तुम्ही सर्वाधिक वाजवलेली गाणी वाजवा</string>
+    <string name="record_mixes_top_songs">सर्वाधिक ऐकलेली गाणी</string>
+    <string name="record_mixes_lost">अजून तुमच्या Stash मध्ये नाही</string>
+    <plurals name="record_mixes_lost_line">
+        <item quantity="one">%1$d गाणे जे तुम्हाला खूप आवडायचे आणि जे तुम्ही वर्षभरात वाजवले नाही. ते ठेवण्यासाठी पसंत करा.</item>
+        <item quantity="other">%1$d गाणी जी तुम्हाला खूप आवडायची आणि जी तुम्ही वर्षभरात वाजवली नाहीत. ठेवण्यासाठी एखादे पसंत करा.</item>
+    </plurals>
+    <string name="record_mixes_lost_play">“अजून तुमच्या Stash मध्ये नाही” वाजवा (%1$s)</string>
+    <string name="record_mixes_show_more">आणखी दाखवा</string>
+    <string name="record_song_more">%1$s साठी आणखी पर्याय</string>
+    <string name="record_song_like">पसंत करा</string>
+    <string name="record_song_unlike">पसंती काढा</string>
+    <string name="record_like_failed">पसंतीच्या गाण्यांमध्ये जोडता आले नाही</string>
+    <string name="record_unlike_failed">पसंतीच्या गाण्यांमधून काढता आले नाही</string>
+    <string name="record_song_playing_next">पुढे वाजेल</string>
+    <string name="record_song_added_to_queue">रांगेत जोडले</string>
+    <string name="record_song_queue_failed">रांगेत जोडता आले नाही</string>
+    <string name="record_song_added_to_playlist">%1$s मध्ये जोडले</string>
+    <string name="record_song_playlist_failed">प्लेलिस्टमध्ये जोडता आले नाही</string>
+    <string name="record_song_radio_failed">या गाण्यावरून रेडिओ सुरू करता आला नाही. थोड्या वेळाने पुन्हा प्रयत्न करा.</string>
 </resources>
