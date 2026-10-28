@@ -199,6 +199,8 @@
     <string name="settings_home_section_community">Communauté</string>
     <string name="settings_home_section_your_listening">Vos écoutes</string>
     <string name="settings_home_section_your_record">Votre disque</string>
+    <string name="settings_home_section_record_mixes">De votre disque</string>
+    <string name="settings_home_section_record_mixes_desc">Des mix que seules vos années d’écoute peuvent faire. Apparaît une fois votre historique arrivé.</string>
     <string name="settings_home_section_move_up">Déplacer %1$s vers le haut</string>
     <string name="settings_home_section_move_down">Déplacer %1$s vers le bas</string>
     <string name="settings_home_section_show_desc">Afficher %1$s sur l’accueil</string>

@@ -194,6 +194,8 @@
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
     <string name="settings_home_section_your_record">你的唱片</string>
+    <string name="settings_home_section_record_mixes">来自你的唱片</string>
+    <string name="settings_home_section_record_mixes_desc">只有你多年的聆听才能做出的混音。导入你的历史后显示。</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>

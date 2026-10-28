@@ -76,6 +76,8 @@ fun SettingsHomeLayoutScreen(
                                 stringResource(R.string.settings_home_section_listening_desc)
                             section == HomeSection.YOUR_RECORD ->
                                 stringResource(R.string.settings_home_section_record_desc)
+                            section == HomeSection.RECORD_MIXES ->
+                                stringResource(R.string.settings_home_section_record_mixes_desc)
                             else -> null
                         },
                         shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
@@ -160,6 +162,7 @@ private fun HomeSection.displayLabel(): String = when (this) {
     HomeSection.COMMUNITY -> stringResource(R.string.settings_home_section_community)
     HomeSection.YOUR_LISTENING -> stringResource(R.string.settings_home_section_your_listening)
     HomeSection.YOUR_RECORD -> stringResource(R.string.settings_home_section_your_record)
+    HomeSection.RECORD_MIXES -> stringResource(R.string.settings_home_section_record_mixes)
 }
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */

@@ -199,6 +199,8 @@
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Dein Hörverlauf</string>
     <string name="settings_home_section_your_record">Deine Platte</string>
+    <string name="settings_home_section_record_mixes">Aus deiner Platte</string>
+    <string name="settings_home_section_record_mixes_desc">Mixes, die nur deine Jahre des Hörens machen können. Erscheint, sobald dein Verlauf da ist.</string>
     <string name="settings_home_section_move_up">%1$s nach oben</string>
     <string name="settings_home_section_move_down">%1$s nach unten</string>
     <string name="settings_home_section_show_desc">%1$s auf Startseite zeigen</string>

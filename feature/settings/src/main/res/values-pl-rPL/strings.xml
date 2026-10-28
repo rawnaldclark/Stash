@@ -209,6 +209,8 @@
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
     <string name="settings_home_section_your_record">Twoja płyta</string>
+    <string name="settings_home_section_record_mixes">Z Twojej płyty</string>
+    <string name="settings_home_section_record_mixes_desc">Mixy, które mogą powstać tylko z Twoich lat słuchania. Pojawia się, gdy Twoja historia jest już tutaj.</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>

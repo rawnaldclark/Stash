@@ -199,6 +199,8 @@
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
     <string name="settings_home_section_your_record">तुमचा रेकॉर्ड</string>
+    <string name="settings_home_section_record_mixes">तुमच्या रेकॉर्डमधून</string>
+    <string name="settings_home_section_record_mixes_desc">फक्त तुमची ऐकण्याची वर्षेच बनवू शकतात असे मिक्स. तुमचा इतिहास आल्यावर दिसतात.</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>

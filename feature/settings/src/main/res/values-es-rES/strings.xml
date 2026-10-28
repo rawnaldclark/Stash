@@ -199,6 +199,8 @@
     <string name="settings_home_section_community">Comunidad</string>
     <string name="settings_home_section_your_listening">Actividad de escucha</string>
     <string name="settings_home_section_your_record">Tu disco</string>
+    <string name="settings_home_section_record_mixes">De tu disco</string>
+    <string name="settings_home_section_record_mixes_desc">Mixes que solo tus años de escucha pueden hacer. Aparece cuando tu historial ya está.</string>
     <string name="settings_home_section_move_up">Subir %1$s</string>
     <string name="settings_home_section_move_down">Bajar %1$s</string>
     <string name="settings_home_section_show_desc">Mostrar %1$s en Inicio</string>

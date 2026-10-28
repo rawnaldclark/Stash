@@ -211,6 +211,8 @@
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
     <string name="settings_home_section_your_record">Ваша пластинка</string>
+    <string name="settings_home_section_record_mixes">С вашей пластинки</string>
+    <string name="settings_home_section_record_mixes_desc">Миксы, которые могут сложиться только из ваших лет слушания. Появится, когда ваша история будет здесь.</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>

@@ -32,11 +32,11 @@ class HomeSectionsListeningPromotionTest {
         }
         val pref = HomeSectionsPreference(context)
         val order = pref.order.first()
-        // Discover stays on top; Your record and Your listening go directly under it.
+        // Discover stays on top; Your record and Your listening go directly under it, From your record above the catalogs.
         assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.YOUR_LISTENING), order.take(3))
         assertEquals(
             listOf(
-                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
+                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.RECORD_MIXES, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
             ),
             order.drop(3),

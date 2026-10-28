@@ -194,6 +194,8 @@
     <string name="settings_home_section_community">커뮤니티</string>
     <string name="settings_home_section_your_listening">듣고 있는 음악</string>
     <string name="settings_home_section_your_record">나의 레코드</string>
+    <string name="settings_home_section_record_mixes">나의 레코드에서</string>
+    <string name="settings_home_section_record_mixes_desc">오랜 세월 들어 온 음악만이 만들 수 있는 믹스. 기록을 가져오면 나타나요.</string>
     <string name="settings_home_section_move_up">%1$s 위로 이동</string>
     <string name="settings_home_section_move_down">%1$s 아래로 이동</string>
     <string name="settings_home_section_show_desc">홈에서 %1$s를 표시합니다</string>
