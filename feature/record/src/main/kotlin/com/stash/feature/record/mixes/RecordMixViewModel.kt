@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -58,23 +59,46 @@ class RecordMixSaver internal constructor(
 }
 
 /**
- * Which playlist each mix was saved to (by the mix's id), kept on this phone: coming back to a mix saved before shows Open while
- * that playlist is still in the library, never a second copy of it.
+ * Which playlist each mix was saved to, kept on this phone by the mix's id and its songs ([contentsOf]): coming back to a mix
+ * saved before shows Open while that playlist is still in the library, never a second copy of it. A mix whose songs have changed
+ * since (This week, years ago on another day; the year so far) offers Save as playlist again. One entry per mix: the last save.
  */
 @Singleton
 class RecordMixSaves internal constructor(private val prefs: SharedPreferences) {
     @Inject constructor(@ApplicationContext context: Context) : this(context.getSharedPreferences(FILE, Context.MODE_PRIVATE))
 
-    fun playlistOf(mixId: String): Long? = prefs.getLong(KEY + mixId, 0L).takeIf { it > 0 }
-
-    fun remember(mixId: String, playlistId: Long) {
-        prefs.edit().putLong(KEY + mixId, playlistId).apply()
+    /**
+     * The playlist [mixId] was saved to with these [contents], else null: never saved, saved with other songs, or an entry from
+     * before the songs were kept with it (its id alone: contents unknown, so Save is offered).
+     */
+    fun playlistOf(mixId: String, contents: String): Long? {
+        val v = try {
+            prefs.getString(KEY + mixId, null)
+        } catch (e: ClassCastException) {
+            null // the id-only entry (a playlist id alone): contents unknown
+        } ?: return null
+        val at = v.lastIndexOf(':')
+        if (at <= 0 || v.substring(0, at) != contents) return null
+        return v.substring(at + 1).toLongOrNull()?.takeIf { it > 0 }
     }
 
-    private companion object {
+    fun remember(mixId: String, contents: String, playlistId: Long) {
+        prefs.edit().putString(KEY + mixId, "$contents:$playlistId").apply()
+    }
+
+    companion object {
         /** Your record's own preferences. */
-        const val FILE = "your_record"
-        const val KEY = "mix_saved:"
+        private const val FILE = "your_record"
+        private const val KEY = "mix_saved:"
+
+        /** Between two keys in what is hashed (a character no key holds). */
+        private const val SEPARATOR = "\u0000"
+
+        /** A mix's songs in brief: a hash of their keys, in order (the same songs in another order are another mix to save). */
+        fun contentsOf(items: List<MixSong>): String {
+            val d = MessageDigest.getInstance("SHA-256").digest(items.joinToString(SEPARATOR) { it.key }.toByteArray(Charsets.UTF_8))
+            return d.take(12).joinToString("") { "%02x".format(it) }
+        }
     }
 }
 
@@ -160,17 +184,16 @@ class RecordMixViewModel @Inject constructor(
         viewModelScope.launch {
             combine(words.filterNotNull(), mixes.changes, again) { w, _, _ -> w.second }.collectLatest { load(it) }
         }
-        // Saved before: the button opens that playlist while it is still in the library
-        viewModelScope.launch {
-            try {
-                val pid = saves.playlistOf(id) ?: return@launch
-                saver.stillThere(pid)?.let { name -> if (_saved.value == null) _saved.value = Saved(pid, name) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "the mix's saved playlist couldn't be read: ${e.javaClass.simpleName}")
-            }
-        }
+    }
+
+    /** These songs saved before: the playlist, while it is still in the library (the button opens it). */
+    private suspend fun savedWith(m: HistoryMix): Saved? = try {
+        saves.playlistOf(id, RecordMixSaves.contentsOf(m.items))?.let { pid -> saver.stillThere(pid)?.let { Saved(pid, it) } }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "the mix's saved playlist couldn't be read: ${e.javaClass.simpleName}")
+        null
     }
 
     /** Try again, after a read that failed. */
@@ -205,6 +228,8 @@ class RecordMixViewModel @Inject constructor(
                 covers = m.items.map { it.lib?.art },
             )
         }
+        // Open when these very songs were saved (made again with other songs: Save as playlist again), known before the page shows
+        _saved.value = savedWith(m)
         _state.value = base
         try {
             val all = mixCovers(art, m.items, albums = Int.MAX_VALUE, retry = viewModelScope) { sofar -> show(m, sofar) }
@@ -243,8 +268,9 @@ class RecordMixViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val pid = saver.save(f.mix.title, songsOf(f.mix.items, f.covers))
+                // Kept first: a mix made again meanwhile finds it
+                saves.remember(id, RecordMixSaves.contentsOf(f.mix.items), pid)
                 _saved.value = Saved(pid, f.mix.title)
-                saves.remember(id, pid)
                 _lines.tryEmit(Line.Saved(f.mix.title))
             } catch (e: CancellationException) {
                 throw e
