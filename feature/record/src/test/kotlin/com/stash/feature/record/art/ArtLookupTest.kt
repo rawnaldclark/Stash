@@ -133,9 +133,9 @@ class ArtLookupTest {
 
     @Test fun `the Worker's artist case, the empty placeholder and a near name skipped`() = runTest {
         val up = Upstream(
-            dzArtist = """{"data":[{"name":"Muerte Y Sepultura","picture_big":"https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"},""" +
-                """{"name":"Sepultura","picture_big":"https://cdn-images.dzcdn.net/images/artist//500x500.jpg"},""" +
-                """{"name":"Sepultura","picture_big":"https://cdn-images.dzcdn.net/images/artist/bb/500.jpg"}]}""",
+            dzArtist = """{"data":[{"name":"Muerte Y Sepultura","nb_fan":900,"picture_big":"https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"},""" +
+                """{"name":"Sepultura","nb_fan":3,"picture_big":"https://cdn-images.dzcdn.net/images/artist//500x500.jpg"},""" +
+                """{"name":"Sepultura","nb_fan":1204336,"picture_big":"https://cdn-images.dzcdn.net/images/artist/bb/500.jpg"}]}""",
         )
         assertThat(lookup(up).lookUp(ArtSong("Sepultura", "Sepultura", isArtist = true)))
             .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/bb/500.jpg"))
@@ -157,10 +157,25 @@ class ArtLookupTest {
         )
         assertThat(lookup(up).lookUp(ArtSong("Radiohead", "Radiohead", isArtist = true)))
             .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/rh/500.jpg"))
-        // with no exact name, the near one is the fallback (the Worker's rule)
+        // with no exact name, none: never a near one (a wrong face is worse than initials)
         val near = Upstream(dzArtist = """{"data":[{"name":"Radiohead Tribute Band","picture_big":"https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"}]}""")
-        assertThat(lookup(near).lookUp(ArtSong("Radiohead", "Radiohead", isArtist = true)))
-            .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/aa/500.jpg"))
+        assertThat(lookup(near).lookUp(ArtSong("Radiohead", "Radiohead", isArtist = true))).isEqualTo(Found.Cover(null))
+    }
+
+    @Test fun `Queen - of the hits named Queen, the one with the most fans, though a namesake of 21 is listed first`() = runTest {
+        val up = Upstream(
+            dzArtist = """{"data":[{"name":"Queen","nb_fan":21,"picture_big":"https://cdn-images.dzcdn.net/images/artist/small/500.jpg"},""" +
+                """{"name":"Queen + Adam Lambert","nb_fan":1100000,"picture_big":"https://cdn-images.dzcdn.net/images/artist/qal/500.jpg"},""" +
+                """{"name":"Queen","nb_fan":12812442,"picture_big":"https://cdn-images.dzcdn.net/images/artist/band/500.jpg"}]}""",
+        )
+        assertThat(lookup(up).lookUp(ArtSong("Queen", "Queen", isArtist = true)))
+            .isEqualTo(Found.Cover("https://cdn-images.dzcdn.net/images/artist/band/500.jpg"))
+        // the most-fanned Queen with Deezer's placeholder: none, never the namesake's face
+        val blank = Upstream(
+            dzArtist = """{"data":[{"name":"Queen","nb_fan":21,"picture_big":"https://cdn-images.dzcdn.net/images/artist/small/500.jpg"},""" +
+                """{"name":"Queen","nb_fan":12812442,"picture_big":"https://cdn-images.dzcdn.net/images/artist//500x500.jpg"}]}""",
+        )
+        assertThat(lookup(blank).lookUp(ArtSong("Queen", "Queen", isArtist = true))).isEqualTo(Found.Cover(null))
     }
 
     @Test fun `Apple refusing, or not answering, is ask later, never none`() = runTest {

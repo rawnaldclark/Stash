@@ -64,13 +64,13 @@ internal object ArtText {
 
     /**
      * client art.ts `artKey`: one cover per album (the primary artist and the album, folded by the identity fold); a song with
-     * no album, its own words; an artist, their name ("ar2:": the pictures kept from Deezer's old artist search, often another
-     * artist's, are asked again).
+     * no album, its own words; an artist, their name ("ar3:": the pictures kept by the earlier rules, Deezer's fielded search
+     * and then the first hit of that name, often another artist's or a small namesake's, are asked again; the web's "ar3|").
      */
     fun artKey(s: ArtSong): String {
         val a = SongKey.fold(primary(s.artist))
         return when {
-            s.isArtist -> "ar2:$a"
+            s.isArtist -> "ar3:$a"
             !s.album.isNullOrEmpty() -> "al:$a|${SongKey.fold(bareAlbum(s.album))}"
             else -> "tr:$a|${SongKey.fold(keyTitle(s.title))}"
         }

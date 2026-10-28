@@ -50,7 +50,7 @@ class ArtTextTest {
         assertThat(ArtText.artKey(ArtSong("Ivy", "Frank Ocean", "Blonde"))).isEqualTo("al:frank ocean|blonde")
         assertThat(ArtText.artKey(ArtSong("Ivy", "Frank Ocean"))).isEqualTo("tr:frank ocean|ivy")
         assertThat(ArtText.artKey(ArtSong("Ivy", "Frank Ocean", album = ""))).isEqualTo("tr:frank ocean|ivy")
-        assertThat(ArtText.artKey(ArtSong("Sepultura", "Sepultura", isArtist = true))).isEqualTo("ar2:sepultura")
+        assertThat(ArtText.artKey(ArtSong("Sepultura", "Sepultura", isArtist = true))).isEqualTo("ar3:sepultura")
         // the identity fold: a bracketed featuring credit isn't the song
         assertThat(ArtText.artKey(ArtSong("Song (feat. X)", "A"))).isEqualTo(ArtText.artKey(ArtSong("Song", "A")))
     }

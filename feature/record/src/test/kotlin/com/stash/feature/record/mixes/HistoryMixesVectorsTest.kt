@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.R
 import com.stash.feature.record.archive.ArchivePlay
+import com.stash.feature.record.art.ArtLookup
 import com.stash.feature.record.taste.SongStat
 import com.stash.feature.record.taste.Taste
 import com.stash.feature.record.taste.TasteRows
@@ -204,6 +205,7 @@ class HistoryMixesVectorsTest {
             val notIn = HistoryMixes.notInLibrary(t.lost, stats, HistoryMixes.libraryIndex(have)).map(HistoryMixes::songItem)
             val wantLost = c["lost"]!!.jsonArray.map { it.jsonObject }
             assertWithMessage("$name: not in your Stash yet").that(notIn.map { it.songKey }).isEqualTo(wantLost.map { it["key"]!!.jsonPrimitive.content })
+            assertWithMessage("$name: lostSongs alone").that(notIn.map { it.songKey }).isEqualTo(strings(c["lostAlone"]))
             for ((s, w) in notIn.zip(wantLost)) itemSame("$name / lost ${s.songKey}", s, w["item"]!!.jsonObject)
             lost += notIn.size
             assertWithMessage("$name: its line").that(words.lostLine(notIn.size)).isEqualTo(c["lostLine"]!!.jsonPrimitive.content)
@@ -252,10 +254,29 @@ class HistoryMixesVectorsTest {
             .isEqualTo(said("page", "{songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.").removePrefix("{songs(lost.length)}"))
         assertThat("aria-label=\"${res.getString(R.string.record_song_more, "{item.title}")}\"").isEqualTo(said("row", "aria-label=\"More for {item.title}\""))
         assertThat("liked ? '${res.getString(R.string.record_song_unlike)}' : '${res.getString(R.string.record_song_like)}'").isEqualTo(said("like", "liked ? 'Unlike' : 'Like'"))
-        // the page's own numbers, as this port has them
-        assertThat(said("page", "const LOST_PAGE = 50;")).contains("${HistoryMixes.LOST_PAGE}")
-        assertThat(said("page", "topSongs(taste, 10).map((s) => toItem(s, now))")).contains("${HistoryMixes.TOP_SONGS}")
-        assertThat(said("page", "taste?.topArtists.slice(0, 10) ?? []")).contains("${HistoryMixes.TOP_ARTISTS}")
+        // mix.ts's own numbers
+        val constants = w["constants"]!!.jsonObject
+        assertThat(constants["TOP_ARTISTS"]!!.jsonPrimitive.int).isEqualTo(HistoryMixes.TOP_ARTISTS)
+        assertThat(constants["TOP_SONGS"]!!.jsonPrimitive.int).isEqualTo(HistoryMixes.TOP_SONGS)
+        assertThat(constants["LOST_PAGE"]!!.jsonPrimitive.int).isEqualTo(HistoryMixes.LOST_PAGE)
+    }
+
+    @Test fun `an artist's picture - the Worker's own artistSearch and pickArtist, case by case`() {
+        val cases = read("artists.json").jsonArray.map { it.jsonObject }
+        assertThat(cases.size).isAtLeast(35)
+        var pictures = 0
+        for (c in cases) {
+            val name = c["name"]!!.jsonPrimitive.content
+            val artist = c["artist"]!!.jsonPrimitive.content
+            val hits = (c["hits"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            assertWithMessage("$name: the search").that(ArtLookup.artistSearch(artist)).isEqualTo(c["search"]!!.jsonPrimitive.content)
+            val want = (c["picture"] as? JsonPrimitive)?.contentOrNull
+            assertWithMessage("$name: the picture").that(ArtLookup.pickArtist(hits, artist)).isEqualTo(want)
+            if (want != null) pictures++
+        }
+        // the cases pick a picture and refuse one, both
+        assertThat(pictures).isAtLeast(20)
+        assertThat(cases.size - pictures).isAtLeast(10)
     }
 
     @Test fun `weekMix - the windows, the counts, the first spelling, the words`() {

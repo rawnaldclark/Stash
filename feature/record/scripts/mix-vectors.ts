@@ -15,15 +15,18 @@
  * - rotation.json: `rotation` and `homePicks` for every day 0..n+1, with "this week" and without.
  * - words.json: `eraWhen`, `andList` and `aboutLength` edges, and the English of the mix page, Home's shelf and the Mixes tab
  *   (MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte, read as the files are).
- * - lists.json: the rest of the Mixes tab (routes/spotify/+page.svelte): Top artists (the first 10, each with the mix it opens,
- *   else the songs it plays: `artistMix`, `artistSongs`), Top songs (years.ts `topSongs`) and "Not in your Stash yet" (years.ts
- *   `notInLibrary` over the taste's `lost`: library copies by words, ISRC, a twin ISRC, guest credits; a remaster; kept, hidden,
- *   skipped, put back and liked songs), with their lines; the page's own <script> lines are ported here, held to the file.
+ * - lists.json: the rest of the Mixes tab, by src/lib/ui/spotify/mix.ts (`mixesLists`: `topArtistRows`, `topSongs(t, TOP_SONGS)`,
+ *   `lostSongs`; `artistLine`, `libraryOf`): Top artists (the first 10, each opening its mix or playing its songs), Top songs and
+ *   "Not in your Stash yet" (the taste's `lost` minus the library: copies by words, ISRC, a twin ISRC, guest credits; a remaster;
+ *   kept, hidden, skipped, put back and liked songs), with their lines and the page's words.
+ * - artists.json: the record's artist pictures, by the Worker's own `artistSearch` and `pickArtist` (worker/art.ts): the search
+ *   asked, and the picture picked among Deezer's hits (the name folded both ways, the most fans, "The" kept, no near name, no
+ *   namesake's face for an artist with Deezer's placeholder).
  *
  * Run from this repository's root, against a stash-player checkout with its node_modules (read only), at the live commit:
  *   PLAYER=../stash-web/player-upi
  *   NODE_PATH=$PLAYER/node_modules $PLAYER/node_modules/.bin/esbuild feature/record/scripts/mix-vectors.ts --bundle --platform=node --format=esm \
- *     --alias:@player=$PLAYER/src/lib --outfile=build/mix-vectors.mjs
+ *     --alias:@player=$PLAYER/src/lib --alias:@worker=$PLAYER/worker --outfile=build/mix-vectors.mjs
  *   node build/mix-vectors.mjs feature/record/src/test/resources/mixes $PLAYER feature/record/src/test/resources/spotify-export
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -50,8 +53,8 @@ import { F_DONE, F_LASTFM, F_REASONS, F_SKIPPED, playId, type ArchivePlay } from
 import { toItem } from '@player/spotify/service';
 import { artistKey, computeTaste, songKey, type SongStat, type Taste, type TastePlay } from '@player/spotify/taste';
 import { songs } from '@player/ui/format';
-import { aboutLength, card, mixHeading, mixLine } from '@player/ui/spotify/mix';
-import { count, hoursLabel, notInLibrary, statsOf, topSongs } from '@player/ui/spotify/years';
+import { aboutLength, artistLine, card, LOST_PAGE, libraryOf, lostSongs, mixesLists, mixHeading, mixLine, TOP_ARTISTS, TOP_SONGS } from '@player/ui/spotify/mix';
+import { artistSearch, pickArtist } from '@worker/art';
 
 const out = process.argv[2];
 const player = process.argv[3];
@@ -523,22 +526,10 @@ write('words.json', {
 
 // ── lists.json ──────────────────────────────────────────────────────────────────────────────────────────────────────
 //
-// The rest of the Mixes tab (routes/spotify/+page.svelte): Top artists (each opening its mix, or playing with too few songs),
-// Top songs and "Not in your Stash yet". The lists are years.ts's and mixes.ts's own (topSongs, notInLibrary, statsOf,
-// artistMix, artistSongs), imported here; what the page does with them in its <script> can't be imported, so these lines are
-// a port of it, held to the page as the file is (pageWords below):
-//   const tops = $derived(taste ? topSongs(taste, 10).map((s) => toItem(s, now)) : []);
-//   const artists = $derived(taste?.topArtists.slice(0, 10) ?? []);
-//   const library = $derived([...L.likes, ...L.playlists.flatMap((p) => p.items)]);
-//   const lost = $derived(taste ? notInLibrary(taste.lost, stats, library).map((s) => toItem(s, now)) : []);
-//   const playArtist = (key: string) => taste && play(artistSongs(taste, key).map((s) => toItem(s, now)));
-//   const artistMixId = $derived(new Map(taste ? artists.map((a) => [a.key, artistMix(taste!, a)?.id]) : []));
-//   <i>{hoursLabel(a.listenedMs)} · {count(a.plays)} plays</i>
-//   {songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.
-//   aria-label="Play the {songs(lost.length)} not in your Stash yet"
-// The taste is service.ts `taste()`'s (asRead: put back, the library's songs no longer kept out), as the page reads it.
+// The rest of the Mixes tab, as the page makes it, by src/lib/ui/spotify/mix.ts (`mixesLists`: `topArtistRows`, `topSongs(t,
+// TOP_SONGS)`, `lostSongs`; `artistLine`; the library `libraryOf(likes, playlists)`). The taste is service.ts `taste()`'s
+// (asRead: put back, the library's songs no longer kept out), as the page reads it.
 
-/** The page's `library`: the likes, then every playlist's songs, each a library item as the web keeps it. */
 type ListsCase = { name: string; taste: Taste; keep?: string[]; have?: Lib[] };
 const lists: ListsCase[] = [];
 const LISTS_NOW = Date.UTC(2026, 9, 28, 12);
@@ -642,35 +633,35 @@ lists.push({ name: 'the golden fixture, nothing in the library', taste: committe
 const listsItem = (s: SongStat) => itemJson(toItem(s, 0));
 const listsOut = lists.map((c) => {
 	const t = asRead(c.taste, c.keep ?? [], c.have ?? []);
-	const library = (c.have ?? []).map(libItem);
-	const stats = statsOf(t);
-	const artists = t.topArtists.slice(0, 10);
-	const lost = notInLibrary(t.lost, stats, library);
+	// The page's library: the likes, then every playlist's songs (a case's library is its likes alone)
+	const library = libraryOf((c.have ?? []).map(libItem), []);
+	const l = mixesLists(t, library);
+	const lost = lostSongs(t, library);
 	return {
 		name: c.name,
 		taste: c.taste === committed.taste ? 'fixture' : tasteJson(c.taste),
 		keep: c.keep ?? [],
 		have: c.have ?? [],
-		artists: artists.map((a) => {
-			const mixId = artistMix(t, a)?.id ?? null;
-			return {
-				key: a.key,
-				name: a.name,
-				line: `${hoursLabel(a.listenedMs)} · ${count(a.plays)} plays`,
-				mixId,
-				// what the row plays when it has no mix (playArtist: artistSongs, 50 at most)
-				plays: mixId ? null : artistSongs(t, a.key).map((s) => s.key)
-			};
-		}),
-		tops: topSongs(t, 10).map((s) => ({ key: s.key, item: listsItem(s) })),
-		lost: lost.map((s) => ({ key: s.key, item: listsItem(s) })),
-		lostLine: `${songs(lost.length)} you loved and haven’t played in a year. Like one to keep it.`,
-		lostPlay: `Play the ${songs(lost.length)} not in your Stash yet`
+		artists: l.artists.map(({ artist: a, action }) => ({
+			key: a.key,
+			name: a.name,
+			line: artistLine(a),
+			mixId: action.kind === 'open' ? action.mixId : null,
+			// what the row plays when it has no mix (artistSongs, MIX_SIZE at most)
+			plays: action.kind === 'play' ? action.songs.map((s) => s.key) : null
+		})),
+		tops: l.tops.map((s) => ({ key: s.key, item: listsItem(s) })),
+		lost: l.lost.map((s) => ({ key: s.key, item: listsItem(s) })),
+		// lostSongs alone gives the same as mixesLists' (the page works each out on its own)
+		lostAlone: lost.map((s) => s.key),
+		lostLine: `${songs(l.lost.length)} you loved and haven’t played in a year. Like one to keep it.`,
+		lostPlay: `Play the ${songs(l.lost.length)} not in your Stash yet`
 	};
 });
 write('lists.json', {
+	constants: { TOP_ARTISTS, TOP_SONGS, LOST_PAGE },
 	cases: listsOut,
-	// The page's words and lines this port follows, each in the file as it is
+	// The page's words, each in the file as it is
 	page: wordsOf('src/routes/spotify/+page.svelte', [
 		'>Top artists</h2>',
 		'>Top songs</h2>',
@@ -679,18 +670,59 @@ write('lists.json', {
 		'aria-label="Play the {songs(lost.length)} not in your Stash yet"',
 		'>Show more</button>',
 		'aria-label="Open your most played songs by {a.name}"',
-		'aria-label="Play your most played songs by {a.name}"',
-		'<i>{hoursLabel(a.listenedMs)} · {count(a.plays)} plays</i>',
-		'const LOST_PAGE = 50;',
-		'topSongs(taste, 10).map((s) => toItem(s, now))',
-		'taste?.topArtists.slice(0, 10) ?? []',
-		'[...L.likes, ...L.playlists.flatMap((p) => p.items)]',
-		'notInLibrary(taste.lost, stats, library).map((s) => toItem(s, now))',
-		'artistSongs(taste, key).map((s) => toItem(s, now))',
-		'artistMix(taste!, a)?.id'
+		'aria-label="Play your most played songs by {a.name}"'
 	]),
 	row: wordsOf('src/lib/ui/TrackRow.svelte', ['aria-label="More for {item.title}"', '<LikeButton {item} class="tr-h" />']),
 	like: wordsOf('src/lib/ui/LikeButton.svelte', ["liked ? 'Unlike' : 'Like'"])
 });
 
-console.log(`history ${historyOut.length}, week ${weekOut.length}, rotation ${rotationOut.length}, lists ${listsOut.length}: written to ${out}`);
+// ── artists.json ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A Deezer artist hit: its name, fans (left out when undefined) and picture on Deezer's own host. */
+const dz = (id: string) => (id === '' ? 'https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg' : `https://cdn-images.dzcdn.net/images/artist/${id}/500x500-000000-80-0-0.jpg`);
+const hit = (name: unknown, id: string, nb_fan?: unknown) => ({ name, ...(nb_fan === undefined ? {} : { nb_fan }), picture_big: dz(id) });
+type ArtistCase = { name: string; artist: string; hits: unknown };
+const artistCases: ArtistCase[] = [
+	{ name: 'Queen: a namesake of 21 fans first, the band (12.8M) sixth', artist: 'Queen', hits: [hit('Queen', 'small', 21), hit('Queen + Adam Lambert', 'qal', 1_100_000), hit('Queen Naija', 'qn', 700_000), hit('Queens of the Stone Age', 'qotsa', 2_400_000), hit('Queen', 'other', 1_500), hit('Queen', 'band', 12_812_442), hit('Queen', 'later', 40)] },
+	{ name: 'Sia: 168 fans first, 8.7M fourth', artist: 'Sia', hits: [hit('Sia', 'small', 168), hit('Sia Furler', 'sf', 2_000), hit('SIA', 'k', 3_000), hit('Sia', 'real', 8_712_004)] },
+	{ name: 'Muse', artist: 'Muse', hits: [hit('Muse', 'small', 11_034), hit('Muse Tribute', 'mt', 900), hit('Muse', 'real', 5_017_220), hit('Muse', 'tiny', 2)] },
+	{ name: 'Joji, a near name with more fans refused', artist: 'Joji', hits: [hit('Joji', 'small', 101), hit('Jojo', 'jojo', 900_000), hit('Joji', 'mid', 2_000), hit('Joji', 'real', 565_000)] },
+	{ name: 'Sia with only a near name bigger', artist: 'Sia', hits: [hit('Sia', 'small', 168), hit('Sia Furler', 'sf', 9_000_000)] },
+	{ name: 'Bush, Low, The Band, boygenius', artist: 'boygenius', hits: [hit('Boy Genius', 'bg', 50_000), hit('boygenius', 'small', 12), hit('boygenius', 'real', 600_000)] },
+	{ name: 'Low', artist: 'Low', hits: [hit('Lowe', 'l2', 900_000), hit('Low', 'tiny', 3), hit('Low', 'band', 210_000), hit('LOW', 'caps', 210_000)] },
+	{ name: 'The Band keeps its The', artist: 'The Band', hits: [hit('Band', 'b', 9_000), hit('The Band', 'tb', 400_000)] },
+	{ name: 'Bush, a feat. credit asked', artist: 'Bush feat. Someone', hits: [hit('Bush', 'small', 5), hit('Kate Bush', 'kb', 2_000_000), hit('Bush', 'real', 700_000)] },
+	{ name: 'a tie, or no fans said: the first listed', artist: 'Daft Punk', hits: [hit('Daft Punk Tribute', 'a'), hit('DAFT PUNK', 'b'), hit('Daft Punk', 'c')] },
+	{ name: 'a tie in fans', artist: 'Nirvana', hits: [hit('Nirvana', 'n1', 50), hit('Nirvana', 'n2', 50)] },
+	{ name: 'fans that aren\'t a number above 0 count 0', artist: 'Nirvana', hits: [hit('Nirvana', 'n1', '9000'), hit('Nirvana', 'n2', -5), hit('Nirvana', 'n3', null), hit('Nirvana', 'n4', 0)] },
+	{ name: 'a string of fans is 0, a 1 beats it', artist: 'Nirvana', hits: [hit('Nirvana', 'n1', '9000'), hit('Nirvana', 'n2', 1)] },
+	{ name: 'the exact name among near ones', artist: 'Nirvana', hits: [hit('Nirvana (UK)', 'uk', 265), hit('Nirvana', 'n1', 10_096_192), hit('Nirvana', 'n2', 10)] },
+	{ name: 'case, punctuation and spacing don\'t count', artist: "guns n' roses", hits: [hit('Guns N’ Roses', 'g')] },
+	{ name: 'AC/DC', artist: 'AC DC', hits: [hit('AC/DC', 'ac')] },
+	{ name: 'the first credit is the one asked', artist: 'Nina Simone, Someone Else', hits: [hit('Nina Simone', 'ns')] },
+	{ name: 'with and & : with cuts, & doesn\'t', artist: 'Simon & Garfunkel with Friends', hits: [hit('Simon', 's', 9_000_000), hit('Simon & Garfunkel', 'sg', 3_000_000)] },
+	{ name: 'a near name: none', artist: 'Nirvana', hits: [hit('Nirvana (UK)', 'uk'), hit('Nirvana Tribute', 'nt')] },
+	{ name: 'a name inside another: none', artist: 'Nina Simone', hits: [hit('Nina', 'n'), hit('Nina Simone Tribute', 't')] },
+	{ name: 'asked a part of a name: none', artist: 'Radio', hits: [hit('Radiohead', 'r')] },
+	{ name: 'accents fold, both ways', artist: 'Björk', hits: [hit('Bjork', 'b')] },
+	{ name: 'accents fold, the other way', artist: 'Bjork', hits: [hit('Björk', 'b')] },
+	{ name: 'Sigur Rós', artist: 'Sigur Ros', hits: [hit('Sigur Rós', 's')] },
+	{ name: 'Beyoncé', artist: 'BEYONCE', hits: [hit('Beyoncé', 'y')] },
+	{ name: 'ø and æ stay what they are', artist: 'Mø', hits: [hit('Mo', 'mo', 9_000_000), hit('MØ', 'moe', 400_000)] },
+	{ name: 'Bjork Gudmundsdottir is not Björk', artist: 'Björk', hits: [hit('Bjork Gudmundsdottir', 'b')] },
+	{ name: 'The Cure is not Cure', artist: 'The Cure', hits: [hit('Cure', 'c'), hit('The Cure', 'tc')] },
+	{ name: 'Cure alone, asked The Cure: none', artist: 'The Cure', hits: [hit('Cure', 'c')] },
+	{ name: 'The Cure, asked Cure: none', artist: 'Cure', hits: [hit('The Cure', 'tc')] },
+	{ name: 'THE CURE', artist: 'the cure', hits: [hit('THE CURE', 'tc')] },
+	{ name: 'a placeholder of few fans stands aside', artist: 'Nirvana', hits: [hit('Nirvana', '', 10), hit('Nirvana', 'real', 10_096_192)] },
+	{ name: 'the most fans with the placeholder: none, never the namesake', artist: 'Nirvana', hits: [hit('Nirvana', '', 10_096_192), hit('Nirvana', 'namesake', 10)] },
+	{ name: 'the placeholder alone', artist: 'Nirvana', hits: [hit('Nirvana', '', 0)] },
+	{ name: 'not https: none', artist: 'Nirvana', hits: [{ name: 'Nirvana', nb_fan: 9, picture_big: 'http://cdn-images.dzcdn.net/images/artist/x/500x500-000000-80-0-0.jpg' }, hit('Nirvana', 'namesake', 1)] },
+	{ name: 'no picture at all: none', artist: 'Nirvana', hits: [{ name: 'Nirvana', nb_fan: 9 }, hit('Nirvana', 'namesake', 1)] },
+	{ name: 'what isn\'t a hit is passed over', artist: 'Nirvana', hits: [null, 7, hit(42, 'n', 1e9), hit('Nirvana', 'ok')] },
+	{ name: 'no hits', artist: 'Nirvana', hits: [] }
+];
+const artistsOut = artistCases.map((c) => ({ name: c.name, artist: c.artist, hits: c.hits, search: artistSearch(c.artist), picture: pickArtist(c.hits, c.artist) }));
+write('artists.json', artistsOut);
+
+console.log(`history ${historyOut.length}, week ${weekOut.length}, rotation ${rotationOut.length}, lists ${listsOut.length}, artists ${artistsOut.length}: written to ${out}`);

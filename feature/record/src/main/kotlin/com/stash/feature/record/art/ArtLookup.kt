@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import java.net.URI
 import java.net.URLEncoder
 
@@ -113,6 +114,8 @@ class ArtLookup(
         if (s.isArtist) return artistPicture(s)
         val artist = ArtText.primary(s.artist)
         if (!s.album.isNullOrEmpty()) {
+            // TODO(art): Deezer's fielded album search is partly broken too (the web found 28 Oct 2026: Sepultura "Roots", Kendrick
+            //  Lamar "DAMN." and Metallica "Master of Puppets" all miss; free text finds them). Change it with the web, not alone.
             val q = "artist:\"$artist\" album:\"${ArtText.bareAlbum(s.album)}\""
             when (val r = deezer("$DEEZER/search/album?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
                 is Dz.No -> return r.found
@@ -156,26 +159,13 @@ class ArtLookup(
     }
 
     /** An artist's picture on Deezer (Apple's search has none): the same name first, else one that starts the same. */
+    /** An artist's picture on Deezer (worker art.ts `artistPicture`: [artistSearch], then [pickArtist]). */
     private suspend fun artistPicture(s: ArtSong): Found {
-        // The name as free text: Deezer's `artist:"…"` on /search/artist leaves the artist out today (28 Oct 2026: "Daft Punk",
-        // "Björk", "Nirvana", "The Cure" and "Nina Simone" all came back without themselves, so other artists' pictures or none
-        // showed), as its track search did (the song step's free text). The web Worker (worker/art.ts) still sends the old query.
-        val q = ArtText.primary(s.artist)
-        val body = when (val r = deezer("$DEEZER/search/artist?q=${ArtText.encodeUriComponent(q)}&limit=10")) {
+        val body = when (val r = deezer(artistSearch(s.artist))) {
             is Dz.No -> return r.found
             is Dz.Ok -> r.body
         }
-        val want = ArtText.fold(ArtText.primary(s.artist))
-        var fallback: String? = null
-        for (a in body.list("data")) {
-            val n = a.str("name")?.let(ArtText::fold).orEmpty()
-            // Deezer's placeholder for an artist with no picture has an empty hash in its address
-            val url = allowed(a.str("picture_big")) ?: continue
-            if (EMPTY_ARTIST.containsMatchIn(url)) continue
-            if (n == want) return Found.Cover(url)
-            if (fallback == null && n.isNotEmpty() && (n.startsWith(want) || want.startsWith(n))) fallback = url
-        }
-        return Found.Cover(fallback)
+        return Found.Cover(pickArtist(body.list("data"), s.artist))
     }
 
     /**
@@ -222,7 +212,7 @@ class ArtLookup(
         return fallback
     }
 
-    private companion object {
+    internal companion object {
         const val DEEZER = "https://api.deezer.com"
         const val ITUNES = "https://itunes.apple.com"
 
@@ -268,6 +258,41 @@ class ArtLookup(
 
         /** An https address the record's page may show (its CSP: Deezer's two CDNs, Apple's mzstatic), else null. */
         fun allowed(url: String?): String? = url?.takeIf { isAllowedCover(it) }
+
+        /**
+         * worker art.ts `artistSearch`: Deezer's artist search for [artist], the first credited name ([ArtText.primary]) as free
+         * text. Deezer's fielded form (`artist:"…"`) leaves the artist out of its own answer (28 Oct 2026: Daft Punk, Björk,
+         * Nirvana, The Cure and Nina Simone came back without themselves).
+         */
+        fun artistSearch(artist: String): String =
+            "$DEEZER/search/artist?q=${ArtText.encodeUriComponent(ArtText.primary(artist))}&limit=10"
+
+        /**
+         * worker art.ts `pickArtist`: the picture of the artist named [artist] among Deezer's [hits]. The artist is the hit of that
+         * name ([ArtText.fold] on both sides: accents, case and punctuation don't count; "The" does) with the most fans (`nb_fan`,
+         * a JSON number above 0, else 0; a tie, the one listed first): a common name has small namesakes listed before the real
+         * one ("Queen": one of 21 fans first, the band's 12.8M sixth). Their picture, unless it is Deezer's placeholder for an
+         * artist with none ([EMPTY_ARTIST]) or not a cover this app takes ([allowed]: https, Deezer's or Apple's hosts): then none,
+         * never a namesake's. No hit of that name: none, never a near one ("Nirvana (UK)", "Cure"). A wrong face is worse than
+         * initials.
+         */
+        fun pickArtist(hits: List<JsonObject>, artist: String): String? {
+            val want = ArtText.fold(ArtText.primary(artist))
+            var best: JsonObject? = null
+            var most = -1.0
+            for (a in hits) {
+                val name = a.str("name") ?: continue
+                if (ArtText.fold(name) != want) continue
+                val n = (a["nb_fan"] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
+                val fans = if (n != null && n.isFinite() && n > 0) n else 0.0
+                if (fans > most) {
+                    best = a
+                    most = fans
+                }
+            }
+            val url = allowed(best?.str("picture_big")) ?: return null
+            return url.takeIf { !EMPTY_ARTIST.containsMatchIn(it) }
+        }
 
         fun JsonElement?.truthy(): Boolean = when (this) {
             null, JsonNull -> false
