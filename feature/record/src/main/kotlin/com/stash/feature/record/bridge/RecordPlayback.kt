@@ -3,9 +3,6 @@ package com.stash.feature.record.bridge
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
-import com.stash.core.data.mapper.toDomain
-import com.stash.core.data.weblink.handoff.HandoffSongMatcher
-import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
@@ -46,9 +43,10 @@ internal fun planRecordQueue(tracks: List<Track?>, index: Int, online: Boolean):
 }
 
 /**
- * Plays the record's songs in Stash (PLAN "Play"): each by its words through the hand-off's matcher (the library's own row
- * when there is one, else a stream-only row that Stash resolves when it plays, as a Search tap does), then the queue, its
- * "Playing from" the record's label ("The Record · Sunday, 3 March 2024").
+ * Plays the record's songs in Stash (PLAN "Play"): each as this phone's row ([RecordMatch]: by its words through the hand-off's
+ * matcher, the library's own row when there is one, else a stream-only row that Stash resolves when it plays, as a Search tap
+ * does; a song of Your record's own mixes also by its Spotify id, or as your own row, with the cover found for it), then the
+ * queue, its "Playing from" the record's label ("The Record · Sunday, 3 March 2024") or the mix's title.
  *
  * App-wide and on its own scope: a back right after a tap closes the record, and the song still starts. The newest tap wins
  * (one still matching is dropped). When nothing can play it says so ([notes], collected by the record's screen while it is
@@ -56,20 +54,22 @@ internal fun planRecordQueue(tracks: List<Track?>, index: Int, online: Boolean):
  */
 @Singleton
 class RecordPlayback internal constructor(
-    private val match: suspend (List<WireSong>) -> List<Track?>,
+    private val match: suspend (List<RecordSong>) -> List<Track?>,
     private val setQueue: suspend (tracks: List<Track>, start: Int, from: String) -> Unit,
     private val online: () -> Boolean,
     private val toast: (RecordNote) -> Unit,
     private val scope: CoroutineScope,
+    /** Shuffle's order (the app's own: a playlist's Shuffle shuffles the queue). */
+    private val shuffled: (List<Track>) -> List<Track> = { it.shuffled() },
 ) : RecordPlayer {
     @Inject
     constructor(
-        matcher: HandoffSongMatcher,
+        match: RecordMatch,
         player: PlayerRepository,
         connectivity: ConnectivityMonitor,
         @ApplicationContext context: Context,
     ) : this(
-        match = { songs -> matcher.matchAll(songs).map { it?.toDomain() } },
+        match = match::rows,
         setQueue = { tracks, start, from -> player.setQueue(tracks, start, PlaybackSource.Listening(from)) },
         online = connectivity::isConnected,
         toast = { note -> Toast.makeText(context, note.text(context.resources), Toast.LENGTH_SHORT).show() },
@@ -83,14 +83,21 @@ class RecordPlayback internal constructor(
 
     private var playing: Job? = null
 
-    override fun play(songs: List<RecordSong>, index: Int, from: String) {
+    override fun play(songs: List<RecordSong>, index: Int, from: String) = play(songs, index, from, shuffle = false)
+
+    /**
+     * [play], or with [shuffle] the songs found in a random order from the first (the app's Shuffle, as a playlist's). Offline,
+     * only the songs with a file here, either way ([planRecordQueue]).
+     */
+    fun play(songs: List<RecordSong>, index: Int, from: String, shuffle: Boolean) {
         // Main thread (the record's messages are handled there): the newest tap wins
         playing?.cancel()
         playing = scope.launch {
             try {
-                val rows = match(songs.map { WireSong(title = it.title, artist = it.artist, album = it.album) })
+                val rows = match(songs)
                 when (val plan = planRecordQueue(rows, index, online())) {
-                    is RecordQueuePlan.Play -> setQueue(plan.tracks, plan.startIndex, from)
+                    is RecordQueuePlan.Play ->
+                        if (shuffle) setQueue(shuffled(plan.tracks), 0, from) else setQueue(plan.tracks, plan.startIndex, from)
                     is RecordQueuePlan.Blocked -> say(plan.note)
                 }
             } catch (e: CancellationException) {

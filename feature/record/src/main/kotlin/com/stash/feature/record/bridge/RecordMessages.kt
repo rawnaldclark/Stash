@@ -10,7 +10,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /** A song the record asks Stash to play: its words only (Stash finds it on its sources when it plays). */
-data class RecordSong(val title: String, val artist: String, val album: String? = null)
+data class RecordSong(
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    /** From Your record's own mixes: the history's Spotify id (the matcher finds the song by it). */
+    val sid: String? = null,
+    /** ...the library's row when you have the song (your copy plays). */
+    val trackId: Long? = null,
+    /** ...and the cover found for it (the queue shows it at once). */
+    val cover: String? = null,
+)
 
 /** A cover the record asks for (the fork's src/stash/covers.ts): its name there, and what it is. No title: an artist. */
 data class RecordArtAsk(val id: String, val artist: String, val title: String? = null, val album: String? = null) {
