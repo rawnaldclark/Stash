@@ -59,7 +59,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.bottomChromePadding
-import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.record.R
 import com.stash.feature.record.bridge.text
 import kotlinx.coroutines.launch
@@ -157,12 +156,13 @@ private fun Header(
                 Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))),
             )
+            // A dark disc under a white arrow: a mix's mosaic is often light (a playlist page's glass vanished on Rumours)
             IconButton(
                 onClick = onBack,
                 modifier = Modifier.statusBarsPadding().padding(start = 8.dp, top = 8.dp).align(Alignment.TopStart).size(48.dp)
-                    .background(StashTheme.extendedColors.glassBackground, CircleShape),
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape),
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.record_mix_back), tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.record_mix_back), tint = Color.White)
             }
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = Gutter)) {
