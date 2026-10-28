@@ -59,6 +59,8 @@ import com.stash.core.ui.util.formatDuration
  * @param selected          Whether this row is currently selected (drives the checkbox).
  * @param onMoreClick       Optional callback for a trailing overflow (three-dot) button,
  *                          shown only when selection is inactive.
+ * @param hideUnknownDuration When true, a track with no known length (0) shows no duration
+ *                          rather than "0:00" (Your record's mixes: a song of the history alone).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -74,6 +76,7 @@ fun DetailTrackRow(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     onMoreClick: (() -> Unit)? = null,
+    hideUnknownDuration: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -190,6 +193,7 @@ fun DetailTrackRow(
                 color = MaterialTheme.colorScheme.primary,
                 strokeWidth = 2.dp,
             )
+            hideUnknownDuration && track.durationMs <= 0 -> Unit
             else -> Text(
                 text = formatDuration(track.durationMs),
                 style = MaterialTheme.typography.bodySmall,

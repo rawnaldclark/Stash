@@ -116,6 +116,8 @@ fun RecordMixScreen(
                         isPlaying = false,
                         onClick = { viewModel.play(i) },
                         onLongPress = {},
+                        // A song of the history alone has no length yet (the web's row shows none)
+                        hideUnknownDuration = true,
                     )
                 }
             }

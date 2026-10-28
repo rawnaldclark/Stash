@@ -83,7 +83,8 @@ internal fun RecordTabsBar(tab: RecordTab, onPick: (RecordTab) -> Unit, onClose:
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            Modifier.weight(1f, fill = false).height(36.dp).clip(CircleShape).background(TabsField).padding(3.dp).selectableGroup(),
+            // Its own width (never a share of the bar's: "Mixes" was cut to "M" when it had one)
+            Modifier.height(36.dp).clip(CircleShape).background(TabsField).padding(3.dp).selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             for (t in RecordTab.entries) {
