@@ -277,6 +277,9 @@ fun NowPlayingScreen(
     val optionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
     var showSpeedSheet by remember { mutableStateOf(false) }
+    val AutoMixViewModel: AutoMixViewModel = hiltViewModel()
+    val autoMixState by AutoMixViewModel.state.collectAsStateWithLifecycle()
+    var showAutoMixSheet by remember { mutableStateOf(false) }
     var showCustomSpeedDialog by remember { mutableStateOf(false) }
     val speedSheetState = rememberModalBottomSheetState()
     // The queue row (if any) whose Save-to-Playlist picker is open.
@@ -559,7 +562,7 @@ fun NowPlayingScreen(
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
     val castingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connected)?.deviceName
-    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
+    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo, autoMixState) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -569,6 +572,9 @@ fun NowPlayingScreen(
             isDownloaded = isDownloaded,
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
+            autoMixEnabled = autoMixState.enabled,
+            autoMixMode = autoMixState.mode,
+            autoMixMixing = autoMixState.isMixing,
         )
     }
     // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
@@ -604,6 +610,7 @@ fun NowPlayingScreen(
                 // Resolves and opens the actual remote album page.
                 NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
                 NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
+                NowPlayingAction.AUTOMIX -> showAutoMixSheet = true
                 // The ⋮ menu's labelled "Download" / "Remove download" row.
                 NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
                 NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
@@ -712,6 +719,15 @@ fun NowPlayingScreen(
             onCustom = { showSpeedSheet = false; showCustomSpeedDialog = true },
             onDismiss = { showSpeedSheet = false },
             sheetState = speedSheetState,
+        )
+    }
+
+    if (showAutoMixSheet) {
+        AutoMixSheet(
+            state = autoMixState,
+            onEnabledChange = AutoMixViewModel::setEnabled,
+            onModeChange = AutoMixViewModel::setMode,
+            onDismiss = { showAutoMixSheet = false },
         )
     }
 
@@ -1262,15 +1278,19 @@ fun NowPlayingScreen(
                                     // in a room (whose Up next is the room's). Art view only: lyrics
                                     // mode keeps the bottom for the lyrics.
                                     Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
-                                    UpNextLine(
-                                        peek = if (room != null) {
-                                            roomUpNextPeek(room.queue)
-                                        } else {
-                                            upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
-                                        },
-                                        inRoom = room != null,
-                                        onOpen = { if (room != null) showSession = true else showQueue = true },
-                                    )
+                                    if (autoMixState.isMixing && room == null) {
+                                        AutoMixMixingLine(state = autoMixState)
+                                    } else {
+                                        UpNextLine(
+                                            peek = if (room != null) {
+                                                roomUpNextPeek(room.queue)
+                                            } else {
+                                                upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
+                                            },
+                                            inRoom = room != null,
+                                            onOpen = { if (room != null) showSession = true else showQueue = true },
+                                        )
+                                    }
                                     },
                                 )
 

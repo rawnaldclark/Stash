@@ -4,6 +4,8 @@ import com.stash.core.data.audio.FFmpegBridge
 import com.stash.core.data.audio.FFmpegBridgeImpl
 import com.stash.core.data.prefs.AutoplayRadioPreference
 import com.stash.core.data.prefs.AutoplayRadioPreferencesManager
+import com.stash.core.data.prefs.AutoMixPreference
+import com.stash.core.data.prefs.AutoMixPreferencesManager
 import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.prefs.CrossfadePreferencesManager
 import com.stash.core.data.prefs.HiResOutputPreference
@@ -45,6 +47,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindCrossfadePreference(impl: CrossfadePreferencesManager): CrossfadePreference
+
+    @Binds
+    @Singleton
+    abstract fun bindAutoMixPreference(impl: AutoMixPreferencesManager): AutoMixPreference
 
     @Binds
     @Singleton

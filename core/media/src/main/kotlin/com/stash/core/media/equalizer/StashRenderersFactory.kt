@@ -86,13 +86,19 @@ class StashRenderersFactory(
             .setEnableAudioOutputPlaybackParameters(true)
             .setAudioOutputProvider(
                 StashAudioOutputProvider(audioTrackProvider, hiResOutputController, outputSession) {
-                    FloatDspChain({ eqController.state.value }) {
-                        // This player's own song gain (see OutputSession.trackGainDb).
-                        val shared = loudnessController.state.value
-                        val own = outputSession.trackGainDb
-                        if (own == null || own == shared.currentTrackGainDb) shared
-                        else shared.copy(currentTrackGainDb = own)
-                    }
+                    FloatDspChain(
+                        eqState = { eqController.state.value },
+                        loudnessState = {
+                            // This player's own song gain (see OutputSession.trackGainDb).
+                            val shared = loudnessController.state.value
+                            val own = outputSession.trackGainDb
+                            if (own == null || own == shared.currentTrackGainDb) shared
+                            else shared.copy(currentTrackGainDb = own)
+                        },
+                        // This player's own AutoMix bass-swap shelf; the two
+                        // crossfade decks must never share this value.
+                        autoMixLowShelfDb = { outputSession.autoMixLowShelfDb },
+                    )
                 },
             )
             .build()

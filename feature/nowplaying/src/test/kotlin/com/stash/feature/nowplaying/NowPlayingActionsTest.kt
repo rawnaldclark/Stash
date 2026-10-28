@@ -1,6 +1,7 @@
 package com.stash.feature.nowplaying
 
 import com.stash.core.data.prefs.NowPlayingAction
+import com.stash.core.data.prefs.NowPlayingAction.AUTOMIX
 import com.stash.core.data.prefs.NowPlayingAction.CAST
 import com.stash.core.data.prefs.NowPlayingAction.DOWNLOAD
 import com.stash.core.data.prefs.NowPlayingAction.FLAG_WRONG_MATCH
@@ -34,9 +35,9 @@ class NowPlayingActionsTest {
         assertEquals(listOf(QUEUE), row.trailing)
     }
 
-    @Test fun `default menu keeps the old items in their old order, with Lyrics first`() {
+    @Test fun `default menu lists the actions in canonical order, with Lyrics first`() {
         assertEquals(
-            listOf(LYRICS, LISTEN_TOGETHER, SAVE_TO_PLAYLIST, SHARE, VIEW_ALBUM, PLAYBACK_SPEED, DOWNLOAD, FLAG_WRONG_MATCH),
+            listOf(LYRICS, LISTEN_TOGETHER, SAVE_TO_PLAYLIST, SHARE, VIEW_ALBUM, PLAYBACK_SPEED, AUTOMIX, DOWNLOAD, FLAG_WRONG_MATCH),
             menuActions(NowPlayingAction.DefaultPins, solo),
         )
     }
@@ -65,9 +66,9 @@ class NowPlayingActionsTest {
 
     // ── visibility rules ─────────────────────────────────────────────────────────────────────
 
-    @Test fun `in a room Radio, Queue and Speed are hidden pinned or not`() {
+    @Test fun `in a room Radio, Queue, Speed and AutoMix are hidden pinned or not`() {
         val room = ActionContext(inRoom = true)
-        val pins = setOf(RADIO, QUEUE, PLAYBACK_SPEED, SHARE)
+        val pins = setOf(RADIO, QUEUE, PLAYBACK_SPEED, AUTOMIX, SHARE)
         val row = topRowActions(pins, room)
         assertEquals(listOf(SHARE), row.leading)
         assertEquals(emptyList<NowPlayingAction>(), row.trailing)
@@ -75,14 +76,17 @@ class NowPlayingActionsTest {
         assertFalse(RADIO in menu)
         assertFalse(QUEUE in menu)
         assertFalse(PLAYBACK_SPEED in menu)
+        assertFalse(AUTOMIX in menu)
         assertTrue(LISTEN_TOGETHER in menu)
     }
 
-    @Test fun `casting hides Speed only`() {
+    @Test fun `casting hides Speed and AutoMix`() {
         val cast = ActionContext(casting = true)
         assertFalse(PLAYBACK_SPEED in topRowActions(setOf(PLAYBACK_SPEED, RADIO), cast).leading)
-        assertTrue(RADIO in topRowActions(setOf(PLAYBACK_SPEED, RADIO), cast).leading)
+        assertFalse(AUTOMIX in topRowActions(setOf(AUTOMIX, RADIO), cast).leading)
+        assertTrue(RADIO in topRowActions(setOf(PLAYBACK_SPEED, AUTOMIX, RADIO), cast).leading)
         assertFalse(PLAYBACK_SPEED in menuActions(emptySet(), cast))
+        assertFalse(AUTOMIX in menuActions(emptySet(), cast))
     }
 
     @Test fun `Post to Community shows only while Community is on`() {

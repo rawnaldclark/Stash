@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.ui.unit.dp
+import com.stash.core.data.prefs.AutoMixMode
 import com.stash.core.data.prefs.LyricsSourcePreference
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -48,6 +49,7 @@ fun SettingsPlaybackScreen(
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
     lyricsViewModel: LyricsSettingsViewModel = hiltViewModel(),
+    AutoMixViewModel: AutoMixSettingsViewModel = hiltViewModel(),
 ) {
     val lyricsSourcePreference by lyricsViewModel.sourcePreference.collectAsStateWithLifecycle()
     val lyricsRecheckState by lyricsViewModel.recheckState.collectAsStateWithLifecycle()
@@ -66,6 +68,8 @@ fun SettingsPlaybackScreen(
     val autoplayRadioEnabled by viewModel.autoplayRadioEnabled.collectAsStateWithLifecycle()
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
+    val autoMixEnabled by AutoMixViewModel.enabled.collectAsStateWithLifecycle()
+    val autoMixMode by AutoMixViewModel.mode.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = stringResource(R.string.settings_playback_title), onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
@@ -163,6 +167,37 @@ fun SettingsPlaybackScreen(
                             seconds = (crossfadeDurationMs / 1000L).toInt().coerceIn(1, 12),
                             onSecondsChange = { viewModel.onCrossfadeDurationChange(it * 1000L) },
                         )
+                    }
+                }
+                add {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_automix_title),
+                        subtitle = stringResource(R.string.settings_automix_desc),
+                        checked = autoMixEnabled,
+                        onCheckedChange = AutoMixViewModel::setEnabled,
+                    )
+                }
+                if (autoMixEnabled) {
+                    add {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            SettingsSegmented(
+                                options = listOf(
+                                    stringResource(R.string.settings_automix_beat_sync),
+                                    stringResource(R.string.settings_automix_smooth),
+                                ),
+                                selectedIndex = if (autoMixMode == AutoMixMode.SMOOTH) 1 else 0,
+                                onSelect = { AutoMixViewModel.setMode(if (it == 1) AutoMixMode.SMOOTH else AutoMixMode.BEAT_SYNC) },
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (autoMixMode == AutoMixMode.SMOOTH) R.string.settings_automix_smooth_desc
+                                    else R.string.settings_automix_beat_sync_desc
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             },

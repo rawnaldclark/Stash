@@ -121,6 +121,16 @@ class OutputSession(
      * Null until the player's first song has been looked up.
      */
     @Volatile var trackGainDb: Float? = null
+
+    /**
+     * AutoMix's per-deck low-shelf cut in dB for THIS player (0 = untouched;
+     * negative removes low end). During a beat blend the playback service
+     * keeps the incoming deck's bass out, then swaps it with the outgoing
+     * deck's around the middle of the mix, so two basslines never play at
+     * full level together. Written on the service thread, read by this
+     * player's DSP chain on the audio thread.
+     */
+    @Volatile var autoMixLowShelfDb: Float = 0f
 }
 
 /**

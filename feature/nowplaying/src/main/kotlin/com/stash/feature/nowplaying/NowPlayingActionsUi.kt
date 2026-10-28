@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.stash.core.data.prefs.AutoMixMode
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.ui.components.SheetOptionRow
@@ -96,6 +98,9 @@ internal data class ActionVisualState(
     val castConnectingTo: String? = null,
     /** The speaker playing, while casting. */
     val castingTo: String? = null,
+    val autoMixEnabled: Boolean = false,
+    val autoMixMode: AutoMixMode = AutoMixMode.BEAT_SYNC,
+    val autoMixMixing: Boolean = false,
 )
 
 /** An action's icon and label right now; [active] tints it with the album accent. */
@@ -147,6 +152,16 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
         if (s.speed == 1f) "Playback speed" else "Playback speed · ${formatSpeed(s.speed)}",
         active = s.speed != 1f,
     )
+    NowPlayingAction.AUTOMIX -> ActionVisual(
+        Icons.Default.AutoAwesome,
+        when {
+            s.autoMixMixing -> "Mixing…"
+            s.autoMixEnabled && s.autoMixMode == AutoMixMode.SMOOTH -> "AutoMix · Smooth"
+            s.autoMixEnabled -> "AutoMix · Beat Sync"
+            else -> "AutoMix"
+        },
+        active = s.autoMixEnabled || s.autoMixMixing,
+    )
     NowPlayingAction.DOWNLOAD -> ActionVisual(
         if (s.isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
         when {
@@ -170,6 +185,7 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
     NowPlayingAction.POST_TO_COMMUNITY -> "Post to Community"
     NowPlayingAction.VIEW_ALBUM -> "View Album"
     NowPlayingAction.PLAYBACK_SPEED -> "Playback speed"
+    NowPlayingAction.AUTOMIX -> "AutoMix"
     NowPlayingAction.DOWNLOAD -> "Download"
     NowPlayingAction.FLAG_WRONG_MATCH -> "Flag as Wrong Match"
 }

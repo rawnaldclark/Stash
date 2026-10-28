@@ -25,6 +25,7 @@ enum class NowPlayingAction {
     POST_TO_COMMUNITY,
     VIEW_ALBUM,
     PLAYBACK_SPEED,
+    AUTOMIX,
     DOWNLOAD,
     FLAG_WRONG_MATCH,
     ;

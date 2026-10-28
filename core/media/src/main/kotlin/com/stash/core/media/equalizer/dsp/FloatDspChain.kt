@@ -59,7 +59,11 @@ fun dspActivation(eq: EqState, loudness: LoudnessState) = DspActivation(
  * nothing has to be drained at end of stream (the old lookahead limiter
  * silently dropped the last 2 ms of every track and prefixed 2 ms of silence).
  *
- * Order: preamp → 5-band EQ → bass shelf → loudness gain → limiter.
+ * Order: preamp → 5-band EQ → bass shelf → AutoMix low-shelf cut →
+ * loudness gain → limiter. The AutoMix shelf is per output/player (supplied
+ * from that player's [com.stash.core.media.output.OutputSession]); it lets a
+ * beat blend keep only one deck's low end at a time without touching the
+ * user's shared EQ settings.
  *
  * State is sampled once per [process] call through the suppliers (a volatile
  * StateFlow read), so a pref change lands within one chunk (~46 ms).
@@ -68,6 +72,7 @@ fun dspActivation(eq: EqState, loudness: LoudnessState) = DspActivation(
 class FloatDspChain(
     private val eqState: () -> EqState,
     private val loudnessState: () -> LoudnessState,
+    private val autoMixLowShelfDb: () -> Float = { 0f },
 ) {
     private var sampleRate = 0
     private var channels = 0
@@ -76,12 +81,16 @@ class FloatDspChain(
     private val loudness = GainRamp()
     private var eqBank = BiquadBank(BAND_FREQS.size, 1)
     private var bassBank = BiquadBank(1, 1)
+    private var autoMixBank = BiquadBank(1, 1)
     private val limiter = SoftLimiter()
 
     private var appliedGains = FloatArray(0)
     private var appliedBassDb = Float.NaN
+    private var appliedAutoMixDb = Float.NaN
+    private var currentAutoMixDb = 0f
     private var eqWasActive = false
     private var bassWasActive = false
+    private var autoMixWasActive = false
 
     val isConfigured: Boolean get() = sampleRate > 0
 
@@ -91,8 +100,10 @@ class FloatDspChain(
         this.channels = channels
         eqBank = BiquadBank(BAND_FREQS.size, channels)
         bassBank = BiquadBank(1, channels)
+        autoMixBank = BiquadBank(1, channels)
         appliedGains = FloatArray(0)
         appliedBassDb = Float.NaN
+        appliedAutoMixDb = Float.NaN
         preamp.configure(sampleRate)
         loudness.configure(sampleRate)
         limiter.configure(sampleRate)
@@ -106,7 +117,14 @@ class FloatDspChain(
     fun reset() {
         eqBank.reset()
         bassBank.reset()
+        autoMixBank.reset()
         limiter.reset()
+        appliedAutoMixDb = Float.NaN
+        // Snap to the deck's current shelf target. An incoming AutoMix spare
+        // is primed with its bass already removed; ramping from flat after a
+        // flush would leak a few hundred milliseconds of the second bassline.
+        currentAutoMixDb = autoMixTargetDb()
+        autoMixWasActive = abs(currentAutoMixDb) > AUTOMIX_EPSILON_DB
         val eq = eqState()
         val ld = loudnessState()
         preamp.snapTo(preampTarget(eq))
@@ -117,7 +135,8 @@ class FloatDspChain(
     fun isActive(): Boolean {
         if (!isConfigured) return false
         val act = dspActivation(eqState(), loudnessState())
-        return act.any || preamp.isActive || loudness.isActive || limiter.isEngaged
+        return act.any || preamp.isActive || loudness.isActive || limiter.isEngaged ||
+            abs(autoMixTargetDb()) > AUTOMIX_EPSILON_DB || abs(currentAutoMixDb) > AUTOMIX_EPSILON_DB
     }
 
     /** Processes [frames] interleaved frames of [samples] in place. */
@@ -152,6 +171,29 @@ class FloatDspChain(
         }
         bassWasActive = act.bass
 
+        val autoMixTarget = autoMixTargetDb()
+        val autoMixActive = abs(autoMixTarget) > AUTOMIX_EPSILON_DB ||
+            abs(currentAutoMixDb) > AUTOMIX_EPSILON_DB
+        if (autoMixActive) {
+            if (!autoMixWasActive) autoMixBank.reset()
+            // Glide the shelf gain rather than stepping coefficients with
+            // every 50 ms engine tick; ~36 dB/s still completes a bass swap
+            // inside roughly one beat at common tempos.
+            val maxStep = AUTOMIX_MAX_DB_PER_SECOND * frames.toFloat() / sampleRate.toFloat()
+            val delta = autoMixTarget - currentAutoMixDb
+            currentAutoMixDb = when {
+                delta > maxStep -> currentAutoMixDb + maxStep
+                delta < -maxStep -> currentAutoMixDb - maxStep
+                else -> autoMixTarget
+            }
+            if (appliedAutoMixDb.isNaN() || abs(currentAutoMixDb - appliedAutoMixDb) > 0.05f) {
+                autoMixBank.setLowShelf(0, AUTOMIX_SHELF_FREQ, currentAutoMixDb, SHELF_Q, sampleRate)
+                appliedAutoMixDb = currentAutoMixDb
+            }
+            if (abs(currentAutoMixDb) > AUTOMIX_EPSILON_DB) autoMixBank.process(samples, frames)
+        }
+        autoMixWasActive = autoMixActive
+
         loudness.setTarget(loudnessTarget(ld))
         if (loudness.isActive) loudness.apply(samples, frames, channels)
 
@@ -166,11 +208,19 @@ class FloatDspChain(
     private fun loudnessTarget(ld: LoudnessState): Float =
         if (ld.enabled && ld.currentTrackGainDb != 0f) dbToLinear(ld.currentTrackGainDb) else 1f
 
+    private fun autoMixTargetDb(): Float = autoMixLowShelfDb()
+        .takeIf { it.isFinite() }
+        ?.coerceIn(-24f, 0f)
+        ?: 0f
+
     companion object {
         val BAND_FREQS: FloatArray = floatArrayOf(60f, 230f, 910f, 3_600f, 14_000f)
         const val BAND_Q = 1f
         const val SHELF_FREQ = 100f
         const val SHELF_Q = 0.7f
+        const val AUTOMIX_SHELF_FREQ = 160f
+        const val AUTOMIX_EPSILON_DB = 0.05f
+        const val AUTOMIX_MAX_DB_PER_SECOND = 36f
 
         fun dbToLinear(db: Float): Float = 10f.pow(db / 20f)
     }

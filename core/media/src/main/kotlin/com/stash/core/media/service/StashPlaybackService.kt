@@ -27,9 +27,18 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.prefs.AutoMixMode
+import com.stash.core.data.prefs.AutoMixPreference
 import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
+import com.stash.core.media.automix.AutoMixPlan
+import com.stash.core.media.automix.AutoMixPlanner
+import com.stash.core.media.automix.AutoMixStateBus
+import com.stash.core.media.automix.AutoMixTrackAnalysis
+import com.stash.core.media.automix.AutoMixTrackAnalyzer
+import com.stash.core.media.automix.AutoMixTransitionKind
+import com.stash.core.media.automix.AutoMixWindow
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.toPlayerRepeatMode
 import com.stash.core.media.mediaToWallMs
@@ -40,6 +49,7 @@ import com.stash.core.media.equalizer.computeGain
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
 import com.stash.core.media.SleepTimerController
+import com.stash.core.media.output.OutputSession
 import com.stash.core.media.output.toSourceFormat
 import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.StashMediaSourceFactory
@@ -60,6 +70,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.guava.future
 import javax.inject.Inject
@@ -95,6 +107,9 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
     @Inject lateinit var crossfadePreference: CrossfadePreference
+    @Inject lateinit var autoMixPreference: AutoMixPreference
+    @Inject lateinit var autoMixTrackAnalyzer: AutoMixTrackAnalyzer
+    @Inject lateinit var autoMixStateBus: AutoMixStateBus
     @Inject lateinit var playbackSessionBus: com.stash.core.media.PlaybackSessionBus
 
     /** Deps for the full-timeline lazy-resolve chain (LazyResolvingDataSource). */
@@ -264,6 +279,11 @@ class StashPlaybackService : MediaLibraryService() {
 
         /** Below this much usable fade, skip the crossfade (hard cut). */
         private const val MIN_FADE_MS = 800L
+        private const val AUTOMIX_ANALYZE_REMAINING_MS = 240_000L
+        private const val AUTOMIX_PRIME_LEAD_MS = 45_000L
+        private const val AUTOMIX_RETRY_DELAY_MS = 30_000L
+        private const val AUTOMIX_MAX_Late_MS = 1_500L
+        private const val AUTOMIX_INCOMING_PREROLL_MS = 350L
 
         /** Separate, low-priority channel for the sleep-timer status notification. */
         private const val SLEEP_TIMER_CHANNEL_ID = "stash_sleep_timer"
@@ -325,6 +345,14 @@ class StashPlaybackService : MediaLibraryService() {
     private var crossfadeEngine: CrossfadeEngine? = null
 
     /**
+     * Each ExoPlayer's own output session, captured when it is built. This is
+     * how AutoMix addresses a bass-swap shelf to one deck only: the two
+     * players share the user's EQ state, but never this per-session value.
+     * Identity map because players are role-swapped, not value-compared.
+     */
+    private val playerOutputSessions = java.util.IdentityHashMap<ExoPlayer, OutputSession>()
+
+    /**
      * Dedicated ~250 ms poll driving crossfade prepare + fire decisions.
      * Separate from [prefetchPollJob] (5 s — too coarse for a 1–12 s seam).
      */
@@ -339,6 +367,24 @@ class StashPlaybackService : MediaLibraryService() {
 
     /** The crossfade preference as last read; [crossfadeEnabled] is this AND not suspended. */
     @Volatile private var crossfadePrefEnabled = false
+
+    @Volatile private var autoMixPrefEnabled = false
+    @Volatile private var autoMixMode: AutoMixMode = AutoMixMode.BEAT_SYNC
+    private data class AutoMixPairKey(
+        val outgoingMediaId: String,
+        val outgoingIndex: Int,
+        val incomingMediaId: String,
+        val incomingIndex: Int,
+        val mode: AutoMixMode,
+    )
+    private var autoMixAnalysisJob: Job? = null
+    private var autoMixKey: AutoMixPairKey? = null
+    private var autoMixOutgoingAnalysis: AutoMixTrackAnalysis? = null
+    private var autoMixIncomingAnalysis: AutoMixTrackAnalysis? = null
+    private var autoMixPlan: AutoMixPlan? = null
+    private var autoMixFiredPlan: AutoMixPlan? = null
+    private var autoMixPreparedStartMs: Long? = null
+    private var autoMixRetryAtElapsedMs = 0L
 
     /** Listen Together's session-scoped crossfade override. In memory only, so a crash can't leave crossfade off (spec §4). */
     private var crossfadeSuspended = false
@@ -613,10 +659,21 @@ class StashPlaybackService : MediaLibraryService() {
         )
         engine.initialize()
         crossfadeEngine = engine
+        engine.onAutoMixLowShelf = { deck, shelfDb ->
+            playerOutputSessions[deck]?.autoMixLowShelfDb = shelfDb
+        }
         // Listen Together: focus pauses bypass ListenTogetherPlayer AND carry no focus reason (see the
         // CrossfadeEngine hooks). Outside a session events is null, so these do nothing.
         engine.onFocusPause = { sessionPlayer.events?.onExternalPause() }
         engine.onFocusResume = { sessionPlayer.events?.onExternalResume() }
+        engine.onTransitionCancelled = {
+            if (autoMixFiredPlan != null) {
+                autoMixFiredPlan = null
+                autoMixStateBus.clear()
+                clearAutoMixPlan()
+            }
+        }
+        engine.onTempoReturnFinished = { mediaId -> autoMixStateBus.finishTempoReturn(mediaId) }
         val player = engine.masterPlayer
         player.audioSessionId = audioSessionId
 
@@ -699,6 +756,8 @@ class StashPlaybackService : MediaLibraryService() {
         // Cache crossfade prefs for the poll's prepare/fire decisions.
         serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
+        serviceScope.launch { autoMixPreference.enabled.collect { onAutoMixPreference(it) } }
+        serviceScope.launch { autoMixPreference.mode.collect { onAutoMixMode(it) } }
         serviceScope.launch {
             hiResOutputController.bitPerfectEngaged.collect { setCrossfadeHeldForBitPerfect(it) }
         }
@@ -1122,6 +1181,7 @@ class StashPlaybackService : MediaLibraryService() {
         // depth, rate). Per player: the crossfade spare reports its next song
         // early, and only becomes "the source" once its output is audible.
         val session = renderersFactory.outputSession
+        playerOutputSessions[player] = session
         // Each player normalizes its OWN song: the crossfade spare primes the
         // next song (a transition on the spare), so it fades in at that song's
         // level while the master keeps the outgoing song's.
@@ -1197,9 +1257,43 @@ class StashPlaybackService : MediaLibraryService() {
         onCrossfadeEnabledChanged(crossfadeAllowed())
     }
 
-    /** The preference, unless a Listen Together session, bit-perfect output or an end-of-track sleep timer holds it off. */
     private fun crossfadeAllowed(): Boolean =
-        crossfadePrefEnabled && !crossfadeSuspended && !crossfadeHeldForBitPerfect && !crossfadeHeldForSleep
+        (crossfadePrefEnabled || autoMixPrefEnabled) &&
+            !crossfadeSuspended && !crossfadeHeldForBitPerfect && !crossfadeHeldForSleep
+
+    private fun autoMixAllowed(): Boolean =
+        autoMixPrefEnabled && !crossfadeSuspended && !crossfadeHeldForBitPerfect &&
+            !crossfadeHeldForSleep && !isCasting
+
+    internal fun onAutoMixPreference(enabled: Boolean) {
+        if (enabled == autoMixPrefEnabled) return
+        autoMixPrefEnabled = enabled
+        if (!enabled) {
+            clearAutoMixPlan()
+            crossfadeEngine?.cancelTransition()
+            autoMixStateBus.clear()
+        }
+        onCrossfadeEnabledChanged(crossfadeAllowed())
+    }
+
+    internal fun onAutoMixMode(mode: AutoMixMode) {
+        if (mode == autoMixMode) return
+        autoMixMode = mode
+        clearAutoMixPlan()
+    }
+
+    private fun autoMixPrimeStartMs(plan: AutoMixPlan): Long = when {
+        plan.incomingPrimeStartMs != null -> plan.incomingPrimeStartMs.coerceAtLeast(0L)
+        plan.beatMatched -> (plan.incomingStartMs - AUTOMIX_INCOMING_PREROLL_MS).coerceAtLeast(0L)
+        else -> plan.incomingStartMs
+    }
+
+    private fun clearAutoMixPlan() {
+        autoMixAnalysisJob?.cancel(); autoMixAnalysisJob = null; autoMixKey = null
+        autoMixOutgoingAnalysis = null; autoMixIncomingAnalysis = null; autoMixPlan = null
+        autoMixPreparedStartMs = null; autoMixRetryAtElapsedMs = 0L
+        if (crossfadeEngine?.isTransitioning() == false) crossfadeEngine?.clearBeatLoop()
+    }
 
     /** Suspends or restores crossfade for a Listen Together session. */
     internal fun setCrossfadeSuspended(suspended: Boolean) {
@@ -1207,6 +1301,7 @@ class StashPlaybackService : MediaLibraryService() {
         if (suspended) {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
+            clearAutoMixPlan()
         }
         onCrossfadeEnabledChanged(crossfadeAllowed())
     }
@@ -1218,6 +1313,7 @@ class StashPlaybackService : MediaLibraryService() {
         if (held) {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
+            clearAutoMixPlan()
         }
         onCrossfadeEnabledChanged(crossfadeAllowed())
     }
@@ -1236,6 +1332,7 @@ class StashPlaybackService : MediaLibraryService() {
         if (held) {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
+            clearAutoMixPlan()
         }
         crossfadeEngine?.masterPlayer?.pauseAtEndOfMediaItems = held
         onCrossfadeEnabledChanged(crossfadeAllowed())
@@ -1271,6 +1368,9 @@ class StashPlaybackService : MediaLibraryService() {
         val nextId = nextItem.mediaId
         val remaining = mediaToWallMs(player.duration - player.currentPosition, speed)
 
+        if (autoMixAllowed() && evaluateAutoMix(player, engine, nextItem, nextIndex)) return
+        if (!crossfadePrefEnabled) return
+
         // Phase 1 — prime the spare as soon as the next track is resolved and we
         // are in the back stretch of the current one, so a COLD stream has tens
         // of seconds to buffer (not just the few seconds before the seam). This
@@ -1294,6 +1394,178 @@ class StashPlaybackService : MediaLibraryService() {
         }
     }
 
+    @OptIn(UnstableApi::class)
+    private fun evaluateAutoMix(player: Player, engine: CrossfadeEngine, nextItem: MediaItem, nextIndex: Int): Boolean {
+        val currentItem = player.currentMediaItem ?: return false
+        if (player.duration < 30_000L) return false
+        val key = AutoMixPairKey(currentItem.mediaId, player.currentMediaItemIndex, nextItem.mediaId, nextIndex, autoMixMode)
+        if (autoMixKey != key) { clearAutoMixPlan(); autoMixKey = key }
+        val speed = player.playbackParameters.speed
+        val outgoingAnalysis = autoMixOutgoingAnalysis
+        val incomingAnalysis = autoMixIncomingAnalysis
+        if (outgoingAnalysis != null && incomingAnalysis != null) {
+            val currentPlan = autoMixPlan
+            if (currentPlan == null || kotlin.math.abs(currentPlan.userSpeedUsed - speed) > 0.005f) {
+                autoMixPlan = AutoMixPlanner.plan(outgoingAnalysis, incomingAnalysis, key.mode, speed)
+                if (autoMixPlan == null) return false
+            }
+        } else {
+            maybeScheduleAutoMixAnalysis(player, currentItem, nextItem, key)
+            return autoMixAnalysisJob?.isActive == true
+        }
+        val plan = autoMixPlan ?: return false
+        val position = player.currentPosition
+        if (position > plan.fadeStartOutgoingMs + AUTOMIX_MAX_Late_MS) {
+            autoMixPlan = null
+            autoMixRetryAtElapsedMs = android.os.SystemClock.elapsedRealtime() + AUTOMIX_RETRY_DELAY_MS
+            return false
+        }
+        val primeStartMs = autoMixPrimeStartMs(plan)
+        val wallToEffectiveEnd = mediaToWallMs(plan.effectiveEndOutgoingMs - position, speed)
+        val shouldPrime = wallToEffectiveEnd <= plan.totalFadeWallMs + AUTOMIX_PRIME_LEAD_MS
+        if (shouldPrime && !engine.isPreparedFor(nextItem.mediaId, primeStartMs)) {
+            engine.prepareNext(
+                nextItem, primeStartMs, plan.incomingMultiplier,
+                lowShelfDb = if (plan.beatMatched) -20f else 0f,
+            )
+            crossfadePreparedId = nextItem.mediaId; autoMixPreparedStartMs = primeStartMs
+        }
+        val loopStartMs = plan.loopStartOutgoingMs
+        val loopEndMs = plan.loopEndOutgoingMs
+        if (shouldPrime && plan.transitionKind == AutoMixTransitionKind.BEAT_LOOP_BRIDGE &&
+            loopStartMs != null && loopEndMs != null &&
+            !engine.isBeatLoopPreparedFor(currentItem.mediaId, loopStartMs, loopEndMs)
+        ) {
+            engine.prepareBeatLoop(currentItem, loopStartMs, loopEndMs)
+        }
+        val wallUntilFade = mediaToWallMs(plan.fadeStartOutgoingMs - position, speed)
+        if (wallUntilFade > CROSSFADE_POLL_INTERVAL_MS) return true
+        val neededBufferMs = wallToMediaMs(plan.audibleFadeWallMs, speed * plan.incomingMultiplier)
+        val loopReady = plan.transitionKind != AutoMixTransitionKind.BEAT_LOOP_BRIDGE || (
+            loopStartMs != null && loopEndMs != null &&
+                engine.isBeatLoopPreparedFor(currentItem.mediaId, loopStartMs, loopEndMs) &&
+                engine.isBeatLoopReady() &&
+                engine.beatLoopBufferedMs() >= minOf(loopEndMs - loopStartMs, 2_000L) &&
+                engine.beatLoopDurationMs() > 0L &&
+                kotlin.math.abs(engine.beatLoopDurationMs() - (loopEndMs - loopStartMs)) <= 1_000L
+            )
+        if (!engine.isPreparedFor(nextItem.mediaId, primeStartMs) ||
+            engine.spareBufferedAheadMs() < neededBufferMs || !loopReady
+        ) return true
+        val adjustedPlan = if (plan.beatMatched) {
+            val adjustedLead = (plan.syncLeadInMs + wallUntilFade).coerceAtLeast(500L)
+            plan.copy(syncLeadInMs = adjustedLead, totalFadeWallMs = plan.totalFadeWallMs + (adjustedLead - plan.syncLeadInMs))
+        } else plan
+        fireAutoMix(engine, adjustedPlan)
+        return true
+    }
+
+    private fun maybeScheduleAutoMixAnalysis(player: Player, currentItem: MediaItem, nextItem: MediaItem, key: AutoMixPairKey) {
+        if (autoMixAnalysisJob?.isActive == true) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now < autoMixRetryAtElapsedMs) return
+        val duration = player.duration
+        if (duration <= 0L) return
+        val speed = player.playbackParameters.speed
+        val remainingWall = mediaToWallMs(duration - player.currentPosition, speed)
+        val playedFraction = player.currentPosition.toDouble() / duration.toDouble()
+        if (remainingWall > AUTOMIX_ANALYZE_REMAINING_MS && playedFraction < 0.35) return
+        if (remainingWall < 20_000L) return
+        val outgoingDuration = duration
+        val incomingDuration = nextItem.mediaMetadata.extras?.getLong(EXTRA_TRACK_DURATION_MS, 0L) ?: 0L
+        android.util.Log.i("AutoMix", "analysing ${currentItem.mediaId} -> ${nextItem.mediaId} mode=${key.mode} remainingWall=$remainingWall")
+        autoMixAnalysisJob = serviceScope.launch {
+            try {
+                val analyses = coroutineScope {
+                    val outgoing = async { autoMixTrackAnalyzer.analyze(currentItem, AutoMixWindow.TAIL, outgoingDuration) }
+                    val incoming = async { autoMixTrackAnalyzer.analyze(nextItem, AutoMixWindow.HEAD, incomingDuration) }
+                    outgoing.await() to incoming.await()
+                }
+                if (autoMixKey != key) return@launch
+                val outgoingAnalysis = analyses.first
+                val incomingAnalysis = analyses.second
+                autoMixOutgoingAnalysis = outgoingAnalysis; autoMixIncomingAnalysis = incomingAnalysis
+                if (outgoingAnalysis == null || incomingAnalysis == null) {
+                    autoMixRetryAtElapsedMs = android.os.SystemClock.elapsedRealtime() + AUTOMIX_RETRY_DELAY_MS
+                    return@launch
+                }
+                val plan = AutoMixPlanner.plan(outgoingAnalysis, incomingAnalysis, key.mode, player.playbackParameters.speed)
+                autoMixPlan = plan
+                if (plan == null) {
+                    autoMixRetryAtElapsedMs = android.os.SystemClock.elapsedRealtime() + AUTOMIX_RETRY_DELAY_MS
+                    android.util.Log.i("AutoMix", "no usable ${key.mode} plan outBpm=${outgoingAnalysis.beatGrid?.bpm} inBpm=${incomingAnalysis.beatGrid?.bpm} outConf=${outgoingAnalysis.beatGrid?.confidence} inConf=${incomingAnalysis.beatGrid?.confidence}")
+                } else {
+                    android.util.Log.i("AutoMix", "planned bars=${plan.bars}+${plan.leadInBars} totalWall=${plan.totalFadeWallMs} lead=${plan.syncLeadInMs} fadeStart=${plan.fadeStartOutgoingMs} audible=${plan.audibleStartOutgoingMs} inStart=${plan.incomingStartMs} bpm=${plan.outgoingBpm}->${plan.incomingBpm} shared=${plan.sharedBpm}")
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (autoMixKey == key) autoMixRetryAtElapsedMs = android.os.SystemClock.elapsedRealtime() + AUTOMIX_RETRY_DELAY_MS
+                android.util.Log.w("AutoMix", "analysis failed; ordinary fallback remains available", e)
+            } finally {
+                if (autoMixKey == key) autoMixAnalysisJob = null
+            }
+        }
+    }
+
+    private fun fireAutoMix(engine: CrossfadeEngine, plan: AutoMixPlan) {
+        autoMixFiredPlan = plan
+        android.util.Log.i(
+            "AutoMix",
+            "firing kind=${plan.transitionKind} mode=${plan.mode} bars=${plan.bars} " +
+                "fadeStart=${plan.fadeStartOutgoingMs} audibleStart=${plan.audibleStartOutgoingMs} " +
+                "end=${plan.effectiveEndOutgoingMs} incomingStart=${plan.incomingStartMs} " +
+                "bpm=${plan.outgoingBpm}->${plan.incomingBpm} shared=${plan.sharedBpm} " +
+                "loop=${plan.loopStartOutgoingMs}..${plan.loopEndOutgoingMs} " +
+                "bridge=${plan.bridgeStartBpm}->${plan.bridgeEndBpm}/${plan.bridgeWallMs}ms " +
+                "incomingPrime=${plan.incomingPrimeStartMs} keyCompatible=${plan.keyCompatible}",
+        )
+        autoMixStateBus.beginMixing(plan.mode, plan.outgoingMediaId, plan.incomingMediaId, plan.outgoingBpm, plan.incomingBpm, plan.sharedBpm)
+        crossfadePollJob?.cancel()
+        engine.performTransition(
+            fadeMs = plan.totalFadeWallMs,
+            speedProfile = CrossfadeSpeedProfile(
+                incomingMultiplier = plan.incomingMultiplier,
+                outgoingTargetMultiplier = plan.outgoingTargetMultiplier,
+                syncLeadInMs = plan.syncLeadInMs,
+                incomingPrerollMs = (plan.incomingStartMs - autoMixPrimeStartMs(plan)).coerceAtLeast(0L),
+                tempoReturnMs = plan.tempoReturnMs,
+                blendKind = when (plan.transitionKind) {
+                    AutoMixTransitionKind.BEAT_LOCK -> CrossfadeBlendKind.BEAT_LOCK
+                    AutoMixTransitionKind.BEAT_LOOP_BRIDGE -> CrossfadeBlendKind.BEAT_LOOP_BRIDGE
+                    AutoMixTransitionKind.CLEAN_BLEND -> CrossfadeBlendKind.CLEAN_BLEND
+                    AutoMixTransitionKind.PHRASE_CUT -> CrossfadeBlendKind.PHRASE_CUT
+                },
+                bassSwap = plan.beatMatched,
+                beatLoop = if (plan.transitionKind == AutoMixTransitionKind.BEAT_LOOP_BRIDGE) {
+                    val loopStart = plan.loopStartOutgoingMs
+                    val loopEnd = plan.loopEndOutgoingMs
+                    val bridgeStart = plan.bridgeStartBpm
+                    val bridgeEnd = plan.bridgeEndBpm
+                    val adjusted = plan.incomingAdjustedBpm
+                    if (loopStart != null && loopEnd != null && bridgeStart != null &&
+                        bridgeEnd != null && adjusted != null
+                    ) {
+                        BeatLoopProfile(
+                            loopStartMs = loopStart,
+                            loopEndMs = loopEnd,
+                            outgoingBpm = bridgeStart,
+                            targetBpm = bridgeEnd,
+                            incomingAdjustedBpm = adjusted,
+                            incomingEntryMs = plan.incomingStartMs,
+                            bridgeWallMs = plan.bridgeWallMs,
+                            bridgeLoopCycles = plan.bridgeLoopCycles,
+                        )
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                },
+            ),
+        ) { newMaster -> onCrossfadeSwap(newMaster) }
+    }
+
     /**
      * Promotes the incoming player to master after a crossfade: re-points the
      * MediaSession, moves [playerListener], re-runs per-track wiring for the new
@@ -1302,6 +1574,15 @@ class StashPlaybackService : MediaLibraryService() {
      */
     @OptIn(UnstableApi::class)
     private fun onCrossfadeSwap(newMaster: ExoPlayer) {
+        val firedPlan = autoMixFiredPlan
+        val newMediaId = newMaster.currentMediaItem?.mediaId
+        if (firedPlan != null && newMediaId == firedPlan.incomingMediaId && firedPlan.tempoReturnMs > 0L) {
+            autoMixStateBus.beginTempoReturn(newMediaId, firedPlan.tempoReturnMs)
+        } else if (firedPlan != null) {
+            autoMixStateBus.clear()
+        }
+        autoMixFiredPlan = null
+        clearAutoMixPlan()
         mediaSession?.player = newMaster
         listenedPlayer?.removeListener(playerListener)
         newMaster.addListener(playerListener)

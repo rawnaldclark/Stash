@@ -104,6 +104,32 @@ class FloatDspChainTest {
         assertThat(db(rms(highOut) / rms(high))).isWithin(0.2).of(0.0)
     }
 
+    @Test fun `AutoMix low shelf removes one deck's bass and leaves highs`() {
+        var shelfDb = -20f
+        val autoMixChain = FloatDspChain({ EqState() }, { loudness }, { shelfDb })
+        val sr = 48_000
+        autoMixChain.configure(sr, 2)
+        assertThat(autoMixChain.isActive()).isTrue()
+
+        val low = sine(40.0, sr, sr * 2, 2, amp = 0.20f)
+        val lowOut = low.copyOf().also { autoMixChain.process(it, sr * 2) }
+        val lowGain = db(
+            rms(lowOut.copyOfRange(sr * 2, lowOut.size)) /
+                rms(low.copyOfRange(sr * 2, low.size)),
+        )
+        assertThat(lowGain).isLessThan(-15.0)
+
+        autoMixChain.reset()
+        val high = sine(8_000.0, sr, sr, 2, amp = 0.20f)
+        val highOut = high.copyOf().also { autoMixChain.process(it, sr) }
+        assertThat(db(rms(highOut) / rms(high))).isWithin(0.25).of(0.0)
+
+        shelfDb = 0f
+        val settle = sine(40.0, sr, sr, 2, amp = 0.20f)
+        autoMixChain.process(settle, sr)
+        assertThat(autoMixChain.isActive()).isFalse()
+    }
+
     @Test fun `preamp ramps instead of stepping, then holds exactly`() {
         eq = EqState(enabled = true, preampDb = -6.0206f) // x0.5
         val sr = 48_000

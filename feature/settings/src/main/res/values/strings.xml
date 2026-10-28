@@ -732,4 +732,10 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_automix_title">AutoMix</string>
+    <string name="settings_automix_desc">DJ-style transitions between songs. Takes priority over Crossfade.</string>
+    <string name="settings_automix_beat_sync">Beat Sync</string>
+    <string name="settings_automix_smooth">Smooth</string>
+    <string name="settings_automix_beat_sync_desc">Sync the songs first, keep them beat-locked for several bars, then ease the new song back to its own tempo.</string>
+    <string name="settings_automix_smooth_desc">A longer blend from each song\'s audible end to the next song\'s start, without changing tempo.</string>
 </resources>

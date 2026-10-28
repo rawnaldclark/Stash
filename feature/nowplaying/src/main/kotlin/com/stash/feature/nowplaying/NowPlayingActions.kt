@@ -61,6 +61,7 @@ private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionCon
     NowPlayingAction.CAST -> ctx.castSupported && !ctx.inRoom
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
+    NowPlayingAction.AUTOMIX -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
     else -> true
 }
@@ -176,7 +177,7 @@ internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String?
     ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
     ctx.isCloudSong && action in CLOUD_HIDDEN -> "Not for songs from your cloud storage"
     action == NowPlayingAction.CAST -> "Cast isn't available on this phone"
-    ctx.casting && action == NowPlayingAction.PLAYBACK_SPEED -> "Hidden while casting"
+    ctx.casting && (action == NowPlayingAction.PLAYBACK_SPEED || action == NowPlayingAction.AUTOMIX) -> "Hidden while casting"
     else -> "Not available right now"
 }
 
