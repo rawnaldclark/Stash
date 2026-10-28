@@ -74,6 +74,19 @@ interface RecordTasteDao {
         return Snapshot(t.computedAt, t.body, mixRows())
     }
 
+    /** Every song of the taste, in its order (its rank: an integer, never text). */
+    @Query("SELECT * FROM record_taste_songs ORDER BY rank")
+    suspend fun songs(): List<RecordTasteSongEntity>
+
+    /** The whole taste: its row and its songs, read together (Your record's history mixes). */
+    data class Whole(val taste: RecordTasteEntity, val songs: List<RecordTasteSongEntity>)
+
+    @Transaction
+    suspend fun whole(): Whole? {
+        val t = taste() ?: return null
+        return Whole(t, songs())
+    }
+
     /** The songs the taste keeps out of mixes, in its order (put-back ones still among them: the reader takes them away). */
     @Query("SELECT * FROM record_taste_songs WHERE avoid = 1 ORDER BY rank")
     suspend fun avoided(): List<RecordTasteSongEntity>

@@ -53,6 +53,13 @@ interface RecordPlayDao {
     @Query("SELECT * FROM record_plays WHERE id > :after AND ((f & $LASTFM) != 0) = :scrobbles ORDER BY id LIMIT :limit")
     suspend fun pageAfterOf(after: String, scrobbles: Boolean, limit: Int): List<RecordPlayEntity>
 
+    /**
+     * The plays that started in [from, until), by the index on `s` (v71): Your record's "This week, years ago". In no order: the
+     * reader sorts them (start, then id) in Kotlin, never SQLite on text.
+     */
+    @Query("SELECT * FROM record_plays WHERE s >= :from AND s < :until")
+    suspend fun between(from: Long, until: Long): List<RecordPlayEntity>
+
     /** Of [ids] (at most [SQLITE_BIND_LIMIT]), the ones kept already. */
     @Query("SELECT id FROM record_plays WHERE id IN (:ids)")
     suspend fun keptIds(ids: List<String>): List<String>
