@@ -240,6 +240,7 @@
     <string name="record_kept_out_put_back_done">%1$s puede sonar en tus próximos mixes</string>
     <string name="record_kept_out_put_back_failed">No se ha podido recuperar ahora. Vuelve a intentarlo.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">es-ES</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Principios de %1$d</string>
     <string name="record_mix_mid">Mediados de %1$d</string>
@@ -315,5 +316,6 @@
     <string name="record_mix_save_failed">No se ha podido guardar ahora. Inténtalo de nuevo.</string>
     <string name="record_mix_gone">Ese mix ya no está en tu disco: los mixes cambian según lo que escuchas.</string>
     <string name="record_mix_gone_back">Volver a tu disco</string>
+    <string name="record_mix_failed">No se ha podido leer tu disco ahora.</string>
     <string name="record_mix_back">Atrás</string>
 </resources>

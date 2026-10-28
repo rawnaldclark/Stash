@@ -55,7 +55,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import java.time.Instant
 import java.time.ZoneId
@@ -74,9 +73,9 @@ fun RecordMixesSection(
     viewModel: RecordMixesShelfViewModel = hiltViewModel(),
 ) {
     // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
-    val res = LocalContext.current.resources
+    val context = LocalContext.current
     val locales = LocalConfiguration.current.locales
-    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(res)) }
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(context)) }
     val cards by viewModel.cards.collectAsStateWithLifecycle()
     if (cards.isEmpty()) return
     CardRail(
@@ -156,6 +155,9 @@ class RecordMixesShelfViewModel @Inject constructor(
     /** A mix's card: its id, words, how many songs (the line when it has none) and the squares of its tile. */
     data class Card(val id: String, val title: String, val sub: String, val songs: Int, val tiles: List<TileCover>)
 
+    /** Each mix's covers as last found, with the songs they were found for (by mix id): a card made again keeps them. */
+    private val lastCovers = java.util.concurrent.ConcurrentHashMap<String, Pair<List<String>, List<String?>>>()
+
     /** The words, in the screen's language (by its tags): set by [RecordMixesSection]. */
     private val words = MutableStateFlow<Pair<String, MixWords>?>(null)
 
@@ -202,16 +204,10 @@ class RecordMixesShelfViewModel @Inject constructor(
             }
         }
         .distinctUntilChanged()
-        .onEach { last = it }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), last)
+        // Home's own: kept while Home is in the back stack (its last cards shown at once on a return), never another Home's
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private companion object {
         const val TAG = "YourRecord"
-
-        /** The last cards made: what Home shows at once when it comes back, before they are made again. */
-        @Volatile var last: List<Card> = emptyList()
-
-        /** Each mix's covers as last found, with the songs they were found for (by mix id). */
-        val lastCovers = java.util.concurrent.ConcurrentHashMap<String, Pair<List<String>, List<String?>>>()
     }
 }

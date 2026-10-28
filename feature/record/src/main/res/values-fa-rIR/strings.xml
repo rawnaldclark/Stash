@@ -239,6 +239,7 @@
     <string name="record_kept_out_put_back_done">%1$s می‌تواند در میکس‌های بعدی‌تان پخش شود</string>
     <string name="record_kept_out_put_back_failed">الان برگردانده نشد. دوباره امتحان کنید.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">fa-IR</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">اوایل %1$d</string>
     <string name="record_mix_mid">اواسط %1$d</string>
@@ -314,5 +315,6 @@
     <string name="record_mix_save_failed">الان ذخیره نشد. دوباره امتحان کنید.</string>
     <string name="record_mix_gone">این میکس دیگر در صفحهٔ شما نیست: میکس‌ها با آنچه گوش می‌دهید تغییر می‌کنند.</string>
     <string name="record_mix_gone_back">بازگشت به صفحهٔ شما</string>
+    <string name="record_mix_failed">الان نمی‌شود صفحهٔ شما را خواند.</string>
     <string name="record_mix_back">بازگشت</string>
 </resources>

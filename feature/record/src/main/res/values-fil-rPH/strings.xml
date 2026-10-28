@@ -239,6 +239,7 @@
     <string name="record_kept_out_put_back_done">Puwede nang tumugtog ang %1$s sa mga susunod mong mix</string>
     <string name="record_kept_out_put_back_failed">Hindi ito maibalik ngayon. Subukan ulit.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">fil-PH</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Simula ng %1$d</string>
     <string name="record_mix_mid">Kalagitnaan ng %1$d</string>
@@ -314,5 +315,6 @@
     <string name="record_mix_save_failed">Hindi ma-save ngayon. Subukan ulit.</string>
     <string name="record_mix_gone">Wala na sa record mo ang mix na iyan: nagbabago ang mga mix kasabay ng pakikinig mo.</string>
     <string name="record_mix_gone_back">Bumalik sa record mo</string>
+    <string name="record_mix_failed">Hindi mabasa ang record mo ngayon.</string>
     <string name="record_mix_back">Bumalik</string>
 </resources>

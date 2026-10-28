@@ -240,6 +240,7 @@
     <string name="record_kept_out_put_back_done">%1$s peut passer dans vos prochains mix</string>
     <string name="record_kept_out_put_back_failed">Impossible de le remettre pour l’instant. Réessayez.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">fr-FR</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Début %1$d</string>
     <string name="record_mix_mid">Mi-%1$d</string>
@@ -315,5 +316,6 @@
     <string name="record_mix_save_failed">Impossible d’enregistrer pour le moment. Réessayez.</string>
     <string name="record_mix_gone">Ce mix n’est plus dans votre disque : les mix changent avec ce que vous écoutez.</string>
     <string name="record_mix_gone_back">Retour à votre disque</string>
+    <string name="record_mix_failed">Impossible de lire votre disque pour le moment.</string>
     <string name="record_mix_back">Retour</string>
 </resources>

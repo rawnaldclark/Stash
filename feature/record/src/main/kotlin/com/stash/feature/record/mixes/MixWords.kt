@@ -1,9 +1,12 @@
 package com.stash.feature.record.mixes
 
+import android.content.Context
+import android.content.res.Configuration
 import android.content.res.Resources
-import com.stash.feature.record.R
-import com.stash.feature.record.imports.ImportText
+import android.os.LocaleList
 import android.text.format.DateFormat
+import com.stash.feature.record.R
+import com.stash.feature.record.card.RecordCard
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -76,12 +79,33 @@ interface MixWords {
     fun number(n: Int): String
 }
 
-/** [MixWords] from the app's strings, in the app's language ([res]'s). */
-class ResourceMixWords(private val res: Resources) : MixWords {
-    private val locale: Locale = res.configuration.locales[0] ?: Locale.getDefault()
+/**
+ * [MixWords] from the app's strings, in the language of [context] (the screen's: the app's own language setting reaches the
+ * Activity). Every date, number and plural is written in the language the strings are in (`record_mix_locale`), never in a
+ * device language the app has no strings for: on an Italian or Bengali phone the English falls back whole, months and digits
+ * included.
+ */
+class ResourceMixWords(context: Context) : MixWords {
+    /** The language of the strings in use. */
+    private val locale: Locale = Locale.forLanguageTag(context.resources.getString(R.string.record_mix_locale))
+
+    /** The strings, formatted and pluralised in [locale] (the same strings: [locale] names the folder they come from). */
+    private val res: Resources = context.resources.let { base ->
+        val strings = locale // (inside Configuration's apply, a bare `locale` would be its own, the device's)
+        if (base.configuration.locales[0] == strings) {
+            base
+        } else {
+            context.createConfigurationContext(Configuration(base.configuration).apply { setLocales(LocaleList(strings)) }).resources
+        }
+    }
 
     private fun s(id: Int) = res.getString(id)
-    private fun s(id: Int, vararg args: Any) = res.getString(id, *args)
+
+    /** A string with its numbers and words put in, in [locale] (what getString does, in its configuration's locale). */
+    private fun s(id: Int, vararg args: Any) = String.format(locale, res.getString(id), *args)
+
+    /** A plural, its form picked by [res] (the strings' language's rules) and filled in [locale]. */
+    private fun q(id: Int, n: Int, vararg args: Any) = String.format(locale, res.getQuantityString(id, n), *args)
 
     /** The language's own digits for every number of a line (a year, a day, a count), never two scripts in one line. */
     private val digits: DecimalStyle = DecimalStyle.of(locale)
@@ -122,7 +146,7 @@ class ResourceMixWords(private val res: Resources) : MixWords {
 
     override fun weekOneYear(month0: Int, day: Int, year: Int) = s(R.string.record_mix_week_one_year, monthDay(month0, day), year)
     override fun weekYears(month0: Int, day: Int, years: Int) =
-        res.getQuantityString(R.plurals.record_mix_week_years, years, monthDay(month0, day), years)
+        q(R.plurals.record_mix_week_years, years, monthDay(month0, day), years)
 
     override fun about(minutes: Int): String = when {
         minutes < 60 -> s(R.string.record_mix_about_min, minutes)
@@ -130,19 +154,19 @@ class ResourceMixWords(private val res: Resources) : MixWords {
         else -> s(R.string.record_mix_about_hr_min, minutes / 60, minutes % 60)
     }
 
-    override fun songs(n: Int) = res.getQuantityString(R.plurals.record_mix_songs, n, n)
+    override fun songs(n: Int) = q(R.plurals.record_mix_songs, n, n)
     override fun cardWith(list: String) = s(R.string.record_mix_card_with, list)
     override fun cardShare(percent: Int) = s(R.string.record_mix_card_share, percent)
     override val cardConstants: String get() = s(R.string.record_mix_card_constants)
-    override fun cardUpToYears(sub: String, years: Int) = res.getQuantityString(R.plurals.record_mix_card_up_to_years, years, sub, years)
+    override fun cardUpToYears(sub: String, years: Int) = q(R.plurals.record_mix_card_up_to_years, years, sub, years)
     override val cardRepeat: String get() = s(R.string.record_mix_card_repeat)
     override fun cardObsession(title: String, plays: Int, monthYear: String) =
-        res.getQuantityString(R.plurals.record_mix_card_obsession, plays, title, plays, monthYear)
+        q(R.plurals.record_mix_card_obsession, plays, title, plays, monthYear)
     override val cardWeek: String get() = s(R.string.record_mix_card_week)
     override val cardYearNow: String get() = s(R.string.record_mix_card_year_now)
     override val cardYear: String get() = s(R.string.record_mix_card_year)
     override fun cardHours(hours: Long) =
-        res.getQuantityString(R.plurals.record_mix_card_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), ImportText.count(res, hours))
+        q(R.plurals.record_mix_card_hours, hours.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), RecordCard.count(hours, locale))
     override val cardStarted: String get() = s(R.string.record_mix_card_started)
     override fun cardFromTo(a: String, aYear: Int, b: String, bYear: Int) = s(R.string.record_mix_card_from_to, a, aYear, b, bYear)
     override val cardLost: String get() = s(R.string.record_mix_card_lost)

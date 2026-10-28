@@ -35,7 +35,7 @@ import java.time.ZoneOffset
 @Config(sdk = [33])
 class RecordMixesTest {
     private val res = ApplicationProvider.getApplicationContext<Context>().resources
-    private val words = ResourceMixWords(res)
+    private val words = ResourceMixWords(ApplicationProvider.getApplicationContext())
     private val day = 86_400_000L
     private val now = java.time.LocalDateTime.of(2026, 7, 4, 15, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
     private val mid2025 = java.time.LocalDateTime.of(2025, 7, 4, 0, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
@@ -178,6 +178,28 @@ class RecordMixesTest {
         val made = m.now(broken, now, ZoneOffset.UTC)!!
         assertThat(made.week).isNull()
         assertThat(made.all.map { it.id }).containsExactly("constants")
+    }
+
+    @Test fun `the library is read once while it is the same (likes and your playlists), and again when it changes`() = runTest {
+        val db = Db(taste((1..9).map { stat("Song $it", "Band") }))
+        var reads = 0
+        var stamp = 1
+        val m = RecordMixes(
+            tastes = db.dao,
+            between = { _, _ -> emptyList() },
+            own = RecordArchiveSource { _, emit -> emit(emptyList(), true) },
+            library = { reads++; listOf(LibrarySong(trackId = 1, title = "Song 1", artist = "Band")) },
+            libraryStamp = flowOf(Unit),
+            libraryStampNow = { stamp },
+            io = EmptyCoroutineContext,
+        )
+        m.now(words, now, ZoneOffset.UTC)
+        val again = m.now(words, now, ZoneOffset.UTC)!!
+        assertThat(reads).isEqualTo(1)
+        assertThat(again.find("constants")!!.items.first().lib?.trackId).isEqualTo(1L)
+        stamp = 2
+        m.now(words, now, ZoneOffset.UTC)
+        assertThat(reads).isEqualTo(2)
     }
 
     private fun Long.minusYears(n: Int): Long =

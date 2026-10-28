@@ -607,9 +607,12 @@ private fun StashNavGraph(
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
                 onOpenRecord = {
                     if (navController.currentBackStackEntry === entry) {
-                        // A mix opened from Home: the record takes its place (closing it comes back to Home, not to this page)
-                        if (navController.previousBackStackEntry?.destination?.hasRoute<YourRecordRoute>() != true) navController.popBackStack()
-                        navController.openRecord(mixes = true)
+                        // Back to the record under it; a mix opened from Home gives its place to the record (closing that comes
+                        // back to Home, not to this page)
+                        if (!navController.popBackStack<YourRecordRoute>(inclusive = false)) {
+                            navController.popBackStack()
+                            navController.openRecord(mixes = true)
+                        }
                     }
                 },
             )

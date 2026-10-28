@@ -273,6 +273,7 @@
     <string name="record_kept_out_put_back_done">%1$s сможет звучать в следующих миксах</string>
     <string name="record_kept_out_put_back_failed">Сейчас не удалось вернуть. Попробуйте снова.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">ru-RU</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Начало %1$d</string>
     <string name="record_mix_mid">Середина %1$d</string>
@@ -358,5 +359,6 @@
     <string name="record_mix_save_failed">Сейчас не получилось сохранить. Попробуйте ещё раз.</string>
     <string name="record_mix_gone">Этого микса больше нет на вашей пластинке: миксы меняются вместе с тем, что вы слушаете.</string>
     <string name="record_mix_gone_back">Назад к пластинке</string>
+    <string name="record_mix_failed">Сейчас не получилось прочитать вашу пластинку.</string>
     <string name="record_mix_back">Назад</string>
 </resources>

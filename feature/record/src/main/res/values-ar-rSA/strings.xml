@@ -307,6 +307,7 @@
     <string name="record_kept_out_put_back_done">يمكن تشغيل %1$s في مزيجاتك القادمة</string>
     <string name="record_kept_out_put_back_failed">تعذر إرجاعها الآن. حاول مجددًا.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">ar-SA</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">أوائل %1$d</string>
     <string name="record_mix_mid">منتصف %1$d</string>
@@ -402,5 +403,6 @@
     <string name="record_mix_save_failed">تعذّر الحفظ الآن. حاول مرة أخرى.</string>
     <string name="record_mix_gone">لم يعد هذا المزيج في أسطوانتك: تتغيّر المزيجات مع ما تستمع إليه.</string>
     <string name="record_mix_gone_back">العودة إلى أسطوانتك</string>
+    <string name="record_mix_failed">تعذّرت قراءة أسطوانتك الآن.</string>
     <string name="record_mix_back">رجوع</string>
 </resources>

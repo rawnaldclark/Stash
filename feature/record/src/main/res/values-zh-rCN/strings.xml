@@ -222,6 +222,7 @@
     <string name="record_kept_out_put_back_done">%1$s 可以出现在你接下来的混音里</string>
     <string name="record_kept_out_put_back_failed">暂时无法放回。请重试。</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">zh-CN</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">%1$d 年初</string>
     <string name="record_mix_mid">%1$d 年中</string>
@@ -292,5 +293,6 @@
     <string name="record_mix_save_failed">现在无法保存，请重试。</string>
     <string name="record_mix_gone">你的唱片里已经没有这个混音了：混音会随你的聆听而变化。</string>
     <string name="record_mix_gone_back">返回你的唱片</string>
+    <string name="record_mix_failed">现在无法读取你的唱片。</string>
     <string name="record_mix_back">返回</string>
 </resources>

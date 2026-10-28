@@ -222,6 +222,7 @@
     <string name="record_kept_out_put_back_done">%1$s 곡이 다음 믹스부터 재생될 수 있습니다</string>
     <string name="record_kept_out_put_back_failed">지금은 다시 넣을 수 없습니다. 다시 시도하세요.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">ko-KR</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">%1$d년 초</string>
     <string name="record_mix_mid">%1$d년 중반</string>
@@ -292,5 +293,6 @@
     <string name="record_mix_save_failed">지금은 저장할 수 없어요. 다시 시도해 주세요.</string>
     <string name="record_mix_gone">이 믹스는 이제 레코드에 없어요. 믹스는 듣는 음악에 따라 바뀌어요.</string>
     <string name="record_mix_gone_back">나의 레코드로 돌아가기</string>
+    <string name="record_mix_failed">지금은 나의 레코드를 읽을 수 없어요.</string>
     <string name="record_mix_back">뒤로</string>
 </resources>

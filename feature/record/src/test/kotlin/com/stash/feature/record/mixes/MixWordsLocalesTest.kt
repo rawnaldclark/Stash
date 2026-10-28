@@ -22,7 +22,7 @@ class MixWordsLocalesTest {
 
     private fun words(tag: String): ResourceMixWords {
         val c = Configuration(app.resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) }
-        return ResourceMixWords(app.createConfigurationContext(c).resources)
+        return ResourceMixWords(app.createConfigurationContext(c))
     }
 
     /** Every word with every count that picks another plural form somewhere (0, 1, 2, 3, 5, 11, 21, 22, 100). */
@@ -72,5 +72,22 @@ class MixWordsLocalesTest {
         }
         // English keeps its own
         assertWithMessage("en").that(words("en-US").span(words("en-US").monthYear(1_654_041_600_000), "x")).isEqualTo("June 2022 – x")
+    }
+
+    @Test fun `a device language with no strings writes the English whole - no Italian months, no Bengali digits`() {
+        val english = words("en-US")
+        for (tag in listOf("it-IT", "bn-BD", "ja-JP")) {
+            val w = words(tag)
+            assertWithMessage(tag).that(w.weekOneYear(9, 28, 2019)).isEqualTo("Around October 28, 2019")
+            assertWithMessage(tag).that(w.weekYears(9, 28, 3)).isEqualTo("Around October 28, in 3 past years")
+            assertWithMessage(tag).that(w.monthYear(1_654_041_600_000)).isEqualTo("June 2022")
+            assertWithMessage(tag).that(w.early(2018)).isEqualTo("Early 2018")
+            assertWithMessage(tag).that(w.songs(12)).isEqualTo("12 songs")
+            // the plural's form by English's rules (Bengali's "one" takes 0 too)
+            assertWithMessage(tag).that(w.songs(0)).isEqualTo(english.songs(0))
+            assertWithMessage(tag).that(w.songs(1)).isEqualTo(english.songs(1))
+            assertWithMessage(tag).that(w.cardHours(1_204)).isEqualTo("1,204 hours of listening")
+            assertWithMessage(tag).that(w.number(2019)).isEqualTo(english.number(2019))
+        }
     }
 }

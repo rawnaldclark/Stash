@@ -312,6 +312,9 @@
     <!-- Your record's history mixes (phase 5c): the web's words (stash-player src/lib/spotify/mixes.ts, src/lib/ui/spotify/mix.ts,
          MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte), character for character in English (’ · –). -->
     <!-- An era across two years: %1$s and %2$s are each a month and year ("June 2022 – March 2023"). -->
+    <!-- The language these strings are in (a BCP 47 tag): the mixes' dates and numbers are written in it, never in a device
+         language the app has no strings for. Each translation names its own language. -->
+    <string name="record_mix_locale">en</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <!-- An era within one year, by its middle month: %1$d the year ("Early 2018", "Mid 2018", "Late 2018"). -->
     <string name="record_mix_early">Early %1$d</string>
@@ -411,5 +414,6 @@
     <string name="record_mix_save_failed">Couldn’t save it just now. Try again.</string>
     <string name="record_mix_gone">That mix isn’t in your record any more: mixes change as your listening does.</string>
     <string name="record_mix_gone_back">Back to Your record</string>
+    <string name="record_mix_failed">Your record couldn’t be read just now.</string>
     <string name="record_mix_back">Back</string>
 </resources>

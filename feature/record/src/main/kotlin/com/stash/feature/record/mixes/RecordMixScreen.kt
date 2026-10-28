@@ -87,7 +87,8 @@ fun RecordMixScreen(
     val resources = LocalContext.current.resources
     // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
     val locales = LocalConfiguration.current.locales
-    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(resources)) }
+    val context = LocalContext.current
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(context)) }
     LaunchedEffect(viewModel) {
         launch {
             viewModel.lines.collect { line ->
@@ -102,8 +103,12 @@ fun RecordMixScreen(
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         when (val s = state) {
-            RecordMixViewModel.State.Looking -> Unit
-            RecordMixViewModel.State.Gone -> Gone(onBack, onOpenRecord)
+            // The way back always shows: while the mix is made, and when it can't be
+            RecordMixViewModel.State.Looking -> Message(onBack, text = null, action = null, onAction = {})
+            RecordMixViewModel.State.Gone ->
+                Message(onBack, stringResource(R.string.record_mix_gone), stringResource(R.string.record_mix_gone_back), onOpenRecord)
+            RecordMixViewModel.State.Failed ->
+                Message(onBack, stringResource(R.string.record_mix_failed), stringResource(R.string.record_error_try_again), viewModel::retry)
             is RecordMixViewModel.State.Found -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
@@ -244,24 +249,29 @@ private fun IconLabel(icon: ImageVector, text: String) {
     }
 }
 
-/** MixView.svelte's "no such mix": what happened, and the way back to Your record. */
+/**
+ * The page with no mix to show: the way back always, and what happened with what to do (MixView.svelte's "no such mix" and its
+ * way back to Your record; a read that failed and Try again). Nothing but the way back while the mix is made.
+ */
 @Composable
-private fun Gone(onBack: () -> Unit, onOpenRecord: () -> Unit) {
+private fun Message(onBack: () -> Unit, text: String?, action: String?, onAction: () -> Unit) {
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp)) {
         IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.record_mix_back), tint = MaterialTheme.colorScheme.onSurface)
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            stringResource(R.string.record_mix_gone),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-        )
-        TextButton(onClick = onOpenRecord, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text(stringResource(R.string.record_mix_gone_back))
+        if (text != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            )
+            if (action != null) {
+                TextButton(onClick = onAction, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(action) }
+            }
+            Spacer(Modifier.weight(1.4f))
         }
-        Spacer(Modifier.weight(1.4f))
     }
 }

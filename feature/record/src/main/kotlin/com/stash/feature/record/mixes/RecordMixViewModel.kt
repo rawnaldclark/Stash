@@ -1,9 +1,12 @@
 package com.stash.feature.record.mixes
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.bridge.RecordMatch
@@ -11,6 +14,7 @@ import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.bridge.RecordSong
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,14 +41,41 @@ import javax.inject.Singleton
 class RecordMixSaver internal constructor(
     private val rows: suspend (List<RecordSong>) -> List<Long?>,
     private val create: suspend (String, List<Long>) -> Long,
+    /** A playlist's name while it is still in the library (active), else null. */
+    private val nameOf: suspend (Long) -> String? = { null },
 ) {
-    @Inject constructor(match: RecordMatch, music: MusicRepository) : this(
+    @Inject constructor(match: RecordMatch, music: MusicRepository, playlists: PlaylistDao) : this(
         rows = { songs -> match.rows(songs).map { it?.id } },
         create = music::createPlaylistWithTracks,
+        nameOf = { id -> playlists.getById(id)?.takeIf { it.isActive }?.name },
     )
 
     /** The new playlist's id. */
     suspend fun save(name: String, songs: List<RecordSong>): Long = create(name, rows(songs).filterNotNull().distinct())
+
+    /** The playlist [id]'s name while it is in the library. */
+    suspend fun stillThere(id: Long): String? = nameOf(id)
+}
+
+/**
+ * Which playlist each mix was saved to (by the mix's id), kept on this phone: coming back to a mix saved before shows Open while
+ * that playlist is still in the library, never a second copy of it.
+ */
+@Singleton
+class RecordMixSaves internal constructor(private val prefs: SharedPreferences) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.getSharedPreferences(FILE, Context.MODE_PRIVATE))
+
+    fun playlistOf(mixId: String): Long? = prefs.getLong(KEY + mixId, 0L).takeIf { it > 0 }
+
+    fun remember(mixId: String, playlistId: Long) {
+        prefs.edit().putLong(KEY + mixId, playlistId).apply()
+    }
+
+    private companion object {
+        /** Your record's own preferences. */
+        const val FILE = "your_record"
+        const val KEY = "mix_saved:"
+    }
 }
 
 /** A mix's songs as the record plays them: the words, the Spotify id, your own row when you have it, and the cover found. */
@@ -66,6 +97,7 @@ class RecordMixViewModel @Inject constructor(
     private val art: RecordArt,
     private val playback: RecordPlayback,
     private val saver: RecordMixSaver,
+    private val saves: RecordMixSaves,
 ) : ViewModel() {
     /** The mix's id ("era:1693526400000", "year:2018", "week"). */
     val id: String = savedState.get<String>(ID) ?: ""
@@ -76,6 +108,9 @@ class RecordMixViewModel @Inject constructor(
 
         /** The taste doesn't make this mix any more: mixes change as the listening does. */
         data object Gone : State
+
+        /** The record couldn't be read (the database busy, a broken taste): says so, with Try again. */
+        data object Failed : State
 
         data class Found(
             val mix: HistoryMix,
@@ -118,10 +153,30 @@ class RecordMixViewModel @Inject constructor(
     /** What a tap came to when it couldn't play (none of the songs here, offline). */
     val playNotes: SharedFlow<RecordNote> = playback.notes
 
+    /** Asked again: Try again after a read that failed. */
+    private val again = MutableStateFlow(0)
+
     init {
         viewModelScope.launch {
-            combine(words.filterNotNull(), mixes.changes) { w, _ -> w.second }.collectLatest { load(it) }
+            combine(words.filterNotNull(), mixes.changes, again) { w, _, _ -> w.second }.collectLatest { load(it) }
         }
+        // Saved before: the button opens that playlist while it is still in the library
+        viewModelScope.launch {
+            try {
+                val pid = saves.playlistOf(id) ?: return@launch
+                saver.stillThere(pid)?.let { name -> if (_saved.value == null) _saved.value = Saved(pid, name) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "the mix's saved playlist couldn't be read: ${e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    /** Try again, after a read that failed. */
+    fun retry() {
+        _state.value = State.Looking
+        again.value++
     }
 
     private suspend fun load(w: MixWords) {
@@ -130,8 +185,9 @@ class RecordMixViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // The page keeps what it shows: a database that can't be read isn't a mix gone
+            // A database that can't be read isn't a mix gone: the page says it couldn't read, or keeps the mix it shows
             Log.w(TAG, "the mix couldn't be made: ${e.javaClass.simpleName}")
+            if (_state.value !is State.Found) _state.value = State.Failed
             return
         }
         val m = now?.find(id)
@@ -188,6 +244,7 @@ class RecordMixViewModel @Inject constructor(
             try {
                 val pid = saver.save(f.mix.title, songsOf(f.mix.items, f.covers))
                 _saved.value = Saved(pid, f.mix.title)
+                saves.remember(id, pid)
                 _lines.tryEmit(Line.Saved(f.mix.title))
             } catch (e: CancellationException) {
                 throw e

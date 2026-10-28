@@ -98,9 +98,9 @@ internal fun RecordMixesTab(
     modifier: Modifier = Modifier,
 ) {
     // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
-    val res = LocalContext.current.resources
+    val context = LocalContext.current
     val locales = LocalConfiguration.current.locales
-    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(res)) }
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(context)) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val bottom = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
     when (val s = state) {
@@ -249,8 +249,8 @@ private fun MixCard(c: RecordMixesTabViewModel.Card, modifier: Modifier, onOpen:
 }
 
 /**
- * The Mixes tab's state: the two lists of cards, worked out the first time the tab shows (the record doesn't need them) and kept
- * while the record is shown again; made again when the taste, the library, the day or the language changes (off the main thread).
+ * The Mixes tab's state: the two lists of cards, worked out while the tab shows (the record doesn't need them), the last ones kept
+ * for a return; made again when the taste, the library, the day or the language changes (off the main thread).
  * Each card's covers, one card after another, top first. A read that fails keeps what the tab shows.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -326,7 +326,8 @@ class RecordMixesTabViewModel @Inject constructor(
                 }
             }
         }
-        .stateIn(viewModelScope, SharingStarted.Lazily, null)
+        // Stopped 5 s after the tab is left (the record shown again, the app in the background), its last state kept for a return
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** A card's round Play: the mix from its first song, "Playing from" its title. */
     fun play(id: String) {

@@ -204,12 +204,12 @@ artists' and This week years ago, from the same taste on the same day as the web
 | Where | What |
 |---|---|
 | `mixes/HistoryMixes.kt` | the pure port, rule for rule: `putBackIn`, `haveIndex`, `eraWhen` (its middle month from the integer middle), `andList`, `artistSongs`, `artistMix`, `firstSongs`, `historyMixes` (Rediscover minus the song keys The ones that stayed plays, unfiltered when that mix isn't made), `weekMix` (the UTC date, `Date.UTC`'s overflow for 29 February, [mid − 3 d, mid + 4 d), years newest first, the first spelling read wins, ties by key), `rotation`, `homePicks` (the local day), `mixHeading`, `mixLine`, `aboutLength` (`Math.round` half up) and the Mixes tab's `card` (an artist's mix falls through to "Lost favourites", never shown) |
-| `mixes/MixWords.kt` | the words, from string resources whose English is the web's character for character (’ · –); the week's day of the year in the language's own form ("October 28" in English whatever the region, "28 октября", "10月28日") |
-| `mixes/RecordMixes.kt` | the mixes now: the stored taste read once per `computed_at` (off the main thread), as the record shows it (kept out = stored avoid minus the songs put back minus the library's songs now); `have` = the library here (liked songs, then the own playlists' songs), so a mix's song you have is your row; this week's plays read once per taste and UTC day |
+| `mixes/MixWords.kt` | the words, from string resources whose English is the web's character for character (’ · –); the week's day of the year in the language's own form ("October 28" in English whatever the region, "28 октября", "10月28日"). Dates, digits and plurals follow the language the strings are in (`record_mix_locale`), never a device language the app has no strings for: on an Italian or Bengali phone the English falls back whole |
+| `mixes/RecordMixes.kt` | the mixes now: the stored taste read once per `computed_at` (off the main thread), as the record shows it (kept out = stored avoid minus the songs put back minus the library's songs now); `have` = the library here (liked songs, then the own playlists' songs), so a mix's song you have is your row, read once per library stamp (core:data's `libraryStamp`: the likes and the songs of your own and Liked Songs playlists, never Daily or Stash Mixes, which a sync rewrites); this week's plays read once per taste and UTC day |
 | `mixes/RecordMixesShelf.kt` | Home's "From your record": 3 cards from `homePicks(local day)`, their mosaics (`MixArt.kt`: your rows' covers, else the record's lookup for the first 4 albums), made again when the taste or the day changes; nothing without picks; Show all opens the record on Mixes |
-| `mixes/RecordMixScreen.kt`, `RecordMixViewModel.kt` | a mix's page (`RecordMixRoute(id)`, a normal screen with the mini player): the mosaic, heading, line, "N songs · about X", Play, Shuffle, Save as playlist (`RecordMixSaver`: a CUSTOM playlist of the rows found, each once, never kept offline, so nothing downloads), "That mix isn’t in your record any more" when the taste no longer makes it; every row's cover looked up as the page opens |
+| `mixes/RecordMixScreen.kt`, `RecordMixViewModel.kt` | a mix's page (`RecordMixRoute(id)`, a normal screen with the mini player): the mosaic, heading, line, "N songs · about X", Play, Shuffle, Save as playlist (`RecordMixSaver`: a CUSTOM playlist of the rows found, each once, never kept offline, so nothing downloads; which playlist each mix went to is kept, `RecordMixSaves`, so coming back shows Open while it is in the library), "That mix isn’t in your record any more" when the taste no longer makes it, a line and Try again when the record can't be read, the way back always; every row's cover looked up as the page opens |
 | `mixes/RecordMixesTab.kt`, `RecordTabs.kt` | the record's "The record \| Mixes" (the tab picked last kept on this phone, Home's Show all opens Mixes): Mixes from your years (this week, the eras oldest first, the single mixes) and Your years, the web's cards over their albums' covers; with no import, what they need and Bring your listening. The source switches show on the record's tab only; the WebView is kept, hidden, while Mixes shows |
-| `bridge/RecordMatch.kt`, `RecordPlayback.kt` | a mix's songs as this phone's rows: your own row by its id, the rest through the hand-off's matcher with the history's Spotify id; a row with no cover takes the one found, on the queue at once and kept on the row (no blank queue art, the web's 10-24 bug). Shuffle as a playlist's (the queue shuffled); offline, only the songs with a file here |
+| `bridge/RecordMatch.kt`, `RecordPlayback.kt` | a mix's songs as this phone's rows: your own row by its id, the rest through the hand-off's matcher with the history's Spotify id; a row with no cover takes the one found, on the queue at once and kept on the row (no blank queue art, the web's 10-24 bug): every cover the phone already knows before matching (`RecordArt.cached`, no network), the rest looked up once the queue is set and handed to core:media's `PlayerRepository.learnArtwork` (the queue's rows, the player's items, the playing one and the media session included). Shuffle as a playlist's (the queue shuffled); offline, only the songs with a file here |
 
 Home's section is `HomeSection.RECORD_MIXES` ("record_mixes"): a saved order without it gets it right before the first catalog
 (New releases, Qobuz playlists, Top albums), as the web's shelf sits; hidden and moved like the others.
@@ -223,6 +223,8 @@ Adapted on purpose:
 - A history song's row shows no length (as the web's row), through an opt-in on core:ui's `DetailTrackRow`.
 - The Mixes tab without an import offers Spotify and Last.fm (the web's line also offers "your phone's history from the Stash app").
 
+Not yet: a mix's rows have no Like and no long-press menu (the web's rows have both); for later.
+
 ### Its tests
 
 - `HistoryMixesVectorsTest` (Robolectric, the English from the app's strings): cases run through the web's own code by
@@ -233,9 +235,12 @@ Adapted on purpose:
   one year and several, spellings, skips, avoided songs, the 50 cut, too few, the fixture's archive on 5 days); `rotation` and
   `homePicks` for every day 0..n+1 and far ones; `eraWhen` on a month's edge, `andList`, `aboutLength`; and the mix page's, the
   shelf's and the Mixes tab's words against the web's files. Run it again after a change to the web's rules.
-- `MixWordsLocalesTest` (every word in every language, plural forms included), `RecordMixesTest` (the taste read once per
-  `computed_at`, kept out as the record shows it, the week stacked and read once a day, the local day), `RecordMatchTest` (the
-  wire's Spotify id and cover, your own row, covers on the queue and kept, Shuffle, offline, Save as playlist), and core:data's
-  `HomeSectionOrderTest`.
+- `MixWordsLocalesTest` (every word in every language, plural forms included, a device language with no strings writing the
+  English whole), `RecordMixesTest` (the taste read once per `computed_at`, kept out as the record shows it, the week stacked and
+  read once a day, the local day, the library read once per stamp), `RecordMatchTest` (the
+  wire's Spotify id and cover, your own row, covers on the queue and kept, the covers known before matching and the rest learnt
+  after the queue is set, Shuffle, offline, Save as playlist), `MixArtTest` (Home's tile, the Mixes tab's card and what is asked
+  for, against Tile.svelte, `coversOf` and `withCovers`), `RecordMixViewModelTest` (a read that fails, a mix saved before),
+  core:media's `QueueArtTest` and core:data's `HomeSectionOrderTest`.
 - On a phone: a debug build writes what the mixes were made from and came to (`files/record-mixes.json`); `scripts/mix-device-check.ts`
   runs the web's `historyMixes`, `weekMix` and `homePicks` over it and compares the picks and every mix (the run is in its header).

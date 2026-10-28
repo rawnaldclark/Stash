@@ -239,6 +239,7 @@
     <string name="record_kept_out_put_back_done">%1$s kann in deinen nächsten Mixes laufen</string>
     <string name="record_kept_out_put_back_failed">Konnte gerade nicht zurückgeholt werden. Versuch es noch einmal.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">de-DE</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Anfang %1$d</string>
     <string name="record_mix_mid">Mitte %1$d</string>
@@ -314,5 +315,6 @@
     <string name="record_mix_save_failed">Konnte gerade nicht gespeichert werden. Versuch es noch mal.</string>
     <string name="record_mix_gone">Diesen Mix gibt es in deiner Platte nicht mehr: Mixes ändern sich mit dem, was du hörst.</string>
     <string name="record_mix_gone_back">Zurück zu deiner Platte</string>
+    <string name="record_mix_failed">Deine Platte konnte gerade nicht gelesen werden.</string>
     <string name="record_mix_back">Zurück</string>
 </resources>

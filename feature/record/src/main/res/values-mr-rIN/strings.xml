@@ -239,6 +239,7 @@
     <string name="record_kept_out_put_back_done">%1$s तुमच्या पुढच्या मिक्समध्ये वाजू शकते</string>
     <string name="record_kept_out_put_back_failed">आत्ता ते परत आणता आले नाही. पुन्हा प्रयत्न करा.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">mr-IN</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">%1$d च्या सुरुवातीला</string>
     <string name="record_mix_mid">%1$d च्या मध्यात</string>
@@ -314,5 +315,6 @@
     <string name="record_mix_save_failed">आत्ता जतन करता आले नाही. पुन्हा प्रयत्न करा.</string>
     <string name="record_mix_gone">हा मिक्स आता तुमच्या रेकॉर्डमध्ये नाही: तुम्ही जे ऐकता त्यानुसार मिक्स बदलतात.</string>
     <string name="record_mix_gone_back">तुमच्या रेकॉर्डकडे परत</string>
+    <string name="record_mix_failed">आत्ता तुमचा रेकॉर्ड वाचता आला नाही.</string>
     <string name="record_mix_back">मागे</string>
 </resources>

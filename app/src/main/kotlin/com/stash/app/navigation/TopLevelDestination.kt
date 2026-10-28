@@ -91,16 +91,13 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 /**
  * Opens Your record, from anywhere (Home's card and shelf, Settings, a finished import, a mix's page), and never again over itself:
  * an import finished over the record (its own "Bring your Spotify") has nothing to open, and a mix opened from the record goes back
- * to that one. Navigating to it again replaced its back-stack entry in place, which crashed the app while the NavHost was the Haze
+ * to that one, wherever it is in the back stack. Navigating to it again replaced its back-stack entry in place, which crashed the app while the NavHost was the Haze
  * source (StashScaffold now keeps the source off the NavHost). [mixes]: on its Mixes tab (a record already open keeps its own).
  */
 fun NavController.openRecord(mixes: Boolean = false) {
     if (currentDestination?.hasRoute<YourRecordRoute>() == true) return
-    // Right under a mix opened from it: that record, as it was (deeper down, a stack of pages is never thrown away for it)
-    if (previousBackStackEntry?.destination?.hasRoute<YourRecordRoute>() == true) {
-        popBackStack()
-        return
-    }
+    // Anywhere under the page showing: that record, as it was (never a second one, with a second WebView, over it)
+    if (popBackStack<YourRecordRoute>(inclusive = false)) return
     navigate(YourRecordRoute(tab = if (mixes) "mixes" else null)) { launchSingleTop = true }
 }
 

@@ -239,6 +239,7 @@
     <string name="record_kept_out_put_back_done">%1$s आपके अगले मिक्स में बज सकता है</string>
     <string name="record_kept_out_put_back_failed">अभी इसे वापस नहीं लाया जा सका। दोबारा कोशिश करें।</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">hi-IN</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">%1$d की शुरुआत</string>
     <string name="record_mix_mid">%1$d का मध्य</string>
@@ -314,5 +315,6 @@
     <string name="record_mix_save_failed">अभी सहेजा नहीं जा सका। फिर से कोशिश करें।</string>
     <string name="record_mix_gone">यह मिक्स अब आपके रिकॉर्ड में नहीं है: मिक्स आपकी सुनवाई के साथ बदलते हैं।</string>
     <string name="record_mix_gone_back">अपने रिकॉर्ड पर वापस जाएँ</string>
+    <string name="record_mix_failed">अभी आपका रिकॉर्ड पढ़ा नहीं जा सका।</string>
     <string name="record_mix_back">वापस</string>
 </resources>

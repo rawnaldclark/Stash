@@ -273,6 +273,7 @@
     <string name="record_kept_out_put_back_done">%1$s może zagrać w Twoich następnych mixach</string>
     <string name="record_kept_out_put_back_failed">Nie udało się teraz przywrócić. Spróbuj ponownie.</string>
     <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_locale">pl-PL</string>
     <string name="record_mix_span">%1$s – %2$s</string>
     <string name="record_mix_early">Początek %1$d</string>
     <string name="record_mix_mid">Połowa %1$d</string>
@@ -358,5 +359,6 @@
     <string name="record_mix_save_failed">Nie udało się teraz zapisać. Spróbuj ponownie.</string>
     <string name="record_mix_gone">Tego mixu nie ma już na Twojej płycie: mixy zmieniają się razem z tym, czego słuchasz.</string>
     <string name="record_mix_gone_back">Wróć do swojej płyty</string>
+    <string name="record_mix_failed">Nie udało się teraz odczytać Twojej płyty.</string>
     <string name="record_mix_back">Wstecz</string>
 </resources>

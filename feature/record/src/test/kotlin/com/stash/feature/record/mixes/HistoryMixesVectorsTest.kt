@@ -38,7 +38,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class HistoryMixesVectorsTest {
     private val res = ApplicationProvider.getApplicationContext<Context>().resources
-    private val words = ResourceMixWords(res)
+    private val words = ResourceMixWords(ApplicationProvider.getApplicationContext())
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun read(name: String): JsonElement = Json.parseToJsonElement(requireNotNull(javaClass.getResource("/mixes/$name")) { name }.readText())
