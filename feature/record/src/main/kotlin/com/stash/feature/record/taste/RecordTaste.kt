@@ -11,9 +11,9 @@ import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.db.entity.RecordTasteKeepEntity
 import com.stash.core.data.prefs.RecordInMixesPreference
 import com.stash.core.data.prefs.StashMixPreference
+import com.stash.core.data.record.MixTaste
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.weblibrary.WebLibraryListens
-import com.stash.core.model.weblink.SongKey
 import com.stash.feature.record.archive.PhoneRows
 import com.stash.feature.record.archive.toArchivePlay
 import com.stash.feature.record.imports.RecordImportStore
@@ -175,38 +175,43 @@ class RecordTaste internal constructor(
         fun sample() {
             peak = maxOf(peak, rt.totalMemory() - rt.freeMemory())
         }
-        val input = TasteInput(ownPlays())
+        // Held only as long as they're needed: up to a million plays are let go before the rows are built and written
+        var input: TasteInput? = TasteInput(ownPlays())
         var after = ""
         var rows = 0
         while (true) {
             currentCoroutineContext().ensureActive()
             val page = plays.pageAfter(after, PAGE)
             if (page.isEmpty()) break
-            input.add(page.map { it.toArchivePlay() })
+            input!!.add(page.map { it.toArchivePlay() })
             rows += page.size
             if (page.size < PAGE) break
             after = page.last().id
             sample()
         }
-        val all = input.plays()
+        var all: List<TastePlay>? = input!!.plays()
+        input = null
+        val playCount = all!!.size
         sample()
-        val kept = keptKeys()
+        val kept = MixTaste.libraryKeys(library)
         kept += extra
         val opts = TasteOptions(now = now(), hidden = hidden.keys().toHashSet(), kept = kept, putBack = tastes.keepKeys().toHashSet())
         val read = System.nanoTime()
         currentCoroutineContext().ensureActive()
-        val taste = Taste.compute(all, opts)
+        val taste = Taste.compute(all!!, opts)
+        all = null
         sample()
-        val had = tastes.computedAt() != null
+        // Daily Discover is asked for once, when the first taste with seed artists lands (a taste with none can't seed it)
+        val hadSeeds = tastes.taste()?.let { TasteRows.seedArtistsOf(it.body).isNotEmpty() } ?: false
         tastes.replace(TasteRows.row(taste), TasteRows.songs(taste))
         val done = System.nanoTime()
         Log.i(
             TAG,
-            "the taste: ${taste.songs.size} songs from ${all.size} plays ($rows rows), ${taste.songs.count { it.avoid }} kept out, " +
+            "the taste: ${taste.songs.size} songs from $playCount plays ($rows rows), ${taste.songs.count { it.avoid }} kept out, " +
                 "${taste.seedArtists.size} seed artists; read ${(read - began) / 1_000_000} ms, worked out and kept " +
                 "${(done - read) / 1_000_000} ms; heap ${peak / MB} MB at most of ${rt.maxMemory() / MB} MB",
         )
-        if (!had && taste.seedArtists.isNotEmpty()) {
+        if (!hadSeeds && taste.seedArtists.isNotEmpty()) {
             try {
                 firstTaste()
             } catch (e: CancellationException) {
@@ -243,25 +248,15 @@ class RecordTaste internal constructor(
         return out
     }
 
-    /** The library here by song key (service.ts `kept`): the liked songs and every song of the listener's own playlists. */
-    private suspend fun keptKeys(): HashSet<String> {
-        val out = HashSet<String>()
-        for (l in library.likes()) out += SongKey.songKey(l.track.title, l.track.artist)
-        for (p in library.playlists()) {
-            for (i in library.playlistItems(p.id, Int.MAX_VALUE)) out += SongKey.songKey(i.track.title, i.track.artist)
-        }
-        return out
-    }
-
     // ── kept out of your mixes (owner decision D1) ──────────────────────────────────────────────────────────────────
 
     /**
-     * "Kept out of your mixes": the songs the taste keeps out now, each with why, in the taste's order; none put back. Empty
-     * with no import (no taste).
+     * "Kept out of your mixes": the songs the taste keeps out now, each with why, in the taste's order; none put back, none in the
+     * library now (a song liked since leaves the list at once). Empty with no import (no taste).
      */
     suspend fun keptOut(): List<KeptOutSong> = withContext(io) {
         if (tastes.computedAt() == null) return@withContext emptyList()
-        KeptOut.of(tastes.avoided(), hidden.keys().toHashSet(), tastes.keepKeys().toHashSet())
+        KeptOut.of(tastes.avoided(), hidden.keys().toHashSet(), tastes.keepKeys().toHashSet() + MixTaste.libraryKeys(library))
     }
 
     /**

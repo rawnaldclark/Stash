@@ -4,6 +4,9 @@ import com.stash.core.data.db.entity.RecordTasteEntity
 import com.stash.core.data.db.entity.RecordTasteSongEntity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 /**
  * The taste as the database keeps it: its songs one row each (`record_taste_songs`, in its order by [RecordTasteSongEntity.rank])
@@ -37,6 +40,11 @@ object TasteRows {
     )
 
     fun readBody(s: String): Body = Json { ignoreUnknownKeys = true }.decodeFromString(Body.serializer(), s)
+
+    /** The body's seed artists alone (none when it can't be read). */
+    fun seedArtistsOf(body: String): List<String> = runCatching {
+        (Json.parseToJsonElement(body).jsonObject["seedArtists"] as? JsonArray).orEmpty().map { (it as JsonPrimitive).content }
+    }.getOrDefault(emptyList())
 
     fun row(t: Taste): RecordTasteEntity = RecordTasteEntity(v = t.v, computedAt = t.computedAt, body = body(t))
 

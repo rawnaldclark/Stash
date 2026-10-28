@@ -73,20 +73,23 @@ class TasteVectorsTest {
         // the tie goes to Alpha, Paper Moons' two runs are one era
         assertThat(all.entries.single { it.key.contains("lead tie") }.value["eras"]!!.jsonArray.map { it.jsonObject["artist"]!!.jsonPrimitive.content })
             .containsExactly("Alpha", "Paper Moons").inOrder()
-        // an artist that folds to nothing is a seed artist named "" on the web too
-        assertThat(strings(all.entries.single { it.key.contains("folds to nothing") }.value["seedArtists"])).contains("")
+        // an artist that folds to nothing names no seed artist (no place, no empty similar-artists ask), on the web too
+        val nothing = all.entries.single { it.key.contains("folds to nothing") }.value
+        assertThat(strings(nothing["seedArtists"])).doesNotContain("")
+        assertThat(nothing["songs"]!!.jsonArray.map { it.jsonObject }.any { it["artist"]!!.jsonPrimitive.content == "!!!" && it["weight"]!!.jsonPrimitive.double > 0 }).isTrue()
     }
 
-    @Test fun `mixTasteOf - kept out minus the songs put back, weights over the top weight of every song`() {
+    @Test fun `mixTasteOf - kept out minus the songs put back and the library's, weights over the top weight of every song`() {
         val byName = tastes.associate { it["name"]!!.jsonPrimitive.content to computed(it) }
         val cases = read("mix-taste.json").jsonArray.map { it.jsonObject }
         assertThat(cases.size).isAtLeast(40)
         for (c in cases) {
             val t = byName.getValue(c["name"]!!.jsonPrimitive.content)
             val putBack = strings(c["putBack"]).toSet()
-            val m = MixTaste.of(t.songs.map { MixTaste.Companion.Song(it.key, it.weight, it.avoid) }, t.seedArtists, putBack)
+            val kept = strings(c["kept"]).toSet()
+            val m = MixTaste.of(t.songs.map { MixTaste.Companion.Song(it.key, it.weight, it.avoid) }, t.seedArtists, putBack, kept)
             val out = c["out"]!!.jsonObject
-            val why = "${c["name"]!!.jsonPrimitive.content} / put back $putBack"
+            val why = "${c["name"]!!.jsonPrimitive.content} / put back $putBack / kept $kept"
             assertWithMessage(why).that(m.artists).isEqualTo(strings(out["artists"]))
             assertWithMessage(why).that(m.avoid.sorted()).isEqualTo(strings(out["avoid"]))
             val weights = out["weights"]!!.jsonObject.mapValues { it.value.jsonPrimitive.double }

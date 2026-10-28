@@ -446,10 +446,11 @@ private class Computation(private val opts: TasteOptions) {
             .sortedWith { a, b -> if (a.listenedMs != b.listenedMs) b.listenedMs.compareTo(a.listenedMs) else a.key.compareTo(b.key) }
             .take(100)
 
+        // An artist whose name folds to nothing ("!!!") names no one to seed a mix with: no place, and no empty similar-artists ask
         val artistWeight = LinkedHashMap<String, Double>()
         for (s in songs) if (!s.avoid && s.weight > 0) {
             val k = artistKey(s.artist)
-            artistWeight[k] = (artistWeight[k] ?: 0.0) + s.weight
+            if (k.isNotEmpty()) artistWeight[k] = (artistWeight[k] ?: 0.0) + s.weight
         }
         val seedArtists = artistWeight.entries
             .sortedWith { a, b -> if (a.value != b.value) b.value.compareTo(a.value) else a.key.compareTo(b.key) }

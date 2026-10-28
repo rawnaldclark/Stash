@@ -8,7 +8,8 @@
  *   the play order; mode ties; songs only ever started; an artist that folds to ""; an era cosine of exactly 0.4 after round9 and
  *   one just under; quiet months; a gap of 3 months and of 4; the era's longest; a lead tie; a same-lead join; a peak of exactly
  *   14 days; UTC year edges; kept beats hidden; put back against hidden. Every field of the taste.
- * - mix-taste.json: `mixTasteOf` (src/lib/spotify/mix-taste.ts) over those tastes, with songs put back and without.
+ * - mix-taste.json: `mixTasteOf` (src/lib/spotify/mix-taste.ts) over those tastes, with songs put back and songs in the library
+ *   (`kept`: liked or in a playlist now, never kept out at read time) and without.
  * - seeds.json: `seedArtists` (src/lib/discover/mix.ts) for crafted histories and taste artists: the own seeds alone, then the
  *   blend.
  * - refresh.json: `refreshTaste` (src/lib/spotify/importer.ts) over a memory archive and this device's own plays: the scrobbles
@@ -18,8 +19,9 @@
  * - words.json: song-key.ts `bareTitle`/`songKey`, station.ts `primaryArtist` and taste.ts `INTERLUDE` over tricky words, and the
  *   English of Settings' rows (src/routes/settings/RecordInMixes.svelte, read from the file) and the import's taste step.
  *
- * Run from this repository's root, against a stash-player checkout with its node_modules (read only):
- *   PLAYER=../stash-web/player-upi
+ * Run from this repository's root, against a stash-player checkout with its node_modules (read only), at the rules the app ports
+ * (stash-player fix/record-taste-seeds, PR #29, until it is merged; master after):
+ *   PLAYER=../stash-web/player-mix-taste
  *   NODE_PATH=$PLAYER/node_modules $PLAYER/node_modules/.bin/esbuild feature/record/scripts/taste-vectors.ts --bundle --platform=node --format=esm \
  *     --alias:@player=$PLAYER/src/lib --outfile=build/taste-vectors.mjs
  *   node build/taste-vectors.mjs feature/record/src/test/resources/taste $PLAYER
@@ -308,8 +310,16 @@ write(
 	'mix-taste.json',
 	tastes.flatMap((c) => {
 		const avoided = c.taste.songs.filter((s) => s.avoid).map((s) => s.key);
-		const putBacks = [[], avoided.slice(0, 1), avoided, [...avoided.slice(0, 1), 'not|a song']];
-		return putBacks.map((pb) => ({ name: c.name, putBack: pb, out: mixOut(mixTasteOf(c.taste, new Set(pb))) }));
+		const variants: [string[], string[]][] = [
+			[[], []],
+			[avoided.slice(0, 1), []],
+			[avoided, []],
+			[[...avoided.slice(0, 1), 'not|a song'], []],
+			[[], avoided.slice(0, 1)],
+			[avoided.slice(0, 1), avoided.slice(1, 2)],
+			[[], [...avoided, 'not|a song']]
+		];
+		return variants.map(([pb, kept]) => ({ name: c.name, putBack: pb, kept, out: mixOut(mixTasteOf(c.taste, new Set(pb), new Set(kept))) }));
 	})
 );
 

@@ -168,6 +168,36 @@ class RecordTasteTest {
         assertThat(firstTastes).isEqualTo(1)
     }
 
+    @Test fun `a song liked since leaves the list at once, before the taste is worked out again`() = runBlocking<Unit> {
+        seed()
+        imported()
+        taste.refresh()
+        assertThat(taste.keptOut().map { it.key }).contains("never again|artist y")
+        db.trackDao().insert(TrackEntity(title = "Never Again (Remastered)", artist = "Artist Y", canonicalTitle = "never again", canonicalArtist = "artist y", stashLikedAt = 9))
+        assertThat(taste.keptOut().map { it.key }).containsExactly("hidden song|band")
+        // the stored taste still has it kept out until the next one, which counts it kept
+        assertThat(db.recordTasteDao().avoided().map { it.key }).contains("never again|artist y")
+        now += DAY
+        taste.refresh()
+        assertThat(db.recordTasteDao().avoided().map { it.key }).containsExactly("hidden song|band")
+    }
+
+    @Test fun `Daily Discover is asked for once, when the first taste with seed artists lands`() = runBlocking {
+        // Only skips at first: a taste with no listens has no seed artists
+        db.recordPlayDao().put((0 until 8).map { row("Never Again", "Artist Y", T0 + it * DAY, 2_000, skipped).toEntity() })
+        imported()
+        taste.refresh()
+        assertThat(TasteRows.seedArtistsOf(db.recordTasteDao().taste()!!.body)).isEmpty()
+        assertThat(firstTastes).isEqualTo(0)
+        db.recordPlayDao().put((0 until 5).map { row("Loved", "Band", T0 + it * DAY).toEntity() })
+        now += DAY
+        taste.refresh()
+        assertThat(firstTastes).isEqualTo(1)
+        now += DAY
+        taste.refresh()
+        assertThat(firstTastes).isEqualTo(1)
+    }
+
     @Test fun `the removals - the taste goes, and the songs put back with it unless kept`() = runBlocking {
         seed()
         imported()
