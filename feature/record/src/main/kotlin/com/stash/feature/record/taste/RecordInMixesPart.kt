@@ -36,7 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.stash.core.ui.components.StashSwitch
@@ -105,16 +108,29 @@ class RecordInMixesViewModel @Inject constructor(
                     _list.value = null
                     return@collect
                 }
-                val read = try {
-                    taste.keptOut()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                _list.value = synchronized(back) { read.filter { it.key !in back } }
+                read()
             }
         }
+    }
+
+    private suspend fun read() {
+        val read = try {
+            taste.keptOut()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
+        }
+        _list.value = synchronized(back) { read.filter { it.key !in back } }
+    }
+
+    /**
+     * Read the list again (Settings shown again): a song liked or added to a playlist elsewhere since leaves it at once, as it
+     * leaves the mixes (the library isn't watched here; the taste and the songs put back are).
+     */
+    fun reload() {
+        if (!imported.value) return
+        viewModelScope.launch { read() }
     }
 
     fun setOn(value: Boolean) {
@@ -158,6 +174,11 @@ fun recordInMixesSettingsRows(viewModel: RecordInMixesViewModel = hiltViewModel(
     val list by viewModel.list.collectAsStateWithLifecycle()
     val putting by viewModel.putting.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Each time Settings is shown again (back from Now Playing, the library, another tab): the list read afresh
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(viewModel, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { viewModel.reload() }
+    }
     LaunchedEffect(viewModel) {
         viewModel.notes.collect { n ->
             val text = when (n) {

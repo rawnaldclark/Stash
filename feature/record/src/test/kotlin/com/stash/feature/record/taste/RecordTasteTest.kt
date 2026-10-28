@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -180,6 +182,32 @@ class RecordTasteTest {
         now += DAY
         taste.refresh()
         assertThat(db.recordTasteDao().avoided().map { it.key }).containsExactly("hidden song|band")
+    }
+
+    @Test fun `Settings shown again reads the list afresh - a song liked elsewhere is gone from it`() = runBlocking<Unit> {
+        kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.Dispatchers.Unconfined)
+        try {
+            seed()
+            imported()
+            taste.refresh()
+            val vm = RecordInMixesViewModel(taste, RecordInMixes(com.stash.core.data.prefs.RecordInMixesPreference.Fixed(), { true }, { true }, scope), store)
+            suspend fun until(what: String, ok: (List<String>?) -> Boolean): List<String>? {
+                repeat(100) {
+                    val keys = vm.list.value?.map { k -> k.key }
+                    if (ok(keys)) return keys
+                    kotlinx.coroutines.delay(50)
+                }
+                error("the list never showed $what: ${vm.list.value?.map { it.key }}")
+            }
+            until("the songs kept out") { it?.contains("never again|artist y") == true }
+            // liked elsewhere (Now Playing): nothing the list watches changes...
+            db.trackDao().insert(TrackEntity(title = "Never Again", artist = "Artist Y", canonicalTitle = "never again", canonicalArtist = "artist y", stashLikedAt = 9))
+            // ...until Settings is shown again
+            vm.reload()
+            assertThat(until("the liked song gone") { it != null && "never again|artist y" !in it }).containsExactly("hidden song|band")
+        } finally {
+            kotlinx.coroutines.Dispatchers.resetMain()
+        }
     }
 
     @Test fun `Daily Discover is asked for once, when the first taste with seed artists lands`() = runBlocking {
