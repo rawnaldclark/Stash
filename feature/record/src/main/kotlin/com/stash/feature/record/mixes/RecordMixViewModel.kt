@@ -16,6 +16,7 @@ import com.stash.feature.record.bridge.RecordSong
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -125,6 +126,8 @@ class RecordMixViewModel @Inject constructor(
     private val playback: RecordPlayback,
     private val saver: RecordMixSaver,
     private val saves: RecordMixSaves,
+    /** A row's Like and its song menu (MixView.svelte's rows: TrackRow, with Like and the song menu). */
+    val actions: RecordSongActions,
 ) : ViewModel() {
     /** The mix's id ("era:1693526400000", "year:2018", "week"). */
     val id: String = savedState.get<String>(ID) ?: ""
@@ -179,6 +182,14 @@ class RecordMixViewModel @Inject constructor(
 
     /** What a tap came to when it couldn't play (none of the songs here, offline). */
     val playNotes: SharedFlow<RecordNote> = playback.notes
+
+    private val likes = RowLikes(viewModelScope, actions, mixes.likes)
+
+    /** Which rows' hearts are filled: liked in Stash, a tap shown at once (the list itself stays as it was made). */
+    internal val hearts: Flow<RowLikes.Hearts> = likes.hearts
+
+    /** What a row's Like or menu came to. */
+    val songLines: SharedFlow<SongLine> = actions.lines
 
     /** Asked again: Try again after a read that failed. */
     private val again = MutableStateFlow(0)
@@ -255,6 +266,19 @@ class RecordMixViewModel @Inject constructor(
     fun play(index: Int = 0) {
         val f = found() ?: return
         playback.play(songsOf(f.mix.items, f.covers), index, f.mix.title, shuffle = false)
+    }
+
+    /** Row [index]'s heart: likes its song in Stash (its cover kept on a row made for it), or (liked) takes it out. */
+    fun toggleLike(index: Int, liked: Boolean) {
+        val f = found() ?: return
+        val s = f.mix.items.getOrNull(index) ?: return
+        likes.toggle(s, liked, f.covers.getOrNull(index))
+    }
+
+    /** Row [index]'s song for its menu. */
+    internal fun menuFor(index: Int): MenuSong? {
+        val f = found() ?: return null
+        return f.mix.items.getOrNull(index)?.let { menuSong(it, f.covers.getOrNull(index), index) }
     }
 
     /** The mix in a random order (the app's Shuffle, as a playlist's: the queue shuffled, from its first song). */

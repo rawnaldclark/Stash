@@ -37,7 +37,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -57,8 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.model.Track
-import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.feature.record.R
 import com.stash.feature.record.bridge.text
@@ -81,6 +81,8 @@ fun RecordMixScreen(
     viewModel: RecordMixViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val hearts by viewModel.hearts.collectAsStateWithLifecycle(initialValue = null)
+    var menuFor by remember { mutableStateOf<MenuSong?>(null) }
     val saved by viewModel.saved.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -99,6 +101,7 @@ fun RecordMixScreen(
                 launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(text) }
             }
         }
+        launch { viewModel.songLines.collect { launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(it.text(resources)) } } }
         viewModel.playNotes.collect { launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(it.text(resources)) } }
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -126,32 +129,26 @@ fun RecordMixScreen(
                     )
                 }
                 itemsIndexed(s.mix.items, key = { i, it -> "${it.key}#$i" }) { i, song ->
-                    DetailTrackRow(
-                        track = rowOf(song, s.covers.getOrNull(i), i),
-                        trackNumber = i + 1,
-                        isPlaying = false,
-                        onClick = { viewModel.play(i) },
-                        onLongPress = {},
-                        // A song of the history alone has no length yet (the web's row shows none)
-                        hideUnknownDuration = true,
+                    // MixView.svelte's rows: play the mix from here, Like, and the song menu (a long press)
+                    val liked = hearts?.liked(song) == true
+                    RecordSongRow(
+                        song = song,
+                        cover = s.covers.getOrNull(i),
+                        number = i + 1,
+                        square = RowSquare.NOTE,
+                        liked = liked,
+                        colors = RowColorsOf.app(),
+                        onPlay = { viewModel.play(i) },
+                        onLike = { viewModel.toggleLike(i, liked) },
+                        onMenu = { menuFor = viewModel.menuFor(i) },
                     )
                 }
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomChromePadding(8.dp)))
     }
+    RecordSongMenu(menuFor, viewModel.actions, onDismiss = { menuFor = null })
 }
-
-/** A mix's song as a row shows it: your own row's words and length, else the history's; the cover found. */
-private fun rowOf(s: MixSong, cover: String?, i: Int): Track = Track(
-    id = s.lib?.trackId ?: -(i + 1L),
-    title = s.title,
-    artist = s.artist,
-    album = s.album.orEmpty(),
-    durationMs = s.lib?.durationMs ?: 0,
-    albumArtUrl = cover,
-    dateAdded = 0,
-)
 
 @Composable
 private fun Header(

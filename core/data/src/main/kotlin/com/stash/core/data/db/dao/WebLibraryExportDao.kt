@@ -97,6 +97,13 @@ interface WebLibraryExportDao {
     suspend fun likes(): List<LikedRow>
 
     /**
+     * The songs liked in Stash (`stash_liked_at`: the heart Now Playing shows), newest first, a blocked song left out. Your
+     * record's song rows show their hearts by it (a song only in a Liked Songs playlist synced from Spotify isn't one).
+     */
+    @Query("SELECT $SONG_COLUMNS FROM tracks t WHERE t.stash_liked_at IS NOT NULL AND $NOT_BLOCKED ORDER BY t.stash_liked_at DESC, t.id ASC")
+    suspend fun stashLikes(): List<SongColumns>
+
+    /**
      * Your own playlists ([com.stash.core.model.PlaylistType.CUSTOM]) as Library shows them (online, see
      * [PlaylistDao.getAllVisible]): active, and synced, pinned, made in Stash, a followed shared mix, or holding a
      * song you can play. Daily Mixes, Stash Mixes, Liked Songs and the Downloads list are other types and never

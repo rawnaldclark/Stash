@@ -109,6 +109,7 @@ class RecordMixViewModelTest {
         ),
         saver = RecordMixSaver(rows = { songs -> songs.map { null } }, create = { _, _ -> newId }, nameOf = { names[it] }),
         saves = saves,
+        actions = testSongActions(),
     ).also { it.useWords("en-US", ResourceMixWords(context)) }
 
     /** The page once [ready] holds (the mix's words are worked out off the main thread). */

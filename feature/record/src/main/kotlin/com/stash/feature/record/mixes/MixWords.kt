@@ -85,6 +85,9 @@ interface MixWords {
 
     /** "Not in your Stash yet"'s line: "12 songs you loved and haven’t played in a year. Like one to keep it." */
     fun lostLine(songs: Int): String
+
+    /** What a play from Top artists, Top songs or "Not in your Stash yet" is "Playing from" (the web's `FROM`, "Your record"). */
+    val fromRecord: String
 }
 
 /**
@@ -190,4 +193,5 @@ class ResourceMixWords(context: Context) : MixWords {
     }
 
     override fun lostLine(songs: Int) = q(R.plurals.record_mixes_lost_line, songs, songs)
+    override val fromRecord: String get() = s(R.string.record_eyebrow)
 }
