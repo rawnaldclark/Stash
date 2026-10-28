@@ -147,6 +147,13 @@ interface PlayerRepository {
     )
 
     /**
+     * Covers learnt after the queue was set (Your record's songs come with their words only, their covers found as they play):
+     * each queued track [arts] names by id that has no cover yet takes its URL, on the queue's rows and on the player's items,
+     * the playing one and the media session's included. A track's own cover is never replaced. Nothing for tracks not queued.
+     */
+    suspend fun learnArtwork(arts: Map<Long, String>) = Unit
+
+    /**
      * Restore the last-played queue — full queue, saved current track,
      * saved position, and shuffle state — and start playing. Reuses the
      * normal [setQueue] resolution path, so it works in both offline and

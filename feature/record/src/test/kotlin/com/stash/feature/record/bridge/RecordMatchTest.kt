@@ -104,4 +104,56 @@ class RecordMatchTest {
         assertThat(id).isEqualTo(77L)
         assertThat(made).isEqualTo("Your 2019" to listOf(2L, 3L))
     }
+
+    @Test fun `no blank queue art - the covers known go on at once, the rest onto the rows and the queue as they are found`() = runTest {
+        val events = mutableListOf<String>()
+        var matched: List<RecordSong> = emptyList()
+        val learnt = mutableMapOf<Long, String>()
+        val playback = RecordPlayback(
+            match = { songs ->
+                matched = songs
+                songs.mapIndexed { i, s ->
+                    // "Mine" is your own row with its cover; the others are bare, unless a cover came with them
+                    Track(id = i + 1L, title = s.title, artist = s.artist, albumArtUrl = if (s.title == "Mine") "https://mine" else s.cover, dateAdded = 0)
+                }
+            },
+            setQueue = { tracks, start, _ -> events += "queue ${tracks.size} from $start" },
+            online = { true },
+            toast = {},
+            scope = backgroundScope,
+            // The phone knows "Known"'s album already (no network)
+            cachedCovers = { songs -> songs.map { if (it.title == "Known") "https://cache/known" else null } },
+            // The rest are looked up: one batch first, then the last word
+            lookCovers = { songs, _, onBatch ->
+                events += "look ${songs.map { it.title }}"
+                onBatch(songs.map { if (it.title == "Late 1") "https://found/late1" else null })
+                songs.map { "https://found/${it.title.lowercase().replace(" ", "")}" }
+            },
+            learn = { arts -> events += "learn ${arts.keys.sorted()}"; learnt += arts },
+        )
+        playback.play(listOf("Mine", "Known", "Late 1", "Late 2", "Given").map { RecordSong(it, "A", cover = if (it == "Given") "https://given" else null) }, 2, "This week, years ago")
+        runCurrent()
+        // the cache's cover went into the match (so onto the row and the queue at once); a cover given stays
+        assertThat(matched.map { it.cover }).containsExactly(null, "https://cache/known", null, null, "https://given").inOrder()
+        // the queue first, then the lookups of the rows still bare only, learnt batch by batch, each row once
+        assertThat(events.first()).isEqualTo("queue 5 from 2")
+        assertThat(events).contains("look [Late 1, Late 2]")
+        assertThat(learnt).containsExactly(3L, "https://found/late1", 4L, "https://found/late2")
+        assertThat(events.filter { it.startsWith("learn") }).containsExactly("learn [3]", "learn [4]")
+    }
+
+    @Test fun `a play that can't start looks nothing up`() = runTest {
+        var looked = false
+        val playback = RecordPlayback(
+            match = { songs -> songs.map { null } },
+            setQueue = { _, _, _ -> },
+            online = { true },
+            toast = {},
+            scope = backgroundScope,
+            lookCovers = { songs, _, _ -> looked = true; songs.map { null } },
+        )
+        playback.play(listOf(RecordSong("Gone", "A")), 0, "x")
+        runCurrent()
+        assertThat(looked).isFalse()
+    }
 }

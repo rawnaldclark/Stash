@@ -1434,6 +1434,29 @@ class PlayerRepositoryImpl @Inject constructor(
         playHistory.moveTo(entry, previousGone)
     }
 
+    override suspend fun learnArtwork(arts: Map<Long, String>) {
+        if (arts.isEmpty()) return
+        val controller = ensureController() ?: return
+        withContext(Dispatchers.Main.immediate) {
+            // The rows Up next shows (the logical queue), then the player's items: the playing one is the notification's
+            currentQueueTracks = QueueArt.fill(currentQueueTracks, arts)
+            var replaced = 0
+            for (i in 0 until controller.mediaItemCount) {
+                val item = controller.getMediaItemAt(i)
+                val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0 } ?: item.mediaId.toLongOrNull() ?: continue
+                val art = arts[id] ?: continue
+                if (item.mediaMetadata.artworkUri != null) continue
+                // Metadata only: the same media, so the playing item goes on without a break
+                val withArt = item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(art)).build()).build()
+                replaceMediaItemKeepingShuffle(controller, i, withArt)
+                replaced++
+            }
+            timelineDirty = true
+            updateState(controller)
+            Log.d(TAG, "learnArtwork: ${arts.size} covers, $replaced player items")
+        }
+    }
+
     /** replaceMediaItem, but under shuffle the play order is put back exactly as it was. */
     private fun replaceMediaItemKeepingShuffle(controller: MediaController, index: Int, replacement: MediaItem) {
         // A rebuilt item (a stream placeholder for a vanished download) keeps its Play next tag,

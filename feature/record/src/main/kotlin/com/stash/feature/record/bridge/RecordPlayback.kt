@@ -3,10 +3,13 @@ package com.stash.feature.record.bridge
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import com.stash.feature.record.art.ArtSong
+import com.stash.feature.record.art.RecordArt
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,6 +65,12 @@ class RecordPlayback internal constructor(
     private val scope: CoroutineScope,
     /** Shuffle's order (the app's own: a playlist's Shuffle shuffles the queue). */
     private val shuffled: (List<Track>) -> List<Track> = { it.shuffled() },
+    /** Each song's cover as far as the phone knows it now, asking no one ([RecordArt.cached]). */
+    private val cachedCovers: suspend (List<ArtSong>) -> List<String?> = { songs -> songs.map { null } },
+    /** Each song's cover looked up ([RecordArt.covers]), every batch told as it lands, the later asks in the scope given. */
+    private val lookCovers: suspend (List<ArtSong>, CoroutineScope, (List<String?>) -> Unit) -> List<String?> = { songs, _, _ -> songs.map { null } },
+    /** Covers found after the queue was set, by row: kept on rows that have none, and put on the queue ([PlayerRepository.learnArtwork]). */
+    private val learn: suspend (Map<Long, String>) -> Unit = {},
 ) : RecordPlayer {
     @Inject
     constructor(
@@ -68,12 +78,28 @@ class RecordPlayback internal constructor(
         player: PlayerRepository,
         connectivity: ConnectivityMonitor,
         @ApplicationContext context: Context,
+        art: RecordArt,
+        tracks: TrackDao,
     ) : this(
         match = match::rows,
         setQueue = { tracks, start, from -> player.setQueue(tracks, start, PlaybackSource.Listening(from)) },
         online = connectivity::isConnected,
         toast = { note -> Toast.makeText(context, note.text(context.resources), Toast.LENGTH_SHORT).show() },
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        cachedCovers = art::cached,
+        lookCovers = { songs, retry, onBatch -> art.covers(songs, retry, onBatch) },
+        learn = { arts ->
+            for ((id, url) in arts) {
+                try {
+                    tracks.fillMissingAlbumArtUrl(id, url)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "a cover couldn't be kept: ${e.javaClass.simpleName}")
+                }
+            }
+            player.learnArtwork(arts)
+        },
     )
 
     private val _notes = MutableSharedFlow<RecordNote>(extraBufferCapacity = 4)
@@ -94,10 +120,23 @@ class RecordPlayback internal constructor(
         playing?.cancel()
         playing = scope.launch {
             try {
-                val rows = match(songs)
+                // Every cover the phone already knows goes on the queue at once (a history's songs come with words only)
+                val arts = songs.map { ArtSong(title = it.title, artist = it.artist, album = it.album) }
+                val known = cachedCovers(arts)
+                val rows = match(songs.mapIndexed { i, s -> if (s.cover == null && known.getOrNull(i) != null) s.copy(cover = known[i]) else s })
                 when (val plan = planRecordQueue(rows, index, online())) {
-                    is RecordQueuePlan.Play ->
+                    is RecordQueuePlan.Play -> {
                         if (shuffle) setQueue(shuffled(plan.tracks), 0, from) else setQueue(plan.tracks, plan.startIndex, from)
+                        // ...and the rest as they are found: on the rows and the queue (the playing one too), never a blank cover
+                        try {
+                            learnLater(rows, arts)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // The music plays: only covers are missing
+                            Log.w(TAG, "the queue's covers couldn't be found: ${e.javaClass.simpleName}")
+                        }
+                    }
                     is RecordQueuePlan.Blocked -> say(plan.note)
                 }
             } catch (e: CancellationException) {
@@ -107,6 +146,23 @@ class RecordPlayback internal constructor(
                 say(RecordNote.PlayFailed)
             }
         }
+    }
+
+    /** The covers of [rows] that have none, looked up after the queue is set and learnt batch by batch ([learn]). */
+    private suspend fun learnLater(rows: List<Track?>, arts: List<ArtSong>) = coroutineScope {
+        val bare = rows.indices.filter { i -> rows[i]?.let { it.albumArtUrl.isNullOrBlank() && it.albumArtPath.isNullOrBlank() } == true }
+        if (bare.isEmpty()) return@coroutineScope
+        val told = HashMap<Long, String>()
+        fun fresh(urls: List<String?>): Map<Long, String> {
+            val out = HashMap<Long, String>()
+            urls.forEachIndexed { j, url ->
+                val id = rows[bare[j]]!!.id
+                if (url != null && told.put(id, url) == null) out[id] = url
+            }
+            return out
+        }
+        val last = lookCovers(bare.map { arts[it] }, this) { sofar -> fresh(sofar).takeIf { it.isNotEmpty() }?.let { launch { learn(it) } } }
+        fresh(last).takeIf { it.isNotEmpty() }?.let { learn(it) }
     }
 
     private fun say(note: RecordNote) {

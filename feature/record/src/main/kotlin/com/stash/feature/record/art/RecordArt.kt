@@ -90,6 +90,12 @@ class RecordArt internal constructor(
         }
     }
 
+    /**
+     * Each song's cover as far as this phone knows it now, asking no one (this process's, else the store's while fresh): what a
+     * play can put on its queue at once, before any lookup.
+     */
+    suspend fun cached(songs: List<ArtSong>): List<String?> = withContext(work) { songs.map { kept(ArtText.artKey(it)) } }
+
     /** Asks for [list] a batch at a time, keeping what's found; returns those to ask again later. */
     private suspend fun pass(
         list: List<Pair<String, ArtSong>>,
