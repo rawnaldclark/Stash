@@ -238,4 +238,81 @@
     <string name="record_kept_out_put_back_label">Ibalik ang %1$s ni %2$s</string>
     <string name="record_kept_out_put_back_done">Puwede nang tumugtog ang %1$s sa mga susunod mong mix</string>
     <string name="record_kept_out_put_back_failed">Hindi ito maibalik ngayon. Subukan ulit.</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">Simula ng %1$d</string>
+    <string name="record_mix_mid">Kalagitnaan ng %1$d</string>
+    <string name="record_mix_late">Huling bahagi ng %1$d</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s &amp; %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">Ang mga nanatili</string>
+    <string name="record_mix_constants_sub">Mga kantang binabalikan mo, taon-taon</string>
+    <string name="record_mix_lost">Tuklasin muli</string>
+    <string name="record_mix_lost_sub">Mga paboritong matagal mo nang hindi napapakinggan</string>
+    <string name="record_mix_repeat">Paulit-ulit, noon</string>
+    <string name="record_mix_repeat_sub">Ang mga kantang hindi mo matigilang patugtugin</string>
+    <string name="record_mix_started">Paano ito nagsimula</string>
+    <string name="record_mix_started_sub">Ang unang kantang pinatugtog mo mula sa bawat paborito mong artist</string>
+    <string name="record_mix_year">Ang %1$d mo</string>
+    <string name="record_mix_year_so_far">Ang %1$d mo hanggang ngayon</string>
+    <string name="record_mix_artist">Ang %1$s mo</string>
+    <string name="record_mix_artist_sub">Ang mga kantang pinakamadalas mong patugtugin, mula %1$d</string>
+    <string name="record_mix_week">Ngayong linggo, mga taon na ang nakalipas</string>
+    <string name="record_mix_week_one_year">Bandang %1$s, %2$d</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="one">Bandang %1$s, sa %2$d nakaraang taon</item>
+        <item quantity="other">Bandang %1$s, sa %2$d nakaraang taon</item>
+    </plurals>
+    <string name="record_mix_about_min">mga %1$d min</string>
+    <string name="record_mix_about_hr">mga %1$d oras</string>
+    <string name="record_mix_about_hr_min">mga %1$d oras %2$d min</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d kanta</item>
+        <item quantity="other">%1$d na kanta</item>
+    </plurals>
+    <string name="record_mix_card_with">kasama ang %1$s</string>
+    <string name="record_mix_card_share">%1$d%% ng mga pinatugtog mo</string>
+    <string name="record_mix_card_constants">Taon-taon</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s, hanggang %2$d taon</item>
+        <item quantity="other">%1$s, hanggang %2$d taon</item>
+    </plurals>
+    <string name="record_mix_card_repeat">Mga kinahumalingan</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: %2$d play sa loob ng dalawang linggo, %3$s</item>
+        <item quantity="other">%1$s: %2$d na play sa loob ng dalawang linggo, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">Ngayong araw sa mga taon mo</string>
+    <string name="record_mix_card_year_now">Ngayong taon hanggang ngayon</string>
+    <string name="record_mix_card_year">Ang taon mo</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s oras ng pakikinig</item>
+        <item quantity="other">%1$s na oras ng pakikinig</item>
+    </plurals>
+    <string name="record_mix_card_started">Kung saan nagsimula</string>
+    <string name="record_mix_card_from_to">Mula %1$s noong %2$d hanggang %3$s noong %4$d</string>
+    <string name="record_mix_card_lost">Mga nawalang paborito</string>
+    <string name="record_mixes_shelf">Mula sa record mo</string>
+    <string name="record_mixes_show_all">Ipakita lahat</string>
+    <string name="record_mixes_open">Buksan ang %1$s</string>
+    <string name="record_mix_play_label">I-play ang %1$s</string>
+    <string name="record_mix_shuffle_label">I-shuffle ang %1$s</string>
+    <string name="record_tab_record">Ang record</string>
+    <string name="record_tab_mixes">Mga mix</string>
+    <string name="record_mixes_from_years">Mga mix mula sa mga taon mo</string>
+    <string name="record_mixes_your_years">Ang mga taon mo</string>
+    <string name="record_mixes_none">Gawa ang mga ito mula sa mga taon ng pakikinig. Dalhin ang history mo sa Spotify o ang mga scrobble mo sa Last.fm, at lalabas sila rito.</string>
+    <string name="record_mixes_none_action">Dalhin ang pakikinig mo</string>
+    <string name="record_mix_eyebrow">Mix mula sa record mo</string>
+    <string name="record_mix_play">I-play</string>
+    <string name="record_mix_shuffle">I-shuffle</string>
+    <string name="record_mix_save">I-save bilang playlist</string>
+    <string name="record_mix_saving">Sine-save…</string>
+    <string name="record_mix_open_saved">Buksan ang “%1$s”</string>
+    <string name="record_mix_saved">Na-save ang “%1$s” sa mga playlist mo</string>
+    <string name="record_mix_save_failed">Hindi ma-save ngayon. Subukan ulit.</string>
+    <string name="record_mix_gone">Wala na sa record mo ang mix na iyan: nagbabago ang mga mix kasabay ng pakikinig mo.</string>
+    <string name="record_mix_gone_back">Bumalik sa record mo</string>
+    <string name="record_mix_back">Bumalik</string>
 </resources>

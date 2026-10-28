@@ -239,4 +239,81 @@
     <string name="record_kept_out_put_back_label">Trazer de volta %1$s de %2$s</string>
     <string name="record_kept_out_put_back_done">%1$s pode tocar nos seus próximos mixes</string>
     <string name="record_kept_out_put_back_failed">Não foi possível trazer de volta agora. Tente de novo.</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">Início de %1$d</string>
+    <string name="record_mix_mid">Meados de %1$d</string>
+    <string name="record_mix_late">Fim de %1$d</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s &amp; %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">As que ficaram</string>
+    <string name="record_mix_constants_sub">Músicas às quais você volta ano após ano</string>
+    <string name="record_mix_lost">Redescubra</string>
+    <string name="record_mix_lost_sub">Favoritas que você não ouve há um tempo</string>
+    <string name="record_mix_repeat">No repeat, naquela época</string>
+    <string name="record_mix_repeat_sub">As músicas que você não parava de ouvir</string>
+    <string name="record_mix_started">Como tudo começou</string>
+    <string name="record_mix_started_sub">A primeira música que você ouviu de cada um dos seus artistas favoritos</string>
+    <string name="record_mix_year">Seu %1$d</string>
+    <string name="record_mix_year_so_far">Seu %1$d até agora</string>
+    <string name="record_mix_artist">Seu %1$s</string>
+    <string name="record_mix_artist_sub">As músicas que você mais ouviu, desde %1$d</string>
+    <string name="record_mix_week">Esta semana, anos atrás</string>
+    <string name="record_mix_week_one_year">Por volta de %1$s de %2$d</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="one">Por volta de %1$s, em %2$d ano passado</item>
+        <item quantity="other">Por volta de %1$s, em %2$d anos passados</item>
+    </plurals>
+    <string name="record_mix_about_min">cerca de %1$d min</string>
+    <string name="record_mix_about_hr">cerca de %1$d h</string>
+    <string name="record_mix_about_hr_min">cerca de %1$d h %2$d min</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d música</item>
+        <item quantity="other">%1$d músicas</item>
+    </plurals>
+    <string name="record_mix_card_with">com %1$s</string>
+    <string name="record_mix_card_share">%1$d%% do que você ouviu</string>
+    <string name="record_mix_card_constants">Ano após ano</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s, até %2$d ano</item>
+        <item quantity="other">%1$s, até %2$d anos</item>
+    </plurals>
+    <string name="record_mix_card_repeat">Obsessões</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: %2$d reprodução em duas semanas, %3$s</item>
+        <item quantity="other">%1$s: %2$d reproduções em duas semanas, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">Hoje nos seus anos</string>
+    <string name="record_mix_card_year_now">Este ano até agora</string>
+    <string name="record_mix_card_year">Seu ano</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s hora ouvindo</item>
+        <item quantity="other">%1$s horas ouvindo</item>
+    </plurals>
+    <string name="record_mix_card_started">Onde tudo começou</string>
+    <string name="record_mix_card_from_to">De %1$s em %2$d a %3$s em %4$d</string>
+    <string name="record_mix_card_lost">Favoritas perdidas</string>
+    <string name="record_mixes_shelf">Do seu disco</string>
+    <string name="record_mixes_show_all">Mostrar tudo</string>
+    <string name="record_mixes_open">Abrir %1$s</string>
+    <string name="record_mix_play_label">Tocar %1$s</string>
+    <string name="record_mix_shuffle_label">Tocar %1$s no aleatório</string>
+    <string name="record_tab_record">O disco</string>
+    <string name="record_tab_mixes">Mixes</string>
+    <string name="record_mixes_from_years">Mixes dos seus anos</string>
+    <string name="record_mixes_your_years">Seus anos</string>
+    <string name="record_mixes_none">Eles nascem de anos ouvindo música. Traga seu histórico do Spotify ou seus scrobbles do Last.fm, e eles aparecem aqui.</string>
+    <string name="record_mixes_none_action">Trazer o que você ouviu</string>
+    <string name="record_mix_eyebrow">Mix do seu disco</string>
+    <string name="record_mix_play">Tocar</string>
+    <string name="record_mix_shuffle">Aleatório</string>
+    <string name="record_mix_save">Salvar como playlist</string>
+    <string name="record_mix_saving">Salvando…</string>
+    <string name="record_mix_open_saved">Abrir “%1$s”</string>
+    <string name="record_mix_saved">“%1$s” salva nas suas playlists</string>
+    <string name="record_mix_save_failed">Não deu para salvar agora. Tente de novo.</string>
+    <string name="record_mix_gone">Esse mix não está mais no seu disco: os mixes mudam conforme o que você ouve.</string>
+    <string name="record_mix_gone_back">Voltar ao seu disco</string>
+    <string name="record_mix_back">Voltar</string>
 </resources>

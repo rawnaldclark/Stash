@@ -238,4 +238,81 @@
     <string name="record_kept_out_put_back_label">%2$s का %1$s वापस लाएँ</string>
     <string name="record_kept_out_put_back_done">%1$s आपके अगले मिक्स में बज सकता है</string>
     <string name="record_kept_out_put_back_failed">अभी इसे वापस नहीं लाया जा सका। दोबारा कोशिश करें।</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">%1$d की शुरुआत</string>
+    <string name="record_mix_mid">%1$d का मध्य</string>
+    <string name="record_mix_late">%1$d का आख़िर</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s और %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">जो साथ रहे</string>
+    <string name="record_mix_constants_sub">गाने जिन पर आप साल-दर-साल लौटते रहे</string>
+    <string name="record_mix_lost">फिर से खोजें</string>
+    <string name="record_mix_lost_sub">पसंदीदा गाने जो आपने कुछ समय से नहीं सुने</string>
+    <string name="record_mix_repeat">तब बार-बार</string>
+    <string name="record_mix_repeat_sub">वे गाने जिन्हें आप बजाना रोक नहीं पाए</string>
+    <string name="record_mix_started">शुरुआत कैसे हुई</string>
+    <string name="record_mix_started_sub">आपके हर पसंदीदा कलाकार का पहला गाना जो आपने बजाया</string>
+    <string name="record_mix_year">आपका %1$d</string>
+    <string name="record_mix_year_so_far">आपका %1$d अब तक</string>
+    <string name="record_mix_artist">आपके %1$s</string>
+    <string name="record_mix_artist_sub">आपके सबसे ज़्यादा बजाए गए गाने, %1$d से</string>
+    <string name="record_mix_week">यह हफ़्ता, बरसों पहले</string>
+    <string name="record_mix_week_one_year">%2$d में %1$s के आसपास</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="one">%1$s के आसपास, पिछले %2$d साल में</item>
+        <item quantity="other">%1$s के आसपास, पिछले %2$d सालों में</item>
+    </plurals>
+    <string name="record_mix_about_min">लगभग %1$d मिनट</string>
+    <string name="record_mix_about_hr">लगभग %1$d घंटे</string>
+    <string name="record_mix_about_hr_min">लगभग %1$d घंटे %2$d मिनट</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d गाना</item>
+        <item quantity="other">%1$d गाने</item>
+    </plurals>
+    <string name="record_mix_card_with">साथ में %1$s</string>
+    <string name="record_mix_card_share">आपने जो बजाया उसका %1$d%%</string>
+    <string name="record_mix_card_constants">साल-दर-साल</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s, %2$d साल तक</item>
+        <item quantity="other">%1$s, %2$d साल तक</item>
+    </plurals>
+    <string name="record_mix_card_repeat">दीवानगी</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: दो हफ़्तों में %2$d बार, %3$s</item>
+        <item quantity="other">%1$s: दो हफ़्तों में %2$d बार, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">आज, आपके बरसों में</string>
+    <string name="record_mix_card_year_now">इस साल अब तक</string>
+    <string name="record_mix_card_year">आपका साल</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s घंटा सुनना</item>
+        <item quantity="other">%1$s घंटे सुनना</item>
+    </plurals>
+    <string name="record_mix_card_started">जहाँ से शुरू हुआ</string>
+    <string name="record_mix_card_from_to">%2$d में %1$s से %4$d में %3$s तक</string>
+    <string name="record_mix_card_lost">खोए हुए पसंदीदा</string>
+    <string name="record_mixes_shelf">आपके रिकॉर्ड से</string>
+    <string name="record_mixes_show_all">सब दिखाएँ</string>
+    <string name="record_mixes_open">%1$s खोलें</string>
+    <string name="record_mix_play_label">%1$s चलाएँ</string>
+    <string name="record_mix_shuffle_label">%1$s शफ़ल करें</string>
+    <string name="record_tab_record">रिकॉर्ड</string>
+    <string name="record_tab_mixes">मिक्स</string>
+    <string name="record_mixes_from_years">आपके बरसों के मिक्स</string>
+    <string name="record_mixes_your_years">आपके साल</string>
+    <string name="record_mixes_none">ये बरसों की सुनवाई से बनते हैं। अपना Spotify इतिहास या Last.fm स्क्रॉबल लाएँ, और ये यहाँ दिखेंगे।</string>
+    <string name="record_mixes_none_action">अपनी सुनवाई लाएँ</string>
+    <string name="record_mix_eyebrow">आपके रिकॉर्ड से मिक्स</string>
+    <string name="record_mix_play">चलाएँ</string>
+    <string name="record_mix_shuffle">शफ़ल</string>
+    <string name="record_mix_save">प्लेलिस्ट के रूप में सहेजें</string>
+    <string name="record_mix_saving">सहेजा जा रहा है…</string>
+    <string name="record_mix_open_saved">“%1$s” खोलें</string>
+    <string name="record_mix_saved">“%1$s” आपकी प्लेलिस्ट में सहेजा गया</string>
+    <string name="record_mix_save_failed">अभी सहेजा नहीं जा सका। फिर से कोशिश करें।</string>
+    <string name="record_mix_gone">यह मिक्स अब आपके रिकॉर्ड में नहीं है: मिक्स आपकी सुनवाई के साथ बदलते हैं।</string>
+    <string name="record_mix_gone_back">अपने रिकॉर्ड पर वापस जाएँ</string>
+    <string name="record_mix_back">वापस</string>
 </resources>

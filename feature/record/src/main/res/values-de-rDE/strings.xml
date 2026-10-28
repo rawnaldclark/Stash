@@ -238,4 +238,81 @@
     <string name="record_kept_out_put_back_label">%1$s von %2$s zurückholen</string>
     <string name="record_kept_out_put_back_done">%1$s kann in deinen nächsten Mixes laufen</string>
     <string name="record_kept_out_put_back_failed">Konnte gerade nicht zurückgeholt werden. Versuch es noch einmal.</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">Anfang %1$d</string>
+    <string name="record_mix_mid">Mitte %1$d</string>
+    <string name="record_mix_late">Ende %1$d</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s &amp; %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">Die, die geblieben sind</string>
+    <string name="record_mix_constants_sub">Songs, zu denen du Jahr für Jahr zurückkehrst</string>
+    <string name="record_mix_lost">Wiederentdecken</string>
+    <string name="record_mix_lost_sub">Lieblingssongs, die du lange nicht gehört hast</string>
+    <string name="record_mix_repeat">Damals in Dauerschleife</string>
+    <string name="record_mix_repeat_sub">Die Songs, von denen du nicht lassen konntest</string>
+    <string name="record_mix_started">Wie alles anfing</string>
+    <string name="record_mix_started_sub">Der erste Song, den du von jedem deiner Lieblingskünstler gehört hast</string>
+    <string name="record_mix_year">Dein %1$d</string>
+    <string name="record_mix_year_so_far">Dein %1$d bis jetzt</string>
+    <string name="record_mix_artist">Dein %1$s</string>
+    <string name="record_mix_artist_sub">Die Songs, die du am meisten gehört hast, seit %1$d</string>
+    <string name="record_mix_week">Diese Woche, vor Jahren</string>
+    <string name="record_mix_week_one_year">Um den %1$s %2$d</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="one">Um den %1$s, in %2$d vergangenen Jahr</item>
+        <item quantity="other">Um den %1$s, in %2$d vergangenen Jahren</item>
+    </plurals>
+    <string name="record_mix_about_min">etwa %1$d Min.</string>
+    <string name="record_mix_about_hr">etwa %1$d Std.</string>
+    <string name="record_mix_about_hr_min">etwa %1$d Std. %2$d Min.</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d Song</item>
+        <item quantity="other">%1$d Songs</item>
+    </plurals>
+    <string name="record_mix_card_with">mit %1$s</string>
+    <string name="record_mix_card_share">%1$d %% von dem, was du gehört hast</string>
+    <string name="record_mix_card_constants">Jahr für Jahr</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s, bis zu %2$d Jahr</item>
+        <item quantity="other">%1$s, bis zu %2$d Jahre</item>
+    </plurals>
+    <string name="record_mix_card_repeat">Obsessionen</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: %2$d Wiedergabe in zwei Wochen, %3$s</item>
+        <item quantity="other">%1$s: %2$d Wiedergaben in zwei Wochen, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">Heute in deinen Jahren</string>
+    <string name="record_mix_card_year_now">Dieses Jahr bis jetzt</string>
+    <string name="record_mix_card_year">Dein Jahr</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s Stunde Hören</item>
+        <item quantity="other">%1$s Stunden Hören</item>
+    </plurals>
+    <string name="record_mix_card_started">Wo alles begann</string>
+    <string name="record_mix_card_from_to">Von %1$s %2$d bis %3$s %4$d</string>
+    <string name="record_mix_card_lost">Verlorene Lieblinge</string>
+    <string name="record_mixes_shelf">Aus deiner Platte</string>
+    <string name="record_mixes_show_all">Alle anzeigen</string>
+    <string name="record_mixes_open">%1$s öffnen</string>
+    <string name="record_mix_play_label">%1$s abspielen</string>
+    <string name="record_mix_shuffle_label">%1$s zufällig abspielen</string>
+    <string name="record_tab_record">Die Platte</string>
+    <string name="record_tab_mixes">Mixes</string>
+    <string name="record_mixes_from_years">Mixes aus deinen Jahren</string>
+    <string name="record_mixes_your_years">Deine Jahre</string>
+    <string name="record_mixes_none">Sie entstehen aus Jahren des Hörens. Bring deinen Spotify-Verlauf oder deine Last.fm-Scrobbles mit, dann erscheinen sie hier.</string>
+    <string name="record_mixes_none_action">Dein Hören mitbringen</string>
+    <string name="record_mix_eyebrow">Mix aus deiner Platte</string>
+    <string name="record_mix_play">Abspielen</string>
+    <string name="record_mix_shuffle">Zufällig</string>
+    <string name="record_mix_save">Als Playlist speichern</string>
+    <string name="record_mix_saving">Wird gespeichert…</string>
+    <string name="record_mix_open_saved">„%1$s“ öffnen</string>
+    <string name="record_mix_saved">„%1$s“ in deinen Playlists gespeichert</string>
+    <string name="record_mix_save_failed">Konnte gerade nicht gespeichert werden. Versuch es noch mal.</string>
+    <string name="record_mix_gone">Diesen Mix gibt es in deiner Platte nicht mehr: Mixes ändern sich mit dem, was du hörst.</string>
+    <string name="record_mix_gone_back">Zurück zu deiner Platte</string>
+    <string name="record_mix_back">Zurück</string>
 </resources>

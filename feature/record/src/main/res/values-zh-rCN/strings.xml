@@ -221,4 +221,76 @@
     <string name="record_kept_out_put_back_label">放回 %2$s 的 %1$s</string>
     <string name="record_kept_out_put_back_done">%1$s 可以出现在你接下来的混音里</string>
     <string name="record_kept_out_put_back_failed">暂时无法放回。请重试。</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">%1$d 年初</string>
+    <string name="record_mix_mid">%1$d 年中</string>
+    <string name="record_mix_late">%1$d 年末</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s和%2$s</string>
+    <string name="record_mix_comma">、</string>
+    <string name="record_mix_constants">一直都在</string>
+    <string name="record_mix_constants_sub">年复一年你总会回来听的歌</string>
+    <string name="record_mix_lost">重新发现</string>
+    <string name="record_mix_lost_sub">好久没听的心头好</string>
+    <string name="record_mix_repeat">那时的单曲循环</string>
+    <string name="record_mix_repeat_sub">那些你停不下来的歌</string>
+    <string name="record_mix_started">一切的开始</string>
+    <string name="record_mix_started_sub">你最爱的每位艺人，你听的第一首歌</string>
+    <string name="record_mix_year">你的 %1$d</string>
+    <string name="record_mix_year_so_far">你的 %1$d（至今）</string>
+    <string name="record_mix_artist">你的 %1$s</string>
+    <string name="record_mix_artist_sub">你听得最多的歌，自 %1$d 年起</string>
+    <string name="record_mix_week">这一周，在往年</string>
+    <string name="record_mix_week_one_year">%2$d 年%1$s前后</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="other">过去 %2$d 年的%1$s前后</item>
+    </plurals>
+    <string name="record_mix_about_min">约 %1$d 分钟</string>
+    <string name="record_mix_about_hr">约 %1$d 小时</string>
+    <string name="record_mix_about_hr_min">约 %1$d 小时 %2$d 分钟</string>
+    <plurals name="record_mix_songs">
+        <item quantity="other">%1$d 首歌</item>
+    </plurals>
+    <string name="record_mix_card_with">还有 %1$s</string>
+    <string name="record_mix_card_share">占你所听的 %1$d%%</string>
+    <string name="record_mix_card_constants">年复一年</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="other">%1$s，长达 %2$d 年</item>
+    </plurals>
+    <string name="record_mix_card_repeat">着迷</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="other">%1$s：两周内播放 %2$d 次，%3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">今天，在你的往年</string>
+    <string name="record_mix_card_year_now">今年至今</string>
+    <string name="record_mix_card_year">你的一年</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="other">%1$s 小时的聆听</item>
+    </plurals>
+    <string name="record_mix_card_started">开始的地方</string>
+    <string name="record_mix_card_from_to">从 %2$d 年的 %1$s 到 %4$d 年的 %3$s</string>
+    <string name="record_mix_card_lost">失落的心头好</string>
+    <string name="record_mixes_shelf">来自你的唱片</string>
+    <string name="record_mixes_show_all">显示全部</string>
+    <string name="record_mixes_open">打开 %1$s</string>
+    <string name="record_mix_play_label">播放 %1$s</string>
+    <string name="record_mix_shuffle_label">随机播放 %1$s</string>
+    <string name="record_tab_record">唱片</string>
+    <string name="record_tab_mixes">混音</string>
+    <string name="record_mixes_from_years">来自你这些年的混音</string>
+    <string name="record_mixes_your_years">你的这些年</string>
+    <string name="record_mixes_none">它们来自多年的聆听。导入你的 Spotify 历史或 Last.fm 记录，它们就会出现在这里。</string>
+    <string name="record_mixes_none_action">导入你的聆听记录</string>
+    <string name="record_mix_eyebrow">来自你唱片的混音</string>
+    <string name="record_mix_play">播放</string>
+    <string name="record_mix_shuffle">随机播放</string>
+    <string name="record_mix_save">存为歌单</string>
+    <string name="record_mix_saving">正在保存…</string>
+    <string name="record_mix_open_saved">打开“%1$s”</string>
+    <string name="record_mix_saved">已将“%1$s”存入你的歌单</string>
+    <string name="record_mix_save_failed">现在无法保存，请重试。</string>
+    <string name="record_mix_gone">你的唱片里已经没有这个混音了：混音会随你的聆听而变化。</string>
+    <string name="record_mix_gone_back">返回你的唱片</string>
+    <string name="record_mix_back">返回</string>
 </resources>

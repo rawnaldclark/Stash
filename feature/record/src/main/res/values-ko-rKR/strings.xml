@@ -221,4 +221,76 @@
     <string name="record_kept_out_put_back_label">%2$s의 %1$s 다시 넣기</string>
     <string name="record_kept_out_put_back_done">%1$s 곡이 다음 믹스부터 재생될 수 있습니다</string>
     <string name="record_kept_out_put_back_failed">지금은 다시 넣을 수 없습니다. 다시 시도하세요.</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">%1$d년 초</string>
+    <string name="record_mix_mid">%1$d년 중반</string>
+    <string name="record_mix_late">%1$d년 말</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s &amp; %2$s</string>
+    <string name="record_mix_comma">", "</string>
+    <string name="record_mix_constants">곁에 남은 노래들</string>
+    <string name="record_mix_constants_sub">해마다 다시 찾게 되는 노래</string>
+    <string name="record_mix_lost">다시 발견하기</string>
+    <string name="record_mix_lost_sub">한동안 듣지 않은 좋아하던 노래</string>
+    <string name="record_mix_repeat">그때 반복해 듣던 노래</string>
+    <string name="record_mix_repeat_sub">멈출 수 없었던 노래들</string>
+    <string name="record_mix_started">모든 것의 시작</string>
+    <string name="record_mix_started_sub">좋아하는 아티스트마다 처음 들은 노래</string>
+    <string name="record_mix_year">나의 %1$d년</string>
+    <string name="record_mix_year_so_far">나의 %1$d년 (지금까지)</string>
+    <string name="record_mix_artist">나의 %1$s</string>
+    <string name="record_mix_artist_sub">가장 많이 들은 노래, %1$d년부터</string>
+    <string name="record_mix_week">이번 주, 몇 해 전</string>
+    <string name="record_mix_week_one_year">%2$d년 %1$s 무렵</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="other">지난 %2$d년 동안 %1$s 무렵</item>
+    </plurals>
+    <string name="record_mix_about_min">약 %1$d분</string>
+    <string name="record_mix_about_hr">약 %1$d시간</string>
+    <string name="record_mix_about_hr_min">약 %1$d시간 %2$d분</string>
+    <plurals name="record_mix_songs">
+        <item quantity="other">%1$d곡</item>
+    </plurals>
+    <string name="record_mix_card_with">함께: %1$s</string>
+    <string name="record_mix_card_share">들은 음악의 %1$d%%</string>
+    <string name="record_mix_card_constants">해마다</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="other">%1$s, 최대 %2$d년</item>
+    </plurals>
+    <string name="record_mix_card_repeat">푹 빠졌던 노래</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="other">%1$s: 2주 동안 %2$d회 재생, %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">오늘, 지난 해들</string>
+    <string name="record_mix_card_year_now">올해 지금까지</string>
+    <string name="record_mix_card_year">나의 한 해</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="other">%1$s시간 동안 들음</item>
+    </plurals>
+    <string name="record_mix_card_started">시작된 곳</string>
+    <string name="record_mix_card_from_to">%2$d년 %1$s부터 %4$d년 %3$s까지</string>
+    <string name="record_mix_card_lost">잃어버린 애청곡</string>
+    <string name="record_mixes_shelf">나의 레코드에서</string>
+    <string name="record_mixes_show_all">모두 보기</string>
+    <string name="record_mixes_open">%1$s 열기</string>
+    <string name="record_mix_play_label">%1$s 재생</string>
+    <string name="record_mix_shuffle_label">%1$s 셔플 재생</string>
+    <string name="record_tab_record">레코드</string>
+    <string name="record_tab_mixes">믹스</string>
+    <string name="record_mixes_from_years">지난 세월의 믹스</string>
+    <string name="record_mixes_your_years">나의 해들</string>
+    <string name="record_mixes_none">믹스는 오랜 감상 기록으로 만들어져요. Spotify 기록이나 Last.fm 스크로블을 가져오면 여기에 나타나요.</string>
+    <string name="record_mixes_none_action">감상 기록 가져오기</string>
+    <string name="record_mix_eyebrow">나의 레코드에서 만든 믹스</string>
+    <string name="record_mix_play">재생</string>
+    <string name="record_mix_shuffle">셔플</string>
+    <string name="record_mix_save">플레이리스트로 저장</string>
+    <string name="record_mix_saving">저장 중…</string>
+    <string name="record_mix_open_saved">‘%1$s’ 열기</string>
+    <string name="record_mix_saved">‘%1$s’을(를) 플레이리스트에 저장했어요</string>
+    <string name="record_mix_save_failed">지금은 저장할 수 없어요. 다시 시도해 주세요.</string>
+    <string name="record_mix_gone">이 믹스는 이제 레코드에 없어요. 믹스는 듣는 음악에 따라 바뀌어요.</string>
+    <string name="record_mix_gone_back">나의 레코드로 돌아가기</string>
+    <string name="record_mix_back">뒤로</string>
 </resources>

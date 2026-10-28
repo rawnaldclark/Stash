@@ -238,4 +238,81 @@
     <string name="record_kept_out_put_back_label">برگرداندن %1$s از %2$s</string>
     <string name="record_kept_out_put_back_done">%1$s می‌تواند در میکس‌های بعدی‌تان پخش شود</string>
     <string name="record_kept_out_put_back_failed">الان برگردانده نشد. دوباره امتحان کنید.</string>
+    <!-- Your record's history mixes (phase 5c). -->
+    <string name="record_mix_span">%1$s – %2$s</string>
+    <string name="record_mix_early">اوایل %1$d</string>
+    <string name="record_mix_mid">اواسط %1$d</string>
+    <string name="record_mix_late">اواخر %1$d</string>
+    <string name="record_mix_dot">%1$s · %2$s</string>
+    <string name="record_mix_and">%1$s و %2$s</string>
+    <string name="record_mix_comma">"، "</string>
+    <string name="record_mix_constants">آن‌هایی که ماندند</string>
+    <string name="record_mix_constants_sub">آهنگ‌هایی که سال به سال سراغشان برمی‌گردید</string>
+    <string name="record_mix_lost">دوباره کشف کنید</string>
+    <string name="record_mix_lost_sub">محبوب‌هایی که مدتی است نشنیده‌اید</string>
+    <string name="record_mix_repeat">آن روزها، پشت سر هم</string>
+    <string name="record_mix_repeat_sub">آهنگ‌هایی که نمی‌توانستید از پخششان دست بکشید</string>
+    <string name="record_mix_started">چطور شروع شد</string>
+    <string name="record_mix_started_sub">اولین آهنگی که از هر یک از هنرمندان محبوبتان پخش کردید</string>
+    <string name="record_mix_year">%1$d شما</string>
+    <string name="record_mix_year_so_far">%1$d شما تا اینجا</string>
+    <string name="record_mix_artist">%1$s شما</string>
+    <string name="record_mix_artist_sub">آهنگ‌هایی که بیشتر از همه پخش کرده‌اید، از %1$d</string>
+    <string name="record_mix_week">این هفته، سال‌ها پیش</string>
+    <string name="record_mix_week_one_year">حوالی %1$s، %2$d</string>
+    <plurals name="record_mix_week_years">
+        <item quantity="one">حوالی %1$s، در %2$d سال گذشته</item>
+        <item quantity="other">حوالی %1$s، در %2$d سال گذشته</item>
+    </plurals>
+    <string name="record_mix_about_min">حدود %1$d دقیقه</string>
+    <string name="record_mix_about_hr">حدود %1$d ساعت</string>
+    <string name="record_mix_about_hr_min">حدود %1$d ساعت و %2$d دقیقه</string>
+    <plurals name="record_mix_songs">
+        <item quantity="one">%1$d آهنگ</item>
+        <item quantity="other">%1$d آهنگ</item>
+    </plurals>
+    <string name="record_mix_card_with">همراه با %1$s</string>
+    <string name="record_mix_card_share">%1$d%% از آنچه پخش کردید</string>
+    <string name="record_mix_card_constants">سال به سال</string>
+    <plurals name="record_mix_card_up_to_years">
+        <item quantity="one">%1$s، تا %2$d سال</item>
+        <item quantity="other">%1$s، تا %2$d سال</item>
+    </plurals>
+    <string name="record_mix_card_repeat">دلبستگی‌ها</string>
+    <plurals name="record_mix_card_obsession">
+        <item quantity="one">%1$s: %2$d بار پخش در دو هفته، %3$s</item>
+        <item quantity="other">%1$s: %2$d بار پخش در دو هفته، %3$s</item>
+    </plurals>
+    <string name="record_mix_card_week">امروز در سال‌های شما</string>
+    <string name="record_mix_card_year_now">امسال تا اینجا</string>
+    <string name="record_mix_card_year">سال شما</string>
+    <plurals name="record_mix_card_hours">
+        <item quantity="one">%1$s ساعت شنیدن</item>
+        <item quantity="other">%1$s ساعت شنیدن</item>
+    </plurals>
+    <string name="record_mix_card_started">جایی که شروع شد</string>
+    <string name="record_mix_card_from_to">از %1$s در %2$d تا %3$s در %4$d</string>
+    <string name="record_mix_card_lost">محبوب‌های گم‌شده</string>
+    <string name="record_mixes_shelf">از صفحهٔ شما</string>
+    <string name="record_mixes_show_all">نمایش همه</string>
+    <string name="record_mixes_open">باز کردن %1$s</string>
+    <string name="record_mix_play_label">پخش %1$s</string>
+    <string name="record_mix_shuffle_label">پخش تصادفی %1$s</string>
+    <string name="record_tab_record">صفحه</string>
+    <string name="record_tab_mixes">میکس‌ها</string>
+    <string name="record_mixes_from_years">میکس‌هایی از سال‌های شما</string>
+    <string name="record_mixes_your_years">سال‌های شما</string>
+    <string name="record_mixes_none">این‌ها از سال‌ها شنیدن ساخته می‌شوند. سابقهٔ Spotify یا اسکرابل‌های Last.fm خود را بیاورید تا اینجا نمایش داده شوند.</string>
+    <string name="record_mixes_none_action">شنیده‌هایتان را بیاورید</string>
+    <string name="record_mix_eyebrow">میکس از صفحهٔ شما</string>
+    <string name="record_mix_play">پخش</string>
+    <string name="record_mix_shuffle">تصادفی</string>
+    <string name="record_mix_save">ذخیره به‌عنوان فهرست پخش</string>
+    <string name="record_mix_saving">در حال ذخیره…</string>
+    <string name="record_mix_open_saved">باز کردن «%1$s»</string>
+    <string name="record_mix_saved">«%1$s» در فهرست‌های پخش شما ذخیره شد</string>
+    <string name="record_mix_save_failed">الان ذخیره نشد. دوباره امتحان کنید.</string>
+    <string name="record_mix_gone">این میکس دیگر در صفحهٔ شما نیست: میکس‌ها با آنچه گوش می‌دهید تغییر می‌کنند.</string>
+    <string name="record_mix_gone_back">بازگشت به صفحهٔ شما</string>
+    <string name="record_mix_back">بازگشت</string>
 </resources>
