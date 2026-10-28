@@ -222,7 +222,8 @@ Adapted on purpose:
   then id in Kotlin (IndexedDB's order on the web, never SQLite's on text). The web reads its archive alone, which holds this
   phone's plays only when the phone's export was brought there.
 - Shuffle shuffles the queue (the app's own Shuffle), where the web turns the player's shuffle on.
-- A history song's row shows no length (as the web's row), through an opt-in on core:ui's `DetailTrackRow`.
+- A history song's row shows no length (as the web's row): the record's own row (`RecordSongRow`, laid out as core:ui's
+  `DetailTrackRow`) shows one only for your own copy.
 - The Mixes tab without an import offers Spotify and Last.fm (the web's line also offers "your phone's history from the Stash app").
 - **A heart is a Stash like** (`stash_liked_at`, the heart Now Playing shows; `WebLibraryExportDao.stashLikes`), where the web's is
   any like in its library: a song only in a Liked Songs playlist synced from Spotify shows an empty heart, and a tap likes it in
