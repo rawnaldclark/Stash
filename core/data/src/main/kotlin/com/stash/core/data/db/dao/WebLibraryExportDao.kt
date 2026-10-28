@@ -432,7 +432,11 @@ interface WebLibraryExportDao {
     )
     suspend fun libraryLengths(): List<LibraryLength>
 
-    /** What the library here holds, in brief: the songs liked here, and every live song of every playlist (count and id sum). */
+    /**
+     * What the library here holds, in brief: the songs liked here, and the live songs of the listener's own playlists and of the
+     * Liked Songs lists (count and id sum each), as [likes] and [playlists] read them. Daily Mixes, Stash Mixes and the Downloads list are left out: a sync or a mix
+     * refresh rewrites them and changes nothing a library song is.
+     */
     data class LibraryStamp(
         @ColumnInfo(name = "liked") val liked: Long,
         @ColumnInfo(name = "liked_ids") val likedIds: Long,
@@ -441,21 +445,31 @@ interface WebLibraryExportDao {
     )
 
     /**
-     * [LibraryStamp], again each time Room sees `tracks` or `playlist_tracks` written (the caller keeps only the changes): Your
-     * record's mixes follow a song liked or added to a playlist, as the web's follow its library.
+     * [LibraryStamp], again each time Room sees `tracks`, `playlists` or `playlist_tracks` written (the caller keeps only the
+     * changes): Your record's mixes follow a song liked or added to one of your playlists, as the web's follow its library.
      */
-    @Query(
-        """
-        SELECT
-            (SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked,
-            (SELECT COALESCE(SUM(id), 0) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked_ids,
-            (SELECT COUNT(*) FROM playlist_tracks WHERE removed_at IS NULL) AS listed,
-            (SELECT COALESCE(SUM(track_id), 0) FROM playlist_tracks WHERE removed_at IS NULL) AS listed_ids
-        """,
-    )
+    @Query(LIBRARY_STAMP)
     fun libraryStamp(): Flow<LibraryStamp>
 
+    /** [libraryStamp] now (what the library read is kept by). */
+    @Query(LIBRARY_STAMP)
+    suspend fun libraryStampNow(): LibraryStamp
+
     companion object {
+        /**
+         * [LibraryStamp]'s query: the playlists [likes] and [playlists] read (Liked Songs lists, and your own CUSTOM ones while
+         * active), with the songs liked here.
+         */
+        const val LIBRARY_STAMP = """
+            SELECT
+                (SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked,
+                (SELECT COALESCE(SUM(id), 0) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked_ids,
+                (SELECT COUNT(*) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed,
+                (SELECT COALESCE(SUM(pt.track_id), 0) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed_ids
+        """
+
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
         const val GUESS_MS = 210_000L
 

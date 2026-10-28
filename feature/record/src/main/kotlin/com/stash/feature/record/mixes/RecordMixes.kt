@@ -83,6 +83,8 @@ class RecordMixes internal constructor(
     private val library: suspend () -> List<LibrarySong>,
     /** Something new each time the library may have changed (a like, a playlist's songs). */
     libraryStamp: Flow<Any>,
+    /** The library's stamp now ([libraryStamp]'s value): the library read is kept while it holds. */
+    private val libraryStampNow: suspend () -> Any = { Any() },
     /** A debug build writes what it made, for the web's code to be run over the same taste and rows. */
     private val dump: (suspend (String) -> Unit)? = null,
     private val io: CoroutineContext = Dispatchers.IO,
@@ -98,6 +100,7 @@ class RecordMixes internal constructor(
         own = OwnArchive(library),
         library = { keptLibrary(library) },
         libraryStamp = library.libraryStamp(),
+        libraryStampNow = { library.libraryStampNow() },
         dump = if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             { text -> File(context.filesDir, DUMP_FILE).writeText(text) }
         } else {
@@ -119,6 +122,19 @@ class RecordMixes internal constructor(
     private val lock = Mutex()
     private var cachedTaste: Taste? = null
     private var cachedWeek: WeekRows? = null
+    private var cachedLibrary: Library? = null
+
+    /** The library read once per stamp: its songs, their song keys and the index a mix's songs are found in. */
+    private class Library(val stamp: Any, val songs: List<LibrarySong>, val keys: Set<String>, val have: Have)
+
+    private suspend fun libraryNow(): Library {
+        val stamp = libraryStampNow()
+        lock.withLock { cachedLibrary?.takeIf { it.stamp == stamp }?.let { return it } }
+        val songs = library()
+        val keys = songs.mapTo(HashSet()) { SongKey.songKey(it.title, it.artist) }
+        return Library(stamp, songs, keys, HistoryMixes.haveIndex(songs)).also { lock.withLock { cachedLibrary = it } }
+    }
+
     private var dumped: String? = null
 
     /** The plays "this week, years ago" reads, for one taste on one UTC day. */
@@ -144,11 +160,12 @@ class RecordMixes internal constructor(
      */
     suspend fun now(words: MixWords, now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): MixesNow? = withContext(io) {
         val stored = stored() ?: return@withContext null
-        val lib = library()
+        val library = libraryNow()
+        val lib = library.songs
         val putBack = HashSet<String>(tastes.keepKeys())
-        for (l in lib) putBack += SongKey.songKey(l.title, l.artist)
+        putBack += library.keys
         val t = HistoryMixes.putBackIn(stored, putBack)
-        val have = HistoryMixes.haveIndex(lib)
+        val have = library.have
         val all = HistoryMixes.historyMixes(t, have, words)
         var rows: WeekRows? = null
         val week = try {
