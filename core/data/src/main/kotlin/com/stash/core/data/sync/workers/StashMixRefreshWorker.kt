@@ -662,7 +662,16 @@ class StashMixRefreshWorker @AssistedInject constructor(
         val rawCandidateIds = playlistDao
             .getStreamableOrDoneTrackIdsForRecipe(recipe.id)
             .take(SURVIVOR_POOL_LIMIT)
-        val nonLibraryCandidates = rawCandidateIds.filter { it !in librarySet }
+        val notInLibrary = rawCandidateIds.filter { it !in librarySet }
+        // Your record's taste: a find it keeps out (hidden on Spotify, always skipped) leaves before the window is cut, so the mix
+        // still fills its places (stash-player discover/mix.ts `discoveryWindow`)
+        val nonLibraryCandidates = if (taste == null || taste.avoid.isEmpty() || notInLibrary.isEmpty()) {
+            notInLibrary
+        } else {
+            val out = trackDao.getByIds(notInLibrary).filter { taste.avoids(it.title, it.artist) }.mapTo(HashSet()) { it.id }
+            Log.i(TAG, "'${recipe.name}': your record avoided ${out.size} of ${notInLibrary.size} finds")
+            notInLibrary.filter { it !in out }
+        }
         // v0.9.21: soft cross-mix dedup. Prefer survivors not already claimed
         // by an earlier-ordered mix; if dedup leaves us below the cap, backfill
         // from the shared pool rather than ship an empty discovery section.
@@ -697,18 +706,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
             }
             preferredIds + backfill
         }
-        val unblocked = buildList {
+        val discoveryTrackIds = buildList {
             for (trackId in survivorCandidates) {
                 if (!blocklistGuard.isBlockedByTrackId(trackId)) add(trackId)
             }
-        }
-        // Your record's taste: a find it keeps out (hidden on Spotify, always skipped) is never linked
-        val discoveryTrackIds = if (taste == null || taste.avoid.isEmpty() || unblocked.isEmpty()) {
-            unblocked
-        } else {
-            val out = trackDao.getByIds(unblocked).filter { taste.avoids(it.title, it.artist) }.mapTo(HashSet()) { it.id }
-            Log.i(TAG, "'${recipe.name}': your record avoided ${out.size} of ${unblocked.size} finds")
-            unblocked.filter { it !in out }
         }
         Log.i(
             TAG,
@@ -851,7 +852,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
                     .ifEmpty { trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT) }
             blendRecentFirst(recentArtists, affinityArtists, TOP_ARTISTS_LIMIT)
         }
-        if (strategy == MixSeedStrategy.ARTIST_SIMILAR && taste == null) Log.i(TAG, "'${recipe.name}': seeds $seedArtists")
 
         // v0.9.20 PR 8: seedTracks gets the same fallback chain as
         // seedArtists (persona > local events > library top-by-LFM-playcount),
@@ -968,10 +968,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
             blendRecentFirst(recentArtists, trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT), TOP_ARTISTS_LIMIT)
         }
         val from = if (own.isNotEmpty()) "plays" else if (blend.isNotEmpty()) "history" else "library"
-        Log.i(
-            TAG,
-            "'${recipe.name}': seeds from $from: own=$own, your record=${blend.drop(ownKept)} -> $seeds",
-        )
+        // Counts only: logs can go out with shared diagnostics, and artist names say what someone listens to
+        Log.i(TAG, "'${recipe.name}': ${seeds.size} seeds from $from: $ownKept of ${own.size} own, ${blend.size - ownKept} from your record")
         return seeds
     }
 

@@ -185,9 +185,28 @@ class StashMixRefreshWorkerTasteTest {
         assertEquals(listOf(11L, 12L, 13L), linked.captured)
     }
 
+    @Test fun `a find kept out leaves before the window is cut, so the mix still fills its places`() = runTest {
+        coEvery { lastFmCredentials.isConfigured } returns false
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { recipeDao.getActive() } returns listOf(recipe)
+        coEvery { mixGenerator.generate(any(), any(), any()) } returns emptyList()
+        coEvery { playlistDao.findBySourceId(any()) } returns null
+        // 35 finds, the newest of them kept out (always in the window's guaranteed head): 34 places to fill
+        val ids = (100L until 135L).toList()
+        coEvery { playlistDao.getStreamableOrDoneTrackIdsForRecipe(1L) } returns ids
+        coEvery { trackDao.getByIds(any()) } answers { firstArg<List<Long>>().map { id -> track(id, if (id == 100L) "Never Again" else "Fine $id") } }
+        val linked = slot<List<Long>>()
+        coEvery { playlistDao.createMixWithMembership(any(), capture(linked), any()) } returns 100L
+
+        newWorker(taste(emptyList(), avoid = setOf(SongKey.songKey("Never Again", "Artist Y")))).doWork()
+
+        assertEquals(34, linked.captured.size)
+        assertEquals(false, 100L in linked.captured)
+    }
+
     @Test fun `the switch off reads as no taste at all`() = runTest {
         val prefs = com.stash.core.data.prefs.RecordInMixesPreference.Fixed(on = false)
-        val room = com.stash.core.data.record.RoomRecordMixTaste(mockk(relaxed = true), prefs)
+        val room = com.stash.core.data.record.RoomRecordMixTaste(mockk(relaxed = true), prefs, mockk(relaxed = true))
         assertNull(room.current())
     }
 

@@ -183,7 +183,7 @@ class MixGenerator @Inject constructor(
         pool = filterByEra(pool, recipe)
         pool = filterByMood(pool, recipe)
 
-        Log.i(TAG, "'${recipe.name}': library pool ${pool.size} of ${rawPool.size} downloaded${if (taste != null) " (with your record)" else ""}")
+        if (taste != null) Log.i(TAG, "'${recipe.name}': library pool ${pool.size} of ${rawPool.size} downloaded (with your record)")
         if (pool.isEmpty()) return emptyList()
 
         // Step 6: score + sort.

@@ -7,6 +7,11 @@ import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.RecordTasteEntity
 import com.stash.core.data.db.entity.RecordTasteKeepEntity
 import com.stash.core.data.db.entity.RecordTasteSongEntity
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import com.stash.core.data.prefs.RecordInMixesPreference
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -32,7 +37,7 @@ class RoomRecordMixTasteTest {
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), StashDatabase::class.java).allowMainThreadQueries().build()
-        seam = RoomRecordMixTaste(db.recordTasteDao(), switch)
+        seam = RoomRecordMixTaste(db.recordTasteDao(), switch, db.webLibraryExportDao())
     }
 
     @After fun tearDown() = db.close()
@@ -63,6 +68,20 @@ class RoomRecordMixTasteTest {
         val t = seam.current()!!
         assertEquals(emptySet<String>(), t.avoid)
         assertEquals(mapOf("a|band" to 1.0, "b|band" to 0.5), t.weights)
+    }
+
+    @Test fun `a song liked since, or in a playlist, is never kept out, at once, and gets its weight back`() = runTest {
+        store(1, "[]", song("never again|artist y", 0, 4.0, avoid = true), song("b|band", 1, 2.0), song("c|band", 2, 1.0, avoid = true))
+        assertEquals(setOf("never again|artist y", "c|band"), seam.current()!!.avoid)
+        // liked here, a remastered spelling of the same song
+        db.trackDao().insert(TrackEntity(title = "Never Again (Remastered)", artist = "Artist Y", canonicalTitle = "never again", canonicalArtist = "artist y", stashLikedAt = 9))
+        // and one in a playlist of the listener's own
+        val c = db.trackDao().insert(TrackEntity(title = "c", artist = "Band", canonicalTitle = "c", canonicalArtist = "band"))
+        val p = db.playlistDao().insert(PlaylistEntity(name = "Mine", source = MusicSource.LOCAL, sourceId = "custom_mine", type = PlaylistType.CUSTOM, isActive = true, syncEnabled = true))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = p, trackId = c, position = 0))
+        val t = seam.current()!!
+        assertEquals(emptySet<String>(), t.avoid)
+        assertEquals(mapOf("never again|artist y" to 1.0, "b|band" to 0.5, "c|band" to 0.25), t.weights)
     }
 
     @Test fun `the switch off is no taste, on again the taste`() = runTest {

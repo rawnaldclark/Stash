@@ -1,6 +1,7 @@
 package com.stash.core.data.record
 
 import com.stash.core.data.db.dao.RecordTasteDao
+import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.core.data.prefs.RecordInMixesPreference
 import com.stash.core.model.weblink.Credits
 import com.stash.core.model.weblink.SongKey
@@ -51,16 +52,17 @@ class MixTaste(
 
         /**
          * stash-player `src/lib/spotify/mix-taste.ts` `mixTasteOf`: [artists] the taste's seed artists; avoid the songs the taste
-         * keeps out minus those [putBack]; each song's weight over the top weight of every song (avoided ones too), for the songs
-         * not kept out with a weight above 0. A song put back has its weight like any other.
+         * keeps out minus those [putBack] and those in the library now ([kept]: liked, in a playlist, [libraryKeys]); each song's
+         * weight over the top weight of every song (avoided ones too), for the songs not kept out with a weight above 0. A song put
+         * back, or liked since, has its weight like any other.
          */
-        fun of(songs: List<Song>, artists: List<String>, putBack: Set<String> = emptySet()): MixTaste {
+        fun of(songs: List<Song>, artists: List<String>, putBack: Set<String> = emptySet(), kept: Set<String> = emptySet()): MixTaste {
             var max = 0.0
             for (s in songs) max = maxOf(max, s.weight)
             val avoid = HashSet<String>()
             val weights = HashMap<String, Double>()
             for (s in songs) {
-                val out = s.avoid && s.key !in putBack
+                val out = s.avoid && s.key !in putBack && s.key !in kept
                 if (out) avoid += s.key else if (max > 0 && s.weight > 0) weights[s.key] = s.weight / max
             }
             return MixTaste(artists, avoid, weights)
@@ -71,6 +73,19 @@ class MixTaste(
          * and the taste's [taste] artists that aren't among them (by `fold(primary(name))`), which keep `max(3, 8 − own)` places
          * (fewer when there are fewer); own fills the rest, first. With no own seeds, the taste alone.
          */
+        /**
+         * The library here by song key, read now (service.ts `kept`, mix-taste.ts `keptKeys`): the liked songs and every song of the
+         * listener's own playlists (as Library shows them). Never kept out of a mix, at once; the next taste counts them kept.
+         */
+        suspend fun libraryKeys(library: WebLibraryExportDao): HashSet<String> {
+            val out = HashSet<String>()
+            for (l in library.likes()) out += SongKey.songKey(l.track.title, l.track.artist)
+            for (p in library.playlists()) {
+                for (i in library.playlistItems(p.id, Int.MAX_VALUE)) out += SongKey.songKey(i.track.title, i.track.artist)
+            }
+            return out
+        }
+
         fun blendSeeds(own: List<String>, taste: List<String>): List<String> {
             val ownKeys = own.mapTo(HashSet()) { SongKey.fold(Credits.primary(it)) }
             val fromTaste = taste.filter { SongKey.fold(Credits.primary(it)) !in ownKeys }
@@ -87,7 +102,8 @@ class MixTaste(
 interface RecordMixTaste {
     /**
      * The taste for the mixes now: null with no import (no taste) or with "Use your record in mixes" off. Kept out = the taste's
-     * avoided songs minus the songs put back since, at once (the next taste has them so too).
+     * avoided songs minus the songs put back since and minus the library's songs now (liked, in a playlist), at once (the next taste
+     * has them so too).
      */
     suspend fun current(): MixTaste?
 
@@ -101,13 +117,14 @@ interface RecordMixTaste {
 
 /**
  * [RecordMixTaste] over the database: the taste's songs (key, weight, avoid) and seed artists (its body), read once per taste
- * (by its `computed_at`), the songs put back on every read, and the switch. The taste exists only while there is an import
- * (feature:record makes it then, and clears it with the import), so no taste row is no import.
+ * (by its `computed_at`), the songs put back and the library's songs on every read, and the switch. The taste exists only while
+ * there is an import (feature:record makes it then, and clears it with the import), so no taste row is no import.
  */
 @Singleton
 class RoomRecordMixTaste @Inject constructor(
     private val dao: RecordTasteDao,
     private val switch: RecordInMixesPreference,
+    private val library: WebLibraryExportDao,
 ) : RecordMixTaste {
     private class Cached(val computedAt: Long, val songs: List<MixTaste.Companion.Song>, val artists: List<String>)
 
@@ -126,7 +143,7 @@ class RoomRecordMixTaste @Inject constructor(
             Cached(snap.computedAt, snap.songs.map { MixTaste.Companion.Song(it.key, it.weight, it.avoid) }, seedArtistsOf(snap.body))
                 .also { cached = it }
         }
-        return MixTaste.of(c.songs, c.artists, dao.keepKeys().toHashSet())
+        return MixTaste.of(c.songs, c.artists, dao.keepKeys().toHashSet(), MixTaste.libraryKeys(library))
     }
 
     companion object {
