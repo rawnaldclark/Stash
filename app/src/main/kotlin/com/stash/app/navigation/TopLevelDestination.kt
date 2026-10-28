@@ -96,8 +96,11 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  */
 fun NavController.openRecord(mixes: Boolean = false) {
     if (currentDestination?.hasRoute<YourRecordRoute>() == true) return
-    // Under a mix opened from it: that record, as it was
-    if (popBackStack<YourRecordRoute>(inclusive = false)) return
+    // Right under a mix opened from it: that record, as it was (deeper down, a stack of pages is never thrown away for it)
+    if (previousBackStackEntry?.destination?.hasRoute<YourRecordRoute>() == true) {
+        popBackStack()
+        return
+    }
     navigate(YourRecordRoute(tab = if (mixes) "mixes" else null)) { launchSingleTop = true }
 }
 
