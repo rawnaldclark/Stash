@@ -381,9 +381,16 @@ class RecordImportsTest {
         events.clear()
         rig.writes.mutex.withLock {
             rig.imports.recordAfterScrobbles()
-            rig.imports.recordAfterLengths()
+            rig.imports.recordAfterLengths(ended = true)
         }
         assertThat(events).containsExactly("taste", "taste").inOrder()
+        // A slice while the pass goes on: the record's hours, never the taste (seconds of work on a big record, every 2 minutes)
+        events.clear()
+        val recordsBefore = rig.store.info.value.record
+        rig.writes.mutex.withLock { rig.imports.recordAfterLengths(ended = false) }
+        assertThat(events).isEmpty()
+        assertThat(rig.store.info.value.record).isNotNull()
+        assertThat(recordsBefore).isNotNull()
 
         events.clear()
         assertThat(rig.imports.removeImport()).isTrue()

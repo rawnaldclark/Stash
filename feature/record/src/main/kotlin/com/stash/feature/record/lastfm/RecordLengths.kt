@@ -72,7 +72,8 @@ class RecordLengths internal constructor(
     private val library: suspend () -> Map<String, Long>,
     private val writes: RecordWrites,
     /** The import record over the archive as it is now (service.ts `storeRecord`), under the lock. */
-    private val recordAfter: suspend () -> Unit,
+    /** After a slice that timed songs, under the write lock: the import record again (and, once the pass [ended], the taste). */
+    private val recordAfter: suspend (ended: Boolean) -> Unit,
     /** The plays changed: an open record reads them again. */
     private val changed: () -> Unit,
     /** Starts the job that calls [run] (a direct call in tests). */
@@ -342,7 +343,7 @@ class RecordLengths internal constructor(
                     }
                     val end = r.left == 0 || r.stopped != null
                     if (dirty && (end || shownAt.let { it == null || clock() - it >= REFRESH_MS })) {
-                        recordAfter()
+                        recordAfter(end)
                         dirty = false
                         shownAt = clock()
                         show = true

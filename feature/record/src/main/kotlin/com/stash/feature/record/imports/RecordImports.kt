@@ -950,12 +950,13 @@ class RecordImports internal constructor(
 
     /**
      * After a slice of the lengths pass that timed songs, under the write lock it holds: the import record over the archive as
-     * it is now, when there is one (service.ts `timeSongs`'s `storeRecord`, no import counted).
+     * it is now, when there is one (service.ts `timeSongs`'s `storeRecord`, no import counted), every 2 minutes at most; the
+     * taste only when the pass [ended] (a big record's taste takes seconds, and the hours are what the screens follow meanwhile).
      */
-    internal suspend fun recordAfterLengths() {
+    internal suspend fun recordAfterLengths(ended: Boolean = true) {
         if (store.info.value.record == null) return
         storeRecord(added = 0)
-        taste.refreshLocked()
+        if (ended) taste.refreshLocked()
     }
 
     /** The scrobbles changed (a run brought some, or they were removed): an open record presses itself again. */

@@ -206,6 +206,21 @@ class RecordLengthsTest {
         assertThat(h.changes).isEqualTo(h.records)
     }
 
+    @Test fun `the record's hours every two minutes, the taste only once the pass has ended`() = runTest {
+        val h = Harness(this, guessed(40, songs = 40), { _, _ -> LengthAnswer(200_000) })
+        val ended = mutableListOf<Boolean>()
+        val slow = RecordLengths(
+            newStore = { h.store }, reader = { a, t -> h.clock += 30_000; h.look.look(a, t) }, library = { emptyMap() }, writes = h.writes,
+            recordAfter = { ended += it }, changed = {}, launch = {}, cancelJob = {}, now = { nowS * 1000 }, clock = { h.clock },
+            gapMs = 0, busyMs = 0,
+        )
+        slow.run()
+        // 1 + 39/4 shown while it runs, then the end: only that one works the taste out again
+        assertThat(ended).hasSize(1 + 39 / 4 + 1)
+        assertThat(ended.dropLast(1).none { it }).isTrue()
+        assertThat(ended.last()).isTrue()
+    }
+
     @Test fun `three songs failing in a row end the run, however the slices fall - real busy waits, a clock that moves`() = runTest {
         val asked = mutableListOf<String>()
         // Last.fm down: every ask busy. A busy song waits 10 s (the test's time) before its second try; slices end after 20 s
