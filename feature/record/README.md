@@ -209,6 +209,8 @@ artists' and This week years ago, from the same taste on the same day as the web
 | `mixes/RecordMixesShelf.kt` | Home's "From your record": 3 cards from `homePicks(local day)`, their mosaics (`MixArt.kt`: your rows' covers, else the record's lookup for the first 4 albums), made again when the taste or the day changes; nothing without picks; Show all opens the record on Mixes |
 | `mixes/RecordMixScreen.kt`, `RecordMixViewModel.kt` | a mix's page (`RecordMixRoute(id)`, a normal screen with the mini player): the mosaic, heading, line, "N songs · about X", Play, Shuffle, Save as playlist (`RecordMixSaver`: a CUSTOM playlist of the rows found, each once, never kept offline, so nothing downloads; which playlist each mix went to is kept with a hash of its song keys, `RecordMixSaves`, so coming back shows Open while those songs are the mix and the playlist is in the library, and Save again once the songs change, as This week, years ago and the year so far do), "That mix isn’t in your record any more" when the taste no longer makes it, a line and Try again when the record can't be read, the way back always; every row's cover looked up as the page opens |
 | `mixes/RecordMixesTab.kt`, `RecordTabs.kt` | the record's "The record \| Mixes" (the tab picked last kept on this phone, Home's Show all opens Mixes): Mixes from your years (this week, the eras oldest first, the single mixes) and Your years, the web's cards over their albums' covers; with no import, what they need and Bring your listening. The source switches show on the record's tab only; the WebView is kept, hidden, while Mixes shows |
+| `mixes/HistoryMixes.kt` (5d), `RecordMixesTab.kt` | the rest of the Mixes tab, under Your years (routes/spotify/+page.svelte): Top artists (`topArtists`: the first 10 by time listened, their pictures from the record's artist lookup, "412 hours · 9,021 plays"; a row opens the artist's mix, or with fewer than 8 songs for one plays their songs, `artistSongs`), Top songs (years.ts `topSongs`, 10) and "Not in your Stash yet" (years.ts `notInLibrary`: the taste's lost favourites minus every song of the library by its words, the song's own colours and a play mark on each square as on the web, 50 at a time with Show more, a Play for them all). Their plays are "Playing from" Your record |
+| `mixes/RecordSongRow.kt`, `RecordSongActions.kt` | every song row of the Mixes tab and of a mix's page (TrackRow.svelte): a tap plays from it, the heart likes it, a long press opens the app's song menu (core:ui `TrackOptionsSheet`, as History's rows open it: Play next, Add to queue, Start radio, Save to playlist). The song is often only words, so each action finds or makes its row first, as a Search result's is kept (`RecordMatch`: your copy, the same song, else a stream-only row with the cover found). Like is Stash's Liked Songs alone (`StashLikedPlaylistRepository`: never Spotify or YouTube Music, nothing downloads unless Liked Songs itself is set to). A liked row leaves "Not in your Stash yet" at once (it is in the library now, so kept, never kept out); a heart fills at once and stays until the likes agree (`RowLikes`), and goes back if the like couldn't be written |
 | `bridge/RecordMatch.kt`, `RecordPlayback.kt` | a mix's songs as this phone's rows: your own row by its id, the rest through the hand-off's matcher with the history's Spotify id; a row with no cover takes the one found, on the queue at once and kept on the row (no blank queue art, the web's 10-24 bug): every cover the phone already knows before matching (`RecordArt.cached`, no network), the rest looked up once the queue is set and handed to core:media's `PlayerRepository.learnArtwork` (the queue's rows, the player's items, the playing one and the media session included). Shuffle as a playlist's (the queue shuffled); offline, only the songs with a file here |
 
 Home's section is `HomeSection.RECORD_MIXES` ("record_mixes"): a saved order without it gets it right before the first catalog
@@ -222,8 +224,14 @@ Adapted on purpose:
 - Shuffle shuffles the queue (the app's own Shuffle), where the web turns the player's shuffle on.
 - A history song's row shows no length (as the web's row), through an opt-in on core:ui's `DetailTrackRow`.
 - The Mixes tab without an import offers Spotify and Last.fm (the web's line also offers "your phone's history from the Stash app").
-
-Not yet: a mix's rows have no Like and no long-press menu (the web's rows have both); for later.
+- **A heart is a Stash like** (`stash_liked_at`, the heart Now Playing shows; `WebLibraryExportDao.stashLikes`), where the web's is
+  any like in its library: a song only in a Liked Songs playlist synced from Spotify shows an empty heart, and a tap likes it in
+  Stash, so a tap is never a dead one (an unlike here couldn't take it off Spotify). "Not in your Stash yet" still leaves out the
+  whole library, as the web's does.
+- The song menu is the app's: no Post to Community (it would post a song that may have no row yet), no Share (its links need ids a
+  history song lacks), no Download (nothing of the record downloads unasked), no Go to artist or album (the web's needs a source's
+  ids). The web's Like is a row of its menu too; here it is the heart alone.
+- A Top artists row that plays shows no mark, one that opens shows a faint chevron (the web's on a phone, where there is no hover).
 
 ### Its tests
 
@@ -235,6 +243,17 @@ Not yet: a mix's rows have no Like and no long-press menu (the web's rows have b
   one year and several, spellings, skips, avoided songs, the 50 cut, too few, the fixture's archive on 5 days); `rotation` and
   `homePicks` for every day 0..n+1 and far ones; `eraWhen` on a month's edge, `andList`, `aboutLength`; and the mix page's, the
   shelf's and the Mixes tab's words against the web's files. Run it again after a change to the web's rules.
+- `HistoryMixesVectorsTest`'s lists (`lists.json`, the same script): Top artists over the fixture and crafted tastes (8 songs open
+  and 7 play, a song put back or liked making the 8th, songs never listened to, a guest credit, an artist with no songs, the first
+  10 only, the hours and plays as the page says them), Top songs (ties by key, an avoided song in, a song only started out) and "Not
+  in your Stash yet" over tastes the web's `computeTaste` works out (library copies by words, ISRC, the second of two ISRC twins,
+  guest credits; a remaster that stays; kept, hidden, skipped, put back and liked songs; past the page of 50), with their lines.
+  The page's own <script> lines (the 10s, the 50, the library, the play-or-open rule) are ported in the script, which checks them
+  against the file.
+- `RecordSongActionsTest` (Like makes or finds the row then likes that row and nothing else; a failure says so; the menu's actions
+  on the row; the hearts at once, kept until the likes agree, back on a failure) and `RecordLikeRoomTest` (on a real database: a
+  lost song liked gets a stream-only row with its Spotify id and cover, joins Stash's Liked Songs, leaves the list, its heart
+  fills, nothing queued to download, nothing saved to Spotify; Unlike brings it back; a song with no id liked twice is one row).
 - `MixWordsLocalesTest` (every word in every language, plural forms included, a device language with no strings writing the
   English whole), `RecordMixesTest` (the taste read once per `computed_at`, kept out as the record shows it, the week stacked and
   read once a day, the local day, the library read once per stamp), `RecordMatchTest` (the
