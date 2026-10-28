@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -84,8 +85,19 @@ fun RecordMixScreen(
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalContext.current.resources
+    // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
+    val locales = LocalConfiguration.current.locales
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(resources)) }
     LaunchedEffect(viewModel) {
-        launch { viewModel.lines.collect { launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(it) } } }
+        launch {
+            viewModel.lines.collect { line ->
+                val text = when (line) {
+                    is RecordMixViewModel.Line.Saved -> resources.getString(R.string.record_mix_saved, line.name)
+                    RecordMixViewModel.Line.SaveFailed -> resources.getString(R.string.record_mix_save_failed)
+                }
+                launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(text) }
+            }
+        }
         viewModel.playNotes.collect { launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(it.text(resources)) } }
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

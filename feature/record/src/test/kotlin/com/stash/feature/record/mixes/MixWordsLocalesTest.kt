@@ -62,4 +62,15 @@ class MixWordsLocalesTest {
         assertWithMessage("zh").that(words("zh-CN").weekOneYear(9, 28, 2019)).contains("10月28日")
         assertWithMessage("29 Feb").that(words("en-US").weekOneYear(1, 29, 2024)).isEqualTo("Around February 29, 2024")
     }
+
+    @Test fun `a line's numbers are in one script - the language's own`() {
+        for (tag in listOf("ar-SA", "fa-IR")) {
+            val w = words(tag)
+            for (line in listOf(w.weekOneYear(9, 28, 2019), w.weekYears(9, 28, 7), w.span(w.monthYear(1_656_633_600_000), w.monthYear(1_680_307_199_999)), w.early(2018))) {
+                assertWithMessage("$tag: $line").that(line.none { it in '0'..'9' }).isTrue()
+            }
+        }
+        // English keeps its own
+        assertWithMessage("en").that(words("en-US").span(words("en-US").monthYear(1_654_041_600_000), "x")).isEqualTo("June 2022 – x")
+    }
 }

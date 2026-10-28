@@ -13,10 +13,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -43,11 +46,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onEach
@@ -68,6 +73,10 @@ fun RecordMixesSection(
     onShowAll: () -> Unit,
     viewModel: RecordMixesShelfViewModel = hiltViewModel(),
 ) {
+    // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
+    val res = LocalContext.current.resources
+    val locales = LocalConfiguration.current.locales
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(res)) }
     val cards by viewModel.cards.collectAsStateWithLifecycle()
     if (cards.isEmpty()) return
     CardRail(
@@ -128,8 +137,10 @@ internal fun mixDays(now: () -> Long = System::currentTimeMillis, zone: () -> Zo
 
 /**
  * [RecordMixesSection]'s cards: today's picks, made again when the taste changes (an import, a removal, the day's work-out, a
- * song put back) and when the day does; then each card's covers, one card after another (cached by album: at once after the
- * first time). Opening Home works the taste out again at most once a local day ([RecordTaste.daily]).
+ * song put back), when the library does (a song liked since plays from your copy), when the day turns and when the language
+ * does; then each card's covers, one card after another (cached by album: at once after the first time; a card made again keeps
+ * the covers it had, so nothing flickers). A read that fails keeps what Home shows. Opening Home works the taste out again at
+ * most once a local day ([RecordTaste.daily]).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -145,27 +156,41 @@ class RecordMixesShelfViewModel @Inject constructor(
     /** A mix's card: its id, words, how many songs (the line when it has none) and the squares of its tile. */
     data class Card(val id: String, val title: String, val sub: String, val songs: Int, val tiles: List<TileCover>)
 
-    val cards: StateFlow<List<Card>> = combine(mixes.changes, mixDays()) { _, _ -> }
-        .flatMapLatest {
+    /** The words, in the screen's language (by its tags): set by [RecordMixesSection]. */
+    private val words = MutableStateFlow<Pair<String, MixWords>?>(null)
+
+    fun useWords(tags: String, w: MixWords) {
+        if (words.value?.first != tags) words.value = tags to w
+    }
+
+    val cards: StateFlow<List<Card>> = combine(words.filterNotNull(), mixes.changes, mixes.libraryChanges, mixDays()) { w, _, _, _ -> w.second }
+        .flatMapLatest { w ->
             channelFlow {
                 val now = try {
-                    mixes.now()
+                    mixes.now(w)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    // Home keeps what it shows
                     Log.w(TAG, "the record's mixes couldn't be made: ${e.javaClass.simpleName}")
-                    null
+                    return@channelFlow
                 }
                 val picks = now?.picks.orEmpty()
-                val covers = picks.map { m -> m.items.map { it.lib?.art } }.toMutableList()
+                // A card made again keeps the covers it had (the same songs), until its own come
+                val covers = picks.map { m ->
+                    val had = lastCovers[m.id]?.takeIf { it.first == m.items.map { s -> s.key } }?.second
+                    m.items.mapIndexed { j, s -> s.lib?.art ?: had?.getOrNull(j) }
+                }.toMutableList()
                 fun cards() = picks.mapIndexed { i, m -> Card(m.id, m.title, m.sub, m.items.size, tileCovers(m.items, covers[i])) }
                 send(cards())
                 for ((i, m) in picks.withIndex()) {
                     try {
-                        covers[i] = mixCovers(art, m.items, albums = 4, retry = this) { sofar ->
-                            covers[i] = sofar
+                        val found = mixCovers(art, m.items, albums = 4, retry = this) { sofar ->
+                            covers[i] = sofar.mapIndexed { j, u -> u ?: covers[i].getOrNull(j) }
                             trySend(cards())
                         }
+                        covers[i] = found.mapIndexed { j, u -> u ?: covers[i].getOrNull(j) }
+                        lastCovers[m.id] = m.items.map { it.key } to covers[i]
                         send(cards())
                     } catch (e: CancellationException) {
                         throw e
@@ -185,5 +210,8 @@ class RecordMixesShelfViewModel @Inject constructor(
 
         /** The last cards made: what Home shows at once when it comes back, before they are made again. */
         @Volatile var last: List<Card> = emptyList()
+
+        /** Each mix's covers as last found, with the songs they were found for (by mix id). */
+        val lastCovers = java.util.concurrent.ConcurrentHashMap<String, Pair<List<String>, List<String?>>>()
     }
 }

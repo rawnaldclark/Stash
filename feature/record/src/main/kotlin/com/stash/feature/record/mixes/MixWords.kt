@@ -4,8 +4,11 @@ import android.content.res.Resources
 import com.stash.feature.record.R
 import com.stash.feature.record.imports.ImportText
 import android.text.format.DateFormat
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.DecimalStyle
 import java.util.Locale
 
 /**
@@ -80,7 +83,13 @@ class ResourceMixWords(private val res: Resources) : MixWords {
     private fun s(id: Int) = res.getString(id)
     private fun s(id: Int, vararg args: Any) = res.getString(id, *args)
 
-    override fun monthYear(t: Long) = ImportText.monthYear(res, t)
+    /** The language's own digits for every number of a line (a year, a day, a count), never two scripts in one line. */
+    private val digits: DecimalStyle = DecimalStyle.of(locale)
+
+    /** years.ts `monthYear`, "June 2022" (the import's own form), in UTC, with the language's digits. */
+    override fun monthYear(t: Long): String =
+        DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "MMMMyyyy"), locale).withDecimalStyle(digits)
+            .format(Instant.ofEpochMilli(t).atZone(ZoneOffset.UTC))
     override fun span(a: String, b: String) = s(R.string.record_mix_span, a, b)
     override fun early(year: Int) = s(R.string.record_mix_early, year)
     override fun mid(year: Int) = s(R.string.record_mix_mid, year)
@@ -108,7 +117,7 @@ class ResourceMixWords(private val res: Resources) : MixWords {
      */
     private fun monthDay(month0: Int, day: Int): String {
         val pattern = if (locale.language == "en") "MMMM d" else DateFormat.getBestDateTimePattern(locale, "MMMMd")
-        return DateTimeFormatter.ofPattern(pattern, locale).format(LocalDate.of(2000, month0 + 1, day))
+        return DateTimeFormatter.ofPattern(pattern, locale).withDecimalStyle(digits).format(LocalDate.of(2000, month0 + 1, day))
     }
 
     override fun weekOneYear(month0: Int, day: Int, year: Int) = s(R.string.record_mix_week_one_year, monthDay(month0, day), year)

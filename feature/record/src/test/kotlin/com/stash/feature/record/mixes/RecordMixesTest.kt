@@ -35,6 +35,7 @@ import java.time.ZoneOffset
 @Config(sdk = [33])
 class RecordMixesTest {
     private val res = ApplicationProvider.getApplicationContext<Context>().resources
+    private val words = ResourceMixWords(res)
     private val day = 86_400_000L
     private val now = java.time.LocalDateTime.of(2026, 7, 4, 15, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
     private val mid2025 = java.time.LocalDateTime.of(2025, 7, 4, 0, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
@@ -77,23 +78,23 @@ class RecordMixesTest {
         between = { from, to -> reads += from to to; imported.filter { it.s >= from && it.s < to }.shuffled() },
         own = RecordArchiveSource { _, emit -> ownReads[0]++; emit(own, true) },
         library = { library },
-        words = { ResourceMixWords(res) },
+        libraryStamp = flowOf(Unit),
         io = EmptyCoroutineContext,
     )
 
     @Test fun `no taste, no mixes`() = runTest {
-        assertThat(mixes(Db(null)).now(now, ZoneOffset.UTC)).isNull()
+        assertThat(mixes(Db(null)).now(words, now, ZoneOffset.UTC)).isNull()
     }
 
     @Test fun `the taste is read once per computed_at, and again when a new one is written`() = runTest {
         val songs = (1..9).map { stat("Song $it", "Band") }
         val db = Db(taste(songs, computedAt = 10))
         val m = mixes(db)
-        m.now(now, ZoneOffset.UTC)
-        m.now(now, ZoneOffset.UTC)
+        m.now(words, now, ZoneOffset.UTC)
+        m.now(words, now, ZoneOffset.UTC)
         coVerify(exactly = 1) { db.dao.whole() }
         db.taste = taste(songs, computedAt = 11)
-        assertThat(m.now(now, ZoneOffset.UTC)!!.taste.computedAt).isEqualTo(11)
+        assertThat(m.now(words, now, ZoneOffset.UTC)!!.taste.computedAt).isEqualTo(11)
         coVerify(exactly = 2) { db.dao.whole() }
     }
 
@@ -102,9 +103,9 @@ class RecordMixesTest {
             stat("Still out", "Band", avoid = true)
         val db = Db(taste(songs), keep = listOf(SongKey.songKey("Skipped", "Band")))
         // nothing put back, nothing liked: 7 songs, no mix
-        assertThat(mixes(Db(taste(songs))).now(now, ZoneOffset.UTC)!!.all).isEmpty()
+        assertThat(mixes(Db(taste(songs))).now(words, now, ZoneOffset.UTC)!!.all).isEmpty()
         val liked = LibrarySong(trackId = 42, title = "Liked", artist = "Band", album = "LP", durationMs = 181_000, art = "https://cdn-images.dzcdn.net/a.jpg")
-        val made = mixes(db, library = listOf(liked)).now(now, ZoneOffset.UTC)!!
+        val made = mixes(db, library = listOf(liked)).now(words, now, ZoneOffset.UTC)!!
         val stayed = made.find("constants")!!
         assertThat(stayed.items.map { it.title }).containsExactly("Song 1", "Song 2", "Song 3", "Song 4", "Song 5", "Song 6", "Song 7", "Skipped", "Liked").inOrder()
         // the liked one is your own row (it plays your copy, its cover and length are yours)
@@ -136,7 +137,7 @@ class RecordMixesTest {
             reads = reads,
             ownReads = ownReads,
         )
-        val week = m.now(now, ZoneOffset.UTC)!!.week!!
+        val week = m.now(words, now, ZoneOffset.UTC)!!.week!!
         assertThat(week.items.map { it.title }).containsExactly(
             // one play each, by key: the export's six, the phone's two plays (its skip is no listen), the free scrobble
             "Phone song", "Phone two", "Scrobbled", "Spotify 0", "Spotify 1", "Spotify 2", "Spotify 3", "Spotify 4", "Spotify 5",
@@ -148,11 +149,11 @@ class RecordMixesTest {
             mid2025.minusYears(4) - 3 * day, mid2025.minusYears(5) - 3 * day,
         ).inOrder()
         // read once a taste a day: the same day reads nothing again
-        m.now(now + 3_600_000L, ZoneOffset.UTC)
+        m.now(words, now + 3_600_000L, ZoneOffset.UTC)
         assertThat(reads).hasSize(6)
         assertThat(ownReads[0]).isEqualTo(1)
         // the next UTC day reads again
-        m.now(now + day, ZoneOffset.UTC)
+        m.now(words, now + day, ZoneOffset.UTC)
         assertThat(ownReads[0]).isEqualTo(2)
     }
 
@@ -161,9 +162,22 @@ class RecordMixesTest {
         val db = Db(taste(songs))
         // 23:30 in UTC−5 on 3 July is already 4 July in UTC
         val evening = java.time.LocalDateTime.of(2026, 7, 4, 4, 30).toInstant(ZoneOffset.UTC).toEpochMilli()
-        val m = mixes(db).now(evening, ZoneOffset.ofHours(-5))!!
+        val m = mixes(db).now(words, evening, ZoneOffset.ofHours(-5))!!
         assertThat(m.day).isEqualTo(java.time.LocalDate.of(2026, 7, 3).toEpochDay())
-        assertThat(mixes(db).now(evening, ZoneOffset.UTC)!!.day).isEqualTo(java.time.LocalDate.of(2026, 7, 4).toEpochDay())
+        assertThat(mixes(db).now(words, evening, ZoneOffset.UTC)!!.day).isEqualTo(java.time.LocalDate.of(2026, 7, 4).toEpochDay())
+    }
+
+    @Test fun `a week line that can't be made loses only this week, never the other mixes`() = runTest {
+        val db = Db(taste((1..9).map { stat("Song $it", "Band") }))
+        val spotify = (0 until 9).map { row("Spotify $it", "Band", mid2025 + it * 3_600_000L) }
+        val m = mixes(db, imported = spotify)
+        assertThat(m.now(words, now, ZoneOffset.UTC)!!.week).isNotNull()
+        val broken = object : MixWords by words {
+            override fun weekOneYear(month0: Int, day: Int, year: Int): String = error("a format this phone can't make")
+        }
+        val made = m.now(broken, now, ZoneOffset.UTC)!!
+        assertThat(made.week).isNull()
+        assertThat(made.all.map { it.id }).containsExactly("constants")
     }
 
     private fun Long.minusYears(n: Int): Long =

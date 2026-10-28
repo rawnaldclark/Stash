@@ -81,7 +81,8 @@ class RecordMixes internal constructor(
     private val own: RecordArchiveSource,
     /** The library here: the liked songs, then each of the listener's own playlists' songs. */
     private val library: suspend () -> List<LibrarySong>,
-    private val words: () -> MixWords,
+    /** Something new each time the library may have changed (a like, a playlist's songs). */
+    libraryStamp: Flow<Any>,
     /** A debug build writes what it made, for the web's code to be run over the same taste and rows. */
     private val dump: (suspend (String) -> Unit)? = null,
     private val io: CoroutineContext = Dispatchers.IO,
@@ -96,7 +97,7 @@ class RecordMixes internal constructor(
         between = { from, to -> plays.between(from, to).map { it.toArchivePlay() } },
         own = OwnArchive(library),
         library = { keptLibrary(library) },
-        words = { ResourceMixWords(context.resources) },
+        libraryStamp = library.libraryStamp(),
         dump = if (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             { text -> File(context.filesDir, DUMP_FILE).writeText(text) }
         } else {
@@ -107,6 +108,13 @@ class RecordMixes internal constructor(
     /** What the mixes follow: a new taste (an import, a removal, a day's work-out, a Last.fm top-up) and a song put back. */
     val changes: Flow<Pair<Long?, Set<String>>> =
         combine(tastes.computedAtFlow(), tastes.keepKeysFlow()) { at, keep -> at to keep.toSet() }.distinctUntilChanged()
+
+    /**
+     * The library's changes (a song liked, added to a playlist or taken out): Home's shelf and the Mixes tab make their mixes
+     * again (a song liked since plays from your copy and is never kept out), as the web's follow its library. A mix's page doesn't:
+     * liking a song there doesn't reshuffle the list under you.
+     */
+    val libraryChanges: Flow<Any> = libraryStamp.distinctUntilChanged()
 
     private val lock = Mutex()
     private var cachedTaste: Taste? = null
@@ -130,28 +138,30 @@ class RecordMixes internal constructor(
     }
 
     /**
-     * The mixes for [now] (Home picks by the local day in [zone]; "this week" by the UTC date, as the web reads them). Null with no
+     * The mixes for [now] (Home picks by the local day in [zone]; "this week" by the UTC date, as the web reads them), their words
+     * in [words]' language (the screen's: the app's own language setting reaches the Activity, not the Application). Null with no
      * taste. The library is read now, so a song liked since plays from your copy and is never kept out.
      */
-    suspend fun now(now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): MixesNow? = withContext(io) {
+    suspend fun now(words: MixWords, now: Long = System.currentTimeMillis(), zone: ZoneId = ZoneId.systemDefault()): MixesNow? = withContext(io) {
         val stored = stored() ?: return@withContext null
         val lib = library()
         val putBack = HashSet<String>(tastes.keepKeys())
         for (l in lib) putBack += SongKey.songKey(l.title, l.artist)
         val t = HistoryMixes.putBackIn(stored, putBack)
         val have = HistoryMixes.haveIndex(lib)
-        val w = words()
-        val all = HistoryMixes.historyMixes(t, have, w)
-        val rows = try {
-            weekRows(stored, now)
+        val all = HistoryMixes.historyMixes(t, have, words)
+        var rows: WeekRows? = null
+        val week = try {
+            val r = weekRows(stored, now)
+            rows = r
+            HistoryMixes.weekMix(r::between, t, now, have, words)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // The web's `weekMix(...).catch(() => null)`: the other mixes still show
-            Log.w(TAG, "this week, years ago couldn't be read: ${e.javaClass.simpleName}")
+            // The web's `weekMix(...).catch(() => null)`: only "this week" is lost, the other mixes still show
+            Log.w(TAG, "this week, years ago couldn't be made: ${e.javaClass.simpleName}")
             null
         }
-        val week = rows?.let { r -> HistoryMixes.weekMix(r::between, t, now, have, w) }
         val day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
         MixesNow(t, all, week, day).also { m -> dump?.let { write(it, m, lib, rows, now) } }
     }

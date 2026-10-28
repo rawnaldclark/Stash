@@ -1,6 +1,5 @@
 package com.stash.feature.record.mixes
 
-import android.content.Context
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -12,7 +11,6 @@ import com.stash.feature.record.bridge.RecordNote
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.bridge.RecordSong
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -64,7 +66,6 @@ class RecordMixViewModel @Inject constructor(
     private val art: RecordArt,
     private val playback: RecordPlayback,
     private val saver: RecordMixSaver,
-    @ApplicationContext private val app: Context,
 ) : ViewModel() {
     /** The mix's id ("era:1693526400000", "year:2018", "week"). */
     val id: String = savedState.get<String>(ID) ?: ""
@@ -97,42 +98,57 @@ class RecordMixViewModel @Inject constructor(
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
-    private val _lines = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    /** A line for the listener after Save as playlist (the screen says it in its language). */
+    sealed interface Line {
+        data class Saved(val name: String) : Line
 
-    /** Lines for the listener: saved, couldn't save. */
-    val lines: SharedFlow<String> = _lines.asSharedFlow()
+        data object SaveFailed : Line
+    }
+
+    private val _lines = MutableSharedFlow<Line>(extraBufferCapacity = 4)
+    val lines: SharedFlow<Line> = _lines.asSharedFlow()
+
+    /** The words, in the screen's language (by its tags): set by [RecordMixScreen]. */
+    private val words = MutableStateFlow<Pair<String, MixWords>?>(null)
+
+    fun useWords(tags: String, w: MixWords) {
+        if (words.value?.first != tags) words.value = tags to w
+    }
 
     /** What a tap came to when it couldn't play (none of the songs here, offline). */
     val playNotes: SharedFlow<RecordNote> = playback.notes
 
     init {
         viewModelScope.launch {
-            mixes.changes.collectLatest { load() }
+            combine(words.filterNotNull(), mixes.changes) { w, _ -> w.second }.collectLatest { load(it) }
         }
     }
 
-    private suspend fun load() {
+    private suspend fun load(w: MixWords) {
         val now = try {
-            mixes.now()
+            mixes.now(w)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // The page keeps what it shows: a database that can't be read isn't a mix gone
             Log.w(TAG, "the mix couldn't be made: ${e.javaClass.simpleName}")
-            null
+            return
         }
         val m = now?.find(id)
         if (now == null || m == null) {
             _state.value = State.Gone
             return
         }
-        val w = ResourceMixWords(app.resources)
-        val base = State.Found(
-            mix = m,
-            heading = HistoryMixes.mixHeading(m, now.taste),
-            line = HistoryMixes.mixLine(m, now.taste, w),
-            length = HistoryMixes.aboutLength(m.items, now.taste, w),
-            covers = m.items.map { it.lib?.art },
-        )
+        // aboutLength reads every song of the taste: off the main thread
+        val base = withContext(Dispatchers.Default) {
+            State.Found(
+                mix = m,
+                heading = HistoryMixes.mixHeading(m, now.taste),
+                line = HistoryMixes.mixLine(m, now.taste, w),
+                length = HistoryMixes.aboutLength(m.items, now.taste, w),
+                covers = m.items.map { it.lib?.art },
+            )
+        }
         _state.value = base
         try {
             val all = mixCovers(art, m.items, albums = Int.MAX_VALUE, retry = viewModelScope) { sofar -> show(m, sofar) }
@@ -172,12 +188,12 @@ class RecordMixViewModel @Inject constructor(
             try {
                 val pid = saver.save(f.mix.title, songsOf(f.mix.items, f.covers))
                 _saved.value = Saved(pid, f.mix.title)
-                _lines.tryEmit(app.getString(com.stash.feature.record.R.string.record_mix_saved, f.mix.title))
+                _lines.tryEmit(Line.Saved(f.mix.title))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "the mix couldn't be saved: ${e.javaClass.simpleName}")
-                _lines.tryEmit(app.getString(com.stash.feature.record.R.string.record_mix_save_failed))
+                _lines.tryEmit(Line.SaveFailed)
             } finally {
                 _saving.value = false
             }

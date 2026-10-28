@@ -1,6 +1,5 @@
 package com.stash.feature.record.mixes
 
-import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,6 +35,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -68,10 +70,13 @@ import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.bridge.RecordPlayback
 import com.stash.feature.record.imports.RecordImports
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
@@ -92,6 +97,10 @@ internal fun RecordMixesTab(
     onOpenMix: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The words in the screen's language (the app's own language setting reaches the Activity, not the Application)
+    val res = LocalContext.current.resources
+    val locales = LocalConfiguration.current.locales
+    LaunchedEffect(locales) { viewModel.useWords(locales.toLanguageTags(), ResourceMixWords(res)) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val bottom = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
     when (val s = state) {
@@ -241,7 +250,8 @@ private fun MixCard(c: RecordMixesTabViewModel.Card, modifier: Modifier, onOpen:
 
 /**
  * The Mixes tab's state: the two lists of cards, worked out the first time the tab shows (the record doesn't need them) and kept
- * while the record is shown again; made again when the taste changes. Each card's covers, one card after another, top first.
+ * while the record is shown again; made again when the taste, the library, the day or the language changes (off the main thread).
+ * Each card's covers, one card after another, top first. A read that fails keeps what the tab shows.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -250,7 +260,6 @@ class RecordMixesTabViewModel @Inject constructor(
     private val art: RecordArt,
     private val playback: RecordPlayback,
     private val imports: RecordImports,
-    @ApplicationContext private val app: Context,
 ) : ViewModel() {
     /** A card: the mix, its words (mix.ts `card`) and the covers of its first albums. */
     data class Card(val id: String, val title: String, val card: HistoryMixes.MixCard, val covers: List<String>)
@@ -265,27 +274,37 @@ class RecordMixesTabViewModel @Inject constructor(
     /** The mixes as made, for Play (their songs and the covers found so far). */
     private var made: Map<String, Pair<HistoryMix, List<String?>>> = emptyMap()
 
-    val state: StateFlow<State?> = combine(mixes.changes, mixDays()) { _, _ -> }
-        .flatMapLatest {
+    /** The words, in the screen's language (by its tags): set by [RecordMixesTab]. */
+    private val wordsIn = MutableStateFlow<Pair<String, MixWords>?>(null)
+
+    fun useWords(tags: String, w: MixWords) {
+        if (wordsIn.value?.first != tags) wordsIn.value = tags to w
+    }
+
+    val state: StateFlow<State?> = combine(wordsIn.filterNotNull(), mixes.changes, mixes.libraryChanges, mixDays()) { w, _, _, _ -> w.second }
+        .flatMapLatest { w ->
             channelFlow {
                 val now = try {
-                    mixes.now()
+                    mixes.now(w)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    // The tab keeps what it shows: a database that can't be read isn't "no import"
                     Log.w(TAG, "the record's mixes couldn't be made: ${e.javaClass.simpleName}")
-                    null
+                    return@channelFlow
                 }
                 if (now == null) {
                     send(State.None)
                     return@channelFlow
                 }
-                val w = ResourceMixWords(app.resources)
-                val stats = now.taste.songs.associateBy { it.key }
                 val (tab, years) = now.tab
                 val all = tab + years
                 val covers = all.map { m -> m.items.map { it.lib?.art } }.toMutableList()
-                val words = all.map { HistoryMixes.card(it, now.taste, w, stats) }
+                // Every card's words (How it started's walks every song of the taste): off the main thread
+                val words = withContext(Dispatchers.Default) {
+                    val stats = now.taste.songs.associateBy { it.key }
+                    all.map { HistoryMixes.card(it, now.taste, w, stats) }
+                }
                 fun state(): State {
                     made = all.indices.associate { all[it].id to (all[it] to covers[it]) }
                     val cards = all.indices.map { Card(all[it].id, all[it].title, words[it], cardCovers(covers[it])) }

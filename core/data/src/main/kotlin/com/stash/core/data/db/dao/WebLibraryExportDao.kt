@@ -432,6 +432,29 @@ interface WebLibraryExportDao {
     )
     suspend fun libraryLengths(): List<LibraryLength>
 
+    /** What the library here holds, in brief: the songs liked here, and every live song of every playlist (count and id sum). */
+    data class LibraryStamp(
+        @ColumnInfo(name = "liked") val liked: Long,
+        @ColumnInfo(name = "liked_ids") val likedIds: Long,
+        @ColumnInfo(name = "listed") val listed: Long,
+        @ColumnInfo(name = "listed_ids") val listedIds: Long,
+    )
+
+    /**
+     * [LibraryStamp], again each time Room sees `tracks` or `playlist_tracks` written (the caller keeps only the changes): Your
+     * record's mixes follow a song liked or added to a playlist, as the web's follow its library.
+     */
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked,
+            (SELECT COALESCE(SUM(id), 0) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked_ids,
+            (SELECT COUNT(*) FROM playlist_tracks WHERE removed_at IS NULL) AS listed,
+            (SELECT COALESCE(SUM(track_id), 0) FROM playlist_tracks WHERE removed_at IS NULL) AS listed_ids
+        """,
+    )
+    fun libraryStamp(): Flow<LibraryStamp>
+
     companion object {
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
         const val GUESS_MS = 210_000L
