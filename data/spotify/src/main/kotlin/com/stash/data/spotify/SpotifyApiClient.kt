@@ -154,10 +154,25 @@ class SpotifyApiClient @Inject constructor(
         const val SPOTIFY_OWNED_ID_PREFIX = "37i9dQ"
 
         /**
-         * Search terms that surface the recaps. "Your Top Songs" alone returns the
-         * yearly set; the all-time list only appeared for its own phrasing.
+         * Search terms that surface the mixes the home feed may leave out. "Your Top
+         * Songs" alone returns the yearly set; the all-time list only appeared for
+         * its own phrasing. Discover Weekly, Release Radar and the Daily Mixes went
+         * missing from a real account's home feed (2026-10-29: 30 "X Mix" / "X
+         * Radio" cards, none of these), so they're searched for by name too.
          */
-        private val YEARLY_SEARCH_TERMS = listOf("Your Top Songs", "Your All-Time Top Songs")
+        private val YEARLY_SEARCH_TERMS = listOf(
+            "Your Top Songs",
+            "Your All-Time Top Songs",
+            "Discover Weekly",
+            "Release Radar",
+            "Daily Mix",
+        )
+
+        /** A searched playlist name that is one of this listener's mixes, not a lookalike. */
+        internal fun isSearchedMixName(name: String): Boolean =
+            name.startsWith("Your", ignoreCase = true) ||
+                DAILY_MIX_REGEX.matches(name) ||
+                name.lowercase(java.util.Locale.ROOT) in SPOTIFY_MIX_NAMES
 
         internal fun isSpotifyMix(name: String, ownerId: String, playlistId: String = ""): Boolean {
             if (DAILY_MIX_REGEX.matches(name)) return true
@@ -525,7 +540,8 @@ class SpotifyApiClient @Inject constructor(
                         val id = uri.removePrefix("spotify:playlist:")
                         if (uri == id) continue                               // not a playlist
                         if (!id.startsWith(SPOTIFY_OWNED_ID_PREFIX)) continue // stranger's copy
-                        if (!name.startsWith("Your", ignoreCase = true)) continue
+                        if (id.startsWith(EDITORIAL_ID_PREFIX)) continue      // curated for everyone
+                        if (!isSearchedMixName(name)) continue
                         val art = d["images"]?.jsonObject?.get("items")?.jsonArray?.firstOrNull()
                             ?.jsonObject?.get("sources")?.jsonArray?.firstOrNull()
                             ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull

@@ -81,6 +81,8 @@ data class SpotifySyncPlaylist(
     val pinnedToHomeAt: Long? = null,
     /** The playlist's Save switch (#474's keep_offline): kept on the phone in either mode. */
     val keepOffline: Boolean = false,
+    /** Taken out of the library on its account's page: listed there only, so it can come back. */
+    val userHidden: Boolean = false,
 )
 
 /**
@@ -100,6 +102,8 @@ data class YouTubeSyncPlaylist(
     val pinnedToHomeAt: Long? = null,
     /** The playlist's Save switch (#474's keep_offline): kept on the phone in either mode. */
     val keepOffline: Boolean = false,
+    /** Taken out of the library on its account's page: listed there only, so it can come back. */
+    val userHidden: Boolean = false,
 )
 
 data class SyncUiState(
@@ -565,6 +569,8 @@ class SyncViewModel @Inject constructor(
      */
     fun onSavePlaylist(playlistId: Long, save: Boolean) {
         viewModelScope.launch {
+            // Saving one that's out of the library brings it back: saved is in.
+            if (save) playlistDao.setUserHidden(playlistId, false)
             if (save && !streamingPreference.current()) {
                 playlistDao.setSyncEnabledAndPin(playlistId, true, System.currentTimeMillis())
             }
@@ -608,6 +614,22 @@ class SyncViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * A playlist's "In your library" check, on its account's page: the way to
+     * turn off what a sync brought in and isn't wanted (2026-10-29). Out of the
+     * library it leaves Home, Library and Songs, and later syncs leave it alone;
+     * one being saved stops downloading too (songs already on the phone stay,
+     * as with the Download switch). Back in, it shows again.
+     */
+    fun onSetInLibrary(playlistId: Long, inLibrary: Boolean) {
+        viewModelScope.launch {
+            if (!inLibrary) {
+                musicRepository.setPlaylistDownload(playlistId, false)
+            }
+            playlistDao.setUserHidden(playlistId, !inLibrary)
         }
     }
 
@@ -913,6 +935,7 @@ class SyncViewModel @Inject constructor(
                                 hideFromHome = e.hideFromHome,
                                 pinnedToHomeAt = e.pinnedToHomeAt,
                                 keepOffline = e.keepOffline,
+                                userHidden = e.userHidden,
                             )
                         }
                     )
@@ -937,6 +960,7 @@ class SyncViewModel @Inject constructor(
                                 hideFromHome = e.hideFromHome,
                                 pinnedToHomeAt = e.pinnedToHomeAt,
                                 keepOffline = e.keepOffline,
+                                userHidden = e.userHidden,
                             )
                         }
                     )

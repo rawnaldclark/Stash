@@ -128,7 +128,10 @@ fun SyncScreen(
         }
     }
 
-    val rows = remember(uiState.spotifyPlaylists, uiState.youTubePlaylists) { uiState.playlistRows() }
+    // What's in the library: the account pages also list what was taken out.
+    val rows = remember(uiState.spotifyPlaylists, uiState.youTubePlaylists) {
+        uiState.playlistRows().filterNot { it.userHidden }
+    }
     val anyConnected = uiState.spotifyConnected || uiState.youTubeConnected
     val firstSource = when {
         uiState.spotifyConnected -> SyncSource.SPOTIFY
@@ -339,6 +342,8 @@ internal data class SyncPlaylistRow(
     val keepOffline: Boolean,
     val artUrl: String?,
     val source: SyncSource,
+    /** Taken out of the library: its account's page still lists it, nothing else does. */
+    val userHidden: Boolean = false,
 ) {
     /**
      * Kept on this phone: its Save switch, or, in Download mode, switched on for
@@ -350,9 +355,9 @@ internal data class SyncPlaylistRow(
 
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden)
     } + youTubePlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden)
     }
 
 /** "Mixes" is a service's own algorithmic playlists; everything else but Liked is the user's. */

@@ -177,4 +177,11 @@
     <string name="sync_saved_state">Saved</string>
     <string name="sync_not_saved_state">Not saved</string>
     <string name="sync_back">Back</string>
+    <string name="sync_manage_in_library_count">%1$d of %2$d in your library</string>
+    <string name="sync_manage_add_all">Add all</string>
+    <string name="sync_manage_remove_all">Remove all</string>
+    <string name="sync_manage_not_in_library">Not in your library</string>
+    <string name="sync_in_library">In your library</string>
+    <string name="sync_in_library_on">In your library</string>
+    <string name="sync_in_library_off">Not in your library</string>
 </resources>

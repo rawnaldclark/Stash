@@ -814,7 +814,7 @@ interface PlaylistDao {
     /** All Spotify playlists ordered by type (liked first, then mixes, then custom) and name. */
     @Query("""
         SELECT * FROM playlists
-        WHERE source = 'SPOTIFY' AND is_active = 1
+        WHERE source = 'SPOTIFY' AND (is_active = 1 OR user_hidden = 1)
         ORDER BY
             CASE type
                 WHEN 'LIKED_SONGS' THEN 0
@@ -828,7 +828,7 @@ interface PlaylistDao {
     /** All YouTube Music playlists ordered by type (liked first, then mixes) and name. */
     @Query("""
         SELECT * FROM playlists
-        WHERE source = 'YOUTUBE' AND is_active = 1
+        WHERE source = 'YOUTUBE' AND (is_active = 1 OR user_hidden = 1)
         ORDER BY
             CASE type
                 WHEN 'LIKED_SONGS' THEN 0
@@ -962,6 +962,23 @@ interface PlaylistDao {
      *  remaining silently hidden. */
     @Query("UPDATE playlists SET is_active = 1 WHERE id = :playlistId AND is_active = 0")
     suspend fun reactivateById(playlistId: Long): Int
+
+    /**
+     * Take a playlist out of the library, or put it back (the account page's
+     * "In your library"). Out is inactive, which every surface already leaves
+     * out, and off Home; sync leaves a hidden playlist alone. Back in shows it
+     * again; the next sync re-hides it as usual if the account no longer has it.
+     */
+    @Query(
+        """
+        UPDATE playlists SET
+            user_hidden = :hidden,
+            is_active = CASE WHEN :hidden THEN 0 ELSE 1 END,
+            pinned_to_home_at = CASE WHEN :hidden THEN NULL ELSE pinned_to_home_at END
+        WHERE id = :playlistId
+        """
+    )
+    suspend fun setUserHidden(playlistId: Long, hidden: Boolean)
 
     /**
      * Set [is_active] on one playlist, either direction. Used by app-managed

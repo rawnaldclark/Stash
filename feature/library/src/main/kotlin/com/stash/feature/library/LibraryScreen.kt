@@ -2813,7 +2813,7 @@ private fun LibraryEmptyState(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Your library is empty",
+            text = "No songs yet",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,

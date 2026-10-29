@@ -394,6 +394,55 @@ internal fun SaveCircle(
     }
 }
 
+/**
+ * A playlist's "In your library" check on its account's page: filled when the
+ * playlist shows on Home and in Library, empty once it's been taken out. 44dp
+ * touch target around a 24dp mark.
+ */
+@Composable
+internal fun InLibraryCheck(
+    inLibrary: Boolean,
+    playlistName: String,
+    label: String,
+    onState: String,
+    offState: String,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable(role = Role.Checkbox) { onToggle(!inLibrary) }
+            .semantics {
+                contentDescription = "$label: $playlistName"
+                stateDescription = if (inLibrary) onState else offState
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .then(
+                    if (inLibrary) Modifier.background(primary)
+                    else Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), CircleShape),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (inLibrary) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
+    }
+}
+
 /** A cover still on its way in: a quiet square and a short line where its name will be. */
 @Composable
 internal fun PendingCoverTile(modifier: Modifier = Modifier) {

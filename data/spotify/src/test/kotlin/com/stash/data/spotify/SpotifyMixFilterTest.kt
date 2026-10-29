@@ -1,5 +1,6 @@
 package com.stash.data.spotify
 
+import com.stash.data.spotify.SpotifyApiClient.Companion.isSearchedMixName
 import com.stash.data.spotify.SpotifyApiClient.Companion.isSpotifyMix
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -62,4 +63,15 @@ class SpotifyMixFilterTest {
     /** Absent id (older call sites / missing data) must not silently drop a mix. */
     @Test fun keepsWhenIdUnknown() =
         assertTrue(isSpotifyMix("Some Personalized Thing", "spotify"))
+
+    // Search finds the mixes the home feed leaves out (2026-10-29); a name search
+    // also returns lookalikes, so only the mixes' own names get through.
+    @Test fun searchKeepsDiscoverWeekly() = assertTrue(isSearchedMixName("Discover Weekly"))
+    @Test fun searchKeepsReleaseRadar()   = assertTrue(isSearchedMixName("Release Radar"))
+    @Test fun searchKeepsDailyMix()       = assertTrue(isSearchedMixName("Daily Mix 4"))
+    @Test fun searchKeepsYourTopSongs()   = assertTrue(isSearchedMixName("Your Top Songs 2025"))
+    @Test fun searchDropsLookalikes() {
+        assertFalse(isSearchedMixName("Discover Weekly Archive"))
+        assertFalse(isSearchedMixName("Daily Mix Vibes"))
+    }
 }

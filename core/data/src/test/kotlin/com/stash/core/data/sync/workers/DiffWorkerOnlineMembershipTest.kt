@@ -192,6 +192,24 @@ class DiffWorkerOnlineMembershipTest {
     }
 
     /**
+     * Taken out of the library from the account's playlist page: the account
+     * still has it, but sync neither brings it back nor links its songs.
+     */
+    @Test
+    fun `a playlist taken out of the library stays out after a sync`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        val id = seed(PlaylistType.CUSTOM, "spotify:playlist:mine", "My Playlist")
+        db.playlistDao().setUserHidden(id, true)
+
+        buildWorker().doWork()
+
+        val row = db.playlistDao().findBySourceId("spotify:playlist:mine")!!
+        assertEquals(false, row.isActive)
+        assertEquals(true, row.userHidden)
+        assertEquals(0, db.playlistDao().getTracksForPlaylist(id).size)
+    }
+
+    /**
      * Seeds a NOT-sync-enabled local playlist (what a fresh install produces for
      * everything but a mix) plus a remote snapshot of 3 fetched tracks.
      */

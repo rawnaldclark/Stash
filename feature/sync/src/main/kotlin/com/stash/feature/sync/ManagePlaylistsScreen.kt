@@ -41,6 +41,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.pluralStringResource
@@ -57,6 +58,7 @@ import com.stash.core.model.PlaylistType
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.components.CoverTile
+import com.stash.feature.sync.components.InLibraryCheck
 import com.stash.feature.sync.components.SaveCircle
 import com.stash.feature.sync.components.SyncAmbientBackdrop
 
@@ -171,9 +173,11 @@ fun ManagePlaylistsScreen(
                                 color = MaterialTheme.colorScheme.onBackground,
                             )
                         }
-                        if (tab == ManageTab.PLAYLISTS && shown.any { !it.saved(streamOnly) }) {
+                        // Saves what's in the library; one taken out stays out.
+                        val unsaved = shown.filter { !it.userHidden && !it.saved(streamOnly) }
+                        if (tab == ManageTab.PLAYLISTS && unsaved.isNotEmpty()) {
                             TextButton(onClick = {
-                                shown.filterNot { it.saved(streamOnly) }.forEach { viewModel.onSavePlaylist(it.id, true) }
+                                unsaved.forEach { viewModel.onSavePlaylist(it.id, true) }
                             }) { Text(stringResource(R.string.sync_manage_save_all)) }
                         }
                     }
@@ -209,6 +213,35 @@ fun ManagePlaylistsScreen(
                             selected = tab == ManageTab.LIKED,
                             onClick = { tab = ManageTab.LIKED },
                         )
+                    }
+                }
+            }
+
+            // How much of this tab is in the library, and the bulk way in or out: an account
+            // can bring 30 mixes nobody asked for.
+            if (shown.isNotEmpty() && q.isBlank()) {
+                item(key = "in-library-count") {
+                    val inLibrary = shown.count { !it.userHidden }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.sync_manage_in_library_count, inLibrary, shown.size),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (inLibrary < shown.size) {
+                            TextButton(onClick = {
+                                shown.filter { it.userHidden }.forEach { viewModel.onSetInLibrary(it.id, true) }
+                            }) { Text(stringResource(R.string.sync_manage_add_all)) }
+                        }
+                        if (inLibrary > 0) {
+                            TextButton(onClick = {
+                                shown.filterNot { it.userHidden }.forEach { viewModel.onSetInLibrary(it.id, false) }
+                            }) { Text(stringResource(R.string.sync_manage_remove_all)) }
+                        }
                     }
                 }
             }
@@ -251,6 +284,7 @@ fun ManagePlaylistsScreen(
                         row = row,
                         saved = row.saved(streamOnly),
                         onToggle = { viewModel.onSavePlaylist(row.id, it) },
+                        onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
                     )
                 }
             }
@@ -263,13 +297,23 @@ private fun PlaylistSaveRow(
     row: SyncPlaylistRow,
     saved: Boolean,
     onToggle: (Boolean) -> Unit,
+    onSetInLibrary: (Boolean) -> Unit,
 ) {
+    val inLibrary = !row.userHidden
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CoverTile(url = row.artUrl, modifier = Modifier.size(56.dp))
+        InLibraryCheck(
+            inLibrary = inLibrary,
+            playlistName = row.name,
+            label = stringResource(R.string.sync_in_library),
+            onState = stringResource(R.string.sync_in_library_on),
+            offState = stringResource(R.string.sync_in_library_off),
+            onToggle = onSetInLibrary,
+        )
+        CoverTile(url = row.artUrl, modifier = Modifier.size(56.dp).alpha(if (inLibrary) 1f else 0.4f))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = row.name,
@@ -281,9 +325,13 @@ private fun PlaylistSaveRow(
             )
             val songs = pluralStringResource(R.plurals.sync_songs_count, row.trackCount, row.trackCount)
             Text(
-                text = if (saved) stringResource(R.string.sync_manage_on_phone, songs) else songs,
+                text = when {
+                    !inLibrary -> stringResource(R.string.sync_manage_not_in_library)
+                    saved -> stringResource(R.string.sync_manage_on_phone, songs)
+                    else -> songs
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (saved) StashTheme.extendedColors.cyanLight else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (saved && inLibrary) StashTheme.extendedColors.cyanLight else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         SaveCircle(

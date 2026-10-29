@@ -285,6 +285,11 @@ class DiffWorker @AssistedInject constructor(
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+                if (localPlaylist.userHidden) {
+                    Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' is out of the library, skipping")
+                    skippedSwitchedOff++
+                    continue
+                }
 
                 // Skip playlists the user has switched off — EXCEPT algorithmic
                 // mixes, and EXCEPT anything at all in Online mode.
@@ -547,6 +552,9 @@ class DiffWorker @AssistedInject constructor(
             ) {
                 playlistDao.updateName(existing.id, snapshot.playlistName)
             }
+            // One the user took out of their library stays out: not
+            // reactivated, and the caller skips it (no linking, no downloads).
+            if (existing.userHidden) return existing
             // Re-activate a previously auto-hidden playlist when it
             // reappears in today's snapshot. Pairs with the post-loop
             // deactivateMissingForSource call below — without it, a mix

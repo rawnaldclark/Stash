@@ -37,7 +37,7 @@ internal fun noMatchMessage(noun: String, query: String, filter: SourceFilter = 
 }
 
 /**
- * What the Songs tab says with nothing downloaded at all (LibraryEmptyState in LibraryScreen):
+ * What the Songs tab says with no songs at all (LibraryEmptyState in LibraryScreen):
  * the body copy and where its main button leads. The three ways music arrives are always named
  * (sync, Search, import from the phone); the main button is Sync once a service is connected and
  * connecting one before that, because Sync now with nothing connected has nothing to fetch.
@@ -53,15 +53,16 @@ internal data class EmptyLibraryPrompt(
 internal fun emptyLibraryPrompt(anyServiceConnected: Boolean): EmptyLibraryPrompt =
     if (anyServiceConnected) {
         EmptyLibraryPrompt(
-            body = "Songs you download show up here. Sync your playlists, find songs in Search, " +
-                "or import audio files from this phone.",
+            // Not "songs you download": in Stream only this tab lists every synced song.
+            body = "Songs from the playlists you sync show up here. You can also find songs " +
+                "in Search, or import audio files from this phone.",
             primaryLabel = "Sync your playlists",
             connectFirst = false,
         )
     } else {
         EmptyLibraryPrompt(
-            body = "Songs you download show up here. Connect Spotify or YouTube Music to bring " +
-                "your playlists over, find songs in Search, or import audio files from this phone.",
+            body = "Connect Spotify or YouTube Music and your playlists' songs show up here. " +
+                "You can also find songs in Search, or import audio files from this phone.",
             primaryLabel = "Connect a music service",
             connectFirst = true,
         )

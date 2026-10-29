@@ -112,4 +112,15 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "keep_offline", defaultValue = "0")
     val keepOffline: Boolean = false,
+
+    /**
+     * The user took this playlist out of their library from its account's
+     * playlist page (the Sync tab overhaul, 2026-10-29). Hidden means inactive
+     * ([isActive] false), the state every surface already leaves out; this flag
+     * is what tells sync not to bring it back, and the playlist page to keep
+     * listing it so it can be turned back on. Separate from [syncEnabled]
+     * (Download mode: downloads) and [keepOffline] (on the phone).
+     */
+    @ColumnInfo(name = "user_hidden", defaultValue = "0")
+    val userHidden: Boolean = false,
 )

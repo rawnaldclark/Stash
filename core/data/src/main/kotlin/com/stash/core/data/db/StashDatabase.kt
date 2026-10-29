@@ -123,7 +123,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.RecordTasteEntity::class,
         com.stash.core.data.db.entity.RecordTasteKeepEntity::class,
     ],
-    version = 71,
+    version = 72,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1895,6 +1895,16 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v71 -> v72: `playlists.user_hidden`, a playlist taken out of the library from its
+         * account's page (the Sync tab overhaul). 0 for every row: nothing was hidden before.
+         */
+        val MIGRATION_71_72 = object : Migration(71, 72) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         /** `record_hidden` keyed by today's [com.stash.core.model.weblink.SongKey.songKey], the first spelling of each kept. */
         internal fun rekeyHidden(db: SupportSQLiteDatabase) {
             class Row(val key: String, val t: String, val a: String)
@@ -2023,6 +2033,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_68_69,
                 MIGRATION_69_70,
                 MIGRATION_70_71,
+                MIGRATION_71_72,
             )
         }
     }
