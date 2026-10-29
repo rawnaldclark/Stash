@@ -17,16 +17,25 @@ import com.stash.core.media.output.OutputSession
 import com.stash.core.media.output.StashAudioOutputProvider
 
 
-/** Samsung's c2.sec FLAC decoder mislabels 16-bit/44.1 output when float is requested. */
+/**
+ * Samsung's own audio decoders (`c2.sec.*`, and `OMX.SEC.*` on older phones: the Note 9 on Android 10) answer a request for
+ * float PCM by going on with 16-bit while saying float, so 16-bit FLAC plays as loud static and the sink sees time jump
+ * (UnexpectedDiscontinuityException, #705). Their names are matched whatever the case (the Note 9's is upper case), for
+ * every audio format, and passed over while another decoder can play it.
+ */
+internal fun isSamsungAudioDecoder(name: String): Boolean =
+    name.startsWith("c2.sec.", ignoreCase = true) || name.startsWith("OMX.sec.", ignoreCase = true)
+
+/** [all] without Samsung's audio decoders ([isSamsungAudioDecoder]), unless they are all there is. */
+internal fun <T> withoutSamsungAudio(mimeType: String, all: List<T>, name: (T) -> String): List<T> {
+    if (!MimeTypes.isAudio(mimeType)) return all
+    val safe = all.filterNot { isSamsungAudioDecoder(name(it)) }
+    return safe.ifEmpty { all }
+}
+
 @OptIn(UnstableApi::class)
-private val flacSafeSelector = MediaCodecSelector { mimeType, secure, tunneling ->
-    val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
-    if (mimeType == MimeTypes.AUDIO_FLAC) {
-        val safe = all.filterNot { it.name.startsWith("c2.sec.") || it.name.startsWith("OMX.sec.") }
-        if (safe.isNotEmpty()) safe else all
-    } else {
-        all
-    }
+private val samsungSafeSelector = MediaCodecSelector { mimeType, secure, tunneling ->
+    withoutSamsungAudio(mimeType, MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)) { it.name }
 }
 /**
  * RenderersFactory that builds Stash's audio sink: Media3's [DefaultAudioSink]
@@ -70,7 +79,7 @@ class StashRenderersFactory(
     /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
     val outputSession = OutputSession(mainPlayback)
     init {
-        setMediaCodecSelector(flacSafeSelector)
+        setMediaCodecSelector(samsungSafeSelector)
     }
 
     override fun buildAudioSink(

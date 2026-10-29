@@ -1138,6 +1138,16 @@ class StashPlaybackService : MediaLibraryService() {
             ) {
                 hiResOutputController.onSourceFormat(session, format.toSourceFormat())
             }
+
+            // The decoder's name, for the diagnostics bundle's log tail (#705: which one a phone picked)
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                android.util.Log.i("StashPlayback", "audio decoder: $decoderName")
+            }
         })
         return player
     }
