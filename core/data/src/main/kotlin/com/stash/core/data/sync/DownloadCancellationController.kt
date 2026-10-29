@@ -22,4 +22,20 @@ class DownloadCancellationController @Inject constructor(
             .cancelUniqueWork(SingleTrackDownloadEnqueuer.workName(queueId))
         return true
     }
+
+    /**
+     * Clear queue: every waiting and running download is cancelled, and the running
+     * ones stop (owner, 2026-10-29). Returns how many were cancelled.
+     */
+    suspend fun cancelAll(): Int = downloadQueueDao.activeIds().count { cancel(it) }
+
+    /**
+     * Rows marked downloading with no job behind them (the app was killed mid-download)
+     * go back to waiting, so they don't show as downloading until the next sync. Held
+     * against claims, so a download starting now can't be caught between its claim and
+     * its registration (DownloadJobRegistry.claimAndRegister).
+     */
+    suspend fun releaseDeadClaims(): Int = jobs.withClaimsHeld {
+        downloadQueueDao.inProgressIds().filterNot(jobs::isLive).sumOf { downloadQueueDao.releaseClaim(it) }
+    }
 }

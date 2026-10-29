@@ -46,9 +46,9 @@ class DownloadQueueDaoManagementTest {
         seedTrack(1, "Newest", "Artist C", "Album C", "art-c")
         seedTrack(2, "Oldest", "Artist A", "Album A", "art-a")
         seedTrack(3, "Middle", "Artist B", "Album B", null)
-        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 300)
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 300, userRequested = true)
         seedQueue(2, 2, DownloadStatus.IN_PROGRESS, createdAt = 100)
-        seedQueue(3, 3, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 200)
+        seedQueue(3, 3, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 200, userRequested = true)
 
         val rows = dao.observeActiveDownloadRows().first()
 
@@ -58,6 +58,36 @@ class DownloadQueueDaoManagementTest {
         assertEquals("Album A", rows[0].album)
         assertEquals("art-a", rows[0].albumArtUrl)
         assertEquals(DownloadStatus.WAITING_FOR_LOSSLESS, rows[1].status)
+    }
+
+    @Test fun active_feed_leaves_out_waiting_rows_no_download_will_take() = runTest {
+        val syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
+        (1L..6L).forEach { seedTrack(it, "Track $it", "Artist $it", "Album", null) }
+        seedPlaylistMembership(trackId = 2)
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100, userRequested = true) // a tap
+        seedQueue(2, 2, DownloadStatus.PENDING, createdAt = 200, syncId = syncId) // a switched-on playlist's
+        seedQueue(3, 3, DownloadStatus.PENDING, createdAt = 300, syncId = syncId) // its playlist is gone
+        seedQueue(4, 4, DownloadStatus.PENDING, createdAt = 400) // a leftover nobody asked for
+        seedQueue(5, 5, DownloadStatus.PENDING, createdAt = 500, userRequested = true) // blocked below
+        seedQueue(6, 6, DownloadStatus.IN_PROGRESS, createdAt = 600) // running: always shown
+        db.trackBlocklistDao().insert(
+            com.stash.core.data.db.entity.TrackBlocklistEntity(canonicalKey = "artist 5|track 5", artist = "Artist 5", title = "Track 5", blockedAt = 1L, blockedFrom = "OTHER"),
+        )
+
+        val rows = dao.observeActiveDownloadRows().first()
+
+        assertEquals(listOf(1L, 2L, 6L), rows.map { it.queueId })
+    }
+
+    @Test fun active_and_in_progress_ids_feed_clear_queue_and_dead_claims() = runTest {
+        (1L..4L).forEach { seedTrack(it, "Track $it", "Artist", "Album", null) }
+        seedQueue(1, 1, DownloadStatus.PENDING, createdAt = 100)
+        seedQueue(2, 2, DownloadStatus.IN_PROGRESS, createdAt = 200)
+        seedQueue(3, 3, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 300)
+        seedQueue(4, 4, DownloadStatus.COMPLETED, createdAt = 400, completedAt = 500)
+
+        assertEquals(setOf(1L, 2L, 3L), dao.activeIds().toSet())
+        assertEquals(listOf(2L), dao.inProgressIds())
     }
 
     @Test fun history_orders_by_terminal_time_with_created_fallback_and_honors_limit() = runTest {
@@ -274,6 +304,7 @@ class DownloadQueueDaoManagementTest {
         error: String? = null,
         failureType: DownloadFailureType = DownloadFailureType.NONE,
         syncId: Long? = null,
+        userRequested: Boolean = false,
     ) {
         dao.insert(
             DownloadQueueEntity(
@@ -286,6 +317,7 @@ class DownloadQueueDaoManagementTest {
                 errorMessage = error,
                 failureType = failureType,
                 syncId = syncId,
+                userRequested = userRequested,
             )
         )
     }
