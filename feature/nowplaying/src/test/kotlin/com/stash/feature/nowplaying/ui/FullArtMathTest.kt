@@ -41,6 +41,18 @@ class FullArtMathTest {
         assertEquals(1, s.pageAt(7))
     }
 
+    @Test fun `#387 - with Cycle album art off the page shown stays the whole song`() {
+        val s = fullArtSchedule(383_000L, 10, cycle = false)
+        assertEquals(listOf(0), s.pages)
+        assertEquals(0, s.segmentAt(0L))
+        assertEquals(0, s.segmentAt(200_000L))
+        assertEquals(0, s.segmentAt(400_000L))
+        // An unknown length doesn't turn either
+        val unknown = fullArtSchedule(0L, 10, cycle = false)
+        assertEquals(false, unknown.endless)
+        assertEquals(0, unknown.segmentAt(60 * FULL_ART_UNKNOWN_HOLD_MS))
+    }
+
     @Test fun `a square page pans across its crop then rests`() {
         // 390 x 520 art: a square page is 520 wide, 130 hidden; at 16 px/s that's about 8 s.
         val start = panCrop(1200f, 1200f, 390f, 520f, elapsedS = 0f, direction = 1, holdS = 38f, speedPxPerS = 16f)
