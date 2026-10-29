@@ -67,9 +67,9 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
 
 /**
  * The play/radio row's height, links or not: 56 dp play coin, or listeners + Support over a row
- * of 32 dp link coins. Fixed so the links landing late never move the name.
+ * of 40 dp link coins. Fixed so the links landing late never move the name.
  */
-private val HeroControlsHeight = 68.dp
+private val HeroControlsHeight = 76.dp
 
 /**
  * Links the header leaves to About, so the few that fit beside play and radio stay a usable
@@ -307,7 +307,7 @@ fun ArtistHero(
                     }
                     if (links.isNotEmpty()) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             // Many links scroll; reversed so the row starts from its right end.
                             modifier = Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true),
                         ) {
@@ -317,7 +317,7 @@ fun ArtistHero(
                                     shape = CircleShape,
                                     color = background.copy(alpha = 0.45f),
                                     border = BorderStroke(1.dp, ink.copy(alpha = 0.18f)),
-                                    modifier = Modifier.size(32.dp),
+                                    modifier = Modifier.size(40.dp),
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         val brand = socialIconFor(social.kind)
@@ -326,14 +326,14 @@ fun ArtistHero(
                                                 painter = painterResource(brand),
                                                 contentDescription = social.kind,
                                                 tint = ink.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(16.dp),
+                                                modifier = Modifier.size(20.dp),
                                             )
                                         } else {
                                             Icon(
                                                 imageVector = Icons.Default.Public,
                                                 contentDescription = social.kind,
                                                 tint = ink.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(16.dp),
+                                                modifier = Modifier.size(20.dp),
                                             )
                                         }
                                     }
