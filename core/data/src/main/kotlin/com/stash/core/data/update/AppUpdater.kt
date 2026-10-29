@@ -87,6 +87,8 @@ class AppUpdater @Inject constructor(
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(listener)
+        // Installed (or nothing to install): the downloaded APK, ~170 MB, has done its job.
+        if (_available.value == null) scope.launch { File(context.cacheDir, DIR).deleteRecursively() }
     }
 
     /** Whether the sheet should come up for [update] now: not put off with Later in the last day. */
