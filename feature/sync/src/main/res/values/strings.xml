@@ -107,5 +107,74 @@
     </plurals>
     <string name="sync_studio_only_title">Studio recordings only</string>
     <string name="sync_studio_only_desc">Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.</string>
-</resources>
+    <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
+    <string name="sync_arrival_title">How should your music arrive?</string>
+    <string name="sync_arrival_stream_title">Stream everything</string>
+    <string name="sync_arrival_recommended">Recommended</string>
+    <string name="sync_arrival_stream_body">Surface your library for streaming.</string>
+    <string name="sync_arrival_save_title">Save to this phone</string>
+    <string name="sync_arrival_save_body">Pick the playlists you want to download.</string>
+    <string name="sync_arrival_sync_now">Sync now</string>
+    <string name="sync_arrival_change_later">Change it any time from the top of Sync.</string>
 
+    <!-- Sync tab overhaul: nothing connected / ready -->
+    <string name="sync_firstrun_title">Bring your music in</string>
+    <string name="sync_firstrun_body">Connect an account and sync. Every playlist, mix and liked song shows up on Home and in Library.</string>
+    <string name="sync_connect_spotify">Connect Spotify</string>
+    <string name="sync_connect_youtube">Connect YouTube Music</string>
+    <string name="sync_connect_lastfm">Also use Last.fm for scrobbles</string>
+    <string name="sync_ready_body">Tap Sync and every playlist, mix and liked song shows up on Home and in Library.</string>
+
+    <!-- Sync tab overhaul: synced -->
+    <string name="sync_home_title">Your music is here</string>
+    <string name="sync_home_summary">%1$s · %2$s · %3$s</string>
+    <string name="sync_home_synced_ago">synced %1$s</string>
+    <string name="sync_open_library">Open Library</string>
+    <string name="sync_account_summary">%1$s · %2$s</string>
+    <plurals name="sync_songs_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="sync_mixes_count">
+        <item quantity="one">%d mix</item>
+        <item quantity="other">%d mixes</item>
+    </plurals>
+    <string name="sync_auto_sync">Auto-sync</string>
+    <string name="sync_auto_sync_off">Off</string>
+    <string name="sync_auto_sync_at">At %1$s</string>
+    <string name="sync_auto_sync_at_wifi">At %1$s · Wi-Fi</string>
+    <string name="sync_history_row">History, blocked songs, undo</string>
+    <string name="sync_accounts_row">Accounts</string>
+
+    <!-- Sync tab overhaul: syncing -->
+    <string name="sync_syncing_title">Bringing in your music</string>
+    <string name="sync_syncing_body">Play anything that\'s landed. You can leave this screen.</string>
+    <string name="sync_stop">Stop</string>
+
+    <!-- Sync tab overhaul: Download mode -->
+    <string name="sync_download_title">On this phone</string>
+    <string name="sync_download_choose">Choose what to save</string>
+    <string name="sync_download_note">Download mode plays your downloads and hides anything that\'s not downloaded.</string>
+    <string name="sync_download_none">Nothing saved yet.</string>
+    <string name="sync_saved_cd">Saved</string>
+
+    <!-- Sync tab overhaul: History screen -->
+    <string name="sync_history_title">History</string>
+    <string name="sync_history_mixes_section">Mixes</string>
+
+    <!-- Sync tab overhaul: an account's playlists -->
+    <string name="sync_manage_all_in_library">All in your library</string>
+    <string name="sync_manage_pick_to_save">Pick what to keep on this phone</string>
+    <string name="sync_manage_save_all">Save all</string>
+    <string name="sync_manage_search">Search playlists and mixes</string>
+    <string name="sync_manage_tab_playlists">Playlists %1$d</string>
+    <string name="sync_manage_tab_mixes">Mixes %1$d</string>
+    <string name="sync_manage_tab_liked">Liked</string>
+    <string name="sync_manage_on_phone">%1$s · on this phone</string>
+    <string name="sync_manage_no_match">No playlists matching “%1$s”</string>
+    <string name="sync_manage_empty">Nothing here yet. It fills in as Sync reads your account.</string>
+    <string name="sync_save">Save</string>
+    <string name="sync_saved_state">Saved</string>
+    <string name="sync_not_saved_state">Not saved</string>
+    <string name="sync_back">Back</string>
+</resources>

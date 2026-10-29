@@ -138,3 +138,6 @@ data class MixBrowseRoute(val rail: String)
 /** Full-screen per-source playlist management; [source] is a [SyncSource] name. */
 @Serializable
 data class ManagePlaylistsRoute(val source: String)
+
+/** The Sync tab's "History, blocked songs, undo" screen. */
+@Serializable data object SyncHistoryRoute

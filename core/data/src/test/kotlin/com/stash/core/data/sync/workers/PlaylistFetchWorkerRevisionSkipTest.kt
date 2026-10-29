@@ -91,6 +91,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         every { syncPreferencesManager.discoverAutoMixes } returns flowOf(false)
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
         coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Empty("no liked songs")
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true, revisionId = revision),

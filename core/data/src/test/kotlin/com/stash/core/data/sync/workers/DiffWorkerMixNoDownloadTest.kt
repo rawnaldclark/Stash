@@ -80,6 +80,7 @@ class DiffWorkerMixNoDownloadTest {
         coEvery { streamingPreference.current() } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
     }
 
     @After

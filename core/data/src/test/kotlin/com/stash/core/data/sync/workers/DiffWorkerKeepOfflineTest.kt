@@ -69,6 +69,7 @@ class DiffWorkerKeepOfflineTest {
         coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
         coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns emptyList()
     }
 

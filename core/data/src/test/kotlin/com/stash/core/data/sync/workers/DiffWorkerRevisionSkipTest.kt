@@ -78,6 +78,7 @@ class DiffWorkerRevisionSkipTest {
         coEvery { streamingPreference.current() } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
         // The run the snapshots belong to: a download the diff queues refers to it.
         runBlocking { assertEquals(1L, db.syncHistoryDao().insert(SyncHistoryEntity())) }
     }

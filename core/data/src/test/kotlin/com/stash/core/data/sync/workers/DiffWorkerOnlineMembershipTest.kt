@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,6 +79,7 @@ class DiffWorkerOnlineMembershipTest {
         coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
     }
 
     @After
@@ -134,6 +137,61 @@ class DiffWorkerOnlineMembershipTest {
     }
 
     /**
+     * "Stream everything" on the first-sync sheet: a playlist this sync finds for
+     * the first time goes on Home's Your playlists rail, so a new user's account
+     * shows up without picking anything. Pinned only, never switched on: in
+     * Download mode a switched-on playlist downloads (#368).
+     */
+    @Test
+    fun `a newly found playlist goes on Home after Stream everything`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(true)
+        seedRemote(PlaylistType.CUSTOM, "spotify:playlist:new", "New Playlist")
+
+        buildWorker().doWork()
+
+        val row = db.playlistDao().findBySourceId("spotify:playlist:new")!!
+        assertNotNull(row.pinnedToHomeAt)
+        assertEquals(false, row.syncEnabled)
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
+    }
+
+    /** Everyone who didn't pick it (every upgrading install) keeps Home as they arranged it. */
+    @Test
+    fun `a newly found playlist stays off Home without Stream everything`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        seedRemote(PlaylistType.CUSTOM, "spotify:playlist:new", "New Playlist")
+
+        buildWorker().doWork()
+
+        assertNull(db.playlistDao().findBySourceId("spotify:playlist:new")!!.pinnedToHomeAt)
+    }
+
+    /** Download mode: a pinned playlist would sit on Home with nothing on the phone. */
+    @Test
+    fun `a newly found playlist stays off Home in Download mode`() = runBlocking {
+        coEvery { streamingPreference.current() } returns false
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(true)
+        seedRemote(PlaylistType.CUSTOM, "spotify:playlist:new", "New Playlist")
+
+        buildWorker().doWork()
+
+        assertNull(db.playlistDao().findBySourceId("spotify:playlist:new")!!.pinnedToHomeAt)
+    }
+
+    /** Mixes have their own Home rails; pinning one would also make it lead its rail forever. */
+    @Test
+    fun `a newly found mix is not pinned`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(true)
+        seedRemote(PlaylistType.DAILY_MIX, "spotify:playlist:37i9mix", "Daily Mix 1")
+
+        buildWorker().doWork()
+
+        assertNull(db.playlistDao().findBySourceId("spotify:playlist:37i9mix")!!.pinnedToHomeAt)
+    }
+
+    /**
      * Seeds a NOT-sync-enabled local playlist (what a fresh install produces for
      * everything but a mix) plus a remote snapshot of 3 fetched tracks.
      */
@@ -152,7 +210,12 @@ class DiffWorkerOnlineMembershipTest {
                 syncEnabled = false,
             )
         )
+        seedRemote(type, sourceId, name)
+        return id
+    }
 
+    /** A remote snapshot of 3 fetched tracks, with no local playlist yet unless [seed] made one. */
+    private fun seedRemote(type: PlaylistType, sourceId: String, name: String) {
         val snapshotId = 7L
         coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(
             RemotePlaylistSnapshotEntity(
@@ -175,7 +238,6 @@ class DiffWorkerOnlineMembershipTest {
                 position = i,
             )
         }
-        return id
     }
 
     private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)

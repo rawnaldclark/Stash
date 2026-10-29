@@ -56,6 +56,17 @@ import kotlinx.coroutines.flow.first
 internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
 
 /**
+ * Whether a playlist sync finds for the first time goes straight onto Home's
+ * Your playlists rail: after "Stream everything" on the first-sync sheet
+ * ([pinNewPlaylists]), in Stream only, and only the user's own playlists. Mixes
+ * have their own Home rails and Liked Songs its own card. In Download mode a
+ * pinned playlist would sit on Home with nothing on the phone, so it waits for
+ * its Save switch like before.
+ */
+internal fun pinOnDiscovery(type: PlaylistType, streamingMode: Boolean, pinNewPlaylists: Boolean): Boolean =
+    pinNewPlaylists && streamingMode && type == PlaylistType.CUSTOM
+
+/**
  * The type to re-write onto an existing playlist row, or null to leave it.
  *
  * `playlists.type` used to be write-once, set by whichever fetch pass saw the
@@ -250,6 +261,7 @@ class DiffWorker @AssistedInject constructor(
             // rely on it) but skip the `download_queue` enqueue. Tracks
             // become available via streaming-tap through KennyySource.
             val streamingMode = streamingPreference.current()
+            val pinNewPlaylists = syncPreferencesManager.pinNewPlaylists.first()
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
@@ -272,7 +284,7 @@ class DiffWorker @AssistedInject constructor(
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
-                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
+                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
 
                 // Skip playlists the user has switched off — EXCEPT algorithmic
                 // mixes, and EXCEPT anything at all in Online mode.
@@ -495,6 +507,7 @@ class DiffWorker @AssistedInject constructor(
     private suspend fun findOrCreatePlaylist(
         snapshot: RemotePlaylistSnapshotEntity,
         streamingMode: Boolean,
+        pinNewPlaylists: Boolean,
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
         if (existing != null) {
@@ -567,6 +580,11 @@ class DiffWorker @AssistedInject constructor(
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
+            pinnedToHomeAt = if (pinOnDiscovery(snapshot.playlistType, streamingMode, pinNewPlaylists)) {
+                System.currentTimeMillis()
+            } else {
+                null
+            },
         )
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most

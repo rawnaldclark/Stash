@@ -98,6 +98,8 @@ class SyncPreferencesManager @Inject constructor(
         val SYNC_DAYS = intPreferencesKey("sync_days")
         val DISCOVER_AUTO_MIXES = booleanPreferencesKey("discover_auto_mixes")
         val AUTO_SYNC_PAUSED_AFTER_UNDO = booleanPreferencesKey("auto_sync_paused_after_undo")
+        val ARRIVAL_CHOSEN = booleanPreferencesKey("first_sync_arrival_chosen")
+        val PIN_NEW_PLAYLISTS = booleanPreferencesKey("pin_new_playlists_to_home")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -163,6 +165,25 @@ class SyncPreferencesManager @Inject constructor(
      */
     val syncDays: Flow<Int> =
         context.syncPrefsDataStore.data.map { it[Keys.SYNC_DAYS] ?: 0b1111111 }
+
+    /**
+     * Whether the first-sync sheet ("How should your music arrive?") has been
+     * answered. A new install's first Sync asks before it runs; an install that
+     * has synced before never sees the sheet, and keeps its mode and switches
+     * (the Sync tab overhaul, 2026-10-29).
+     */
+    val arrivalChosen: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.ARRIVAL_CHOSEN] ?: false }
+
+    /**
+     * Whether a playlist sync finds for the first time goes on Home's Your
+     * playlists rail. Turned on by "Stream everything" on the first-sync sheet,
+     * so a new user's whole account shows up on Home without picking anything.
+     * Off for everyone else: their Home stays as they arranged it. Pins only;
+     * never touches sync_enabled, which in Download mode would download (#368).
+     */
+    val pinNewPlaylists: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.PIN_NEW_PLAYLISTS] ?: false }
 
     private fun resolveSpotifyMode(
         prefs: androidx.datastore.preferences.core.Preferences,
@@ -243,6 +264,19 @@ class SyncPreferencesManager @Inject constructor(
     /** Persist whether sync discovers the service's own algorithmic mixes. */
     suspend fun setDiscoverAutoMixes(enabled: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.DISCOVER_AUTO_MIXES] = enabled }
+    }
+
+    /** Record the first-sync sheet's answer: [pinNewPlaylists] for "Stream everything". */
+    suspend fun setArrivalChosen(pinNewPlaylists: Boolean) {
+        context.syncPrefsDataStore.edit {
+            it[Keys.ARRIVAL_CHOSEN] = true
+            it[Keys.PIN_NEW_PLAYLISTS] = pinNewPlaylists
+        }
+    }
+
+    /** Mark the sheet answered without changing anything: an install that already synced. */
+    suspend fun markArrivalChosen() {
+        context.syncPrefsDataStore.edit { it[Keys.ARRIVAL_CHOSEN] = true }
     }
 
     /** Persist the days-of-week bitmask. UI passes [DayOfWeekSet.bitmask]. */

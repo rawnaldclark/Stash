@@ -89,6 +89,7 @@ class DiffWorkerTest {
         coEvery { streamingPreference.current() } returns false
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
     }
 
     @After
@@ -698,6 +699,7 @@ class DiffWorkerTest {
     @Test
     fun `duplicate new YouTube ID queues one offline download`() = runBlocking {
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
                 name = "YouTube Duplicates", source = MusicSource.YOUTUBE,

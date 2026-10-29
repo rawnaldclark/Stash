@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -78,6 +79,8 @@ data class SpotifySyncPlaylist(
     val artUrl: String? = null,
     val hideFromHome: Boolean = false,
     val pinnedToHomeAt: Long? = null,
+    /** The playlist's Save switch (#474's keep_offline): kept on the phone in either mode. */
+    val keepOffline: Boolean = false,
 )
 
 /**
@@ -95,6 +98,8 @@ data class YouTubeSyncPlaylist(
     val artUrl: String? = null,
     val hideFromHome: Boolean = false,
     val pinnedToHomeAt: Long? = null,
+    /** The playlist's Save switch (#474's keep_offline): kept on the phone in either mode. */
+    val keepOffline: Boolean = false,
 )
 
 data class SyncUiState(
@@ -173,6 +178,17 @@ data class SyncUiState(
      * step with the displayed "Last sync …" line.
      */
     val hasEverSynced: Boolean = false,
+    /**
+     * The first-sync sheet ("How should your music arrive?") is up. A new
+     * install's first Sync asks this before it runs; see [SyncViewModel.onSyncNow].
+     */
+    val showArrivalSheet: Boolean = false,
+    /**
+     * "Save to this phone" was picked on the first-sync sheet: the screen opens
+     * this source's playlists so the user can choose what to download, then
+     * clears it with [SyncViewModel.onManageOpened].
+     */
+    val openManageFor: SyncSource? = null,
 )
 
 /**
@@ -468,13 +484,91 @@ class SyncViewModel @Inject constructor(
             android.util.Log.i("SyncViewModel", "onSyncNow ignored — sync already in progress")
             return
         }
+        viewModelScope.launch {
+            if (needsArrivalChoice()) {
+                _uiState.update { it.copy(showArrivalSheet = true) }
+                return@launch
+            }
+            startSync()
+        }
+    }
+
+    private suspend fun startSync() {
         // The Wi-Fi rule this screen shows: what a sync queued offline downloads under.
         val wifiOnly = _uiState.value.syncPreferences.wifiOnly
-        val pausedAfterUndo = _uiState.value.syncPreferences.autoSyncPausedAfterUndo
+        // A manual Sync ends the pause "Undo last sync" put on Auto-sync.
+        if (_uiState.value.syncPreferences.autoSyncPausedAfterUndo) {
+            syncPreferencesManager.setAutoSyncPausedAfterUndo(false)
+        }
+        syncScheduler.triggerManualSync(wifiOnly)
+    }
+
+    /**
+     * Whether this Sync is a new install's first, which asks how music should
+     * arrive before it runs. New installs start in Download mode with every
+     * playlist switched off, so a first sync used to finish with nothing on Home
+     * or in Library and users thought it had failed (2026-10-29). An install that
+     * has synced before keeps its mode and switches and is never asked; it's
+     * marked answered here so the history read happens once.
+     */
+    private suspend fun needsArrivalChoice(): Boolean {
+        if (syncPreferencesManager.arrivalChosen.first()) return false
+        if (syncHistoryDao.getLatest() != null) {
+            syncPreferencesManager.markArrivalChosen()
+            return false
+        }
+        return true
+    }
+
+    /**
+     * The first-sync sheet's answer. "Stream everything" ([streamEverything])
+     * is Stream only plus new playlists on Home: the whole account shows up
+     * after one sync and nothing downloads. "Save to this phone" is Download
+     * mode, and opens the first account's playlists so the user can pick what
+     * to save while the sync reads them. Either way the sync starts now.
+     */
+    fun onArrivalChosen(streamEverything: Boolean) {
+        _uiState.update { it.copy(showArrivalSheet = false) }
         viewModelScope.launch {
-            // A manual Sync ends the pause "Undo last sync" put on Auto-sync.
-            if (pausedAfterUndo) syncPreferencesManager.setAutoSyncPausedAfterUndo(false)
-            syncScheduler.triggerManualSync(wifiOnly)
+            // Written before the sync starts: DiffWorker reads both once per run.
+            streamingPreference.setEnabled(streamEverything)
+            syncPreferencesManager.setArrivalChosen(pinNewPlaylists = streamEverything)
+            startSync()
+            if (!streamEverything) {
+                val state = _uiState.value
+                val source = when {
+                    state.spotifyConnected -> SyncSource.SPOTIFY
+                    state.youTubeConnected -> SyncSource.YOUTUBE
+                    else -> null
+                }
+                _uiState.update { it.copy(openManageFor = source) }
+            }
+        }
+    }
+
+    /** The first-sync sheet was dismissed without an answer: nothing runs, it asks again next time. */
+    fun onArrivalDismissed() {
+        _uiState.update { it.copy(showArrivalSheet = false) }
+    }
+
+    /** The screen has navigated to [SyncUiState.openManageFor]. */
+    fun onManageOpened() {
+        _uiState.update { it.copy(openManageFor = null) }
+    }
+
+    /**
+     * A playlist's Save switch: keep it on this phone. The playlist page's
+     * Download switch does the same thing ([MusicRepository.setPlaylistDownload],
+     * #474), so the two always agree. In Download mode a saved playlist is also
+     * switched on for sync, as the old switch was, so later syncs download what
+     * it gains and it stays on Home; off there turns sync off too.
+     */
+    fun onSavePlaylist(playlistId: Long, save: Boolean) {
+        viewModelScope.launch {
+            if (save && !streamingPreference.current()) {
+                playlistDao.setSyncEnabledAndPin(playlistId, true, System.currentTimeMillis())
+            }
+            musicRepository.setPlaylistDownload(playlistId, save)
         }
     }
 
@@ -818,6 +912,7 @@ class SyncViewModel @Inject constructor(
                                 artUrl = e.artUrl,
                                 hideFromHome = e.hideFromHome,
                                 pinnedToHomeAt = e.pinnedToHomeAt,
+                                keepOffline = e.keepOffline,
                             )
                         }
                     )
@@ -841,6 +936,7 @@ class SyncViewModel @Inject constructor(
                                 artUrl = e.artUrl,
                                 hideFromHome = e.hideFromHome,
                                 pinnedToHomeAt = e.pinnedToHomeAt,
+                                keepOffline = e.keepOffline,
                             )
                         }
                     )

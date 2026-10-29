@@ -1,7 +1,9 @@
 package com.stash.feature.sync
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,19 +12,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,25 +37,39 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.model.PlaylistType
 import com.stash.core.data.mix.LastFmRecommendationState
+import com.stash.core.model.PlaylistType
+import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
-import com.stash.core.common.extensions.pluralize
+import com.stash.feature.sync.components.CoverTile
+import com.stash.feature.sync.components.SaveCircle
+import com.stash.feature.sync.components.SyncAmbientBackdrop
+
+/** Which of an account's lists is showing. */
+private enum class ManageTab { PLAYLISTS, MIXES, LIKED }
 
 /**
- * Full-screen, search-first playlist management for one sync source. Hosts the
- * per-playlist sync toggles that used to live inline on the Sync-tab source
- * card, plus a hide-from-Home toggle for algo mixes — so the Sync landing stays
- * a compact dashboard and the (possibly 100+) playlist list is virtualized here.
+ * One account's playlists, mixes and liked songs, every one with its cover and
+ * a Save circle. In Stream only all of it is already in the library, and Save
+ * keeps a playlist on the phone too; in Download mode Save is how anything gets
+ * there. Save is the playlist page's Download switch ([SyncViewModel.onSavePlaylist]),
+ * so the two always agree. The Sync tab overhaul, 2026-10-29: this used to be
+ * a list of on/off switches whose meaning changed with the mode.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,282 +79,275 @@ fun ManagePlaylistsScreen(
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    // Issue #255 — the Last.fm manage surface is driven by recommendation
-    // state, not by imported-playlist lists.
+    // Issue #255: the Last.fm manage surface is driven by recommendation state.
     val lastFmState by viewModel.lastFmState.collectAsStateWithLifecycle()
+    val streamOnly by viewModel.streamingEnabled.collectAsStateWithLifecycle()
 
-    // Both source playlist types share the same shape but are distinct classes;
-    // map into one source-agnostic row so the rest of the screen ignores which.
-    val rows: List<ManageRow> = if (source == SyncSource.SPOTIFY) {
-        uiState.spotifyPlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome, it.pinnedToHomeAt) }
-    } else if (source == SyncSource.YOUTUBE) {
-        uiState.youTubePlaylists.map { ManageRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.hideFromHome, it.pinnedToHomeAt) }
-    } else {
-        emptyList()
+    if (source == SyncSource.LASTFM) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Last.fm") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.sync_back))
+                        }
+                    },
+                )
+            },
+        ) { innerPadding ->
+            LastFmManageContent(
+                state = lastFmState,
+                onToggle = viewModel::onLastFmRecommendationsToggled,
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+            )
+        }
+        return
     }
 
-    val accent = when (source) {
-        SyncSource.SPOTIFY -> StashTheme.extendedColors.spotifyGreen
-        SyncSource.YOUTUBE -> StashTheme.extendedColors.youtubeRed
-        SyncSource.LASTFM -> StashTheme.extendedColors.lastfmRed
-    }
-    val title = when (source) {
-        SyncSource.SPOTIFY -> "Spotify playlists"
-        SyncSource.YOUTUBE -> "YouTube Music playlists"
-        SyncSource.LASTFM -> "Last.fm"
-    }
-
-    var query by remember { mutableStateOf("") }
-    var segment by remember { mutableStateOf(ManageSegment.ALL) }
-
-    val liked = rows.firstOrNull { it.type == PlaylistType.LIKED_SONGS }
+    val rows = uiState.playlistRows().filter { it.source == source }
+    val liked = rows.filter { it.type == PlaylistType.LIKED_SONGS }
     val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
-    val customAll = rows.filter { it.type == PlaylistType.CUSTOM }
-    val customEnabled = customAll.count { it.syncEnabled }
+    val playlists = rows.filter { it.type != PlaylistType.DAILY_MIX && it.type != PlaylistType.LIKED_SONGS }
+    val name = if (source == SyncSource.SPOTIFY) "Spotify" else "YouTube Music"
+    val brand = if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
-    // Land at the true top once playlists load. The sections fill in async:
-    // the first frame has empty data (only the custom section), then Liked +
-    // Mixes get prepended when the flow emits. With stable item keys LazyColumn
-    // anchors to the already-shown custom section, leaving Liked + Mixes
-    // scrolled off above the fold — so snap back to item 0 on the 0→N load.
+    var tab by rememberSaveable { mutableStateOf(ManageTab.PLAYLISTS) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val q = query.trim()
+    // The query reaches every tab, so search never looks broken behind a tab (#310).
+    fun matches(row: SyncPlaylistRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
+    val shown = when (tab) {
+        ManageTab.PLAYLISTS -> playlists
+        ManageTab.MIXES -> mixes
+        ManageTab.LIKED -> liked
+    }.filter(::matches)
+
+    // Land at the top once the list loads: rows arrive a frame after the screen.
     val listState = rememberLazyListState()
     LaunchedEffect(rows.isEmpty()) {
         if (rows.isNotEmpty()) listState.scrollToItem(0)
     }
 
-    val bySegment = customAll.filter { matchesSegment(segment, it.syncEnabled) }
-    // The query filters every section, not just "Your playlists": accounts can
-    // have 100+ auto mixes, and an unfiltered Liked/Mixes block pushes the
-    // filtered custom results off-screen - making search look broken (#310).
-    //
-    // The SEGMENT reaches every section whose switch is sync state, for the same
-    // reason: it used to filter the custom list alone, so "Off" left the Liked
-    // row and every mix on screen wearing an ON switch and read as broken
-    // (#373). Mix rows are excluded rather than filtered — their switch is a
-    // different axis (see showMixRows).
-    val q = query.trim()
-    fun matchesQuery(row: ManageRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
-    val visibleLiked = liked?.takeIf { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
-    val visibleMixes = mixes.filter { matchesQuery(it) && matchesSegment(segment, it.syncEnabled) }
-    val visibleCustom = bySegment.filter { matchesQuery(it) }
+    val arts = (playlists + mixes).mapNotNull { it.artUrl }.distinct()
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        SyncAmbientBackdrop(arts = arts.take(2), modifier = Modifier.height(400.dp))
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
-        },
-    ) { innerPadding ->
-        if (source == SyncSource.LASTFM) {
-            // Issue #255 — Last.fm has no importable playlists; its manage
-            // surface is the single Recommendations toggle + explainer.
-            LastFmManageContent(
-                state = lastFmState,
-                onToggle = viewModel::onLastFmRecommendationsToggled,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-            )
-            return@Scaffold
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 96.dp),
         ) {
-            // -- Pinned search (stays fixed above the scrolling list) ----------
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = { Text("Filter playlists…") },
-                singleLine = true,
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = null,
-                        tint = accent,
-                    )
-                },
-                trailingIcon = if (query.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear filter")
+            item(key = "header") {
+                Column {
+                    IconButton(onClick = onBack, modifier = Modifier.padding(start = 0.dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.sync_back),
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(Modifier.size(8.dp).clip(CircleShape).background(brand))
+                                Text(
+                                    text = stringResource(
+                                        if (streamOnly) R.string.sync_manage_all_in_library else R.string.sync_manage_pick_to_save,
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                text = name,
+                                fontFamily = SpaceGrotesk,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 30.sp,
+                                letterSpacing = (-0.5).sp,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                        }
+                        if (tab == ManageTab.PLAYLISTS && shown.any { !it.saved(streamOnly) }) {
+                            TextButton(onClick = {
+                                shown.filterNot { it.saved(streamOnly) }.forEach { viewModel.onSavePlaylist(it.id, true) }
+                            }) { Text(stringResource(R.string.sync_manage_save_all)) }
                         }
                     }
-                } else null,
-            )
-
-            // -- Segment filter (applies to the custom "Your playlists" list) --
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ManageSegment.values().forEach { seg ->
-                    FilterChip(
-                        selected = segment == seg,
-                        onClick = { segment = seg },
-                        label = { Text(seg.label) },
-                    )
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                // -- Liked ------------------------------------------------------
-                if (visibleLiked != null) {
-                    item(key = "liked-label") { ManageSectionLabel("Liked") }
-                    item(key = "liked-row") {
-                        SpotifySyncToggleRow(
-                            name = visibleLiked.name,
-                            trackCount = visibleLiked.trackCount,
-                            enabled = visibleLiked.syncEnabled,
-                            onToggle = { viewModel.onTogglePlaylistSync(visibleLiked.id, it) },
+            item(key = "search") {
+                SearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
+
+            item(key = "tabs") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TabPill(
+                        label = stringResource(R.string.sync_manage_tab_playlists, playlists.size),
+                        selected = tab == ManageTab.PLAYLISTS,
+                        onClick = { tab = ManageTab.PLAYLISTS },
+                    )
+                    TabPill(
+                        label = stringResource(R.string.sync_manage_tab_mixes, mixes.size),
+                        selected = tab == ManageTab.MIXES,
+                        onClick = { tab = ManageTab.MIXES },
+                    )
+                    if (liked.isNotEmpty()) {
+                        TabPill(
+                            label = stringResource(R.string.sync_manage_tab_liked),
+                            selected = tab == ManageTab.LIKED,
+                            onClick = { tab = ManageTab.LIKED },
                         )
                     }
-                    if (source == SyncSource.YOUTUBE) {
-                        item(key = "liked-studio") {
-                            StudioOnlyToggleRow(
-                                enabled = uiState.youtubeLikedStudioOnly,
-                                onChange = viewModel::onYoutubeLikedStudioOnlyChanged,
-                            )
-                        }
-                    }
                 }
+            }
 
-                // -- Mixes (auto) ----------------------------------------------
-                // The section header always renders, even with no mixes yet, so
-                // the discovery switch is reachable BEFORE the first sync pulls
-                // any in — otherwise the only way to stop mixes appearing is to
-                // let them appear first (#335, #344).
-                item(key = "mixes-label") { ManageSectionLabel("Mixes (auto)") }
+            // The discovery switch shows even with no mixes yet, so they can be
+            // stopped before the first sync pulls any in (#335, #344).
+            if (tab == ManageTab.MIXES) {
                 item(key = "mixes-discovery") {
                     DiscoverMixesRow(
                         enabled = uiState.discoverAutoMixes,
                         onChange = viewModel::onDiscoverAutoMixesChanged,
                     )
                 }
-                if (visibleMixes.isNotEmpty()) {
-                    item(key = "mixes-summary") {
-                        Text(
-                            text = "${mixes.count { it.syncEnabled }}/${mixes.size} switched on · a switched-on mix downloads in Download mode",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 4.dp),
-                        )
-                    }
-                    items(visibleMixes, key = { "mix-${it.id}" }) { mix ->
-                        // One switch, meaning the same thing as every other row:
-                        // sync this. In Download mode that downloads it; switching
-                        // on also pins it to Home. Hiding a mix from Home lives on
-                        // Home itself (long-press → Hide).
-                        SpotifySyncToggleRow(
-                            name = mix.name,
-                            trackCount = mix.trackCount,
-                            enabled = mix.syncEnabled,
-                            onToggle = { viewModel.onTogglePlaylistSync(mix.id, it) },
-                        )
-                    }
+            }
+            if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
+                item(key = "liked-studio") {
+                    StudioOnlyToggleRow(
+                        enabled = uiState.youtubeLikedStudioOnly,
+                        onChange = viewModel::onYoutubeLikedStudioOnlyChanged,
+                    )
                 }
+            }
 
-                // -- Your playlists --------------------------------------------
-                item(key = "custom-label") {
-                    ManageSectionLabel("Your playlists · $customEnabled/${customAll.size}")
+            if (shown.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        text = if (q.isNotBlank()) {
+                            stringResource(R.string.sync_manage_no_match, q)
+                        } else {
+                            stringResource(R.string.sync_manage_empty)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
                 }
-                item(key = "custom-actions") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = {
-                            visibleCustom.forEach { viewModel.onTogglePlaylistSync(it.id, true) }
-                        }) { Text("Enable all") }
-                        TextButton(onClick = {
-                            visibleCustom.forEach { viewModel.onTogglePlaylistSync(it.id, false) }
-                        }) { Text("Enable none") }
-                    }
+            } else {
+                items(shown, key = { it.id }) { row ->
+                    PlaylistSaveRow(
+                        row = row,
+                        saved = row.saved(streamOnly),
+                        onToggle = { viewModel.onSavePlaylist(row.id, it) },
+                    )
                 }
-                if (visibleCustom.isEmpty()) {
-                    item(key = "custom-empty") {
-                        Text(
-                            text = if (query.isNotBlank())
-                                "No playlists matching “${query.trim()}”"
-                            else
-                                "No playlists here",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
-                    }
-                } else {
-                    items(visibleCustom, key = { "custom-${it.id}" }) { pl ->
-                        SpotifySyncToggleRow(
-                            name = pl.name,
-                            trackCount = pl.trackCount,
-                            enabled = pl.syncEnabled,
-                            onToggle = { viewModel.onTogglePlaylistSync(pl.id, it) },
-                        )
-                    }
-                }
-
-                item(key = "bottom-spacer") { Spacer(Modifier.height(80.dp)) }
             }
         }
     }
 }
 
-/** Source-agnostic view of one playlist row (both source types map into this). */
-private data class ManageRow(
-    val id: Long,
-    val name: String,
-    val trackCount: Int,
-    val type: PlaylistType,
-    val syncEnabled: Boolean,
-    val hideFromHome: Boolean,
-    val pinnedToHomeAt: Long? = null,
-)
-
-/** Segment filter over the custom "Your playlists" list. */
-internal enum class ManageSegment(val label: String) {
-    ALL("All"),
-    SYNCED("Synced"),
-    OFF("Off"),
+@Composable
+private fun PlaylistSaveRow(
+    row: SyncPlaylistRow,
+    saved: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        CoverTile(url = row.artUrl, modifier = Modifier.size(56.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = row.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val songs = pluralStringResource(R.plurals.sync_songs_count, row.trackCount, row.trackCount)
+            Text(
+                text = if (saved) stringResource(R.string.sync_manage_on_phone, songs) else songs,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (saved) StashTheme.extendedColors.cyanLight else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        SaveCircle(
+            saved = saved,
+            playlistName = row.name,
+            saveLabel = stringResource(R.string.sync_save),
+            savedState = stringResource(R.string.sync_saved_state),
+            notSavedState = stringResource(R.string.sync_not_saved_state),
+            onToggle = onToggle,
+        )
+    }
 }
 
-/**
- * Whether a row belongs in [segment]. Only meaningful for rows whose switch IS
- * the sync state — the Liked row and the user's own playlists.
- *
- * One predicate, both call sites: the segment used to be applied inline to the
- * custom list only, so the Liked row silently fell through and an enabled
- * playlist survived the "Off" chip (#373).
- */
-internal fun matchesSegment(segment: ManageSegment, syncEnabled: Boolean): Boolean =
-    when (segment) {
-        ManageSegment.ALL -> true
-        ManageSegment.SYNCED -> syncEnabled
-        ManageSegment.OFF -> !syncEnabled
-    }
+@Composable
+private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (selected) MaterialTheme.colorScheme.onBackground else StashTheme.extendedColors.glassBackgroundHover)
+            .clickable(role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    )
+}
 
 @Composable
-private fun ManageSectionLabel(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.5.sp,
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-    )
+private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(StashTheme.extendedColors.glassBackgroundHover)
+            .padding(start = 14.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.sync_manage_search),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            IconButton(onClick = { onQueryChange("") }) {
+                Icon(Icons.Filled.Clear, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 /**
@@ -419,7 +431,7 @@ private fun LastFmManageContent(
             modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
         )
 
-        // The toggle row mirrors SpotifySyncToggleRow's shape so all three
+        // The toggle row mirrors the other manage rows' shape so all three
         // manage screens read as siblings.
         Row(
             modifier = Modifier
