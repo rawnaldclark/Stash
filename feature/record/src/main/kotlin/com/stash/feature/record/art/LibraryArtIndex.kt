@@ -1,6 +1,7 @@
 package com.stash.feature.record.art
 
 import com.stash.core.data.db.dao.LibraryArtDao
+import java.io.File
 
 /**
  * The library's covers by the record's keys ([ArtText.artKey]), owner decision D1: a cover of the person's own files (a local
@@ -67,7 +68,7 @@ internal class LibraryArtIndex private constructor(
         }
 
         /** A plain absolute path: never a `content://` or `file://` address. */
-        private fun isFilePath(p: String) = p.startsWith("/") && !p.contains('\u0000')
+        private fun isFilePath(p: String) = (p.startsWith("/") || File(p).isAbsolute) && !p.contains("://") && !p.contains('\u0000')
 
         private fun isRemote(u: String) = u.startsWith("https://") || u.startsWith("http://")
     }

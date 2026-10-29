@@ -18,10 +18,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.CoroutineContext
@@ -60,11 +62,13 @@ internal class CoilArtDecoder(private val context: Context) : ArtDecoder {
  * - The name is 32 hex of sha256: of a file's canonical path, length and modification time (a cover changed is a new name, so
  *   the page's year-long cache never shows an old one), or of a remote address.
  * - A name is given only once its file exists: the page's covers have no fallback, so it never meets a 404.
- * - What each name was made from is kept in memory ([sources]), so a file the folder's trim (or the system) removed is made
- *   again when the page asks for it.
- * - Only files under the app's own folders ([roots]: `filesDir`, `cacheDir`) are read, after their path is made canonical:
- *   never external storage, a `content://` address or a link out. And every file is decoded and encoded again, so even a
- *   wrong path could only ever give a picture.
+ * - What each name was made from is kept in memory ([sources]): only a name given in this process is served, and a file the
+ *   folder's trim (or the system) removed is made again when the page asks for it.
+ * - Only files in the library's own cover folders ([roots]: `cacheDir/albumart` for local imports and downloads,
+ *   `filesDir/scanned_art`, `filesDir/cloud_art`) are read, after their path is made canonical: never external storage, a
+ *   `content://` address or a link out; and none over [MAX_SOURCE_BYTES]. Every file is decoded (at most [DECODE_TIMEOUT_MS])
+ *   and encoded again, so even a wrong path could only ever give a picture.
+ * - The folder is trimmed when the record opens and after every [TRIM_EVERY] covers made.
  */
 @Singleton
 class LibraryArtFiles internal constructor(
@@ -73,11 +77,12 @@ class LibraryArtFiles internal constructor(
     private val decoder: ArtDecoder,
     private val io: CoroutineContext = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
+    private val decodeTimeoutMs: Long = DECODE_TIMEOUT_MS,
 ) {
     @Inject
     constructor(@ApplicationContext context: Context) : this(
         dir = File(context.cacheDir, DIR),
-        roots = listOf(context.filesDir, context.cacheDir),
+        roots = coverFolders(filesDir = context.filesDir, cacheDir = context.cacheDir),
         decoder = CoilArtDecoder(context),
     )
 
@@ -96,10 +101,14 @@ class LibraryArtFiles internal constructor(
     /** Covers made at once, at most: a page asks 150 at a time, each a decode of a whole picture. */
     private val making = Semaphore(MAKE_AT_ONCE)
 
+    /** Covers made in this process: the folder is trimmed after every [TRIM_EVERY]. */
+    private val writes = AtomicInteger()
+
     /** The record's address for the cover in the file at [path] (made first when needed), or null: not ours to read, or not a picture. */
     suspend fun forFile(path: String): String? = withContext(io) {
         val file = readable(path) ?: return@withContext null
         val length = file.length()
+        if (length > MAX_SOURCE_BYTES) return@withContext null
         val modified = file.lastModified()
         give(hash("file\u0000${file.path}\u0000$length\u0000$modified"), Source.Local(file.path))
     }
@@ -121,8 +130,12 @@ class LibraryArtFiles internal constructor(
 
     private suspend fun make(source: Source, out: File): Boolean = making.withPermit {
         try {
-            val bitmap = decoder.decode(source.model, LibraryArtEncode.PX) ?: return@withPermit false
-            LibraryArtEncode.write(bitmap, out)
+            // A picture that takes longer than this (a huge or hostile file) is no cover
+            val bitmap = withTimeoutOrNull(decodeTimeoutMs) { decoder.decode(source.model, LibraryArtEncode.PX) }
+                ?: return@withPermit false
+            LibraryArtEncode.write(bitmap, out).also { ok ->
+                if (ok && writes.incrementAndGet() % TRIM_EVERY == 0) trim()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -133,13 +146,14 @@ class LibraryArtFiles internal constructor(
 
     /**
      * The file for the page's [path] under `/art/` (`v1/<32 hex>.jpg`, nothing else), made again from what it was made from
-     * when it has gone; null for any other path or a name never given. Called on the WebView's own thread, which may wait.
+     * when it has gone; null for any other path or a name not given in this process (even one whose file is still in the
+     * folder). Called on the WebView's own thread, which may wait.
      */
     fun open(path: String): File? {
         val hash = NAME.matchEntire(path)?.groupValues?.get(1) ?: return null
+        val source = sources[hash] ?: return null
         val file = fileOf(hash)
         if (!file.isFile || file.length() == 0L) {
-            val source = sources[hash] ?: return null
             if (!runBlocking(io) { make(source, file) }) return null
         }
         // Kept as the most recent for the trim
@@ -205,8 +219,27 @@ class LibraryArtFiles internal constructor(
 
         const val MAKE_AT_ONCE = 3
 
+        /** A decode taking longer than this gives no cover. */
+        const val DECODE_TIMEOUT_MS = 3_000L
+
+        /** A source file bigger than this is never decoded (a cover is a few hundred KB; a 20 MB one is not art). */
+        const val MAX_SOURCE_BYTES = 20L * 1024 * 1024
+
+        /** The folder is trimmed after this many covers made, as well as on each open. */
+        const val TRIM_EVERY = 50
+
         /** A half-written file older than this is left over from a process that died. */
         const val TMP_AGE_MS = 60_000L
+
+        /** The library's cover folders: the only places a cover is read from. */
+        internal fun coverFolders(filesDir: File, cacheDir: File): List<File> = listOf(
+            // Local imports' embedded art (LocalImportCoordinator) and downloads' covers (FileOrganizer.getAlbumArtDir)
+            File(cacheDir, "albumart"),
+            // Scanned songs' embedded art (feature:library ScannedCoverStore.DIR_NAME)
+            File(filesDir, "scanned_art"),
+            // Cloud songs' embedded art (data:cloud CloudArtStore.DIR)
+            File(filesDir, "cloud_art"),
+        )
 
         internal fun hash(identity: String): String =
             MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))

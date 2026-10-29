@@ -50,6 +50,11 @@ internal class LibraryArt(
         LibraryArtIndex.EMPTY
     }
 
+    override suspend fun owned(songs: List<ArtSong>): List<Boolean> = withContext(work) {
+        val ix = index()
+        songs.map { ix.localFor(it) != null }
+    }
+
     override suspend fun local(songs: List<ArtSong>): List<String?> = withContext(work) {
         val ix = index()
         resolve(songs.map(ix::localFor), files::forFile)

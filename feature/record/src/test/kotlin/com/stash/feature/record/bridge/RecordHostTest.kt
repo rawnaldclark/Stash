@@ -442,10 +442,22 @@ class RecordHostTest {
         ).inOrder()
     }
 
-    /** The library: own files for the songs in [local], remote addresses for those in [remote], by title. */
-    private class Library(val local: Map<String, String>, val remote: Map<String, String>) : RecordLibraryArt {
+    /**
+     * The library: own files for the songs in [local] (a null value: a file that can't be made), remote addresses for those in
+     * [remote], by title. [encoding], when set, holds the making of the files.
+     */
+    private class Library(
+        val local: Map<String, String?>,
+        val remote: Map<String, String>,
+        val encoding: CompletableDeferred<Unit>? = null,
+    ) : RecordLibraryArt {
         val asked = mutableListOf<String>()
-        override suspend fun local(songs: List<ArtSong>): List<String?> = songs.map { asked += "local ${it.title}"; local[it.title] }
+        override suspend fun owned(songs: List<ArtSong>): List<Boolean> = songs.map { it.title in local }
+        override suspend fun local(songs: List<ArtSong>): List<String?> {
+            songs.forEach { asked += "local ${it.title}" }
+            encoding?.await()
+            return songs.map { local[it.title] }
+        }
         override suspend fun remote(songs: List<ArtSong>): List<String?> = songs.map { asked += "remote ${it.title}"; remote[it.title] }
     }
 
@@ -509,6 +521,7 @@ class RecordHostTest {
         assertThat(lists(page).last()).containsExactly("Ivy|Frank Ocean" to "\"https://appassets.androidplatform.net/art/v1/${"c".repeat(32)}.jpg\"")
 
         val broken = object : RecordLibraryArt {
+            override suspend fun owned(songs: List<ArtSong>): List<Boolean> = error("no database")
             override suspend fun local(songs: List<ArtSong>): List<String?> = error("no database")
             override suspend fun remote(songs: List<ArtSong>): List<String?> = error("no database")
         }
@@ -518,6 +531,40 @@ class RecordHostTest {
         runCurrent()
         assertThat(lookups).isEqualTo(1)
         assertThat(lists(page2).last()).containsExactly("Ivy|Frank Ocean" to "\"https://x/Ivy.jpg\"")
+    }
+
+    @Test fun `art - the lookups never wait for a file being made, and a file that can't be made goes to the lookups`() = runTest {
+        val looked = mutableListOf<List<String>>()
+        val covers = RecordCovers { songs, _, onBatch ->
+            looked += songs.map { it.title }
+            songs.map { "https://x/${it.title}.jpg" }.also(onBatch)
+        }
+        val gate = CompletableDeferred<Unit>()
+        val own = "https://appassets.androidplatform.net/art/v1/${"d".repeat(32)}.jpg"
+        val library = Library(local = mapOf("Ivy" to own, "Broken" to null), remote = emptyMap(), encoding = gate)
+        val h = Harness(this, rows(0), covers = covers, library = library)
+        val page = Page()
+        h.say(
+            """{"type":"stash:art","asks":[{"id":"Ivy|F","artist":"F","title":"Ivy"},{"id":"Broken|F","artist":"F","title":"Broken"},""" +
+                """{"id":"Nights|F","artist":"F","title":"Nights"}]}""",
+            page,
+        )
+        runCurrent()
+        // The files are still being made: the song without one is looked up already, and answered
+        assertThat(looked).containsExactly(listOf("Nights"))
+        assertThat(lists(page)).containsExactly(listOf("Nights|F" to "\"https://x/Nights.jpg\""))
+        gate.complete(Unit)
+        runCurrent()
+        // Ivy's own file, never looked up; Broken's couldn't be made, so it is looked up after all
+        assertThat(looked).containsExactly(listOf("Nights"), listOf("Broken")).inOrder()
+        val l = lists(page)
+        assertThat(l[1]).containsExactly("Ivy|F" to "\"$own\"")
+        assertThat(l[2]).containsExactly("Broken|F" to "\"https://x/Broken.jpg\"")
+        assertThat(l.last()).containsExactly(
+            "Ivy|F" to "\"$own\"",
+            "Broken|F" to "\"https://x/Broken.jpg\"",
+            "Nights|F" to "\"https://x/Nights.jpg\"",
+        ).inOrder()
     }
 
     @Test fun `what a page started stops when it goes (its renderer died, the screen stays) - its covers, its wait on back, its file`() = runTest {

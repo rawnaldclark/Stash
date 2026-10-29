@@ -58,14 +58,14 @@ class LibraryArtEncodeTest {
     private lateinit var files: LibraryArtFiles
 
     @Before fun setUp() {
-        files = LibraryArtFiles(File(context.cacheDir, LibraryArtFiles.DIR), listOf(context.filesDir, context.cacheDir), testDecoder, Dispatchers.Unconfined)
+        files = LibraryArtFiles(File(context.cacheDir, LibraryArtFiles.DIR), LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), testDecoder, Dispatchers.Unconfined)
         File(context.cacheDir, LibraryArtFiles.DIR).deleteRecursively()
     }
 
     private fun served(url: String): File = File(files.dir, url.removePrefix(LibraryArtFiles.URL_PREFIX))
 
     @Test fun `a 3000 px cover becomes a JPEG square of at most 600, its EXIF gone`() = runTest {
-        val src = File(context.filesDir, "albumart/local_big.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(3000, 2000, "SECRET-GPS-48.85N")) }
+        val src = File(context.cacheDir, "albumart/local_big.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(3000, 2000, "SECRET-GPS-48.85N")) }
         assertThat(src.readBytes().contains("Exif".toByteArray())).isTrue()
         val url = files.forFile(src.path)!!
         assertThat(url).matches("https://appassets\\.androidplatform\\.net/art/v1/[0-9a-f]{32}\\.jpg")
@@ -85,8 +85,8 @@ class LibraryArtEncodeTest {
     // API 27: Robolectric's ImageDecoder can't read a file, so Coil decodes with BitmapFactory here (on the phone, ImageDecoder)
     @Config(sdk = [27])
     @Test fun `through Coil, as the app decodes it, a 3000 px file is a 600 square too, and an address never fetched is nothing`() = runTest {
-        val coil = LibraryArtFiles(files.dir, listOf(context.filesDir, context.cacheDir), CoilArtDecoder(context), Dispatchers.Unconfined)
-        val src = File(context.filesDir, "albumart/local_coil.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(3000, 2000, "SECRET-GPS")) }
+        val coil = LibraryArtFiles(files.dir, LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), CoilArtDecoder(context), Dispatchers.Unconfined)
+        val src = File(context.cacheDir, "albumart/local_coil.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(3000, 2000, "SECRET-GPS")) }
         val out = served(coil.forFile(src.path)!!).readBytes()
         assertThat(out.contains("SECRET-GPS".toByteArray())).isFalse()
         val b = BitmapFactory.decodeByteArray(out, 0, out.size)
@@ -95,7 +95,7 @@ class LibraryArtEncodeTest {
     }
 
     @Test fun `the same file twice is one name, and a changed file is another`() = runTest {
-        val src = File(context.filesDir, "a.jpg").apply { writeBytes(jpegWithExif(700, 700, "x")) }
+        val src = File(context.filesDir, "cloud_art/a.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(700, 700, "x")) }
         val first = files.forFile(src.path)!!
         assertThat(files.forFile(src.path)).isEqualTo(first)
         src.writeBytes(jpegWithExif(800, 800, "y"))
@@ -104,9 +104,61 @@ class LibraryArtEncodeTest {
     }
 
     @Test fun `a file that isn't a picture gives nothing, and leaves nothing behind`() = runTest {
-        val src = File(context.filesDir, "not-art.jpg").apply { writeText("SQLite format 3\u0000 secrets") }
+        val src = File(context.filesDir, "cloud_art/not-art.jpg").apply { parentFile!!.mkdirs(); writeText("SQLite format 3\u0000 secrets") }
         assertThat(files.forFile(src.path)).isNull()
         assertThat(files.dir.listFiles().orEmpty().toList()).isEmpty()
+    }
+
+    @Test fun `only the library's cover folders are read - not the rest of the app's files, nor its database`() = runTest {
+        val jpeg = jpegWithExif(300, 300, "x")
+        for (ok in listOf(File(context.cacheDir, "albumart/local_1.jpg"), File(context.filesDir, "scanned_art/scanned_1.jpg"), File(context.filesDir, "cloud_art/c1.jpg"))) {
+            ok.parentFile!!.mkdirs()
+            ok.writeBytes(jpeg)
+            assertThat(files.forFile(ok.path)).isNotNull()
+        }
+        for (no in listOf(File(context.filesDir, "loose.jpg"), File(context.cacheDir, "loose.jpg"), File(context.filesDir, "music/x/cover.jpg"), File(context.cacheDir, "albumart_not/x.jpg"))) {
+            no.parentFile!!.mkdirs()
+            no.writeBytes(jpeg)
+            assertThat(files.forFile(no.path)).isNull()
+        }
+        // A path that starts in a cover folder and climbs out of it
+        assertThat(files.forFile(File(context.filesDir, "cloud_art/../loose.jpg").path)).isNull()
+    }
+
+    @Test fun `a source over 20 MB is never decoded, and a decode that takes too long gives nothing`() = runTest {
+        var decodes = 0
+        val counting = ArtDecoder { m, px -> decodes++; testDecoder.decode(m, px) }
+        val f = LibraryArtFiles(files.dir, LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), counting, Dispatchers.Unconfined)
+        val big = File(context.filesDir, "cloud_art/big.jpg").apply { parentFile!!.mkdirs() }
+        java.io.RandomAccessFile(big, "rw").use { it.write(jpegWithExif(100, 100, "x")); it.setLength(LibraryArtFiles.MAX_SOURCE_BYTES + 1) }
+        assertThat(f.forFile(big.path)).isNull()
+        assertThat(decodes).isEqualTo(0)
+        big.delete()
+
+        val slow = LibraryArtFiles(files.dir, LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), { _, _ -> kotlinx.coroutines.awaitCancellation() }, Dispatchers.Unconfined, decodeTimeoutMs = 50)
+        val src = File(context.filesDir, "cloud_art/slow.jpg").apply { writeBytes(jpegWithExif(100, 100, "x")) }
+        val start = System.nanoTime()
+        assertThat(kotlinx.coroutines.withContext(Dispatchers.Default) { slow.forFile(src.path) }).isNull()
+        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(2_000)
+    }
+
+    @Test fun `the folder is trimmed after every 50 covers made`() = runTest {
+        files.dir.mkdirs()
+        val leftover = File(files.dir, "x.jpg.dead${LibraryArtEncode.TMP}").apply { writeText("half"); setLastModified(1_000) }
+        repeat(LibraryArtFiles.TRIM_EVERY - 1) { i ->
+            val src = File(context.filesDir, "cloud_art/t$i.png").apply { parentFile!!.mkdirs(); writeBytes(png(i)) }
+            assertThat(files.forFile(src.path)).isNotNull()
+        }
+        assertThat(leftover.exists()).isTrue()
+        val last = File(context.filesDir, "cloud_art/t-last.png").apply { writeBytes(png(999)) }
+        assertThat(files.forFile(last.path)).isNotNull()
+        assertThat(leftover.exists()).isFalse()
+    }
+
+    /** A small picture of its own colour (so each is a cover of its own). */
+    private fun png(seed: Int): ByteArray {
+        val bmp = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(seed % 256, (seed * 7) % 256, 90)) }
+        return ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
     }
 
     @Test fun `a path outside the app's own folders is refused, even one that climbs out of them`() = runTest {
@@ -132,12 +184,12 @@ class LibraryArtHandlerTest {
 
     @Before fun setUp() {
         File(context.cacheDir, LibraryArtFiles.DIR).deleteRecursively()
-        files = LibraryArtFiles(File(context.cacheDir, LibraryArtFiles.DIR), listOf(context.filesDir, context.cacheDir), testDecoder, Dispatchers.Unconfined)
+        files = LibraryArtFiles(File(context.cacheDir, LibraryArtFiles.DIR), LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), testDecoder, Dispatchers.Unconfined)
         handler = LibraryArtHandler(files)
     }
 
     private suspend fun given(): String {
-        val src = File(context.filesDir, "cover.jpg").apply { writeBytes(jpegWithExif(640, 640, "x")) }
+        val src = File(context.filesDir, "cloud_art/cover.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(640, 640, "x")) }
         return files.forFile(src.path)!!.removePrefix("https://appassets.androidplatform.net/art/")
     }
 
@@ -175,6 +227,13 @@ class LibraryArtHandlerTest {
         assertThat(handler.handle(path)).isNotNull()
     }
 
+    @Test fun `a cover in the folder from another process (a name not given in this one) is not served`() = runTest {
+        val path = given()
+        val later = LibraryArtFiles(files.dir, LibraryArtFiles.coverFolders(context.filesDir, context.cacheDir), testDecoder, Dispatchers.Unconfined)
+        assertThat(File(files.dir, path.removePrefix("v1/")).isFile).isTrue()
+        assertThat(LibraryArtHandler(later).handle(path)).isNull()
+    }
+
     @Test fun `a cover the trim removed is made again from what it was made from`() = runTest {
         val path = given()
         files.trim(maxBytes = 0)
@@ -184,8 +243,8 @@ class LibraryArtHandlerTest {
     }
 
     @Test fun `the trim keeps the covers shown last`() = runTest {
-        val a = File(context.filesDir, "a.jpg").apply { writeBytes(jpegWithExif(700, 700, "a")) }
-        val b = File(context.filesDir, "b.jpg").apply { writeBytes(jpegWithExif(900, 500, "b")) }
+        val a = File(context.filesDir, "cloud_art/a.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(700, 700, "a")) }
+        val b = File(context.filesDir, "cloud_art/b.jpg").apply { parentFile!!.mkdirs(); writeBytes(jpegWithExif(900, 500, "b")) }
         val pa = files.forFile(a.path)!!.removePrefix("https://appassets.androidplatform.net/art/")
         val pb = files.forFile(b.path)!!.removePrefix("https://appassets.androidplatform.net/art/")
         val fa = File(files.dir, pa.removePrefix("v1/"))

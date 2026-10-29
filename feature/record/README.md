@@ -24,6 +24,9 @@ The Home card's parity fixtures (`src/test/resources/parity/`) are the fork's `s
 `card-parity-sources.expect.json` (every source stacked, the switches) at `2e5d17a`, which adds only that fixture and its test
 to the bundled build (the page is the same). Refresh them with the build when the page's logic changes.
 
+Every other path on this origin (one no handler serves, one a handler refuses, a missing asset, a cover never given) is a 404
+with an empty body (`recordResponse`), so the record's origin never reaches the network.
+
 Left out on purpose: the landing page and the site's files (`index.html`, `index-*`, `og.png`, icons, `robots.txt`,
 `sitemap.xml`, `_headers`), the demo's chunk (`load-*.js`, imported only with `?demo=1`), every `.woff` (the `.woff2` is used
 everywhere) and Instrument Serif's upright 400 (the embed sets it italic only).
@@ -118,11 +121,11 @@ record's page allows no other images but its own origin's.
 
 Owner decision D1 (`~/.stash/design/record-in-app-2026-10-26/PHASE6.md`): the person's own files' art comes first. A
 `stash:art` is answered in three steps (`RecordHost.art`), each a `stash:covers` of its own names, then the whole list (the page
-takes the last word for a name, so each list repeats what the ones before said):
+takes the last word for a name, so the last list repeats what the ones before said):
 
-1. **Own files** (`RecordLibraryArt.local`): a local import's, a scanned song's or a cloud file's embedded cover, a download's file.
-   These songs are never asked of `RecordArt`.
-2. **The lookups** (`RecordArt`, Deezer then iTunes) for the rest.
+1. **Own files** (`RecordLibraryArt.owned`, the index alone, then `local` to make them): a local import's, a scanned song's or a
+   cloud file's embedded cover, a download's file. These songs are never asked of `RecordArt`, unless their file couldn't be made.
+2. **The lookups** (`RecordArt`, Deezer then iTunes) for the rest, at once: they never wait for a file being made.
 3. **The library's remote covers** (i.scdn.co, ytimg, ...) only for what the lookups found nothing for, read from Coil's disk
    cache alone (never fetched). Artists' pictures (`ar3:`) are never the library's.
 
@@ -131,7 +134,7 @@ takes the last word for a name, so each list repeats what the ones before said):
 | core:data `db/dao/LibraryArtDao.kt` | the two reads: tracks with a cover (title, artist, album artist, album, path, address) and scanned songs with an embedded one |
 | `art/LibraryArtIndex.kt` | the covers by `ArtText.artKey`: `al:` artist and album, `al:` album artist and album, `tr:` artist and title; the first row a key wins, files and addresses kept apart so a file always comes first; words that fold to nothing make no key |
 | `art/LibraryArt.kt` | the index read once per record opened, off the main thread, on the page's first ask (its size and build time logged under `RecordArt`); each source made once however many songs share it |
-| `art/LibraryArtFiles.kt` | each cover made into `cacheDir/record-library-art/<hash>.jpg` before its name is given (the page's covers have no fallback, so it never meets a 404): decoded by Coil at 600, the middle square, JPEG q85, so no EXIF and no byte of the source reaches the page. The name is 32 hex of sha256 of the file's canonical path, length and modification time, or of the address. Only files under `filesDir` and `cacheDir`, made canonical first, are read: never external storage or `content://`. What each name was made from is kept in memory, so a file removed is made again when asked for; the folder is trimmed to 40 MB, least recently shown first, each time the record opens |
+| `art/LibraryArtFiles.kt` | each cover made into `cacheDir/record-library-art/<hash>.jpg` before its name is given (the page's covers have no fallback, so it never meets a 404): decoded by Coil at 600 (at most 3 s; no source over 20 MB), the middle square, JPEG q85, so no EXIF and no byte of the source reaches the page. The name is 32 hex of sha256 of the file's canonical path, length and modification time, or of the address. Only files in the library's cover folders (`cacheDir/albumart`, `filesDir/scanned_art`, `filesDir/cloud_art`), made canonical first, are read: never external storage or `content://`. What each name was made from is kept in memory: only names given in this process are served, and a file removed is made again when asked for. The folder is trimmed to 40 MB, least recently shown first, each time the record opens and after every 50 covers made |
 | `art/LibraryArtHandler.kt` | `/art/` on the record's origin: only `v1/<32 lowercase hex>.jpg`, only from its own folder, `Cache-Control: private, max-age=31536000, immutable`; anything else is null (nothing found) |
 
 None of these addresses goes into `record-art.tsv`, and the Home card and the mixes' tiles still use the lookups alone.
@@ -139,10 +142,13 @@ None of these addresses goes into `record-art.tsv`, and the Home card and the mi
 ### Its tests
 
 - `LibraryArtIndexTest` (keys for remasters, feat. and the album artist; files before addresses), `LibraryArtEncodeTest`
-  (3000 px to a 600 square through Coil, EXIF gone, a file that isn't a picture, paths outside the app's folders), `LibraryArtHandlerTest`
-  (the name's rule, traversal plain and encoded, a name never given, a removed file made again, the trim, the headers),
-  `RecordHostTest` (own files, then the lookups for the rest only, then the library's addresses; a library that fails), and
-  `RecordCspTest` (the bundled `embed.html` lets `img-src` load `'self'`).
+  (3000 px to a 600 square through Coil, EXIF gone, a file that isn't a picture, paths outside the cover folders, 20 MB and the
+  decode's time limit, the trim after 50), `LibraryArtHandlerTest` (the name's rule, traversal plain and encoded, a name never
+  given or given by another process, a removed file made again, the trim, the headers), `LibraryArtTest` (the index read once
+  for asks that come together, an album's cover made once, a database that fails), `RecordHostTest` (own files, the lookups for
+  the rest at once without waiting for a file, a file that can't be made looked up, then the library's addresses; a library
+  that fails), `RecordLoaderTest` (the origin's 404s, `/art/` reaching its handler) and `RecordCspTest` (the bundled
+  `embed.html` lets `img-src` load `'self'`).
 
 ## Bring your Spotify (the import)
 
