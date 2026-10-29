@@ -1,13 +1,13 @@
 ---
 /**
- * This month's donations against the goal: "$X of $100 this month" and a bar. The numbers here are
+ * This month's donations against the goal: "$X of $200 this month" and a bar. The numbers here are
  * placeholders; the Worker fills them in on every request (worker/pages.js, data-goal) from KV, and
  * removes the whole block (data-if="goal") if it can't read them. The target is GOAL_CENTS in wrangler.jsonc.
  */
 ---
 
 <div class="goal" data-if="goal">
-  <p class="figures"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month</p>
+  <p class="figures"><strong data-goal="raised">$0</strong> of <span data-goal="target">$200</span> this month</p>
   <div
     class="track"
     role="progressbar"
@@ -15,7 +15,7 @@
     aria-valuemin="0"
     aria-valuemax="100"
     aria-valuenow="0"
-    aria-valuetext="$0 of $100 this month"
+    aria-valuetext="$0 of $200 this month"
     data-goal="bar"
   >
     <span class="fill" data-goal="fill" style="width:0%"></span>

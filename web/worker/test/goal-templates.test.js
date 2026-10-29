@@ -150,7 +150,7 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     assert.match(config.kv_namespaces[0].id, /^[0-9a-f]{32}$/, "the stash-early-access namespace id");
     // Previews get nothing but assets: no production KV or email (Cloudflare's Previews don't inherit bindings).
     assert.deepEqual(config.previews, {});
-    assert.equal(config.vars.GOAL_CENTS, "10000");
+    assert.equal(config.vars.GOAL_CENTS, "20000");
     // The web player's address is a plain var; its signing key is a secret and must never be in this file.
     assert.equal(config.vars.PLAYER_URL, "https://play.stashfm.app");
     assert.ok(!("PLAYER_TICKET_PRIVATE_KEY" in config.vars));

@@ -140,8 +140,8 @@
     // While it's open, codes a UTC day to emails on neither list (open.js), so a flood can't use up the email
     // service's daily sending for supporters. Change it in the dashboard if real sign-ups hit it.
     "OPEN_DAILY_CODES": "1500",
-    // The monthly goal, in US cents: $100.
-    "GOAL_CENTS": "10000",
+    // The monthly goal, in US cents: $200.
+    "GOAL_CENTS": "20000",
     // Where sign-in codes come from (the send_email binding above allows only this address).
     "EMAIL_FROM": "access@stashfm.app",
     // The Cloudflare Access application "Stash admin" that guards stashfm.app/admin (set up 2026-10-04).
