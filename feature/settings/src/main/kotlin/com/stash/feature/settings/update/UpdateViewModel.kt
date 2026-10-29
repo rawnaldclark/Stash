@@ -51,8 +51,15 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
         _visible.value = false
     }
 
-    /** The app came back to the front: maybe from Android's "Install unknown apps" screen. */
-    fun onResume() = updater.onReturnFromPermission()
+    /**
+     * The app came back to the front: maybe from Android's "Install unknown apps" screen, or a day after Later with the process
+     * still alive (the stored release then emits nothing new, so the deadline is checked here).
+     */
+    fun onResume() {
+        updater.onReturnFromPermission()
+        val u = updater.available.value
+        if (!_visible.value && u != null && updater.shouldPrompt(u)) _visible.value = true
+    }
 
     fun permissionIntent(): Intent = updater.permissionIntent()
 

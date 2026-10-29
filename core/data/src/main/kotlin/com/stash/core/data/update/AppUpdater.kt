@@ -65,10 +65,26 @@ sealed interface UpdateState {
  * later updates need no confirm.
  */
 @Singleton
-class AppUpdater @Inject constructor(
-    @ApplicationContext private val context: Context,
+class AppUpdater internal constructor(
+    private val context: Context,
     private val okHttpClient: OkHttpClient,
+    testSteps: Steps?,
 ) {
+    @Inject constructor(@ApplicationContext context: Context, okHttpClient: OkHttpClient) : this(context, okHttpClient, null)
+
+    /** The platform's part of an update, replaced in tests: checking the APK, the install permission, the install itself. */
+    internal interface Steps {
+        fun verify(apk: File): UpdateState.Failed.Reason?
+        fun canInstall(): Boolean
+        fun install(apk: File)
+    }
+
+    private val steps: Steps = testSteps ?: object : Steps {
+        override fun verify(apk: File) = verifyApk(apk)
+        override fun canInstall() = context.packageManager.canRequestPackageInstalls()
+        override fun install(apk: File) = stageAndCommit(apk)
+    }
+
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
@@ -111,34 +127,62 @@ class AppUpdater @Inject constructor(
     }
 
     /** Update: download, check, install. A second tap while it runs does nothing. */
+    @Synchronized
     fun update() {
         val update = _available.value ?: return
-        if (job?.isActive == true || _state.value == UpdateState.Installing) return
+        if (busy()) return
+        _state.value = UpdateState.Downloading(0f) // busy from this call on, before the job starts
         job = scope.launch {
-            try {
-                val apk = download(update)
-                verify(apk)?.let { reason ->
-                    apk.delete()
-                    _state.value = UpdateState.Failed(reason)
-                    return@launch
-                }
-                install(apk)
+            val apk = try {
+                download(update)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "update failed: ${e.javaClass.simpleName}: ${e.message}")
+                Log.w(TAG, "download failed: ${e.javaClass.simpleName}: ${e.message}")
                 _state.value = UpdateState.Failed(UpdateState.Failed.Reason.DOWNLOAD)
+                return@launch
             }
+            steps.verify(apk)?.let { reason ->
+                apk.delete()
+                _state.value = UpdateState.Failed(reason)
+                return@launch
+            }
+            installOrFail(apk)
         }
     }
 
-    /** Back from Android's "Install unknown apps" screen: install what was downloaded, now that it's allowed. */
+    /**
+     * Back from Android's "Install unknown apps" screen: install what was downloaded, now that it's allowed. The same one job
+     * as [update], so two resumes in a row install once.
+     */
+    @Synchronized
     fun onReturnFromPermission() {
-        if (_state.value != UpdateState.NeedsPermission) return
+        if (_state.value != UpdateState.NeedsPermission || job?.isActive == true) return
         val update = _available.value ?: return
         val apk = apkFile(update)
-        if (!apk.exists()) return
-        if (context.packageManager.canRequestPackageInstalls()) scope.launch { install(apk) }
+        if (!apk.exists() || !steps.canInstall()) return
+        _state.value = UpdateState.Installing
+        job = scope.launch { installOrFail(apk) }
+    }
+
+    /** A download or install under way (a confirm Android shows counts too). */
+    private fun busy() = job?.isActive == true || _state.value == UpdateState.Installing
+
+    /** The install (or Android's permission step first), a failure of it (no space to stage the APK, the installer refusing) shown, never thrown. */
+    private fun installOrFail(apk: File) {
+        if (!steps.canInstall()) {
+            _state.value = UpdateState.NeedsPermission
+            return
+        }
+        _state.value = UpdateState.Installing
+        try {
+            steps.install(apk)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "install failed: ${e.javaClass.simpleName}: ${e.message}")
+            _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
+        }
     }
 
     /** Android's "Install unknown apps" screen for Stash. */
@@ -151,8 +195,8 @@ class AppUpdater @Inject constructor(
         if (_state.value is UpdateState.Failed) _state.value = UpdateState.Idle
     }
 
-    /** [UpdateInstallReceiver]: the installer's answer. */
-    internal fun onInstallResult(status: Int, message: String?) {
+    /** [UpdateInstallReceiver]: the installer's answer. Public: called from another file (see the incremental-build note in #741). */
+    fun onInstallResult(status: Int, message: String?) {
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit // the receiver opened Android's confirm
             PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle // this process is replaced right after
@@ -174,9 +218,20 @@ class AppUpdater @Inject constructor(
         apk.parentFile?.mkdirs()
         val part = File(apk.path + ".part")
         _state.value = UpdateState.Downloading(0f)
+        try {
+            fetch(update, part)
+            if (!part.renameTo(apk)) error("rename failed")
+        } finally {
+            // A broken or interrupted download (no space, a dropped connection, cancelled) leaves nothing behind.
+            part.delete()
+        }
+        return apk
+    }
+
+    private fun fetch(update: AvailableUpdate, part: File) {
         if (update.apkUrl.startsWith("file:") && isDebuggable(context)) {
             // A debug build's test release (see [UpdateCheckWorker]): an APK already on the phone.
-            File(Uri.parse(update.apkUrl).path!!).copyTo(part, overwrite = true)
+            File(java.net.URI(update.apkUrl)).copyTo(part, overwrite = true)
         } else {
             val request = Request.Builder().url(update.apkUrl).header("User-Agent", "Stash-Android").build()
             okHttpClient.newCall(request).execute().use { response ->
@@ -207,13 +262,11 @@ class AppUpdater @Inject constructor(
                 }
             }
         }
-        if (!part.renameTo(apk)) error("rename failed")
-        return apk
     }
 
     /** Why [apk] mustn't be installed, or null: it's this app, newer than this one, and signed with this one's key. */
     @Suppress("DEPRECATION")
-    private fun verify(apk: File): UpdateState.Failed.Reason? {
+    private fun verifyApk(apk: File): UpdateState.Failed.Reason? {
         val pm = context.packageManager
         val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val archive = pm.getPackageArchiveInfo(apk.path, flags) ?: return UpdateState.Failed.Reason.NOT_AN_UPDATE
@@ -243,12 +296,8 @@ class AppUpdater @Inject constructor(
         return sigs.mapTo(HashSet()) { sig -> sha.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) } }
     }
 
-    private fun install(apk: File) {
-        if (!context.packageManager.canRequestPackageInstalls()) {
-            _state.value = UpdateState.NeedsPermission
-            return
-        }
-        _state.value = UpdateState.Installing
+    /** Stages [apk] in a [PackageInstaller] session and commits it ([UpdateInstallReceiver] hears the answer). */
+    private fun stageAndCommit(apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
@@ -257,19 +306,25 @@ class AppUpdater @Inject constructor(
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("stash.apk", 0, apk.length()).use { out ->
-                apk.inputStream().use { it.copyTo(out) }
-                session.fsync(out)
+        try {
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("stash.apk", 0, apk.length()).use { out ->
+                    apk.inputStream().use { it.copyTo(out) }
+                    session.fsync(out)
+                }
+                val callback = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(context, UpdateInstallReceiver::class.java).setPackage(context.packageName),
+                    // Mutable: the installer adds its status to it.
+                    PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0),
+                )
+                session.commit(callback.intentSender)
             }
-            val callback = PendingIntent.getBroadcast(
-                context,
-                sessionId,
-                Intent(context, UpdateInstallReceiver::class.java).setPackage(context.packageName),
-                // Mutable: the installer adds its status to it.
-                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0),
-            )
-            session.commit(callback.intentSender)
+        } catch (e: Exception) {
+            // Staging failed: the session's copy of the APK mustn't stay on the phone.
+            runCatching { installer.abandonSession(sessionId) }
+            throw e
         }
     }
 
