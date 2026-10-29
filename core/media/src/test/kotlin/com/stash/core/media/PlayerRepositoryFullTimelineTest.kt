@@ -569,6 +569,49 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
+    fun `prefetch leaves the slot alone when playback reached it during the lookup`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        repo.filePathExistsOnDisk = { it == "/storage/music/new.flac" }
+        var advanced = false
+        // The row read suspends; meanwhile the song before ends and slot 1 starts playing.
+        coEvery { trackDao.getById(42L) } coAnswers {
+            advanced = true
+            com.stash.core.data.db.entity.TrackEntity(
+                id = 42L, title = "Next", artist = "Artist", filePath = "/storage/music/new.flac",
+                fileSizeBytes = 1_000_000L, fileFormat = "flac", isDownloaded = true,
+            )
+        }
+        val nextItem = MediaItem.Builder()
+            .setMediaId("42")
+            .setUri("https://cdn.example/earlier-prefetch.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setExtras(android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 42L) }).build(),
+            )
+            .build()
+        every { controller.currentMediaItemIndex } answers { if (advanced) 1 else 0 }
+        every { controller.nextMediaItemIndex } answers { if (advanced) -1 else 1 }
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns nextItem
+        repo.currentQueueTracks = listOf(
+            Track(id = 41L, title = "Current", artist = "Artist"),
+            Track(id = 42L, title = "Next", artist = "Artist", isStreamable = true),
+        )
+
+        repo.prefetchNextTrack()
+
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        assertThat(repo.currentQueueTracks[1].isDownloaded).isFalse()
+    }
+
+    @Test
+    fun `the next-up check`() {
+        assertThat(isStillNextUp(currentIndex = 0, nextIndex = 1, timelineIndex = 1)).isTrue()
+        assertThat(isStillNextUp(currentIndex = 1, nextIndex = 2, timelineIndex = 1)).isFalse()
+        assertThat(isStillNextUp(currentIndex = 0, nextIndex = 2, timelineIndex = 1)).isFalse()
+    }
+
+    @Test
     fun `direct queue jump replaces a stale downloaded target with a stream placeholder`() = runTest {
         coEvery { streamingPreference.current() } returns true
         every { connectivity.isConnected() } returns true

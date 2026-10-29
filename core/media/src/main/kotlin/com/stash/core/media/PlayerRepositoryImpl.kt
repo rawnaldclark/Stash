@@ -1213,6 +1213,12 @@ class PlayerRepositoryImpl @Inject constructor(
      * longer plays, and updates the queue's copy so later reads see the file.
      */
     private fun playNextFromFile(controller: MediaController, timelineIndex: Int, next: Track) {
+        if (!isStillNextUp(controller.currentMediaItemIndex, controller.nextMediaItemIndex, timelineIndex)) {
+            // Playback moved while the row and file were read (an advance, a tap): the slot may be the one
+            // playing now, and swapping its source would restart it mid-song (review on #730).
+            Log.d(TAG, "next-up id=${next.id} isn't next any more; leaving its slot alone")
+            return
+        }
         if (timelineIndex !in 0 until controller.mediaItemCount) return
         val item = controller.getMediaItemAt(timelineIndex)
         if (item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) != next.id) return
@@ -3830,3 +3836,10 @@ internal fun MediaItem.toScannedTrack(trackId: Long): Track {
 /** The ids of a queue that a resume can find again: every All Songs file is left out. */
 internal fun savableQueueIds(ids: List<Long>): List<Long> =
     if (ids.none(::isScannedTrackId)) ids else ids.filterNot(::isScannedTrackId)
+
+/**
+ * Whether the slot a prefetch captured at [timelineIndex] is still the next-up and not the one playing, read again right
+ * before replacing it: the prefetch suspends for the DB and the file check in between (review on #730).
+ */
+internal fun isStillNextUp(currentIndex: Int, nextIndex: Int, timelineIndex: Int): Boolean =
+    timelineIndex == nextIndex && timelineIndex != currentIndex
