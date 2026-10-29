@@ -501,6 +501,18 @@ fun NowPlayingScreen(
     // Full art's pages: the front (the square art's own decode), then the back and the pages
     // inside as far as they're known.
     val frontRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
+    // The covers either side, fetched ahead: a skip then shows its cover at once.
+    run {
+        val q = uiState.queue
+        val i = uiState.currentIndex
+        val wrap = uiState.repeatMode == RepeatMode.ALL
+        val nextTrack = q.getOrNull(i + 1) ?: q.firstOrNull()?.takeIf { wrap && q.size > 1 && i == q.lastIndex }
+        val previousTrack = q.getOrNull(i - 1) ?: q.lastOrNull()?.takeIf { wrap && q.size > 1 && i == 0 }
+        com.stash.feature.nowplaying.ui.PrefetchNeighbourArt(
+            previous = previousTrack?.let { it.albumArtPath ?: it.albumArtUrl },
+            next = nextTrack?.let { it.albumArtPath ?: it.albumArtUrl },
+        )
+    }
     val npContext = androidx.compose.ui.platform.LocalContext.current
     val fullArtPages = remember(artModel, frontRequest, coverArt) {
         if (artModel == null) {
