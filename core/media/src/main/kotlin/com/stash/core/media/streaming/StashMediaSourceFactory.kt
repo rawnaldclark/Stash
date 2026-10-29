@@ -58,7 +58,7 @@ class StashMediaSourceFactory(
      */
     cloudDataSourceFactory: DataSource.Factory? = null,
     /** The same without the cache, for Cast. */
-    private val cloudUncachedDataSourceFactory: DataSource.Factory? = null,
+    cloudUncachedDataSourceFactory: DataSource.Factory? = null,
     /** "Play my cloud copies first": told when a cloud copy won't open. Null in tests. */
     private val cloudCopies: CloudCopyFinder? = null,
     /**
@@ -79,15 +79,20 @@ class StashMediaSourceFactory(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
     )
 
-    private val localDataSourceFactory = DefaultDataSource.Factory(context)
+    // Every network source below is gated when it OPENS ([DownloadModeGate]), not only here when its
+    // media source is made: a source made in Stream only and opened after the switch flips is refused.
+    // A file on the phone always opens.
+    private val localDataSourceFactory = DownloadModeGate.gate(DefaultDataSource.Factory(context), streamAllowed)
     private val localFactory = DefaultMediaSourceFactory(localDataSourceFactory)
 
     internal val jioSaavnHttpClient = httpClient.newBuilder()
         .followRedirects(false)
         .followSslRedirects(false)
         .build()
-    private val jioSaavnDataSourceFactory =
-        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
+    private val jioSaavnDataSourceFactory = DownloadModeGate.gate(
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient),
+        streamAllowed,
+    )
     private val jioSaavnFactory = DefaultMediaSourceFactory(jioSaavnDataSourceFactory)
 
     // Full-timeline placeholders: stash-resolve://track/<id> items resolve
@@ -100,17 +105,18 @@ class StashMediaSourceFactory(
                 resolver = resolver,
                 urlCache = urlCache,
                 trackDao = trackDao,
+                // Each delegate gated too: a placeholder whose URL was cached opens it without a resolve.
                 httpDelegate = {
-                    DefaultHttpDataSource.Factory().setUserAgent("Stash/0.9.26")
-                        .setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
-                        .createDataSource()
+                    DownloadModeGate(
+                        DefaultHttpDataSource.Factory().setUserAgent("Stash/0.9.26")
+                            .setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
+                            .createDataSource(),
+                        streamAllowed,
+                    )
                 },
-                jioSaavnDelegate = {
-                    androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(jioSaavnHttpClient)
-                        .createDataSource()
-                },
+                jioSaavnDelegate = { jioSaavnDataSourceFactory.createDataSource() },
                 // "Play my cloud copies first": a stream answered by the user's own cloud file.
-                cloudDelegate = cloudDataSourceFactory?.let { cloud -> { cloud.createDataSource() } },
+                cloudDelegate = cloudDataSourceFactory?.let { { cloudSourceFactory.createDataSource() } },
                 cloudCopies = cloudCopies,
                 streamAllowed = streamAllowed,
             )
@@ -121,8 +127,11 @@ class StashMediaSourceFactory(
     private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
     private val refusedFactory = DefaultMediaSourceFactory(refusedDataSourceFactory)
 
-    private val cloudSourceFactory: DataSource.Factory =
-        cloudDataSourceFactory ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
+    private val cloudSourceFactory: DataSource.Factory = cloudDataSourceFactory
+        ?.let { DownloadModeGate.gate(it, streamAllowed, alwaysNetwork = true) }
+        ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
+    private val cloudUncachedSourceFactory: DataSource.Factory? =
+        cloudUncachedDataSourceFactory?.let { DownloadModeGate.gate(it, streamAllowed, alwaysNetwork = true) }
     // A blocked or changed cloud file fails at once instead of being retried (CloudLoadErrorPolicy).
     private val cloudFactory = DefaultMediaSourceFactory(cloudSourceFactory).apply {
         setLoadErrorHandlingPolicy(CloudLoadErrorPolicy())
@@ -163,7 +172,7 @@ class StashMediaSourceFactory(
         if (mediaItem.localConfiguration?.uri?.isRefusedStream() == true) return refusedDataSourceFactory
         if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) return lazyDataSourceFactory
         if (mediaItem.localConfiguration?.uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) {
-            return cloudUncachedDataSourceFactory ?: cloudSourceFactory
+            return cloudUncachedSourceFactory ?: cloudSourceFactory
         }
         streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
