@@ -195,6 +195,8 @@ abstract class StashDatabase : RoomDatabase() {
 
     abstract fun recordTasteDao(): com.stash.core.data.db.dao.RecordTasteDao
 
+    abstract fun libraryArtDao(): com.stash.core.data.db.dao.LibraryArtDao
+
     companion object {
         const val DATABASE_NAME = "stash.db"
 

@@ -32,10 +32,11 @@ internal const val BRIDGE = "StashHost"
 
 /**
  * The bundled record over https on the asset loader's own domain, never `file://`: `/record/` is `assets/record/` (the
- * fork's build), `/fonts/` is `assets/record-fonts/` (the faces theme.css loads from the site root). Nothing else of the
- * APK's assets is reachable, and a path that climbs (`..`) is refused.
+ * fork's build), `/fonts/` is `assets/record-fonts/` (the faces theme.css loads from the site root), and `/art/` the
+ * library's covers by the names the host gave the page ([art]: [com.stash.feature.record.art.LibraryArtHandler]). Nothing
+ * else of the APK's assets is reachable, and a path that climbs (`..`) is refused.
  */
-internal fun recordAssetLoader(context: Context): WebViewAssetLoader {
+internal fun recordAssetLoader(context: Context, art: WebViewAssetLoader.PathHandler? = null): WebViewAssetLoader {
     val assets = WebViewAssetLoader.AssetsPathHandler(context)
     fun under(dir: String) = WebViewAssetLoader.PathHandler { path ->
         if (path.split('/').any { it == ".." || it == "." }) null else assets.handle("$dir/$path")
@@ -43,6 +44,7 @@ internal fun recordAssetLoader(context: Context): WebViewAssetLoader {
     return WebViewAssetLoader.Builder()
         .addPathHandler("/record/", under("record"))
         .addPathHandler("/fonts/", under("record-fonts"))
+        .apply { if (art != null) addPathHandler("/art/", art) }
         .build()
 }
 
@@ -66,7 +68,7 @@ private data class ProxyPort(private val proxy: JavaScriptReplyProxy) : RecordPo
  * Made on a [android.content.MutableContextWrapper] by [RecordViewModel], which keeps it across configuration changes and
  * points the wrapper at whichever Activity shows it.
  *
- * [onGone]: the page's renderer died; this view can't be used again ([release] then only destroys it).
+ * [onGone]: the page's renderer died; this view can't be used again ([release] then only destroys it). [art]: `/art/`.
  */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 internal class RecordWebView(
@@ -74,9 +76,10 @@ internal class RecordWebView(
     onMessage: (String, RecordPort) -> Unit,
     onResponsive: (Boolean) -> Unit,
     private val onGone: () -> Unit,
+    art: WebViewAssetLoader.PathHandler? = null,
 ) : WebView(context) {
     private var rendererGone = false
-    private val assetLoader = recordAssetLoader(context)
+    private val assetLoader = recordAssetLoader(context, art)
 
     init {
         // Its own size, whatever holds it. Compose's AndroidView adds a view with the ViewGroup default, wrap_content, and a

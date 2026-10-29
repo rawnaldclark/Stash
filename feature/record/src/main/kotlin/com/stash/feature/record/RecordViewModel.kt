@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.db.dao.LibraryArtDao
 import com.stash.core.data.db.dao.RecordPlayDao
 import com.stash.core.data.db.dao.WebLibraryExportDao
 import com.stash.feature.record.archive.OwnArchive
@@ -17,6 +18,9 @@ import com.stash.feature.record.archive.RecordSources
 import com.stash.feature.record.archive.RecordSourcesStore
 import com.stash.feature.record.archive.SourceCounts
 import com.stash.feature.record.archive.SourcesOn
+import com.stash.feature.record.art.LibraryArt
+import com.stash.feature.record.art.LibraryArtFiles
+import com.stash.feature.record.art.LibraryArtHandler
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.bridge.RecordEvent
 import com.stash.feature.record.bridge.RecordHost
@@ -30,6 +34,7 @@ import com.stash.feature.record.imports.RecordImports
 import com.stash.feature.record.lastfm.RecordLastfm
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -72,6 +77,8 @@ class RecordViewModel @Inject constructor(
     taste: com.stash.feature.record.taste.RecordTaste,
     private val savedState: SavedStateHandle,
     private val tabs: RecordTabStore,
+    libraryArt: LibraryArtDao,
+    private val artFiles: LibraryArtFiles,
 ) : ViewModel() {
     private val _tab = MutableStateFlow(
         RecordTab.of(savedState.get<String>(SHOWN)) ?: RecordTab.of(savedState.get<String>(TAB_ARG)) ?: tabs.last,
@@ -124,6 +131,8 @@ class RecordViewModel @Inject constructor(
                 this@RecordViewModel.counts.value = counts
             }
         },
+        // The library's own covers first (owner decision D1), read once for this record opened
+        library = LibraryArt(libraryArt, artFiles, File(app.filesDir, SCANNED_ART_DIR)),
     )
 
     /**
@@ -142,6 +151,8 @@ class RecordViewModel @Inject constructor(
         lastfm.topUp()
         // ...and works the taste out again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
         taste.daily()
+        // The library covers' folder back to its size, the least recently shown going first
+        viewModelScope.launch(Dispatchers.IO) { artFiles.trim() }
     }
 
     /**
@@ -187,6 +198,7 @@ class RecordViewModel @Inject constructor(
             onMessage = host::onMessage,
             onResponsive = { host.unresponsive = !it },
             onGone = ::rendererGone,
+            art = LibraryArtHandler(artFiles),
         )
         holder.baseContext = context
         web = w
@@ -244,6 +256,9 @@ class RecordViewModel @Inject constructor(
     companion object {
         /** Where the record's files are put together before they are saved or shared (cacheDir). */
         private const val SAVES_DIR = "record-saves"
+
+        /** Scanned songs' covers (filesDir; feature:library's ScannedCoverStore.DIR_NAME). */
+        private const val SCANNED_ART_DIR = "scanned_art"
 
         /** The route's argument (YourRecordRoute's `tab`): the tab to open on ([RecordTab.key]), or none. */
         const val TAB_ARG = "tab"

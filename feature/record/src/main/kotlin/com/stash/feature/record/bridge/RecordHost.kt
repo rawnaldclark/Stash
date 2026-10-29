@@ -55,6 +55,25 @@ fun interface RecordCovers {
 }
 
 /**
+ * The library's own covers for the record (owner decision D1; [com.stash.feature.record.art.LibraryArt]): each song's, as an
+ * address the page can show at once (its file made already), or null.
+ */
+interface RecordLibraryArt {
+    /** Covers of the person's own files (local, embedded, cloud, imported): before any lookup. */
+    suspend fun local(songs: List<ArtSong>): List<String?>
+
+    /** The library's remote covers (from the image cache alone): only for what the lookups found nothing for. */
+    suspend fun remote(songs: List<ArtSong>): List<String?>
+
+    /** No library (a host that shows the lookups' covers alone). */
+    object None : RecordLibraryArt {
+        override suspend fun local(songs: List<ArtSong>): List<String?> = songs.map { null }
+
+        override suspend fun remote(songs: List<ArtSong>): List<String?> = songs.map { null }
+    }
+}
+
+/**
  * The record's source switches as the host sees them (stash-player `src/routes/spotify/+page.svelte`'s sources): the choice kept
  * on this phone, and what each source brings once it is known. Called on the main thread.
  */
@@ -111,8 +130,11 @@ interface RecordSaveSink {
  *   which agrees) and a switch flipped ([sourcesChanged]) send it again, only when it changed: the page presses again for each.
  * - `stash:play`: "Playing …" at once (the record covers the mini player), and the songs to [RecordPlayer], which outlives
  *   the screen: back right after a tap still plays.
- * - `stash:art`: covers looked up here ([RecordCovers]), handed back by the record's own names as each batch lands, then the
- *   whole list with null for none (and any found later, after that).
+ * - `stash:art`: the library's own-file covers first ([RecordLibraryArt.local], posted as a batch of their own), then the rest
+ *   looked up here ([RecordCovers]: never asked for a song the library answered), handed back by the record's own names as each
+ *   batch lands, then for what is still missing the library's remote covers ([RecordLibraryArt.remote]), then the whole list
+ *   with null for none (and any found later, after that). The page takes the last word for a name, so each list says what the
+ *   lists before it said.
  * - `stash:save`: a poster's or a video's chunks, put together ([RecordSaveSink]) and saved or shared; each answered
  *   `stash:save-ack` once it is in the file (the page keeps two in flight). `stash:save-abort`: what was gathered goes.
  * - `stash:import`: the import sheet opens over the record ([RecordEvent.Import]). When an import or a removal changes the
@@ -134,6 +156,7 @@ class RecordHost(
     private val saves: RecordSaveSink,
     private val events: (RecordEvent) -> Unit,
     private val sources: RecordSourceSwitch = RecordSourceSwitch.All,
+    private val library: RecordLibraryArt = RecordLibraryArt.None,
     private val main: CoroutineContext = Dispatchers.Main.immediate,
     private val background: CoroutineContext = Dispatchers.Default,
     private val chunkSize: Int = CHUNK_ROWS,
@@ -441,22 +464,44 @@ class RecordHost(
         val songs = asks.map { if (it.isArtist) ArtSong(it.artist, it.artist, isArtist = true) else ArtSong(it.title!!, it.artist, it.album) }
         val here = pageScope()
         here.launch {
-            // Called where covers() runs (this scope's thread, the main one), so it posts in order, before the final list
-            val found: (List<String?>) -> Unit = { urls ->
-                val list = asks.indices.mapNotNull { i -> urls.getOrNull(i)?.let { asks[i].id to it } }
-                if (list.isNotEmpty()) from.post(RecordMessages.covers(list))
+            val out = arrayOfNulls<String>(asks.size)
+            // 1. The person's own files' covers, as a batch of their own
+            fill(out, asks.indices.toList(), "library covers") { library.local(songs) }
+            postFound(from, asks, out, asks.indices.filter { out[it] != null })
+            // 2. The lookups for the rest; each batch says only its own names, so a lookup never covers an own cover
+            val rest = asks.indices.filter { out[it] == null }
+            if (rest.isNotEmpty()) {
+                // Called where covers() runs (this scope's thread, the main one), so it posts in order, before the final list
+                val found: (List<String?>) -> Unit = { urls ->
+                    val list = rest.indices.mapNotNull { j -> urls.getOrNull(j)?.let { asks[rest[j]].id to it } }
+                    if (list.isNotEmpty()) from.post(RecordMessages.covers(list))
+                }
+                // Its drawn covers stay when it fails: nothing to say
+                fill(out, rest, "covers") { covers.covers(rest.map(songs::get), here, found) }
             }
-            try {
-                val urls = covers.covers(songs, here, found)
-                // Answered to the page that asked: one that has gone since drops it, and a new page ignores names it never asked
-                from.post(RecordMessages.covers(asks.mapIndexed { i, a -> a.id to urls.getOrNull(i) }))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Its drawn covers stay: nothing to say
-                Log.w(TAG, "covers failed: ${e.javaClass.simpleName}")
-            }
+            // 3. The library's remote covers where the lookups found nothing
+            val missing = asks.indices.filter { out[it] == null && !asks[it].isArtist }
+            if (missing.isNotEmpty()) fill(out, missing, "library addresses") { library.remote(missing.map(songs::get)) }
+            // Answered to the page that asked: one that has gone since drops it, and a new page ignores names it never asked
+            from.post(RecordMessages.covers(asks.mapIndexed { i, a -> a.id to out[i] }))
         }
+    }
+
+    /** [find]'s answers for the asks at [at] into [out]; one that fails leaves them as they were. */
+    private suspend fun fill(out: Array<String?>, at: List<Int>, what: String, find: suspend () -> List<String?>) {
+        val urls = try {
+            find()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "$what failed: ${e.javaClass.simpleName}")
+            return
+        }
+        at.forEachIndexed { j, i -> urls.getOrNull(j)?.let { out[i] = it } }
+    }
+
+    private fun postFound(from: RecordPort, asks: List<RecordArtAsk>, out: Array<String?>, at: List<Int>) {
+        if (at.isNotEmpty()) from.post(RecordMessages.covers(at.map { asks[it].id to out[it] }))
     }
 
     companion object {
