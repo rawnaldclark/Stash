@@ -19,8 +19,8 @@ data class YTSong(
     val thumbnailUrl: String?,
 )
 
-/** Reads what a pasted YouTube link needs from browse and `next` responses. */
-internal object LinkResponseParser {
+/** Reads what a pasted YouTube link needs from browse and `next` responses. Public: [YTMusicApiClient] calls it from another file. */
+object LinkResponseParser {
 
     /** A playlist page's `musicResponsiveHeaderRenderer` (or the editable one, the listener's own playlists). */
     fun playlistHeader(response: JsonObject): YTPlaylistHeader? {
