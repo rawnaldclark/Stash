@@ -46,7 +46,7 @@
     <string name="settings_update_on_latest">You\'re on the latest version (%1$s)</string>
     <string name="settings_update_available">Update available: %1$s</string>
     <string name="update_sheet_title">Stash %1$s is ready</string>
-    <string name="update_sheet_whats_new">What's new</string>
+    <string name="update_sheet_whats_new">What\'s new</string>
     <string name="update_sheet_update_now">Update now</string>
     <string name="update_sheet_later">Later</string>
     <string name="update_sheet_downloading">Downloading…</string>
@@ -56,10 +56,10 @@
     <string name="update_sheet_open_settings">Open settings</string>
     <string name="update_sheet_try_again">Try again</string>
     <string name="update_sheet_github">Get it from GitHub</string>
-    <string name="update_failed_not_an_update">This download isn't a Stash update, so nothing was installed.</string>
+    <string name="update_failed_not_an_update">This download isn\'t a Stash update, so nothing was installed.</string>
     <string name="update_failed_already_newer">You already have this version or a newer one.</string>
-    <string name="update_failed_download">Couldn't download the update. Check your connection and try again.</string>
-    <string name="update_failed_install">Android couldn't install the update. Try again, or get it from GitHub.</string>
+    <string name="update_failed_download">Couldn\'t download the update. Check your connection and try again.</string>
+    <string name="update_failed_install">Android couldn\'t install the update. Try again, or get it from GitHub.</string>
     <string name="settings_update_see_releases">see Releases</string>
     <string name="settings_update_check_failed">Couldn\'t check for updates — try again later</string>
     <string name="settings_version_label">Version</string>
