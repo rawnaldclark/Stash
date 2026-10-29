@@ -22,39 +22,39 @@ class LosslessSourceHealthTest {
 
     @Test
     fun `starts healthy`() = runTest {
-        assertThat(health.qbdlxLooksDown.first()).isFalse()
+        assertThat(health.losslessLooksDown.first()).isFalse()
     }
 
     @Test
     fun `a few misses are just catalog gaps, not an outage`() = runTest {
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD - 1) { health.recordQbdlxMiss() }
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD - 1) { health.recordLosslessMiss() }
 
-        assertThat(health.qbdlxLooksDown.first()).isFalse()
+        assertThat(health.losslessLooksDown.first()).isFalse()
     }
 
     @Test
     fun `threshold consecutive misses reads as down`() = runTest {
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { health.recordQbdlxMiss() }
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { health.recordLosslessMiss() }
 
-        assertThat(health.qbdlxLooksDown.first()).isTrue()
+        assertThat(health.losslessLooksDown.first()).isTrue()
     }
 
     @Test
     fun `a single serve resets the streak`() = runTest {
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { health.recordQbdlxMiss() }
-        health.recordQbdlxServed()
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { health.recordLosslessMiss() }
+        health.recordLosslessServed()
 
-        assertThat(health.qbdlxLooksDown.first()).isFalse()
+        assertThat(health.losslessLooksDown.first()).isFalse()
 
         // And the streak restarts from zero, not from the old count.
-        health.recordQbdlxMiss()
-        assertThat(health.qbdlxLooksDown.first()).isFalse()
+        health.recordLosslessMiss()
+        assertThat(health.losslessLooksDown.first()).isFalse()
     }
 
     @Test
     fun `stays down while misses continue past the threshold`() = runTest {
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD * 3) { health.recordQbdlxMiss() }
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD * 3) { health.recordLosslessMiss() }
 
-        assertThat(health.qbdlxLooksDown.first()).isTrue()
+        assertThat(health.losslessLooksDown.first()).isTrue()
     }
 }

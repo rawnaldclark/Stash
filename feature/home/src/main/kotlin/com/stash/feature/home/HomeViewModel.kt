@@ -400,7 +400,7 @@ class HomeViewModel @Inject constructor(
      * account — is exactly what that user still needs to do.
      */
     private val losslessOfflineFlow = combine(
-        losslessSourceHealth.qbdlxLooksDown,
+        losslessSourceHealth.losslessLooksDown,
         losslessAvailability.anyUserOwned,
         losslessPrefs.enabled,
         losslessPrefs.losslessOfflineDismissed,
