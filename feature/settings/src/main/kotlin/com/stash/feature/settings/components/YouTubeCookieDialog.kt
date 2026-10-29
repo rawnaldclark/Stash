@@ -19,8 +19,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.stash.feature.settings.R
 
 /**
  * Dialog for entering YouTube Music cookies to authenticate.
@@ -47,14 +49,14 @@ fun YouTubeCookieDialog(
         onDismissRequest = { if (!isValidating) onDismiss() },
         title = {
             Text(
-                text = "Connect YouTube Music",
+                text = stringResource(R.string.settings_youtube_connect_dialog_title),
                 style = MaterialTheme.typography.headlineSmall,
             )
         },
         text = {
             Column {
                 Text(
-                    text = "Paste your YouTube Music cookies to connect.",
+                    text = stringResource(R.string.settings_youtube_cookie_dialog_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -62,7 +64,7 @@ fun YouTubeCookieDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "How to get your cookies:",
+                    text = stringResource(R.string.settings_youtube_how_to_get_cookies),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -70,13 +72,7 @@ fun YouTubeCookieDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "1. Open a Private/Incognito window\n" +
-                        "2. Go to music.youtube.com and log in\n" +
-                        "3. Press F12 to open DevTools\n" +
-                        "4. Go to Network tab, click any request\n" +
-                        "5. Find 'Cookie' in Request Headers\n" +
-                        "6. Copy the ENTIRE cookie value\n\n" +
-                        "Must contain: SAPISID, LOGIN_INFO, SID",
+                    text = stringResource(R.string.settings_youtube_how_to_get_cookies_steps),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -86,8 +82,8 @@ fun YouTubeCookieDialog(
                 OutlinedTextField(
                     value = cookieValue,
                     onValueChange = { cookieValue = it },
-                    label = { Text("Cookie") },
-                    placeholder = { Text("Paste your cookie here") },
+                    label = { Text(stringResource(R.string.settings_youtube_cookie_label)) },
+                    placeholder = { Text(stringResource(R.string.settings_youtube_cookie_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                     maxLines = 5,
@@ -123,14 +119,14 @@ fun YouTubeCookieDialog(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Connect")
+                    Text(stringResource(R.string.settings_account_connect))
                 }
             }
         },
         dismissButton = {
             if (!isValidating) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.settings_cancel))
                 }
             }
         },

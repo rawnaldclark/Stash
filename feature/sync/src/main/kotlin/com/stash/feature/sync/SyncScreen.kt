@@ -39,6 +39,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -140,7 +143,7 @@ fun SyncScreen(
         item {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Sync",
+                text = stringResource(R.string.sync_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -237,7 +240,7 @@ fun SyncScreen(
         }
 
         // -- Sources section -------------------------------------------------
-        item { SyncSectionLabel("Sources") }
+        item { SyncSectionLabel(stringResource(R.string.sync_section_sources)) }
 
         // -- Spotify source dashboard (above schedule) ------------------------
         // Rendered whenever Spotify is connected, even before the first sync
@@ -262,11 +265,7 @@ fun SyncScreen(
                                 likedCount = playlists.firstOrNull { it.type == PlaylistType.LIKED_SONGS }?.trackCount,
                             )
                         } else {
-                            SourceEmptyHint(
-                                "Your Spotify playlists and daily mixes will appear here after " +
-                                    "the first sync. Tap Sync Now to load them — nothing downloads " +
-                                    "until you toggle it on.",
-                            )
+                            SourceEmptyHint(stringResource(R.string.sync_source_empty_spotify))
                         }
                     },
                     modeChips = {
@@ -311,11 +310,7 @@ fun SyncScreen(
                                 likedCount = playlists.firstOrNull { it.type == PlaylistType.LIKED_SONGS }?.trackCount,
                             )
                         } else {
-                            SourceEmptyHint(
-                                "Your Home Mixes, Liked Songs, and playlists from your YouTube " +
-                                    "Music library will appear here after the first sync. Nothing " +
-                                    "downloads until you pick what you want — no surprise downloads.",
-                            )
+                            SourceEmptyHint(stringResource(R.string.sync_source_empty_youtube))
                         }
                     },
                     modeChips = {
@@ -352,15 +347,11 @@ fun SyncScreen(
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 SourceStatCell(
                                     number = "${lastFmState.trackCount}",
-                                    label = "RECOMMENDED",
+                                    label = stringResource(R.string.sync_source_stat_recommended),
                                 )
                             }
                         } else {
-                            SourceEmptyHint(
-                                "A playlist of tracks Last.fm recommends — seeded from " +
-                                    "what you listen to — will be built on the next sync. " +
-                                    "Tap Sync Now to start it.",
-                            )
+                            SourceEmptyHint(stringResource(R.string.sync_source_empty_lastfm))
                         }
                     },
                     modeChips = {
@@ -375,7 +366,7 @@ fun SyncScreen(
         }
 
         // -- Schedule section -------------------------------------------------
-        item { SyncSectionLabel("Schedule") }
+        item { SyncSectionLabel(stringResource(R.string.sync_section_schedule)) }
         item {
             com.stash.feature.sync.components.ScheduleCard(
                 autoSyncEnabled = uiState.syncPreferences.autoSyncEnabled,
@@ -393,7 +384,7 @@ fun SyncScreen(
         // -- Library section --------------------------------------------------
         // Sync-adjacent maintenance: Blocked Songs gate what sync will
         // re-download, so the entry point lives here above Recent Syncs.
-        item { SyncSectionLabel("Library") }
+        item { SyncSectionLabel(stringResource(R.string.sync_section_library)) }
         item {
             LibraryMaintenanceCard(
                 blockedCount = blockedCount,
@@ -403,7 +394,7 @@ fun SyncScreen(
 
         // -- Recent Syncs section ---------------------------------------------
         if (uiState.recentSyncs.isNotEmpty()) {
-            item { SyncSectionLabel("Recent syncs") }
+            item { SyncSectionLabel(stringResource(R.string.sync_section_recent_syncs)) }
             item {
                 val rows = uiState.recentSyncs.map { it.toRecentSyncRow(formatRelativeTime(it.startedAt)) }
                 RecentSyncsCard(rows)
@@ -420,22 +411,15 @@ fun SyncScreen(
     if (uiState.pendingRefreshSource != null) {
         AlertDialog(
             onDismissRequest = viewModel::cancelRefreshMode,
-            title = { Text("Switch to Refresh?") },
+            title = { Text(stringResource(R.string.sync_switch_to_refresh_title)) },
             text = {
-                Text(
-                    "Refresh pulls fresh tracks each sync — your auto-generated " +
-                        "daily mixes, weekly discovery, and other rotating playlists. " +
-                        "Tracks that rotate out are removed from the mix and their " +
-                        "downloads deleted to keep your library lean. Cleanup runs once " +
-                        "all sources are set to Refresh — while any source still " +
-                        "accumulates, nothing is deleted. Tracks you added manually are kept."
-                )
+                Text(stringResource(R.string.sync_switch_to_refresh_body))
             },
             confirmButton = {
-                TextButton(onClick = viewModel::confirmRefreshMode) { Text("Switch to Refresh") }
+                TextButton(onClick = viewModel::confirmRefreshMode) { Text(stringResource(R.string.sync_switch_to_refresh_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::cancelRefreshMode) { Text("Cancel") }
+                TextButton(onClick = viewModel::cancelRefreshMode) { Text(stringResource(R.string.sync_cancel)) }
             },
         )
     }
@@ -445,20 +429,12 @@ fun SyncScreen(
     // put back, since "undo" invites the assumption that it reverses everything.
     if (confirmUndo) {
         val card = undoCard
+        val changedPlaylistsSuffix = card?.let { " (" + pluralStringResource(R.plurals.sync_playlists_count, it.changedPlaylists, it.changedPlaylists) + ")" }.orEmpty()
         AlertDialog(
             onDismissRequest = { confirmUndo = false },
-            title = { Text("Undo last sync?") },
+            title = { Text(stringResource(R.string.sync_undo_dialog_title)) },
             text = {
-                Text(
-                    "Your library goes back to how it was before the last sync: " +
-                        "playlists it hid come back, playlists it added are hidden, and " +
-                        "playlists it emptied are refilled in their original order" +
-                        (card?.let { " (${playlistsWord(it.changedPlaylists)})." } ?: ".") +
-                        "\n\nTracks you added or removed yourself, and Download switches you " +
-                        "changed, are kept. Downloaded files that were already deleted can't " +
-                        "be brought back." +
-                        "\n\nAuto-sync then pauses until you tap Sync, so it doesn't redo it."
-                )
+                Text(stringResource(R.string.sync_undo_dialog_body, changedPlaylistsSuffix))
             },
             confirmButton = {
                 TextButton(
@@ -466,10 +442,10 @@ fun SyncScreen(
                         confirmUndo = false
                         viewModel.onUndoLastSync()
                     },
-                ) { Text("Undo sync") }
+                ) { Text(stringResource(R.string.sync_undo_sync_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmUndo = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmUndo = false }) { Text(stringResource(R.string.sync_cancel)) }
             },
         )
     }
@@ -479,10 +455,10 @@ fun SyncScreen(
     undoResult?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::onUndoResultShown,
-            title = { Text("Sync undone") },
+            title = { Text(stringResource(R.string.sync_undone_title)) },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = viewModel::onUndoResultShown) { Text("OK") }
+                TextButton(onClick = viewModel::onUndoResultShown) { Text(stringResource(R.string.sync_ok)) }
             },
         )
     }
@@ -513,20 +489,20 @@ private fun DownloadManagementCard(onClick: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Downloads",
+                    text = stringResource(R.string.sync_downloads_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "View current downloads, queue, and history",
+                    text = stringResource(R.string.sync_downloads_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "Open downloads",
+                contentDescription = stringResource(R.string.sync_downloads_cd),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -565,11 +541,11 @@ private fun SourceStatsRow(
         verticalAlignment = Alignment.Bottom,
     ) {
         if (mixesCount > 0) {
-            SourceStatCell(number = "$mixesCount", label = "MIXES")
+            SourceStatCell(number = "$mixesCount", label = stringResource(R.string.sync_source_stat_mixes))
         }
-        SourceStatCell(number = "$playlistsEnabled/$playlistsTotal", label = "PLAYLISTS")
+        SourceStatCell(number = "$playlistsEnabled/$playlistsTotal", label = stringResource(R.string.sync_source_stat_playlists))
         if (likedCount != null) {
-            SourceStatCell(number = compactCount(likedCount), label = "LIKED")
+            SourceStatCell(number = compactCount(likedCount), label = stringResource(R.string.sync_source_stat_liked))
         }
     }
 }
@@ -663,15 +639,15 @@ private fun LibraryMaintenanceCard(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Blocked Songs",
+                    text = stringResource(R.string.sync_blocked_songs_title),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = if (blockedCount > 0)
-                        "$blockedCount song${if (blockedCount != 1) "s" else ""} will never re-download"
+                        pluralStringResource(R.plurals.sync_blocked_songs_count, blockedCount, blockedCount)
                     else
-                        "No blocked songs",
+                        stringResource(R.string.sync_blocked_songs_none),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -711,19 +687,19 @@ private fun UnmatchedSongsCard(
     // would see a card claiming sync failed, which is false.
     val headline = when {
         unmatchedCount > 0 && flaggedCount > 0 ->
-            "$count song${if (count != 1) "s" else ""} need review"
+            pluralStringResource(R.plurals.sync_review_need_review, count, count)
         flaggedCount > 0 ->
-            "$flaggedCount song${if (flaggedCount != 1) "s" else ""} flagged as wrong match"
+            pluralStringResource(R.plurals.sync_review_flagged_wrong, flaggedCount, flaggedCount)
         else ->
-            "$unmatchedCount song${if (unmatchedCount != 1) "s" else ""} couldn't be matched"
+            pluralStringResource(R.plurals.sync_review_unmatched, unmatchedCount, unmatchedCount)
     }
     val sub = when {
         unmatchedCount > 0 && flaggedCount > 0 ->
-            "$unmatchedCount unmatched \u00B7 $flaggedCount flagged \u2014 tap to fix"
+            stringResource(R.string.sync_review_sub_both, unmatchedCount, flaggedCount)
         flaggedCount > 0 ->
-            "Tap to pick a replacement"
+            stringResource(R.string.sync_review_sub_flagged)
         else ->
-            "Tap to review"
+            stringResource(R.string.sync_review_sub_unmatched)
     }
 
     Surface(
@@ -829,12 +805,12 @@ private fun FailedDownloadsCard(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Failed Downloads",
+                    text = stringResource(R.string.sync_failed_downloads_title),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "$count track${if (count != 1) "s" else ""} need attention",
+                    text = pluralStringResource(R.plurals.sync_failed_downloads_count, count, count),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -889,13 +865,13 @@ private fun SyncTerminalCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "SYNC LOG",
+                    text = stringResource(R.string.sync_log_title),
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onCopy) { Text("Copy") }
+                TextButton(onClick = onCopy) { Text(stringResource(R.string.sync_log_copy)) }
             }
             LazyColumn(
                 state = listState,
@@ -924,8 +900,7 @@ private fun SyncTerminalCard(
     }
 }
 
-/** "1 playlist" / "3 playlists". */
-private fun playlistsWord(n: Int): String = if (n == 1) "1 playlist" else "$n playlists"
+
 
 /**
  * The plain note under the Sync button while "Undo last sync" has Auto-sync
@@ -945,7 +920,7 @@ private fun AutoSyncPausedNote(modifier: Modifier = Modifier) {
             modifier = Modifier.size(16.dp),
         )
         Text(
-            text = "Auto-sync paused after Undo. Tap Sync to resume.",
+            text = stringResource(R.string.sync_auto_sync_paused_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -970,14 +945,17 @@ private fun UndoSyncCard(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
-    val when_ = remember(capturedAtEpochMs) {
-        val ageMs = System.currentTimeMillis() - capturedAtEpochMs
-        val mins = (ageMs / 60_000L).coerceAtLeast(0)
-        when {
-            mins < 1 -> "just now"
-            mins < 60 -> "$mins min ago"
-            mins < 60 * 24 -> "${mins / 60} hr ago"
-            else -> "${mins / (60 * 24)} day${if (mins / (60 * 24) != 1L) "s" else ""} ago"
+    val mins = remember(capturedAtEpochMs) {
+        val ageMs = (System.currentTimeMillis() - capturedAtEpochMs).coerceAtLeast(0)
+        ageMs / 60_000L
+    }
+    val when_ = when {
+        mins < 1 -> stringResource(R.string.sync_time_just_now)
+        mins < 60 -> stringResource(R.string.sync_time_mins_ago, mins.toInt())
+        mins < 60 * 24 -> stringResource(R.string.sync_time_hours_ago, (mins / 60).toInt())
+        else -> {
+            val days = (mins / (60 * 24)).toInt()
+            pluralStringResource(R.plurals.sync_time_days_ago, days, days)
         }
     }
 
@@ -1000,18 +978,22 @@ private fun UndoSyncCard(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Undo last sync",
+                    text = stringResource(R.string.sync_undo_last_sync_title),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Puts back the ${playlistsWord(playlistCount)} it changed, as they were $when_",
+                    text = stringResource(
+                        R.string.sync_undo_last_sync_subtitle,
+                        pluralStringResource(R.plurals.sync_playlists_count, playlistCount, playlistCount),
+                        when_,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             TextButton(onClick = onUndo, enabled = !inProgress) {
-                Text(if (inProgress) "Undoing…" else "Undo")
+                Text(if (inProgress) stringResource(R.string.sync_undoing) else stringResource(R.string.sync_undo))
             }
         }
     }
@@ -1033,7 +1015,7 @@ private fun SyncModeChipRow(
     accent: Color,
 ) {
     Text(
-        text = "Mix sync mode",
+        text = stringResource(R.string.sync_mix_mode_title),
         style = MaterialTheme.typography.labelMedium,
         color = accent,
         fontWeight = FontWeight.SemiBold,
@@ -1045,19 +1027,19 @@ private fun SyncModeChipRow(
         FilterChip(
             selected = mode == SyncMode.REFRESH,
             onClick = { onRequestRefresh() },
-            label = { Text("Refresh") },
+            label = { Text(stringResource(R.string.sync_mode_refresh)) },
         )
         FilterChip(
             selected = mode == SyncMode.ACCUMULATE,
             onClick = { onChange(SyncMode.ACCUMULATE) },
-            label = { Text("Accumulate") },
+            label = { Text(stringResource(R.string.sync_mode_accumulate)) },
         )
     }
     Text(
         text = if (mode == SyncMode.REFRESH)
-            "Mixes update with fresh tracks each sync"
+            stringResource(R.string.sync_mode_refresh_desc)
         else
-            "New tracks stack on top of old ones",
+            stringResource(R.string.sync_mode_accumulate_desc),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -1086,16 +1068,16 @@ private fun LastFmRecommendationsToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Recommended tracks",
+                text = stringResource(R.string.sync_recommended_tracks_title),
                 style = MaterialTheme.typography.labelMedium,
                 color = StashTheme.extendedColors.lastfmRed,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = if (enabled)
-                    "A rotating playlist of Last.fm recommendations is kept up to date"
+                    stringResource(R.string.sync_lastfm_recommended_enabled_desc)
                 else
-                    "Off — no recommendations are generated",
+                    stringResource(R.string.sync_lastfm_recommended_disabled_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1130,7 +1112,7 @@ internal fun SpotifySyncToggleRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "$trackCount tracks",
+                text = pluralStringResource(R.plurals.sync_tracks_count, trackCount, trackCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1156,12 +1138,12 @@ internal fun StudioOnlyToggleRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Studio recordings only",
+                text = stringResource(R.string.sync_studio_only_title),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.",
+                text = stringResource(R.string.sync_studio_only_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -35,7 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.feature.settings.R
 
 /**
  * Full-screen Discord login via WebView. Same shape as [SpotifyLoginWebView],
@@ -162,13 +164,13 @@ fun DiscordLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Sign in to Discord") },
+            title = { Text(stringResource(R.string.settings_discord_signin_title)) },
             navigationIcon = {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
             },
             actions = {
                 TextButton(onClick = onManualFallback) {
-                    Text("Paste token", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.settings_discord_paste_token_action), style = MaterialTheme.typography.labelMedium)
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -185,7 +187,7 @@ fun DiscordLoginWebView(
 
         if (tokenFound) {
             Text(
-                text = "Login successful, connecting...",
+                text = stringResource(R.string.settings_login_successful_connecting),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -301,13 +303,13 @@ fun DiscordLoginWebView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Sign-in blocked or not working?",
+                    text = stringResource(R.string.settings_signin_blocked_question),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onManualFallback) {
-                    Text("Paste token instead")
+                    Text(stringResource(R.string.settings_discord_paste_token_instead))
                 }
             }
         }
