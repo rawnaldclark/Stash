@@ -4,7 +4,6 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.StashDatabase
-import com.stash.core.data.db.entity.RecordPlayEntity
 import com.stash.feature.record.archive.ArchivePlay
 import com.stash.feature.record.importer.MemoryArchive
 import com.stash.feature.record.importer.PickedFile
@@ -105,12 +104,8 @@ class RoomImportTest {
         // A title cut at 300 UTF-16 units through an emoji, as the web's str cuts it, ends in a lone high surrogate
         val title = "a".repeat(299) + "\uD83C"
         val id = "$title|artist|1"
-        // SQLite itself: at the end of a text it reads U+FFFD, but mid-text it pairs the surrogate with the next unit (the bar)
-        db.recordPlayDao().apply(listOf(RecordPlayEntity(id = id, t = title, a = "artist", al = null, s = 1, ms = 1, f = 0)), emptyList())
-        val raw = stored().single()
-        assertThat(raw.t).isEqualTo("a".repeat(299) + "\uFFFD")
-        assertThat(raw.id).doesNotContain("\uFFFD|artist|1")
-        db.recordPlayDao().clear()
+        // What SQLite makes of a lone surrogate is no rule to rely on: it differs by build (U+FFFD on the desktop JVM's, '?' on CI's
+        // Linux one, and mid-text it can pair it with the next unit, the bar). So the store makes each word well-formed first.
 
         // Through the import's store: made well-formed first, so the id keeps its bar and differs from the web's in that one unit
         val store = DaoArchiveStore(db.recordPlayDao())
