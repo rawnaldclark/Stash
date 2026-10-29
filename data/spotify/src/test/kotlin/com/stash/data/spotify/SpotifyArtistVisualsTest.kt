@@ -31,6 +31,21 @@ class SpotifyArtistVisualsTest {
         assertEquals("abc", findArtistId(root, "Beck"))
     }
 
+    @Test fun `two different artists with the exact name, no artist`() {
+        val root = json("""{"data":{"searchV2":{"artists":{"items":[
+            ${artist("first", "Nirvana")}, ${artist("sixties", "Nirvana")}
+        ]}}}}""")
+        assertNull(findArtistId(root, "Nirvana"))
+    }
+
+    @Test fun `the same artist in both answer shapes is one artist`() {
+        val root = json("""{"data":{
+            "search":{"artists":{"items":[${artist("abc", "Beck")}]}},
+            "searchV2":{"artists":{"items":[${artist("abc", "Beck")}]}}
+        }}""")
+        assertEquals("abc", findArtistId(root, "Beck"))
+    }
+
     @Test fun `no exact match, no artist`() {
         val root = json("""{"data":{"searchV2":{"artists":{"items":[${artist("x", "Beckett")}]}}}}""")
         assertNull(findArtistId(root, "Beck"))

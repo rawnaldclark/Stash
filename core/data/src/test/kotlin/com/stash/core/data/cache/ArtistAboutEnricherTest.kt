@@ -7,12 +7,15 @@ import com.stash.core.data.musicbrainz.MusicBrainzClient
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyArtistVisuals
 import com.stash.data.ytmusic.model.SocialLink
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 
 class ArtistAboutEnricherTest {
@@ -28,6 +31,7 @@ class ArtistAboutEnricherTest {
         mbLookup: JsonObject? = null,
         mbSearch: JsonObject? = null,
         visuals: SpotifyArtistVisuals? = null,
+        visualsStall: Boolean = false,
     ): RealArtistAboutEnricher {
         val lastFm = mock<LastFmApiClient> {
             onBlocking { getArtistInfo(any()) } doReturn Result.success(info)
@@ -42,7 +46,11 @@ class ArtistAboutEnricherTest {
             override suspend fun releaseUrlRels(releaseId: String): JsonObject? = null
         }
         val spotify = mock<SpotifyApiClient> {
-            onBlocking { getArtistVisuals(any()) } doReturn visuals
+            if (visualsStall) {
+                onBlocking { getArtistVisuals(any()) } doSuspendableAnswer { awaitCancellation() }
+            } else {
+                onBlocking { getArtistVisuals(any()) } doReturn visuals
+            }
         }
         return RealArtistAboutEnricher(lastFm, mb, spotify)
     }
@@ -95,5 +103,13 @@ class ArtistAboutEnricherTest {
         ).enrich("A")
         assertThat(about!!.gallery).hasSize(1)
         assertThat(about.bio).isNull()
+    }
+
+    @Test fun `Spotify photos that never answer cost the photos, not the bio`() = runTest {
+        val about = enricher(info = LastFmArtistInfo(bio = "b", mbid = null), visualsStall = true).enrich("A")
+        assertThat(about!!.bio).isEqualTo("b")
+        assertThat(about.gallery).isEmpty()
+        // Within the 4 s ArtistCache gives the whole enrich.
+        assertThat(currentTime).isLessThan(4_000)
     }
 }

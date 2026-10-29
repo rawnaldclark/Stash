@@ -15,6 +15,7 @@ import com.stash.data.spotify.model.SpotifyTrackObject
 import com.stash.data.spotify.model.SpotifyTracksRef
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -161,14 +162,16 @@ class SpotifyApiClient @Inject constructor(
         private val YEARLY_SEARCH_TERMS = listOf("Your Top Songs", "Your All-Time Top Songs")
 
         /**
-         * The id of the artist in a `searchDesktop` answer whose name is exactly [name] (case and
-         * surrounding spaces aside), in Spotify's relevance order. Both answer shapes:
-         * `data.search.artists.items[]` and `data.searchV2.artists.items[]`, each item the artist
-         * itself, under `data`, or under `item.data`.
+         * The id of the one artist in a `searchDesktop` answer whose name is exactly [name] (case and
+         * surrounding spaces aside). Both answer shapes: `data.search.artists.items[]` and
+         * `data.searchV2.artists.items[]`, each item the artist itself, under `data`, or under
+         * `item.data`. Null when two different artists share the name (review on #738): the spelling
+         * can't tell namesakes apart, and the wrong one's photos are worse than none.
          */
         internal fun findArtistId(root: JsonObject, name: String): String? {
             val data = root["data"] as? JsonObject ?: return null
             val wanted = name.trim().lowercase(java.util.Locale.ROOT)
+            val ids = linkedSetOf<String>()
             for (container in listOf("search", "searchV2")) {
                 val items = ((data[container] as? JsonObject)?.get("artists") as? JsonObject)
                     ?.get("items") as? JsonArray ?: continue
@@ -182,11 +185,11 @@ class SpotifyApiClient @Inject constructor(
                     val artistName = ((artist["profile"] as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull
                         ?: continue
                     if (artistName.trim().lowercase(java.util.Locale.ROOT) == wanted) {
-                        return uri.removePrefix("spotify:artist:")
+                        ids += uri.removePrefix("spotify:artist:")
                     }
                 }
             }
-            return null
+            return ids.singleOrNull()
         }
 
         /**
@@ -616,7 +619,9 @@ class SpotifyApiClient @Inject constructor(
      * An artist's photos on Spotify, for the artist page: the photo gallery (About) and the wide
      * header (the banner when YouTube has none). Finds the artist by [name] with `searchDesktop`
      * (an exact name match only, so a namesake never lends their photos), then reads its
-     * `queryArtistOverview`. Null when not signed in to Spotify, no exact match, or nothing parses.
+     * `queryArtistOverview`. Null when not signed in to Spotify, no single exact match, or nothing
+     * parses. Both requests stop when the caller's coroutine is cancelled (review on #738): the
+     * artist page bounds them, and a stalled answer must not hold up the bio.
      */
     suspend fun getArtistVisuals(name: String): SpotifyArtistVisuals? = withContext(Dispatchers.IO) {
         try {
@@ -631,9 +636,10 @@ class SpotifyApiClient @Inject constructor(
                     put("includePreReleases", false)
                 }.toString(),
                 seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+                cancellable = true,
             ) ?: return@withContext null
             val artistId = findArtistId(search, name) ?: run {
-                Log.d(TAG, "getArtistVisuals: no exact Spotify match for '$name'")
+                Log.d(TAG, "getArtistVisuals: no single exact Spotify match for '$name'")
                 return@withContext null
             }
             val overview = executeGraphQL(
@@ -644,6 +650,7 @@ class SpotifyApiClient @Inject constructor(
                     put("preReleaseV2", false)
                 }.toString(),
                 seedHash = SpotifyAuthConfig.HASH_ARTIST_OVERVIEW,
+                cancellable = true,
             ) ?: return@withContext null
             parseArtistVisuals(overview).also {
                 Log.d(TAG, "getArtistVisuals: '$name' gallery=${it?.gallery?.size ?: 0} header=${it?.headerUrl != null}")
@@ -1354,7 +1361,12 @@ class SpotifyApiClient @Inject constructor(
      * (#471: `home` rotated, Daily Mixes vanished from the sync). The failed
      * hash is replaced by the live bundle's and the query retried once.
      */
-    private suspend fun retryWithScrapedHash(operationName: String, variables: String, failedHash: String): JsonObject? {
+    private suspend fun retryWithScrapedHash(
+        operationName: String,
+        variables: String,
+        failedHash: String,
+        cancellable: Boolean,
+    ): JsonObject? {
         val fresh = spotifyAuthManager.scrapePersistedQueryHash(operationName, failedHash)
         if (fresh == null) {
             Log.w(TAG, "executeGraphQL: $operationName hash rotated; no replacement in the web-player bundle")
@@ -1362,7 +1374,7 @@ class SpotifyApiClient @Inject constructor(
         }
         Log.i(TAG, "executeGraphQL: $operationName hash rotated; retrying with ${fresh.take(16)}...")
         liveHashes[operationName] = fresh
-        return executeGraphQL(operationName, variables, fresh, rescrapeOnMiss = false)
+        return executeGraphQL(operationName, variables, fresh, rescrapeOnMiss = false, cancellable = cancellable)
     }
 
     private suspend fun executeGraphQL(
@@ -1370,6 +1382,8 @@ class SpotifyApiClient @Inject constructor(
         variables: String,
         seedHash: String,
         rescrapeOnMiss: Boolean = true,
+        /** Sent on OkHttp's threads and cancelled with the caller (the artist page's photos); the sync keeps execute(). */
+        cancellable: Boolean = false,
     ): JsonObject? {
         val hash = liveHashes[operationName] ?: seedHash
         val accessToken = tokenManager.getSpotifyAccessToken()
@@ -1417,19 +1431,17 @@ class SpotifyApiClient @Inject constructor(
             )
             .build()
 
-        val response = okHttpClient.newCall(request).execute()
-        val responseCode = response.code
-        val responseBody = response.body?.string()
+        val (responseCode, responseBody) = send(request, cancellable)
 
         Log.d(TAG, "executeGraphQL: $operationName -> HTTP $responseCode, " +
             "body length=${responseBody?.length ?: 0}")
 
-        if (!response.isSuccessful) {
+        if (responseCode !in 200..299) {
             Log.e(TAG, "executeGraphQL: HTTP $responseCode for $operationName, " +
                 "bodyLen=${responseBody?.length ?: 0}")
 
             if (rescrapeOnMiss && isPersistedQueryMiss(responseBody)) {
-                return retryWithScrapedHash(operationName, variables, hash)
+                return retryWithScrapedHash(operationName, variables, hash, cancellable)
             }
             // If we get 401, try refreshing the access token and retrying once
             if (responseCode == 401) {
@@ -1439,7 +1451,7 @@ class SpotifyApiClient @Inject constructor(
                     cachedClientToken = null
                     val newClientToken = ensureClientToken()
                     if (newClientToken != null) {
-                        return retryGraphQL(operationName, refreshedToken, newClientToken, url)
+                        return retryGraphQL(operationName, refreshedToken, newClientToken, url, cancellable)
                     }
                 }
             }
@@ -1450,7 +1462,7 @@ class SpotifyApiClient @Inject constructor(
                 cachedClientToken = null
                 val newClientToken = ensureClientToken()
                 if (newClientToken != null) {
-                    return retryGraphQL(operationName, accessToken, newClientToken, url)
+                    return retryGraphQL(operationName, accessToken, newClientToken, url, cancellable)
                 }
             }
 
@@ -1470,7 +1482,7 @@ class SpotifyApiClient @Inject constructor(
             if (errors != null) {
                 Log.w(TAG, "executeGraphQL: GraphQL errors in $operationName: $errors")
                 if (rescrapeOnMiss && isPersistedQueryMiss(responseBody)) {
-                    return retryWithScrapedHash(operationName, variables, hash)
+                    return retryWithScrapedHash(operationName, variables, hash, cancellable)
                 }
             }
             parsed
@@ -1485,11 +1497,12 @@ class SpotifyApiClient @Inject constructor(
      * Retries a GraphQL request with updated tokens.
      * Used after token refresh or client token re-acquisition.
      */
-    private fun retryGraphQL(
+    private suspend fun retryGraphQL(
         operationName: String,
         accessToken: String,
         clientToken: String,
         url: String,
+        cancellable: Boolean,
     ): JsonObject? {
         Log.d(TAG, "retryGraphQL: retrying $operationName with refreshed tokens")
 
@@ -1510,14 +1523,13 @@ class SpotifyApiClient @Inject constructor(
             )
             .build()
 
-        val retryResponse = okHttpClient.newCall(retryRequest).execute()
-        val retryBody = retryResponse.body?.string()
-        Log.d(TAG, "retryGraphQL: $operationName -> HTTP ${retryResponse.code}, " +
+        val (retryCode, retryBody) = send(retryRequest, cancellable)
+        Log.d(TAG, "retryGraphQL: $operationName -> HTTP $retryCode, " +
             "body length=${retryBody?.length ?: 0}")
 
-        if (!retryResponse.isSuccessful || retryBody == null) {
+        if (retryCode !in 200..299 || retryBody == null) {
             Log.e(TAG, "retryGraphQL: retry also failed for $operationName: " +
-                "HTTP ${retryResponse.code}, bodyLen=${retryBody?.length ?: 0}")
+                "HTTP $retryCode, bodyLen=${retryBody?.length ?: 0}")
             return null
         }
 
@@ -1526,6 +1538,31 @@ class SpotifyApiClient @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "retryGraphQL: parse failed for $operationName", e)
             null
+        }
+    }
+
+    /**
+     * [request]'s code and body. [cancellable]: run on OkHttp's own threads and cancelled with the
+     * caller's coroutine, body read included; a blocking `execute()` can't be, so the caller would
+     * wait out the HTTP timeouts.
+     */
+    private suspend fun send(request: Request, cancellable: Boolean): Pair<Int, String?> {
+        val call = okHttpClient.newCall(request)
+        if (!cancellable) return call.execute().use { it.code to it.body?.string() }
+        return suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : okhttp3.Callback {
+                    override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                        if (cont.isActive) cont.resumeWith(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                        val read = runCatching { response.use { it.code to it.body?.string() } }
+                        if (cont.isActive) cont.resumeWith(read)
+                    }
+                },
+            )
         }
     }
 
