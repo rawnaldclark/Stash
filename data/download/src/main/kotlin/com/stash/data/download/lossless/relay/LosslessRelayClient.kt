@@ -251,6 +251,13 @@ class LosslessRelayClient @Inject constructor(
                         note(base, startedAt, "429 paced ${wait}s")
                         RelayMint.Paced(wait)
                     }
+                    // This build is below the relay's minimum: lossy until the app is updated.
+                    RelaySigner.APP_TOO_OLD -> {
+                        Log.w(TAG, "relay ${host(base)} refuses this app build — cooling 1 h")
+                        cool(base, RelaySigner.APP_TOO_OLD_BACKOFF_MS)
+                        note(base, startedAt, "426 app too old")
+                        RelayMint.Unavailable
+                    }
                     503 -> {
                         Log.i(TAG, "relay ${host(base)} busy — cooling ${BUSY_COOLDOWN_MS / 1000}s")
                         cool(base, BUSY_COOLDOWN_MS)

@@ -584,6 +584,8 @@ class BitchordClient @Inject constructor(
                 // per-network limiter, 300 / 600 s when capped or paused. A flat 5 min turned
                 // a 15 s pacing blip into a device-wide Tidal blackout.
                 503 -> Reply.Busy(now + retryAfterMs(r, BUSY_MIN_RETRY_AFTER_MS, BUSY_MAX_RETRY_AFTER_MS))
+                // This build is below the relay's minimum: no point asking again for an hour.
+                RelaySigner.APP_TOO_OLD -> Reply.Busy(now + RelaySigner.APP_TOO_OLD_BACKOFF_MS)
                 // The daily lossless cap is this install's allowance, not a busy pool: AAC and
                 // other installs' traffic are unaffected, so it must not open the busy circuit.
                 429 -> if (owner && boundedBody(r)?.let { quota.onCapBody(it) } == true) {

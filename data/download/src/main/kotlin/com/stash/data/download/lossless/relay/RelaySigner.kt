@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.relay
 
 import android.util.Log
+import com.stash.core.common.AppVersionProvider
 import com.stash.core.data.supporter.SupporterRepository
 import java.util.UUID
 import javax.crypto.Mac
@@ -27,6 +28,11 @@ import okhttp3.Response
  * Callers pass their own clock (each client has a test seam for it); the offset is the one
  * piece of state, so a skew learned from either relay fixes both.
  *
+ * Every signed request also names the app's build ([APP_BUILD_HEADER], the versionCode), so the
+ * relays can refuse builds below a minimum (`MIN_APP_BUILD`, 426 `app_too_old`) whenever the owner
+ * decides an old version should lose access. It is not secret and not signed: it steers real
+ * apps, it does not stop scripts.
+ *
  * [entitle] adds the Ko-fi supporter token ([SupporterRepository]) the same way: owner relays
  * only, decided by the caller, since a Qobuz mint may also go to a user's own endpoint.
  */
@@ -34,6 +40,7 @@ import okhttp3.Response
 class RelaySigner @Inject constructor(
     private val config: LosslessConfigFetcher,
     private val supporter: SupporterRepository,
+    private val appVersion: AppVersionProvider = UNKNOWN_BUILD,
 ) {
     /**
      * Relay time minus device time, seconds; added to every signed timestamp. In memory only:
@@ -61,6 +68,7 @@ class RelaySigner @Inject constructor(
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }
         val sig = mac.doFinal("$install:$payload:$ts".toByteArray()).joinToString("") { "%02x".format(it) }
         b.header("X-Stash-Install", install).header("X-Stash-Ts", ts.toString()).header("X-Stash-Auth", sig)
+        b.header(APP_BUILD_HEADER, appVersion.versionCode.toString())
         return true
     }
 
@@ -96,5 +104,18 @@ class RelaySigner @Inject constructor(
     companion object {
         private const val TAG = "RelaySigner"
         const val ENTITLEMENT_HEADER = "X-Stash-Entitlement"
+        const val APP_BUILD_HEADER = "X-Stash-App-Build"
+
+        /** A relay refusing this build: `MIN_APP_BUILD` is above it. */
+        const val APP_TOO_OLD = 426
+
+        /** How long a relay that answered [APP_TOO_OLD] is left alone: an update is the only fix. */
+        const val APP_TOO_OLD_BACKOFF_MS = 60 * 60_000L
+
+        /** Tests and previews: build 0, below any minimum. */
+        private val UNKNOWN_BUILD = object : AppVersionProvider {
+            override val versionName = "0"
+            override val versionCode = 0
+        }
     }
 }

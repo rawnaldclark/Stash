@@ -62,4 +62,19 @@ class LosslessRelayClientOutcomesTest {
         repeat(LosslessRelayClient.RECENT_MAX + 5) { client.mint(base(), it.toLong(), 7) }
         assertThat(client.recentOutcomes()).hasSize(LosslessRelayClient.RECENT_MAX)
     }
+
+    @Test fun `a relay refusing this build rests an hour, not five minutes`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(426).setBody("""{"error":"app_too_old","min_build":200}"""))
+        client.mint(base(), 1L, 7)
+        now += 30 * 60_000L // past the usual 5 min cooldown
+        client.mint(base(), 2L, 7)
+        now += 31 * 60_000L // past the hour
+        server.enqueue(MockResponse().setResponseCode(404))
+        client.mint(base(), 3L, 7)
+
+        val lines = client.recentOutcomes()
+        assertThat(lines[0]).contains("426 app too old")
+        assertThat(lines[1]).contains("skipped: cooled")
+        assertThat(lines[2]).contains("404 not available")
+    }
 }
