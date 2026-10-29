@@ -37,7 +37,7 @@ import com.stash.core.data.db.dao.TrackDao
  */
 @OptIn(UnstableApi::class)
 class StashMediaSourceFactory(
-    context: Context,
+    private val context: Context,
     private val streamingFactory: StreamingMediaSourceFactory,
     private val streamingTrackId: (MediaItem) -> Long?,
     private val isJioSaavnOrigin: (MediaItem) -> Boolean,
@@ -105,6 +105,9 @@ class StashMediaSourceFactory(
                 // "Play my cloud copies first": a stream answered by the user's own cloud file.
                 cloudDelegate = cloudDataSourceFactory?.let { cloud -> { cloud.createDataSource() } },
                 cloudCopies = cloudCopies,
+                // A song whose download finished after it was queued plays its file.
+                downloadedFile = { row -> row.usableDownload(context) },
+                localDelegate = { localDataSourceFactory.createDataSource() },
             )
         }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
@@ -169,9 +172,14 @@ class StashMediaSourceFactory(
                     mediaItem = mediaItem,
                     scope = resolveScope,
                     resolve = {
-                        urlCache.get(trackId) ?: placeholderEntity(trackDao, trackId, uri)
-                            ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
-                            ?.also { urlCache.put(trackId, it) }
+                        // A downloaded file needs no resolve: the lazy child opens it.
+                        if (trackDao.getById(trackId)?.usableDownload(context) != null) {
+                            null
+                        } else {
+                            urlCache.get(trackId) ?: placeholderEntity(trackDao, trackId, uri)
+                                ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
+                                ?.also { urlCache.put(trackId, it) }
+                        }
                     },
                     childFor = { item, resolved ->
                         if (resolved?.isDash == true) {

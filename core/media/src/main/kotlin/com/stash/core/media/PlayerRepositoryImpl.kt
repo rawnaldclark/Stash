@@ -138,22 +138,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * track is anywhere near this small, so there are no false negatives.
      */
     internal var filePathExistsOnDisk: (String) -> Boolean = { path ->
-        val bytes = try {
-            if (path.startsWith("content://")) {
-                DocumentFile.fromSingleUri(context, path.toUri())?.length() ?: 0L
-            } else {
-                // Handle both plain paths and file:// URIs.
-                val plainPath = if (path.startsWith("file://")) {
-                    path.toUri().path ?: path.removePrefix("file://")
-                } else {
-                    path
-                }
-                File(plainPath).length()
-            }
-        } catch (e: Exception) {
-            0L
-        }
-        bytes >= StashConstants.MIN_PLAYABLE_LOCAL_BYTES
+        com.stash.core.media.streaming.isUsableLocalFile(context, path)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -1040,7 +1025,20 @@ class PlayerRepositoryImpl @Inject constructor(
             .mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
         // An All Songs file plays from its file or not at all: nothing to resolve or swap in.
         if (isScannedTrackId(nextId)) return
-        val next = tracks.firstOrNull { it.id == nextId } ?: return
+        val queued = tracks.firstOrNull { it.id == nextId } ?: return
+        // The queue's copy is as old as the queue: a download that finished since is only
+        // in the row. Read it, so the next song plays its new file instead of a stream.
+        val row = withContext(Dispatchers.IO) { trackDao.getById(nextId) }
+        val next = if (row != null && row.isDownloaded && !queued.isDownloaded) {
+            queued.copy(
+                isDownloaded = true,
+                filePath = row.filePath,
+                fileSizeBytes = row.fileSizeBytes,
+                fileFormat = row.fileFormat,
+            )
+        } else {
+            queued
+        }
         val nextLocalPath = next.filePath
         val hasRecordedDownload = next.isDownloaded && !nextLocalPath.isNullOrBlank()
         val knownTooSmall = next.fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
@@ -1052,7 +1050,10 @@ class PlayerRepositoryImpl @Inject constructor(
             val hasUsableLocal = withContext(Dispatchers.IO) {
                 filePathExistsOnDisk(nextLocalPath)
             }
-            if (hasUsableLocal) return
+            if (hasUsableLocal) {
+                if (next !== queued) playNextFromFile(controller, nextTimelineIndex, next)
+                return
+            }
         }
         // Only a CONFIRMED-unstreamable row (checked and false) is skipped.
         // Synced-library rows are all "never checked" (isStreamable=false,
@@ -1086,7 +1087,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         val t0 = System.currentTimeMillis()
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
-        val entity = trackDao.getById(next.id) ?: next.toEntity()
+        val entity = row ?: next.toEntity()
         val resolved = try {
             // Full-fat resolve (allowYtDlp = true) for the single next-up track
             // during active playback, so auto-advance stays seamless during a
@@ -1170,6 +1171,33 @@ class PlayerRepositoryImpl @Inject constructor(
             .build()
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
         return true
+    }
+
+    /**
+     * Points the next-up's [timelineIndex] slot at [next]'s downloaded file: its
+     * download finished after the queue was built, and the slot still holds a
+     * placeholder or a stream an earlier prefetch swapped in. Keeps the slot's
+     * metadata (art, extras) minus the stream stamps, which describe a stream it no
+     * longer plays, and updates the queue's copy so later reads see the file.
+     */
+    private fun playNextFromFile(controller: MediaController, timelineIndex: Int, next: Track) {
+        if (timelineIndex !in 0 until controller.mediaItemCount) return
+        val item = controller.getMediaItemAt(timelineIndex)
+        if (item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) != next.id) return
+        val fileItem = next.toMediaItem()
+        val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
+            listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
+                .forEach(::remove)
+            putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
+        }
+        val refreshed = item.buildUpon()
+            .setUri(fileItem.localConfiguration?.uri)
+            .setRequestMetadata(fileItem.requestMetadata)
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+            .build()
+        replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
+        currentQueueTracks = currentQueueTracks.map { if (it.id == next.id) next else it }
+        Log.d(TAG, "next-up id=${next.id} downloaded since it was queued; plays its file")
     }
 
     /**
