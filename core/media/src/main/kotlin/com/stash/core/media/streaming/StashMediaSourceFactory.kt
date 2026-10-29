@@ -173,11 +173,11 @@ class StashMediaSourceFactory(
                             ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
                             ?.also { urlCache.put(trackId, it) }
                     },
-                    childFor = { resolved ->
+                    childFor = { item, resolved ->
                         if (resolved?.isDash == true) {
-                            streamingFactory.createDashMediaSource(mediaItem, resolved.url)
+                            streamingFactory.createDashMediaSource(item, resolved.url)
                         } else {
-                            lazyFactory.createMediaSource(mediaItem)
+                            lazyFactory.createMediaSource(item)
                         }
                     },
                 )
