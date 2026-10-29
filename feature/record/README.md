@@ -10,6 +10,7 @@ the app feeds it this phone's plays, and a play tapped in it plays in Stash.
 |---|---|---|
 | `https://appassets.androidplatform.net/record/embed.html?embed=stash-app` | `src/main/assets/record/` | the fork's `dist/embed.html` and `dist/assets/` |
 | `https://appassets.androidplatform.net/fonts/` | `src/main/assets/record-fonts/` | Inter and Space Grotesk (theme.css loads them from the site root), with their OFL licences |
+| `https://appassets.androidplatform.net/art/v1/<32 hex>.jpg` | `cacheDir/record-library-art/` | the library's own covers, by the names the host gave the page ([Covers](#covers)) |
 
 **Bundled build:** stash-on-record `35fe50f` ("feat(stash): in the app, the record acks each archive chunk (stash:archive-ack), so
 the app keeps two in flight"), 1,518,856 bytes, plus 65,663 bytes of fonts. The page at this commit takes the app's rows up to
@@ -111,7 +112,37 @@ Left as they are, on purpose:
 track, then Apple's iTunes search, sized 600; artist pictures from Deezer, its searches paced), `RecordArt` the client's
 (`src/lib/spotify/art.ts`: batches of 25, a minute's pause after a refusal, one retry of what Deezer couldn't look up yet). Kept
 in `noBackupFilesDir/record-art.tsv` (180 days a cover, 3 days a miss). Only Deezer CDN and mzstatic addresses are taken: the
-record's page allows no other images.
+record's page allows no other images but its own origin's.
+
+### The library's own covers (phase 6)
+
+Owner decision D1 (`~/.stash/design/record-in-app-2026-10-26/PHASE6.md`): the person's own files' art comes first. A
+`stash:art` is answered in three steps (`RecordHost.art`), each a `stash:covers` of its own names, then the whole list (the page
+takes the last word for a name, so each list repeats what the ones before said):
+
+1. **Own files** (`RecordLibraryArt.local`): a local import's, a scanned song's or a cloud file's embedded cover, a download's file.
+   These songs are never asked of `RecordArt`.
+2. **The lookups** (`RecordArt`, Deezer then iTunes) for the rest.
+3. **The library's remote covers** (i.scdn.co, ytimg, ...) only for what the lookups found nothing for, read from Coil's disk
+   cache alone (never fetched). Artists' pictures (`ar3:`) are never the library's.
+
+| Where | What |
+|---|---|
+| core:data `db/dao/LibraryArtDao.kt` | the two reads: tracks with a cover (title, artist, album artist, album, path, address) and scanned songs with an embedded one |
+| `art/LibraryArtIndex.kt` | the covers by `ArtText.artKey`: `al:` artist and album, `al:` album artist and album, `tr:` artist and title; the first row a key wins, files and addresses kept apart so a file always comes first; words that fold to nothing make no key |
+| `art/LibraryArt.kt` | the index read once per record opened, off the main thread, on the page's first ask (its size and build time logged under `RecordArt`); each source made once however many songs share it |
+| `art/LibraryArtFiles.kt` | each cover made into `cacheDir/record-library-art/<hash>.jpg` before its name is given (the page's covers have no fallback, so it never meets a 404): decoded by Coil at 600, the middle square, JPEG q85, so no EXIF and no byte of the source reaches the page. The name is 32 hex of sha256 of the file's canonical path, length and modification time, or of the address. Only files under `filesDir` and `cacheDir`, made canonical first, are read: never external storage or `content://`. What each name was made from is kept in memory, so a file removed is made again when asked for; the folder is trimmed to 40 MB, least recently shown first, each time the record opens |
+| `art/LibraryArtHandler.kt` | `/art/` on the record's origin: only `v1/<32 lowercase hex>.jpg`, only from its own folder, `Cache-Control: private, max-age=31536000, immutable`; anything else is null (nothing found) |
+
+None of these addresses goes into `record-art.tsv`, and the Home card and the mixes' tiles still use the lookups alone.
+
+### Its tests
+
+- `LibraryArtIndexTest` (keys for remasters, feat. and the album artist; files before addresses), `LibraryArtEncodeTest`
+  (3000 px to a 600 square through Coil, EXIF gone, a file that isn't a picture, paths outside the app's folders), `LibraryArtHandlerTest`
+  (the name's rule, traversal plain and encoded, a name never given, a removed file made again, the trim, the headers),
+  `RecordHostTest` (own files, then the lookups for the rest only, then the library's addresses; a library that fails), and
+  `RecordCspTest` (the bundled `embed.html` lets `img-src` load `'self'`).
 
 ## Bring your Spotify (the import)
 
