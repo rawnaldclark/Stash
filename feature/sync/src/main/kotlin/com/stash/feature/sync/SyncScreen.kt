@@ -349,6 +349,9 @@ internal data class SyncPlaylistRow(
     val userHidden: Boolean = false,
     /** When it first arrived (epoch ms). */
     val addedAt: Long = 0L,
+    /** A mix that can stack, and whether it does. */
+    val stackable: Boolean = false,
+    val stackSongs: Boolean = false,
 ) {
     /**
      * Kept on this phone: its Save switch, or, in Download mode, switched on for
@@ -360,9 +363,9 @@ internal data class SyncPlaylistRow(
 
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
     } + youTubePlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
     }
 
 /**

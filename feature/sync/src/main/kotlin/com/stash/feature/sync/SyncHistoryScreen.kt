@@ -33,7 +33,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.core.model.PlaylistType
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
@@ -116,12 +115,11 @@ fun SyncHistoryScreen(
                 )
             }
 
-            // Each account's mixes: Refresh replaces them every sync, Accumulate keeps every song.
-            val anyMixes = uiState.spotifyPlaylists.any { it.type == PlaylistType.DAILY_MIX } ||
-                uiState.youTubePlaylists.any { it.type == PlaylistType.DAILY_MIX }
-            if (anyMixes) {
+            // Each account's own playlists and Liked: Refresh mirrors a song removed there,
+            // Accumulate keeps it. Mixes have their own Stack switch on the account's page.
+            if (uiState.spotifyConnected || uiState.youTubeConnected) {
                 item(key = "mixes_label") { SyncSectionLabel(stringResource(R.string.sync_history_mixes_section)) }
-                if (uiState.spotifyPlaylists.any { it.type == PlaylistType.DAILY_MIX }) {
+                if (uiState.spotifyConnected) {
                     item(key = "spotify_mode") {
                         MixModeCard(name = "Spotify") {
                             SyncModeChipRow(
@@ -133,7 +131,7 @@ fun SyncHistoryScreen(
                         }
                     }
                 }
-                if (uiState.youTubePlaylists.any { it.type == PlaylistType.DAILY_MIX }) {
+                if (uiState.youTubeConnected) {
                     item(key = "youtube_mode") {
                         MixModeCard(name = "YouTube Music") {
                             SyncModeChipRow(

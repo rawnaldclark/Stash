@@ -35,6 +35,7 @@ fun PlaylistEntity.toDomain(): Playlist {
         pinnedToHomeAt = pinnedToHomeAt,
         keepOffline = keepOffline,
         userHidden = userHidden,
+        stackSongs = stackSongs,
     )
 }
 
@@ -64,4 +65,5 @@ fun Playlist.toEntity(): PlaylistEntity = PlaylistEntity(
     pinnedToHomeAt = pinnedToHomeAt,
     keepOffline = keepOffline,
     userHidden = userHidden,
+    stackSongs = stackSongs,
 )

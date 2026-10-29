@@ -85,6 +85,9 @@ data class SpotifySyncPlaylist(
     val userHidden: Boolean = false,
     /** When the playlist first arrived (epoch ms): the Sync tab's covers lead with the newest. */
     val dateAdded: Long = 0L,
+    /** A mix that can stack ([com.stash.core.data.sync.MixStacking]), and whether it does. */
+    val stackable: Boolean = false,
+    val stackSongs: Boolean = false,
 )
 
 /**
@@ -108,6 +111,9 @@ data class YouTubeSyncPlaylist(
     val userHidden: Boolean = false,
     /** When the playlist first arrived (epoch ms): the Sync tab's covers lead with the newest. */
     val dateAdded: Long = 0L,
+    /** A mix that can stack ([com.stash.core.data.sync.MixStacking]), and whether it does. */
+    val stackable: Boolean = false,
+    val stackSongs: Boolean = false,
 )
 
 data class SyncUiState(
@@ -628,6 +634,11 @@ class SyncViewModel @Inject constructor(
      * one being saved stops downloading too (songs already on the phone stay,
      * as with the Download switch). Back in, it shows again.
      */
+    /** A mix's Stack switch: keep every song it brings, from the next sync on. */
+    fun onSetStack(playlistId: Long, on: Boolean) {
+        viewModelScope.launch { playlistDao.setStackSongs(playlistId, on) }
+    }
+
     fun onSetInLibrary(playlistId: Long, inLibrary: Boolean) {
         viewModelScope.launch {
             if (!inLibrary) {
@@ -941,6 +952,8 @@ class SyncViewModel @Inject constructor(
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
                                 dateAdded = e.dateAdded.toEpochMilli(),
+                                stackable = com.stash.core.data.sync.MixStacking.isStackable(e.source, e.type, e.name),
+                                stackSongs = e.stackSongs,
                             )
                         }
                     )
@@ -967,6 +980,8 @@ class SyncViewModel @Inject constructor(
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
                                 dateAdded = e.dateAdded.toEpochMilli(),
+                                stackable = com.stash.core.data.sync.MixStacking.isStackable(e.source, e.type, e.name),
+                                stackSongs = e.stackSongs,
                             )
                         }
                     )

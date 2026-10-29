@@ -44,6 +44,8 @@ data class Playlist(
     val keepOffline: Boolean = false,
     /** Taken out of the library from its account's playlist page; sync leaves it alone. */
     val userHidden: Boolean = false,
+    /** A mix that keeps every song it has brought ([com.stash.core.model.PlaylistType.DAILY_MIX] only). */
+    val stackSongs: Boolean = false,
 )
 
 enum class PlaylistType {

@@ -87,13 +87,13 @@
 
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">Switch to Refresh?</string>
-    <string name="sync_switch_to_refresh_body">Refresh pulls fresh tracks each sync — your auto-generated daily mixes, weekly discovery, and other rotating playlists. Tracks that rotate out are removed from the mix and their downloads deleted to keep your library lean. Cleanup runs once all sources are set to Refresh — while any source still accumulates, nothing is deleted. Tracks you added manually are kept.</string>
+    <string name="sync_switch_to_refresh_body">Refresh mirrors your playlists and Liked songs: a song removed on the service is removed here too. Its download is deleted once every account is set to Refresh; while any account keeps songs, nothing is deleted. Songs you added in Stash are kept. Mixes follow their own Stack setting.</string>
     <string name="sync_switch_to_refresh_confirm">Switch to Refresh</string>
-    <string name="sync_mix_mode_title">Mix sync mode</string>
+    <string name="sync_mix_mode_title">When a song leaves a playlist</string>
     <string name="sync_mode_refresh">Refresh</string>
     <string name="sync_mode_accumulate">Accumulate</string>
-    <string name="sync_mode_refresh_desc">Mixes update with fresh tracks each sync</string>
-    <string name="sync_mode_accumulate_desc">New tracks stack on top of old ones</string>
+    <string name="sync_mode_refresh_desc">Removed here too, so your playlists match your account</string>
+    <string name="sync_mode_accumulate_desc">Kept here, so nothing you synced disappears</string>
 
     <!-- Last.fm Recommendations Toggle -->
     <string name="sync_recommended_tracks_title">Recommended tracks</string>
@@ -116,6 +116,11 @@
     <string name="sync_arrival_save_body">Pick the playlists you want to download.</string>
     <string name="sync_arrival_sync_now">Sync now</string>
     <string name="sync_button">Sync</string>
+    <string name="sync_stack">Stack</string>
+    <string name="sync_stacking">Stacking</string>
+    <string name="sync_stack_on">Keeps every song</string>
+    <string name="sync_stack_off">Shows this week\'s songs only</string>
+    <string name="sync_stack_explainer">Stack a mix to keep every song it brings you. Each sync adds the new ones and removes none.</string>
     <string name="sync_arrival_change_later">Change it any time from the top of Sync.</string>
 
     <!-- Sync tab overhaul: nothing connected / ready -->
@@ -161,7 +166,7 @@
 
     <!-- Sync tab overhaul: History screen -->
     <string name="sync_history_title">History</string>
-    <string name="sync_history_mixes_section">Mixes</string>
+    <string name="sync_history_mixes_section">Your playlists</string>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>

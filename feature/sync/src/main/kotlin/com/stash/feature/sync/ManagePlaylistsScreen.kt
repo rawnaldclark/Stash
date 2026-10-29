@@ -47,6 +47,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -255,6 +260,17 @@ fun ManagePlaylistsScreen(
                         onChange = viewModel::onDiscoverAutoMixesChanged,
                     )
                 }
+                // What Stack means, once, above the mixes that have it.
+                if (shown.any { it.stackable && !it.userHidden }) {
+                    item(key = "mixes-stack-note") {
+                        Text(
+                            text = stringResource(R.string.sync_stack_explainer),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                }
             }
             if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
                 item(key = "liked-studio") {
@@ -285,6 +301,7 @@ fun ManagePlaylistsScreen(
                         saved = row.saved(streamOnly),
                         onToggle = { viewModel.onSavePlaylist(row.id, it) },
                         onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
+                        onSetStack = { viewModel.onSetStack(row.id, it) },
                     )
                 }
             }
@@ -298,6 +315,7 @@ private fun PlaylistSaveRow(
     saved: Boolean,
     onToggle: (Boolean) -> Unit,
     onSetInLibrary: (Boolean) -> Unit,
+    onSetStack: (Boolean) -> Unit,
 ) {
     val inLibrary = !row.userHidden
     Row(
@@ -333,6 +351,9 @@ private fun PlaylistSaveRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = if (saved && inLibrary) StashTheme.extendedColors.cyanLight else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (row.stackable && inLibrary) {
+                StackPill(stacking = row.stackSongs, playlistName = row.name, onToggle = onSetStack)
+            }
         }
         SaveCircle(
             saved = saved,
@@ -341,6 +362,49 @@ private fun PlaylistSaveRow(
             savedState = stringResource(R.string.sync_saved_state),
             notSavedState = stringResource(R.string.sync_not_saved_state),
             onToggle = onToggle,
+        )
+    }
+}
+
+/**
+ * A stackable mix's Stack switch, as a small pill under its song count: outlined "Stack" when
+ * the mix mirrors this week's songs, filled "Stacking" when it keeps them all. A pill, not a
+ * second switch on the row, so the save circle stays the row's one big control.
+ */
+@Composable
+private fun StackPill(stacking: Boolean, playlistName: String, onToggle: (Boolean) -> Unit) {
+    val label = stringResource(R.string.sync_stack)
+    val stateOn = stringResource(R.string.sync_stack_on)
+    val stateOff = stringResource(R.string.sync_stack_off)
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .clip(shape)
+            .then(
+                if (stacking) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                else Modifier.border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), shape),
+            )
+            .clickable(role = Role.Switch) { onToggle(!stacking) }
+            .semantics {
+                contentDescription = "$label: $playlistName"
+                stateDescription = if (stacking) stateOn else stateOff
+            }
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Layers,
+            contentDescription = null,
+            tint = if (stacking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = if (stacking) stringResource(R.string.sync_stacking) else label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (stacking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

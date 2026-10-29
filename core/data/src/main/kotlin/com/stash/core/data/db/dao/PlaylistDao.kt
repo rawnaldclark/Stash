@@ -980,6 +980,14 @@ interface PlaylistDao {
     )
     suspend fun setUserHidden(playlistId: Long, hidden: Boolean)
 
+    /** A mix's Stack switch ([PlaylistEntity.stackSongs]). */
+    @Query("UPDATE playlists SET stack_songs = :on WHERE id = :playlistId")
+    suspend fun setStackSongs(playlistId: Long, on: Boolean)
+
+    /** Every service mix, in or out of the library. */
+    @Query("SELECT * FROM playlists WHERE type = 'DAILY_MIX'")
+    suspend fun getMixPlaylists(): List<PlaylistEntity>
+
     /**
      * Set [is_active] on one playlist, either direction. Used by app-managed
      * surfaces (e.g. [com.stash.core.data.mix.LastFmRecommendationSource]) that

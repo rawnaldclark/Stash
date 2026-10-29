@@ -80,6 +80,7 @@ class DiffWorkerOnlineMembershipTest {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(true)
     }
 
     @After
@@ -207,6 +208,94 @@ class DiffWorkerOnlineMembershipTest {
         assertEquals(false, row.isActive)
         assertEquals(true, row.userHidden)
         assertEquals(0, db.playlistDao().getTracksForPlaylist(id).size)
+    }
+
+    // ── Stack, per mix (2026-10-29) ──────────────────────────────────────
+
+    /** Stacking: the song the service dropped this week stays, next to this week's three. */
+    @Test
+    fun `a stacking Daily Mix keeps the songs it brought before`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        val id = seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9dm1", "Daily Mix 1")
+        db.playlistDao().setStackSongs(id, true)
+        linkOldSong(id)
+
+        buildWorker().doWork()
+
+        assertEquals(4, db.playlistDao().getTracksForPlaylist(id).size)
+    }
+
+    /** The default, even with the account on Accumulate: the mix is what the service gave this time. */
+    @Test
+    fun `a mix that is not stacking holds only this sync's songs`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        val id = seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9dm1", "Daily Mix 1")
+        linkOldSong(id)
+
+        buildWorker().doWork()
+
+        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
+    }
+
+    /** Radios and genre mixes can't stack; a switch left on (a restored backup) changes nothing. */
+    @Test
+    fun `a mix that cannot stack refreshes even with the switch on`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        val id = seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9radio", "Beck Radio")
+        db.playlistDao().setStackSongs(id, true)
+        linkOldSong(id)
+
+        buildWorker().doWork()
+
+        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
+    }
+
+    /**
+     * Upgrading: the account was accumulating, so its Daily Mix already holds weeks of songs.
+     * The first sync under per-mix stacking switches Stack on for it (and only for mixes that
+     * can stack), so the update doesn't shrink it back to this week's.
+     */
+    @Test
+    fun `the first sync after the update keeps an accumulating account's mixes stacking`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(false)
+        coEvery { syncPreferencesManager.markMixStackSeeded() } returns Unit
+        val mix = seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9dm1", "Daily Mix 1")
+        linkOldSong(mix)
+        db.playlistDao().insert(
+            PlaylistEntity(name = "Beck Radio", source = MusicSource.SPOTIFY, sourceId = "spotify:playlist:radio", type = PlaylistType.DAILY_MIX),
+        )
+
+        buildWorker().doWork()
+
+        assertEquals(true, db.playlistDao().findBySourceId("spotify:playlist:37i9dm1")!!.stackSongs)
+        assertEquals(false, db.playlistDao().findBySourceId("spotify:playlist:radio")!!.stackSongs)
+        assertEquals(4, db.playlistDao().getTracksForPlaylist(mix).size)
+        coVerify(exactly = 1) { syncPreferencesManager.markMixStackSeeded() }
+    }
+
+    /** An account set to Refresh chose fresh mixes; the carry-over leaves its mixes alone. */
+    @Test
+    fun `the carry-over leaves a refreshing account's mixes alone`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(false)
+        coEvery { syncPreferencesManager.markMixStackSeeded() } returns Unit
+        seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9dm1", "Daily Mix 1")
+
+        buildWorker().doWork()
+
+        assertEquals(false, db.playlistDao().findBySourceId("spotify:playlist:37i9dm1")!!.stackSongs)
+    }
+
+    /** A song a mix brought on an earlier sync, which this sync's snapshot no longer has. */
+    private suspend fun linkOldSong(playlistId: Long) {
+        val trackId = db.trackDao().insert(
+            com.stash.core.data.db.entity.TrackEntity(title = "Last Week", artist = "Old Artist", spotifyUri = "spotify:track:old"),
+        )
+        db.playlistDao().insertCrossRef(
+            com.stash.core.data.db.entity.PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId, position = 9),
+        )
     }
 
     /**

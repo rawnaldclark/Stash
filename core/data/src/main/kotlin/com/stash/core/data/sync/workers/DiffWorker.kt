@@ -29,6 +29,7 @@ import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
+import com.stash.core.data.sync.MixStacking
 import com.stash.core.model.SyncState
 import com.stash.data.spotify.SpotifyApiClient
 import dagger.assisted.Assisted
@@ -263,6 +264,22 @@ class DiffWorker @AssistedInject constructor(
             val streamingMode = streamingPreference.current()
             val pinNewPlaylists = syncPreferencesManager.pinNewPlaylists.first()
 
+            // Stacking became a switch per mix (2026-10-29). Once, before the first diff under
+            // it: an account that was accumulating keeps its stackable mixes stacking, so an
+            // upgrade never shrinks a collected Daily Mix back to this week's 50 songs.
+            if (!syncPreferencesManager.mixStackSeeded.first()) {
+                var seeded = 0
+                for (mix in playlistDao.getMixPlaylists()) {
+                    val accountMode = if (mix.source == MusicSource.YOUTUBE) youtubeSyncMode else spotifySyncMode
+                    if (accountMode == SyncMode.ACCUMULATE && MixStacking.isStackable(mix.source, mix.type, mix.name)) {
+                        playlistDao.setStackSongs(mix.id, true)
+                        seeded++
+                    }
+                }
+                syncPreferencesManager.markMixStackSeeded()
+                if (seeded > 0) Log.i(TAG, "Stack switched on for $seeded mix(es) that were accumulating")
+            }
+
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
             var newTrackCount = 0
@@ -273,18 +290,22 @@ class DiffWorker @AssistedInject constructor(
             var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
-                // Pick the mode for this specific playlist's source so a
-                // user can Refresh Spotify Daily Mixes while Accumulating
-                // YouTube Liked Music on the same sync run.
-                val playlistSyncMode = when (playlistSnapshot.source) {
-                    MusicSource.YOUTUBE -> youtubeSyncMode
-                    else -> spotifySyncMode
-                }
-
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
                 val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+
+                // A mix follows its own Stack switch: stacking accumulates, anything else
+                // mirrors what the service gave this time. The user's own playlists and Liked
+                // keep their account's mode (whether a song removed there goes here too).
+                val playlistSyncMode = when {
+                    localPlaylist.type == PlaylistType.DAILY_MIX ->
+                        if (localPlaylist.stackSongs &&
+                            MixStacking.isStackable(localPlaylist.source, localPlaylist.type, localPlaylist.name)
+                        ) SyncMode.ACCUMULATE else SyncMode.REFRESH
+                    playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
+                    else -> spotifySyncMode
+                }
                 if (localPlaylist.userHidden) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' is out of the library, skipping")
                     skippedSwitchedOff++

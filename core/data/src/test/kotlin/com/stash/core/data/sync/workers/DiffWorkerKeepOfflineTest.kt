@@ -70,6 +70,7 @@ class DiffWorkerKeepOfflineTest {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
         every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(true)
         coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns emptyList()
     }
 

@@ -100,6 +100,7 @@ class SyncPreferencesManager @Inject constructor(
         val AUTO_SYNC_PAUSED_AFTER_UNDO = booleanPreferencesKey("auto_sync_paused_after_undo")
         val ARRIVAL_CHOSEN = booleanPreferencesKey("first_sync_arrival_chosen")
         val PIN_NEW_PLAYLISTS = booleanPreferencesKey("pin_new_playlists_to_home")
+        val MIX_STACK_SEEDED = booleanPreferencesKey("mix_stack_seeded")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -174,6 +175,17 @@ class SyncPreferencesManager @Inject constructor(
      */
     val arrivalChosen: Flow<Boolean> =
         context.syncPrefsDataStore.data.map { it[Keys.ARRIVAL_CHOSEN] ?: false }
+
+    /**
+     * Whether the per-mix Stack switches have been set from the old per-account mode
+     * (DiffWorker does it once: an accumulating account's stackable mixes keep stacking).
+     */
+    val mixStackSeeded: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.MIX_STACK_SEEDED] ?: false }
+
+    suspend fun markMixStackSeeded() {
+        context.syncPrefsDataStore.edit { it[Keys.MIX_STACK_SEEDED] = true }
+    }
 
     /**
      * Whether a playlist sync finds for the first time goes on Home's Your
