@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -32,7 +31,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -48,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
@@ -205,8 +204,12 @@ fun SyncScreen(
                     ReadyContent(onSync = viewModel::onSyncNow)
                 }
                 streamingMode -> item(key = "synced") {
+                    // The three newest mixes, so the hero changes when a sync brings some.
+                    // The fan draws its last cover on top: the newest goes last.
+                    val fan = rows.filter { it.isMix() }.newestFirst()
+                        .mapNotNull { it.artUrl }.distinct().take(3).reversed()
                     SyncedHero(
-                        arts = arts,
+                        arts = fan.ifEmpty { arts },
                         summary = librarySummary(uiState, rows),
                         onOpenLibrary = onOpenLibrary,
                         onSync = viewModel::onSyncNow,
@@ -344,6 +347,8 @@ internal data class SyncPlaylistRow(
     val source: SyncSource,
     /** Taken out of the library: its account's page still lists it, nothing else does. */
     val userHidden: Boolean = false,
+    /** When it first arrived (epoch ms). */
+    val addedAt: Long = 0L,
 ) {
     /**
      * Kept on this phone: its Save switch, or, in Download mode, switched on for
@@ -355,10 +360,17 @@ internal data class SyncPlaylistRow(
 
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded)
     } + youTubePlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded)
     }
+
+/**
+ * Newest arrivals first. Every cover on the Sync tab reads in this order, so a sync that brings
+ * new mixes shows them; name order kept the first sync's covers up forever (2026-10-29: 25 new
+ * YouTube mixes arrived and nothing on the tab changed). Stable, so ties keep their order.
+ */
+internal fun List<SyncPlaylistRow>.newestFirst(): List<SyncPlaylistRow> = sortedByDescending { it.addedAt }
 
 /** "Mixes" is a service's own algorithmic playlists; everything else but Liked is the user's. */
 private fun SyncPlaylistRow.isMix() = type == PlaylistType.DAILY_MIX
@@ -455,17 +467,28 @@ private fun PrimaryPill(text: String, onClick: () -> Unit, modifier: Modifier = 
 
 @Composable
 private fun SyncCircleButton(onClick: () -> Unit) {
-    IconButton(
-        onClick = onClick,
+    // Icon and word: the bare circular arrow read as "refresh this screen", or as nothing.
+    Row(
         modifier = Modifier
-            .size(50.dp)
-            .clip(CircleShape)
-            .background(StashTheme.extendedColors.glassBackgroundHover),
+            .height(50.dp)
+            .clip(RoundedCornerShape(25.dp))
+            .background(StashTheme.extendedColors.glassBackgroundHover)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(
             imageVector = Icons.Filled.Sync,
-            contentDescription = stringResource(R.string.sync_arrival_sync_now),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            text = stringResource(R.string.sync_button),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
         )
     }
 }
@@ -648,8 +671,8 @@ private fun SyncingContent(
             trackColor = StashTheme.extendedColors.glassBackgroundHover,
         )
         Spacer(Modifier.height(26.dp))
-        // Covers first, art-less playlists after; three pending tiles keep the grid going.
-        val tiles = landed.sortedBy { it.artUrl == null }.take(12)
+        // What just arrived first, covers before art-less ones; three pending tiles keep the grid going.
+        val tiles = landed.newestFirst().sortedBy { it.artUrl == null }.take(12)
         val cells = tiles.map<SyncPlaylistRow, SyncPlaylistRow?> { it } + List(3) { null }
         cells.chunked(3).take(5).forEach { line ->
             Row(
@@ -691,8 +714,9 @@ private fun AccountCards(
             val mine = rows.filter { it.source == source }
             val playlists = mine.count { it.isOwnPlaylist() }
             val mixes = mine.count { it.isMix() }
-            val arts = (mine.filter { it.isOwnPlaylist() } + mine.filter { !it.isOwnPlaylist() })
+            val arts = mine.newestFirst()
                 .mapNotNull { it.artUrl }
+                .distinct()
                 .take(4)
             AccountCard(
                 name = name,

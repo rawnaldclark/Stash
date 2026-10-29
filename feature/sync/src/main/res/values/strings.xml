@@ -115,6 +115,7 @@
     <string name="sync_arrival_save_title">Save to this phone</string>
     <string name="sync_arrival_save_body">Pick the playlists you want to download.</string>
     <string name="sync_arrival_sync_now">Sync now</string>
+    <string name="sync_button">Sync</string>
     <string name="sync_arrival_change_later">Change it any time from the top of Sync.</string>
 
     <!-- Sync tab overhaul: nothing connected / ready -->

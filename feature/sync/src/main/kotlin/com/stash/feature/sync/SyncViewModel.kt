@@ -83,6 +83,8 @@ data class SpotifySyncPlaylist(
     val keepOffline: Boolean = false,
     /** Taken out of the library on its account's page: listed there only, so it can come back. */
     val userHidden: Boolean = false,
+    /** When the playlist first arrived (epoch ms): the Sync tab's covers lead with the newest. */
+    val dateAdded: Long = 0L,
 )
 
 /**
@@ -104,6 +106,8 @@ data class YouTubeSyncPlaylist(
     val keepOffline: Boolean = false,
     /** Taken out of the library on its account's page: listed there only, so it can come back. */
     val userHidden: Boolean = false,
+    /** When the playlist first arrived (epoch ms): the Sync tab's covers lead with the newest. */
+    val dateAdded: Long = 0L,
 )
 
 data class SyncUiState(
@@ -936,6 +940,7 @@ class SyncViewModel @Inject constructor(
                                 pinnedToHomeAt = e.pinnedToHomeAt,
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
+                                dateAdded = e.dateAdded.toEpochMilli(),
                             )
                         }
                     )
@@ -961,6 +966,7 @@ class SyncViewModel @Inject constructor(
                                 pinnedToHomeAt = e.pinnedToHomeAt,
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
+                                dateAdded = e.dateAdded.toEpochMilli(),
                             )
                         }
                     )
