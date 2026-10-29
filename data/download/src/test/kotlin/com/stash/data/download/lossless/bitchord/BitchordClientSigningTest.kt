@@ -8,6 +8,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.relay.appVersionProvider
 import com.stash.data.download.lossless.relay.supporter
 import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
@@ -63,7 +64,7 @@ class BitchordClientSigningTest {
             every { relayKey } returns this@BitchordClientSigningTest.relayKey
             coEvery { installId() } returns INSTALL_ID
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, FakeDao(), RelaySigner(config, supporter { supporterToken }), LosslessQuota.inMemory { now })
+        client = BitchordClient(OkHttpClient(), prefs, config, FakeDao(), RelaySigner(config, supporter { supporterToken }, appVersionProvider()), LosslessQuota.inMemory { now })
         client.nowMs = { now }
     }
 
@@ -92,6 +93,7 @@ class BitchordClientSigningTest {
         val stream = take()
         assertThat(stream.path).startsWith("/stream/td:4711")
         assertThat(stream.getHeader("X-Stash-Install")).isEqualTo(INSTALL_ID)
+        assertThat(stream.getHeader("X-Stash-App-Build")).isEqualTo("157")
         assertThat(stream.getHeader("X-Stash-Ts")).isEqualTo("1700000000")
         assertThat(stream.getHeader("X-Stash-Auth")).isEqualTo(hmac("$INSTALL_ID:td:4711:1700000000"))
     }
@@ -105,6 +107,7 @@ class BitchordClientSigningTest {
         take()
         val stream = take()
         assertThat(stream.getHeader("X-Stash-Auth")).isNull()
+        assertThat(stream.getHeader("X-Stash-App-Build")).isEqualTo("157")
         assertThat(stream.getHeader(RelaySigner.ENTITLEMENT_HEADER)).isNull()
     }
 

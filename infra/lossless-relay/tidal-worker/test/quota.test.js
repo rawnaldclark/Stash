@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import worker from "../src/index.js";
 import { verifySigned } from "../src/auth.js";
-import { hooks, nextResetSec } from "../src/quota.js";
+import { freeDailyLimit, hooks, nextResetSec } from "../src/quota.js";
 import { keypair, token, tidOf } from "./entitlement-keys.js";
 
 /**
@@ -18,6 +18,18 @@ const INSTALL = "install-0001";
 const MIGRATIONS = new URL("../migrations/", import.meta.url);
 const now = () => Math.floor(Date.now() / 1000);
 const today = () => new Date().toISOString().slice(0, 10);
+
+test("FREE_LOSSLESS_DAILY defaults to 300 when missing or invalid", () => {
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => errors.push(args.join(" "));
+  try {
+    assert.equal(freeDailyLimit({}), 300);
+    assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: "500" }), 500);
+    for (const value of ["0", "-1", "x", "500junk"]) assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: value }), 300);
+  } finally { console.error = original; }
+  assert.ok(errors.some((message) => message.includes("FREE_LOSSLESS_DAILY missing or invalid; using safe default 300")));
+});
 
 function relayDb() {
   const db = new DatabaseSync(":memory:");
@@ -94,10 +106,10 @@ test("a signed FLAC stream costs one unit and carries the counter headers; a rel
   const first = await r.call("/stream/td:1", signed("td:1"));
   assert.equal(first.status, 200);
   assert.equal((await first.json()).codec, "flac");
-  assert.equal(first.headers.get("X-Stash-Lossless"), "1/500");
+  assert.equal(first.headers.get("X-Stash-Lossless"), "1/300");
   assert.equal(first.headers.get("X-Stash-Lossless-Reset"), String(nextResetSec(now())));
   const hit = await r.call("/stream/1", signed("td:1"));
-  assert.equal(hit.headers.get("X-Stash-Lossless"), "2/500", "the bare /stream/<id> form signs td:<id> too");
+  assert.equal(hit.headers.get("X-Stash-Lossless"), "2/300", "the bare /stream/<id> form signs td:<id> too");
   assert.equal(r.calls.length, 1, "the second answer came from the relay cache");
   assert.equal(r.used(), 2);
 });
@@ -111,12 +123,12 @@ test("DASH FLAC and Tidal's AAC (?aac=1 on a CD-only track, ?aac=only) each coun
   }, { seats: 8 });
   const d = await r.call("/stream/td:3", signed("td:3"));
   assert.equal((await d.json()).manifest, "dash");
-  assert.equal(d.headers.get("X-Stash-Lossless"), "1/500");
+  assert.equal(d.headers.get("X-Stash-Lossless"), "1/300");
   for (const [path, id, status, counter] of [
-    ["/stream/td:1?aac=1", 1, 200, "2/500"],
+    ["/stream/td:1?aac=1", 1, 200, "2/300"],
     ["/stream/td:2", 2, 404, null],
     ["/stream/td:4", 4, 404, null],
-    ["/stream/td:5?aac=only", 5, 200, "3/500"],
+    ["/stream/td:5?aac=only", 5, 200, "3/300"],
   ]) {
     const res = await r.call(path, signed(`td:${id}`));
     assert.equal(res.status, status, path);
@@ -131,7 +143,7 @@ test("an AAC answer from the relay cache counts again, like a cached FLAC one", 
   const first = await r.call("/stream/td:1?aac=only", signed("td:1"));
   assert.equal((await first.json()).codec, "aac");
   const hit = await r.call("/stream/td:1?aac=only", signed("td:1"));
-  assert.equal(hit.headers.get("X-Stash-Lossless"), "2/500");
+  assert.equal(hit.headers.get("X-Stash-Lossless"), "2/300");
   assert.equal(r.calls.filter((c) => c.includes("playbackinfo")).length, 1, "the second came from the relay cache");
   assert.equal(r.used(), 2);
 });
@@ -200,14 +212,14 @@ test("a warm ?aac=only entry serves ?aac=only&hires=0 with no Tidal call, and it
   const res = await r.call("/stream/td:5?aac=only&hires=0", signed("td:5"));
   assert.equal((await res.json()).codec, "aac");
   assert.equal(r.calls.length, calls, "served from the warm ?aac=only entry");
-  assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+  assert.equal(res.headers.get("X-Stash-Lossless"), "1/300");
 });
 
 test("?aac=only&hires=0 counts one unit like any AAC answer", async () => {
   const r = relay(() => aacInfo());
   const res = await r.call("/stream/td:2?aac=only&hires=0", signed("td:2"));
   assert.equal((await res.json()).codec, "aac");
-  assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+  assert.equal(res.headers.get("X-Stash-Lossless"), "1/300");
   assert.equal(r.used(), 1);
 });
 
@@ -219,13 +231,46 @@ test("legacy: a request with no install headers streams uncounted, as before", a
   assert.equal(r.qdb.prepare("SELECT COUNT(*) AS n FROM usage").get().n, 0);
 });
 
-test("REQUIRE_INSTALL=1 refuses a request with no install headers; a signed one plays", async () => {
+test("REQUIRE_INSTALL=1 refuses unsigned app requests but exempts the web player lanes", async () => {
   const r = relay(tidal(), { env: { REQUIRE_INSTALL: "1" } });
   const res = await r.call("/stream/td:1");
   assert.equal(res.status, 401);
   assert.ok(res.headers.get("X-Stash-Server-Time"));
   assert.equal((await r.call("/stream/td:1", signed("td:1"))).status, 200);
+  assert.equal((await r.call("/stream/td:5?aac=only&hires=0")).status, 401, "the app's AAC-only lane is still app-gated");
+  for (const path of ["/stream/td:2?web=1", "/stream/td:3?web=mse", "/stream/td:4?aac=only"]) {
+    const web = await r.call(path);
+    assert.notEqual(web.status, 401, path);
+    assert.notEqual(web.status, 500, path);
+  }
+  assert.ok(r.calls.length >= 2);
+});
+
+test("MIN_APP_BUILD rejects missing, malformed and old app builds before quota or Tidal; quota stays open", async () => {
+  const r = relay(tidal(), { env: { MIN_APP_BUILD: "157" } });
+  for (const headers of [{}, { "X-Stash-App-Build": "x157" }, { "X-Stash-App-Build": "156" }]) {
+    const res = await r.call("/stream/td:1", { ...signed("td:1"), ...headers });
+    assert.equal(res.status, 426);
+    assert.deepEqual(await res.json(), { error: "app_too_old", min_build: 157 });
+  }
+  assert.equal((await r.call("/stream/td:9?aac=only&hires=0")).status, 426, "app AAC-only calls require a current build");
+  assert.equal(r.calls.length, 0);
+  assert.equal(r.used(), 0);
+  const current = await r.call("/stream/td:2", { ...signed("td:2"), "X-Stash-App-Build": "157" });
+  assert.equal(current.status, 200);
   assert.equal(r.calls.length, 1);
+  const quota = await r.call("/quota", signed("quota"));
+  assert.equal(quota.status, 200);
+});
+
+test("MIN_APP_BUILD exempts Tidal web lanes and defaults off", async () => {
+  const gated = relay(tidal(), { env: { MIN_APP_BUILD: "157" } });
+  for (const path of ["/stream/td:1?web=1", "/stream/td:2?web=mse", "/stream/td:3?aac=only"]) {
+    assert.notEqual((await gated.call(path)).status, 426, path);
+  }
+  assert.equal((await gated.call("/stream/td:4?aac=only&hires=0")).status, 426, "the app AAC-only form is gated");
+  const off = relay(tidal());
+  assert.equal((await off.call("/stream/td:4")).status, 200);
 });
 
 /** Install headers that fail verification for /stream/td:1 for a reason other than a skewed clock. */
@@ -325,8 +370,8 @@ test("GET /quota: signed '<install>:quota:<ts>', today's count with the headers,
   for (let i = 0; i < 2; i++) {
     const res = await r.call("/quota", signed("quota"));
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { used: 1, limit: 500, resetsAt: nextResetSec(now()), supporter: false });
-    assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+    assert.deepEqual(await res.json(), { used: 1, limit: 300, resetsAt: nextResetSec(now()), supporter: false });
+    assert.equal(res.headers.get("X-Stash-Lossless"), "1/300");
     assert.equal(res.headers.get("X-Stash-Lossless-Reset"), String(nextResetSec(now())));
   }
   assert.equal(r.used(), 1);
@@ -369,7 +414,7 @@ test("a D1 error bumping the stream counters after Tidal answered still returns 
     const res = await r.call("/stream/td:1", { ...ip, ...signed("td:1") });
     assert.equal(res.status, 200);
     assert.equal((await res.json()).codec, "flac");
-    assert.equal(res.headers.get("X-Stash-Lossless"), "1/500");
+    assert.equal(res.headers.get("X-Stash-Lossless"), "1/300");
   } finally { console.error = original; }
   assert.equal(r.calls.length, 1);
   assert.ok(errors.some((l) => l.startsWith("stream quota bump failed")), errors.join("\n"));

@@ -556,8 +556,9 @@ class BitchordClient @Inject constructor(
             val b = Request.Builder().url(url).get()
                 .header("Accept", "application/json")
                 .apply { if (token != null) header("X-Access-Token", token) }
+            if (url.encodedPath.startsWith("/stream/")) signer.appBuild(b)
             val signed = signPayload != null && signer.sign(b, signPayload, nowMs())
-            if (signPayload != null) signer.entitle(b)
+            if (signPayload != null && owner) signer.entitle(b)
             val reply = httpClient.newCall(b.build()).execute().use { r ->
                 if (r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
                     null

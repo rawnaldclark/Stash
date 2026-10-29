@@ -196,10 +196,13 @@ class LosslessRelayClient @Inject constructor(
                 .header("X-Stash-Version", PROTOCOL_VERSION)
                 .header("Accept", "application/json")
                 .also { if (download != null) it.header("X-Stash-Purpose", "download") }
-            val signed = signer.sign(b, "$trackId:$formatId", clock())
+            signer.appBuild(b)
             // A supporter's token goes to the signed config's relays only, never a user's own endpoint.
             val owner = signer.isOwnerRelay(base)
-            if (owner) signer.entitle(b)
+            if (owner) {
+                signer.entitle(b)
+            }
+            val signed = signer.sign(b, "$trackId:$formatId", clock())
             val req = b.get().build()
             return httpClient.newCall(req).execute().use { r ->
                 val body = r.body?.string().orEmpty()

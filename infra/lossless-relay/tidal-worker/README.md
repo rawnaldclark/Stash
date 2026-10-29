@@ -25,8 +25,19 @@ Run `npm run tidal:login` to add a live account or `npm run tidal:login -- --res
 
 ## Daily lossless counter (shared with the Qobuz relay)
 
+With `REQUIRE_INSTALL="1"`, app `/stream` requests require valid `X-Stash-Install/-Ts/-Auth`
+headers. `MIN_APP_BUILD` defaults to `"0"` (disabled); when enabled, app `/stream` requests
+also need integer `X-Stash-App-Build` at least that value or receive
+`426 {"error":"app_too_old","min_build":N}` before quota checks or Tidal calls. `/quota`
+is unaffected by the build gate. JSON is proxied by the web plugin; no CORS allow-header
+list exists on these endpoints.
+
+Both gates exempt the web player's existing `?web=1`, `?web=mse`, and `?aac=only` lanes.
+The app's AAC-only form adds `hires=0`, so `?aac=only&hires=0` remains gated unless it
+also explicitly selects a web lane. This is request routing, not proof of a browser's identity.
+
 Design: `docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md`. Every install gets `FREE_LOSSLESS_DAILY`
-(default 500) lossless answers per UTC day, **Qobuz and Tidal together**: both relays count in one D1 database,
+(default 300) lossless answers per UTC day, **Qobuz and Tidal together**: both relays count in one D1 database,
 `stash-quota` (binding `QUOTA_DB`, table `usage(day, subject, n)`, subject `i:<install id>`; schema and migrate command
 in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`: keep them equal). Code:
 `src/quota.js` (an identical copy of the Qobuz relay's) and `src/auth.js`.
@@ -48,14 +59,14 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
 - **Counts (one unit):** a `200` `/stream` answer with `codec: "flac"` (progressive, DASH or `?web=1` edge) or
   `codec: "aac"` (Tidal's AAC: `?aac=1` on a CD-only track, `?aac=only`), a relay response-cache hit included.
   **Never:** 404s, errors, busy, searches, `/quota`, `/dash`.
-- **At the limit:** `429 {"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":<epoch s>}` with
+- **At the limit:** `429 {"error":"daily_lossless_cap","used":300,"limit":300,"resetsAt":<epoch s>}` with
   `Retry-After` = seconds to `resetsAt` (the next UTC midnight); no seat is taken. Every mode gets it, `?aac=1` and
   `?aac=only` included: past the limit Tidal answers nothing, FLAC or AAC, until the reset.
 - **Headers** on every counted answer, the 429 and `/quota`: `X-Stash-Lossless:
   <used>/<limit>` (`used` after this answer; `<used>/unlimited` for a supporter) and `X-Stash-Lossless-Reset: <epoch
   s>`. JSON answers set no CORS headers, so there is no `Access-Control-Expose-Headers` to extend
   (`LOSSLESS_HEADER_NAMES` in `src/quota.js` is ready if that changes).
-- **`GET /quota`** → `200 {"used":n,"limit":500,"resetsAt":T,"supporter":false}` (`limit: null` for a supporter)
+- **`GET /quota`** → `200 {"used":n,"limit":300,"resetsAt":T,"supporter":false}` (`limit: null` for a supporter)
   with the headers. Needs `X-Access-Token` and the signed headers (missing ones: 401); behind `REQUEST_RL`; never
   counted. `404 {"error":"quota_off"}` without `QUOTA_DB` or `RELAY_KEY` (an older deploy answers `not_found` 404).
 - **Supporters:** `/stream` and `/quota` may carry `X-Stash-Entitlement: <token>`, the token the tip jar issues to a
@@ -70,7 +81,7 @@ in `infra/lossless-quota/`, copied for the tests to `test/fixtures/quota_*.sql`:
   apply to supporters.
 - **Per-token ceiling:** every counted answer (FLAC or AAC) under a token also counts in `usage` as subject
   `t:<tid>`. At `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free
-  limit applies again (headers `<used>/500`, then the 429). This keeps a posted token from being a free pass.
+  limit applies again (headers `<used>/300`, then the 429). This keeps a posted token from being a free pass.
 - **Revocation:** table `revoked_tokens(tid, revoked_at, reason)` in `stash-quota` (migration
   `infra/lossless-quota/migrations/0002_revoked_tokens.sql`, copied to `test/fixtures/quota_0002_revoked_tokens.sql`),
   checked in the same D1 read as the install's count. Revoke (the tid is in the token's first segment, base64url
