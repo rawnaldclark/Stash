@@ -225,10 +225,13 @@ class DownloadQueueDaoManagementTest {
     }
 
     @Test fun `history sweep purges cancelled rows alongside completed ones`() = runTest {
-        (1L..3L).forEach { seedTrack(it, "Track $it", "Artist", "Album", null) }
+        (1L..6L).forEach { seedTrack(it, "Track $it", "Artist", "Album", null) }
         seedQueue(1, 1, DownloadStatus.COMPLETED, createdAt = 10, completedAt = 200)
         seedQueue(2, 2, DownloadStatus.SKIPPED, createdAt = 20, completedAt = 300)
         seedQueue(3, 3, DownloadStatus.FAILED, createdAt = 30, completedAt = 400)
+        seedQueue(4, 4, DownloadStatus.PENDING, createdAt = 40)
+        seedQueue(5, 5, DownloadStatus.IN_PROGRESS, createdAt = 50)
+        seedQueue(6, 6, DownloadStatus.WAITING_FOR_LOSSLESS, createdAt = 60)
 
         dao.deleteCompleted()
 
@@ -237,6 +240,10 @@ class DownloadQueueDaoManagementTest {
         assertNull(dao.getById(1))
         assertNull(dao.getById(2))
         assertEquals(DownloadStatus.FAILED, dao.getStatusById(3))
+        // Clear history never touches the queue: waiting and running rows stay.
+        assertEquals(DownloadStatus.PENDING, dao.getStatusById(4))
+        assertEquals(DownloadStatus.IN_PROGRESS, dao.getStatusById(5))
+        assertEquals(DownloadStatus.WAITING_FOR_LOSSLESS, dao.getStatusById(6))
     }
 
     @Test fun `orphan sweep evicts a cancelled row once its track loses every playlist`() = runTest {

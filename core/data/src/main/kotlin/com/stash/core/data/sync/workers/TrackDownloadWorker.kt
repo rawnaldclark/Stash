@@ -11,7 +11,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
 import kotlinx.coroutines.NonCancellable
@@ -73,11 +72,11 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
     private val downloadJobs: DownloadJobRegistry,
     private val fileReplacement: com.stash.core.data.files.TrackFileReplacement,
+    /** The songs downloading at once, shared with DownloadManager and the discovery drain. */
+    private val downloadSlots: com.stash.core.data.sync.DownloadSlots = com.stash.core.data.sync.DownloadSlots(),
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
-        /** Songs downloading at once: DownloadManager's own limit. */
-        internal const val DOWNLOAD_SLOTS = 8
 
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_DOWNLOADED = "downloaded"
@@ -237,8 +236,8 @@ class TrackDownloadWorker @AssistedInject constructor(
             // ── Parallel download loop ──────────────────────────────────
             //
             // All pending items are launched as concurrent coroutines, and
-            // [DOWNLOAD_SLOTS] of them run at a time (downloadSlots below, the
-            // same 8 as the Semaphore inside DownloadManager.downloadTrack()).
+            // DownloadSlots.COUNT of them run at a time (downloadSlots, the
+            // same slots DownloadManager.downloadTrack() and other workers take).
             //
             // Previously this was a sequential for loop, which meant the
             // Semaphore only ever saw one caller and concurrency was always 1.
@@ -257,8 +256,6 @@ class TrackDownloadWorker @AssistedInject constructor(
             val firstError = AtomicReference<String?>(null)
             val playlistsChecked = inputData.getInt(DiffWorker.KEY_PLAYLISTS_CHECKED, 0)
             val downloadedTrackIds = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
-            // The same number DownloadManager lets download at once.
-            val downloadSlots = kotlinx.coroutines.sync.Semaphore(DOWNLOAD_SLOTS)
 
             supervisorScope {
                 for (queueItem in pendingItems) {
@@ -266,7 +263,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                         // A song is claimed (and so shown as downloading) only once it holds
                         // one of the slots: launching all and letting each wait inside
                         // DownloadManager marked every pending row IN_PROGRESS at once.
-                        downloadSlots.withPermit {
+                        downloadSlots.withSlot {
                             val itemJob = currentCoroutineContext().job
                             // Claim and register as one step, so a tap never sees this
                             // row IN_PROGRESS without its live job (DownloadJobRegistry).
@@ -335,10 +332,12 @@ class TrackDownloadWorker @AssistedInject constructor(
 
                                 keptPath = trackEntity.filePath
                                 val track = trackEntity.toDomain()
-                                val outcome = trackDownloader.downloadTrack(
-                                    track = track,
-                                    preResolvedUrl = queueItem.youtubeUrl,
-                                )
+                                val outcome = downloadSlots.holding {
+                                    trackDownloader.downloadTrack(
+                                        track = track,
+                                        preResolvedUrl = queueItem.youtubeUrl,
+                                    )
+                                }
 
                                 when (outcome) {
                                     is TrackDownloadOutcome.Success -> {
@@ -803,6 +802,15 @@ class TrackDownloadWorker @AssistedInject constructor(
         // can no-op on non-FAILED rows). Relies on updateStatus's defaults to
         // null out error_message / completed_at / rejected_video_id and reset
         // failure_type to NONE, matching the chain-mode IN_PROGRESS call.
+        // The row is claimed only once a download slot is free (DownloadSlots), so it waits as Pending behind a busy sync.
+        return downloadSlots.withSlot { claimAndDownload(entry, track) }
+    }
+
+    /** [runSingleTrackMode] from the claim on, holding a download slot. */
+    private suspend fun claimAndDownload(
+        entry: com.stash.core.data.db.entity.DownloadQueueEntity,
+        track: com.stash.core.model.Track,
+    ): Result {
         val itemJob = currentCoroutineContext().job
         // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
         if (!downloadJobs.claimAndRegister(entry.id, itemJob) { downloadQueueDao.claimForDownload(entry.id) != 0 }) {
@@ -841,10 +849,12 @@ class TrackDownloadWorker @AssistedInject constructor(
         }
 
         val outcome = try {
-            trackDownloader.downloadTrack(
-                track = track,
-                preResolvedUrl = entry.youtubeUrl,
-            )
+            downloadSlots.holding {
+                trackDownloader.downloadTrack(
+                    track = track,
+                    preResolvedUrl = entry.youtubeUrl,
+                )
+            }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             // WorkManager stopped us. Don't mark the row FAILED: a user skip
             // returns quietly, anything else rethrows to runSingleTrackMode,
