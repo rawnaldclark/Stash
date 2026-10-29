@@ -73,7 +73,7 @@ class PlayerRepositoryListenTogetherTest {
             context = ApplicationProvider.getApplicationContext(),
             playbackStateStore = playbackStateStore,
             musicRepository = musicRepository,
-            streamingPreference = mockk(relaxed = true),
+            streamingPreference = mockk<com.stash.core.data.prefs.StreamingPreference>(relaxed = true) { coEvery { current() } returns true },
             streamResolver = mockk(),
             streamUrlCache = streamUrlCache,
             connectivity = mockk(relaxed = true),

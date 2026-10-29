@@ -13,6 +13,7 @@ import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.Track
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -52,7 +53,7 @@ class PlayerRepositorySetQueueSupersedeTest {
             context = ApplicationProvider.getApplicationContext(),
             playbackStateStore = playbackStateStore,
             musicRepository = musicRepository,
-            streamingPreference = mockk<StreamingPreference>(relaxed = true),
+            streamingPreference = mockk<StreamingPreference>(relaxed = true) { coEvery { current() } returns true },
             streamResolver = mockk<StreamSourceRegistry>(),
             streamUrlCache = mockk<StreamUrlCache>(relaxed = true),
             connectivity = mockk<ConnectivityMonitor>(relaxed = true),

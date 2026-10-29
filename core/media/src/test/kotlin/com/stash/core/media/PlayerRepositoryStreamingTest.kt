@@ -144,9 +144,8 @@ class PlayerRepositoryStreamingTest {
     @Test
     fun buildMediaItem_downloadedTrackButFileMissing_fallsThroughToStreaming() = runTest {
         // Row says downloaded=true but the file is gone: routing skips the
-        // local-file branch and streams it like any other track. The Download
-        // switch is never consulted (until 2026-09-17 it short-circuited here
-        // to OfflineMode and this path had no coverage).
+        // local-file branch and, in Stream only, streams it like any other track.
+        coEvery { streamingPreference.current() } returns true
         repo.filePathExistsOnDisk = { false }
         every { streamingPreference.streamOnCellular } returns flowOf(true)
         every { connectivity.isConnected() } returns true
@@ -364,8 +363,8 @@ class PlayerRepositoryStreamingTest {
     fun buildMediaItem_unresolvableTrack_returnsNotAvailable() = runTest {
         // Not downloaded and the resolvers have nothing: the stale
         // isStreamable flag is never consulted (AvailabilityCheckWorker that
-        // drove it was removed in v0.9.30), and neither is the Download switch.
-        coEvery { streamingPreference.current() } returns false
+        // drove it was removed in v0.9.30).
+        coEvery { streamingPreference.current() } returns true
         every { streamingPreference.streamOnCellular } returns flowOf(true)
         every { connectivity.isConnected() } returns true
         every { connectivity.isCellular() } returns false
@@ -385,9 +384,8 @@ class PlayerRepositoryStreamingTest {
     }
 
     @Test
-    fun buildMediaItem_streamableTrackInDownloadMode_stillStreams() = runTest {
-        // The Download switch decides what sync writes to disk, never what
-        // plays: streaming pref off changes nothing here.
+    fun buildMediaItem_streamableTrackInDownloadMode_isRefused() = runTest {
+        // Download mode plays only what is on the phone (owner, 2026-10-29).
         val track = streamable(id = 5L)
         coEvery { streamingPreference.current() } returns false
         every { streamingPreference.streamOnCellular } returns flowOf(true)
@@ -400,9 +398,8 @@ class PlayerRepositoryStreamingTest {
 
         val result = repo.buildMediaItemForTrack(track)
 
-        assertThat(result).isInstanceOf(StreamRoutingResult.Item::class.java)
-        val item = (result as StreamRoutingResult.Item).mediaItem
-        assertThat(item.localConfiguration?.uri?.toString()).isEqualTo("https://cdn.example/five")
+        assertThat(result).isEqualTo(StreamRoutingResult.DownloadMode)
+        coVerify(exactly = 0) { streamResolver.resolve(any()) }
     }
 
     @Test

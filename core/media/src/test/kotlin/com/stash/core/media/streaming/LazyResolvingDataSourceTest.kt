@@ -272,4 +272,22 @@ class LazyResolvingDataSourceTest {
         verify { finder.markFailed("stash-cloud://dropbox/1/abc?v=1") }
         verify { urlCache.invalidate(5L) }
     }
+
+    @Test
+    fun `Download mode resolves nothing and fails the open, so the song is skipped`() {
+        val source = LazyResolvingDataSource(
+            resolver = resolver,
+            urlCache = urlCache,
+            trackDao = trackDao,
+            httpDelegate = { httpSource },
+            jioSaavnDelegate = { jioSaavnSource },
+            streamAllowed = { false },
+        )
+
+        assertThrows(IOException::class.java) { source.open(placeholderSpec(42L)) }
+
+        coVerify(exactly = 0) { resolver.resolve(any(), any(), any()) }
+        verify(exactly = 0) { urlCache.get(any()) }
+        verify(exactly = 0) { httpSource.open(any()) }
+    }
 }

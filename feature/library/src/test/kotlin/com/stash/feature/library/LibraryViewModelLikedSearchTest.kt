@@ -89,6 +89,7 @@ class LibraryViewModelLikedSearchTest {
             on { getPlaylistsByType(eq(PlaylistType.STASH_LIKED)) } doReturn flowOf(emptyList())
             on { getPlaylistsByType(eq(PlaylistType.LIKED_SONGS)) } doReturn flowOf(listOf(likedPlaylist))
             on { getTracksByPlaylist(eq(42L)) } doReturn flowOf(likedSongs)
+            on { getShownTracksByPlaylist(eq(42L)) } doReturn flowOf(likedSongs)
         }
         return LibraryViewModel(
             musicRepository = musicRepository,
