@@ -66,10 +66,10 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
         ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
 
 /**
- * The play/radio row's height, links or not: 56 dp play coin, or listeners + Support over a row
- * of 40 dp link coins. Fixed so the links landing late never move the name.
+ * A link coin, as on the original header. The links' line under listeners + Support is this tall
+ * before they arrive too, so their landing a beat late never moves the name.
  */
-private val HeroControlsHeight = 76.dp
+private val LinkCoinSize = 32.dp
 
 /**
  * Links the header leaves to About, so the few that fit beside play and radio stay a usable
@@ -222,12 +222,10 @@ fun ArtistHero(
                 overflow = TextOverflow.Ellipsis,
             )
             // Play and radio on the left; on the right, listeners and Support with the
-            // artist's links under them. The row's height is fixed: the links arrive a beat
-            // after the page (MusicBrainz), and growing the row then pushed the name up the photo.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.height(HeroControlsHeight),
-            ) {
+            // artist's links under them. The links arrive a beat after the page (MusicBrainz);
+            // their line is held open from the start, so the row never grows and the name never
+            // moves. Not a fixed row height: with a large font, that squashed the coins flat.
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     onClick = onPlayArtist,
                     shape = CircleShape,
@@ -305,6 +303,7 @@ fun ArtistHero(
                             }
                         }
                     }
+                    Box(Modifier.height(LinkCoinSize), contentAlignment = Alignment.CenterEnd) {
                     if (links.isNotEmpty()) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -317,7 +316,7 @@ fun ArtistHero(
                                     shape = CircleShape,
                                     color = background.copy(alpha = 0.45f),
                                     border = BorderStroke(1.dp, ink.copy(alpha = 0.18f)),
-                                    modifier = Modifier.size(40.dp),
+                                    modifier = Modifier.size(LinkCoinSize),
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         val brand = socialIconFor(social.kind)
@@ -326,20 +325,21 @@ fun ArtistHero(
                                                 painter = painterResource(brand),
                                                 contentDescription = social.kind,
                                                 tint = ink.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(20.dp),
+                                                modifier = Modifier.size(16.dp),
                                             )
                                         } else {
                                             Icon(
                                                 imageVector = Icons.Default.Public,
                                                 contentDescription = social.kind,
                                                 tint = ink.copy(alpha = 0.85f),
-                                                modifier = Modifier.size(20.dp),
+                                                modifier = Modifier.size(16.dp),
                                             )
                                         }
                                     }
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
