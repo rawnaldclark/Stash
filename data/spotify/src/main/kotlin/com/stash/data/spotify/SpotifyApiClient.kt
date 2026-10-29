@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -158,6 +159,66 @@ class SpotifyApiClient @Inject constructor(
          * yearly set; the all-time list only appeared for its own phrasing.
          */
         private val YEARLY_SEARCH_TERMS = listOf("Your Top Songs", "Your All-Time Top Songs")
+
+        /**
+         * The id of the artist in a `searchDesktop` answer whose name is exactly [name] (case and
+         * surrounding spaces aside), in Spotify's relevance order. Both answer shapes:
+         * `data.search.artists.items[]` and `data.searchV2.artists.items[]`, each item the artist
+         * itself, under `data`, or under `item.data`.
+         */
+        internal fun findArtistId(root: JsonObject, name: String): String? {
+            val data = root["data"] as? JsonObject ?: return null
+            val wanted = name.trim().lowercase(java.util.Locale.ROOT)
+            for (container in listOf("search", "searchV2")) {
+                val items = ((data[container] as? JsonObject)?.get("artists") as? JsonObject)
+                    ?.get("items") as? JsonArray ?: continue
+                for (el in items) {
+                    val o = el as? JsonObject ?: continue
+                    val artist = (o["data"] as? JsonObject)
+                        ?: ((o["item"] as? JsonObject)?.get("data") as? JsonObject)
+                        ?: o
+                    val uri = (artist["uri"] as? JsonPrimitive)?.contentOrNull ?: continue
+                    if (!uri.startsWith("spotify:artist:")) continue
+                    val artistName = ((artist["profile"] as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull
+                        ?: continue
+                    if (artistName.trim().lowercase(java.util.Locale.ROOT) == wanted) {
+                        return uri.removePrefix("spotify:artist:")
+                    }
+                }
+            }
+            return null
+        }
+
+        /**
+         * The gallery (largest source of each photo) and the wide header from a
+         * `queryArtistOverview` answer: `data.artistUnion.visuals`. The header sits under
+         * `headerImage.data.sources` (or `headerImage.sources`). Null when neither is there.
+         */
+        internal fun parseArtistVisuals(root: JsonObject): SpotifyArtistVisuals? {
+            val visuals = (((root["data"] as? JsonObject)?.get("artistUnion") as? JsonObject)
+                ?.get("visuals")) as? JsonObject ?: return null
+            val gallery = ((visuals["gallery"] as? JsonObject)?.get("items") as? JsonArray)
+                ?.mapNotNull { largestSource((it as? JsonObject)?.get("sources")) }
+                ?.distinct()
+                .orEmpty()
+            val header = visuals["headerImage"] as? JsonObject
+            val headerUrl = largestSource((header?.get("data") as? JsonObject)?.get("sources"))
+                ?: largestSource(header?.get("sources"))
+            if (gallery.isEmpty() && headerUrl == null) return null
+            return SpotifyArtistVisuals(gallery = gallery, headerUrl = headerUrl)
+        }
+
+        /** The widest https image of a `sources` array (a missing width counts as 0). */
+        private fun largestSource(sources: kotlinx.serialization.json.JsonElement?): String? =
+            (sources as? JsonArray)
+                ?.mapNotNull { it as? JsonObject }
+                ?.mapNotNull { src ->
+                    val url = (src["url"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.startsWith("https://") }
+                        ?: return@mapNotNull null
+                    url to ((src["width"] as? JsonPrimitive)?.intOrNull ?: 0)
+                }
+                ?.maxByOrNull { it.second }
+                ?.first
 
         internal fun isSpotifyMix(name: String, ownerId: String, playlistId: String = ""): Boolean {
             if (DAILY_MIX_REGEX.matches(name)) return true
@@ -548,6 +609,49 @@ class SpotifyApiClient @Inject constructor(
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "getYearlyMixes failed", e)
             SyncResult.Error("getYearlyMixes failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * An artist's photos on Spotify, for the artist page: the photo gallery (About) and the wide
+     * header (the banner when YouTube has none). Finds the artist by [name] with `searchDesktop`
+     * (an exact name match only, so a namesake never lends their photos), then reads its
+     * `queryArtistOverview`. Null when not signed in to Spotify, no exact match, or nothing parses.
+     */
+    suspend fun getArtistVisuals(name: String): SpotifyArtistVisuals? = withContext(Dispatchers.IO) {
+        try {
+            val search = executeGraphQL(
+                operationName = "searchDesktop",
+                variables = buildJsonObject {
+                    put("searchTerm", name)
+                    put("offset", 0)
+                    put("limit", 10)
+                    put("numberOfTopResults", 5)
+                    put("includeAudiobooks", false)
+                    put("includePreReleases", false)
+                }.toString(),
+                seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+            ) ?: return@withContext null
+            val artistId = findArtistId(search, name) ?: run {
+                Log.d(TAG, "getArtistVisuals: no exact Spotify match for '$name'")
+                return@withContext null
+            }
+            val overview = executeGraphQL(
+                operationName = "queryArtistOverview",
+                variables = buildJsonObject {
+                    put("uri", "spotify:artist:$artistId")
+                    put("locale", "")
+                    put("preReleaseV2", false)
+                }.toString(),
+                seedHash = SpotifyAuthConfig.HASH_ARTIST_OVERVIEW,
+            ) ?: return@withContext null
+            parseArtistVisuals(overview).also {
+                Log.d(TAG, "getArtistVisuals: '$name' gallery=${it?.gallery?.size ?: 0} header=${it?.headerUrl != null}")
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "getArtistVisuals failed for '$name'", e)
+            null
         }
     }
 

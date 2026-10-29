@@ -97,6 +97,8 @@ fun ArtistHero(
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
     onPlayArtist: () -> Unit,
+    /** The artist's album covers: the banner when there's no header photo anywhere. */
+    fallbackCovers: List<String> = emptyList(),
     onStartRadio: () -> Unit,
     streamingEnabled: Boolean,
     onStreamingClick: () -> Unit,
@@ -135,6 +137,19 @@ fun ArtistHero(
                     Brush.verticalGradient(listOf(primary.copy(alpha = 0.45f), primary.copy(alpha = 0.08f))),
                 ),
         ) {
+            if (photo == null && fallbackCovers.isNotEmpty()) {
+                // No header photo on YouTube or Spotify: the artist's own covers, side by side.
+                Row(Modifier.fillMaxSize()) {
+                    fallbackCovers.forEach { cover ->
+                        AsyncImage(
+                            model = ArtUrlUpgrader.upgrade(cover),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
+                }
+            }
             if (photo != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalPlatformContext.current)
@@ -263,12 +278,14 @@ fun ArtistHero(
                 }
             }
 
-            // -- The artist's doors: a glass coin each, the full width ------------
+            // -- The artist's doors: a glass coin each, on the right under listeners + Support --
             if (socials.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    // Many links scroll; reversed so the row starts from its right end.
+                    modifier = Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true),
                 ) {
                     socials.forEach { social ->
                         Surface(
@@ -298,6 +315,7 @@ fun ArtistHero(
                             }
                         }
                     }
+                }
                 }
             }
         }

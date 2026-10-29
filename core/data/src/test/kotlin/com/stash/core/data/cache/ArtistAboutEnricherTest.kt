@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmArtistInfo
 import com.stash.core.data.musicbrainz.MusicBrainzClient
+import com.stash.data.spotify.SpotifyApiClient
+import com.stash.data.spotify.SpotifyArtistVisuals
 import com.stash.data.ytmusic.model.SocialLink
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -25,6 +27,7 @@ class ArtistAboutEnricherTest {
         info: LastFmArtistInfo?,
         mbLookup: JsonObject? = null,
         mbSearch: JsonObject? = null,
+        visuals: SpotifyArtistVisuals? = null,
     ): RealArtistAboutEnricher {
         val lastFm = mock<LastFmApiClient> {
             onBlocking { getArtistInfo(any()) } doReturn Result.success(info)
@@ -38,7 +41,10 @@ class ArtistAboutEnricherTest {
             override suspend fun releaseGroupUrlRels(releaseGroupId: String): JsonObject? = null
             override suspend fun releaseUrlRels(releaseId: String): JsonObject? = null
         }
-        return RealArtistAboutEnricher(lastFm, mb)
+        val spotify = mock<SpotifyApiClient> {
+            onBlocking { getArtistVisuals(any()) } doReturn visuals
+        }
+        return RealArtistAboutEnricher(lastFm, mb, spotify)
     }
 
     @Test fun `bio and socials both present`() = runTest {
@@ -71,5 +77,23 @@ class ArtistAboutEnricherTest {
             mbSearch = relsPayload("youtube" to "https://youtube.com/@a"),
         ).enrich("A")
         assertThat(about!!.socials).containsExactly(SocialLink("youtube", "https://youtube.com/@a"))
+    }
+
+    @Test fun `Spotify photos fill the gallery and the header`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = null),
+            visuals = SpotifyArtistVisuals(gallery = listOf("https://i/1", "https://i/2"), headerUrl = "https://i/h"),
+        ).enrich("A")
+        assertThat(about!!.gallery).containsExactly("https://i/1", "https://i/2").inOrder()
+        assertThat(about.headerUrl).isEqualTo("https://i/h")
+    }
+
+    @Test fun `photos alone still make an About`() = runTest {
+        val about = enricher(
+            info = null,
+            visuals = SpotifyArtistVisuals(gallery = listOf("https://i/1"), headerUrl = null),
+        ).enrich("A")
+        assertThat(about!!.gallery).hasSize(1)
+        assertThat(about.bio).isNull()
     }
 }

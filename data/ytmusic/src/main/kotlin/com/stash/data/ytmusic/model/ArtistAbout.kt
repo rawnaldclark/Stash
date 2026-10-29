@@ -15,4 +15,8 @@ data class ArtistAbout(
     val bio: String? = null,
     val socials: List<SocialLink> = emptyList(),
     val photoUrl: String? = null, // upgrade only; UI coalesces with avatarUrl
+    /** The artist's photo gallery (Spotify), shown as a row in About. */
+    val gallery: List<String> = emptyList(),
+    /** A wide header photo (Spotify): the banner when YouTube's page has none. */
+    val headerUrl: String? = null,
 )
