@@ -89,6 +89,7 @@ class RecordHostTest {
         val covers: RecordCovers = RecordCovers { songs, _, _ -> songs.map { null } },
         chunk: Int = 2,
         scope: CoroutineScope = test.backgroundScope,
+        library: RecordLibraryArt = RecordLibraryArt.None,
     ) {
         val events = mutableListOf<RecordEvent>()
         val played = mutableListOf<Triple<List<RecordSong>, Int, String>>()
@@ -105,6 +106,7 @@ class RecordHostTest {
             background = dispatcher,
             chunkSize = chunk,
             now = { test.testScheduler.currentTime },
+            library = library,
         )
 
         /** Says [raw] and lets the host handle it (messages are queued). */
@@ -438,6 +440,84 @@ class RecordHostTest {
             "Frank Ocean" to "\"https://x/frank.jpg\"",
             "Nights|Frank Ocean" to "null",
         ).inOrder()
+    }
+
+    /** The library: own files for the songs in [local], remote addresses for those in [remote], by title. */
+    private class Library(val local: Map<String, String>, val remote: Map<String, String>) : RecordLibraryArt {
+        val asked = mutableListOf<String>()
+        override suspend fun local(songs: List<ArtSong>): List<String?> = songs.map { asked += "local ${it.title}"; local[it.title] }
+        override suspend fun remote(songs: List<ArtSong>): List<String?> = songs.map { asked += "remote ${it.title}"; remote[it.title] }
+    }
+
+    private fun lists(page: Page) = page.messages.filter { it["type"]!!.jsonPrimitive.content == "stash:covers" }.map { m ->
+        m["covers"]!!.jsonArray.map { c -> (c as JsonObject).let { it["id"]!!.jsonPrimitive.content to it["url"]!!.toString() } }
+    }
+
+    @Test fun `art - own files first as their own batch, the lookups only for the rest, the library's addresses only for what they missed`() = runTest {
+        val looked = mutableListOf<List<ArtSong>>()
+        val order = mutableListOf<String>()
+        val library = Library(
+            local = mapOf("Blonde" to "https://appassets.androidplatform.net/art/v1/${"a".repeat(32)}.jpg"),
+            remote = mapOf(
+                "Blonde" to "https://never/blonde.jpg",
+                "Nights" to "https://appassets.androidplatform.net/art/v1/${"b".repeat(32)}.jpg",
+                "Solo" to "https://never/solo.jpg",
+            ),
+        )
+        val covers = RecordCovers { songs, _, onBatch ->
+            order += "lookups"
+            looked += songs
+            onBatch(listOf("https://x/frank.jpg", null, null, null))
+            listOf("https://x/frank.jpg", null, null, "https://x/solo.jpg")
+        }
+        val h = Harness(this, rows(0), covers = covers, library = library)
+        val page = Page()
+        h.say(
+            """{"type":"stash:art","asks":[{"id":"Blonde|Frank Ocean","artist":"Frank Ocean","title":"Blonde","album":"Blonde"},""" +
+                """{"id":"Frank Ocean","artist":"Frank Ocean"},{"id":"Nights|Frank Ocean","artist":"Frank Ocean","title":"Nights"},""" +
+                """{"id":"Ivy|Frank Ocean","artist":"Frank Ocean","title":"Ivy"},{"id":"Solo|Frank Ocean","artist":"Frank Ocean","title":"Solo"}]}""",
+            page,
+        )
+        runCurrent()
+        // Own files asked first; the lookups never hear of a song the library answered
+        assertThat(library.asked.first()).isEqualTo("local Blonde")
+        assertThat(looked.single().map { it.title }).containsExactly("Frank Ocean", "Nights", "Ivy", "Solo").inOrder()
+        // The library's addresses only for the songs the lookups found nothing for (never an artist)
+        assertThat(library.asked.filter { it.startsWith("remote") }).containsExactly("remote Nights", "remote Ivy").inOrder()
+        val l = lists(page)
+        assertThat(l).hasSize(3)
+        assertThat(l[0]).containsExactly("Blonde|Frank Ocean" to "\"https://appassets.androidplatform.net/art/v1/${"a".repeat(32)}.jpg\"")
+        assertThat(l[1]).containsExactly("Frank Ocean" to "\"https://x/frank.jpg\"")
+        assertThat(l[2]).containsExactly(
+            "Blonde|Frank Ocean" to "\"https://appassets.androidplatform.net/art/v1/${"a".repeat(32)}.jpg\"",
+            "Frank Ocean" to "\"https://x/frank.jpg\"",
+            "Nights|Frank Ocean" to "\"https://appassets.androidplatform.net/art/v1/${"b".repeat(32)}.jpg\"",
+            "Ivy|Frank Ocean" to "null",
+            "Solo|Frank Ocean" to "\"https://x/solo.jpg\"",
+        ).inOrder()
+    }
+
+    @Test fun `art - when every song has its own file the lookups are never asked, and a library that fails leaves them to the lookups`() = runTest {
+        var lookups = 0
+        val covers = RecordCovers { songs, _, _ -> lookups++; songs.map { "https://x/${it.title}.jpg" } }
+        val own = Library(local = mapOf("Ivy" to "https://appassets.androidplatform.net/art/v1/${"c".repeat(32)}.jpg"), remote = emptyMap())
+        val h = Harness(this, rows(0), covers = covers, library = own)
+        val page = Page()
+        h.say("""{"type":"stash:art","asks":[{"id":"Ivy|Frank Ocean","artist":"Frank Ocean","title":"Ivy"}]}""", page)
+        runCurrent()
+        assertThat(lookups).isEqualTo(0)
+        assertThat(lists(page).last()).containsExactly("Ivy|Frank Ocean" to "\"https://appassets.androidplatform.net/art/v1/${"c".repeat(32)}.jpg\"")
+
+        val broken = object : RecordLibraryArt {
+            override suspend fun local(songs: List<ArtSong>): List<String?> = error("no database")
+            override suspend fun remote(songs: List<ArtSong>): List<String?> = error("no database")
+        }
+        val h2 = Harness(this, rows(0), covers = covers, library = broken)
+        val page2 = Page()
+        h2.say("""{"type":"stash:art","asks":[{"id":"Ivy|Frank Ocean","artist":"Frank Ocean","title":"Ivy"}]}""", page2)
+        runCurrent()
+        assertThat(lookups).isEqualTo(1)
+        assertThat(lists(page2).last()).containsExactly("Ivy|Frank Ocean" to "\"https://x/Ivy.jpg\"")
     }
 
     @Test fun `what a page started stops when it goes (its renderer died, the screen stays) - its covers, its wait on back, its file`() = runTest {

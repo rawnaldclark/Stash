@@ -38,7 +38,8 @@ internal fun interface ArtDecoder {
 internal class CoilArtDecoder(private val context: Context) : ArtDecoder {
     override suspend fun decode(model: String, px: Int): Bitmap? {
         val request = ImageRequest.Builder(context)
-            .data(model)
+            // A file as a File (Coil's file fetcher), an address as itself (its disk cache, keyed as the rows key it)
+            .data(if (model.contains("://")) model else File(model))
             .size(px, px)
             .scale(Scale.FILL)
             .allowHardware(false)
@@ -175,7 +176,7 @@ class LibraryArtFiles internal constructor(
 
     /** [path] made canonical, when it is a file under one of the app's own folders; else null. */
     internal fun readable(path: String): File? {
-        if (!path.startsWith("/") || path.contains('\u0000')) return null
+        if (!File(path).isAbsolute || path.contains("://") || path.contains('\u0000')) return null
         val file = try {
             File(path).canonicalFile
         } catch (e: IOException) {
