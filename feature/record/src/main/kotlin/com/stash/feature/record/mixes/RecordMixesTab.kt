@@ -77,6 +77,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
+import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTextPrimary
 import com.stash.core.ui.theme.StashTextSecondary
@@ -169,7 +170,8 @@ internal fun RecordMixesTab(
                 }
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                    // The last row scrolls clear of the mini player
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp + LocalBottomChromeInset.current),
                 ) {
                     if (s.mixes.isNotEmpty()) item(key = "mixes") { CardRow(stringResource(R.string.record_mixes_from_years), s.mixes, onOpenMix, viewModel::play) }
                     if (s.years.isNotEmpty()) item(key = "years") { CardRow(stringResource(R.string.record_mixes_your_years), s.years, onOpenMix, viewModel::play) }

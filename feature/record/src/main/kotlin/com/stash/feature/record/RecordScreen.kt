@@ -61,6 +61,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashTextPrimary
@@ -85,7 +86,7 @@ internal val RECORD_GROUND_ARGB = 0xFF06060C.toInt()
  *
  * Back asks the record to close what it has open first; its ×, a back with nothing open (or a page that doesn't answer back)
  * close the screen ([onClose]). The record covers the mini player, so what a tap starts, and what a save did, show as a line
- * over it. The record is dark in both themes, like an album sleeve on a light shelf, so the system bars' icons are light here.
+ * over it; on the Mixes tab the scaffold shows the mini player ([onMixesShown]), so a card's Play shows what it started. The record is dark in both themes, like an album sleeve on a light shelf, so the system bars' icons are light here.
  *
  * A phone whose Android System WebView is too old for the bridge says so instead. A renderer that dies (memory, a crash)
  * leaves a way to open the record again.
@@ -98,6 +99,8 @@ internal val RECORD_GROUND_ARGB = 0xFF06060C.toInt()
 fun RecordScreen(
     onClose: () -> Unit,
     onOpenMix: (String) -> Unit = {},
+    /** The Mixes tab shows (true) or not: false again when the screen goes. */
+    onMixesShown: (Boolean) -> Unit = {},
     viewModel: RecordViewModel = hiltViewModel(),
     mixesViewModel: RecordMixesTabViewModel = hiltViewModel(),
 ) {
@@ -127,6 +130,9 @@ fun RecordScreen(
     val supported = remember { bridgeSupported() }
     val tab by viewModel.tab.collectAsStateWithLifecycle()
     BackHandler { if (supported && tab == RecordTab.RECORD) viewModel.back() else close() }
+    val mixesShown by rememberUpdatedState(onMixesShown)
+    LaunchedEffect(tab) { mixesShown(tab == RecordTab.MIXES) }
+    DisposableEffect(Unit) { onDispose { mixesShown(false) } }
     LightSystemBarIcons()
     PauseWithScreen(viewModel)
     // A share sheet opens only while Stash is in front (Android refuses one from the background): a video that finished
@@ -210,7 +216,9 @@ fun RecordScreen(
                 }
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
+        // Above the mini player on the Mixes tab (its inset holds the system bar's), else above the system bar
+        val chrome = LocalBottomChromeInset.current
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).then(if (chrome > 0.dp) Modifier.padding(bottom = chrome) else Modifier.navigationBarsPadding()))
     }
 }
 
