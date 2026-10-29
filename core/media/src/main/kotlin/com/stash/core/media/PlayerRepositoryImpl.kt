@@ -69,7 +69,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -331,6 +333,36 @@ class PlayerRepositoryImpl @Inject constructor(
                     prefetchNextTrack()
                 }
         }
+
+        watchNextUpDownload()
+    }
+
+    /**
+     * A download that lands while its song waits next in line: the prefetch watcher
+     * already ran (and may have swapped a stream in), so run it again; it now finds
+     * the row's file and points the slot at it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun watchNextUpDownload() {
+        scope.launch {
+            playerState
+                .map { it.currentIndex }
+                .distinctUntilChanged()
+                .flatMapLatest {
+                    val nextId = nextUpTrackId() ?: return@flatMapLatest flowOf(false)
+                    trackDao.observeById(nextId).map { it?.isDownloaded == true }.distinctUntilChanged().drop(1)
+                }
+                .catch { e -> Log.w(TAG, "next-up download watch stopped: ${e.message}") }
+                .collect { downloaded -> if (downloaded) prefetchNextTrack() }
+        }
+    }
+
+    /** The track id in the slot Media3 plays next, or null when there is none. */
+    private fun nextUpTrackId(): Long? {
+        val controller = controllerDeferred ?: return null
+        val index = controller.nextMediaItemIndex
+        if (index !in 0 until controller.mediaItemCount) return null
+        return controller.getMediaItemAt(index).mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0L }
     }
 
     private val _playerState = MutableStateFlow(PlayerState())
