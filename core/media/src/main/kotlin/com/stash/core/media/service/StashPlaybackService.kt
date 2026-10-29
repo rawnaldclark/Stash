@@ -87,6 +87,18 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
     @Inject lateinit var trackDao: TrackDao
+    @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
+
+    /** The Download / Stream only switch as last seen; null until the first read. */
+    @Volatile private var streamAllowedCache: Boolean? = null
+
+    /**
+     * False in Download mode. Read on the playback thread when a song is opened, so the
+     * very first read (a cold-start resume, before [onCreate]'s collector has run) reads
+     * the store once rather than guessing.
+     */
+    private fun streamAllowedNow(): Boolean =
+        streamAllowedCache ?: kotlinx.coroutines.runBlocking { streamingPreference.current() }.also { streamAllowedCache = it }
     @Inject lateinit var playlistDao: PlaylistDao
     @Inject lateinit var likeCoordinator: LikeCoordinator
     @Inject lateinit var likeTargetResolver: LikeTargetResolver
@@ -591,6 +603,8 @@ class StashPlaybackService : MediaLibraryService() {
             // Tidal may answer with a DASH MPD, so with a server set placeholders
             // resolve before their media source is chosen.
             resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
+            // Download mode plays only files on the phone, whatever queued a stream.
+            streamAllowed = ::streamAllowedNow,
             // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google
             // Drive's alt=media with a bearer header through the OkHttp source below.
             cloudDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.factory(
@@ -695,6 +709,8 @@ class StashPlaybackService : MediaLibraryService() {
         // Link Stash on the web: publish what plays for the linked browsers, on events only, for as long as this service
         // lives (spec §8.1). A no-op unless the feature is built in, linked and switched on.
         handoffPublisher.start(serviceScope)
+
+        serviceScope.launch { streamingPreference.enabled.collect { streamAllowedCache = it } }
 
         // Cache crossfade prefs for the poll's prepare/fire decisions.
         serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }

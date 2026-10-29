@@ -43,6 +43,9 @@ sealed class StreamRoutingResult {
      */
     data object NoConnectivity : StreamRoutingResult()
 
+    /** Download mode: the song isn't on the phone, and Download mode never streams. */
+    data object DownloadMode : StreamRoutingResult()
+
     /**
      * Rapid duplicate tap while a prior resolve for the same videoId is
      * still in flight. Caller should NOT emit any user-visible feedback:

@@ -116,6 +116,8 @@ class LazyResolvingDataSource(
     private val cloudDelegate: (() -> DataSource)? = null,
     /** Told when a cloud copy won't open, so it isn't offered again this session. */
     private val cloudCopies: CloudCopyFinder? = null,
+    /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
+    private val streamAllowed: () -> Boolean = { true },
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -154,6 +156,8 @@ class LazyResolvingDataSource(
         }
         val trackId = uri.lastPathSegment?.toLongOrNull()
             ?: throw IOException("stash-resolve URI without a track id: $uri")
+
+        if (!streamAllowed()) throw IOException("Download mode: track $trackId isn't on the phone; not streaming it")
 
         val pin = pinned
         val fresh = if (pin != null && pinStillValid()) {

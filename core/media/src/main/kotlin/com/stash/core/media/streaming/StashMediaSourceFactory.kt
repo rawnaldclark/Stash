@@ -61,6 +61,13 @@ class StashMediaSourceFactory(
     private val cloudUncachedDataSourceFactory: DataSource.Factory? = null,
     /** "Play my cloud copies first": told when a cloud copy won't open. Null in tests. */
     private val cloudCopies: CloudCopyFinder? = null,
+    /**
+     * False in Download mode. Then only a file on the phone opens: every stream (a
+     * placeholder's resolve, an http(s) URL, a cloud file) fails to open and is skipped,
+     * whichever path queued it. The player's own gates keep streams out of the queue;
+     * this is the last line behind them.
+     */
+    private val streamAllowed: () -> Boolean = { true },
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -105,9 +112,14 @@ class StashMediaSourceFactory(
                 // "Play my cloud copies first": a stream answered by the user's own cloud file.
                 cloudDelegate = cloudDataSourceFactory?.let { cloud -> { cloud.createDataSource() } },
                 cloudCopies = cloudCopies,
+                streamAllowed = streamAllowed,
             )
         }
     private val lazyFactory = DefaultMediaSourceFactory(lazyDataSourceFactory)
+
+    /** What a stream opens as in Download mode: an error, so the player skips it. */
+    private val refusedDataSourceFactory = DataSource.Factory { DownloadModeRefusal() }
+    private val refusedFactory = DefaultMediaSourceFactory(refusedDataSourceFactory)
 
     private val cloudSourceFactory: DataSource.Factory =
         cloudDataSourceFactory ?: DataSource.Factory { throw java.io.IOException("cloud playback isn't wired") }
@@ -120,6 +132,7 @@ class StashMediaSourceFactory(
         provider: DrmSessionManagerProvider,
     ): MediaSource.Factory {
         localFactory.setDrmSessionManagerProvider(provider)
+        refusedFactory.setDrmSessionManagerProvider(provider)
         jioSaavnFactory.setDrmSessionManagerProvider(provider)
         lazyFactory.setDrmSessionManagerProvider(provider)
         cloudFactory.setDrmSessionManagerProvider(provider)
@@ -130,6 +143,7 @@ class StashMediaSourceFactory(
         policy: LoadErrorHandlingPolicy,
     ): MediaSource.Factory {
         localFactory.setLoadErrorHandlingPolicy(policy)
+        refusedFactory.setLoadErrorHandlingPolicy(policy)
         jioSaavnFactory.setLoadErrorHandlingPolicy(policy)
         lazyFactory.setLoadErrorHandlingPolicy(policy)
         cloudFactory.setLoadErrorHandlingPolicy(CloudLoadErrorPolicy(policy))
@@ -146,6 +160,7 @@ class StashMediaSourceFactory(
      * stream cache, see [StreamingMediaSourceFactory.createUncachedDataSourceFactory].
      */
     fun dataSourceFactoryFor(mediaItem: MediaItem): DataSource.Factory {
+        if (mediaItem.localConfiguration?.uri?.isRefusedStream() == true) return refusedDataSourceFactory
         if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) return lazyDataSourceFactory
         if (mediaItem.localConfiguration?.uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) {
             return cloudUncachedDataSourceFactory ?: cloudSourceFactory
@@ -155,16 +170,30 @@ class StashMediaSourceFactory(
         return localDataSourceFactory
     }
 
+    /**
+     * True for a stream in Download mode. A placeholder isn't refused here: it may be a
+     * downloaded song queued before its file landed, and [LazyResolvingDataSource] refuses
+     * only the resolve.
+     */
+    private fun android.net.Uri.isRefusedStream(): Boolean {
+        if (streamAllowed()) return false
+        return when (scheme?.lowercase()) {
+            null, "file", "content", "android.resource", STASH_RESOLVE_SCHEME -> false
+            else -> true
+        }
+    }
+
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         // Placeholder items (full-timeline queue) resolve in the DataSource
         // layer — checked first because they carry no http(s) scheme for the
         // predicates below to match.
         val uri = mediaItem.localConfiguration?.uri
+        if (uri?.isRefusedStream() == true) return refusedFactory.createMediaSource(mediaItem)
         // The user's own cloud file: its own resolver and cache, never the online chain below.
         if (uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) return cloudFactory.createMediaSource(mediaItem)
         if (uri?.scheme == STASH_RESOLVE_SCHEME) {
             val trackId = uri.lastPathSegment?.toLongOrNull()
-            if (trackId != null && !isRowOverride(uri) && resolveBeforeSourcePick()) {
+            if (trackId != null && !isRowOverride(uri) && streamAllowed() && resolveBeforeSourcePick()) {
                 return ResolveFirstMediaSource(
                     mediaItem = mediaItem,
                     scope = resolveScope,
@@ -200,4 +229,15 @@ class StashMediaSourceFactory(
         }
         return localFactory.createMediaSource(mediaItem)
     }
+}
+
+/** A stream's source in Download mode: it never opens, so the player skips the song. */
+@OptIn(UnstableApi::class)
+private class DownloadModeRefusal : DataSource {
+    override fun addTransferListener(transferListener: androidx.media3.datasource.TransferListener) = Unit
+    override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long =
+        throw java.io.IOException("Download mode: ${dataSpec.uri.scheme} streams don't play")
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = throw java.io.IOException("not open")
+    override fun getUri(): android.net.Uri? = null
+    override fun close() = Unit
 }

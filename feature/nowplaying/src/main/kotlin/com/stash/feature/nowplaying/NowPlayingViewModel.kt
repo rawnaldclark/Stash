@@ -413,6 +413,7 @@ class NowPlayingViewModel @Inject constructor(
         RadioStartResult.Started -> null
         RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
         RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
+        RadioStartResult.DownloadMode -> "Radio streams. Switch to Stream only to start one."
     }
 
     /** Stop the active radio station. */

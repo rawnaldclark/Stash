@@ -799,10 +799,12 @@ class PlayerRepositoryImpl @Inject constructor(
         // lazily; local playback errors already skip safely when encountered.
         // Construction stays on IO for the selected SAF probe and the large
         // allocation, but tap-to-audio no longer scales with filesystem work.
+        val streamOk = streamAllowed()
         val builtItems = withContext(Dispatchers.IO) {
             tracks.mapIndexedNotNull { index, track ->
                 track.toInitialQueueMediaItem(
                     validateLocalFile = index == safeStart,
+                    streamAllowed = streamOk,
                 )?.let { Triple(index, track, it) }
             }
         }
@@ -813,23 +815,28 @@ class PlayerRepositoryImpl @Inject constructor(
             Log.i(TAG, "setQueue: superseded by a later one while building, dropped")
             return
         }
-        // Every built item is accepted: streaming is always allowed, so a
-        // stash-resolve:// placeholder is as legitimate a queue entry as a
-        // file:// one. (Until 2026-09-17 Offline mode dropped the placeholders.)
+        // Every built item is accepted: in Stream only a stash-resolve:// placeholder is as
+        // legitimate a queue entry as a file:// one, and in Download mode none was built.
         val acceptedItems = builtItems
         val playable = acceptedItems.map { it.second }
         val items = acceptedItems.map { it.third }
         if (items.isEmpty()) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return
         }
         // startIndex maps through the playable filter by position, not by track
-        // id: a song queued twice starts at the copy that was tapped.
+        // id: a song queued twice starts at the copy that was tapped. In Download mode a
+        // play from the top (Play, Shuffle, a mix tile) whose first song isn't on the phone
+        // starts at the first one that is; a tap on a later song still says why it won't play.
         val startInPlayable = acceptedItems.indexOfFirst { it.first == safeStart }
+            .let { if (it < 0 && !streamOk && safeStart == 0) 0 else it }
         if (startInPlayable < 0) {
             _userMessages.tryEmit(
-                if (tracks[safeStart].isScannedSong) SCANNED_FILE_MISSING_MESSAGE
-                else "That song isn't available offline right now.",
+                when {
+                    tracks[safeStart].isScannedSong -> SCANNED_FILE_MISSING_MESSAGE
+                    !streamOk -> DOWNLOAD_MODE_MESSAGE
+                    else -> "That song isn't available offline right now."
+                },
             )
             // Don't fall back to track 0 — bail rather than silently substitute.
             return
@@ -883,9 +890,11 @@ class PlayerRepositoryImpl @Inject constructor(
             }
             // Timeline position of each rest entry (before + first + after), or -1 when the player can't take it.
             val all = rest.before + mine + rest.after
+            val streamOk = streamAllowed()
             val built = withContext(Dispatchers.IO) {
                 all.mapIndexed { i, t ->
-                    if (i >= rest.before.size && i < rest.before.size + mine.size) null else t.toInitialQueueMediaItem(validateLocalFile = false)
+                    if (i >= rest.before.size && i < rest.before.size + mine.size) null
+                    else t.toInitialQueueMediaItem(validateLocalFile = false, streamAllowed = streamOk)
                 }
             }
             val beforeItems = (rest.before.indices).mapNotNull { built[it] }
@@ -1054,6 +1063,8 @@ class PlayerRepositoryImpl @Inject constructor(
             }
             if (hasUsableLocal) return
         }
+        // Download mode never streams, so there is nothing to warm.
+        if (!streamAllowed()) return
         // Only a CONFIRMED-unstreamable row (checked and false) is skipped.
         // Synced-library rows are all "never checked" (isStreamable=false,
         // isStreamableCheckedAt=null) — the bare-flag gate silently killed
@@ -1228,6 +1239,8 @@ class PlayerRepositoryImpl @Inject constructor(
         keepCurrent: Boolean,
     ): RadioStartResult {
         val controller = ensureController() ?: return RadioStartResult.PlayerNotReady
+        // A station is songs found online: Download mode plays only what is on the phone.
+        if (!streamAllowed()) return RadioStartResult.DownloadMode
         val (session, generated) = radioGenerator.start(seed)
         if (generated.isEmpty()) return RadioStartResult.NoStation
         // Library ids before queueing: the generator's ids are videoId hashes with no row, so a
@@ -1308,7 +1321,7 @@ class PlayerRepositoryImpl @Inject constructor(
             val session = radioSession ?: return
             val batch = radioGenerator.nextBatch(session)
             if (batch.isEmpty()) return
-            if (!radioActive) {
+            if (!radioActive || !streamAllowed()) {
                 stopRadio()
                 return
             }
@@ -1385,13 +1398,28 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     /**
-     * A track may join the queue unless it is confirmed unavailable. Streaming
-     * is always allowed — only connectivity and the cellular setting can refuse
-     * it, and they do so at resolve time — so a not-yet-downloaded track enters
-     * as a stash-resolve:// placeholder and resolves when it is reached. Until
-     * 2026-09-17 Offline mode also demanded a usable local file here.
+     * In Stream only a track may join the queue unless it is confirmed unavailable:
+     * only connectivity and the cellular setting can refuse it, at resolve time, so a
+     * not-yet-downloaded track enters as a stash-resolve:// placeholder. In Download
+     * mode it needs a usable file on the phone.
      */
-    private fun Track.isPlayableForQueueAppend(): Boolean = !isUnavailableForDisplay
+    private fun Track.isPlayableForQueueAppend(streamAllowed: Boolean): Boolean =
+        if (streamAllowed) !isUnavailableForDisplay else hasUsableLocalFile()
+
+    /** A downloaded (or All Songs) file that is on the phone and big enough to play. */
+    private fun Track.hasUsableLocalFile(): Boolean {
+        val localPath = filePath
+        return (isDownloaded || isScannedSong) && !localPath.isNullOrBlank() &&
+            fileSizeBytes !in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES &&
+            filePathExistsOnDisk(localPath)
+    }
+
+    /**
+     * False in Download mode: the player then plays only what is on the phone, never a
+     * stream (owner, 2026-10-29: Download mode is offline again). Stream only streams
+     * whatever isn't downloaded.
+     */
+    private suspend fun streamAllowed(): Boolean = streamingPreference.current()
 
     /**
      * The controller's shuffle walk (timeline indexes in play order), or null with
@@ -1511,16 +1539,17 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     override suspend fun addNext(track: Track): Boolean {
         val controller = ensureController() ?: return false
+        val streamOk = streamAllowed()
         val playable = track.takeIf {
-            it.isPlayableForQueueAppend()
+            withContext(Dispatchers.IO) { it.isPlayableForQueueAppend(streamOk) }
         }
         if (playable == null) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return false
         }
         val queueTrack = playable.withQueueIdentity()
-        if (!queueTrack.isPlayableForQueueAppend()) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+        if (!withContext(Dispatchers.IO) { queueTrack.isPlayableForQueueAppend(streamOk) }) {
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return false
         }
         // Off the main thread: a downloaded track's disk check is a ContentResolver
@@ -1619,16 +1648,17 @@ class PlayerRepositoryImpl @Inject constructor(
 
     override suspend fun addToQueue(track: Track): Boolean {
         val controller = ensureController() ?: return false
+        val streamOk = streamAllowed()
         val playable = track.takeIf {
-            it.isPlayableForQueueAppend()
+            withContext(Dispatchers.IO) { it.isPlayableForQueueAppend(streamOk) }
         }
         if (playable == null) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return false
         }
         val queueTrack = playable.withQueueIdentity()
-        if (!queueTrack.isPlayableForQueueAppend()) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+        if (!withContext(Dispatchers.IO) { queueTrack.isPlayableForQueueAppend(streamOk) }) {
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return false
         }
         // Off the main thread: a downloaded track's disk check is a ContentResolver
@@ -1652,9 +1682,10 @@ class PlayerRepositoryImpl @Inject constructor(
     override suspend fun addToQueue(tracks: List<Track>): Boolean {
         if (tracks.isEmpty()) return false
         val controller = ensureController() ?: return false
-        val playable = tracks.filter { it.isPlayableForQueueAppend() }
+        val streamOk = streamAllowed()
+        val playable = withContext(Dispatchers.IO) { tracks.filter { it.isPlayableForQueueAppend(streamOk) } }
         if (playable.isEmpty()) {
-            _userMessages.tryEmit("Nothing in this queue is playable right now.")
+            _userMessages.tryEmit(if (streamOk) "Nothing in this queue is playable right now." else DOWNLOAD_MODE_MESSAGE)
             return false
         }
         val persistedTracks = playable.map { it.withQueueIdentity() }
@@ -1756,6 +1787,10 @@ class PlayerRepositoryImpl @Inject constructor(
             return false
         }
 
+        if (!streamAllowed()) {
+            if (reportUnavailable) _userMessages.tryEmit(DOWNLOAD_MODE_MESSAGE)
+            return false
+        }
         if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
                 _userMessages.tryEmit("That song isn't available offline right now.")
@@ -1838,7 +1873,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // A session owns the player's queue (the sheet isn't offered there); an empty player has
         // no queue to put a song back into.
         if (listenTogetherOwnsQueue || controller.mediaItemCount == 0) return false
-        if (!track.isPlayableForQueueAppend()) return false
+        val streamOk = streamAllowed()
+        if (!withContext(Dispatchers.IO) { track.isPlayableForQueueAppend(streamOk) }) return false
         val queueTrack = track.withQueueIdentity()
         // Off the main thread: a downloaded track's disk check is a ContentResolver query on a
         // SAF tree, which a slow provider stalls (as in addNext).
@@ -2379,9 +2415,8 @@ class PlayerRepositoryImpl @Inject constructor(
      *    streaming is enabled — caching what you already have is free.
      * 2. No validated internet → [StreamRoutingResult.NoConnectivity].
      *    Includes airplane mode, captive-portal-not-yet-accepted, and
-     *    any other "associated but no real internet" state. (There is no
-     *    "streaming off" step: streaming is always allowed; the Download
-     *    switch only decides what sync writes to disk.)
+     *    any other "associated but no real internet" state. Before it, Download
+     *    mode → [StreamRoutingResult.DownloadMode]: it plays only what is on the phone.
      * 3. Cellular + cellular pref off → [StreamRoutingResult.CellularRefused].
      *    The user has a data plan they want to protect.
      * 4. URL cache hit → use the cached signed URL.
@@ -2433,6 +2468,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     .build()
             )
         }
+        if (!streamAllowed()) return StreamRoutingResult.DownloadMode
         if (!connectivity.isConnected()) return StreamRoutingResult.NoConnectivity
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) {
             return StreamRoutingResult.CellularRefused
@@ -2961,6 +2997,8 @@ class PlayerRepositoryImpl @Inject constructor(
         val failedId = failedItem.mediaMetadata.extras
             ?.getLong(EXTRA_TRACK_ID, -1L) ?: return false
         if (isScannedTrackId(failedId)) return false
+        // Download mode never streams: a broken download is skipped, not swapped for a stream.
+        if (!streamAllowed()) return false
         if (!connectivity.isConnected()) return false
         if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) return false
         val mediaTrackId = failedItem.mediaId.toLongOrNull() ?: return false
@@ -3473,6 +3511,9 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
 
         /** Shown when an All Songs file can't be played because it isn't where the scan found it. */
+        /** Download mode refuses a song that isn't on the phone. */
+        internal const val DOWNLOAD_MODE_MESSAGE = "You're in Download mode. Switch to Stream only to play this."
+
         internal const val SCANNED_FILE_MISSING_MESSAGE =
             "That file isn't there anymore. Rescan your folders: Library, then the disk icon at the top."
 
@@ -3509,6 +3550,7 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private fun Track.toInitialQueueMediaItem(
         validateLocalFile: Boolean,
+        streamAllowed: Boolean,
     ): MediaItem? {
         val localPath = filePath
         val hasRecordedDownload = isDownloaded && !localPath.isNullOrBlank()
@@ -3520,11 +3562,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // which would resolve an online match by its title and artist.
         if (isScannedSong) return if (hasUsableLocal) toMediaItem() else null
 
-        // Streaming is always allowed: a track without a usable file becomes a
-        // stash-resolve:// placeholder unless it is confirmed unavailable.
+        // In Stream only a track without a usable file becomes a stash-resolve://
+        // placeholder unless it is confirmed unavailable; Download mode leaves it out.
         return when {
             hasUsableLocal -> toMediaItem()
-            isUnavailableForDisplay -> null
+            isUnavailableForDisplay || !streamAllowed -> null
             else -> toStreamPlaceholderMediaItem()
         }
     }

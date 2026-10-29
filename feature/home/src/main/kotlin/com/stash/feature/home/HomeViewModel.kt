@@ -360,7 +360,7 @@ class HomeViewModel @Inject constructor(
                             flowOf(LikedCardState(trackCount = 0))
                         } else {
                             combine(
-                                likedPlaylists.map { musicRepository.getTracksByPlaylist(it.id) },
+                                likedPlaylists.map { musicRepository.getShownTracksByPlaylist(it.id) },
                             ) { arrays ->
                                 LikedCardState(
                                     trackCount = arrays.flatMap { it }.distinctBy { it.id }.size,
