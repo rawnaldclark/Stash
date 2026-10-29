@@ -65,7 +65,7 @@ class MixesNow(
     private val library: SongIndex<Boolean> = SongIndex(),
     /** The Spotify ids the library's rows carry (a song of the history by that id is in the library: [HistoryMixes.notInLibrary]). */
     private val spotifyIds: Set<String> = emptySet(),
-    /** Blocked songs, never in Top songs or "Not in your Stash yet". */
+    /** Blocked songs, never in Top songs, "Not in your Stash yet" or a Top artists row's songs. */
     private val blocked: BlockedSongs = BlockedSongs.NONE,
 ) {
     /** Home's few today (mixes.ts `homePicks`). */
@@ -96,8 +96,9 @@ class MixesNow(
     /** The taste's songs the lists leave out as blocked (a debug build writes them with what it made). */
     val blockedKeys: List<String> by lazy { taste.songs.filter(isBlocked).map { it.key } }
 
-    /** The songs a Top artists row with no mix plays ([HistoryMixes.artistSongs], 50 at most). */
-    fun artistSongs(key: String): List<MixSong> = HistoryMixes.artistSongs(taste, key).map(HistoryMixes::songItem)
+    /** The songs a Top artists row with no mix plays ([HistoryMixes.artistSongs], 50 at most); a blocked song left out. */
+    fun artistSongs(key: String): List<MixSong> =
+        HistoryMixes.artistSongs(taste, key, Int.MAX_VALUE).filterNot(isBlocked).take(HistoryMixes.MIX_SIZE).map(HistoryMixes::songItem)
 }
 
 /**
@@ -261,12 +262,13 @@ class RecordMixes internal constructor(
         if (library.spotifyIds.isNotEmpty()) for (s in stored.songs) if (s.sid != null && s.sid in library.spotifyIds) putBack += s.key
         val t = HistoryMixes.putBackIn(stored, putBack)
         val have = library.have
-        val all = HistoryMixes.historyMixes(t, have, words)
+        val blocked = blocked()
+        val all = HistoryMixes.historyMixes(t, have, words).mapNotNull { it.without(blocked) }
         var rows: WeekRows? = null
         val week = try {
             val r = weekRows(stored, now)
             rows = r
-            HistoryMixes.weekMix(r::between, t, now, have, words)
+            HistoryMixes.weekMix(r::between, t, now, have, words)?.without(blocked)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -275,7 +277,7 @@ class RecordMixes internal constructor(
             null
         }
         val day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
-        MixesNow(t, all, week, day, library.index, library.spotifyIds, blocked()).also { m -> dump?.let { write(it, m, lib, rows, now) } }
+        MixesNow(t, all, week, day, library.index, library.spotifyIds, blocked).also { m -> dump?.let { write(it, m, lib, rows, now) } }
     }
 
     /**

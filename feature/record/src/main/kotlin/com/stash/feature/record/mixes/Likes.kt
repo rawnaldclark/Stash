@@ -35,7 +35,7 @@ class Likes(val rows: List<LibrarySong>) {
 
 /**
  * The blocklist as the record's lists read it (BlocklistGuard.isBlocked's rule over a song's words and its Spotify id: a history
- * song has no YouTube id): a blocked song is never in Top songs or "Not in your Stash yet".
+ * song has no YouTube id): a blocked song is never in Top songs, "Not in your Stash yet" or a mix ([without]).
  */
 fun interface BlockedSongs {
     fun has(title: String, artist: String, sid: String?): Boolean
@@ -52,5 +52,16 @@ fun interface BlockedSongs {
                 BlocklistKey.of(artist, title, matcher) in keys || (sid != null && "spotify:track:$sid" in uris)
             }
         }
+    }
+}
+
+/** This mix without its blocked songs, or null when every one of them is blocked (the app never shows a blocked song). */
+fun HistoryMix.without(blocked: BlockedSongs): HistoryMix? {
+    if (blocked === BlockedSongs.NONE) return this
+    val kept = items.filterNot { blocked.has(it.title, it.artist, it.sid) }
+    return when {
+        kept.isEmpty() -> null
+        kept.size == items.size -> this
+        else -> copy(items = kept)
     }
 }

@@ -73,14 +73,26 @@ class RecordMixesTest {
         library: List<LibrarySong> = emptyList(),
         reads: MutableList<Pair<Long, Long>> = mutableListOf(),
         ownReads: IntArray = IntArray(1),
+        blocked: BlockedSongs = BlockedSongs.NONE,
     ) = RecordMixes(
         tastes = db.dao,
         between = { from, to -> reads += from to to; imported.filter { it.s >= from && it.s < to }.shuffled() },
         own = RecordArchiveSource { _, emit -> ownReads[0]++; emit(own, true) },
         library = { library },
         libraryStamp = flowOf(Unit),
+        blocked = { blocked },
         io = EmptyCoroutineContext,
     )
+
+    @Test fun `a blocked song is in no mix, and a mix of blocked songs alone is gone`() = runTest {
+        val songs = (1..9).map { stat("Song $it", "Band") }
+        val db = Db(taste(songs))
+        val some = mixes(db, blocked = BlockedSongs { title, _, _ -> title == "Song 3" }).now(words, now, ZoneOffset.UTC)!!
+        assertThat(some.find("constants")!!.items.map { it.title }).doesNotContain("Song 3")
+        assertThat(some.find("constants")!!.items).hasSize(8)
+        val every = mixes(db, blocked = BlockedSongs { _, _, _ -> true }).now(words, now, ZoneOffset.UTC)!!
+        assertThat(every.all).isEmpty()
+    }
 
     @Test fun `no taste, no mixes`() = runTest {
         assertThat(mixes(Db(null)).now(words, now, ZoneOffset.UTC)).isNull()

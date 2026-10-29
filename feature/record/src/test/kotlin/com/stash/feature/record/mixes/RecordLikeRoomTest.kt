@@ -241,4 +241,24 @@ class RecordLikeRoomTest {
         assertThat(actions.like(HistoryMixes.songItem(stat("Lost 01", "sid01")).recordSong(null)).await()).isNull()
         assertThat(count("SELECT COUNT(*) FROM tracks")).isEqualTo(tracksBefore)
     }
+
+    @Test fun `a blocked song is never in a Top artists row's songs, and is never matched to play or save - no row made`() = runTest(UnconfinedTestDispatcher()) {
+        seed()
+        block("Lost 02", "Lost Band")
+        block("Something Else", "Nobody", sid = "sid01")
+        assertThat(mixes().now(words)!!.artistSongs(Taste.artistKey("Lost Band")).map { it.title }).containsExactly("Lost 03")
+        val matcher = HandoffSongMatcher(db.trackDao(), mockk(relaxed = true), db)
+        val guarded = RecordMatch(
+            byId = db.trackDao()::getById,
+            matchAll = { matcher.matchAll(it) },
+            keepCover = db.trackDao()::fillMissingAlbumArtUrl,
+            blocked = { BlockedSongs.of(db.trackBlocklistDao().observeAll().first(), TrackMatcher()) },
+        )
+        val ownRow = synced("Lost 02", "Lost Band", "sid02")
+        val tracksBefore = count("SELECT COUNT(*) FROM tracks")
+        val songs = listOf(stat("Lost 01", "sid01"), stat("Lost 02", null)).map { HistoryMixes.songItem(it).recordSong(null) } +
+            HistoryMixes.songItem(stat("Lost 02", null)).recordSong(null).copy(trackId = ownRow)
+        assertThat(guarded.rows(songs)).containsExactly(null, null, null)
+        assertThat(count("SELECT COUNT(*) FROM tracks")).isEqualTo(tracksBefore)
+    }
 }

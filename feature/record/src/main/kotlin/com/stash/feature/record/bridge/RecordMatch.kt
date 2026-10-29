@@ -1,14 +1,18 @@
 package com.stash.feature.record.bridge
 
 import android.util.Log
+import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.weblink.handoff.HandoffSongMatcher
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.model.Track
+import com.stash.feature.record.mixes.BlockedSongs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,23 +31,30 @@ internal fun withCover(row: Track, cover: String?): Track = if (cover != null &&
  * The record's songs as this phone's rows, in order (null: none for that song): a song you have in the library by its own row
  * ([RecordSong.trackId]; one gone since, by its words), the rest through the hand-off's matcher (the library's row by ISRC,
  * Spotify id or the same words, else a stream-only row that Stash resolves when it plays). A row with no cover takes the one
- * found for its song ([RecordSong.cover]): on the queue at once, and kept on the row (only while it has none).
+ * found for its song ([RecordSong.cover]): on the queue at once, and kept on the row (only while it has none). A blocked song
+ * ([BlockedSongs]) has none and none is made for it: it never plays, nor is saved, from the record (a row made for it would only
+ * be hidden and swept).
  */
 @Singleton
 class RecordMatch internal constructor(
     private val byId: suspend (Long) -> TrackEntity?,
     private val matchAll: suspend (List<WireSong>) -> List<TrackEntity?>,
     private val keepCover: suspend (Long, String) -> Unit,
+    /** The blocklist now. */
+    private val blocked: suspend () -> BlockedSongs = { BlockedSongs.NONE },
 ) {
-    @Inject constructor(matcher: HandoffSongMatcher, tracks: TrackDao) : this(
+    @Inject constructor(matcher: HandoffSongMatcher, tracks: TrackDao, blocklist: TrackBlocklistDao, words: TrackMatcher) : this(
         byId = tracks::getById,
         matchAll = { songs -> matcher.matchAll(songs) },
         keepCover = tracks::fillMissingAlbumArtUrl,
+        blocked = { BlockedSongs.of(blocklist.observeAll().first(), words) },
     )
 
     suspend fun rows(songs: List<RecordSong>): List<Track?> = withContext(Dispatchers.IO) {
-        val rows = songs.map { s -> s.trackId?.let { byId(it) } }.toMutableList()
-        val ask = songs.indices.filter { rows[it] == null }
+        val b = blocked()
+        val open = songs.map { s -> !b.has(s.title, s.artist, s.sid) }
+        val rows = songs.mapIndexed { i, s -> if (open[i]) s.trackId?.let { byId(it) } else null }.toMutableList()
+        val ask = songs.indices.filter { open[it] && rows[it] == null }
         if (ask.isNotEmpty()) {
             val found = matchAll(ask.map { wireOf(songs[it]) })
             ask.forEachIndexed { j, i -> rows[i] = found.getOrNull(j) }
