@@ -265,13 +265,16 @@ class DiffWorker @AssistedInject constructor(
             val pinNewPlaylists = syncPreferencesManager.pinNewPlaylists.first()
 
             // Stacking became a switch per mix (2026-10-29). Once, before the first diff under
-            // it: an account that was accumulating keeps its stackable mixes stacking, so an
-            // upgrade never shrinks a collected Daily Mix back to this week's 50 songs.
+            // it: an account that was accumulating keeps EVERY mix it has stacking, not only the
+            // ones that offer the switch to new mixes (Release Radar, My Supermix, a Daily Mix
+            // under another locale's name all collected too), so an upgrade never shrinks a
+            // collected mix back to this week's songs (review on #737). They keep the switch
+            // ([MixStacking.showsSwitch]) to turn it off.
             if (!syncPreferencesManager.mixStackSeeded.first()) {
                 var seeded = 0
                 for (mix in playlistDao.getMixPlaylists()) {
                     val accountMode = if (mix.source == MusicSource.YOUTUBE) youtubeSyncMode else spotifySyncMode
-                    if (accountMode == SyncMode.ACCUMULATE && MixStacking.isStackable(mix.source, mix.type, mix.name)) {
+                    if (accountMode == SyncMode.ACCUMULATE) {
                         playlistDao.setStackSongs(mix.id, true)
                         seeded++
                     }
@@ -300,9 +303,7 @@ class DiffWorker @AssistedInject constructor(
                 // keep their account's mode (whether a song removed there goes here too).
                 val playlistSyncMode = when {
                     localPlaylist.type == PlaylistType.DAILY_MIX ->
-                        if (localPlaylist.stackSongs &&
-                            MixStacking.isStackable(localPlaylist.source, localPlaylist.type, localPlaylist.name)
-                        ) SyncMode.ACCUMULATE else SyncMode.REFRESH
+                        if (localPlaylist.stackSongs) SyncMode.ACCUMULATE else SyncMode.REFRESH
                     playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
                     else -> spotifySyncMode
                 }

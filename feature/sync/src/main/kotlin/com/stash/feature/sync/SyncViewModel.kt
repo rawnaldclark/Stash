@@ -971,7 +971,7 @@ class SyncViewModel @Inject constructor(
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
                                 dateAdded = e.dateAdded.toEpochMilli(),
-                                stackable = com.stash.core.data.sync.MixStacking.isStackable(e.source, e.type, e.name),
+                                stackable = com.stash.core.data.sync.MixStacking.showsSwitch(e.source, e.type, e.name, e.stackSongs),
                                 stackSongs = e.stackSongs,
                             )
                         }
@@ -999,7 +999,7 @@ class SyncViewModel @Inject constructor(
                                 keepOffline = e.keepOffline,
                                 userHidden = e.userHidden,
                                 dateAdded = e.dateAdded.toEpochMilli(),
-                                stackable = com.stash.core.data.sync.MixStacking.isStackable(e.source, e.type, e.name),
+                                stackable = com.stash.core.data.sync.MixStacking.showsSwitch(e.source, e.type, e.name, e.stackSongs),
                                 stackSongs = e.stackSongs,
                             )
                         }

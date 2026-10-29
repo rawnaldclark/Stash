@@ -11,7 +11,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.test.runTest
 import org.junit.After
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -20,7 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * A finished sync builds the Stash mixes when one is empty (2026-10-29): a new
+ * A finished sync builds each empty Stash mix, and only those, (2026-10-29): a new
  * install built Daily Discover at first launch from an empty library and it
  * stayed empty until the next day.
  */
@@ -44,14 +44,14 @@ class StashMixRecipeDaoEmptyMixTest {
     )
 
     @Test fun `a mix never built is empty`() = runTest {
-        dao.insert(StashMixRecipeEntity(name = "Daily Discover", isBuiltin = true, isActive = true))
-        assertTrue(dao.anyActiveMixEmpty())
+        val id = dao.insert(StashMixRecipeEntity(name = "Daily Discover", isBuiltin = true, isActive = true))
+        assertEquals(listOf(id), dao.activeEmptyMixIds())
     }
 
     @Test fun `a mix built from an empty library is empty`() = runTest {
         val id = dao.insert(StashMixRecipeEntity(name = "Daily Discover", isBuiltin = true, isActive = true))
         dao.setPlaylistId(id, mixPlaylist())
-        assertTrue(dao.anyActiveMixEmpty())
+        assertEquals(listOf(id), dao.activeEmptyMixIds())
     }
 
     @Test fun `a mix with songs is not empty, so a sync leaves it alone`() = runTest {
@@ -60,11 +60,22 @@ class StashMixRecipeDaoEmptyMixTest {
         dao.setPlaylistId(id, playlistId)
         val trackId = db.trackDao().insert(TrackEntity(title = "Song", artist = "Artist"))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId))
-        assertFalse(dao.anyActiveMixEmpty())
+        assertTrue(dao.activeEmptyMixIds().isEmpty())
     }
 
     @Test fun `a switched-off mix does not count`() = runTest {
         dao.insert(StashMixRecipeEntity(name = "Recommended by Last.fm", isBuiltin = true, isActive = false))
-        assertFalse(dao.anyActiveMixEmpty())
+        assertTrue(dao.activeEmptyMixIds().isEmpty())
+    }
+
+    @Test fun `beside an empty mix, a mix with songs is not rebuilt`() = runTest {
+        val full = dao.insert(StashMixRecipeEntity(name = "Daily Discover", isBuiltin = true, isActive = true))
+        val playlistId = mixPlaylist()
+        dao.setPlaylistId(full, playlistId)
+        val trackId = db.trackDao().insert(TrackEntity(title = "Song", artist = "Artist"))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackId))
+        val empty = dao.insert(StashMixRecipeEntity(name = "Recommended by Last.fm", isBuiltin = true, isActive = true))
+
+        assertEquals(listOf(empty), dao.activeEmptyMixIds())
     }
 }

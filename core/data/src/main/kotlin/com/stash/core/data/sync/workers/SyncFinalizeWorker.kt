@@ -122,13 +122,14 @@ class SyncFinalizeWorker @AssistedInject constructor(
             com.stash.core.data.share.SharedMixFollowWorker.enqueue(applicationContext, force = true)
 
             // An empty Stash mix is built now, not tomorrow: a new install's first launch built
-            // Daily Discover from an empty library, and only the daily refresh came after. Only
-            // when one is empty, so a sync never reshuffles mixes that already have songs.
-            // Never fails the sync, which already worked.
+            // Daily Discover from an empty library, and only the daily refresh came after. Each
+            // empty one alone (same-day rotation), so a sync never reshuffles a mix that already
+            // has songs. Never fails the sync, which already worked.
             try {
-                if (stashMixRecipeDao.anyActiveMixEmpty()) {
-                    Log.i(TAG, "A Stash mix is empty after sync $syncId; building mixes now")
-                    StashMixRefreshWorker.enqueueOneTime(applicationContext)
+                val empty = stashMixRecipeDao.activeEmptyMixIds()
+                if (empty.isNotEmpty()) {
+                    Log.i(TAG, "${empty.size} Stash mix(es) empty after sync $syncId; building them now")
+                    empty.forEach { StashMixRefreshWorker.enqueueOneTime(applicationContext, recipeId = it, sameDay = true) }
                 }
             } catch (e: CancellationException) {
                 throw e

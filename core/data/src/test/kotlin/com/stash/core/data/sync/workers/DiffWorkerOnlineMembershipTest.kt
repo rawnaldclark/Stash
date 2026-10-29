@@ -237,9 +237,13 @@ class DiffWorkerOnlineMembershipTest {
         assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
     }
 
-    /** Radios and genre mixes can't stack; a switch left on (a restored backup) changes nothing. */
+    /**
+     * A radio a new install would never offer Stack for, but whose switch is on (it was stacking
+     * before the switch existed): the switch is the rule, so it keeps what it collected, and
+     * shows the switch to turn it off (review on #737).
+     */
     @Test
-    fun `a mix that cannot stack refreshes even with the switch on`() = runBlocking {
+    fun `a mix whose switch is on stacks, even one that new mixes aren't offered it for`() = runBlocking {
         coEvery { streamingPreference.current() } returns true
         val id = seed(PlaylistType.DAILY_MIX, "spotify:playlist:37i9radio", "Beck Radio")
         db.playlistDao().setStackSongs(id, true)
@@ -247,13 +251,15 @@ class DiffWorkerOnlineMembershipTest {
 
         buildWorker().doWork()
 
-        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
+        assertEquals(4, db.playlistDao().getTracksForPlaylist(id).size)
+        assertEquals(true, com.stash.core.data.sync.MixStacking.showsSwitch(MusicSource.SPOTIFY, PlaylistType.DAILY_MIX, "Beck Radio", stackSongs = true))
     }
 
     /**
      * Upgrading: the account was accumulating, so its Daily Mix already holds weeks of songs.
-     * The first sync under per-mix stacking switches Stack on for it (and only for mixes that
-     * can stack), so the update doesn't shrink it back to this week's.
+     * The first sync under per-mix stacking switches Stack on for every mix the account had,
+     * radios too (they were collecting as well), so the update doesn't shrink any of them back
+     * to this week's (review on #737).
      */
     @Test
     fun `the first sync after the update keeps an accumulating account's mixes stacking`() = runBlocking {
@@ -269,7 +275,7 @@ class DiffWorkerOnlineMembershipTest {
         buildWorker().doWork()
 
         assertEquals(true, db.playlistDao().findBySourceId("spotify:playlist:37i9dm1")!!.stackSongs)
-        assertEquals(false, db.playlistDao().findBySourceId("spotify:playlist:radio")!!.stackSongs)
+        assertEquals(true, db.playlistDao().findBySourceId("spotify:playlist:radio")!!.stackSongs)
         assertEquals(4, db.playlistDao().getTracksForPlaylist(mix).size)
         coVerify(exactly = 1) { syncPreferencesManager.markMixStackSeeded() }
     }

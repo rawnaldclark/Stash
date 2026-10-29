@@ -26,4 +26,12 @@ object MixStacking {
             else -> false
         }
     }
+
+    /**
+     * Whether a mix shows the Stack switch: one that can stack, or one stacking already. A mix an accumulating account had
+     * before the switch existed (Release Radar, My Supermix, a Daily Mix under another locale's name) kept stacking on the
+     * upgrade (review on #737), so it keeps the switch to turn that off.
+     */
+    fun showsSwitch(source: MusicSource, type: PlaylistType, name: String, stackSongs: Boolean): Boolean =
+        type == PlaylistType.DAILY_MIX && (stackSongs || isStackable(source, type, name))
 }

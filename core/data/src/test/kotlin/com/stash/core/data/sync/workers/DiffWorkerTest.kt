@@ -1374,6 +1374,61 @@ class DiffWorkerTest {
     }
 
     /** [canonicalRecompute]: done already by default; these tests are about the diff, not the one-time re-key. */
+    // ── Stack seeding on the upgrade (review on #737) ────────────────────
+
+    /** A mix the library has, holding [tracks] it collected under ACCUMULATE before the Stack switch existed. */
+    private suspend fun seedMix(name: String, source: MusicSource, sourceId: String, vararg tracks: String): Long {
+        val id = db.playlistDao().insert(
+            PlaylistEntity(name = name, source = source, sourceId = sourceId, type = PlaylistType.DAILY_MIX, syncEnabled = true),
+        )
+        tracks.forEachIndexed { i, uri ->
+            val t = db.trackDao().insert(TrackEntity(title = uri, artist = "A", canonicalTitle = uri, canonicalArtist = "a", spotifyUri = uri))
+            db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(id, t, i, Instant.parse("2026-07-01T00:00:00Z")))
+        }
+        return id
+    }
+
+    @Test
+    fun `the upgrade keeps every mix an accumulating account collected, whitelisted or not`() = runBlocking {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(false)
+        coEvery { syncPreferencesManager.markMixStackSeeded() } returns Unit
+        val radar = seedMix("Release Radar", MusicSource.SPOTIFY, "spotify:playlist:radar", "spotify:track:old1", "spotify:track:old2")
+        val supermix = seedMix("My Supermix", MusicSource.YOUTUBE, "RTMsuper", "spotify:track:old3")
+        val localized = seedMix("Mix diario 1", MusicSource.SPOTIFY, "spotify:playlist:diario1", "spotify:track:old4")
+
+        // This week's Release Radar: one new song, none of the collected ones.
+        val snapshot = RemotePlaylistSnapshotEntity(
+            id = 31L, syncId = 1L, source = MusicSource.SPOTIFY, sourcePlaylistId = "spotify:playlist:radar",
+            playlistName = "Release Radar", playlistType = PlaylistType.DAILY_MIX,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(31L) } returns listOf(
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 31L, title = "New", artist = "A", spotifyUri = "spotify:track:new", position = 0),
+        )
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        for (id in listOf(radar, supermix, localized)) assertTrue(db.playlistDao().getById(id)!!.stackSongs)
+        val kept = db.playlistDao().getCrossRefsForPlaylist(radar).filter { it.removedAt == null }
+            .map { db.trackDao().getById(it.trackId)!!.spotifyUri }.toSet()
+        assertEquals(setOf("spotify:track:old1", "spotify:track:old2", "spotify:track:new"), kept)
+        coVerify(exactly = 1) { syncPreferencesManager.markMixStackSeeded() }
+    }
+
+    @Test
+    fun `the upgrade leaves a refreshing account's mixes refreshing`() = runBlocking {
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(false)
+        coEvery { syncPreferencesManager.markMixStackSeeded() } returns Unit
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns emptyList()
+        val mix = seedMix("Daily Mix 1", MusicSource.SPOTIFY, "spotify:playlist:dm1", "spotify:track:x")
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(false, db.playlistDao().getById(mix)!!.stackSongs)
+    }
+
     private fun buildWorker(
         canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),
     ): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)

@@ -41,25 +41,24 @@ interface StashMixRecipeDao {
     suspend fun getActive(): List<StashMixRecipeEntity>
 
     /**
-     * Whether any active mix has nothing in it: never built, or built before the
+     * The active mixes with nothing in them: never built, or built before the
      * library had anything to seed from. A new install builds its mixes at first
      * launch, when the library is still empty, so Daily Discover stayed empty
      * until the next day's refresh even after a sync brought in thousands of
-     * songs (2026-10-29). A finished sync checks this and builds them then.
+     * songs (2026-10-29). A finished sync builds these, and only these: a mix
+     * with songs is never rebuilt by a sync (review on #737).
      */
     @Query(
         """
-        SELECT EXISTS (
-            SELECT 1 FROM stash_mix_recipes r
-            WHERE r.is_active = 1
-              AND NOT EXISTS (
-                  SELECT 1 FROM playlist_tracks pt
-                  WHERE pt.playlist_id = r.playlist_id AND pt.removed_at IS NULL
-              )
-        )
+        SELECT r.id FROM stash_mix_recipes r
+        WHERE r.is_active = 1
+          AND NOT EXISTS (
+              SELECT 1 FROM playlist_tracks pt
+              WHERE pt.playlist_id = r.playlist_id AND pt.removed_at IS NULL
+          )
         """
     )
-    suspend fun anyActiveMixEmpty(): Boolean
+    suspend fun activeEmptyMixIds(): List<Long>
 
     /** Toggle active/inactive (drives the Sync-screen mix-preference switches). */
     @Query("UPDATE stash_mix_recipes SET is_active = :active WHERE id = :id")
