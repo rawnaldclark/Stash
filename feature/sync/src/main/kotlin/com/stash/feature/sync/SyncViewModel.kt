@@ -259,6 +259,8 @@ class SyncViewModel @Inject constructor(
      * and forwards the user's toggle.
      */
     private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
+    /** "Play something new" on the synced hero. */
+    private val playerRepository: com.stash.core.media.PlayerRepository,
 ) : ViewModel() {
 
     /**
@@ -634,6 +636,23 @@ class SyncViewModel @Inject constructor(
      * one being saved stops downloading too (songs already on the phone stay,
      * as with the Download switch). Back in, it shows again.
      */
+    /**
+     * "Play something new": the newest mix, from its first song. The hero that offers it only
+     * shows in Stream only, where every song plays without a download.
+     */
+    fun onPlayPlaylist(playlistId: Long, name: String) {
+        viewModelScope.launch {
+            val tracks = musicRepository.getTracksByPlaylist(playlistId).first()
+            if (tracks.isNotEmpty()) {
+                playerRepository.setQueue(
+                    tracks,
+                    startIndex = 0,
+                    source = com.stash.core.model.PlaybackSource.Playlist(playlistId, name),
+                )
+            }
+        }
+    }
+
     /** A mix's Stack switch: keep every song it brings, from the next sync on. */
     fun onSetStack(playlistId: Long, on: Boolean) {
         viewModelScope.launch { playlistDao.setStackSongs(playlistId, on) }

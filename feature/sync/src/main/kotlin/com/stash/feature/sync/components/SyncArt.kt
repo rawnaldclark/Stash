@@ -114,7 +114,12 @@ internal fun CoverTile(url: String?, modifier: Modifier = Modifier, corner: Dp =
 
 /** Three covers fanned like sleeves pulled from a shelf: the top of a synced Sync tab. */
 @Composable
-internal fun CoverFan(arts: List<String>, modifier: Modifier = Modifier) {
+internal fun CoverFan(
+    arts: List<String>,
+    modifier: Modifier = Modifier,
+    /** Tapping cover [i] of [arts]; null leaves the covers as pictures only. */
+    onTap: ((Int) -> Unit)? = null,
+) {
     if (arts.isEmpty()) return
     // Back to front: smallest and most tilted first, so the last one sits on top.
     val slots = listOf(
@@ -133,7 +138,14 @@ internal fun CoverFan(arts: List<String>, modifier: Modifier = Modifier) {
                     .offset(x, y)
                     .size(size)
                     .rotate(angle)
-                    .shadow(20.dp, RoundedCornerShape(10.dp)),
+                    .shadow(20.dp, RoundedCornerShape(10.dp))
+                    .then(
+                        if (onTap != null) {
+                            Modifier.clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { onTap(i) }
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
     }

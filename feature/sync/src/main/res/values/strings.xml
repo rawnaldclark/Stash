@@ -116,6 +116,7 @@
     <string name="sync_arrival_save_body">Pick the playlists you want to download.</string>
     <string name="sync_arrival_sync_now">Sync now</string>
     <string name="sync_button">Sync</string>
+    <string name="sync_play_new">Play something new</string>
     <string name="sync_stack">Stack</string>
     <string name="sync_stacking">Stacking</string>
     <string name="sync_stack_on">Keeps every song</string>
@@ -187,6 +188,7 @@
     <string name="sync_manage_add_all">Add all</string>
     <string name="sync_manage_remove_all">Remove all</string>
     <string name="sync_manage_not_in_library">Not in your library</string>
+    <string name="sync_manage_out_section">Not in your library · %1$d</string>
     <string name="sync_in_library">In your library</string>
     <string name="sync_in_library_on">In your library</string>
     <string name="sync_in_library_off">Not in your library</string>

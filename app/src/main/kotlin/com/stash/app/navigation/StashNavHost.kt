@@ -323,7 +323,6 @@ private fun StashNavGraph(
                 },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
                 onOpenHistory = { navController.navigate(SyncHistoryRoute) },
-                onOpenLibrary = { onNavigateToTab(TopLevelDestination.LIBRARY) },
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
             )
         }

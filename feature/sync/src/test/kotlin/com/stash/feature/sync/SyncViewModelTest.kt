@@ -105,6 +105,7 @@ class SyncViewModelTest {
         librarySizeHolder = librarySizeHolder,
         streamingPreference = streamingPreference,
         lastFmRecommendationSource = mockk(relaxed = true),
+        playerRepository = mockk(relaxed = true),
     )
 
     @Before fun setUp() {

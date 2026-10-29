@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -108,7 +110,6 @@ fun SyncScreen(
     onNavigateToAccounts: () -> Unit = {},
     onManageSource: (SyncSource) -> Unit = {},
     onOpenHistory: () -> Unit = {},
-    onOpenLibrary: () -> Unit = {},
     onOpenPlaylist: (Long) -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
@@ -206,12 +207,18 @@ fun SyncScreen(
                 streamingMode -> item(key = "synced") {
                     // The three newest mixes, so the hero changes when a sync brings some.
                     // The fan draws its last cover on top: the newest goes last.
-                    val fan = rows.filter { it.isMix() }.newestFirst()
-                        .mapNotNull { it.artUrl }.distinct().take(3).reversed()
+                    val fan = rows.filter { it.isMix() && it.artUrl != null }.newestFirst()
+                        .distinctBy { it.artUrl }.take(3).reversed()
+                    // "Play something new": the newest mix that has songs.
+                    val newest = rows.filter { it.isMix() && it.trackCount > 0 }.newestFirst().firstOrNull()
                     SyncedHero(
-                        arts = fan.ifEmpty { arts },
+                        arts = fan.mapNotNull { it.artUrl }.ifEmpty { arts },
+                        // Each cover opens its mix; the fallback art (no mixes yet) is pictures only.
+                        onCoverTap = if (fan.isEmpty()) null else { i -> onOpenPlaylist(fan[i].id) },
                         summary = librarySummary(uiState, rows),
-                        onOpenLibrary = onOpenLibrary,
+                        syncedAgo = uiState.lastSyncRelativeTime,
+                        newest = newest,
+                        onPlay = { row -> viewModel.onPlayPlaylist(row.id, row.name) },
                         onSync = viewModel::onSyncNow,
                     )
                 }
@@ -454,7 +461,12 @@ private fun HeroBody(text: String) {
 
 /** The primary pill: light on the dark ground, the one thing to tap. */
 @Composable
-private fun PrimaryPill(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun PrimaryPill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+) {
     Button(
         onClick = onClick,
         modifier = modifier.height(50.dp),
@@ -464,6 +476,10 @@ private fun PrimaryPill(text: String, onClick: () -> Unit, modifier: Modifier = 
             contentColor = MaterialTheme.colorScheme.background,
         ),
     ) {
+        if (icon != null) {
+            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+        }
         Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
     }
 }
@@ -543,25 +559,72 @@ private fun ReadyContent(onSync: () -> Unit) {
 @Composable
 private fun SyncedHero(
     arts: List<String>,
+    onCoverTap: ((Int) -> Unit)?,
     summary: String,
-    onOpenLibrary: () -> Unit,
+    syncedAgo: String,
+    newest: SyncPlaylistRow?,
+    onPlay: (SyncPlaylistRow) -> Unit,
     onSync: () -> Unit,
 ) {
+    // Sync is what this tab is for, so it's the big button (it used to be "Open Library",
+    // which the Library tab already is). The second turns a finished sync into listening.
     Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
-        CoverFan(arts = arts)
+        CoverFan(arts = arts, onTap = onCoverTap)
         Spacer(Modifier.height(18.dp))
         HeroTitle(stringResource(R.string.sync_home_title))
         Spacer(Modifier.height(6.dp))
-        HeroBody(summary)
+        HeroBody(
+            if (syncedAgo.isBlank()) summary
+            else summary + " · " + stringResource(R.string.sync_home_synced_ago, syncedAgo.lowercase()),
+        )
         Spacer(Modifier.height(18.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryPill(
-                text = stringResource(R.string.sync_open_library),
-                onClick = onOpenLibrary,
-                modifier = Modifier.weight(1f),
-            )
-            SyncCircleButton(onClick = onSync)
+        PrimaryPill(
+            text = stringResource(R.string.sync_arrival_sync_now),
+            onClick = onSync,
+            icon = Icons.Filled.Sync,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (newest != null) {
+            Spacer(Modifier.height(10.dp))
+            PlaySomethingNew(name = newest.name, onClick = { onPlay(newest) })
         }
+    }
+}
+
+/** A glass pill: play, "Play something new", and which mix it is. */
+@Composable
+private fun PlaySomethingNew(name: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clip(RoundedCornerShape(25.dp))
+            .background(StashTheme.extendedColors.glassBackgroundHover)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text = stringResource(R.string.sync_play_new),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

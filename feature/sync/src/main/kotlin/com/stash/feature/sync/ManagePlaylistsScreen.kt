@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -121,6 +123,8 @@ fun ManagePlaylistsScreen(
 
     var tab by rememberSaveable { mutableStateOf(ManageTab.PLAYLISTS) }
     var query by rememberSaveable { mutableStateOf("") }
+    // Taken-out playlists fold under one row at the bottom, closed until asked for.
+    var showOut by rememberSaveable { mutableStateOf(false) }
     val q = query.trim()
     // The query reaches every tab, so search never looks broken behind a tab (#310).
     fun matches(row: SyncPlaylistRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
@@ -295,7 +299,7 @@ fun ManagePlaylistsScreen(
                     )
                 }
             } else {
-                items(shown, key = { it.id }) { row ->
+                val rowContent: @Composable (SyncPlaylistRow) -> Unit = { row ->
                     PlaylistSaveRow(
                         row = row,
                         saved = row.saved(streamOnly),
@@ -303,6 +307,16 @@ fun ManagePlaylistsScreen(
                         onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
                         onSetStack = { viewModel.onSetStack(row.id, it) },
                     )
+                }
+                val (out, inLibrary) = shown.partition { it.userHidden }
+                items(inLibrary, key = { it.id }) { rowContent(it) }
+                // What was taken out folds away; a search opens it, so a match is never hidden.
+                if (out.isNotEmpty()) {
+                    val open = showOut || q.isNotBlank()
+                    item(key = "out-of-library") {
+                        OutOfLibraryHeader(count = out.size, expanded = open, onToggle = { showOut = !showOut })
+                    }
+                    if (open) items(out, key = { it.id }) { rowContent(it) }
                 }
             }
         }
@@ -405,6 +419,34 @@ private fun StackPill(stacking: Boolean, playlistName: String, onToggle: (Boolea
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = if (stacking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The fold over the playlists taken out of the library: "Not in your library · 12". */
+@Composable
+private fun OutOfLibraryHeader(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(role = Role.Button, onClick = onToggle)
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.sync_manage_out_section, count),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
