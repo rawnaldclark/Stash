@@ -1089,6 +1089,8 @@ private fun LikedTab(
     // Track pending delete confirmation.
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
+    // Downloaded likes carry the check when the list mixes downloaded and streaming songs (the Songs tab's rule).
+    val mixed = remember(tracks) { tracks.any { it.isDownloaded } && tracks.any { !it.isDownloaded } }
     val listState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
         // The rows share one width reading and text measurer (TrackListItem's fit).
@@ -1128,6 +1130,7 @@ private fun LikedTab(
                         onLongPress = { if (!selection.isActive) selection.enter(track.id) },
                         selectionActive = selection.isActive,
                         selected = selection.isSelected(track.id),
+                        showAvailabilityTag = mixed,
                         onMoreClick = { selectedTrack = track },
                     )
                 }
