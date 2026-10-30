@@ -948,7 +948,7 @@ class DiffWorker @AssistedInject constructor(
         // is now the switch — discovered mixes start off — not the type.
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
             for (batchTrack in newTracks) {
-                if (batchTrack.entity.soundCloudId != null) continue // Download integration follows; never title-match an upload.
+                if (batchTrack.entity.soundCloudPreview) continue // A preview is never queued for download.
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
                     DownloadQueueEntity(

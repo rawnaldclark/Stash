@@ -682,6 +682,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun queueDownload(trackId: Long): Boolean {
         val entity = trackDao.getById(trackId) ?: return false
+        if (entity.soundCloudPreview) return false
         if (entity.isDownloaded) return false
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
@@ -908,7 +909,7 @@ class MusicRepositoryImpl @Inject constructor(
         // already queued, failed or cancelled keeps that one row. That makes
         // this safe to call after every sync (#474) without re-trying the same
         // unmatchable songs, or piling duplicate rows into Failed downloads.
-        val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed }
+        val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
         if (candidates.isEmpty()) return moved
 
         val entries = candidates.mapNotNull { entity ->

@@ -189,6 +189,7 @@ class DownloadManager @Inject constructor(
         com.stash.data.download.lossless.ResolvedSourceHandoff(),
     /** The downloads that run at once, shared with every worker that claims a queue row first. */
     private val downloadSlots: com.stash.core.data.sync.DownloadSlots = com.stash.core.data.sync.DownloadSlots(),
+    private val soundCloudDownloads: SoundCloudDownloads? = null,
 ) {
 
     // The extra buffer keeps intermediate tryEmit()s from being dropped whenever the
@@ -291,7 +292,14 @@ class DownloadManager @Inject constructor(
      */
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
         if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) {
-            return TrackDownloadResult.Failed("SoundCloud downloads are not available yet")
+            val result = soundCloudDownloads?.download(track) { progress ->
+                emitProgress(track.id, progress, DownloadStatus.DOWNLOADING)
+            } ?: TrackDownloadResult.Failed("SoundCloud download is unavailable")
+            if (result is TrackDownloadResult.Success) {
+                lyricsFetchTrigger.enqueueFor(track.id)
+                emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
+            }
+            return result
         }
         // Never search, match or look up a cloud song online: TrackDownloaderImpl copies it from
         // the user's cloud instead. Refused here too, whoever calls.

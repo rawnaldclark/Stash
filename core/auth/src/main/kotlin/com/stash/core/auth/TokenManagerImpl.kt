@@ -42,6 +42,7 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectSoundCloudWithToken(token: String) = soundCloudAccounts.connect(token)
     override suspend fun connectSoundCloudPublicProfile(url: String) = soundCloudAccounts.connectPublicProfile(url)
     override suspend fun getSoundCloudToken(): String? = soundCloudSession.first()?.oauthToken
+    override suspend fun hasSoundCloudConnection(): Boolean = soundCloudSession.first() != null
 
     /**
      * Dedicated scope for collecting store flows; survives until the process dies.

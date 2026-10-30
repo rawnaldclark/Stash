@@ -81,6 +81,7 @@ class LibraryReconciliationUseCase @Inject constructor(
         val connectedSources = buildList {
             if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.SPOTIFY)) add("SPOTIFY")
             if (tokenManager.isAuthenticated(com.stash.core.auth.model.AuthService.YOUTUBE_MUSIC)) add("YOUTUBE")
+                if (tokenManager.hasSoundCloudConnection()) add("SOUNDCLOUD")
             add("BOTH")
         }
 

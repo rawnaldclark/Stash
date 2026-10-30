@@ -22,6 +22,8 @@ interface TokenManager {
 
     suspend fun getSoundCloudToken(): String?
 
+    suspend fun hasSoundCloudConnection(): Boolean
+
     /** Current authentication state for Spotify. */
     val spotifyAuthState: StateFlow<AuthState>
 
