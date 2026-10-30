@@ -91,10 +91,25 @@ class SoundCloudPlaylistClientTest {
         }
     }
 
-    @Test fun `known blocked stubs are omitted without substituting another track`() = runTest {
+    @Test fun `large stub lists use bounded batches and retain service order`() = runTest {
+        val sizes = mutableListOf<Int>()
+        val c = client { req ->
+            val ids = req.url.queryParameter("ids")!!.split(',').map(String::toInt)
+            sizes += ids.size
+            200 to ids.reversed().joinToString(prefix = "[", postfix = "]") { track(it) }
+        }
+        val ids = (1..123).toList().reversed()
+        val set = Json.parseToJsonElement(ids.joinToString(prefix = "{\"tracks\":[", postfix = "]}") { "{\"id\":$it}" }).jsonObject
+        assertEquals(ids.map(Int::toString), c.playlistTracks(set).map { it.id })
+        assertEquals(listOf(50, 50, 23), sizes)
+    }
+
+    @Test fun `blocked stubs cannot authorize removing an existing downloaded member`() = runTest {
         val c = client { 200 to "[${track(1)}]" }
-        assertEquals(listOf("1"), c.playlistTracks(Json.parseToJsonElement(
-            """{"tracks":[{"id":1},{"id":2,"policy":"BLOCK"}]}""").jsonObject).map { it.id })
+        try {
+            c.playlistTracks(Json.parseToJsonElement("""{"tracks":[{"id":1},{"id":2,"policy":"BLOCK"}]}""").jsonObject)
+            fail("Blocked membership was treated as a removal")
+        } catch (_: SoundCloudException) { }
     }
 
     @Test fun `numeric and system playlist ids use their own endpoint`() = runTest {

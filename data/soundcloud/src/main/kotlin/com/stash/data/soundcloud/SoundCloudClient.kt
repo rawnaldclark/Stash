@@ -157,7 +157,8 @@ class SoundCloudClient(
         val expected = (playlist["track_count"] as? JsonPrimitive)?.intOrNull
         if (expected != null && expected != tracks.size) throw SoundCloudException()
         val items = tracks.map { it as? JsonObject ?: throw SoundCloudException() }
-            .filter { it.string("policy") != "BLOCK" }
+        // A geo/subscription block is not a remote removal: never clear an existing downloaded member.
+        if (items.any { it.string("policy") == "BLOCK" }) throw SoundCloudException()
         val full = mutableMapOf<String, SoundCloudTrack>()
         items.filter { it.string("title") != null }.forEach { full[numericId(it)] = parseTrack(it) }
         val missing = items.filter { it.string("title") == null }.map(::numericId).distinct()
