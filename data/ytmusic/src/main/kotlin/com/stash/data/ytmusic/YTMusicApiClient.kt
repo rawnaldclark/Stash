@@ -999,6 +999,29 @@ class YTMusicApiClient @Inject constructor(
         return AlbumResponseParser.parse(browseId, response)
     }
 
+    /**
+     * A playlist's name, maker and cover (a pasted playlist link's preview), or null when its page can't be read. An album's
+     * own playlist (`OLAK5uy_…`) has no such header: [albumOfPlaylist] finds its album instead.
+     */
+    suspend fun getPlaylistHeader(playlistId: String): YTPlaylistHeader? {
+        val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        val response = innerTubeClient.browse(browseId) ?: return null
+        return LinkResponseParser.playlistHeader(response)
+    }
+
+    /** The album (`MPREb_…`) an album's own playlist (`OLAK5uy_…`) is of, or null. */
+    suspend fun albumOfPlaylist(playlistId: String): String? {
+        val browseId = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        val response = innerTubeClient.browse(browseId) ?: return null
+        return LinkResponseParser.albumBrowseId(response)
+    }
+
+    /** One song by its video id (a pasted `watch?v=` or `youtu.be` link), or null when YouTube Music doesn't show it. */
+    suspend fun getSong(videoId: String): YTSong? {
+        val response = innerTubeClient.next(videoId) ?: return null
+        return LinkResponseParser.song(response)?.takeIf { it.videoId == videoId }
+    }
+
     // `normalizeArtistBrowseId` lives as a top-level `internal` fun in
     // [ResponseParserHelpers.kt] so unit tests can exercise it directly
     // without reflection; this file calls it below in [getArtist].

@@ -139,7 +139,7 @@ class WebLibraryImporter internal constructor(
      * (the likes and the playlists' songs), a batch at a time. [progress] may throw to stop the import where it is (a
      * [CancellationException]: what was written stays, and importing again finishes it without doubling anything).
      */
-    internal suspend fun import(
+    suspend fun import(
         content: WebLibraryContent,
         selection: ImportSelection,
         origin: String,

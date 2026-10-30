@@ -271,6 +271,7 @@ private fun StashNavGraph(
                 // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -283,6 +284,7 @@ private fun StashNavGraph(
         }
         composable<SearchRoute> {
             SearchScreen(
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },
@@ -546,6 +548,16 @@ private fun StashNavGraph(
         composable<SharedTrackRoute> {
             AboveChrome {
                 com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+            }
+        }
+
+        composable<LinkImportRoute> {
+            AboveChrome {
+                com.stash.feature.library.share.LinkImportScreen(
+                    onBack = { navController.popBackStack() },
+                    // Back from the playlist skips the link's screen.
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<LinkImportRoute> { inclusive = true } } },
+                )
             }
         }
 

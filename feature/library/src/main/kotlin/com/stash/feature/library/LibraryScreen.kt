@@ -5,6 +5,9 @@ import kotlin.math.absoluteValue
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -167,6 +170,8 @@ fun LibraryScreen(
     onNavigateToSync: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToAccounts: () -> Unit = {},
+    /** "+" › Add from a link: the pasted Spotify / YouTube link's preview. */
+    onOpenLink: (String) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -314,6 +319,7 @@ fun LibraryScreen(
             onOpenSync = onNavigateToSync,
             onOpenSearch = onNavigateToSearch,
             onOpenAccounts = onNavigateToAccounts,
+            onOpenLink = onOpenLink,
             deviceContent = {
                 OnThisDeviceTab(
                     viewModel = deviceViewModel,
@@ -570,6 +576,7 @@ fun LibraryScreen(
 @Composable
 private fun LibraryContent(
     state: LibraryUiState,
+    onOpenLink: (String) -> Unit = {},
     /** Field-facing query — updates this frame; see LibraryViewModel.searchQuery. */
     searchQuery: String,
     importState: com.stash.data.download.files.LocalImportState,
@@ -739,8 +746,31 @@ private fun LibraryContent(
                     tint = chrome.accent,
                 )
             }
-            IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
-                Icon(Icons.Filled.Add, contentDescription = "Import tracks")
+            // "+": audio files from the phone, or a Spotify / YouTube link.
+            Box {
+                var addMenu by remember { mutableStateOf(false) }
+                var pasteLink by remember { mutableStateOf(false) }
+                IconButton(onClick = { addMenu = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add music")
+                }
+                DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Add from a link") },
+                        leadingIcon = { Icon(Icons.Filled.Link, contentDescription = null) },
+                        onClick = { addMenu = false; pasteLink = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Import audio files") },
+                        leadingIcon = { Icon(Icons.Filled.AudioFile, contentDescription = null) },
+                        onClick = { addMenu = false; importPicker.launch(arrayOf("audio/*")) },
+                    )
+                }
+                if (pasteLink) {
+                    com.stash.feature.library.share.PasteLinkDialog(
+                        onDismiss = { pasteLink = false },
+                        onOpen = { pasteLink = false; onOpenLink(it) },
+                    )
+                }
             }
             // Closing the search clears it: it used to only hide the field, leaving every tab
             // silently filtered by a query the user could no longer see.

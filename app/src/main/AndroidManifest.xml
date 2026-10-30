@@ -108,6 +108,15 @@
                 <data android:mimeType="audio/*" />
             </intent-filter>
             <!--
+                A Spotify or YouTube link shared as text (Share → Stash from either app): MainActivity
+                opens its preview, to add the playlist, album or song to the library.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!--
                 Legacy stash://track share links: open the shared-track card.
             -->
             <intent-filter>
