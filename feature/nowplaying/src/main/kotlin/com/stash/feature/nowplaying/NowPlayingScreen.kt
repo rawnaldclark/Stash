@@ -939,6 +939,7 @@ fun NowPlayingScreen(
                 running = npInSight,
                 pages = fullArtPages,
                 startPage = if (cycleAlbumArt && pagesLineUp) cycleIndex else 0,
+                cycle = cycleAlbumArt,
                 trackKey = track?.let { it.id to uiState.currentIndex },
                 positionMs = { playerPosition.value },
                 durationMs = uiState.durationMs,

@@ -313,6 +313,7 @@ internal fun FullArtTheme(on: Boolean, content: @Composable () -> Unit) {
  * @param running Now Playing is in sight: the pan's frame loop runs only then.
  * @param pages The front, then the back and the pages inside, those that are known.
  * @param startPage The page the square art shows: full art opens on it.
+ * @param cycle Settings' Cycle album art: off, the pages don't turn by themselves (a swipe still turns them).
  * @param trackKey The playing song: a new one starts on its front.
  * @param origin The square art in window coordinates: full art grows from it and back into it.
  * @param originCornerPx The square art's corner radius.
@@ -330,6 +331,7 @@ internal fun FullArtLayer(
     running: Boolean,
     pages: List<FullArtPage>,
     startPage: Int,
+    cycle: Boolean,
     trackKey: Any?,
     positionMs: () -> Long,
     durationMs: Long,
@@ -361,7 +363,7 @@ internal fun FullArtLayer(
     }
     if (!target && state.grow.value == 0f) return
 
-    val schedule = remember(durationMs, pages.size) { fullArtSchedule(durationMs, pages.size) }
+    val schedule = remember(durationMs, pages.size, cycle) { fullArtSchedule(durationMs, pages.size, cycle) }
     val loaded = remember { mutableStateMapOf<String, LoadedPage>() }
     val failed = remember { mutableStateMapOf<String, Boolean>() }
     val currentOnPage by rememberUpdatedState(onPage)
