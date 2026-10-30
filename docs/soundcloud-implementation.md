@@ -176,9 +176,9 @@ Phone QA caught and fixed missing first-run SoundCloud connection entry, stale N
 Settings summary, a downloaded-song count limited to Spotify/YouTube, and incorrect imported
 playlist source badges. Both follow-up full debug builds exited 0; visual rechecks continue.
 
-Private OAuth login is still unverified. The public-profile checks do not establish private or
-Go+ subscriber access, Android Auto behavior, long-pause recovery, low-storage cleanup, or full
-backup round-trip on the device. Keep these gates explicit rather than inferring them from unit tests.
+Private OAuth login and authenticated likes are now verified in the follow-up below. These checks
+do not establish Go+ subscriber access, Android Auto behavior, long-pause recovery, low-storage
+cleanup, or full backup round-trip on the device. Keep these gates explicit rather than inferring them from unit tests.
 
 Additional device results:
 - In Download mode, the SoundCloud Liked filter contains only downloaded Warm; undownloaded
@@ -209,4 +209,10 @@ SoundCloudLoginCookies now reads the active trusted origin first, retains root-c
 and refuses credential reads on foreign/insecure pages. Login cleanup includes host-only cookies
 for mobile/www/secure as well as the root domain cookie. Six regression tests cover mobile scope,
 precedence, fallback, hostile pages, blank/incorrect cookie names and cookie removal scope.
-Device return-to-Stash verification is pending the fixed APK install.
+All nine SoundCloud settings tests passed and the full APK build exited 0. Installed the fresh
+fixed APK on the Pixel 5. Reopening login reused the existing browser session, closed the
+WebView automatically and displayed the owner's connected account. No second manual login was needed.
+
+Authenticated follow-up: Sync now completed with 140 liked tracks for the owner's account.
+Force-stopped and restarted the app after sync; Accounts still showed the owner connected.
+The phone is left in Accounts with playback paused and the original Stream-only preference.
