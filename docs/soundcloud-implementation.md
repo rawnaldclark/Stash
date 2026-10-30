@@ -196,3 +196,17 @@ Additional device results:
 - Fresh-install recheck shows Connect SoundCloud on Sync's first-run screen; it opens Accounts.
   The layout was checked visually on the Pixel 5. Final card-label build exited 0 and installed
   successfully; no database wipe or destructive install was used.
+
+## OAuth return regression (2026-10-30)
+
+The owner completed sign-in, but the embedded mobile site stayed open. Runtime inspection of
+cookie names/scope confirmed oauth_token was host-only on m.soundcloud.com; the old code read
+only soundcloud.com. No credential values were printed or written to a diagnostic file. Using
+that session in memory, both SoundCloud's session-validation POST and authenticated profile GET
+returned HTTP 200. This established a cookie-capture bug rather than invalid credentials.
+
+SoundCloudLoginCookies now reads the active trusted origin first, retains root-cookie fallback,
+and refuses credential reads on foreign/insecure pages. Login cleanup includes host-only cookies
+for mobile/www/secure as well as the root domain cookie. Six regression tests cover mobile scope,
+precedence, fallback, hostile pages, blank/incorrect cookie names and cookie removal scope.
+Device return-to-Stash verification is pending the fixed APK install.

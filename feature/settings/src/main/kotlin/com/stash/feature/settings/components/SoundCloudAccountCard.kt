@@ -69,13 +69,8 @@ private fun SoundCloudLogin(onToken: (String) -> Unit, onClose: () -> Unit) {
     DisposableEffect(Unit) { onDispose { browser?.stopLoading(); browser?.destroy(); browser = null } }
     LaunchedEffect(browser) {
         while (!delivered) {
-            val host = browser?.url?.let { android.net.Uri.parse(it).host }
-            if (host == "soundcloud.com" || host?.endsWith(".soundcloud.com") == true) {
-                val cookie = CookieManager.getInstance().getCookie("https://soundcloud.com").orEmpty()
-                    .split(';').map(String::trim).firstOrNull { it.startsWith("oauth_token=") }
-                    ?.substringAfter('=')?.takeIf { it.isNotBlank() }
-                if (cookie != null) { delivered = true; onToken(cookie) }
-            }
+            val cookie = SoundCloudLoginCookies.token(browser?.url, CookieManager.getInstance()::getCookie)
+            if (cookie != null) { delivered = true; onToken(cookie) }
             delay(500)
         }
     }
@@ -95,11 +90,15 @@ private fun SoundCloudLogin(onToken: (String) -> Unit, onClose: () -> Unit) {
                             request.isForMainFrame && !isAllowedSoundCloudLoginUrl(request.url.toString())
                     }
                     val cookies = CookieManager.getInstance()
-                    cookies.setCookie("https://soundcloud.com", "oauth_token=; Max-Age=0; path=/; domain=.soundcloud.com") {
-                        cookies.setCookie("https://soundcloud.com", "oauth_token=; Max-Age=0; path=/") {
+                    fun clearCookie(index: Int) {
+                        if (index == SoundCloudLoginCookies.removals.size) {
                             view.post { if (browser === view) view.loadUrl("https://soundcloud.com/signin") }
+                            return
                         }
+                        val (origin, header) = SoundCloudLoginCookies.removals[index]
+                        cookies.setCookie(origin, header) { clearCookie(index + 1) }
                     }
+                    clearCookie(0)
                 } })
             }
         }
