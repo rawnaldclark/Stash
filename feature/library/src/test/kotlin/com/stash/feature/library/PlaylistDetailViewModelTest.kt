@@ -187,6 +187,7 @@ class PlaylistDetailViewModelTest {
         // the playlist per tracks write.
         val music = musicRepoMock().stub {
             on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
+            on { getShownTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
         }
         val vm = buildVm(musicRepository = music)
@@ -204,6 +205,7 @@ class PlaylistDetailViewModelTest {
     @Test fun `the counts cover the whole playlist while a search filter is active`() = runTest {
         val music = musicRepoMock().stub {
             on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
+            on { getShownTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
         }
         val vm = buildVm(musicRepository = music)
@@ -294,6 +296,7 @@ class PlaylistDetailViewModelTest {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
             on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
         }
         val vm = buildVm(
             musicRepository = music,
@@ -317,6 +320,7 @@ class PlaylistDetailViewModelTest {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
             on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
         }
         val vm = buildVm(musicRepository = music)
         backgroundScope.launch { vm.downloadButton.collect {} }
@@ -578,6 +582,7 @@ class PlaylistDetailViewModelTest {
 
     private fun musicRepoMock(): MusicRepository = mock {
         on { getTracksByPlaylist(any()) } doReturn flowOf(emptyList())
+        on { getShownTracksByPlaylist(any()) } doReturn flowOf(emptyList())
         on { observePlaylist(any()) } doReturn flowOf(null)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true

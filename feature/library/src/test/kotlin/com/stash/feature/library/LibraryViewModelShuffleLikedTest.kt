@@ -81,9 +81,10 @@ class LibraryViewModelShuffleLikedTest {
         assertThat(tracksCaptor.firstValue.map { it.id }).containsExactly(1L, 2L, 3L)
     }
 
-    @Test fun shuffle_liked_in_download_mode_keeps_undownloaded_tracks() = runTest {
-        // The harness runs with the Download switch on (streaming pref off);
-        // a liked song that is not on disk still shuffles in and streams.
+    @Test fun shuffle_liked_queues_every_song_the_liked_list_shows() = runTest {
+        // The view model queues the list as the repository shows it. Download mode's
+        // downloads-only rule lives below it: getShownTracksByPlaylist leaves the other
+        // songs out, and the player refuses any that get through (2026-10-29).
         val playerRepository = playerRepoMock()
         val liked = listOf(track(1), track(2, downloaded = false), track(3))
         val vm = buildVm(playerRepository, liked)
@@ -127,6 +128,7 @@ class LibraryViewModelShuffleLikedTest {
             on { getPlaylistsByType(eq(PlaylistType.STASH_LIKED)) } doReturn flowOf(emptyList())
             on { getPlaylistsByType(eq(PlaylistType.LIKED_SONGS)) } doReturn flowOf(listOf(likedPlaylist))
             on { getTracksByPlaylist(eq(42L)) } doReturn flowOf(liked)
+            on { getShownTracksByPlaylist(eq(42L)) } doReturn flowOf(liked)
         }
         return LibraryViewModel(
             musicRepository = musicRepository,

@@ -30,7 +30,8 @@ import com.stash.core.ui.theme.StashTheme
 
 /**
  * Two-tile picker for the one mode switch: "Stream only" vs "Download".
- * It decides what Sync writes to disk, never what plays. Selected tile is
+ * Download: Sync saves to the phone and only saved songs play. Stream only: nothing
+ * is saved and everything streams. Selected tile is
  * filled with primary-tinted glass; the other is muted. Tapping either
  * fires [onSelect] with the chosen mode (`true` = stream only, `false` =
  * download). Re-tapping the already-selected tile is a no-op via the

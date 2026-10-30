@@ -65,7 +65,7 @@ fun StreamingModeSheet(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Should Sync save your switched-on playlists and mixes to this phone? Music plays either way.",
+                text = "Download saves your switched-on playlists and mixes to this phone and plays only what's saved. Stream only saves nothing and streams everything.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

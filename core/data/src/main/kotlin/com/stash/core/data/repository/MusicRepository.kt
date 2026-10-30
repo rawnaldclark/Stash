@@ -56,6 +56,13 @@ interface MusicRepository {
     /** Tracks belonging to a playlist. */
     fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>>
 
+    /**
+     * The songs a playlist screen shows: all of [getTracksByPlaylist] in Stream only, only
+     * the downloaded ones in Download mode, which plays nothing else (owner, 2026-10-29).
+     * For lists people see and play; counts, saves and syncs keep [getTracksByPlaylist].
+     */
+    fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> = getTracksByPlaylist(playlistId)
+
     /** Distinct artists with track counts and durations. */
     fun getAllArtists(): Flow<List<ArtistSummary>>
 

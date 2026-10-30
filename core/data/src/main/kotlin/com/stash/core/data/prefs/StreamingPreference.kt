@@ -31,10 +31,10 @@ enum class StreamQualityTier { LOSSLESS, HIGH_QUALITY_LOSSY }
  *
  *  - [enabled] — the app's ONE mode switch, shown to the user inverted as
  *    "Download". `false` = Download mode: sync writes switched-on playlists
- *    and mixes to disk. `true` = sync only keeps the streamable index. Since
- *    2026-09-17 this no longer gates playback: streaming is always allowed,
- *    refused only by connectivity or [streamOnCellular]. (Before that — and
- *    still in this property's name — it was the Online/Offline switch.)
+ *    and mixes to disk, and playback plays only what is on the phone (owner,
+ *    2026-10-29; from 2026-09-17 until then it didn't gate playback). `true` =
+ *    sync only keeps the streamable index, and everything streams, refused only
+ *    by connectivity or [streamOnCellular].
  *  - [streamOnCellular] — whether streaming is allowed on a metered
  *    network. Default `false` so users don't burn data unintentionally.
  *  - [streamQuality] — preferred lossless vs high-quality-lossy tier

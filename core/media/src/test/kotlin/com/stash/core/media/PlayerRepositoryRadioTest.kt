@@ -36,7 +36,7 @@ class PlayerRepositoryRadioTest {
     private val musicRepository: MusicRepository = mockk {
         every { trackDeletions } returns MutableSharedFlow()
     }
-    private val streamingPreference: StreamingPreference = mockk(relaxed = true)
+    private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)
@@ -73,20 +73,16 @@ class PlayerRepositoryRadioTest {
 
     private fun track(id: Long) = Track(id = id, title = "t$id", artist = "a", youtubeId = "v$id", isStreamable = true)
 
-    @Test fun `startRadio starts a station in Download mode too`() = runTest {
-        // The Download switch decides what sync writes to disk, never what
-        // plays (until 2026-09-17 this returned StreamingOff and never asked
-        // the generator).
+    @Test fun `startRadio refuses in Download mode, which plays only what is on the phone`() = runTest {
+        // A station is songs found online. (From 2026-09-17 to 2026-10-29 it started anyway.)
         coEvery { streamingPreference.current() } returns false
-        val session = mockk<RadioSession>(relaxed = true)
-        coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
-        every { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) } returns Unit
 
         val started = repo.startRadio(RadioSeed.Artist("My Bloody Valentine", "id"))
 
-        assertThat(started).isEqualTo(RadioStartResult.Started)
-        assertThat(repo.radioSeedLabel.value).isEqualTo("My Bloody Valentine")
-        coVerify(exactly = 1) { radioGenerator.start(any()) }
+        assertThat(started).isEqualTo(RadioStartResult.DownloadMode)
+        assertThat(repo.radioSeedLabel.value).isNull()
+        coVerify(exactly = 0) { radioGenerator.start(any()) }
+        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
     }
 
     @Test fun `startRadio returns PlayerNotReady when the controller cannot connect`() = runTest {
@@ -234,9 +230,7 @@ class PlayerRepositoryRadioTest {
         verify { controller.addMediaItems(any<List<MediaItem>>()) }
     }
 
-    @Test fun `growRadio keeps growing in Download mode`() = runTest {
-        // Flipping the Download switch on mid-station used to disarm the
-        // radio; the switch no longer touches playback.
+    @Test fun `growRadio stops the station when Download mode comes on`() = runTest {
         coEvery { streamingPreference.current() } returns true
         val session = mockk<RadioSession>(relaxed = true)
         coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
@@ -247,9 +241,8 @@ class PlayerRepositoryRadioTest {
 
         repo.growRadio()
 
-        assertThat(repo.radioSeedLabel.value).isEqualTo("MBV")
-        coVerify(exactly = 1) { radioGenerator.nextBatch(session) }
-        verify(exactly = 1) { controller.addMediaItems(any<List<MediaItem>>()) }
+        assertThat(repo.radioSeedLabel.value).isNull()
+        verify(exactly = 0) { controller.addMediaItems(any<List<MediaItem>>()) }
     }
 
     @Test fun `growRadio is a no-op when no station is active`() = runTest {

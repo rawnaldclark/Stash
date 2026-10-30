@@ -233,7 +233,8 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<PlaylistDetailUiState> = combine(
         _playlist,
-        playlistTracks.withSearchFilter(_searchQuery),
+        // Download mode lists only what it plays: the downloaded songs.
+        musicRepository.getShownTracksByPlaylist(playlistId).withSearchFilter(_searchQuery),
         playerRepository.playerState,
         _searchQuery,
         _showSearch,
@@ -313,8 +314,7 @@ class PlaylistDetailViewModel @Inject constructor(
         // A track with no local audio needs a live connection; without one the
         // player would fail it silently, so bail out early with a Snackbar so
         // the user knows *why* nothing happened. Downloaded tracks always play.
-        // (The Download button is not consulted: it decides what gets written
-        // to disk, never what plays.)
+        // (In Download mode such a track isn't listed, and the player refuses it.)
         viewModelScope.launch {
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
@@ -337,10 +337,9 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
-     * The tracks to enqueue: the whole list. Streaming is always allowed, so a
-     * track that is not downloaded resolves when it is reached (a
-     * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
-     * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
+     * The tracks to enqueue: the list shown. In Stream only a track that is not
+     * downloaded resolves when it is reached (a `stash-resolve://` placeholder inside
+     * [PlayerRepository.setQueue]); in Download mode the list holds downloads only.
      */
     private suspend fun playableTracks(): List<Track> = uiState.value.tracks
 

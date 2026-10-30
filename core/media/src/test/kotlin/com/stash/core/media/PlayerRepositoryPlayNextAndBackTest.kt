@@ -24,6 +24,7 @@ import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrlCache
 import com.stash.core.model.Track
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,7 +52,7 @@ class PlayerRepositoryPlayNextAndBackTest {
     private val musicRepository: MusicRepository = mockk {
         every { trackDeletions } returns MutableSharedFlow()
     }
-    private val streamingPreference: StreamingPreference = mockk(relaxed = true)
+    private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)

@@ -124,6 +124,8 @@ class LazyResolvingDataSource(
     private val downloadedFile: ((TrackEntity) -> Uri?)? = null,
     /** Opens [downloadedFile]'s `file://` / `content://` URI. */
     private val localDelegate: (() -> DataSource)? = null,
+    /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
+    private val streamAllowed: () -> Boolean = { true },
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -175,6 +177,7 @@ class LazyResolvingDataSource(
             pinnedFile = file
             return delegateTo(local(), dataSpec.buildUpon().setUri(file).build())
         }
+        if (!streamAllowed()) throw IOException("Download mode: track $trackId isn't on the phone; not streaming it")
 
         val pin = pinned
         val fresh = if (pin != null && pinStillValid()) {
