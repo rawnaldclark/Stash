@@ -29,6 +29,14 @@ title matching, lossless upgrade/sweep queries, stream registry, and DownloadMan
 enabling row creation. The shared word-matching rule now refuses SoundCloud/unlinked pairs;
 SoundCloud-to-existing-recording reuse must use verified ISRC identity explicitly.
 
+Playback integration also requires HLS support. `StreamUrl` currently marks DASH only, and
+`StashMediaSourceFactory` selects a DASH child or the progressive lazy data source. Add an
+explicit HLS marker, the matching Media3 HLS dependency and media source, and route cached and
+fresh resolutions through that child. Do not send SoundCloud manifests into the progressive
+byte pipe. Cover the initial resolve, cached URL, expired URL refresh, local-file preference,
+and Download-mode rejection. Check whether other StreamUrl consumers (recap and preview)
+need the same routing before allowing them to consume SoundCloud streams.
+
 ## Scope
 
 Connect a SoundCloud account using its WebView `oauth_token`, or use a public profile's likes.
@@ -108,3 +116,8 @@ No new settings page. Preview state is visible before playback or download, not 
 Web sleeve flip/browser checks, web dependency repair, relay PRs, playlist-order web/backup/undo
 follow-ups, and release preparation are separate work. Do not alter them during SoundCloud work.
 Do not build a combined custom order for Liked Songs. Do not fix contributor AutoMix #720.
+
+Integration verification: the complete `:app:assembleDebug --max-workers=3` build passed on
+2026-10-30, with Gradle exit 0 and a fresh `app/build/outputs/apk/debug/app-debug.apk`
+(187,297,340 bytes). This verifies the current client/account/database integration across the
+app; it does not verify SoundCloud playback or likes sync, which remain unwired. No installation.
