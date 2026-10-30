@@ -4,7 +4,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Parsed identity only; no arbitrary input URL is used for authenticated API requests. */
 data class SoundCloudLink(val url: String, val kind: Kind) {
-    enum class Kind { TRACK, SET, LIKES, PROFILE, SHORT }
+    enum class Kind { TRACK, SET, MIX, LIKES, PROFILE, SHORT }
 }
 
 object SoundCloudLinks {
@@ -15,6 +15,10 @@ object SoundCloudLinks {
         if (url.host !in setOf("soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com")) return null
         val host = url.host.removePrefix("www.").removePrefix("m.")
         val parts = url.pathSegments.filter { it.isNotEmpty() }
+        if (host == "soundcloud.com" && parts.size == 3 && parts[0] == "discover" && parts[1] == "sets" &&
+            parts[2].matches(Regex("[A-Za-z0-9_-][A-Za-z0-9:_-]{0,255}"))) {
+            return SoundCloudLink(url.newBuilder().host("soundcloud.com").query(null).fragment(null).build().toString(), SoundCloudLink.Kind.MIX)
+        }
         if (parts.any { !it.matches(Regex("[A-Za-z0-9_-]+")) }) return null
         val kind = when {
             url.host == "on.soundcloud.com" && parts.size == 1 -> SoundCloudLink.Kind.SHORT

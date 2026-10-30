@@ -42,6 +42,9 @@ data class SoundCloudTrack(
 )
 data class SoundCloudStream(val url: String, val mimeType: String, val hls: Boolean, val preview: Boolean)
 
+data class SoundCloudPlaylist(val id: String, val title: String, val permalink: String,
+    val artworkUrl: String?, val system: Boolean)
+
 /**
  * The public web API. Callers own encrypted OAuth storage and pass a token per operation.
  * Authentication is sent only to exact API hosts; paging, assets and short links are untrusted.
@@ -101,16 +104,108 @@ class SoundCloudClient(
         return tracks.values.toList()
     }
 
-    /** Playlists may contain id-only stubs; hydrate them rather than silently dropping songs. */
+    suspend fun ownPlaylists(userId: String, token: String? = null): List<SoundCloudPlaylist> {
+        require(userId.matches(Regex("[0-9]+")))
+        return collection("https://api-v2.soundcloud.com/users/$userId/playlists?limit=50&linked_partitioning=1".toHttpUrl(), token)
+            .filter { (it["user"] as? JsonObject)?.string("id") == userId || it.string("user_id") == userId }
+            .map(::parsePlaylist).distinctBy { it.id }
+    }
+
+    /** Only the listener's Mixed for… shelf, not stations, charts or general recommendations. */
+    suspend fun personalMixes(userId: String, token: String): List<SoundCloudPlaylist> {
+        require(userId.matches(Regex("[0-9]+")))
+        val sections = collection("https://api-v2.soundcloud.com/mixed-selections?limit=10&linked_partitioning=1".toHttpUrl(), token, maxPages = 5, discovery = true)
+        val result = linkedMapOf<String, SoundCloudPlaylist>()
+        for (section in sections.filter { it.string("urn") == "soundcloud:selections:your-moods" }) {
+            val items = section["items"] as? JsonObject ?: throw SoundCloudException()
+            val entries = collection(null, token, initial = items)
+            for (entry in entries) {
+                if (entry.string("kind") != "system-playlist" ||
+                    (entry["made_for"] as? JsonObject)?.string("id") != userId) continue
+                val playlist = parsePlaylist(entry)
+                result[playlist.id] = playlist
+            }
+        }
+        return result.values.toList()
+    }
+
+    fun parsePlaylist(value: JsonObject): SoundCloudPlaylist {
+        val system = value.string("kind") == "system-playlist"
+        if (!system && value.string("kind") != "playlist") throw SoundCloudException()
+        val id = value.string("id") ?: value.string("urn") ?: throw SoundCloudException()
+        requirePlaylistId(id, system)
+        val link = value.string("permalink_url")?.let(SoundCloudLinks::parse)
+            ?.takeIf { it.kind == if (system) SoundCloudLink.Kind.MIX else SoundCloudLink.Kind.SET }
+            ?: throw SoundCloudException()
+        return SoundCloudPlaylist(id, value.string("title") ?: throw SoundCloudException(), link.url,
+            value.string("artwork_url") ?: value.string("calculated_artwork_url"), system)
+    }
+
+    suspend fun playlist(id: String, token: String? = null): JsonObject {
+        val system = id.startsWith("soundcloud:system-playlists:")
+        requirePlaylistId(id, system)
+        val endpoint = if (system) "system-playlists" else "playlists"
+        return api("https://api-v2.soundcloud.com/".toHttpUrl().newBuilder()
+            .addPathSegment(endpoint).addPathSegment(id).build(), token).also {
+                if (parsePlaylist(it).id != id) throw SoundCloudException()
+            }
+    }
+
+    /** Hydrate stubs in batches, then restore service order. Never accept silently missing IDs. */
     suspend fun playlistTracks(playlist: JsonObject, token: String? = null): List<SoundCloudTrack> {
         val tracks = playlist["tracks"] as? JsonArray ?: throw SoundCloudException()
-        return tracks.map { value ->
-            val item = value as? JsonObject ?: throw SoundCloudException()
-            if (item.string("title") != null) parseTrack(item) else {
-                pause(250)
-                track(item.string("id") ?: throw SoundCloudException(), token)
+        val expected = (playlist["track_count"] as? JsonPrimitive)?.intOrNull
+        if (expected != null && expected != tracks.size) throw SoundCloudException()
+        val items = tracks.map { it as? JsonObject ?: throw SoundCloudException() }
+            .filter { it.string("policy") != "BLOCK" }
+        val full = mutableMapOf<String, SoundCloudTrack>()
+        items.filter { it.string("title") != null }.forEach { full[numericId(it)] = parseTrack(it) }
+        val missing = items.filter { it.string("title") == null }.map(::numericId).distinct()
+        for (batch in missing.chunked(50)) {
+            pause(250)
+            val response = apiValue("https://api-v2.soundcloud.com/tracks".toHttpUrl().newBuilder()
+                .addQueryParameter("ids", batch.joinToString(",")).build(), token) as? JsonArray ?: throw SoundCloudException()
+            for (item in response) {
+                val parsed = parseTrack(item as? JsonObject ?: throw SoundCloudException())
+                if (parsed.id !in batch) throw SoundCloudException()
+                full[parsed.id] = parsed
             }
-        }.distinctBy { it.id }
+            if (batch.any { it !in full }) throw SoundCloudException()
+        }
+        return items.map { full[numericId(it)] ?: throw SoundCloudException() }.distinctBy { it.id }
+    }
+
+    private fun requirePlaylistId(id: String, system: Boolean) {
+        val valid = if (system) id.length <= 256 && id.matches(Regex("soundcloud:system-playlists:[A-Za-z0-9:_-]+"))
+            else id.matches(Regex("[0-9]+"))
+        if (!valid) throw SoundCloudException()
+    }
+
+    private suspend fun collection(start: HttpUrl?, token: String?, maxPages: Int = 500,
+        discovery: Boolean = false, initial: JsonObject? = null): List<JsonObject> {
+        var next = start
+        var pending = initial
+        val visited = mutableSetOf<String>()
+        val result = mutableListOf<JsonObject>()
+        var pages = 0
+        do {
+            if (pages++ >= maxPages) {
+                if (discovery) break else throw SoundCloudException()
+            }
+            val page = pending ?: run {
+                val url = next ?: throw SoundCloudException()
+                if (!visited.add(url.toString())) throw SoundCloudException()
+                api(url, token)
+            }
+            pending = null
+            val values = page["collection"] as? JsonArray ?: throw SoundCloudException()
+            result += values.map { it as? JsonObject ?: throw SoundCloudException() }
+            next = page.string("next_href")?.takeIf { it.isNotBlank() }?.let {
+                it.toHttpUrlOrNull()?.also(::requireApiUrl) ?: throw SoundCloudException()
+            }
+            if (next != null) pause(250)
+        } while (next != null)
+        return result
     }
 
     suspend fun stream(id: String, token: String? = null): SoundCloudStream? {
@@ -169,7 +264,10 @@ class SoundCloudClient(
         throw SoundCloudException()
     }
 
-    private suspend fun api(url: HttpUrl, token: String?, body: String? = null): JsonObject {
+    private suspend fun api(url: HttpUrl, token: String?, body: String? = null): JsonObject =
+        apiValue(url, token, body) as? JsonObject ?: throw SoundCloudException()
+
+    private suspend fun apiValue(url: HttpUrl, token: String?, body: String? = null): JsonElement {
         requireApiUrl(url)
         var refreshed = false
         var retries = 0
@@ -194,7 +292,7 @@ class SoundCloudClient(
             if (response.code !in 200..299) throw SoundCloudException(response.code)
             if (body != null && response.body.isBlank()) return JsonObject(emptyMap())
             return withContext(Dispatchers.Default) {
-                (json.parseToJsonElement(response.body) as? JsonObject) ?: throw SoundCloudException()
+                json.parseToJsonElement(response.body)
             }
         }
     }
