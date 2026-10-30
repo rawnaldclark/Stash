@@ -59,6 +59,8 @@ data class StreamUrl(
      * progressive byte-pipe [LazyResolvingDataSource] refuses it.
      */
     val isDash: Boolean = false,
+    val isHls: Boolean = false,
+    val isPreview: Boolean = false,
 )
 
 /**

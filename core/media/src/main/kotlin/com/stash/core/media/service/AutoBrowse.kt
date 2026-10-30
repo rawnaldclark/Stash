@@ -84,7 +84,10 @@ internal fun TrackEntity.autoPlaybackUri(): Uri {
         album = album,
         durationMs = durationMs,
         isrc = isrc,
-    )
+    ).let { uri ->
+        if (soundCloudId != null || source == com.stash.core.model.MusicSource.SOUNDCLOUD)
+            uri.buildUpon().appendQueryParameter("sc", "1").build() else uri
+    }
 }
 
 /**

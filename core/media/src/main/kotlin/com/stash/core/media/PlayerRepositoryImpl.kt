@@ -1112,7 +1112,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // have been cached by LazyResolvingDataSource (cold jump), which can't
         // touch item metadata, so the placeholder would keep its unstamped
         // extras and Now Playing would read the "opus" fallback for it.
-        val cached = streamUrlCache.get(next.id)
+        val cached = streamUrlCache.get(next.id)?.takeIf {
+            (next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+        }
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
             refreshControllerMediaItem(controller, nextTimelineIndex, next, cached)
@@ -1209,7 +1211,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         val refreshed = item.buildUpon()
             // A cloud copy keeps the placeholder (its source has the fallback); see buildMediaItemForTrack.
-            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) setUri(resolved.url) }
+            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN && resolved.origin != "soundcloud") setUri(resolved.url) }
             .setMediaMetadata(refreshedMeta.build())
             .build()
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
@@ -2544,7 +2546,9 @@ class PlayerRepositoryImpl @Inject constructor(
             return StreamRoutingResult.Item(track.toDomain().toStreamPlaceholderMediaItem())
         }
 
-        val cached = streamUrlCache.get(track.id)
+        val cached = streamUrlCache.get(track.id)?.takeIf {
+            (track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+        }
         val stream = cached ?: streamResolver.resolve(
             track,
             allowYouTube = allowYouTube,
@@ -2596,10 +2600,12 @@ class PlayerRepositoryImpl @Inject constructor(
                 // A cloud copy plays through the placeholder, whose source falls back to the stream
                 // chain when the copy won't open; the stash-cloud:// address itself has no fallback.
                 .setUri(
-                    if (stream.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) {
+                    if (stream.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN || stream.origin == "soundcloud") {
                         com.stash.core.media.streaming.stashResolveUri(
                             track.id, track.youtubeId, track.title, track.artist, track.album, track.durationMs, track.isrc,
-                        )
+                        ).let { uri ->
+                            if (stream.origin == "soundcloud") uri.buildUpon().appendQueryParameter("sc", "1").build() else uri
+                        }
                     } else {
                         Uri.parse(stream.url)
                     },
@@ -3116,7 +3122,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 isrc = track.isrc,
             )
         }
-        val replacement = failedItem.buildUpon().setUri(placeholder).build()
+        val replacement = failedItem.buildUpon().setUri(
+            if (track.soundCloudId != null) placeholder.buildUpon().appendQueryParameter("sc", "1").build() else placeholder,
+        ).build()
         replaceMediaItemKeepingShuffle(controller, failedIndex, replacement)
         controller.prepare()
         controller.play()
@@ -3653,7 +3661,9 @@ class PlayerRepositoryImpl @Inject constructor(
             durationMs = durationMs,
             isrc = isrc,
         )
-        return toMediaItem().buildUpon().setUri(placeholder).build()
+        return toMediaItem().buildUpon().setUri(
+            if (soundCloudId != null) placeholder.buildUpon().appendQueryParameter("sc", "1").build() else placeholder,
+        ).build()
     }
 
     /**

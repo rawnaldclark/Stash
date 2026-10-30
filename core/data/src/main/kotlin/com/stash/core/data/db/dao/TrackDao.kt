@@ -907,6 +907,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE soundcloud_id IN (:ids)")
     suspend fun findBySoundCloudIds(ids: List<String>): List<TrackEntity>
 
+    @Query("UPDATE tracks SET soundcloud_preview = :preview WHERE id = :id")
+    suspend fun updateSoundCloudPreview(id: Long, preview: Boolean)
+
     @Query("SELECT * FROM tracks WHERE isrc IN (:ids) ORDER BY is_downloaded DESC, id ASC")
     suspend fun findByIsrcs(ids: List<String>): List<TrackEntity>
 

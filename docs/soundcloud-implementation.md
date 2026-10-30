@@ -17,8 +17,13 @@ Do not install a database-73 build on either phone. Do not release, merge or dep
   published transactionally, and the diff checks the connection ID before any playlist writes.
 - SoundCloud has its own sync mode (default Accumulate). Exact upload IDs are batched, verified
   ISRCs can reuse an existing recording/file, and loose title matches never replace an upload.
-- Streaming/downloading and phone controls remain unwired. Dedicated guards reject generic
-  streaming, downloading, and lossless upgrades for SoundCloud rows; the diff does not enqueue
+- Playback now has a dedicated SoundCloud resolver, explicit HLS source selection, preview
+  metadata, a bounded URL cache lifetime, and manifest-only URL refresh. Phone and Android Auto
+  placeholders select the source after resolution; usable local files still win. Download-mode
+  gates cover manifests and segments. Cached URLs from other services cannot bypass SoundCloud
+  routing, and recap cards cannot substitute a YouTube title match.
+- Dedicated downloading, preview controls and phone connection controls remain unwired. Guards
+  reject generic downloading and lossless upgrades for SoundCloud rows; the diff does not enqueue
   them. Keep the PR draft and do not install this slice.
 
 The sync implementation covers both PlaylistFetchWorker's initial "no authenticated services"
@@ -134,3 +139,20 @@ failed/stale fetch rejection, both modes with a custom order, distinct upload id
 ISRC reuse retaining the existing file. The full assembleDebug build passed in the same Gradle
 invocation. No phone install or live-account check. Dedicated playback/download controls remain
 pending, so keep PR #744 draft.
+
+
+Playback recovery boundary: an expired root manifest may be re-resolved once, provided the
+codec and full/preview status stay the same. Segment authorization failures invalidate the
+cached URL and fail that load; they do not transparently remap segment URLs or splice playlist
+bytes into an audio segment. A new playback attempt is required. Live SoundCloud playback,
+long-pause/seek expiry behavior, and release readiness still require device checks.
+
+The selected playback run passed 81 tests: direct SoundCloud routing/cancellation/preview state,
+manifest refresh, cached-source identity, cold and cached HLS source selection, local-file
+preference, Download mode, and recap exclusions. Follow-up tests cover the actual HLS factory,
+existing player streaming, and Android Auto placeholder construction.
+
+Final playback validation: 118 distinct tests passed across the focused playback and regression
+runs, including the refreshed-manifest URI case. The latest full debug APK build exited 0.
+No device installation or live-account playback validation was performed. Dedicated SoundCloud
+streaming is implemented; downloading, connection controls, link import and preview labels remain.
