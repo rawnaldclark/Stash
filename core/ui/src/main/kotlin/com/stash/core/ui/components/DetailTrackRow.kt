@@ -164,6 +164,7 @@ fun DetailTrackRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                if (track.soundCloudPreview && !track.isDownloaded) PreviewBadge()
                 FlacBadge(
                     fileFormat = track.fileFormat,
                     bitsPerSample = track.bitsPerSample,

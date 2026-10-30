@@ -1674,6 +1674,7 @@ private fun TitleLine(
                 .weight(1f, fill = false)
                 .marqueeWhileShown(),
         )
+        if (track?.soundCloudPreview == true && !track.isDownloaded) com.stash.core.ui.components.PreviewBadge()
         if (track != null) {
             Spacer(modifier = Modifier.width(6.dp))
             if (resolvingArtist) {

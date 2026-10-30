@@ -79,6 +79,7 @@ class SyncViewModelTest {
         every { syncUndoDao.latestPoint() } returns emptyFlow()
         every { playlistDao.getSpotifyPlaylistsForPreferences() } returns emptyFlow()
         every { playlistDao.getYouTubePlaylistsForPreferences() } returns emptyFlow()
+        every { playlistDao.getBySource(MusicSource.SOUNDCLOUD) } returns emptyFlow()
         every { musicRepository.getUnmatchedCount() } returns emptyFlow()
         every { musicRepository.getFlaggedCount() } returns emptyFlow()
         every { musicRepository.observeLatestSync() } returns emptyFlow()
@@ -109,6 +110,7 @@ class SyncViewModelTest {
     )
 
     @Before fun setUp() {
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(null)
         Dispatchers.setMain(UnconfinedTestDispatcher())
         stubInitFlows()
     }

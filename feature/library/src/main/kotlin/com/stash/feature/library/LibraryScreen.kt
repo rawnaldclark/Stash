@@ -1101,6 +1101,7 @@ private fun LikedTab(
         if (LikedFilter.STASH in sources) add("Stash" to LikedFilter.STASH)
         if (LikedFilter.SPOTIFY in sources) add("Spotify" to LikedFilter.SPOTIFY)
         if (LikedFilter.YOUTUBE in sources) add("YouTube" to LikedFilter.YOUTUBE)
+        if (LikedFilter.SOUNDCLOUD in sources) add("SoundCloud" to LikedFilter.SOUNDCLOUD)
     }
 
     // Track selected for the context-menu bottom sheet (opened via the ⋮ now;

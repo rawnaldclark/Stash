@@ -7,6 +7,8 @@ import androidx.media3.common.MediaMetadata
 import com.stash.core.common.ArtUrlSizer
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.mapper.toDomain
+import com.stash.core.media.putSoundCloudMetadata
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
@@ -125,6 +127,7 @@ internal fun TrackEntity.toAutoMediaItem(
                 .setIsBrowsable(false)
                 .setExtras(android.os.Bundle().apply {
                     putLong(EXTRA_TRACK_ID, id)
+                    putSoundCloudMetadata(this@toAutoMediaItem.toDomain())
                     youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                     if (durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, durationMs)
                     // "Will stream" — drives the offline silent-skip for

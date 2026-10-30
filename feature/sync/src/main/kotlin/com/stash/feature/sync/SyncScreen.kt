@@ -129,13 +129,14 @@ fun SyncScreen(
     }
 
     // What's in the library: the account pages also list what was taken out.
-    val rows = remember(uiState.spotifyPlaylists, uiState.youTubePlaylists) {
+    val rows = remember(uiState.spotifyPlaylists, uiState.youTubePlaylists, uiState.soundCloudPlaylists) {
         uiState.playlistRows().filterNot { it.userHidden }
     }
-    val anyConnected = uiState.spotifyConnected || uiState.youTubeConnected
+    val anyConnected = uiState.spotifyConnected || uiState.youTubeConnected || uiState.soundCloudConnected
     val firstSource = when {
         uiState.spotifyConnected -> SyncSource.SPOTIFY
         uiState.youTubeConnected -> SyncSource.YOUTUBE
+        uiState.soundCloudConnected -> SyncSource.SOUNDCLOUD
         else -> null
     }
     val savedRows = rows.filter { it.saved(streamingMode) }
@@ -302,6 +303,7 @@ fun SyncScreen(
         ArrivalSheet(
             spotifyConnected = uiState.spotifyConnected,
             youTubeConnected = uiState.youTubeConnected,
+            soundCloudConnected = uiState.soundCloudConnected,
             onChoose = viewModel::onArrivalChosen,
             onDismiss = viewModel::onArrivalDismissed,
         )
@@ -371,6 +373,8 @@ internal data class SyncPlaylistRow(
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
         SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
+    } + soundCloudPlaylists.map {
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SOUNDCLOUD, it.userHidden, it.dateAdded)
     } + youTubePlaylists.map {
         SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
     }
@@ -774,6 +778,7 @@ private fun AccountCards(
     val sources = buildList {
         if (uiState.spotifyConnected) add(Triple(SyncSource.SPOTIFY, "Spotify", StashTheme.extendedColors.spotifyGreen))
         if (uiState.youTubeConnected) add(Triple(SyncSource.YOUTUBE, "YouTube Music", StashTheme.extendedColors.youtubeRed))
+        if (uiState.soundCloudConnected) add(Triple(SyncSource.SOUNDCLOUD, "SoundCloud", Color(0xFFFF5500)))
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         sources.forEach { (source, name, color) ->
@@ -788,7 +793,7 @@ private fun AccountCards(
                 name = name,
                 brandColor = color,
                 arts = arts,
-                subtitle = stringResource(
+                subtitle = if (source == SyncSource.SOUNDCLOUD) pluralStringResource(R.plurals.sync_tracks_count, mine.sumOf { it.trackCount }, mine.sumOf { it.trackCount }) else stringResource(
                     R.string.sync_account_summary,
                     pluralStringResource(R.plurals.sync_playlists_count, playlists, playlists),
                     pluralStringResource(R.plurals.sync_mixes_count, mixes, mixes),
@@ -869,7 +874,7 @@ internal fun DownloadManagementCard(onClick: () -> Unit) {
 }
 
 /** Which source a "Manage ›" tap targets. Consumed by the nav host (Task 5). */
-enum class SyncSource { SPOTIFY, YOUTUBE,
+enum class SyncSource { SPOTIFY, YOUTUBE, SOUNDCLOUD,
 
     /**
      * Last.fm as a recommendation SOURCE (issue #255). Unlike SPOTIFY/

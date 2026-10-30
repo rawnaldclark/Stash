@@ -118,10 +118,10 @@ fun ManagePlaylistsScreen(
     val liked = rows.filter { it.type == PlaylistType.LIKED_SONGS }
     val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
     val playlists = rows.filter { it.type != PlaylistType.DAILY_MIX && it.type != PlaylistType.LIKED_SONGS }
-    val name = if (source == SyncSource.SPOTIFY) "Spotify" else "YouTube Music"
-    val brand = if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
+    val name = when (source) { SyncSource.SPOTIFY -> "Spotify"; SyncSource.SOUNDCLOUD -> "SoundCloud"; else -> "YouTube Music" }
+    val brand = if (source == SyncSource.SOUNDCLOUD) androidx.compose.ui.graphics.Color(0xFFFF5500) else if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
-    var tab by rememberSaveable { mutableStateOf(ManageTab.PLAYLISTS) }
+    var tab by rememberSaveable { mutableStateOf(if (source == SyncSource.SOUNDCLOUD) ManageTab.LIKED else ManageTab.PLAYLISTS) }
     var query by rememberSaveable { mutableStateOf("") }
     // Taken-out playlists fold under one row at the bottom, closed until asked for.
     var showOut by rememberSaveable { mutableStateOf(false) }
@@ -206,6 +206,7 @@ fun ManagePlaylistsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (source != SyncSource.SOUNDCLOUD) {
                     TabPill(
                         label = stringResource(R.string.sync_manage_tab_playlists, playlists.size),
                         selected = tab == ManageTab.PLAYLISTS,
@@ -216,6 +217,7 @@ fun ManagePlaylistsScreen(
                         selected = tab == ManageTab.MIXES,
                         onClick = { tab = ManageTab.MIXES },
                     )
+                    }
                     if (liked.isNotEmpty()) {
                         TabPill(
                             label = stringResource(R.string.sync_manage_tab_liked),

@@ -161,6 +161,8 @@ fun SettingsAccountsScreen(
 
         // Each account's own switches (likes, history) show only while it is
         // connected: a disconnected card is one line and a Connect button.
+        com.stash.feature.settings.components.SoundCloudAccountCard()
+
         val spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected
         val ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected
 

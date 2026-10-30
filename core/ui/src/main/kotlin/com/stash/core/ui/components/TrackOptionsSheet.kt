@@ -203,7 +203,7 @@ fun TrackOptionsSheet(
                 label = "Remove download",
                 onClick = { onRemoveDownload(track) },
             )
-        } else if (!track.isDownloaded && onDownload != null) {
+        } else if (!track.isDownloaded && !track.soundCloudPreview && onDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.Download,
                 label = "Download",

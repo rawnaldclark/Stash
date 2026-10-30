@@ -56,7 +56,7 @@ data class LibraryUiState(
 enum class LibraryTab { PLAYLISTS, TRACKS, LIKED, ARTISTS, ALBUMS, DEVICE }
 
 /** Source sift for the Liked subcategory: all likes, or one origin. */
-enum class LikedFilter { ALL, STASH, SPOTIFY, YOUTUBE }
+enum class LikedFilter { ALL, STASH, SPOTIFY, YOUTUBE, SOUNDCLOUD }
 
 /** Sort options applicable to every content tab. DURATION is offered for Songs (and Artists). */
 enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED, DURATION }

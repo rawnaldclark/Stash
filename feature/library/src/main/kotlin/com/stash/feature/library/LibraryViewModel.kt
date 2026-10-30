@@ -563,6 +563,7 @@ class LibraryViewModel @Inject constructor(
                     add(LikedFilter.SPOTIFY)
                 }
                 if (external.any { it.source == MusicSource.YOUTUBE && it.trackCount > 0 }) add(LikedFilter.YOUTUBE)
+                if (external.any { it.source == MusicSource.SOUNDCLOUD && it.trackCount > 0 }) add(LikedFilter.SOUNDCLOUD)
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
@@ -580,6 +581,7 @@ class LibraryViewModel @Inject constructor(
                 LikedFilter.STASH -> stash
                 LikedFilter.SPOTIFY -> external.filter { it.source == MusicSource.SPOTIFY || it.source == MusicSource.BOTH }
                 LikedFilter.YOUTUBE -> external.filter { it.source == MusicSource.YOUTUBE }
+                LikedFilter.SOUNDCLOUD -> external.filter { it.source == MusicSource.SOUNDCLOUD }
             }
         }.flatMapLatest { playlists ->
             if (playlists.isEmpty()) {
