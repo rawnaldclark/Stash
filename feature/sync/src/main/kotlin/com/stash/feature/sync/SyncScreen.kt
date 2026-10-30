@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -226,7 +227,7 @@ fun SyncScreen(
                 else -> item(key = "on_phone") {
                     OnThisPhoneHero(
                         saved = savedRows,
-                        songsOnPhone = uiState.syncStatus.spotifyTracks + uiState.syncStatus.youTubeTracks,
+                        songsOnPhone = uiState.syncStatus.totalTracks,
                         syncedAgo = uiState.lastSyncRelativeTime,
                         onChoose = { firstSource?.let(onManageSource) },
                         onSync = viewModel::onSyncNow,
@@ -536,6 +537,12 @@ private fun FirstRunContent(onConnect: () -> Unit) {
         ConnectButton(
             label = stringResource(R.string.sync_connect_youtube),
             mark = { YouTubeMusicMark(34.dp) },
+            onClick = onConnect,
+        )
+        Spacer(Modifier.height(12.dp))
+        ConnectButton(
+            label = stringResource(R.string.sync_connect_soundcloud),
+            mark = { Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color(0xFFFF5500), modifier = Modifier.size(34.dp)) },
             onClick = onConnect,
         )
         Spacer(Modifier.height(28.dp))
