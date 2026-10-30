@@ -205,6 +205,29 @@ class MusicRepositoryLibraryScopeTest {
         assertEquals(listOf((1L..6L).toSet(), setOf(1L, 2L)), seen)
     }
 
+    /**
+     * A new install's playlists are all switched off. Songs used to require the switch, so a
+     * full first sync left Songs empty while Playlists listed everything (2026-10-29).
+     */
+    @Test fun `a song in a switched-off playlist is in Songs`() = runTest {
+        insert(7L, artist = "Mazzy Star", album = "So Tonight", downloaded = false)
+        addToPlaylist(7L, playlist(syncEnabled = false))
+        streamOnly.value = true
+
+        assertEquals(listOf(7L), repo().getLibraryTracksIncludingOnline().first().map { it.id })
+    }
+
+    /** Taken out of the library from the account's playlist page: its songs leave Songs too. */
+    @Test fun `a song only in a playlist taken out of the library is not in Songs`() = runTest {
+        insert(8L, artist = "Mazzy Star", album = "So Tonight", downloaded = false)
+        val playlistId = db.playlistDao().insert(playlist())
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = 8L))
+        db.playlistDao().setUserHidden(playlistId, true)
+        streamOnly.value = true
+
+        assertEquals(emptyList<Long>(), repo().getLibraryTracksIncludingOnline().first().map { it.id })
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private fun playlist(

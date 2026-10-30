@@ -30,6 +30,7 @@ class SyncFinalizeWorker @AssistedInject constructor(
     private val lastFmCacheDao: LastFmCacheDao,
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
+    private val stashMixRecipeDao: com.stash.core.data.db.dao.StashMixRecipeDao,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -119,6 +120,22 @@ class SyncFinalizeWorker @AssistedInject constructor(
             // Shared mixes (spec §5-6): republish what this phone shares, and pull what it follows.
             com.stash.core.data.share.SharedMixPublishWorker.enqueue(applicationContext)
             com.stash.core.data.share.SharedMixFollowWorker.enqueue(applicationContext, force = true)
+
+            // An empty Stash mix is built now, not tomorrow: a new install's first launch built
+            // Daily Discover from an empty library, and only the daily refresh came after. Each
+            // empty one alone (same-day rotation), so a sync never reshuffles a mix that already
+            // has songs. Never fails the sync, which already worked.
+            try {
+                val empty = stashMixRecipeDao.activeEmptyMixIds()
+                if (empty.isNotEmpty()) {
+                    Log.i(TAG, "${empty.size} Stash mix(es) empty after sync $syncId; building them now")
+                    empty.forEach { StashMixRefreshWorker.enqueueOneTime(applicationContext, recipeId = it, sameDay = true) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Checking for empty Stash mixes failed", e)
+            }
 
             Log.i(
                 TAG,

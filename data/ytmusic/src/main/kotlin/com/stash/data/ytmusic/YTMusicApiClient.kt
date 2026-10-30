@@ -55,6 +55,9 @@ class YTMusicApiClient @Inject constructor(
         /** InnerTube browse ID for the YouTube Music home feed. */
         private const val BROWSE_HOME = "FEmusic_home"
 
+        /** Home-feed pages read per sync: page one plus up to four continuations. */
+        private const val HOME_MAX_PAGES = 5
+
         /**
          * Library Playlists tab — user-created + user-saved playlists.
          * Returns a tabbed browse with a `gridRenderer` of
@@ -167,7 +170,20 @@ class YTMusicApiClient @Inject constructor(
         if (response == null) {
             return SyncResult.Error("InnerTube browse($BROWSE_HOME) returned null — check CLIENT_VERSION or cookie")
         }
-        val mixes = parseMixesFromHome(response)
+        // The first page holds only a few shelves; "Mixed for you" (My Supermix, My Mix N,
+        // New Release Mix) often sits further down, and reading page one alone found 5 mixes
+        // on a real account (2026-10-29). Follow the feed's own continuations, a few pages deep.
+        val found = parseMixesFromHome(response).toMutableList()
+        var token = homeContinuationToken(response)
+        var pages = 1
+        while (token != null && pages < HOME_MAX_PAGES) {
+            val next = innerTubeClient.browseContinuation(token) ?: break
+            pages++
+            found += parseMixesFromHome(next)
+            token = homeContinuationToken(next)
+        }
+        val mixes = found.distinctBy { it.playlistId }
+        Log.d(TAG, "getHomeMixes: ${mixes.size} mixes over $pages page(s)")
         return if (mixes.isEmpty()) {
             SyncResult.Empty("Home feed returned no mixes")
         } else {
@@ -1184,18 +1200,35 @@ class YTMusicApiClient @Inject constructor(
      * Looks for `musicCarouselShelfRenderer` sections and parses
      * `musicTwoRowItemRenderer` items that have a playlist navigation endpoint.
      */
-    private fun parseMixesFromHome(response: JsonObject): List<YTMusicPlaylist> {
-        val playlists = mutableListOf<YTMusicPlaylist>()
-
-        val sections = response.navigatePath(
+    /**
+     * The home feed's section list: under the first tab on page one, under
+     * `continuationContents.sectionListContinuation` on the pages after it.
+     */
+    private fun homeSectionList(response: JsonObject): JsonObject? =
+        response.navigatePath(
             "contents",
             "singleColumnBrowseResultsRenderer",
             "tabs",
         )?.firstArray()?.firstOrNull()
             ?.asObject()
-            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
-            ?.asArray()
-            ?: return emptyList()
+            ?.navigatePath("tabRenderer", "content", "sectionListRenderer")
+            ?.asObject()
+            ?: response.navigatePath("continuationContents", "sectionListContinuation")?.asObject()
+
+    /** The next home-feed page's token, in either of the two places YouTube puts it; null at the end. */
+    private fun homeContinuationToken(response: JsonObject): String? {
+        val list = homeSectionList(response) ?: return null
+        return list["continuations"]?.asArray()?.firstOrNull()?.asObject()
+            ?.navigatePath("nextContinuationData", "continuation")?.asString()
+            ?: list["contents"]?.asArray()?.lastOrNull()?.asObject()
+                ?.navigatePath("continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token")
+                ?.asString()
+    }
+
+    private fun parseMixesFromHome(response: JsonObject): List<YTMusicPlaylist> {
+        val playlists = mutableListOf<YTMusicPlaylist>()
+
+        val sections = homeSectionList(response)?.get("contents")?.asArray() ?: return emptyList()
 
         for (section in sections) {
             val carousel = section.asObject()

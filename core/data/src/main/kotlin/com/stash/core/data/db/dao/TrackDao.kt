@@ -309,9 +309,13 @@ private const val LIBRARY_ROW_COLUMNS = """
 /**
  * "In your library", over a `tracks` row aliased `t`: exactly the songs Library's Songs tab lists
  * in Stream only ([TrackDao.getLibraryWithOnlineByDateAdded]). Every downloaded song, plus a song
- * that isn't downloaded when its match wasn't dismissed and it sits in an active playlist you
- * keep (synced or kept offline) that is not a Stash or Daily mix and not a share link. Never a
- * blocked song.
+ * that isn't downloaded when its match wasn't dismissed and it sits in an active playlist that
+ * is not a Stash or Daily mix and not a share link. Never a blocked song.
+ *
+ * Any active playlist, switched on or not (2026-10-29): a new install's playlists are all
+ * switched off, so requiring the switch left Songs empty after a full sync while Playlists
+ * listed everything. A playlist the user takes out of the library is inactive
+ * ([com.stash.core.data.db.entity.PlaylistEntity.userHidden]), which is how one leaves.
  *
  * The Artists and Albums tabs' "In your library" filter, their artist and album pages and the
  * artist-photo backfill read this same text ([IN_LIBRARY_IDS] where `t` is taken), so they can't
@@ -336,7 +340,6 @@ internal const val IN_LIBRARY = """
                   AND p.is_active = 1
                   AND p.type NOT IN ('STASH_MIX', 'DAILY_MIX')
                   AND (p.source_id IS NULL OR p.source_id NOT LIKE 'share:%')
-                  AND (p.sync_enabled = 1 OR p.keep_offline = 1)
             )
         )
     )

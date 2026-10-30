@@ -521,7 +521,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     if (extraYearly.isNotEmpty()) {
                         Log.d(TAG, "fetchSpotifyPlaylists: +${extraYearly.size} yearly recap(s)")
                         syncLog.success(
-                            "Your recaps — " + extraYearly.joinToString(", ") { it.name },
+                            "More mixes — " + extraYearly.joinToString(", ") { it.name },
                         )
                     }
                     val dailyMixes = result.data + extraYearly

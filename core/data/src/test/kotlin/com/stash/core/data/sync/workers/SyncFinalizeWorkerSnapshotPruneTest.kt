@@ -80,6 +80,7 @@ class SyncFinalizeWorkerSnapshotPruneTest {
                         lastFmCacheDao = db.lastFmCacheDao(),
                         syncStateManager = mockk(relaxed = true),
                         syncNotificationManager = mockk(relaxed = true),
+                        stashMixRecipeDao = db.stashMixRecipeDao(),
                     )
             })
             .build()
