@@ -37,6 +37,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -100,7 +103,7 @@ fun LibraryPickerSheet(
     /** The export only: "Your whole listening history", ticked with [LibraryPick.listensOn]. */
     history: PickerHistory? = null,
     /** The export only: "Recent plays", so it doesn't read as the whole history above it. "Plays" otherwise. */
-    playsLabel: String = "Plays",
+    playsLabel: String = stringResource(R.string.settings_picker_plays),
     /** A line under the buttons (the export: the whole history goes only in a saved file, not a send). */
     footnote: String? = null,
     busy: Boolean = false,
@@ -125,7 +128,7 @@ fun LibraryPickerSheet(
             }
             Spacer(Modifier.padding(top = 8.dp))
             CheckRow(
-                label = "Likes",
+                label = stringResource(R.string.settings_picker_likes),
                 detail = count(pick.likes),
                 checked = pick.takesLikes,
                 enabled = pick.likes > 0 && !busy,
@@ -155,14 +158,14 @@ fun LibraryPickerSheet(
                     .padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Playlists", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.settings_picker_playlists), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Text(
-                    if (n == 0) "none" else "${pick.tickedPlaylists.size} of $n",
+                    if (n == 0) stringResource(R.string.settings_picker_playlists_none) else stringResource(R.string.settings_picker_playlists_ticked_of_total, pick.tickedPlaylists.size, n),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // No chevron on an empty row: there is nothing to open.
-                if (n > 0) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Choose playlists", tint = StashTheme.extendedColors.textTertiary)
+                if (n > 0) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.settings_picker_choose_playlists_desc), tint = StashTheme.extendedColors.textTertiary)
                 else Spacer(Modifier.width(24.dp))
             }
             message?.let {
@@ -236,10 +239,10 @@ private fun HistoryRow(h: PickerHistory, checked: Boolean, enabled: Boolean, onC
 @Composable
 private fun PlaylistChecklist(pick: LibraryPick, onPick: (LibraryPick) -> Unit, onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-        Text("Playlists", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        TextButton(onClick = { onPick(pick.copy(ticked = pick.playlists.mapTo(HashSet()) { it.key })) }) { Text("All") }
-        TextButton(onClick = { onPick(pick.copy(ticked = emptySet())) }) { Text("None") }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back)) }
+        Text(stringResource(R.string.settings_picker_playlists), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = { onPick(pick.copy(ticked = pick.playlists.mapTo(HashSet()) { it.key })) }) { Text(stringResource(R.string.settings_picker_all)) }
+        TextButton(onClick = { onPick(pick.copy(ticked = emptySet())) }) { Text(stringResource(R.string.settings_picker_none)) }
     }
     HorizontalDivider(color = StashTheme.extendedColors.glassBorder)
     LazyColumn(Modifier.heightIn(max = 480.dp)) {
@@ -259,8 +262,8 @@ private fun PlaylistChecklist(pick: LibraryPick, onPick: (LibraryPick) -> Unit, 
                     Text(p.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         buildString {
-                            append(if (p.songs == 1) "1 song" else "%,d songs".format(p.songs))
-                            if (p.sharedMix) append(" · Shared mix")
+                            append(pluralStringResource(R.plurals.settings_picker_songs_count, p.songs, p.songs))
+                            if (p.sharedMix) append(stringResource(R.string.settings_picker_shared_mix))
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

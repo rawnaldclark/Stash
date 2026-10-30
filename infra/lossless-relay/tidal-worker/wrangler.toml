@@ -10,27 +10,28 @@ TIDAL_PKCE_CLIENT_ID = "6BDSRdpK9hqEBTgU" # python-tidal's PKCE client: web seat
 TIDAL_MSE_CDN_HOSTS = "sp-ad-cf.audio.tidal.com" # ?web=mse: the only CDN hosts handed to browsers (CloudFront, Access-Control-Allow-Origin: *)
 TIDAL_RELAY_PAUSED = "0"
 TIDAL_COUNTRY_CODE = "US"
-TIDAL_ACCOUNT_HOURLY_CAP = "450" # 200→218→251 on 10-20; →450 on 10-21 with the 7 s gap (gap allows ~514/h; 429s are burst-driven)
-TIDAL_ACCOUNT_DAILY_CAP = "9600"
-TIDAL_SEAT_MIN_GAP_SECONDS = "7" # every upstream call; Tidal 429s are burst limits
+TIDAL_ACCOUNT_HOURLY_CAP = "828"
+TIDAL_ACCOUNT_DAILY_CAP = "17664"
+TIDAL_SEAT_MIN_GAP_SECONDS = "2" # per-seat minimum gap between upstream calls
 TIDAL_429_COOLDOWN_SECONDS = "120" # doubles per strike while hot, max TIDAL_429_COOLDOWN_MAX_SECONDS
 TIDAL_429_COOLDOWN_MAX_SECONDS = "960"
 TIDAL_SOFT_OPEN_PERCENT = "50"
 TIDAL_SOFT_OPEN_SECONDS = "600"
-GLOBAL_DAILY_CAP = "34667"
+GLOBAL_DAILY_CAP = "63787"
 NETWORK_DAILY_CAP = "2000"
 NETWORK_SEARCH_DAILY_CAP = "2000" # uncached (upstream) searches per network per day; cache hits are free
 EDGE_BASE = "https://stash-tidal-edge.stashfm.deno.net" # tidal-edge on Deno Deploy (Tidal's CDN refuses Cloudflare); ?web=1 signs links for it with the EDGE_SECRET secret
 # The daily lossless counter shared with the Qobuz relay (QUOTA_DB below): free FLAC answers per verified install
 # per UTC day, Qobuz and Tidal together. Over it: 429 daily_lossless_cap (?aac=1 gets AAC instead).
 FREE_LOSSLESS_DAILY = "300" # 500→400→300 on 2026-10-20 (frees capacity for average users)
+MIN_APP_BUILD = "0" # 0 disables the minimum supported app build gate
 # Supporters (X-Stash-Entitlement token from the tip jar, src/quota.js): unlimited lossless, verified with this
 # Ed25519 public key (standard base64 of the raw 32 bytes; public by design, the private half is the tip jar's
 # secret). SUPPORTER_DAILY_CAP is the per-token safety ceiling: past it that day the token counts as free.
 # The network, global and fair-share limits still apply to supporters. Same values as the Qobuz relay.
 ENTITLEMENT_PUBLIC_KEY = "IbghbSB8gJcuHbpSEf8tRKfCwzBfB14eBPew3nVkQFQ="
 SUPPORTER_DAILY_CAP = "5000"
-REQUIRE_INSTALL = "0" # "1": /stream without X-Stash-Install/-Ts/-Auth is a 401 (flip once every app signs)
+REQUIRE_INSTALL = "1" # App /stream calls need install signature headers; recognized web lanes are exempt
 TIDAL_V2_MANIFESTS = "1" # "1": lossless streams try openapi v2 trackManifests (CD FLAC as DASH) before v1 playbackinfo; ?aac=only stays v1
 
 [[d1_databases]]

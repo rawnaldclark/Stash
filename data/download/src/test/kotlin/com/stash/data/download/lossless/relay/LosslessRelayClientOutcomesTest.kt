@@ -27,7 +27,7 @@ class LosslessRelayClientOutcomesTest {
 
     @Before fun setUp() {
         server = MockWebServer(); server.start()
-        client = LosslessRelayClient(OkHttpClient(), RelaySigner(config, supporter()), quota).also { it.clock = { now } }
+        client = LosslessRelayClient(OkHttpClient(), RelaySigner(config, supporter(), appVersionProvider()), quota).also { it.clock = { now } }
     }
 
     @After fun tearDown() = server.shutdown()
@@ -55,6 +55,24 @@ class LosslessRelayClientOutcomesTest {
             assertThat(line).doesNotContain("http://") // host only, never the base
             assertThat(line).endsWith("ms")
         }
+    }
+
+    @Test fun `app too old - the relay is left alone an hour, every format and downloads too, then asked again`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(RelaySigner.APP_TOO_OLD).setBody("""{"error":"app_too_old"}"""))
+        assertThat(client.mint(base(), 1L, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+
+        now += RelaySigner.APP_TOO_OLD_BACKOFF_MS - 1_000
+        assertThat(client.mint(base(), 1L, 6)).isEqualTo(RelayMint.Unavailable) // another format
+        val download = LosslessDownloadPurpose()
+        assertThat(kotlinx.coroutines.withContext(download) { client.mint(base(), 2L, 27) }).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(client.recentOutcomes()[0]).contains("426 app too old")
+
+        now += 2_000
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"url":"https://cdn/x","format_id":27}"""))
+        assertThat(client.mint(base(), 1L, 27)).isInstanceOf(RelayMint.Ok::class.java)
+        assertThat(server.requestCount).isEqualTo(2)
     }
 
     @Test fun `only the newest RECENT_MAX answers are kept`() = runTest {

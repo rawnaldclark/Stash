@@ -33,7 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.stash.feature.settings.R
 
 /**
  * Full-screen Spotify login via WebView.
@@ -112,16 +114,16 @@ fun SpotifyLoginWebView(
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Sign in to Spotify") },
+            title = { Text(stringResource(R.string.settings_spotify_signin_title)) },
             navigationIcon = {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.settings_cancel))
                 }
             },
             actions = {
                 TextButton(onClick = onManualFallback) {
                     Text(
-                        "Paste cookie",
+                        stringResource(R.string.settings_spotify_paste_cookie_action),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -140,7 +142,7 @@ fun SpotifyLoginWebView(
 
         if (cookieFound) {
             Text(
-                text = "Login successful, connecting...",
+                text = stringResource(R.string.settings_login_successful_connecting),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -237,13 +239,13 @@ fun SpotifyLoginWebView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Sign-in blocked or not working?",
+                    text = stringResource(R.string.settings_signin_blocked_question),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onManualFallback) {
-                    Text("Paste cookie instead")
+                    Text(stringResource(R.string.settings_spotify_paste_cookie_instead))
                 }
             }
         }

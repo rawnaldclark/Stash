@@ -1,6 +1,7 @@
 package com.stash.data.download.lossless.relay
 
 import android.util.Log
+import com.stash.core.common.AppVersionProvider
 import com.stash.core.data.supporter.SupporterRepository
 import java.util.UUID
 import javax.crypto.Mac
@@ -34,6 +35,7 @@ import okhttp3.Response
 class RelaySigner @Inject constructor(
     private val config: LosslessConfigFetcher,
     private val supporter: SupporterRepository,
+    private val appVersion: AppVersionProvider,
 ) {
     /**
      * Relay time minus device time, seconds; added to every signed timestamp. In memory only:
@@ -44,6 +46,11 @@ class RelaySigner @Inject constructor(
 
     /** True when the applied config carries a relay key, i.e. [sign] would sign. */
     val keyed: Boolean get() = config.relayKey.value != null
+
+    /** Adds the running binary's integer version to Stash owner-relay lossless requests. */
+    fun appBuild(b: Request.Builder) {
+        b.header("X-Stash-App-Build", appVersion.versionCode.toString())
+    }
 
     /**
      * Signs [b] over [payload] at [nowMs] (+ [clockOffsetSec]). Returns true when it signed.
@@ -96,5 +103,14 @@ class RelaySigner @Inject constructor(
     companion object {
         private const val TAG = "RelaySigner"
         const val ENTITLEMENT_HEADER = "X-Stash-Entitlement"
+
+        /** A relay refusing this build: its `MIN_APP_BUILD` is above it (`app_too_old`). */
+        const val APP_TOO_OLD = 426
+
+        /**
+         * How long a relay that answered [APP_TOO_OLD] is left alone, streams and downloads alike: only an update fixes
+         * it, so asking again sooner (or in another format) is a wasted request.
+         */
+        const val APP_TOO_OLD_BACKOFF_MS = 60 * 60_000L
     }
 }

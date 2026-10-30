@@ -28,6 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -117,11 +120,12 @@ class MirrorViewModel @Inject constructor(
     }
 }
 
+@Composable
 fun dirLabel(d: Dir): String = when (d) {
-    Dir.OFF -> "Off"
-    Dir.BOTH -> "Both ways"
-    Dir.TO_WEB -> "Phone → web"
-    Dir.TO_PHONE -> "Web → phone"
+    Dir.OFF -> stringResource(R.string.settings_mirror_dir_off)
+    Dir.BOTH -> stringResource(R.string.settings_mirror_dir_both)
+    Dir.TO_WEB -> stringResource(R.string.settings_mirror_dir_to_web)
+    Dir.TO_PHONE -> stringResource(R.string.settings_mirror_dir_to_phone)
 }
 
 /** The block under Linked devices. */
@@ -130,9 +134,9 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     var picking by remember { mutableStateOf<Kind?>(null) }
     var choosing by remember { mutableStateOf(false) }
     val cfg = status.config
-    SettingsSectionLabel("Mirror between your devices")
+    SettingsSectionLabel(stringResource(R.string.settings_mirror_section_title))
     Text(
-        "Off keeps a separate library on each. What mirrors is end-to-end encrypted.",
+        stringResource(R.string.settings_mirror_section_desc),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -140,10 +144,10 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     val rows = mutableListOf<@Composable () -> Unit>()
     rows += {
         SettingsNavRow(
-            title = "Likes",
+            title = stringResource(R.string.settings_mirror_likes_title),
             subtitle = dirLabel(cfg?.likes?.dir ?: Dir.OFF) + when {
-                status.waiting -> " · Waiting for ${status.otherName} to share its likes."
-                status.question != null -> " · Choose how to combine them"
+                status.waiting -> stringResource(R.string.settings_mirror_likes_waiting_share, status.otherName)
+                status.question != null -> stringResource(R.string.settings_mirror_likes_choose_combine)
                 else -> ""
             },
             leadingIcon = Icons.Outlined.Favorite,
@@ -153,8 +157,8 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     rows += {
         val n = cfg?.ids?.size ?: 0
         SettingsNavRow(
-            title = "Playlists",
-            subtitle = dirLabel(cfg?.playlists?.dir ?: Dir.OFF) + if (cfg?.playlists?.dir != Dir.OFF && cfg != null) " · $n chosen" else "",
+            title = stringResource(R.string.settings_mirror_playlists_title),
+            subtitle = dirLabel(cfg?.playlists?.dir ?: Dir.OFF) + if (cfg?.playlists?.dir != Dir.OFF && cfg != null) pluralStringResource(R.plurals.settings_mirror_playlists_chosen, n, n) else "",
             leadingIcon = Icons.AutoMirrored.Outlined.QueueMusic,
             onClick = { picking = Kind.PLAYLISTS },
         )
@@ -162,8 +166,8 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     if (cfg != null && cfg.playlists.dir != Dir.OFF) {
         rows += {
             SettingsNavRow(
-                title = "Choose playlists",
-                subtitle = "Spotify and YouTube Music playlists go to the web only, read-only there.",
+                title = stringResource(R.string.settings_mirror_choose_playlists_title),
+                subtitle = stringResource(R.string.settings_mirror_choose_playlists_subtitle),
                 onClick = {
                     vm.loadPlaylists()
                     choosing = true
@@ -173,8 +177,8 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     }
     rows += {
         SettingsNavRow(
-            title = "Plays",
-            subtitle = dirLabel(cfg?.plays?.dir ?: Dir.OFF) + if (cfg?.plays?.dir?.let { it == Dir.BOTH || it == Dir.TO_PHONE } == true) " · Plays from the web show in History, never in your Stash Mixes" else "",
+            title = stringResource(R.string.settings_mirror_plays_title),
+            subtitle = dirLabel(cfg?.plays?.dir ?: Dir.OFF) + if (cfg?.plays?.dir?.let { it == Dir.BOTH || it == Dir.TO_PHONE } == true) stringResource(R.string.settings_mirror_plays_subtitle_note) else "",
             leadingIcon = Icons.Outlined.History,
             onClick = { picking = Kind.PLAYS },
         )
@@ -182,15 +186,15 @@ fun MirrorSection(status: MirrorStatus, vm: MirrorViewModel) {
     SettingsGroupCard(rows = rows)
     if (status.heldRemovals > 0) {
         Text(
-            "Mirroring is holding ${status.heldRemovals} unlikes from this phone. Send them to ${status.otherName}, or keep those likes?",
+            pluralStringResource(R.plurals.settings_mirror_held_unlikes, status.heldRemovals, status.heldRemovals, status.otherName),
             style = MaterialTheme.typography.bodyMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { vm.releaseRemovals(false) }) { Text("Keep the likes") }
+            TextButton(onClick = { vm.releaseRemovals(false) }) { Text(stringResource(R.string.settings_mirror_keep_likes)) }
             TextButton(
                 onClick = { vm.releaseRemovals(true) },
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Send the unlikes") }
+            ) { Text(stringResource(R.string.settings_mirror_send_unlikes)) }
         }
     }
     status.problem?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
@@ -226,7 +230,16 @@ private fun DirDialog(kind: Kind, current: Dir, onPick: (Dir) -> Unit, onDismiss
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text(kind.wire.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleLarge) },
+        title = {
+            Text(
+                when (kind) {
+                    Kind.LIKES -> stringResource(R.string.settings_mirror_likes_title)
+                    Kind.PLAYLISTS -> stringResource(R.string.settings_mirror_playlists_title)
+                    Kind.PLAYS -> stringResource(R.string.settings_mirror_plays_title)
+                },
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
         text = {
             Column {
                 for (d in Dir.entries) {
@@ -240,14 +253,14 @@ private fun DirDialog(kind: Kind, current: Dir, onPick: (Dir) -> Unit, onDismiss
                 }
                 if (kind == Kind.PLAYLISTS) {
                     Text(
-                        "Playlists that sync from Spotify or YouTube Music go phone → web only, whatever this says.",
+                        stringResource(R.string.settings_mirror_playlists_spotify_ytm_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close)) } },
     )
 }
 
@@ -264,11 +277,11 @@ private fun PlaylistChooser(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Choose playlists", style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(R.string.settings_mirror_choose_playlists_title), style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Mirror new playlists too", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.settings_mirror_new_playlists_too), Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                     Switch(checked = newOnes, onCheckedChange = onNewOnes)
                 }
                 if (playlists == null) {
@@ -281,9 +294,9 @@ private fun PlaylistChooser(
                                     Text(p.name, style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         buildString {
-                                            append(if (p.songs == 1) "1 song" else "${p.songs} songs")
-                                            if (p.ro) append(" · From your phone, read-only on the web")
-                                            if (p.follow != null) append(" · Shared mix")
+                                            append(pluralStringResource(R.plurals.settings_mirror_playlist_songs, p.songs, p.songs))
+                                            if (p.ro) append(stringResource(R.string.settings_mirror_playlist_readonly_web))
+                                            if (p.follow != null) append(stringResource(R.string.settings_mirror_playlist_shared_mix))
                                         },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -294,14 +307,14 @@ private fun PlaylistChooser(
                         }
                     }
                     Text(
-                        "Switching one off stops mirroring it and leaves every copy where it is.",
+                        stringResource(R.string.settings_mirror_switch_off_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_done)) } },
     )
 }
 
@@ -321,12 +334,12 @@ private fun FirstMergeDialog(q: LikesQuestion, onAnswer: (FirstMergeChoice) -> U
         onDismissRequest = {},
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Your likes: ${q.there} on ${q.thereName}, ${q.here} here", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(stringResource(R.string.settings_mirror_first_merge_title, q.there, q.thereName, q.here), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
                 if (q.changedSinceAnswer) {
                     Text(
-                        "Your likes changed since you answered. Check the numbers again.",
+                        stringResource(R.string.settings_mirror_first_merge_changed),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -346,16 +359,16 @@ private fun FirstMergeDialog(q: LikesQuestion, onAnswer: (FirstMergeChoice) -> U
                     }
                 }
                 if (q.oneWay) {
-                    option(FirstMergeChoice.COMBINE, "Add ${q.thereName}'s to this phone's", "${q.combined} likes here")
-                    option(FirstMergeChoice.THEIRS, "Replace this phone's with ${q.thereName}'s", "Removes $removesHere likes here", red = removesHere > 0)
+                    option(FirstMergeChoice.COMBINE, stringResource(R.string.settings_mirror_merge_add_theirs, q.thereName), stringResource(R.string.settings_mirror_merge_likes_here, q.combined))
+                    option(FirstMergeChoice.THEIRS, stringResource(R.string.settings_mirror_merge_replace_with_theirs, q.thereName), pluralStringResource(R.plurals.settings_mirror_merge_removes_here, removesHere, removesHere), red = removesHere > 0)
                 } else {
-                    option(FirstMergeChoice.COMBINE, "Combine them", "Keep both, ${q.combined} likes everywhere")
-                    option(FirstMergeChoice.THEIRS, "Use ${q.thereName}'s", "Removes $removesHere likes here", red = removesHere > 0)
-                    option(FirstMergeChoice.MINE, "Use this phone's", "Removes $removesThere likes on ${q.thereName}", red = removesThere > 0)
+                    option(FirstMergeChoice.COMBINE, stringResource(R.string.settings_mirror_merge_combine_title), stringResource(R.string.settings_mirror_merge_combine_detail, q.combined))
+                    option(FirstMergeChoice.THEIRS, stringResource(R.string.settings_mirror_merge_use_theirs, q.thereName), pluralStringResource(R.plurals.settings_mirror_merge_removes_here, removesHere, removesHere), red = removesHere > 0)
+                    option(FirstMergeChoice.MINE, stringResource(R.string.settings_mirror_merge_use_mine), pluralStringResource(R.plurals.settings_mirror_merge_removes_there, removesThere, removesThere, q.thereName), red = removesThere > 0)
                 }
                 if (q.externalHere > 0) {
                     Text(
-                        "Likes from Spotify or YouTube Music stay liked on this phone.",
+                        stringResource(R.string.settings_mirror_merge_external_likes_stay),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -369,7 +382,7 @@ private fun FirstMergeDialog(q: LikesQuestion, onAnswer: (FirstMergeChoice) -> U
                     if (removes && !confirming) confirming = true else onAnswer(choice)
                 },
                 colors = if (confirming) ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.textButtonColors(),
-            ) { Text(if (confirming) "Yes, remove them" else "Turn on") }
+            ) { Text(if (confirming) stringResource(R.string.settings_mirror_merge_yes_remove) else stringResource(R.string.settings_mirror_merge_turn_on)) }
         },
     )
 }

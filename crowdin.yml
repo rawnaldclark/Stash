@@ -7,5 +7,7 @@ files:
     translation: /app/src/debug/res/values-%android_code%/strings.xml
   - source: /feature/settings/src/main/res/values/strings.xml
     translation: /feature/settings/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/sync/src/main/res/values/strings.xml
+    translation: /feature/sync/src/main/res/values-%android_code%/strings.xml
   - source: /feature/record/src/main/res/values/strings.xml
     translation: /feature/record/src/main/res/values-%android_code%/strings.xml

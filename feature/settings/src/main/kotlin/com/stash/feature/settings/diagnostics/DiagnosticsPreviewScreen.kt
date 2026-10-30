@@ -28,6 +28,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -72,13 +74,13 @@ fun DiagnosticsPreviewScreen(
             IconButton(onClick = onNavigateBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(R.string.settings_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Spacer(Modifier.size(4.dp))
             Text(
-                text = "Diagnostics",
+                text = stringResource(R.string.diagnostics_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -106,22 +108,22 @@ fun DiagnosticsPreviewScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = state.error ?: "Failed to build diagnostics",
+                        text = state.error ?: stringResource(R.string.diagnostics_failed_to_build),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = viewModel::rebuild) {
-                        Text("Retry")
+                        Text(stringResource(R.string.settings_retry))
                     }
                 }
             }
 
             else -> {
                 Text(
-                    text = "Review what will be shared. No passwords or tokens are included. " +
-                        "Share sends a zip with this report plus the full recent log; " +
-                        "attach it to your GitHub issue.",
+                    text = stringResource(R.string.diagnostics_review_description),
+
+
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -163,34 +165,34 @@ fun DiagnosticsPreviewScreen(
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                 putExtra(
                                     android.content.Intent.EXTRA_SUBJECT,
-                                    "Stash diagnostics",
+                                    context.getString(R.string.diagnostics_share_subject),
                                 )
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            val chooser = android.content.Intent.createChooser(send, "Share diagnostics")
+                            val chooser = android.content.Intent.createChooser(send, context.getString(R.string.settings_share_diagnostics))
                                 .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
                             runCatching { context.startActivity(chooser) }
                                 .onFailure {
                                     Toast.makeText(
                                         context,
-                                        "No app available to share.",
+                                        context.getString(R.string.diagnostics_share_no_app),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Share")
+                        Text(stringResource(R.string.diagnostics_share_button))
                     }
 
                     OutlinedButton(
                         onClick = {
                             clipboard.setText(AnnotatedString(state.text))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.diagnostics_copied_toast), Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Copy")
+                        Text(stringResource(R.string.diagnostics_copy_button))
                     }
                 }
 
@@ -200,7 +202,7 @@ fun DiagnosticsPreviewScreen(
                     onClick = { runCatching { uriHandler.openUri(ISSUE_TRACKER_URL) } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Open a GitHub issue")
+                    Text(stringResource(R.string.diagnostics_open_issue_button))
                 }
 
                 Spacer(Modifier.height(8.dp))

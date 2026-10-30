@@ -253,9 +253,9 @@ fun SettingsAccountsScreen(
                 {
                     val ytUser = (uiState.youTubeAuthState as? com.stash.core.auth.model.AuthState.Connected)?.user
                     com.stash.feature.settings.components.SettingsValueRow(
-                        title = "Profile",
-                        value = ytUser?.displayName?.takeIf { ytUser.id != "youtube_user" } ?: "Your account",
-                        subtitle = "The profile Stash syncs your library from",
+                        title = stringResource(R.string.settings_youtube_profile_title),
+                        value = ytUser?.displayName?.takeIf { ytUser.id != "youtube_user" } ?: stringResource(R.string.settings_youtube_profile_default),
+                        subtitle = stringResource(R.string.settings_youtube_profile_subtitle),
                         onClick = { showYouTubeProfiles = true },
                     )
                     LikeMirrorToggleRow(

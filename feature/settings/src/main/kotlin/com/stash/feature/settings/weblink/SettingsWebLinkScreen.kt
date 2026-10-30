@@ -29,6 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +93,7 @@ fun SettingsWebLinkScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        SettingsScaffold(title = "Link Stash on the web", onBack = onBack) {
+        SettingsScaffold(title = stringResource(R.string.settings_web_link_nav_title), onBack = onBack) {
             if (pairing != PairingState.Idle) {
                 PairingPanel(pairing, onLink = viewModel::confirm, onClose = viewModel::closePairing, onScanAgain = viewModel::startScan)
             }
@@ -144,18 +147,18 @@ fun SettingsWebLinkScreen(
     }
     removing?.let { d ->
         ConfirmDialog(
-            title = "Remove ${d.name}?",
-            text = "It stops seeing your phone at once. Its library stays as it is.",
-            confirm = "Remove",
+            title = stringResource(R.string.settings_web_link_remove_device_title, d.name),
+            text = stringResource(R.string.settings_web_link_remove_device_desc),
+            confirm = stringResource(R.string.settings_web_link_action_remove),
             onConfirm = { viewModel.remove(d.id); removing = null },
             onDismiss = { removing = null },
         )
     }
     if (unlinkAll) {
         ConfirmDialog(
-            title = "Unlink everything?",
-            text = "Every linked browser is unlinked at once. Nothing is deleted from any library.",
-            confirm = "Unlink everything",
+            title = stringResource(R.string.settings_web_link_unlink_everything_title),
+            text = stringResource(R.string.settings_web_link_unlink_everything_desc),
+            confirm = stringResource(R.string.settings_web_link_action_unlink_everything),
             onConfirm = { viewModel.unlinkEverything(); unlinkAll = false },
             onDismiss = { unlinkAll = false },
         )
@@ -166,7 +169,7 @@ fun SettingsWebLinkScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
             text = { Text(m, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = mirrorVm::messageShown) { Text("OK") } },
+            confirmButton = { TextButton(onClick = mirrorVm::messageShown) { Text(stringResource(R.string.settings_ok)) } },
         )
     }
     message?.let { m ->
@@ -175,23 +178,23 @@ fun SettingsWebLinkScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             shape = MaterialTheme.shapes.large,
             text = { Text(m, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = { TextButton(onClick = viewModel::messageShown) { Text("OK") } },
+            confirmButton = { TextButton(onClick = viewModel::messageShown) { Text(stringResource(R.string.settings_ok)) } },
         )
     }
 }
 
 @Composable
 private fun NotLinkedCard(onScan: () -> Unit) {
-    SettingsSectionLabel("Link a browser")
+    SettingsSectionLabel(stringResource(R.string.settings_web_link_section_link_browser))
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Pick up where you left off, mirror, send your library.", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.settings_web_link_nav_subtitle), style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Open play.stashfm.app › Settings › Your phone",
+                stringResource(R.string.settings_web_link_not_linked_instructions),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onScan) { Text("Scan code") }
+            Button(onClick = onScan) { Text(stringResource(R.string.settings_web_link_scan_code_button)) }
         }
     }
 }
@@ -210,7 +213,7 @@ private fun LinkedList(
     onOpenSend: (IncomingSend) -> Unit,
     mirror: @Composable () -> Unit,
 ) {
-    SettingsSectionLabel("Linked devices")
+    SettingsSectionLabel(stringResource(R.string.settings_web_link_section_linked_devices))
     status.problem?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
@@ -228,44 +231,44 @@ private fun LinkedList(
     }
     rows += {
         SettingsNavRow(
-            title = "Link another browser",
-            subtitle = "Up to 4",
+            title = stringResource(R.string.settings_web_link_link_another_browser),
+            subtitle = stringResource(R.string.settings_web_link_up_to_four),
             leadingIcon = Icons.Outlined.QrCodeScanner,
             onClick = { if (!busy) onScan() },
         )
     }
     SettingsGroupCard(rows = rows)
-    SettingsSectionLabel("Handoff")
+    SettingsSectionLabel(stringResource(R.string.settings_web_link_section_handoff))
     SettingsGroupCard(
         rows = listOf {
             SettingsToggleRow(
-                title = "Pick up where you left off",
-                subtitle = "Share what's playing with your linked devices.",
+                title = stringResource(R.string.settings_web_link_handoff_title),
+                subtitle = stringResource(R.string.settings_web_link_handoff_subtitle),
                 checked = handoffOn,
                 onCheckedChange = onHandoff,
             )
         },
     )
     mirror()
-    SettingsSectionLabel("Your library")
+    SettingsSectionLabel(stringResource(R.string.settings_web_link_section_your_library))
     SettingsGroupCard(
         rows = listOf {
             SettingsNavRow(
-                title = "Send my library to a browser",
-                subtitle = "Choose what goes: likes, plays, each playlist.",
+                title = stringResource(R.string.settings_web_link_send_library_title),
+                subtitle = stringResource(R.string.settings_web_link_send_library_subtitle),
                 leadingIcon = Icons.AutoMirrored.Outlined.Send,
                 onClick = { if (!busy && status.browsers.isNotEmpty()) onSendLibrary() },
             )
         },
     )
     if (sends.isNotEmpty()) {
-        SettingsSectionLabel("Waiting for you")
+        SettingsSectionLabel(stringResource(R.string.settings_web_link_section_waiting_for_you))
         SettingsGroupCard(
             rows = sends.map { s ->
                 @Composable {
                     SettingsNavRow(
-                        title = "${s.name} sent you ${s.summary}",
-                        subtitle = s.problem?.let { "$it Discard it." } ?: "Add it, choose what to add, or discard it.",
+                        title = stringResource(R.string.settings_web_link_sent_you_summary, s.name, s.summary),
+                        subtitle = s.problem?.let { stringResource(R.string.settings_web_link_sent_problem_discard, it) } ?: stringResource(R.string.settings_web_link_sent_actions_subtitle),
                         leadingIcon = Icons.Outlined.Inbox,
                         onClick = { onOpenSend(s) },
                     )
@@ -273,11 +276,11 @@ private fun LinkedList(
             },
         )
     }
-    SettingsSectionLabel("Unlink")
+    SettingsSectionLabel(stringResource(R.string.settings_web_link_section_unlink))
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                "Unlinking never deletes anything from a library.",
+                stringResource(R.string.settings_web_link_unlink_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -285,20 +288,21 @@ private fun LinkedList(
                 onClick = onUnlinkAll,
                 enabled = !busy,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Unlink everything") }
+            ) { Text(stringResource(R.string.settings_web_link_action_unlink_everything)) }
         }
     }
 }
 
+@Composable
 private fun subtitleOf(d: LinkedDevice, serverTime: Long): String = when {
-    d.isMe -> "This phone"
+    d.isMe -> stringResource(R.string.settings_web_link_device_this_phone)
     d.trust == DeviceTrust.KEY_CHANGED -> WebLinkCopy.KEY_CHANGED
     d.trust == DeviceTrust.NOT_VERIFIED -> WebLinkCopy.NOT_VERIFIED
-    serverTime <= 0 || d.lastSeenAt <= 0 -> "Linked"
+    serverTime <= 0 || d.lastSeenAt <= 0 -> stringResource(R.string.settings_web_link_device_linked)
     else -> when (val days = ((serverTime - d.lastSeenAt).coerceAtLeast(0) / 86_400_000L).toInt()) {
-        0 -> "Last used today"
-        1 -> "Last used yesterday"
-        else -> "Last used $days days ago"
+        0 -> stringResource(R.string.settings_web_link_device_last_used_today)
+        1 -> stringResource(R.string.settings_web_link_device_last_used_yesterday)
+        else -> pluralStringResource(R.plurals.settings_web_link_device_last_used_days, days, days)
     }
 }
 
@@ -310,58 +314,58 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
             when (state) {
                 PairingState.Idle -> Unit
                 PairingState.Checking -> {
-                    Text("Reading the code…", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.settings_web_link_reading_code), style = MaterialTheme.typography.titleMedium)
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 is PairingState.Confirm -> {
-                    Text("Link ${state.browserName}?", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.settings_web_link_confirm_title, state.browserName), style = MaterialTheme.typography.titleMedium)
                     Text(
                         buildAnnotatedString {
-                            append("Your computer will ask you to check ")
+                            append(stringResource(R.string.settings_web_link_confirm_body_before_code))
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(state.code)) }
-                            append(". It will see what you're playing here, and you can choose to mirror your library with it.")
+                            append(stringResource(R.string.settings_web_link_confirm_body_after_code))
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     if (state.fromLink) {
                         // An App Link can come from anyone (a chat, a web page), and the name above is the browser's own choice.
                         Text(
-                            "Only continue if you just opened Link your phone on your own computer, and it's in front of you now.",
+                            stringResource(R.string.settings_web_link_confirm_from_link_warning),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onClose) { Text("Cancel") }
-                        Button(onClick = onLink) { Text("Link") }
+                        OutlinedButton(onClick = onClose) { Text(stringResource(R.string.settings_cancel)) }
+                        Button(onClick = onLink) { Text(stringResource(R.string.settings_web_link_action_link)) }
                     }
                 }
                 is PairingState.Waiting -> {
                     Text(
                         buildAnnotatedString {
-                            append("Waiting for your computer… · ")
+                            append(stringResource(R.string.settings_web_link_waiting_computer))
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(state.code)) }
                         },
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        "Check that ${state.browserName} shows the same six digits, then tap Link there.",
+                        stringResource(R.string.settings_web_link_waiting_desc, state.browserName),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                    OutlinedButton(onClick = onClose) { Text("Cancel") }
+                    OutlinedButton(onClick = onClose) { Text(stringResource(R.string.settings_cancel)) }
                 }
                 is PairingState.Linked -> {
-                    Text("Linked to ${state.browserName}", style = MaterialTheme.typography.titleMedium)
-                    Text("Linked. Nothing is mirrored yet.", style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = onClose) { Text("Done") }
+                    Text(stringResource(R.string.settings_web_link_linked_to, state.browserName), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.settings_web_link_linked_desc), style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = onClose) { Text(stringResource(R.string.settings_done)) }
                 }
                 is PairingState.Failed -> {
                     state.code?.let {
                         Text(
                             buildAnnotatedString {
-                                append("Code ")
+                                append(stringResource(R.string.settings_web_link_code_label))
                                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(it)) }
                             },
                             style = MaterialTheme.typography.titleMedium,
@@ -369,8 +373,8 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                     }
                     Text(state.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onClose) { Text("OK") }
-                        Button(onClick = onScanAgain) { Text("Scan again") }
+                        OutlinedButton(onClick = onClose) { Text(stringResource(R.string.settings_ok)) }
+                        Button(onClick = onScanAgain) { Text(stringResource(R.string.settings_web_link_scan_again)) }
                     }
                 }
             }
@@ -387,15 +391,15 @@ private fun DeviceActionsDialog(device: LinkedDevice, onRename: () -> Unit, onRe
         title = { Text(device.name, style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(Modifier.padding(top = 4.dp)) {
-                TextButton(onClick = onRename) { Text("Rename") }
+                TextButton(onClick = onRename) { Text(stringResource(R.string.settings_web_link_action_rename)) }
                 if (!device.isMe) {
                     TextButton(onClick = onRemove, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                        Text("Remove")
+                        Text(stringResource(R.string.settings_web_link_action_remove))
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_close)) } },
     )
 }
 
@@ -406,19 +410,19 @@ private fun RenameDialog(device: LinkedDevice, onSave: (String) -> Unit, onDismi
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         shape = MaterialTheme.shapes.large,
-        title = { Text("Rename", style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(R.string.settings_web_link_rename_dialog_title), style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = text, onValueChange = { text = it.take(60) }, singleLine = true)
                 Text(
-                    if (device.isMe) "Your linked devices see this name." else "This name stays on this phone.",
+                    if (device.isMe) stringResource(R.string.settings_web_link_rename_me_hint) else stringResource(R.string.settings_web_link_rename_other_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(text) }, enabled = text.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onSave(text) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.settings_save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }
 
@@ -435,6 +439,6 @@ private fun ConfirmDialog(title: String, text: String, confirm: String, onConfir
                 Text(confirm)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
     )
 }

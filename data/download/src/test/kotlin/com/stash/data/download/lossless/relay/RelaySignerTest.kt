@@ -16,7 +16,7 @@ class RelaySignerTest {
     private val config: LosslessConfigFetcher = mockk {
         every { relayKey } returns MutableStateFlow("k-secret")
     }
-    private val signer = RelaySigner(config, supporter())
+    private val signer = RelaySigner(config, supporter(), appVersionProvider())
 
     @Test fun `a cancelled install-id read cancels the signing, not a transient id`() {
         coEvery { config.installId() } throws CancellationException("left the screen")
@@ -30,5 +30,11 @@ class RelaySignerTest {
         val b = Request.Builder().url("https://relay.example/x")
         assertThat(signer.sign(b, "quota", 0L)).isTrue()
         assertThat(b.build().header("X-Stash-Install")).isNotEmpty()
+    }
+
+    @Test fun `adds the running version code as the app build header`() {
+        val b = Request.Builder().url("https://relay.example/x")
+        signer.appBuild(b)
+        assertThat(b.build().header("X-Stash-App-Build")).isEqualTo("157")
     }
 }

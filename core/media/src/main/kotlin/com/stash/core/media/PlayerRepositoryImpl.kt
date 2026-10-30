@@ -69,7 +69,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -138,22 +140,7 @@ class PlayerRepositoryImpl @Inject constructor(
      * track is anywhere near this small, so there are no false negatives.
      */
     internal var filePathExistsOnDisk: (String) -> Boolean = { path ->
-        val bytes = try {
-            if (path.startsWith("content://")) {
-                DocumentFile.fromSingleUri(context, path.toUri())?.length() ?: 0L
-            } else {
-                // Handle both plain paths and file:// URIs.
-                val plainPath = if (path.startsWith("file://")) {
-                    path.toUri().path ?: path.removePrefix("file://")
-                } else {
-                    path
-                }
-                File(plainPath).length()
-            }
-        } catch (e: Exception) {
-            0L
-        }
-        bytes >= StashConstants.MIN_PLAYABLE_LOCAL_BYTES
+        com.stash.core.media.streaming.isUsableLocalFile(context, path)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -346,6 +333,36 @@ class PlayerRepositoryImpl @Inject constructor(
                     prefetchNextTrack()
                 }
         }
+
+        watchNextUpDownload()
+    }
+
+    /**
+     * A download that lands while its song waits next in line: the prefetch watcher
+     * already ran (and may have swapped a stream in), so run it again; it now finds
+     * the row's file and points the slot at it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun watchNextUpDownload() {
+        scope.launch {
+            playerState
+                .map { it.currentIndex }
+                .distinctUntilChanged()
+                .flatMapLatest {
+                    val nextId = nextUpTrackId() ?: return@flatMapLatest flowOf(false)
+                    trackDao.observeById(nextId).map { it?.isDownloaded == true }.distinctUntilChanged().drop(1)
+                }
+                .catch { e -> Log.w(TAG, "next-up download watch stopped: ${e.message}") }
+                .collect { downloaded -> if (downloaded) prefetchNextTrack() }
+        }
+    }
+
+    /** The track id in the slot Media3 plays next, or null when there is none. */
+    private fun nextUpTrackId(): Long? {
+        val controller = controllerDeferred ?: return null
+        val index = controller.nextMediaItemIndex
+        if (index !in 0 until controller.mediaItemCount) return null
+        return controller.getMediaItemAt(index).mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L)?.takeIf { it > 0L }
     }
 
     private val _playerState = MutableStateFlow(PlayerState())
@@ -1049,7 +1066,20 @@ class PlayerRepositoryImpl @Inject constructor(
             .mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
         // An All Songs file plays from its file or not at all: nothing to resolve or swap in.
         if (isScannedTrackId(nextId)) return
-        val next = tracks.firstOrNull { it.id == nextId } ?: return
+        val queued = tracks.firstOrNull { it.id == nextId } ?: return
+        // The queue's copy is as old as the queue: a download that finished since is only
+        // in the row. Read it, so the next song plays its new file instead of a stream.
+        val row = withContext(Dispatchers.IO) { trackDao.getById(nextId) }
+        val next = if (row != null && row.isDownloaded && !queued.isDownloaded) {
+            queued.copy(
+                isDownloaded = true,
+                filePath = row.filePath,
+                fileSizeBytes = row.fileSizeBytes,
+                fileFormat = row.fileFormat,
+            )
+        } else {
+            queued
+        }
         val nextLocalPath = next.filePath
         val hasRecordedDownload = next.isDownloaded && !nextLocalPath.isNullOrBlank()
         val knownTooSmall = next.fileSizeBytes in 1 until StashConstants.MIN_PLAYABLE_LOCAL_BYTES
@@ -1061,7 +1091,10 @@ class PlayerRepositoryImpl @Inject constructor(
             val hasUsableLocal = withContext(Dispatchers.IO) {
                 filePathExistsOnDisk(nextLocalPath)
             }
-            if (hasUsableLocal) return
+            if (hasUsableLocal) {
+                if (next !== queued) playNextFromFile(controller, nextTimelineIndex, next)
+                return
+            }
         }
         // Download mode never streams, so there is nothing to warm.
         if (!streamAllowed()) return
@@ -1097,7 +1130,7 @@ class PlayerRepositoryImpl @Inject constructor(
 
         val t0 = System.currentTimeMillis()
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
-        val entity = trackDao.getById(next.id) ?: next.toEntity()
+        val entity = row ?: next.toEntity()
         val resolved = try {
             // Full-fat resolve (allowYtDlp = true) for the single next-up track
             // during active playback, so auto-advance stays seamless during a
@@ -1181,6 +1214,39 @@ class PlayerRepositoryImpl @Inject constructor(
             .build()
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
         return true
+    }
+
+    /**
+     * Points the next-up's [timelineIndex] slot at [next]'s downloaded file: its
+     * download finished after the queue was built, and the slot still holds a
+     * placeholder or a stream an earlier prefetch swapped in. Keeps the slot's
+     * metadata (art, extras) minus the stream stamps, which describe a stream it no
+     * longer plays, and updates the queue's copy so later reads see the file.
+     */
+    private fun playNextFromFile(controller: MediaController, timelineIndex: Int, next: Track) {
+        if (!isStillNextUp(controller.currentMediaItemIndex, controller.nextMediaItemIndex, timelineIndex)) {
+            // Playback moved while the row and file were read (an advance, a tap): the slot may be the one
+            // playing now, and swapping its source would restart it mid-song (review on #730).
+            Log.d(TAG, "next-up id=${next.id} isn't next any more; leaving its slot alone")
+            return
+        }
+        if (timelineIndex !in 0 until controller.mediaItemCount) return
+        val item = controller.getMediaItemAt(timelineIndex)
+        if (item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) != next.id) return
+        val fileItem = next.toMediaItem()
+        val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
+            listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
+                .forEach(::remove)
+            putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
+        }
+        val refreshed = item.buildUpon()
+            .setUri(fileItem.localConfiguration?.uri)
+            .setRequestMetadata(fileItem.requestMetadata)
+            .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+            .build()
+        replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
+        currentQueueTracks = currentQueueTracks.map { if (it.id == next.id) next else it }
+        Log.d(TAG, "next-up id=${next.id} downloaded since it was queued; plays its file")
     }
 
     /**
@@ -3812,3 +3878,10 @@ internal fun MediaItem.toScannedTrack(trackId: Long): Track {
 /** The ids of a queue that a resume can find again: every All Songs file is left out. */
 internal fun savableQueueIds(ids: List<Long>): List<Long> =
     if (ids.none(::isScannedTrackId)) ids else ids.filterNot(::isScannedTrackId)
+
+/**
+ * Whether the slot a prefetch captured at [timelineIndex] is still the next-up and not the one playing, read again right
+ * before replacing it: the prefetch suspends for the DB and the file check in between (review on #730).
+ */
+internal fun isStillNextUp(currentIndex: Int, nextIndex: Int, timelineIndex: Int): Boolean =
+    timelineIndex == nextIndex && timelineIndex != currentIndex
