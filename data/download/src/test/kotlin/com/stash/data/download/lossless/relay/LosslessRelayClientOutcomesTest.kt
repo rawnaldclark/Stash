@@ -57,6 +57,24 @@ class LosslessRelayClientOutcomesTest {
         }
     }
 
+    @Test fun `app too old - the relay is left alone an hour, every format and downloads too, then asked again`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(RelaySigner.APP_TOO_OLD).setBody("""{"error":"app_too_old"}"""))
+        assertThat(client.mint(base(), 1L, 27)).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+
+        now += RelaySigner.APP_TOO_OLD_BACKOFF_MS - 1_000
+        assertThat(client.mint(base(), 1L, 6)).isEqualTo(RelayMint.Unavailable) // another format
+        val download = LosslessDownloadPurpose()
+        assertThat(kotlinx.coroutines.withContext(download) { client.mint(base(), 2L, 27) }).isEqualTo(RelayMint.Unavailable)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(client.recentOutcomes()[0]).contains("426 app too old")
+
+        now += 2_000
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"url":"https://cdn/x","format_id":27}"""))
+        assertThat(client.mint(base(), 1L, 27)).isInstanceOf(RelayMint.Ok::class.java)
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
     @Test fun `only the newest RECENT_MAX answers are kept`() = runTest {
         repeat(LosslessRelayClient.RECENT_MAX + 5) { server.enqueue(MockResponse().setResponseCode(404)) }
         repeat(LosslessRelayClient.RECENT_MAX + 5) { client.mint(base(), it.toLong(), 7) }

@@ -103,5 +103,14 @@ class RelaySigner @Inject constructor(
     companion object {
         private const val TAG = "RelaySigner"
         const val ENTITLEMENT_HEADER = "X-Stash-Entitlement"
+
+        /** A relay refusing this build: its `MIN_APP_BUILD` is above it (`app_too_old`). */
+        const val APP_TOO_OLD = 426
+
+        /**
+         * How long a relay that answered [APP_TOO_OLD] is left alone, streams and downloads alike: only an update fixes
+         * it, so asking again sooner (or in another format) is a wasted request.
+         */
+        const val APP_TOO_OLD_BACKOFF_MS = 60 * 60_000L
     }
 }

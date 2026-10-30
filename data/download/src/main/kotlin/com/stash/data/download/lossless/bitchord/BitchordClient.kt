@@ -211,6 +211,13 @@ class BitchordClient @Inject constructor(
      */
     @Volatile private var busyUntilMs: Long = 0L
 
+    /**
+     * Relays that refused this app build ([RelaySigner.APP_TOO_OLD]), by base, epoch-ms (review on #736). Only
+     * that relay is skipped, by every path, for [RelaySigner.APP_TOO_OLD_BACKOFF_MS]: a user's own server is
+     * not the owner's relay, and asking again before an update can't help.
+     */
+    private val appTooOldUntilMs = ConcurrentHashMap<String, Long>()
+
     /** Wall clock; tests drive it. */
     internal var nowMs: () -> Long = System::currentTimeMillis
 
@@ -269,6 +276,10 @@ class BitchordClient @Inject constructor(
         if (quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
+        appTooOldUntilMs[server.base]?.let { until ->
+            if (now < until) return TidalLookup.Busy(until)
+            appTooOldUntilMs.remove(server.base, until)
+        }
 
         val flightKey = "$key|aac=${if (aacOnly) "only" else aac.toString()}"
         inFlight[flightKey]?.let { return it.await() }
@@ -310,6 +321,7 @@ class BitchordClient @Inject constructor(
                         is Reply.Ok -> r.body
                         is Reply.Busy -> return@withContext busy(r.untilMs)
                         Reply.Spent -> return@withContext TidalLookup.Spent(quota.resetsAtMs())
+                        Reply.AppTooOld -> return@withContext appTooOld(server)
                         else -> return@withContext TidalLookup.Failed
                     }
                     val tracks = json.decodeFromString<BitchordSearchResponse>(body).tracks
@@ -392,6 +404,7 @@ class BitchordClient @Inject constructor(
                     }
                     is Reply.Busy -> busy(r.untilMs)
                     Reply.Spent -> TidalLookup.Spent(quota.resetsAtMs())
+                    Reply.AppTooOld -> appTooOld(server)
                     is Reply.Error -> TidalLookup.Failed
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -403,6 +416,14 @@ class BitchordClient @Inject constructor(
                 TidalLookup.Failed
             }
         }
+
+    /** [server] refused this app build: it is left alone for [RelaySigner.APP_TOO_OLD_BACKOFF_MS]. */
+    private fun appTooOld(server: TidalRelay): TidalLookup {
+        val until = nowMs() + RelaySigner.APP_TOO_OLD_BACKOFF_MS
+        appTooOldUntilMs[server.base] = until
+        Log.w(TAG, "relay refuses this app build; pausing it for ${RelaySigner.APP_TOO_OLD_BACKOFF_MS / 60_000} min")
+        return TidalLookup.Busy(until)
+    }
 
     private fun busy(untilMs: Long): TidalLookup {
         if (untilMs > busyUntilMs) {
@@ -539,6 +560,8 @@ class BitchordClient @Inject constructor(
         data class Busy(val untilMs: Long) : Reply
         /** 429 `daily_lossless_cap`: the day's lossless allowance is used up. Never a miss, never busy. */
         data object Spent : Reply
+        /** 426 `app_too_old`: this build is below the relay's minimum. Never a miss; only this relay pauses. */
+        data object AppTooOld : Reply
         /** Anything else (5xx, other 4xx): transient, never cached as a miss. */
         data class Error(val code: Int) : Reply
     }
@@ -581,6 +604,7 @@ class BitchordClient @Inject constructor(
             val now = nowMs()
             return when (r.code) {
                 404 -> Reply.NotFound(definitive = errorCode(r) == "lossless_unavailable")
+                RelaySigner.APP_TOO_OLD -> Reply.AppTooOld
                 // The relay says how long: 15 s when only seat pacing blocks, 30 s for its
                 // per-network limiter, 300 / 600 s when capped or paused. A flat 5 min turned
                 // a 15 s pacing blip into a device-wide Tidal blackout.
