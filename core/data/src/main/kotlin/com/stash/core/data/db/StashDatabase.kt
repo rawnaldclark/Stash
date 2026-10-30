@@ -125,7 +125,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.PlaylistOrderEntity::class,
         com.stash.core.data.db.entity.PlaylistOrderEntryEntity::class,
     ],
-    version = 74,
+    version = 75,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1921,10 +1921,20 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * Edit order: `playlist_order` (a playlist in the listener's own order) and `playlist_order_entries` (each
-         * song's place). Both start empty: every playlist keeps its order until it's edited.
-         */
+        /** SoundCloud recording identity; old rows remain unlinked and keep their audio and ordering. */
+        val MIGRATION_74_75 = object : Migration(74, 75) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("tracks", "remote_track_snapshots")) {
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_id` TEXT")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_permalink` TEXT")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_preview` INTEGER NOT NULL DEFAULT 0")
+                }
+                db.execSQL("CREATE UNIQUE INDEX `index_tracks_soundcloud_id` ON `tracks` (`soundcloud_id`)")
+                db.execSQL("ALTER TABLE `remote_playlist_snapshots` ADD COLUMN `soundcloud_connection_id` TEXT")
+            }
+        }
+
+        /** Edit order tables start empty, so existing playlists retain their native order. */
         val MIGRATION_73_74 = object : Migration(73, 74) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -2075,6 +2085,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_71_72,
                 MIGRATION_72_73,
                 MIGRATION_73_74,
+                MIGRATION_74_75,
             )
         }
     }

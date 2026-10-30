@@ -874,10 +874,12 @@ class DatabaseBackupManager @Inject constructor(
                 // backup track takes the first that SameSongRule calls it.
                 val liveBySpotifyUri = HashMap<String, Long>()
                 val liveByYoutubeId = HashMap<String, Long>()
+                val liveBySoundCloudId = HashMap<String, Long>()
                 val liveByCanonical = HashMap<String, MutableList<TrackEntity>>()
                 for (t in trackDao.getAllForIntegrityScan().sortedBy { it.id }) {
                     t.spotifyUri?.let { liveBySpotifyUri.putIfAbsent(it, t.id) }
                     t.youtubeId?.let { liveByYoutubeId.putIfAbsent(it, t.id) }
+                    t.soundCloudId?.let { liveBySoundCloudId.putIfAbsent(it, t.id) }
                     if (hasCanonicalIdentity(t.canonicalTitle, t.canonicalArtist)) {
                         liveByCanonical.getOrPut(canonicalKey(t.canonicalTitle, t.canonicalArtist)) { mutableListOf() }.add(t)
                     }
@@ -893,7 +895,8 @@ class DatabaseBackupManager @Inject constructor(
                     // are skipped with it (they map through trackIdMap).
                     if (track.source == com.stash.core.model.MusicSource.CLOUD) continue
                     val words = lookupWords(track)
-                    val existing = track.spotifyUri?.let { liveBySpotifyUri[it] }
+                    val existing = track.soundCloudId?.let { liveBySoundCloudId[it] }
+                        ?: track.spotifyUri?.let { liveBySpotifyUri[it] }
                         ?: track.youtubeId?.let { liveByYoutubeId[it] }
                         ?: if (hasCanonicalIdentity(words.first, words.second)) {
                             // By words only when it is the same song: no id disagrees and the
@@ -907,6 +910,7 @@ class DatabaseBackupManager @Inject constructor(
                                         youtubeId = track.youtubeId,
                                         spotifyUri = track.spotifyUri,
                                         forDownload = false,
+                                        soundCloudId = track.soundCloudId,
                                     )
                                 }
                                 ?.id
@@ -954,6 +958,7 @@ class DatabaseBackupManager @Inject constructor(
                     val newId = trackDao.insert(inserted)
                     track.spotifyUri?.let { liveBySpotifyUri.putIfAbsent(it, newId) }
                     track.youtubeId?.let { liveByYoutubeId.putIfAbsent(it, newId) }
+                    track.soundCloudId?.let { liveBySoundCloudId.putIfAbsent(it, newId) }
                     if (hasCanonicalIdentity(words.first, words.second)) {
                         liveByCanonical.getOrPut(canonicalKey(words.first, words.second)) { mutableListOf() }
                             .add(inserted.copy(id = newId))

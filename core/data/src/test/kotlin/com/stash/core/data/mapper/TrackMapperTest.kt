@@ -15,6 +15,19 @@ import org.junit.Test
  * downloads.
  */
 class TrackMapperTest {
+    @Test fun `SoundCloud identity and preview survive domain round trip`() {
+        val entity = TrackEntity(
+            title = "Remix", artist = "Artist", soundCloudId = "123",
+            soundCloudPermalink = "https://soundcloud.com/artist/remix", soundCloudPreview = true,
+            filePath = "/music/existing.flac", isDownloaded = true,
+        )
+        val restored = entity.toDomain().toEntity()
+        assertEquals(entity.soundCloudId, restored.soundCloudId)
+        assertEquals(entity.soundCloudPermalink, restored.soundCloudPermalink)
+        assertEquals(true, restored.soundCloudPreview)
+        assertEquals(entity.filePath, restored.filePath)
+        assertEquals(true, restored.isDownloaded)
+    }
 
     @Test
     fun `entity round-trip preserves isrc and explicit`() {

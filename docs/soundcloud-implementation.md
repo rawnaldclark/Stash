@@ -3,6 +3,32 @@
 Work on `feat/soundcloud`, based on master including playlist ordering (#742), database 74.
 Do not install a database-73 build on either phone. Do not release, merge or deploy this branch.
 
+## Current integration boundary
+
+- Client foundation: implemented, 12 fixture tests pass.
+- Account storage: implemented through TokenManager and the existing encrypted store. Public
+  profiles have null credentials. Latest connection intent wins; disconnect invalidates pending
+  validations. The complete core/auth suite passes (24 tests, including seven SoundCloud tests).
+- Database identity: migration 74 to 75 adds exact SoundCloud identity, permalink, and preview
+  status on tracks and track snapshots. Playlist snapshots carry a connection ID so a future diff
+  can reject results from a previous account connection. Domain/Library mappings retain the fields.
+- Source enum, sync entry points, streaming/downloading, and phone controls remain unwired. No
+  production path creates SoundCloud songs yet. Keep the PR draft and do not install this slice.
+
+The next sync change must cover both PlaylistFetchWorker's initial "no authenticated services"
+gate and its auth-probe short circuit: a public SoundCloud profile is connected but has no OAuth
+token, so `isAuthenticated(SOUNDCLOUD)` intentionally returns false. Read `soundCloudSession`
+instead. Fetch all pages before writing a snapshot, then use `withCurrentSession(connectionId)`
+around its short database transaction. DiffWorker must check the same connection ID under that
+guard **before findOrCreatePlaylist**, and keep the guard through the membership transaction.
+Do not hold the account lock while fetching network data. Give SoundCloud its own sync mode;
+the existing diff's fallback to Spotify's account mode must not apply to it.
+
+Add MusicSource.SOUNDCLOUD together with its routing guards. Audit exhaustive source branches,
+title matching, lossless upgrade/sweep queries, stream registry, and DownloadManager before
+enabling row creation. The shared word-matching rule now refuses SoundCloud/unlinked pairs;
+SoundCloud-to-existing-recording reuse must use verified ISRC identity explicitly.
+
 ## Scope
 
 Connect a SoundCloud account using its WebView `oauth_token`, or use a public profile's likes.

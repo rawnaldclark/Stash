@@ -96,6 +96,9 @@ data class LibraryTrackRow(
     val source: com.stash.core.model.MusicSource,
     @androidx.room.ColumnInfo(name = "spotify_uri") val spotifyUri: String?,
     @androidx.room.ColumnInfo(name = "youtube_id") val youtubeId: String?,
+    @androidx.room.ColumnInfo(name = "soundcloud_id") val soundCloudId: String? = null,
+    @androidx.room.ColumnInfo(name = "soundcloud_permalink") val soundCloudPermalink: String? = null,
+    @androidx.room.ColumnInfo(name = "soundcloud_preview") val soundCloudPreview: Boolean = false,
     @androidx.room.ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
     @androidx.room.ColumnInfo(name = "album_art_path") val albumArtPath: String?,
     @androidx.room.ColumnInfo(name = "date_added") val dateAdded: java.time.Instant,
@@ -296,7 +299,7 @@ private const val RESTORABLE_DOWNLOAD = """
 private const val LIBRARY_ROW_COLUMNS = """
     t.id, t.title, t.artist, t.album, t.album_artist, t.duration_ms,
     t.file_path, t.file_format, t.quality_kbps, t.file_size_bytes,
-    t.source, t.spotify_uri, t.youtube_id, t.album_art_url,
+    t.source, t.spotify_uri, t.youtube_id, t.soundcloud_id, t.soundcloud_permalink, t.soundcloud_preview, t.album_art_url,
     t.album_art_path, t.date_added, t.last_played, t.play_count,
     (t.is_downloaded = 1 OR t.file_path IS NOT NULL) AS is_downloaded,
     t.match_confidence, t.match_dismissed, t.isrc,
@@ -672,7 +675,7 @@ interface TrackDao {
         """
         SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.duration_ms,
                t.file_path, t.file_format, t.quality_kbps, t.file_size_bytes,
-               t.source, t.spotify_uri, t.youtube_id, t.album_art_url,
+               t.source, t.spotify_uri, t.youtube_id, t.soundcloud_id, t.soundcloud_permalink, t.soundcloud_preview, t.album_art_url,
                t.album_art_path, t.date_added, t.last_played, t.play_count,
                t.is_downloaded, t.match_confidence, t.match_dismissed, t.isrc,
                t.explicit, t.bits_per_sample, t.sample_rate_hz,
@@ -897,6 +900,9 @@ interface TrackDao {
     /** Find a track by its YouTube video ID, or null if not found. */
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     suspend fun findByYoutubeId(youtubeId: String): TrackEntity?
+
+    @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
+    suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?
 
     /** Find a track by exact ISRC, preferring a downloaded row (Listen Together's exact match, spec 2026-09-24 §4). */
     @Query("SELECT * FROM tracks WHERE isrc = :isrc ORDER BY is_downloaded DESC, id ASC LIMIT 1")
