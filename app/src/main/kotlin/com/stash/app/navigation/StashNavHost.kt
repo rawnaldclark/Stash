@@ -77,6 +77,8 @@ fun StashNavHost(
     // the same lambda will be wired to Liked/Album/Artist/Library detail screens
     // in later tasks — only the Playlist destination consumes it today.
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    // Your record's Mixes tab showing (the scaffold shows the mini player over it).
+    onRecordMixesShown: (Boolean) -> Unit = {},
     // The scaffold's canonical bottom-nav tab switch, for screens that trigger
     // one themselves (Home's Liked card → Library ▸ Liked).
     onNavigateToTab: (TopLevelDestination) -> Unit = {},
@@ -98,7 +100,7 @@ fun StashNavHost(
                 navController.popBackStack()) Unit
         }
     }
-    StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
+    StashNavGraph(navController, modifier, onSelectionModeChanged, onRecordMixesShown, onNavigateToTab, posting, startDestination)
 }
 
 /**
@@ -120,6 +122,7 @@ private fun StashNavGraph(
     navController: NavHostController,
     modifier: Modifier,
     onSelectionModeChanged: (Boolean) -> Unit,
+    onRecordMixesShown: (Boolean) -> Unit,
     onNavigateToTab: (TopLevelDestination) -> Unit,
     posting: CommunityPosting,
     startDestination: Any,
@@ -615,6 +618,7 @@ private fun StashNavGraph(
             RecordScreen(
                 onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
                 onOpenMix = { id -> if (navController.currentBackStackEntry === entry) navController.navigate(RecordMixRoute(id)) },
+                onMixesShown = onRecordMixesShown,
             )
         }
 

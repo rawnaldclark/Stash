@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -151,6 +153,11 @@ fun StashScaffold(
     // selection action bar owns the bottom edge instead of stacking on / being
     // crowded by it (premium multi-select pattern, avoids mis-taps).
     var selectionActive by remember { mutableStateOf(false) }
+
+    // Your record's Mixes tab is a list of things to play: the mini player shows over it (no tab bar: the record stays full
+    // screen), so a Play there shows at once what it started. The record's own tab keeps the whole screen.
+    var recordMixesShown by remember { mutableStateOf(false) }
+    val miniOverRecord = recordMixesShown && navBackStackEntry?.destination?.hasRoute<YourRecordRoute>() == true
 
     // The queue sheet opened from the mini player's Up next button, over any screen.
     var showQueue by rememberSaveable { mutableStateOf(false) }
@@ -334,7 +341,7 @@ fun StashScaffold(
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            if (!selectionActive && !immersive) {
+            if (!selectionActive && (!immersive || miniOverRecord)) {
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
@@ -385,15 +392,20 @@ fun StashScaffold(
                     // it closes: a layer move with the finger, never a re-layout. It fades out faster
                     // than it slides (gone by 12 %), so it never shows through the system's 3-button
                     // bar on its way down.
-                    StashNavigationBar(
-                        currentRoute = currentRoute,
-                        onNavigate = ::navigateToTab,
-                        modifier = Modifier.graphicsLayer {
-                            val p = playerSheet.progress
-                            translationY = size.height * PlayerSheetMath.tabBarHide(p)
-                            alpha = PlayerSheetMath.tabBarAlpha(p)
-                        },
-                    )
+                    if (miniOverRecord) {
+                        // No tab bar on the record: the mini player sits on the system bar's inset
+                        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+                    } else {
+                        StashNavigationBar(
+                            currentRoute = currentRoute,
+                            onNavigate = ::navigateToTab,
+                            modifier = Modifier.graphicsLayer {
+                                val p = playerSheet.progress
+                                translationY = size.height * PlayerSheetMath.tabBarHide(p)
+                                alpha = PlayerSheetMath.tabBarAlpha(p)
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -415,7 +427,7 @@ fun StashScaffold(
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
         CompositionLocalProvider(
-            LocalBottomChromeInset provides if (selectionActive || immersive) 0.dp else bottomChrome,
+            LocalBottomChromeInset provides if (selectionActive || (immersive && !miniOverRecord)) 0.dp else bottomChrome,
             // The NavHost takes its host lifecycle from here and caps every page at it.
             LocalLifecycleOwner provides pageLifecycleOwner,
         ) {
@@ -447,6 +459,7 @@ fun StashScaffold(
             navController = navController,
             modifier = Modifier.fillMaxSize(),
             onSelectionModeChanged = { selectionActive = it },
+            onRecordMixesShown = { recordMixesShown = it },
             onNavigateToTab = ::navigateToTab,
             startDestination = when (startTab) {
                 StartTab.HOME -> HomeRoute
