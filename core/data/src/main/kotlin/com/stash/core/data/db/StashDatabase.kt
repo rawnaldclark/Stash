@@ -122,8 +122,10 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.RecordTasteSongEntity::class,
         com.stash.core.data.db.entity.RecordTasteEntity::class,
         com.stash.core.data.db.entity.RecordTasteKeepEntity::class,
+        com.stash.core.data.db.entity.PlaylistOrderEntity::class,
+        com.stash.core.data.db.entity.PlaylistOrderEntryEntity::class,
     ],
-    version = 73,
+    version = 74,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -176,6 +178,8 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun listenSubmissionDao(): ListenSubmissionDao
 
     abstract fun syncUndoDao(): SyncUndoDao
+
+    abstract fun playlistOrderDao(): com.stash.core.data.db.dao.PlaylistOrderDao
 
     abstract fun sharedMixDao(): SharedMixDao
 
@@ -1917,6 +1921,29 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Edit order: `playlist_order` (a playlist in the listener's own order) and `playlist_order_entries` (each
+         * song's place). Both start empty: every playlist keeps its order until it's edited.
+         */
+        val MIGRATION_73_74 = object : Migration(73, 74) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlist_order` (`playlist_id` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`), " +
+                        "FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlist_order_entries` (`playlist_id` INTEGER NOT NULL, `track_id` INTEGER NOT NULL, " +
+                        "`rank` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`, `track_id`), " +
+                        "FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_order_entries_playlist_id_rank` ON `playlist_order_entries` (`playlist_id`, `rank`)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_order_entries_track_id` ON `playlist_order_entries` (`track_id`)")
+            }
+        }
+
         /** `record_hidden` keyed by today's [com.stash.core.model.weblink.SongKey.songKey], the first spelling of each kept. */
         internal fun rekeyHidden(db: SupportSQLiteDatabase) {
             class Row(val key: String, val t: String, val a: String)
@@ -2047,6 +2074,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_70_71,
                 MIGRATION_71_72,
                 MIGRATION_72_73,
+                MIGRATION_73_74,
             )
         }
     }

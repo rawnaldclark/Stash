@@ -96,6 +96,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val discoveryQueueDao: DiscoveryQueueDao,
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
     private val downloadQueueDao: DownloadQueueDao,
+    private val orderDao: com.stash.core.data.db.dao.PlaylistOrderDao,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -114,6 +115,44 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private val _bulkPlayInFlight = MutableStateFlow<BulkPlayAction?>(null)
     val bulkPlayInFlight: StateFlow<BulkPlayAction?> = _bulkPlayInFlight.asStateFlow()
+
+    private val _editingOrder = MutableStateFlow(false)
+
+    /** Edit order: rows show drag handles, taps don't play. */
+    val editingOrder: StateFlow<Boolean> = _editingOrder.asStateFlow()
+
+    /** The playlist is in the listener's own order (so its Use … order button shows). */
+    val customOrder: StateFlow<Boolean> = orderDao.observeIsCustom(playlistId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Edit order starts on the whole list: the search closes. */
+    fun startEditOrder() {
+        _searchQuery.value = ""
+        _showSearch.value = false
+        _editingOrder.value = true
+    }
+
+    fun stopEditOrder() { _editingOrder.value = false }
+
+    /**
+     * [trackId] dropped between [afterTrackId] (above it now) and [beforeTrackId] (below it). Each drop is saved
+     * as it lands; Done only leaves editing.
+     */
+    fun moveTrack(trackId: Long, beforeTrackId: Long?, afterTrackId: Long?) {
+        viewModelScope.launch {
+            val moved = runCatching { orderDao.move(playlistId, trackId, beforeTrackId, afterTrackId) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            when {
+                moved.isFailure -> _userMessages.tryEmit("Couldn't change the order. Try again.")
+                moved.getOrNull() == false -> _userMessages.tryEmit("That song is no longer in this playlist.")
+            }
+        }
+    }
+
+    /** Back to the service's order: the listener's order is forgotten. */
+    fun resetOrder() {
+        viewModelScope.launch { orderDao.reset(playlistId) }
+    }
 
     fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
     fun clearSearch() { _searchQuery.value = "" }

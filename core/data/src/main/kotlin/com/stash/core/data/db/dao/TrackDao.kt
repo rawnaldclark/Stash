@@ -797,6 +797,10 @@ interface TrackDao {
      * the sync renumbers its own rows from 0 — and tied rows otherwise came
      * back in whatever order SQLite chose, so they could swap between
      * emissions.
+     *
+     * A playlist the listener put into their own order (Edit order, [PlaylistOrderDao]) follows its ranks first;
+     * a song with no rank yet (arrived after the last move) comes after them, in the service's order. Keep this
+     * ORDER BY in step with [PlaylistOrderDao.memberIdsInOrder].
      */
     @Transaction
     @Query(
@@ -804,6 +808,8 @@ interface TrackDao {
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
         INNER JOIN playlists p ON pt.playlist_id = p.id
+        LEFT JOIN playlist_order o ON o.playlist_id = pt.playlist_id
+        LEFT JOIN playlist_order_entries e ON e.playlist_id = pt.playlist_id AND e.track_id = pt.track_id
         LEFT JOIN track_blocklist bl
             ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
@@ -818,7 +824,9 @@ interface TrackDao {
               OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
           )
         ORDER BY
-            CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
+            CASE WHEN o.playlist_id IS NOT NULL THEN e.rank IS NULL END ASC,
+            CASE WHEN o.playlist_id IS NOT NULL THEN e.rank END ASC,
+            CASE WHEN p.type = 'DAILY_MIX' AND o.playlist_id IS NULL THEN pt.added_at END DESC,
             pt.position ASC,
             pt.added_at ASC,
             t.id ASC

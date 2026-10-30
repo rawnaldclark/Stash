@@ -55,6 +55,9 @@ object DatabaseModule {
     fun providePlaylistDao(db: StashDatabase): PlaylistDao = db.playlistDao()
 
     @Provides
+    fun providePlaylistOrderDao(db: StashDatabase): com.stash.core.data.db.dao.PlaylistOrderDao = db.playlistOrderDao()
+
+    @Provides
     fun provideSyncHistoryDao(db: StashDatabase): SyncHistoryDao = db.syncHistoryDao()
 
     @Provides
