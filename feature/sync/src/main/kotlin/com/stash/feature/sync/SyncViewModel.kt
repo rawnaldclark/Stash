@@ -989,7 +989,7 @@ class SyncViewModel @Inject constructor(
     private fun observeSoundCloud() {
         viewModelScope.launch {
             combine(tokenManager.soundCloudSession, playlistDao.getBySource(MusicSource.SOUNDCLOUD)) { session, entities ->
-                session to entities.filter { it.sourceId == "soundcloud_liked_${session?.userId}" }
+                session to entities.filter { session != null && com.stash.core.data.sync.SoundCloudPlaylistIds.belongsTo(it.sourceId, session.userId) }
             }.collect { (session, entities) ->
                 _uiState.update { state -> state.copy(soundCloudConnected = session != null,
                     soundCloudPlaylists = entities.map { e ->

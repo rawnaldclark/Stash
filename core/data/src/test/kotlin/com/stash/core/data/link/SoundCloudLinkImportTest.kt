@@ -17,6 +17,30 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class SoundCloudLinkImportTest {
+    @Test fun `personal mix link loads through the shared importer and re-pastes without duplicates`() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java).build()
+        try {
+            val url = "https://soundcloud.com/discover/sets/your-moods:7:1"
+            val client = mockk<com.stash.data.soundcloud.SoundCloudClient>()
+            val tokens = mockk<com.stash.core.auth.TokenManager>()
+            coEvery { tokens.getSoundCloudToken() } returns "secret"
+            coEvery { client.resolve(any(), "secret") } returns kotlinx.serialization.json.Json.parseToJsonElement(
+                """{"id":"soundcloud:system-playlists:your-moods:7:1","kind":"system-playlist","title":"Your Mix 1"}"""
+            ) as kotlinx.serialization.json.JsonObject
+            coEvery { client.playlistTracks(any(), "secret") } returns listOf(com.stash.data.soundcloud.SoundCloudTrack(
+                "101", "https://soundcloud.com/artist/song", "Song", "Artist", 180000, null, null, false, emptyList(), null))
+            val repo = mockk<MusicRepository>(relaxed = true)
+            val entry = LinkImporter(mockk(), mockk(), mockk(), mockk(), db.playlistDao(), repo,
+                SoundCloudLinkImport(client, tokens, db, repo))
+            val loaded = entry.load(MusicLinks.parse(url)!!)
+            assertTrue(loaded is LinkLoad.Ok)
+            val preview = (loaded as LinkLoad.Ok).preview
+            assertEquals("Your Mix 1", preview.name)
+            assertEquals(1, entry.add(preview, false) { _, _ -> }.songsAdded)
+            assertEquals(0, entry.add(preview, false) { _, _ -> }.songsAdded)
+        } finally { db.close() }
+    }
+
     private fun song(id: String, preview: Boolean = false) = SoundCloudLinkSong(id,
         "https://soundcloud.com/artist/song-$id", "Same title", "Artist", 180000, null, null, preview)
     private fun preview(vararg songs: SoundCloudLinkSong) = LinkPreview(LinkKind.PLAYLIST, "Set", "Artist", null,

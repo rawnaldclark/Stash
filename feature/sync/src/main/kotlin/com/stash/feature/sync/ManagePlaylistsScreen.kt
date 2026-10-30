@@ -206,7 +206,6 @@ fun ManagePlaylistsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (source != SyncSource.SOUNDCLOUD) {
                     TabPill(
                         label = stringResource(R.string.sync_manage_tab_playlists, playlists.size),
                         selected = tab == ManageTab.PLAYLISTS,
@@ -217,7 +216,6 @@ fun ManagePlaylistsScreen(
                         selected = tab == ManageTab.MIXES,
                         onClick = { tab = ManageTab.MIXES },
                     )
-                    }
                     if (liked.isNotEmpty()) {
                         TabPill(
                             label = stringResource(R.string.sync_manage_tab_liked),

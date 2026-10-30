@@ -32,12 +32,13 @@ class SoundCloudLinkImport @Inject constructor(
         val link = SoundCloudLinks.parse(url) ?: return@withContext LinkLoad.Failed("Invalid SoundCloud link")
         val token = tokens.getSoundCloudToken()
         val entity = client.resolve(link, token)
-        val remoteId = entity.text("id")?.takeIf { it.matches(Regex("[0-9]+")) }
+        val remoteId = entity.text("id")?.takeIf { it.matches(Regex("[0-9]+")) ||
+            (entity.text("kind") == "system-playlist" && it.length <= 256 && it.matches(Regex("soundcloud:system-playlists:[A-Za-z0-9:_-]+"))) }
             ?: return@withContext LinkLoad.Failed("SoundCloud page is unavailable")
         val kind = entity.text("kind")
         val tracks = when (kind) {
             "track" -> listOf(client.parseTrack(entity))
-            "playlist" -> client.playlistTracks(entity, token)
+            "playlist", "system-playlist" -> client.playlistTracks(entity, token)
             "user" -> client.likes(client.user(entity).id, token)
             else -> return@withContext LinkLoad.Failed("This SoundCloud page has no songs")
         }
