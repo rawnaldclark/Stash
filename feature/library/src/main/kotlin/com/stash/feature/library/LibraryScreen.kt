@@ -1564,7 +1564,10 @@ private fun PlaylistsGrid(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SourceIndicator(source = playlist.source)
+                                // Imported playlists are locally owned; BOTH is not their songs' source.
+                                if (!playlist.sourceId.startsWith("custom_link_")) {
+                                    SourceIndicator(source = playlist.source)
+                                }
                                 Text(
                                     text = pluralize(playlist.trackCount, "track"),
                                     style = MaterialTheme.typography.bodySmall,
@@ -1623,7 +1626,10 @@ private fun PlaylistsGrid(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SourceIndicator(source = playlist.source)
+                                // Imported playlists are locally owned; BOTH is not their songs' source.
+                                if (!playlist.sourceId.startsWith("custom_link_")) {
+                                    SourceIndicator(source = playlist.source)
+                                }
                                 Text(
                                     text = pluralize(playlist.trackCount, "track"),
                                     style = MaterialTheme.typography.bodySmall,
