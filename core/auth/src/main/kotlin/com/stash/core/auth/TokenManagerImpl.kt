@@ -35,7 +35,13 @@ class TokenManagerImpl @Inject constructor(
     private val tokenStore: EncryptedTokenStore,
     private val spotifyAuthManager: SpotifyAuthManager,
     private val youTubeCookieHelper: YouTubeCookieHelper,
+    private val soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager,
 ) : TokenManager {
+
+    override val soundCloudSession get() = soundCloudAccounts.session
+    override suspend fun connectSoundCloudWithToken(token: String) = soundCloudAccounts.connect(token)
+    override suspend fun connectSoundCloudPublicProfile(url: String) = soundCloudAccounts.connectPublicProfile(url)
+    override suspend fun getSoundCloudToken(): String? = soundCloudSession.first()?.oauthToken
 
     /**
      * Dedicated scope for collecting store flows; survives until the process dies.
@@ -227,11 +233,13 @@ class TokenManagerImpl @Inject constructor(
             AuthService.SPOTIFY -> tokenStore.clearSpotify()
             AuthService.YOUTUBE_MUSIC -> tokenStore.clearYouTube()
             AuthService.DISCORD -> tokenStore.clearDiscord()
+            AuthService.SOUNDCLOUD -> soundCloudAccounts.disconnect()
         }
     }
 
     override suspend fun isAuthenticated(service: AuthService): Boolean {
         return when (service) {
+            AuthService.SOUNDCLOUD -> soundCloudSession.first()?.oauthToken != null
             AuthService.SPOTIFY -> tokenStore.spotifyToken.first()?.let {
                 it.refreshToken.isNotEmpty()  // sp_dc cookie is the long-lived credential
             } ?: false
