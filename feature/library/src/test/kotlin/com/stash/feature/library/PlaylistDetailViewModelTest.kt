@@ -633,5 +633,6 @@ class PlaylistDetailViewModelTest {
         discoveryQueueDao = discoveryQueueDao,
         sharedMixRepository = sharedMixRepository,
         downloadQueueDao = downloadQueueDao,
+        orderDao = mock { on { observeIsCustom(any()) } doReturn flowOf(false) },
     )
 }
