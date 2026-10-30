@@ -174,6 +174,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val youtubeAuthHealthProbe: YoutubeAuthHealthProbe,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
+    private val soundCloudLikes: com.stash.core.data.sync.SoundCloudLikesFetcher? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -348,7 +349,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val isSpotifyAuthenticated = tokenManager.isAuthenticated(AuthService.SPOTIFY)
             val isYouTubeAuthenticated = tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC)
 
-            if (!isSpotifyAuthenticated && !isYouTubeAuthenticated) {
+            val soundCloudSession = if (soundCloudLikes != null) tokenManager.soundCloudSession.first() else null
+            if (!isSpotifyAuthenticated && !isYouTubeAuthenticated && soundCloudSession == null) {
                 syncHistoryDao.updateStatus(
                     id = syncId,
                     status = SyncState.FAILED,
@@ -375,7 +377,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 youtubeProbe = youtubeAuthHealthProbe,
             )
             syncStateManager.onAuthExpiryProbed(probeResult.state)
-            if (probeResult.shortCircuit) {
+            if (probeResult.shortCircuit && soundCloudSession == null) {
                 Log.i(
                     TAG,
                     "Auth expired (spotify=${probeResult.state.spotifyExpired}, " +
@@ -408,6 +410,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var youtubeComplete = true
             if (probeResult.fetchYoutube) {
                 youtubeComplete = fetchYouTubePlaylists(syncId, diagnostics)
+            }
+
+            if (soundCloudSession != null && soundCloudLikes != null) {
+                try {
+                    val applied = soundCloudLikes.fetch(syncId, soundCloudSession)
+                    diagnostics.add(SyncStepResult("SOUNDCLOUD", "getLikedSongs",
+                        if (applied) StepStatus.SUCCESS else StepStatus.SKIPPED))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    diagnostics.add(SyncStepResult("SOUNDCLOUD", "getLikedSongs", StepStatus.ERROR,
+                        errorMessage = "SoundCloud likes could not be fetched; library kept unchanged"))
+                }
             }
 
             // Persist diagnostics.

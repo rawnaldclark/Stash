@@ -290,6 +290,9 @@ class DownloadManager @Inject constructor(
      * Executes the download pipeline for a single track.
      */
     private suspend fun executeDownload(track: Track, preResolvedUrl: String?): TrackDownloadResult {
+        if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) {
+            return TrackDownloadResult.Failed("SoundCloud downloads are not available yet")
+        }
         // Never search, match or look up a cloud song online: TrackDownloaderImpl copies it from
         // the user's cloud instead. Refused here too, whoever calls.
         if (track.source == com.stash.core.model.MusicSource.CLOUD) {

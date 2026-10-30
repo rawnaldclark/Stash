@@ -105,4 +105,5 @@ internal fun sourceIndicatorLabels(source: MusicSource): List<String> = when (so
     MusicSource.BOTH -> listOf("Spotify", "YouTube")
     MusicSource.LOCAL -> listOf("Local")
     MusicSource.CLOUD -> listOf("Cloud")
+    MusicSource.SOUNDCLOUD -> listOf("SoundCloud")
 }

@@ -179,6 +179,7 @@ class DiffWorker @AssistedInject constructor(
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val canonicalRecompute: com.stash.core.data.library.CanonicalRecomputeRunner,
+    private val soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -256,6 +257,7 @@ class DiffWorker @AssistedInject constructor(
                 ?: syncPreferencesManager.spotifySyncMode.first()
             val youtubeSyncMode = syncPreferencesManager.youtubeSyncMode.first()
 
+
             // Read the streaming-mode toggle ONCE up front. When on, new
             // track rows still land in the `tracks` table (the metadata is
             // needed regardless — Home playlist surfaces + playlist detail
@@ -284,6 +286,8 @@ class DiffWorker @AssistedInject constructor(
             }
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
+            val soundCloudSyncMode = if (playlistSnapshots.any { it.source == MusicSource.SOUNDCLOUD })
+                syncPreferencesManager.soundCloudSyncMode.first() else SyncMode.ACCUMULATE
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
             var newTrackCount = 0
             var playlistsDiffed = 0
@@ -293,6 +297,7 @@ class DiffWorker @AssistedInject constructor(
             var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
+                val applySnapshot: suspend () -> Unit = applySnapshot@ {
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
@@ -305,12 +310,13 @@ class DiffWorker @AssistedInject constructor(
                     localPlaylist.type == PlaylistType.DAILY_MIX ->
                         if (localPlaylist.stackSongs) SyncMode.ACCUMULATE else SyncMode.REFRESH
                     playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
+                    playlistSnapshot.source == MusicSource.SOUNDCLOUD -> soundCloudSyncMode
                     else -> spotifySyncMode
                 }
                 if (localPlaylist.userHidden) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' is out of the library, skipping")
                     skippedSwitchedOff++
-                    continue
+                    return@applySnapshot
                 }
 
                 // Skip playlists the user has switched off — EXCEPT algorithmic
@@ -336,7 +342,7 @@ class DiffWorker @AssistedInject constructor(
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     skippedSwitchedOff++
-                    continue
+                    return@applySnapshot
                 }
 
                 // A Spotify library playlist the fetch step didn't re-read: its
@@ -358,7 +364,7 @@ class DiffWorker @AssistedInject constructor(
                     // Checked, with nothing to do: the progress still moves.
                     playlistsDiffed++
                     syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
-                    continue
+                    return@applySnapshot
                 }
 
                 // Get track snapshots for this playlist (read is outside
@@ -385,6 +391,13 @@ class DiffWorker @AssistedInject constructor(
                 newTrackCount += playlistNewTracks
                 playlistsDiffed++
                 syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
+                }
+                if (playlistSnapshot.source == MusicSource.SOUNDCLOUD) {
+                    val connection = playlistSnapshot.soundCloudConnectionId
+                    if (connection != null) soundCloudAccounts?.withCurrentSession(connection, applySnapshot)
+                } else {
+                    applySnapshot()
+                }
             }
 
             // Soft-hide YouTube playlists that rotated off the home feed
@@ -724,12 +737,18 @@ class DiffWorker @AssistedInject constructor(
             .map { (t, a) -> t to a }
             .distinct()
 
-        val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities)
+        val soundCloudCandidates = allowedSnapshots.mapNotNull { it.soundCloudId }.distinct()
+            .chunked(900).flatMap { trackDao.findBySoundCloudIds(it) }
+        val soundCloudIsrcs = allowedSnapshots.filter { it.soundCloudId != null }.mapNotNull { it.isrc }
+            .filter { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }.distinct()
+        val isrcCandidates = soundCloudIsrcs.chunked(900).flatMap { trackDao.findByIsrcs(it) }
+        val candidates = (isrcCandidates + trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities) + soundCloudCandidates).distinctBy { it.id }
         val candidateTracks = candidates.associate { candidate ->
             candidate.id to BatchTrack(candidate, isNew = false)
         }
         val bySpotifyUri = mutableMapOf<String, BatchTrack>()
         val byYoutubeId = mutableMapOf<String, BatchTrack>()
+        val bySoundCloudId = mutableMapOf<String, BatchTrack>()
         // A canonical key can legitimately map to MULTIPLE rows — e.g. two
         // distinct YouTube uploads of "the same song" that arrive with
         // different videoIds. A single-value map here would collapse them
@@ -737,6 +756,7 @@ class DiffWorker @AssistedInject constructor(
         val byCanonical = mutableMapOf<CanonicalKey, MutableList<BatchTrack>>()
 
         fun registerBatchTrack(track: BatchTrack) {
+            track.entity.soundCloudId?.let { bySoundCloudId[it] = track }
             track.entity.spotifyUri?.takeIf(String::isNotBlank)?.let { bySpotifyUri[it] = track }
             track.entity.youtubeId?.takeIf(String::isNotBlank)?.let { byYoutubeId[it] = track }
             val canonicalKey = CanonicalKey(
@@ -774,6 +794,14 @@ class DiffWorker @AssistedInject constructor(
         )
 
         fun matchBatchTrack(snapshot: RemoteTrackSnapshotEntity): BatchTrack? {
+            snapshot.soundCloudId?.let { id ->
+                bySoundCloudId[id]?.let { return it }
+                // An official ISRC is an exact recording identity. Never reuse another upload id.
+                if (snapshot.isrc in soundCloudIsrcs) return candidateTracks.values.firstOrNull {
+                    it.entity.isrc == snapshot.isrc && it.entity.soundCloudId == null
+                }
+                return null
+            }
             snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri ->
                 bySpotifyUri[uri]?.let { return it }
             }
@@ -793,6 +821,13 @@ class DiffWorker @AssistedInject constructor(
             batchTrack: BatchTrack,
             snapshot: RemoteTrackSnapshotEntity,
         ) {
+            if (snapshot.soundCloudId != null) {
+                val enriched = batchTrack.entity.copy(soundCloudId = snapshot.soundCloudId,
+                    soundCloudPermalink = snapshot.soundCloudPermalink, soundCloudPreview = snapshot.soundCloudPreview)
+                trackDao.update(enriched)
+                batchTrack.entity = enriched
+                bySoundCloudId[snapshot.soundCloudId] = batchTrack
+            }
             val existingTrack = batchTrack.entity
             val snapshotYtId = snapshot.youtubeId?.takeIf(String::isNotBlank)
             if (snapshotYtId != null && existingTrack.youtubeId.isNullOrBlank()) {
@@ -843,6 +878,9 @@ class DiffWorker @AssistedInject constructor(
                         source = playlistSnapshot.source,
                         spotifyUri = snapshot.spotifyUri?.takeIf(String::isNotBlank),
                         youtubeId = snapshot.youtubeId?.takeIf(String::isNotBlank),
+                        soundCloudId = snapshot.soundCloudId,
+                        soundCloudPermalink = snapshot.soundCloudPermalink,
+                        soundCloudPreview = snapshot.soundCloudPreview,
                         albumArtUrl = snapshot.albumArtUrl,
                         canonicalTitle = ct,
                         canonicalArtist = ca,
@@ -910,6 +948,7 @@ class DiffWorker @AssistedInject constructor(
         // is now the switch — discovered mixes start off — not the type.
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
             for (batchTrack in newTracks) {
+                if (batchTrack.entity.soundCloudId != null) continue // Download integration follows; never title-match an upload.
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
                     DownloadQueueEntity(
@@ -973,6 +1012,13 @@ class DiffWorker @AssistedInject constructor(
                 .mapValues { (_, rows) -> rows.sortedBy { it.id } }
         }
         for ((batchTrack, snapshot) in existingPairs) {
+            if (snapshot.soundCloudId != null) {
+                val enriched = batchTrack.entity.copy(soundCloudId = snapshot.soundCloudId,
+                    soundCloudPermalink = snapshot.soundCloudPermalink, soundCloudPreview = snapshot.soundCloudPreview)
+                trackDao.update(enriched)
+                batchTrack.entity = enriched
+                bySoundCloudId[snapshot.soundCloudId] = batchTrack
+            }
             val existingTrack = batchTrack.entity
             addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
 

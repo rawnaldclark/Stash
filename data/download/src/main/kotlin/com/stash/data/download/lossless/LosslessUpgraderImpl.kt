@@ -64,6 +64,7 @@ class LosslessUpgraderImpl @Inject constructor(
         // A cloud song is the user's own file (Dropbox / OneDrive): never looked up on the
         // lossless relays or replaced. The sweep's SQL and the Library's Non-FLAC list already
         // leave it out; this holds for any other caller.
+        if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) return@runCatching UpgradeResult.NoMatch
         if (track.source == com.stash.core.model.MusicSource.CLOUD) return@runCatching UpgradeResult.NoMatch
         // Capture old path BEFORE the download — the row's current file_path
         // gets overwritten by markAsDownloaded, so reading post-persist would

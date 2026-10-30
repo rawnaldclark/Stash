@@ -470,7 +470,17 @@ class PlaylistFetchWorkerRevisionSkipTest {
         runFetchOutput().getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
 
     /** Runs the fetch step; returns its output data. */
-    private suspend fun runFetchOutput(): androidx.work.Data {
+    @Test fun `public SoundCloud profile enters the real fetch worker without Spotify or YouTube auth`() = runBlocking {
+        coEvery { tokenManager.isAuthenticated(any()) } returns false
+        val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Public", connectionId = "current")
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
+        val fetcher = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
+        coEvery { fetcher.fetch(any(), session) } returns true
+        runFetchOutput(fetcher)
+        coVerify(exactly = 1) { fetcher.fetch(any(), session) }
+    }
+
+    private suspend fun runFetchOutput(soundCloud: com.stash.core.data.sync.SoundCloudLikesFetcher? = null): androidx.work.Data {
         val result = TestListenableWorkerBuilder<PlaylistFetchWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
@@ -494,6 +504,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
                     youtubeAuthHealthProbe = mockk(relaxed = true),
                     streamingPreference = streamingPreference,
                     syncUndoDao = db.syncUndoDao(),
+                    soundCloudLikes = soundCloud,
                 )
             })
             .build()

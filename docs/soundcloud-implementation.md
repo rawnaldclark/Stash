@@ -12,10 +12,16 @@ Do not install a database-73 build on either phone. Do not release, merge or dep
 - Database identity: migration 74 to 75 adds exact SoundCloud identity, permalink, and preview
   status on tracks and track snapshots. Playlist snapshots carry a connection ID so a future diff
   can reject results from a previous account connection. Domain/Library mappings retain the fields.
-- Source enum, sync entry points, streaming/downloading, and phone controls remain unwired. No
-  production path creates SoundCloud songs yet. Keep the PR draft and do not install this slice.
+- Source enum and sync worker entry points are implemented. A connected public profile passes
+  the worker's connection gate without pretending to have an OAuth credential. Full likes are
+  published transactionally, and the diff checks the connection ID before any playlist writes.
+- SoundCloud has its own sync mode (default Accumulate). Exact upload IDs are batched, verified
+  ISRCs can reuse an existing recording/file, and loose title matches never replace an upload.
+- Streaming/downloading and phone controls remain unwired. Dedicated guards reject generic
+  streaming, downloading, and lossless upgrades for SoundCloud rows; the diff does not enqueue
+  them. Keep the PR draft and do not install this slice.
 
-The next sync change must cover both PlaylistFetchWorker's initial "no authenticated services"
+The sync implementation covers both PlaylistFetchWorker's initial "no authenticated services"
 gate and its auth-probe short circuit: a public SoundCloud profile is connected but has no OAuth
 token, so `isAuthenticated(SOUNDCLOUD)` intentionally returns false. Read `soundCloudSession`
 instead. Fetch all pages before writing a snapshot, then use `withCurrentSession(connectionId)`
@@ -24,7 +30,7 @@ guard **before findOrCreatePlaylist**, and keep the guard through the membership
 Do not hold the account lock while fetching network data. Give SoundCloud its own sync mode;
 the existing diff's fallback to Spotify's account mode must not apply to it.
 
-Add MusicSource.SOUNDCLOUD together with its routing guards. Audit exhaustive source branches,
+MusicSource.SOUNDCLOUD is present with temporary routing guards. Audit exhaustive source branches,
 title matching, lossless upgrade/sweep queries, stream registry, and DownloadManager before
 enabling row creation. The shared word-matching rule now refuses SoundCloud/unlinked pairs;
 SoundCloud-to-existing-recording reuse must use verified ISRC identity explicitly.
@@ -121,3 +127,10 @@ Integration verification: the complete `:app:assembleDebug --max-workers=3` buil
 2026-10-30, with Gradle exit 0 and a fresh `app/build/outputs/apk/debug/app-debug.apk`
 (187,297,340 bytes). This verifies the current client/account/database integration across the
 app; it does not verify SoundCloud playback or likes sync, which remain unwired. No installation.
+
+Likes-sync validation: 66 selected tests passed (SoundCloudLikesFetcherTest, DiffWorkerTest,
+PlaylistFetchWorkerRevisionSkipTest), including the real public-profile worker entry point,
+failed/stale fetch rejection, both modes with a custom order, distinct upload identities, and
+ISRC reuse retaining the existing file. The full assembleDebug build passed in the same Gradle
+invocation. No phone install or live-account check. Dedicated playback/download controls remain
+pending, so keep PR #744 draft.

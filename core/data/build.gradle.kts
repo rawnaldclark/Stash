@@ -37,6 +37,7 @@ ksp {
     arg("room.generateKotlin", "true")
 }
 dependencies {
+    implementation(project(":data:soundcloud"))
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:auth"))

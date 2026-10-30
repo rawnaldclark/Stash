@@ -453,7 +453,7 @@ interface TrackDao {
         AND LOWER(t.file_format) != 'flac'
         AND t.match_picked_at IS NULL
         -- A cloud song's audio is the user's own file: never looked up or replaced online.
-        AND t.source != 'CLOUD'
+        AND t.source NOT IN ('CLOUD', 'SOUNDCLOUD')
         AND bl.canonical_key IS NULL
         AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
         ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
@@ -903,6 +903,12 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
     suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?
+
+    @Query("SELECT * FROM tracks WHERE soundcloud_id IN (:ids)")
+    suspend fun findBySoundCloudIds(ids: List<String>): List<TrackEntity>
+
+    @Query("SELECT * FROM tracks WHERE isrc IN (:ids) ORDER BY is_downloaded DESC, id ASC")
+    suspend fun findByIsrcs(ids: List<String>): List<TrackEntity>
 
     /** Find a track by exact ISRC, preferring a downloaded row (Listen Together's exact match, spec 2026-09-24 §4). */
     @Query("SELECT * FROM tracks WHERE isrc = :isrc ORDER BY is_downloaded DESC, id ASC LIMIT 1")
@@ -1959,7 +1965,7 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD')
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD', 'SOUNDCLOUD')
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
