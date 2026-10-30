@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -84,6 +86,8 @@ class SyncViewModelTest {
         every { musicRepository.getSpotifyDownloadedCount() } returns emptyFlow()
         every { musicRepository.getYouTubeDownloadedCount() } returns emptyFlow()
         every { librarySizeHolder.size } returns MutableStateFlow(mockk(relaxed = true))
+        // The first-sync sheet is answered: Sync runs straight away unless a test says otherwise.
+        every { prefs.arrivalChosen } returns MutableStateFlow(true)
     }
 
     private fun newVm(): SyncViewModel = SyncViewModel(
@@ -101,6 +105,7 @@ class SyncViewModelTest {
         librarySizeHolder = librarySizeHolder,
         streamingPreference = streamingPreference,
         lastFmRecommendationSource = mockk(relaxed = true),
+        playerRepository = mockk(relaxed = true),
     )
 
     @Before fun setUp() {
@@ -360,5 +365,97 @@ class SyncViewModelTest {
         advanceUntilIdle()
 
         verify { syncScheduler.scheduleDailySync(7, 30, false, DayOfWeekSet.WEEKENDS) }
+    }
+
+    // -- First-sync sheet (Sync tab overhaul, 2026-10-29) --------------------
+
+    /** A new install's first Sync asks how music should arrive, and runs nothing yet. */
+    @Test
+    fun `a new install's first Sync asks first`() = runTest {
+        every { prefs.arrivalChosen } returns MutableStateFlow(false)
+        coEvery { syncHistoryDao.getLatest() } returns null
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.showArrivalSheet)
+        coVerify(exactly = 0) { syncScheduler.triggerManualSync(any()) }
+    }
+
+    /** An upgrading install has synced before: it keeps its mode and switches, and is never asked. */
+    @Test
+    fun `an install that synced before is never asked`() = runTest {
+        every { prefs.arrivalChosen } returns MutableStateFlow(false)
+        coEvery { syncHistoryDao.getLatest() } returns mockk(relaxed = true)
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.showArrivalSheet)
+        coVerify { prefs.markArrivalChosen() }
+        coVerify { syncScheduler.triggerManualSync(any()) }
+        coVerify(exactly = 0) { streamingPreference.setEnabled(any()) }
+    }
+
+    /** Stream everything: Stream only, new playlists on Home, then the sync, in that order. */
+    @Test
+    fun `Stream everything switches to Stream only before the sync starts`() = runTest {
+        val vm = newVm()
+
+        vm.onArrivalChosen(streamEverything = true)
+        advanceUntilIdle()
+
+        coVerifyOrder {
+            streamingPreference.setEnabled(true)
+            prefs.setArrivalChosen(pinNewPlaylists = true)
+            syncScheduler.triggerManualSync(any())
+        }
+        assertFalse(vm.uiState.value.showArrivalSheet)
+        assertNull(vm.uiState.value.openManageFor)
+    }
+
+    /** Save to this phone: Download mode, nothing pinned, and the playlists open to pick from. */
+    @Test
+    fun `Save to this phone picks Download mode and opens the playlists`() = runTest {
+        every { tokenManager.spotifyAuthState } returns MutableStateFlow(mockk<AuthState.Connected>(relaxed = true))
+        val vm = newVm()
+
+        vm.onArrivalChosen(streamEverything = false)
+        advanceUntilIdle()
+
+        coVerifyOrder {
+            streamingPreference.setEnabled(false)
+            prefs.setArrivalChosen(pinNewPlaylists = false)
+            syncScheduler.triggerManualSync(any())
+        }
+        assertEquals(SyncSource.SPOTIFY, vm.uiState.value.openManageFor)
+    }
+
+    /** Save in Stream only keeps the playlist on the phone and leaves its sync switch alone. */
+    @Test
+    fun `Save in Stream only only keeps the playlist on the phone`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val vm = newVm()
+
+        vm.onSavePlaylist(42L, true)
+        advanceUntilIdle()
+
+        coVerify { musicRepository.setPlaylistDownload(42L, true) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), any(), any()) }
+    }
+
+    /** Save in Download mode also switches the playlist on for sync, as the old switch did. */
+    @Test
+    fun `Save in Download mode also switches the playlist on for sync`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        val vm = newVm()
+
+        vm.onSavePlaylist(42L, true)
+        advanceUntilIdle()
+
+        coVerify { playlistDao.setSyncEnabledAndPin(42L, true, any()) }
+        coVerify { musicRepository.setPlaylistDownload(42L, true) }
     }
 }

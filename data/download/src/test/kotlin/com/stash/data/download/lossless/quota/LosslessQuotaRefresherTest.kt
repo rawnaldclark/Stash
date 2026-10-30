@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelayEntry
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.relay.appVersionProvider
 import com.stash.data.download.lossless.relay.supporter
 import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
@@ -40,7 +41,7 @@ class LosslessQuotaRefresherTest {
 
     @Before fun setUp() {
         server.start()
-        refresher = LosslessQuotaRefresher(OkHttpClient(), config, RelaySigner(config, supporter { supporterToken }), quota).also {
+        refresher = LosslessQuotaRefresher(OkHttpClient(), config, RelaySigner(config, supporter { supporterToken }, appVersionProvider()), quota).also {
             it.nowMs = { now }
             it.configWaitMs = 200
         }

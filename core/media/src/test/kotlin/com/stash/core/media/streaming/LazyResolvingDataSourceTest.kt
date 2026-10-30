@@ -45,6 +45,20 @@ class LazyResolvingDataSourceTest {
         resolveDeadlineMs = deadlineMs,
     )
 
+    private val fileSource: DataSource = mockk(relaxed = true)
+    private val fileUri = Uri.parse("file:///music/song.flac")
+
+    /** [source] with downloads wired: a row marked downloaded has [fileUri]. */
+    private fun sourceWithDownloads() = LazyResolvingDataSource(
+        resolver = resolver,
+        urlCache = urlCache,
+        trackDao = trackDao,
+        httpDelegate = { httpSource },
+        jioSaavnDelegate = { jioSaavnSource },
+        downloadedFile = { row -> if (row.isDownloaded) fileUri else null },
+        localDelegate = { fileSource },
+    )
+
     private fun placeholderSpec(trackId: Long, position: Long = 0L) =
         DataSpec.Builder().setUri(Uri.parse("$STASH_RESOLVE_SCHEME://track/$trackId")).setPosition(position).build()
 
@@ -271,5 +285,71 @@ class LazyResolvingDataSourceTest {
         assertThat(spec.captured.uri.toString()).isEqualTo("https://cdn/q.flac")
         verify { finder.markFailed("stash-cloud://dropbox/1/abc?v=1") }
         verify { urlCache.invalidate(5L) }
+    }
+
+    @Test
+    fun `a song downloaded after it was queued plays its file, even with a stream cached`() {
+        every { urlCache.get(42L) } returns stream("https://cdn/x.flac", "squid")
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a", isDownloaded = true)
+        val spec = slot<DataSpec>()
+        every { fileSource.open(capture(spec)) } returns 100L
+
+        sourceWithDownloads().open(placeholderSpec(42L))
+
+        assertThat(spec.captured.uri).isEqualTo(fileUri)
+        verify(exactly = 0) { httpSource.open(any()) }
+        coVerify(exactly = 0) { resolver.resolve(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a song that started from its file re-opens from its file`() {
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a", isDownloaded = true)
+        every { fileSource.open(any()) } returns 100L
+        val source = sourceWithDownloads()
+        source.open(placeholderSpec(42L))
+        source.close()
+
+        // The row changes under it (deleted, say): the seek stays on the file it sniffed.
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a")
+        val spec = slot<DataSpec>()
+        every { fileSource.open(capture(spec)) } returns 50L
+        source.open(placeholderSpec(42L, position = 50L))
+
+        assertThat(spec.captured.uri).isEqualTo(fileUri)
+        assertThat(spec.captured.position).isEqualTo(50L)
+        verify(exactly = 0) { httpSource.open(any()) }
+    }
+
+    @Test
+    fun `a song already streaming keeps its stream when its download lands mid-song`() {
+        every { urlCache.get(42L) } returns stream("https://cdn/x.flac", "squid")
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a")
+        every { httpSource.open(any()) } returns 100L
+        val source = sourceWithDownloads()
+        source.open(placeholderSpec(42L))
+        source.close()
+
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a", isDownloaded = true)
+        every { httpSource.open(any()) } returns 50L
+        source.open(placeholderSpec(42L, position = 50L))
+
+        verify(exactly = 2) { httpSource.open(any()) }
+        verify(exactly = 0) { fileSource.open(any()) }
+    }
+    fun `Download mode resolves nothing and fails the open, so the song is skipped`() {
+        val source = LazyResolvingDataSource(
+            resolver = resolver,
+            urlCache = urlCache,
+            trackDao = trackDao,
+            httpDelegate = { httpSource },
+            jioSaavnDelegate = { jioSaavnSource },
+            streamAllowed = { false },
+        )
+
+        assertThrows(IOException::class.java) { source.open(placeholderSpec(42L)) }
+
+        coVerify(exactly = 0) { resolver.resolve(any(), any(), any()) }
+        verify(exactly = 0) { urlCache.get(any()) }
+        verify(exactly = 0) { httpSource.open(any()) }
     }
 }

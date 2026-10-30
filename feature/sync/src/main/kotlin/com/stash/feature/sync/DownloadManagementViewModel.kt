@@ -113,6 +113,7 @@ class DownloadManagementViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch { cancellationController.releaseDeadClaims() }
         viewModelScope.launch {
             downloadManager.progress.collect { update ->
                 progressByTrackId.value = when (update.status) {
@@ -134,6 +135,18 @@ class DownloadManagementViewModel @Inject constructor(
     fun cancel(queueId: Long) = viewModelScope.launch {
         val cancelled = cancellationController.cancel(queueId)
         message.value = if (cancelled) "Download cancelled" else "Download could not be cancelled"
+    }
+
+    /** Cancels every waiting and running download. */
+    fun clearQueue() = viewModelScope.launch {
+        val cancelled = cancellationController.cancelAll()
+        message.value = if (cancelled == 0) "Nothing to cancel" else "Cancelled $cancelled ${if (cancelled == 1) "download" else "downloads"}"
+    }
+
+    /** Removes finished and cancelled downloads from History; failed ones stay, so they can be retried. */
+    fun clearHistory() = viewModelScope.launch {
+        downloadQueueDao.deleteCompleted()
+        message.value = "History cleared"
     }
 
     fun retry(queueId: Long) = viewModelScope.launch {

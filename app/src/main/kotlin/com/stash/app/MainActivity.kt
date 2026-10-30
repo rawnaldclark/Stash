@@ -1,5 +1,7 @@
 package com.stash.app
 
+import com.stash.core.data.link.MusicLinks
+import com.stash.core.data.link.LinkImporter
 import android.content.Context
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import android.content.Intent
@@ -77,6 +79,8 @@ class MainActivity : AppCompatActivity() {
 
         /** [pendingDeepLink] for the update notification: open the update sheet. */
         const val DEEP_LINK_OPEN_UPDATE = "open_update"
+        /** [pendingDeepLink] prefix for a shared Spotify / YouTube link (text shared to Stash); the link follows. */
+        const val DEEP_LINK_MUSIC_LINK_PREFIX = "music_link:"
 
         /** A pairing link is about 160 characters; anything far longer isn't one. */
         private const val MAX_WEB_LINK = 512
@@ -414,6 +418,17 @@ class MainActivity : AppCompatActivity() {
      */
     private fun handleShareIntent(intent: Intent?) {
         if (intent == null) return
+        // A link shared as text from Spotify or YouTube ("Share → Stash"): its preview, to add it to the library.
+        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            val link = MusicLinks.findUrl(intent.getStringExtra(Intent.EXTRA_TEXT))
+            if (link != null) {
+                pendingDeepLink.value = DEEP_LINK_MUSIC_LINK_PREFIX + link
+            } else {
+                Toast.makeText(this, LinkImporter.NOT_MUSIC, Toast.LENGTH_LONG).show()
+            }
+            intent.removeExtra(Intent.EXTRA_TEXT) // a configuration change replays the intent
+            return
+        }
         val uris = shareUris(intent)
         if (uris.isNotEmpty()) {
             localImportCoordinator.start(uris)

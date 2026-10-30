@@ -48,7 +48,7 @@ class PlayerRepositoryShuffleQueueTest {
     private val musicRepository: MusicRepository = mockk {
         every { trackDeletions } returns MutableSharedFlow()
     }
-    private val streamingPreference: StreamingPreference = mockk(relaxed = true)
+    private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)

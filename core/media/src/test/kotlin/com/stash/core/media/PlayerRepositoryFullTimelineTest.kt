@@ -44,7 +44,7 @@ class PlayerRepositoryFullTimelineTest {
     private val musicRepository: MusicRepository = mockk {
         every { trackDeletions } returns MutableSharedFlow()
     }
-    private val streamingPreference: StreamingPreference = mockk(relaxed = true)
+    private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
     private val streamResolver: StreamSourceRegistry = mockk()
     private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true)
     private val connectivity: ConnectivityMonitor = mockk(relaxed = true)
@@ -90,6 +90,41 @@ class PlayerRepositoryFullTimelineTest {
         assertThat(items.captured).hasSize(57)
         assertThat(items.captured[5].localConfiguration?.uri?.scheme).isEqualTo("stash-resolve")
         assertThat(items.captured[5].mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)).isEqualTo(6L)
+    }
+
+    @Test
+    fun `setQueue in Download mode queues only the downloads and starts a play-from-the-top at the first`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        repo.filePathExistsOnDisk = { true }
+        fun downloaded(id: Long) = Track(
+            id = id, title = "t$id", artist = "a",
+            filePath = "/storage/music/$id.flac", fileSizeBytes = 1_000_000L, isDownloaded = true,
+        )
+        fun online(id: Long) = Track(id = id, title = "t$id", artist = "a", youtubeId = "v$id", isStreamable = true)
+        val tracks = listOf(online(1L), downloaded(2L), online(3L), downloaded(4L))
+        val items = slot<List<MediaItem>>()
+        val start = slot<Int>()
+        every { controller.setMediaItems(capture(items), capture(start), any<Long>()) } returns Unit
+
+        repo.setQueue(tracks, startIndex = 0)
+
+        assertThat(items.captured.map { it.mediaId }).containsExactly("2", "4").inOrder()
+        assertThat(items.captured.map { it.localConfiguration?.uri?.scheme }).containsExactly("file", "file")
+        assertThat(start.captured).isEqualTo(0)
+    }
+
+    @Test
+    fun `setQueue in Download mode refuses a tap on a song that isn't on the phone`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        repo.filePathExistsOnDisk = { true }
+        val tracks = listOf(
+            Track(id = 1L, title = "t1", artist = "a", filePath = "/storage/music/1.flac", fileSizeBytes = 1_000_000L, isDownloaded = true),
+            Track(id = 2L, title = "t2", artist = "a", youtubeId = "v2", isStreamable = true),
+        )
+
+        repo.setQueue(tracks, startIndex = 1)
+
+        verify(exactly = 0) { controller.setMediaItems(any<List<MediaItem>>(), any<Int>(), any<Long>()) }
     }
 
     @Test
@@ -522,6 +557,96 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
+    fun `prefetch plays the next song's file when its download finished after it was queued`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        repo.filePathExistsOnDisk = { it == "/storage/music/new.flac" }
+        val current = Track(id = 41L, title = "Current", artist = "Artist")
+        // The queue's copy predates the download; only the row knows about the file.
+        val queuedNext = Track(id = 42L, title = "Next", artist = "Artist", isStreamable = true)
+        coEvery { trackDao.getById(42L) } returns com.stash.core.data.db.entity.TrackEntity(
+            id = 42L,
+            title = "Next",
+            artist = "Artist",
+            filePath = "/storage/music/new.flac",
+            fileSizeBytes = 1_000_000L,
+            fileFormat = "flac",
+            isDownloaded = true,
+        )
+        val nextItem = MediaItem.Builder()
+            .setMediaId("42")
+            .setUri("https://cdn.example/earlier-prefetch.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder().setExtras(
+                    android.os.Bundle().apply {
+                        putLong(EXTRA_TRACK_ID, 42L)
+                        putString(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_ORIGIN, "qbdlx")
+                    },
+                ).build(),
+            )
+            .build()
+        every { controller.nextMediaItemIndex } returns 1
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns nextItem
+        val replacement = slot<MediaItem>()
+        every { controller.replaceMediaItem(1, capture(replacement)) } returns Unit
+        repo.currentQueueTracks = listOf(current, queuedNext)
+
+        repo.prefetchNextTrack()
+
+        assertThat(replacement.captured.localConfiguration?.uri?.toString())
+            .isEqualTo("file:///storage/music/new.flac")
+        assertThat(
+            replacement.captured.mediaMetadata.extras
+                ?.containsKey(com.stash.core.media.service.StashPlaybackService.EXTRA_STREAM_ORIGIN),
+        ).isFalse()
+        assertThat(repo.currentQueueTracks[1].isDownloaded).isTrue()
+        coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `prefetch leaves the slot alone when playback reached it during the lookup`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        repo.filePathExistsOnDisk = { it == "/storage/music/new.flac" }
+        var advanced = false
+        // The row read suspends; meanwhile the song before ends and slot 1 starts playing.
+        coEvery { trackDao.getById(42L) } coAnswers {
+            advanced = true
+            com.stash.core.data.db.entity.TrackEntity(
+                id = 42L, title = "Next", artist = "Artist", filePath = "/storage/music/new.flac",
+                fileSizeBytes = 1_000_000L, fileFormat = "flac", isDownloaded = true,
+            )
+        }
+        val nextItem = MediaItem.Builder()
+            .setMediaId("42")
+            .setUri("https://cdn.example/earlier-prefetch.flac")
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setExtras(android.os.Bundle().apply { putLong(EXTRA_TRACK_ID, 42L) }).build(),
+            )
+            .build()
+        every { controller.currentMediaItemIndex } answers { if (advanced) 1 else 0 }
+        every { controller.nextMediaItemIndex } answers { if (advanced) -1 else 1 }
+        every { controller.mediaItemCount } returns 2
+        every { controller.getMediaItemAt(1) } returns nextItem
+        repo.currentQueueTracks = listOf(
+            Track(id = 41L, title = "Current", artist = "Artist"),
+            Track(id = 42L, title = "Next", artist = "Artist", isStreamable = true),
+        )
+
+        repo.prefetchNextTrack()
+
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        assertThat(repo.currentQueueTracks[1].isDownloaded).isFalse()
+    }
+
+    @Test
+    fun `the next-up check`() {
+        assertThat(isStillNextUp(currentIndex = 0, nextIndex = 1, timelineIndex = 1)).isTrue()
+        assertThat(isStillNextUp(currentIndex = 1, nextIndex = 2, timelineIndex = 1)).isFalse()
+        assertThat(isStillNextUp(currentIndex = 0, nextIndex = 2, timelineIndex = 1)).isFalse()
+    }
+
+    @Test
     fun `direct queue jump replaces a stale downloaded target with a stream placeholder`() = runTest {
         coEvery { streamingPreference.current() } returns true
         every { connectivity.isConnected() } returns true
@@ -571,11 +696,8 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
-    fun `addToQueue in Download mode appends stream-only tracks as placeholders`() = runTest {
-        // The Download switch decides what sync writes to disk, never what
-        // plays (until 2026-09-17 Offline mode rejected both without touching
-        // the player).
-        coEvery { streamingPreference.current() } returns false
+    fun `addToQueue in Stream only appends stream-only tracks as placeholders`() = runTest {
+        coEvery { streamingPreference.current() } returns true
         every { controller.mediaItemCount } returns 1
         val first = Track(
             id = 101L,
@@ -601,8 +723,31 @@ class PlayerRepositoryFullTimelineTest {
     }
 
     @Test
-    fun `addToQueue turns a downloaded row whose local file is unusable into a stream placeholder`() = runTest {
+    fun `addToQueue in Download mode refuses songs that aren't on the phone`() = runTest {
+        // Download mode plays only what is on the phone (owner, 2026-10-29): a stream-only
+        // song and a download whose file has gone are both refused, never queued as streams.
         coEvery { streamingPreference.current() } returns false
+        repo.filePathExistsOnDisk = { false }
+        every { controller.mediaItemCount } returns 1
+        val streamOnly = Track(id = 101L, title = "First", artist = "Artist", youtubeId = "first-video", isStreamable = true)
+        val staleDownload = Track(
+            id = 303L,
+            title = "Missing",
+            artist = "Artist",
+            filePath = "/storage/music/missing.flac",
+            isDownloaded = true,
+            isStreamable = true,
+        )
+
+        assertThat(repo.addToQueue(streamOnly)).isFalse()
+        assertThat(repo.addToQueue(staleDownload)).isFalse()
+
+        verify(exactly = 0) { controller.addMediaItem(any()) }
+    }
+
+    @Test
+    fun `addToQueue turns a downloaded row whose local file is unusable into a stream placeholder`() = runTest {
+        coEvery { streamingPreference.current() } returns true
         repo.filePathExistsOnDisk = { false }
         every { controller.mediaItemCount } returns 1
         val staleDownload = Track(
@@ -627,7 +772,7 @@ class PlayerRepositoryFullTimelineTest {
     fun `setQueue turns a start item whose local file is unusable into a stream placeholder`() = runTest {
         // Only the selected item is validated on disk (the rest lazily, at
         // open time); a stale one streams instead of refusing the whole queue.
-        coEvery { streamingPreference.current() } returns false
+        coEvery { streamingPreference.current() } returns true
         val checkedPaths = mutableListOf<String>()
         repo.filePathExistsOnDisk = { path ->
             checkedPaths += path

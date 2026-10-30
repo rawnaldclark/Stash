@@ -78,6 +78,10 @@ class SpotifyRevisionSkipParityTest {
 
         init {
             every { prefs.discoverAutoMixes } returns flowOf(false)
+            // The sync tab overhaul's settings: mixes already seeded, nothing pinned on discovery.
+            every { prefs.mixStackSeeded } returns flowOf(true)
+            every { prefs.pinNewPlaylists } returns flowOf(false)
+            coEvery { prefs.markMixStackSeeded() } returns Unit
             every { prefs.spotifySyncMode } answers { flowOf(mode) }
             every { prefs.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
             coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Empty("none")

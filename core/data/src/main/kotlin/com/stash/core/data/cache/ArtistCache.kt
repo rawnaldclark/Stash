@@ -262,7 +262,13 @@ class ArtistCache(
         }
         val merged = discographyDeferred.await()
         val about = aboutDeferred.await()
-        yt.copy(albums = merged.albums, singles = merged.singles, about = about)
+        // The banner is YouTube's header photo; Spotify's wide header only fills in when YouTube has none.
+        yt.copy(
+            albums = merged.albums,
+            singles = merged.singles,
+            about = about,
+            avatarUrl = yt.avatarUrl ?: about?.headerUrl,
+        )
     }
 
     /**

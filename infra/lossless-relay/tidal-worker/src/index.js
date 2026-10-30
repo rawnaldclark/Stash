@@ -64,8 +64,11 @@ export default {
       const streamMatch = path.match(/^\/stream\/(?:td:)?(\d+)$/);
       if (streamMatch && request.method === "GET") {
         if (!authorized(request, env.ACCESS_TOKEN)) return unauthorized();
+        const webRequest = isWebRequest(url);
+        const buildDenial = appBuildDenial(request, env, webRequest);
+        if (buildDenial) return buildDenial;
         if (env.TIDAL_RELAY_PAUSED === "1") return paused();
-        const caller = installOf(request, env, `td:${streamMatch[1]}`);
+        const caller = installOf(request, env, `td:${streamMatch[1]}`, !webRequest);
         if (caller.denial) return caller.denial;
         const quota = await admitStream(request, env);
         if (quota.denial) return quota.denial;
@@ -284,7 +287,21 @@ async function searchUncached(query, cc, request, env, onSeat = async () => {}) 
     const artists = [t.artist?.name, ...(t.artists || []).map((a) => a.name)].filter((v, i, a) => v && a.indexOf(v) === i);
     const title = `${t.title || ""}${t.version ? ` (${t.version})` : ""}`;
     const artwork = cover ? `https://resources.tidal.com/images/${cover.replaceAll("-", "/")}/1280x1280.jpg` : null;
-    return { id: `td:${t.id}`, title, artist: artists.join(", "), album: t.album?.title || "", duration: Math.round(Number(t.duration) || 0), artwork, artworkURL: artwork, format: "flac", audioQuality: quality, bitrate: quality === "HI_RES_LOSSLESS" ? 9216 : quality === "LOSSLESS" ? 1411 : 320, isrc: t.isrc || null };
+    return {
+      id: `td:${t.id}`,
+      title,
+      artist: artists.join(", "),
+      album: t.album?.title || "",
+      duration: Math.round(Number(t.duration) || 0),
+      artwork,
+      artworkURL: artwork,
+      format: "flac",
+      audioQuality: quality,
+      bitrate: quality === "HI_RES_LOSSLESS" ? 9216 : quality === "LOSSLESS" ? 1411 : 320,
+      isrc: t.isrc || null,
+      // Preserve the live relay's parental-advisory flag for explicit/clean matching.
+      explicit: typeof t.explicit === "boolean" ? t.explicit : null,
+    };
   });
   return json({ tracks });
 }
@@ -346,6 +363,24 @@ function skipsHires(url, aac) {
 
 /** ?web=mse: the browser-MSE FLAC lane (raw MPD on CORS-open CDN URLs), served by web (PKCE) seats only. */
 function mseMode(url) { return url.searchParams.get("web") === "mse"; }
+
+/** The web player has no app install/build identity. These are its existing relay lanes. */
+function isWebRequest(url) {
+  const webAac = url.searchParams.get("aac") === "only" && url.searchParams.get("hires") !== "0";
+  return url.searchParams.get("web") === "1" || mseMode(url) || webAac;
+}
+
+function appBuildDenial(request, env, webRequest) {
+  const rawMin = env.MIN_APP_BUILD;
+  const min = typeof rawMin === "string" && /^\d+$/.test(rawMin) ? Number(rawMin) : 0;
+  if (!Number.isSafeInteger(min) || min <= 0 || webRequest) return null;
+  const rawBuild = request.headers.get("X-Stash-App-Build") || "";
+  if (!/^\d+$/.test(rawBuild)) return appTooOld(min);
+  const build = Number(rawBuild);
+  return Number.isSafeInteger(build) && build >= min ? null : appTooOld(min);
+}
+
+function appTooOld(min) { return json({ error: "app_too_old", min_build: min }, 426); }
 
 /** ?aac as one of "", "1", "only": anything else is "", so callers cannot mint unbounded cache namespaces. */
 function aacMode(url) {
@@ -1090,10 +1125,10 @@ async function admitStream(request, env) {
  * X-Stash-Server-Time); any other failure (bad HMAC, wrong key, malformed headers) is logged and served as legacy,
  * uncounted, so an app with a stale key or a bug keeps playing while the counter is still optional.
  */
-function installOf(request, env, middle) {
+function installOf(request, env, middle, enforceRequired = true) {
   const h = (name) => request.headers.get(name) || "";
   const install = h("X-Stash-Install"), ts = h("X-Stash-Ts"), auth = h("X-Stash-Auth");
-  const requireInstall = env.REQUIRE_INSTALL === "1";
+  const requireInstall = enforceRequired && env.REQUIRE_INSTALL === "1";
   if (!install && !ts && !auth) return requireInstall ? { denial: installUnauthorized() } : { none: "legacy" };
   if (!env.RELAY_KEY) {
     if (requireInstall) return { denial: json({ error: "server_misconfigured", message: "RELAY_KEY not set" }, 500) };

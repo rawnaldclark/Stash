@@ -271,6 +271,7 @@ private fun StashNavGraph(
                 // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -283,6 +284,7 @@ private fun StashNavGraph(
         }
         composable<SearchRoute> {
             SearchScreen(
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },
@@ -305,21 +307,14 @@ private fun StashNavGraph(
                 onNavigateToFailedMatches = {
                     navController.navigate(FailedMatchesRoute)
                 },
-                // Phase 8: Library actions (Blocked Songs + Fix wrong-version)
-                // moved out of Settings into the Sync tab's Library section.
-                onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
                 onNavigateToFailedDownloads = {
                     navController.navigate(FailedDownloadsRoute)
                 },
-                onNavigateToDownloads = {
-                    navController.navigate(DownloadManagementRoute)
-                },
-                // "Re-authenticate" opens Accounts itself, where the expired card
-                // leads with Reconnect, instead of the Settings hub one tap short.
-                // Settings goes under it first: Accounts shares the ViewModel
-                // scoped to the SettingsRoute entry (getBackStackEntry throws
-                // without it), as the captcha deep link does. Back from Accounts
-                // lands on Settings, then Sync.
+                // Connecting, and "Re-authenticate", open Accounts itself, where an
+                // expired card leads with Reconnect. Settings goes under it first:
+                // Accounts shares the ViewModel scoped to the SettingsRoute entry
+                // (getBackStackEntry throws without it), as the captcha deep link
+                // does. Back from Accounts lands on Settings, then Sync.
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -329,7 +324,20 @@ private fun StashNavGraph(
                     }
                 },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+                onOpenHistory = { navController.navigate(SyncHistoryRoute) },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
             )
+        }
+        composable<SyncHistoryRoute> {
+            AboveChrome {
+                com.stash.feature.sync.SyncHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    // Blocked Songs + Downloads moved here from the Sync tab itself.
+                    onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
+                    onNavigateToDownloads = { navController.navigate(DownloadManagementRoute) },
+                    onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+                )
+            }
         }
         composable<ManagePlaylistsRoute> {
             AboveChrome {
@@ -540,6 +548,16 @@ private fun StashNavGraph(
         composable<SharedTrackRoute> {
             AboveChrome {
                 com.stash.feature.library.share.SharedTrackScreen(onBack = { navController.popBackStack() })
+            }
+        }
+
+        composable<LinkImportRoute> {
+            AboveChrome {
+                com.stash.feature.library.share.LinkImportScreen(
+                    onBack = { navController.popBackStack() },
+                    // Back from the playlist skips the link's screen.
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<LinkImportRoute> { inclusive = true } } },
+                )
             }
         }
 

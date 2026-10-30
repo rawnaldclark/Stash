@@ -43,6 +43,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class MixBuilderRoute(val recipeId: Long? = null)
 @Serializable data class SharedMixRoute(val shareId: String)
 @Serializable data class SharedTrackRoute(val link: String)
+/** A pasted or shared Spotify / YouTube link ([com.stash.core.data.link.MusicLinks]): its preview and Add to library. */
+@Serializable data class LinkImportRoute(val link: String)
 @Serializable data class ListenJoinRoute(val code: String)
 /** Settings › Library & Storage › Link Stash on the web; [link] is a pairing link opened from outside (spec 2026-10-10 link-sync §2.2). */
 @Serializable data class WebLinkRoute(val link: String? = null)
@@ -138,3 +140,6 @@ data class MixBrowseRoute(val rail: String)
 /** Full-screen per-source playlist management; [source] is a [SyncSource] name. */
 @Serializable
 data class ManagePlaylistsRoute(val source: String)
+
+/** The Sync tab's "History, blocked songs, undo" screen. */
+@Serializable data object SyncHistoryRoute

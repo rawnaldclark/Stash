@@ -659,13 +659,13 @@ test("a lossless MISS and every cache HIT count one unit for the install, with t
     const e = quotaEnv(); const q = qobuz([200, GOOD]);
     const miss = await handle(mintReq(42, 27), e, q, NOW);
     assert.equal(miss.headers.get("X-Stash-Cache"), "MISS");
-    assert.equal(miss.headers.get("X-Stash-Lossless"), "1/500");
+    assert.equal(miss.headers.get("X-Stash-Lossless"), "1/300");
     assert.equal(miss.headers.get("X-Stash-Lossless-Reset"), String(RESET));
     const hit = await handle(mintReq(42, 27), e, q, NOW + 5);
     assert.equal(hit.headers.get("X-Stash-Cache"), "HIT");
-    assert.equal(hit.headers.get("X-Stash-Lossless"), "2/500");
+    assert.equal(hit.headers.get("X-Stash-Lossless"), "2/300");
     const other = await handle(mintReq(42, 27, { install: "install-0002" }), e, q, NOW + 6);
-    assert.equal(other.headers.get("X-Stash-Lossless"), "1/500", "per install");
+    assert.equal(other.headers.get("X-Stash-Lossless"), "1/300", "per install");
     assert.equal(usage(e), 2);
     assert.equal(usage(e, "i:install-0002"), 1);
 });
@@ -695,7 +695,7 @@ test("the counter's bump never holds up the answer: it rides on ctx.waitUntil an
         const r = await handleWithCtx(mintReq(track, 27), ge, fq, NOW + 1, ctx); // resolves with the write still blocked
         assert.equal(r.status, 200);
         assert.equal(r.headers.get("X-Stash-Cache"), cache);
-        assert.equal(r.headers.get("X-Stash-Lossless"), "2/500", cache); // the read said 1; this answer makes 2
+        assert.equal(r.headers.get("X-Stash-Lossless"), "2/300", cache); // the read said 1; this answer makes 2
         assert.equal(ctx.pending.length, 1, cache);
         assert.equal(usage(e), 1, `${cache}: not written yet`);
         gated.open();
@@ -705,7 +705,7 @@ test("the counter's bump never holds up the answer: it rides on ctx.waitUntil an
     }
     // A direct caller with no ctx still gets the unit written before handle() returns.
     const direct = await handleWithCtx(mintReq(42, 27), e, qobuz(), NOW + 2);
-    assert.equal(direct.headers.get("X-Stash-Lossless"), "2/500");
+    assert.equal(direct.headers.get("X-Stash-Lossless"), "2/300");
     assert.equal(usage(e), 2);
 });
 
@@ -783,12 +783,34 @@ test("GET /v1/quota: signed '<install>:quota:<ts>', today's count with the heade
     for (let i = 0; i < 2; i++) {
         const r = await handle(quotaReq(), e, q, NOW);
         assert.equal(r.status, 200);
-        assert.deepEqual(await r.json(), { used: 1, limit: 500, resetsAt: RESET, supporter: false });
-        assert.equal(r.headers.get("X-Stash-Lossless"), "1/500");
+        assert.deepEqual(await r.json(), { used: 1, limit: 300, resetsAt: RESET, supporter: false });
+        assert.equal(r.headers.get("X-Stash-Lossless"), "1/300");
         assert.equal(r.headers.get("X-Stash-Lossless-Reset"), String(RESET));
     }
-    assert.deepEqual(await (await handle(quotaReq({ install: "install-0009" }), e, q, NOW)).json(), { used: 0, limit: 500, resetsAt: RESET, supporter: false });
+    assert.deepEqual(await (await handle(quotaReq({ install: "install-0009" }), e, q, NOW)).json(), { used: 0, limit: 300, resetsAt: RESET, supporter: false });
     assert.equal(usage(e), 1);
+});
+
+test("MIN_APP_BUILD rejects missing, malformed and old mint builds before quota or Qobuz; quota stays open", async () => {
+    const e = quotaEnv({ MIN_APP_BUILD: "157" });
+    const q = qobuz([200, GOOD]);
+    for (const build of [null, "157x", "156"]) {
+        const original = mintReq(42, 27);
+        const headers = new Headers(original.headers);
+        if (build !== null) headers.set("X-Stash-App-Build", build);
+        const response = await handle(new Request(original, { headers }), e, q, NOW);
+        assert.equal(response.status, 426);
+        assert.deepEqual(await response.json(), { error: "app_too_old", min_build: 157 });
+    }
+    assert.equal(q.calls.length, 0);
+    assert.equal(usage(e), 0);
+
+    const current = mintReq(42, 27);
+    const currentHeaders = new Headers(current.headers);
+    currentHeaders.set("X-Stash-App-Build", "157");
+    assert.equal((await handle(new Request(current, { headers: currentHeaders }), e, q, NOW)).status, 200);
+    const quota = await handle(quotaReq(), e, q, NOW);
+    assert.equal(quota.status, 200);
 });
 
 test("GET /v1/quota refuses unsigned, wrong-key, skewed and mint-signed requests (401 + server time)", async () => {
@@ -853,7 +875,7 @@ test("only revoked_tokens missing: free requests are still counted; a supporter'
     let lines;
     try {
         lines = await errorsDuring(async () => {
-            assert.equal((await handle(mintReq(100, 27), e, q, NOW)).headers.get("X-Stash-Lossless"), "1/500");
+            assert.equal((await handle(mintReq(100, 27), e, q, NOW)).headers.get("X-Stash-Lossless"), "1/300");
             hooks.entitlementOf = async () => ({ tid: "0123456789abcdef0123456789abcdef" });
             for (let i = 1; i <= 3; i++) {
                 const r = await handle(mintReq(100 + i, 27), e, q, NOW + i);
@@ -861,7 +883,7 @@ test("only revoked_tokens missing: free requests are still counted; a supporter'
                 assert.equal(r.headers.get("X-Stash-Lossless"), null, "a supporter read can't run: counter off");
             }
             hooks.entitlementOf = async () => null;
-            assert.equal((await handle(mintReq(200, 27), e, q, NOW + 10)).headers.get("X-Stash-Lossless"), "2/500", "free requests still counted");
+            assert.equal((await handle(mintReq(200, 27), e, q, NOW + 10)).headers.get("X-Stash-Lossless"), "2/300", "free requests still counted");
         });
     } finally { hooks.entitlementOf = original; }
     assert.equal(lines.filter((l) => /quota read failed/.test(l)).length, 1, lines.join("\n"));
@@ -880,7 +902,7 @@ test("a transient QUOTA_DB failure with the tables present is not mistaken for m
     const q = qobuzByToken(new Set());
     const lines = await errorsDuring(async () => {
         assert.equal((await handle(mintReq(100, 27), e, q, NOW)).headers.get("X-Stash-Lossless"), null);
-        assert.equal((await handle(mintReq(101, 27), e, q, NOW + 1)).headers.get("X-Stash-Lossless"), "1/500");
+        assert.equal((await handle(mintReq(101, 27), e, q, NOW + 1)).headers.get("X-Stash-Lossless"), "1/300");
     });
     assert.deepEqual(lines.filter((l) => /stash-quota has no/.test(l)), []);
 });

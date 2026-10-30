@@ -8,6 +8,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.relay.appVersionProvider
 import com.stash.data.download.lossless.relay.supporter
 import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
@@ -55,8 +56,9 @@ class BitchordClientQuotaTest {
     @Before fun setUp() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
-                request.path!!.startsWith("/search") -> ok(SEARCH_HIT)
-                request.path!!.startsWith("/stream") -> { streams.incrementAndGet(); streamReply(request) }
+                // Under the root (the owner's relay) or a prefix (a user's own server on the same host).
+                request.path!!.substringAfter("/user").startsWith("/search") -> ok(SEARCH_HIT)
+                request.path!!.substringAfter("/user").startsWith("/stream") -> { streams.incrementAndGet(); streamReply(request) }
                 else -> MockResponse().setResponseCode(404)
             }
         }
@@ -71,7 +73,7 @@ class BitchordClientQuotaTest {
             every { tidalRelay } returns MutableStateFlow(TidalRelay(base, null))
             every { relayKey } returns MutableStateFlow(null)
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter()), quota)
+        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
         client.nowMs = { now }
     }
 
@@ -172,6 +174,39 @@ class BitchordClientQuotaTest {
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Busy::class.java)
         assertThat(client.isBusy()).isTrue()
         assertThat(quota.current()).isNull()
+    }
+
+    @Test fun `app too old - the owner's relay is left alone an hour by every lookup, then asked again`() = runBlocking {
+        streamReply = { MockResponse().setResponseCode(RelaySigner.APP_TOO_OLD).setBody("""{"error":"app_too_old"}""") }
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.Busy(now + RelaySigner.APP_TOO_OLD_BACKOFF_MS))
+        // Not the device-wide busy circuit, and not a miss.
+        assertThat(client.isBusy()).isFalse()
+        assertThat(dao.rows.values.single().losslessMissAt).isNull()
+        val asked = server.requestCount
+
+        // Within the hour: no stream, no AAC, no other song, no download goes out.
+        now += RelaySigner.APP_TOO_OLD_BACKOFF_MS - 1_000
+        val other = query.copy(title = "One More Time", isrc = "GBDUW0000059")
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(client.lookup(query, aacOnly = true)).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(client.lookup(other)).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(server.requestCount).isEqualTo(asked)
+
+        // After it: asked again (an updated app gets FLAC).
+        now += 2_000
+        streamReply = { ok(FLAC) }
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(server.requestCount).isGreaterThan(asked)
+    }
+
+    @Test fun `app too old - a user's own server is still asked`() = runBlocking {
+        streamReply = { MockResponse().setResponseCode(RelaySigner.APP_TOO_OLD).setBody("""{"error":"app_too_old"}""") }
+        client.lookup(query)
+
+        userEndpoint = server.url("/user").toString().trimEnd('/')
+        streamReply = { ok(FLAC) }
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
     }
 
     private companion object {

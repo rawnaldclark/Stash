@@ -29,6 +29,7 @@ import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
+import com.stash.core.data.sync.MixStacking
 import com.stash.core.model.SyncState
 import com.stash.data.spotify.SpotifyApiClient
 import dagger.assisted.Assisted
@@ -54,6 +55,17 @@ import kotlinx.coroutines.flow.first
  */
 @Suppress("UNUSED_PARAMETER")
 internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
+
+/**
+ * Whether a playlist sync finds for the first time goes straight onto Home's
+ * Your playlists rail: after "Stream everything" on the first-sync sheet
+ * ([pinNewPlaylists]), in Stream only, and only the user's own playlists. Mixes
+ * have their own Home rails and Liked Songs its own card. In Download mode a
+ * pinned playlist would sit on Home with nothing on the phone, so it waits for
+ * its Save switch like before.
+ */
+internal fun pinOnDiscovery(type: PlaylistType, streamingMode: Boolean, pinNewPlaylists: Boolean): Boolean =
+    pinNewPlaylists && streamingMode && type == PlaylistType.CUSTOM
 
 /**
  * The type to re-write onto an existing playlist row, or null to leave it.
@@ -250,6 +262,26 @@ class DiffWorker @AssistedInject constructor(
             // rely on it) but skip the `download_queue` enqueue. Tracks
             // become available via streaming-tap through KennyySource.
             val streamingMode = streamingPreference.current()
+            val pinNewPlaylists = syncPreferencesManager.pinNewPlaylists.first()
+
+            // Stacking became a switch per mix (2026-10-29). Once, before the first diff under
+            // it: an account that was accumulating keeps EVERY mix it has stacking, not only the
+            // ones that offer the switch to new mixes (Release Radar, My Supermix, a Daily Mix
+            // under another locale's name all collected too), so an upgrade never shrinks a
+            // collected mix back to this week's songs (review on #737). They keep the switch
+            // ([MixStacking.showsSwitch]) to turn it off.
+            if (!syncPreferencesManager.mixStackSeeded.first()) {
+                var seeded = 0
+                for (mix in playlistDao.getMixPlaylists()) {
+                    val accountMode = if (mix.source == MusicSource.YOUTUBE) youtubeSyncMode else spotifySyncMode
+                    if (accountMode == SyncMode.ACCUMULATE) {
+                        playlistDao.setStackSongs(mix.id, true)
+                        seeded++
+                    }
+                }
+                syncPreferencesManager.markMixStackSeeded()
+                if (seeded > 0) Log.i(TAG, "Stack switched on for $seeded mix(es) that were accumulating")
+            }
 
             val playlistSnapshots = remoteSnapshotDao.getPlaylistSnapshotsBySyncId(syncId)
             syncStateManager.onDiffing(playlistsDiffed = 0, totalPlaylists = playlistSnapshots.size)
@@ -261,18 +293,25 @@ class DiffWorker @AssistedInject constructor(
             var skippedUnchanged = 0
 
             for (playlistSnapshot in playlistSnapshots) {
-                // Pick the mode for this specific playlist's source so a
-                // user can Refresh Spotify Daily Mixes while Accumulating
-                // YouTube Liked Music on the same sync run.
-                val playlistSyncMode = when (playlistSnapshot.source) {
-                    MusicSource.YOUTUBE -> youtubeSyncMode
-                    else -> spotifySyncMode
-                }
-
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
                 // and needs its id to drive the block below).
-                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode)
+                val localPlaylist = findOrCreatePlaylist(playlistSnapshot, streamingMode, pinNewPlaylists)
+
+                // A mix follows its own Stack switch: stacking accumulates, anything else
+                // mirrors what the service gave this time. The user's own playlists and Liked
+                // keep their account's mode (whether a song removed there goes here too).
+                val playlistSyncMode = when {
+                    localPlaylist.type == PlaylistType.DAILY_MIX ->
+                        if (localPlaylist.stackSongs) SyncMode.ACCUMULATE else SyncMode.REFRESH
+                    playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
+                    else -> spotifySyncMode
+                }
+                if (localPlaylist.userHidden) {
+                    Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' is out of the library, skipping")
+                    skippedSwitchedOff++
+                    continue
+                }
 
                 // Skip playlists the user has switched off — EXCEPT algorithmic
                 // mixes, and EXCEPT anything at all in Online mode.
@@ -495,6 +534,7 @@ class DiffWorker @AssistedInject constructor(
     private suspend fun findOrCreatePlaylist(
         snapshot: RemotePlaylistSnapshotEntity,
         streamingMode: Boolean,
+        pinNewPlaylists: Boolean,
     ): PlaylistEntity {
         val existing = playlistDao.findBySourceId(snapshot.sourcePlaylistId)
         if (existing != null) {
@@ -534,6 +574,9 @@ class DiffWorker @AssistedInject constructor(
             ) {
                 playlistDao.updateName(existing.id, snapshot.playlistName)
             }
+            // One the user took out of their library stays out: not
+            // reactivated, and the caller skips it (no linking, no downloads).
+            if (existing.userHidden) return existing
             // Re-activate a previously auto-hidden playlist when it
             // reappears in today's snapshot. Pairs with the post-loop
             // deactivateMissingForSource call below — without it, a mix
@@ -567,6 +610,11 @@ class DiffWorker @AssistedInject constructor(
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
+            pinnedToHomeAt = if (pinOnDiscovery(snapshot.playlistType, streamingMode, pinNewPlaylists)) {
+                System.currentTimeMillis()
+            } else {
+                null
+            },
         )
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most

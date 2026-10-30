@@ -18,10 +18,16 @@ test("day is the UTC date; the reset is the next UTC midnight", () => {
     assert.equal(quotaDay(1792195200 + 86399), "2026-10-17");
 });
 
-test("FREE_LOSSLESS_DAILY defaults to 500; junk or non-positive values fall back", () => {
-    assert.equal(freeDailyLimit({}), 500);
-    assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: "20" }), 20);
-    for (const v of ["0", "-3", "x"]) assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: v }), 500, v);
+test("FREE_LOSSLESS_DAILY defaults to 300; junk or non-positive values fall back", () => {
+    const errors = [];
+    const original = console.error;
+    console.error = (...args) => errors.push(args.join(" "));
+    try {
+        assert.equal(freeDailyLimit({}), 300);
+        assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: "20" }), 20);
+        for (const v of ["0", "-3", "x", "500junk"]) assert.equal(freeDailyLimit({ FREE_LOSSLESS_DAILY: v }), 300, v);
+    } finally { console.error = original; }
+    assert.ok(errors.some((message) => message.includes("FREE_LOSSLESS_DAILY missing or invalid; using safe default 300")));
 });
 
 test("no QUOTA_DB or no subject: the counter is off (null) and every helper accepts that", async () => {

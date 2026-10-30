@@ -4,8 +4,12 @@ import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.musicbrainz.MusicBrainzClient
 import com.stash.core.data.musicbrainz.mapSocials
 import com.stash.data.ytmusic.model.ArtistAbout
+import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.ytmusic.model.SocialLink
 import javax.inject.Inject
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 
 interface ArtistAboutEnricher { suspend fun enrich(artistName: String): ArtistAbout? }
 
@@ -18,14 +22,26 @@ class NoopArtistAboutEnricher : ArtistAboutEnricher {
 class RealArtistAboutEnricher @Inject constructor(
     private val lastFm: LastFmApiClient,
     private val mb: MusicBrainzClient,
+    private val spotify: SpotifyApiClient,
 ) : ArtistAboutEnricher {
-    override suspend fun enrich(artistName: String): ArtistAbout? {
+    override suspend fun enrich(artistName: String): ArtistAbout? = coroutineScope {
+        // Spotify's photos alongside the bio, on a shorter leash of their own: a slow answer
+        // costs the photos, never the bio (ArtistCache bounds the whole enrich).
+        val visuals = async { withTimeoutOrNull(VISUALS_TIMEOUT_MS) { spotify.getArtistVisuals(artistName) } }
         val info = lastFm.getArtistInfo(artistName).getOrNull()
         val bio = info?.bio
         val relsPayload = (info?.mbid?.let { mb.lookupUrlRels(it) }) ?: mb.searchByName(artistName)
         val socials: List<SocialLink> = relsPayload?.let { mapSocials(it) } ?: emptyList()
+        val photos = visuals.await()
+        val gallery = photos?.gallery.orEmpty()
+        val header = photos?.headerUrl
         // photoUrl left null in v1 (Wikimedia upgrade deferred).
-        return if (bio == null && socials.isEmpty()) null
-        else ArtistAbout(bio = bio, socials = socials, photoUrl = null)
+        if (bio == null && socials.isEmpty() && gallery.isEmpty() && header == null) null
+        else ArtistAbout(bio = bio, socials = socials, photoUrl = null, gallery = gallery, headerUrl = header)
+    }
+
+    private companion object {
+        /** Under ArtistCache's 4 s for the whole enrich: a search and an overview, each ~0.5 s. */
+        const val VISUALS_TIMEOUT_MS = 3_500L
     }
 }
