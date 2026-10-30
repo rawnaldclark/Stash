@@ -428,7 +428,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
             if (soundCloudSession != null && soundCloudPlaylists != null) {
                 val steps: List<Pair<String, suspend () -> com.stash.core.data.sync.SoundCloudPlaylistFetchResult>> = listOf(
                     "getPlaylists" to { soundCloudPlaylists.fetchPlaylists(syncId, soundCloudSession) },
-                    "getPersonalMixes" to { soundCloudPlaylists.fetchMixes(syncId, soundCloudSession) },
+                    "getPersonalMixes" to {
+                        if (syncPreferencesManager.discoverAutoMixes.first()) soundCloudPlaylists.fetchMixes(syncId, soundCloudSession)
+                        else com.stash.core.data.sync.SoundCloudPlaylistFetchResult(skipped = true)
+                    },
                 )
                 for ((name, fetch) in steps) {
                     try {
