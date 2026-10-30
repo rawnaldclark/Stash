@@ -37,7 +37,7 @@ class LosslessRelayClientTest {
         every { config.relayKey } returns relayKey
         every { config.relays } returns relays
         coEvery { config.installId() } returns INSTALL_ID
-        client = LosslessRelayClient(OkHttpClient(), RelaySigner(config, supporter { supporterToken }), quota).also { it.clock = { now } }
+        client = LosslessRelayClient(OkHttpClient(), RelaySigner(config, supporter { supporterToken }, appVersionProvider()), quota).also { it.clock = { now } }
     }
     @After fun tearDown() { server.shutdown() }
 
@@ -167,15 +167,18 @@ class LosslessRelayClientTest {
         assertThat(req.getHeader("X-Stash-Auth")).isNull()
         assertThat(req.getHeader("X-Stash-Install")).isNull()
         assertThat(req.getHeader("X-Stash-Ts")).isNull()
+        assertThat(req.getHeader("X-Stash-App-Build")).isEqualTo("157")
     }
 
     @Test fun `with a relay key the mint carries install id, timestamp, and a verifiable HMAC`() = runTest {
         relayKey.value = "k-secret"
+        relays.value = listOf(RelayEntry(base))
         now = 1_700_000_000_123L // ts is unix SECONDS — the millis must be truncated, not rounded
         server.enqueue(MockResponse().setBody("""{"url":"https://cdn.example/f.flac?etsp=1"}"""))
         client.mint(base, 42, 27)
         val req = server.takeRequest()
         assertThat(req.getHeader("X-Stash-Install")).isEqualTo(INSTALL_ID)
+        assertThat(req.getHeader("X-Stash-App-Build")).isEqualTo("157")
         assertThat(req.getHeader("X-Stash-Ts")).isEqualTo("1700000000")
         // Recompute independently: the relay will do exactly this.
         val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec("k-secret".toByteArray(), "HmacSHA256")) }
@@ -309,7 +312,7 @@ class LosslessRelayClientTest {
         server.enqueue(MockResponse().setResponseCode(429)
             .setBody("""{"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":${now / 1000 + 3600}}"""))
         server.enqueue(MockResponse().setResponseCode(401).setHeader("X-Stash-Server-Time", (now / 1000 + 900).toString()))
-        val signer = RelaySigner(config, supporter())
+        val signer = RelaySigner(config, supporter(), appVersionProvider())
         client = LosslessRelayClient(OkHttpClient(), signer, quota).also { it.clock = { now } }
 
         client.mint(base, 42, 27) // not in the config: a user's own endpoint
