@@ -435,6 +435,17 @@ class SyncViewModelTest {
         assertEquals(SyncSource.SPOTIFY, vm.uiState.value.openManageFor)
     }
 
+    @Test fun `SoundCloud public profile is connected and opens its likes for Download mode`() = runTest {
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(
+            com.stash.core.auth.soundcloud.SoundCloudSession("7", "Public", connectionId = "current"))
+        every { playlistDao.getBySource(MusicSource.SOUNDCLOUD) } returns kotlinx.coroutines.flow.flowOf(emptyList())
+        val vm = newVm()
+        assertTrue(vm.uiState.value.soundCloudConnected)
+        vm.onArrivalChosen(streamEverything = false)
+        advanceUntilIdle()
+        assertEquals(SyncSource.SOUNDCLOUD, vm.uiState.value.openManageFor)
+    }
+
     /** Save in Stream only keeps the playlist on the phone and leaves its sync switch alone. */
     @Test
     fun `Save in Stream only only keeps the playlist on the phone`() = runTest {

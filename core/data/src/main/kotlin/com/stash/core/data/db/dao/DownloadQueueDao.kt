@@ -295,7 +295,7 @@ interface DownloadQueueDao {
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE dq.status = 'PENDING'
-          AND t.source IN (:sources)
+          AND ((t.source IN (:sources) AND t.soundcloud_id IS NULL) OR (t.soundcloud_id IS NOT NULL AND 'SOUNDCLOUD' IN (:sources)))
           AND bl.canonical_key IS NULL
           -- A track the user asked for by hand (Library & Storage ->
           -- "Re-download missing") carries no sync run and need not sit in a
@@ -349,7 +349,7 @@ interface DownloadQueueDao {
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE dq.status = 'FAILED' AND dq.retry_count < 3
-          AND t.source IN (:sources)
+          AND ((t.source IN (:sources) AND t.soundcloud_id IS NULL) OR (t.soundcloud_id IS NOT NULL AND 'SOUNDCLOUD' IN (:sources)))
           AND bl.canonical_key IS NULL
           -- A track the user asked for by hand (Library & Storage ->
           -- "Re-download missing") carries no sync run and need not sit in a
@@ -1019,7 +1019,7 @@ interface DownloadQueueDao {
     @Query("""
         DELETE FROM download_queue
         WHERE status IN ('PENDING', 'IN_PROGRESS')
-        AND track_id IN (SELECT id FROM tracks WHERE source = :source)
+        AND track_id IN (SELECT id FROM tracks WHERE (source = :source AND soundcloud_id IS NULL) OR (:source = 'SOUNDCLOUD' AND soundcloud_id IS NOT NULL))
     """)
     suspend fun cancelDownloadsForSource(source: String): Int
 
@@ -1087,7 +1087,8 @@ interface DownloadQueueDao {
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE t.is_downloaded = 0
           AND t.match_dismissed = 0
-          AND t.source IN (:sources)
+          AND t.soundcloud_preview = 0
+          AND ((t.source IN (:sources) AND t.soundcloud_id IS NULL) OR (t.soundcloud_id IS NOT NULL AND 'SOUNDCLOUD' IN (:sources)))
           AND bl.canonical_key IS NULL
           AND EXISTS (
               SELECT 1 FROM playlist_tracks pt

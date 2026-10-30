@@ -1209,7 +1209,7 @@ class NowPlayingViewModel @Inject constructor(
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
         // A cloud song is the user's own file, not a match: nothing to flag or swap.
-        if (track.source == com.stash.core.model.MusicSource.CLOUD) return
+        if (track.source == com.stash.core.model.MusicSource.CLOUD || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD || track.soundCloudId != null) return
         launchUserAction {
             // Persisted first: flagging a stream's transient id flagged no row, yet said "Flagged".
             val trackId = persistOrNull(track) ?: run {
@@ -1342,7 +1342,7 @@ class NowPlayingViewModel @Inject constructor(
         val track = _uiState.value.currentTrack ?: return
         if (track.isFlac) return
         // A cloud song (Dropbox / OneDrive) is the user's own file: never replaced by an online match.
-        if (track.source == com.stash.core.model.MusicSource.CLOUD) return
+        if (track.source == com.stash.core.model.MusicSource.CLOUD || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD || track.soundCloudId != null) return
         // An All Songs file is the user's own file: never replaced by an online match.
         if (track.isScannedSong) return
         launchUserAction {

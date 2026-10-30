@@ -25,6 +25,7 @@ import com.stash.core.data.sync.workers.DiscoveryDownloadWorker
 import com.stash.core.data.sync.workers.constraintsForManualTrigger
 import com.stash.core.model.Playlist
 import com.stash.core.model.Track
+import com.stash.core.model.MusicSource
 import com.stash.core.model.isScannedSong
 import com.stash.core.model.share.toTrack
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -534,6 +535,14 @@ class MusicRepositoryImpl @Inject constructor(
         // block or a playlist save would land on something else. Refused: callers already turn a
         // throw into their "Couldn't ..." message.
         check(!track.isScannedSong) { "An All Songs file is never saved to the library" }
+        track.soundCloudId?.let { id ->
+            check(id.matches(Regex("[0-9]+"))) { "Invalid SoundCloud identity" }
+            trackDao.findBySoundCloudId(id)?.let { return it.id }
+            val (ct, ca) = blocklistGuard.canonicalWordsForSave(track.title, track.artist)
+            return insertOrAdopt(track.toEntity().copy(id = 0, source = MusicSource.SOUNDCLOUD,
+                youtubeId = null, spotifyUri = null, canonicalTitle = ct, canonicalArtist = ca, isStreamable = true))
+        }
+        check(track.source != MusicSource.SOUNDCLOUD) { "A SoundCloud track needs its upload id" }
         // Quick exit: real DB row already. Not for a synthetic stream id
         // (`videoId.hashCode().toLong()`, e.g. RadioStationGenerator): it is
         // positive half the time, and one equal to an unrelated row's id would
@@ -611,7 +620,8 @@ class MusicRepositoryImpl @Inject constructor(
         try {
             trackDao.insert(entity)
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
-            val winner = entity.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
+            val winner = entity.soundCloudId?.let { trackDao.findBySoundCloudId(it) }
+                ?: entity.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
                 ?: entity.spotifyUri?.takeIf { it.isNotBlank() }?.let { trackDao.findBySpotifyUri(it) }
             winner?.id ?: throw e
         }

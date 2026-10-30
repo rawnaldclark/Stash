@@ -27,6 +27,8 @@ internal data class ActionContext(
     val isScannedSong: Boolean = false,
     /** The current track is from the user's own cloud storage (see [CLOUD_HIDDEN]). */
     val isCloudSong: Boolean = false,
+    val isSoundCloudSong: Boolean = false,
+    val isPreview: Boolean = false,
 )
 
 /** What an All Songs file can't do: each needs a library row, an online identity, or both. */
@@ -52,6 +54,8 @@ internal val CLOUD_HIDDEN: Set<NowPlayingAction> = setOf(NowPlayingAction.FLAG_W
  * phone that can Cast, outside a Listen Together room: the two exclude each other).
  */
 internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Boolean = when {
+    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> false
+    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> false
     ctx.isScannedSong && action in SCANNED_HIDDEN -> false
     ctx.isCloudSong && action in CLOUD_HIDDEN -> false
     else -> isActionAvailableForAnySong(action, ctx)
@@ -172,6 +176,8 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
 /** Why a pinned action is missing from the row right now, or null when it shows. */
 internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
     isActionAvailable(action, ctx) -> null
+    ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> "Previews cannot be downloaded"
+    ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> "This plays the exact SoundCloud upload"
     ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"
     ctx.isScannedSong && action in SCANNED_HIDDEN -> "Not for songs from your folders"
     ctx.isCloudSong && action in CLOUD_HIDDEN -> "Not for songs from your cloud storage"

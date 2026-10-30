@@ -140,7 +140,8 @@ class LikeCoordinator internal constructor(
         // A cloud song (the user's own Dropbox / OneDrive file) is never searched for on Spotify or
         // YouTube: that would write an online id onto it, the first step of matching it. It still
         // reaches Last.fm, which goes by artist and title.
-        if (op.liked && track.source != com.stash.core.model.MusicSource.CLOUD) {
+        if (op.liked && track.source != com.stash.core.model.MusicSource.CLOUD &&
+            track.source != com.stash.core.model.MusicSource.SOUNDCLOUD && track.soundCloudId == null) {
             if (mirrorSpotify && track.spotifyUri == null) {
                 crossPlatformResolver.ensureSpotifyUri(track)?.let { track = track.copy(spotifyUri = it) }
             }

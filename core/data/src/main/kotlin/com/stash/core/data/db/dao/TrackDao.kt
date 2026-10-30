@@ -454,6 +454,7 @@ interface TrackDao {
         AND t.match_picked_at IS NULL
         -- A cloud song's audio is the user's own file: never looked up or replaced online.
         AND t.source NOT IN ('CLOUD', 'SOUNDCLOUD')
+        AND t.soundcloud_id IS NULL
         AND bl.canonical_key IS NULL
         AND (t.flac_no_match_at IS NULL OR t.flac_no_match_at < :retryBefore)
         ORDER BY t.flac_no_match_at IS NOT NULL, t.flac_no_match_at ASC, t.id ASC
@@ -1969,6 +1970,7 @@ interface TrackDao {
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
           AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD', 'SOUNDCLOUD')
+          AND t.soundcloud_id IS NULL
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL

@@ -40,6 +40,18 @@ class SoundCloudLinkImportTest {
         } finally { db.close() }
     }
 
+    @Test fun `a recording flagged as the wrong file is not adopted by ISRC`() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java).build()
+        try {
+            val bad = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "Same title", artist = "Artist",
+                isrc = "USABC2400001", matchFlagged = true, isDownloaded = true, filePath = "/wrong.mp3"))
+            SoundCloudLinkImport(mockk(), mockk(), db, mockk(relaxed = true)).add(
+                preview(song("101").copy(isrc = "USABC2400001")), false) { _, _ -> }
+            assertNotEquals(bad, db.trackDao().findBySoundCloudId("101")!!.id)
+            assertEquals("/wrong.mp3", db.trackDao().getById(bad)!!.filePath)
+        } finally { db.close() }
+    }
+
     @Test fun `all-preview import never enables downloading`() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java).build()
         try {

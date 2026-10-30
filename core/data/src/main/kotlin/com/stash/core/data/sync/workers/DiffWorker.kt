@@ -798,7 +798,7 @@ class DiffWorker @AssistedInject constructor(
                 bySoundCloudId[id]?.let { return it }
                 // An official ISRC is an exact recording identity. Never reuse another upload id.
                 if (snapshot.isrc in soundCloudIsrcs) return candidateTracks.values.firstOrNull {
-                    it.entity.isrc == snapshot.isrc && it.entity.soundCloudId == null
+                    it.entity.isrc == snapshot.isrc && it.entity.soundCloudId == null && it.entity.source != MusicSource.CLOUD && !it.entity.matchFlagged && !it.entity.matchDismissed
                 }
                 return null
             }

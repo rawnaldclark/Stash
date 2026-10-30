@@ -52,6 +52,17 @@ class DownloadQueueDaoPartitionTest {
 
     @After fun tearDown() { db.close() }
 
+    @Test fun `ISRC reused row follows its SoundCloud identity for queue eligibility and disconnect`() = runTest {
+        seedTrackInSyncEnabledPlaylist(1, MusicSource.SPOTIFY)
+        trackDao.update(trackDao.getById(1)!!.copy(soundCloudId = "123"))
+        assertEquals(listOf(1L), dao.getUnqueuedTrackIds(listOf("SOUNDCLOUD")))
+        assertTrue(dao.getUnqueuedTrackIds(listOf("SPOTIFY")).isEmpty())
+        dao.insert(pendingRow(100, 1, 5))
+        assertEquals(listOf(100L), dao.getAllPendingBySources(listOf("SOUNDCLOUD")).map { it.id })
+        assertEquals(0, dao.cancelDownloadsForSource("SPOTIFY"))
+        assertEquals(1, dao.cancelDownloadsForSource("SOUNDCLOUD"))
+    }
+
     @Test fun `getAllPendingBySources excludes rows with sync_id IS NULL`() = runTest {
         seedTrackInSyncEnabledPlaylist(trackId = 1L, source = MusicSource.YOUTUBE)
         seedTrackInSyncEnabledPlaylist(trackId = 2L, source = MusicSource.YOUTUBE)

@@ -69,7 +69,7 @@ class SoundCloudLinkImport @Inject constructor(
             val wanted = songs.mapIndexedNotNull { index, s ->
                 val ct = TrackCanonical.title(s.title); val ca = TrackCanonical.artist(s.artist)
                 val existing = tracks.findBySoundCloudId(s.id) ?: s.isrc?.takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }
-                    ?.let { tracks.findByIsrc(it) }?.takeIf { it.soundCloudId == null }
+                    ?.let { tracks.findByIsrc(it) }?.takeIf { it.soundCloudId == null && it.source != MusicSource.CLOUD && !it.matchFlagged && !it.matchDismissed }
                 progress(index + 1, songs.size)
                 if (database.trackBlocklistDao().isBlocked(com.stash.core.data.blocklist.BlocklistKey.fromStoredCanonicals(ca, ct), existing?.spotifyUri, existing?.youtubeId)) null else {
                     if (existing != null) {
