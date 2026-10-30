@@ -9,6 +9,34 @@ import {
 const CAPS = { hourly: 2, daily: 3 };
 const T0 = 1788282000; // 2026-09-01T17:00:00Z
 
+test("second standby activates only after all three designated accounts are dead", async () => {
+    for (const order of [[0, 1, 2], [2, 1, 0], [1, 0, 2], [1, 2, 0], [2, 0, 1], [0, 2, 1]]) {
+        const db = fakeD1();
+        const labels = ["acct-qobuz-cooldownchess-20261030", "acct-qobuz-cooldownchess2-20261030", "acct-qobuz-grifties1-20261030"];
+        const backup = "acct-qobuz-grifties2-20261030";
+        await ensureAccounts(db, [...labels, backup]);
+        await db.prepare("UPDATE accounts SET state='reserve' WHERE label IN (?1,?2)").bind(labels[1], backup).run();
+        for (let i = 0; i < 3; i++) {
+            await killAccount(db, labels[order[i]], "401");
+            const row = await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(backup).first();
+            assert.equal(row.state, i === 2 ? "live" : "reserve", order.join(","));
+        }
+        await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(labels[0]).run();
+        assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(backup).first()).state, "reserve");
+    }
+});
+
+test("fourth account override applies hourly and daily caps", async () => {
+    const db = fakeD1();
+    await ensureAccounts(db, ["backup"]);
+    const caps = { hourly: 1, daily: 1, overrideLabel4: "backup", overrideHourly4: 2, overrideDaily4: 3 };
+    assert.equal(await selectAccount(db, T0, caps), "backup");
+    assert.equal(await selectAccount(db, T0 + 1, caps), "backup");
+    assert.equal(await selectAccount(db, T0 + 2, caps), null);
+    assert.equal(await selectAccount(db, T0 + 3600, caps), "backup");
+    assert.equal(await selectAccount(db, T0 + 3601, caps), null);
+});
+
 test("eligible accounts alternate even when all selections occur within one second", async () => {
     const db = fakeD1();
     await ensureAccounts(db, ["a", "b"]);

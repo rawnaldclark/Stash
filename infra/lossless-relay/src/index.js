@@ -192,7 +192,7 @@ async function mint(request, url, env, fetchImpl, nowSec, ctx) {
     const accounts = parseAccounts(env);
     // Every label needs a D1 row BEFORE selection, or the LRU never reaches an account added to the
     // secret while the old ones are still under their caps. Once per isolate per secret value.
-    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || "", env.QOBUZ_ACCOUNTS_RECOVERED_4 || "", env.QOBUZ_ACCOUNTS_RECOVERED_5 || ""]);
+    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || "", env.QOBUZ_ACCOUNTS_RECOVERED_4 || "", env.QOBUZ_ACCOUNTS_RECOVERED_5 || "", env.QOBUZ_ACCOUNTS_RECOVERED_6 || ""]);
     if (ensured.get(env.DB) !== accountSecretVersion) {
         await ensureAccounts(env.DB, accounts.map((a) => a.label));
         ensured.set(env.DB, accountSecretVersion);
@@ -444,6 +444,9 @@ function vars(env) {
         overrideLabel3: String(env.ACCOUNT_CAP_OVERRIDE_LABEL_3 || "").trim(),
         overrideHourly3: n(env.ACCOUNT_HOURLY_CAP_OVERRIDE_3, n(env.ACCOUNT_HOURLY_CAP, 20)),
         overrideDaily3: n(env.ACCOUNT_DAILY_CAP_OVERRIDE_3, n(env.ACCOUNT_DAILY_CAP, 200)),
+        overrideLabel4: String(env.ACCOUNT_CAP_OVERRIDE_LABEL_4 || "").trim(),
+        overrideHourly4: n(env.ACCOUNT_HOURLY_CAP_OVERRIDE_4, n(env.ACCOUNT_HOURLY_CAP, 20)),
+        overrideDaily4: n(env.ACCOUNT_DAILY_CAP_OVERRIDE_4, n(env.ACCOUNT_DAILY_CAP, 200)),
         // These account labels bypass only the per-account hourly/daily selection limits.
         // Global, install, network, and request-rate caps continue to apply.
         uncappedLabels: String(env.ACCOUNT_UNCAPPED_LABELS || "").split(",").map((label) => label.trim()).filter(Boolean),
@@ -456,7 +459,7 @@ function vars(env) {
 
 /** Account secrets are operator-written JSON arrays; malformed values degrade to no entries, not a 500 loop. */
 function parseAccounts(env) {
-    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4, env.QOBUZ_ACCOUNTS_RECOVERED_5].flatMap((raw) => {
+    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4, env.QOBUZ_ACCOUNTS_RECOVERED_5, env.QOBUZ_ACCOUNTS_RECOVERED_6].flatMap((raw) => {
         try {
             const a = JSON.parse(raw || "[]");
             return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];
