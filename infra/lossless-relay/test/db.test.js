@@ -9,6 +9,14 @@ import {
 const CAPS = { hourly: 2, daily: 3 };
 const T0 = 1788282000; // 2026-09-01T17:00:00Z
 
+test("eligible accounts alternate even when all selections occur within one second", async () => {
+    const db = fakeD1();
+    await ensureAccounts(db, ["a", "b"]);
+    const picks = [];
+    for (let i = 0; i < 100; i++) picks.push(await selectAccount(db, T0, { hourly: 1000, daily: 24000 }));
+    assert.deepEqual(picks, Array.from({ length: 100 }, (_, i) => i % 2 ? "b" : "a"));
+});
+
 test("day and hour keys are UTC", () => {
     assert.equal(dayKey(T0), "2026-09-01");
     assert.equal(hourKey(T0), "2026-09-01T17");

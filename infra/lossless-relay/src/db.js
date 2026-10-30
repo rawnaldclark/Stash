@@ -63,7 +63,8 @@ export async function selectAccount(db, nowSec, caps, exclude = null, labels = n
 UPDATE accounts SET
   hour_n = CASE WHEN hour_key = ?2 THEN hour_n + 1 ELSE 1 END, hour_key = ?2,
   day_n  = CASE WHEN day_key  = ?3 THEN day_n  + 1 ELSE 1 END, day_key  = ?3,
-  last_used_at = ?1
+  last_used_at = ?1,
+  rotation_seq = (SELECT COALESCE(MAX(rotation_seq), 0) + 1 FROM accounts)
 WHERE label = (
   SELECT label FROM accounts
   WHERE state = 'live' AND (cooling_until <= ?1 OR label IN (SELECT value FROM json_each(?9)))
@@ -71,7 +72,7 @@ WHERE label = (
     AND (label IN (SELECT value FROM json_each(?8)) OR (day_key  != ?3 OR day_n  < CASE WHEN label = ?10 AND ?10 != '' THEN ?12 WHEN label = ?13 AND ?13 != '' THEN ?15 WHEN label = ?16 AND ?16 != '' THEN ?18 ELSE ?5 END))
     AND label IS NOT ?6
     AND (?7 IS NULL OR label IN (SELECT value FROM json_each(?7)))
-  ORDER BY CASE WHEN ?6 IS NULL THEN last_used_at ELSE -last_used_at END ASC, label ASC LIMIT 1)
+  ORDER BY CASE WHEN ?6 IS NULL THEN rotation_seq ELSE -rotation_seq END ASC, label ASC LIMIT 1)
 RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels), uncappedLabels?.length ? JSON.stringify(uncappedLabels) : null, noCooldownLabels?.length ? JSON.stringify(noCooldownLabels) : null, caps.overrideLabel || "", caps.overrideHourly || caps.hourly, caps.overrideDaily || caps.daily, caps.overrideLabel2 || "", caps.overrideHourly2 || caps.hourly, caps.overrideDaily2 || caps.daily, caps.overrideLabel3 || "", caps.overrideHourly3 || caps.hourly, caps.overrideDaily3 || caps.daily).first();
     return row ? row.label : null;
 }
