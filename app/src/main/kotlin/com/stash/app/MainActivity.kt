@@ -3,6 +3,7 @@ package com.stash.app
 import com.stash.core.data.link.MusicLinks
 import com.stash.core.data.link.LinkImporter
 import android.content.Context
+import com.stash.core.data.sync.workers.UpdateCheckWorker
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
@@ -76,6 +77,8 @@ class MainActivity : AppCompatActivity() {
         /** [pendingDeepLink] prefix for a Link Stash on the web pairing link (`https://stashfm.app/link#1.…`); the link follows. */
         const val DEEP_LINK_WEB_LINK_PREFIX = "weblink:"
 
+        /** [pendingDeepLink] for the update notification: open the update sheet. */
+        const val DEEP_LINK_OPEN_UPDATE = "open_update"
         /** [pendingDeepLink] prefix for a shared Spotify / YouTube link (text shared to Stash); the link follows. */
         const val DEEP_LINK_MUSIC_LINK_PREFIX = "music_link:"
 
@@ -384,6 +387,13 @@ class MainActivity : AppCompatActivity() {
                 null -> false
             }
             if (handled) { intent.data = null; return } // don't reprocess on config change
+        }
+
+        // The update notification: the update sheet (it only opens when an update is stored).
+        if (intent.getBooleanExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE, false)) {
+            pendingDeepLink.value = DEEP_LINK_OPEN_UPDATE
+            intent.removeExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE)
+            return
         }
 
         val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- In-app updates: Stash installs its own newer release (Android still asks the listener). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -181,6 +183,10 @@
                 android:name="autoStoreLocales"
                 android:value="true" />
         </service>
+        <!-- In-app updates: the installer's answer to Stash's own update (only its own PendingIntent reaches it). -->
+        <receiver
+            android:name="com.stash.core.data.update.UpdateInstallReceiver"
+            android:exported="false" />
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"
             android:exported="true"

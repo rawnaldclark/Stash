@@ -225,6 +225,10 @@ fun StashScaffold(
     // Process notification deep-link extras handed in from MainActivity.
     // Only one target right now (the captcha verifier); easy to extend
     // when more deep-link surfaces show up.
+    // The update sheet, over every screen (in-app updates).
+    val updateViewModel: com.stash.feature.settings.update.UpdateViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    com.stash.feature.settings.update.UpdateSheetHost(updateViewModel)
+
     LaunchedEffect(pendingDeepLink) {
         when (pendingDeepLink) {
             // The media notification (A2): open the player over whatever screen is showing.
@@ -248,6 +252,10 @@ fun StashScaffold(
                 navController.navigate(SquidWtfCaptchaRoute) {
                     launchSingleTop = true
                 }
+                onDeepLinkConsumed()
+            }
+            com.stash.app.MainActivity.DEEP_LINK_OPEN_UPDATE -> {
+                updateViewModel.ask()
                 onDeepLinkConsumed()
             }
             null -> Unit
