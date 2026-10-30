@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -286,20 +287,43 @@ private const val NP_ART_MAX_DECODE_PX = 1440
 @Composable
 internal fun rememberNpArtRequest(artModel: Any?): ImageRequest {
     val context = LocalContext.current
+    val decodePx = rememberNpArtDecodePx()
+    return remember(context, artModel, decodePx) { npArtRequest(context, artModel, decodePx) }
+}
+
+/** [rememberNpArtRequest]'s decode size, for building the same request outside composition. */
+@Composable
+internal fun rememberNpArtDecodePx(): Int {
     val configuration = LocalConfiguration.current
-    val decodePx = with(LocalDensity.current) {
+    return with(LocalDensity.current) {
         minOf(configuration.screenWidthDp, configuration.screenHeightDp).dp.roundToPx()
     }.coerceIn(1, NP_ART_MAX_DECODE_PX)
-    return remember(context, artModel, decodePx) {
-        ImageRequest.Builder(context)
-            .data(artModel)
-            .placeholderMemoryCacheKey(artModel as? String)
-            .size(decodePx)
-            .precision(Precision.INEXACT)
-            // Software, as when Now Playing sampled its palette from this bitmap. Nothing reads
-            // its pixels any more, so a hardware bitmap would do: a separate, measured change.
-            .allowHardware(false)
-            .build()
+}
+
+/** The cover request itself: the same data, size and options give the same Coil memory-cache key. */
+internal fun npArtRequest(context: android.content.Context, artModel: Any?, decodePx: Int): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(artModel)
+        .placeholderMemoryCacheKey(artModel as? String)
+        .size(decodePx)
+        .precision(Precision.INEXACT)
+        // Software, as when Now Playing sampled its palette from this bitmap. Nothing reads
+        // its pixels any more, so a hardware bitmap would do: a separate, measured change.
+        .allowHardware(false)
+        .build()
+
+/**
+ * Fetches the covers of the songs either side of the playing one, with [npArtRequest]'s exact
+ * request, so Next or Previous finds its cover in memory: the square art and full art's front
+ * show at once instead of after a download.
+ */
+@Composable
+internal fun PrefetchNeighbourArt(previous: Any?, next: Any?) {
+    val context = LocalContext.current
+    val decodePx = rememberNpArtDecodePx()
+    LaunchedEffect(previous, next, decodePx) {
+        val loader = coil3.SingletonImageLoader.get(context)
+        listOfNotNull(next, previous).forEach { loader.enqueue(npArtRequest(context, it, decodePx)) }
     }
 }
 
