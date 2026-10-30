@@ -89,6 +89,9 @@ class PlaylistFetchWorkerRevisionSkipTest {
             .build()
         // Only the library walk is under test: no home-feed mixes, no Liked Songs.
         every { syncPreferencesManager.discoverAutoMixes } returns flowOf(false)
+        // The sync tab overhaul's Stack seeding has already run.
+        every { syncPreferencesManager.mixStackSeeded } returns flowOf(true)
+        coEvery { syncPreferencesManager.markMixStackSeeded() } returns Unit
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
         every { syncPreferencesManager.pinNewPlaylists } returns flowOf(false)
