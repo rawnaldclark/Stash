@@ -27,6 +27,6 @@ object SoundCloudLinks {
             parts.size == 2 -> SoundCloudLink.Kind.TRACK
             else -> return null
         }
-        return SoundCloudLink(url.newBuilder().query(null).fragment(null).build().toString(), kind)
+        return SoundCloudLink(url.newBuilder().host(if (url.host == "on.soundcloud.com") url.host else "soundcloud.com").query(null).fragment(null).build().toString(), kind)
     }
 }

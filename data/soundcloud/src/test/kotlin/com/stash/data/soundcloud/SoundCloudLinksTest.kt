@@ -4,6 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SoundCloudLinksTest {
+    @Test fun mobileAndWwwLinksAreCanonicalized() {
+        for (host in listOf("m.soundcloud.com", "www.soundcloud.com"))
+            assertEquals("https://soundcloud.com/artist/song", SoundCloudLinks.parse("https://$host/artist/song?si=tracking")?.url)
+    }
     @Test fun supportedForms() {
         mapOf("artist/song" to SoundCloudLink.Kind.TRACK, "artist/sets/set" to SoundCloudLink.Kind.SET,
             "artist/likes" to SoundCloudLink.Kind.LIKES, "artist" to SoundCloudLink.Kind.PROFILE).forEach { (path, kind) ->

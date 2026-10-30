@@ -70,7 +70,7 @@ private fun SoundCloudLogin(onToken: (String) -> Unit, onClose: () -> Unit) {
     LaunchedEffect(browser) {
         while (!delivered) {
             val host = browser?.url?.let { android.net.Uri.parse(it).host }
-            if (host == "soundcloud.com" || host == "www.soundcloud.com") {
+            if (host == "soundcloud.com" || host?.endsWith(".soundcloud.com") == true) {
                 val cookie = CookieManager.getInstance().getCookie("https://soundcloud.com").orEmpty()
                     .split(';').map(String::trim).firstOrNull { it.startsWith("oauth_token=") }
                     ?.substringAfter('=')?.takeIf { it.isNotBlank() }
@@ -92,11 +92,14 @@ private fun SoundCloudLogin(onToken: (String) -> Unit, onClose: () -> Unit) {
                     view.settings.userAgentString = view.settings.userAgentString.replace("; wv", "")
                     view.webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(v: WebView, request: android.webkit.WebResourceRequest): Boolean =
-                            request.url.scheme != "https"
+                            request.isForMainFrame && !isAllowedSoundCloudLoginUrl(request.url.toString())
                     }
-                    CookieManager.getInstance().setCookie("https://soundcloud.com", "oauth_token=; Max-Age=0; path=/; domain=.soundcloud.com")
-                    CookieManager.getInstance().flush()
-                    view.loadUrl("https://soundcloud.com/signin")
+                    val cookies = CookieManager.getInstance()
+                    cookies.setCookie("https://soundcloud.com", "oauth_token=; Max-Age=0; path=/; domain=.soundcloud.com") {
+                        cookies.setCookie("https://soundcloud.com", "oauth_token=; Max-Age=0; path=/") {
+                            view.post { if (browser === view) view.loadUrl("https://soundcloud.com/signin") }
+                        }
+                    }
                 } })
             }
         }

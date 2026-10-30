@@ -128,7 +128,7 @@ class SoundCloudClient(
             }
             val signed = response.string("url") ?: throw SoundCloudException()
             val parsed = signed.toHttpUrlOrNull() ?: throw SoundCloudException()
-            if (!secure(parsed) || !cdnHost(parsed.host)) throw SoundCloudException()
+            if (!secure(parsed) || !mediaHost(parsed.host)) throw SoundCloudException()
             return SoundCloudStream(signed, format.mimeType, format.protocol == "hls", track.preview || format.preview || SoundCloudFormats.isPreviewUrl(signed))
         }
         return null
@@ -146,7 +146,8 @@ class SoundCloudClient(
             id = numericId(value), permalink = link.url,
             title = value.string("title") ?: throw SoundCloudException(),
             artist = (value["user"] as? JsonObject)?.string("username").orEmpty(),
-            durationMs = (value["duration"] as? JsonPrimitive)?.longOrNull?.coerceAtLeast(0) ?: 0,
+            durationMs = ((value["full_duration"] as? JsonPrimitive)?.longOrNull
+                ?: (value["duration"] as? JsonPrimitive)?.longOrNull)?.coerceAtLeast(0) ?: 0,
             artworkUrl = value.string("artwork_url") ?: (value["user"] as? JsonObject)?.string("avatar_url"),
             isrc = (value["publisher_metadata"] as? JsonObject)?.string("isrc"),
             preview = value.string("policy") == "SNIP" || (value["snipped"] as? JsonPrimitive)?.booleanOrNull == true ||
@@ -191,6 +192,7 @@ class SoundCloudClient(
                 continue
             }
             if (response.code !in 200..299) throw SoundCloudException(response.code)
+            if (body != null && response.body.isBlank()) return JsonObject(emptyMap())
             return withContext(Dispatchers.Default) {
                 (json.parseToJsonElement(response.body) as? JsonObject) ?: throw SoundCloudException()
             }
@@ -254,6 +256,7 @@ class SoundCloudClient(
         }
 
         private fun secure(url: HttpUrl) = url.scheme == "https" && url.port == 443 && url.username.isEmpty() && url.password.isEmpty()
+        private fun mediaHost(host: String) = cdnHost(host) || host == "playback.media-streaming.soundcloud.cloud"
         private fun cdnHost(host: String) = host.endsWith(".sndcdn.com") || host == "sndcdn.com"
         private fun requireApiUrl(url: HttpUrl) {
             if (!secure(url) || url.host !in setOf("api-v2.soundcloud.com", "api-auth.soundcloud.com")) throw SoundCloudException()

@@ -25,6 +25,42 @@ class SoundCloudClientTest {
         }.build(), pause = {},
     )
 
+    @Test fun `preview metadata keeps the full recording duration`() {
+        val client = client { 500 to "{}" }
+        val value = Json.parseToJsonElement(track.replace("\"duration\":210000", "\"duration\":30000,\"full_duration\":210000").replace("\"policy\":\"ALLOW\"", "\"policy\":\"SNIP\"")).jsonObject
+        assertEquals(210000L, client.parseTrack(value).durationMs)
+        assertTrue(client.parseTrack(value).preview)
+    }
+
+    @Test fun `empty session verification still requires a valid authenticated profile`() = runTest {
+        val client = client { request ->
+            when (request.url.host) {
+                "soundcloud.com" -> 200 to "<script src=\"https://a-v2.sndcdn.com/app.js\"></script>"
+                "a-v2.sndcdn.com" -> 200 to "client_id:\"$first\""
+                "api-auth.soundcloud.com" -> 204 to ""
+                else -> { assertEquals("OAuth secret", request.header("Authorization")); 200 to """{"id":7,"username":"Listener"}""" }
+            }
+        }
+        assertEquals("7", client.validateToken("secret").id)
+    }
+
+    @Test fun `current SoundCloud playback host is accepted but a lookalike is refused`() = runTest {
+        for (host in listOf("playback.media-streaming.soundcloud.cloud", "playback.media-streaming.soundcloud.cloud.evil.example")) {
+            val withFormats = track.replace("\"transcodings\":[]", """"transcodings":[{"url":"https://api-v2.soundcloud.com/media/aac","preset":"aac_160k","format":{"protocol":"hls","mime_type":"audio/mp4"}}]""")
+            val client = client { request ->
+                when (request.url.host) {
+                    "soundcloud.com" -> 200 to "<script src=\"https://a-v2.sndcdn.com/app.js\"></script>"
+                    "a-v2.sndcdn.com" -> 200 to "client_id:\"$first\""
+                    else -> if (request.url.encodedPath == "/tracks/123") 200 to withFormats
+                        else 200 to """{"url":"https://$host/stream"}"""
+                }
+            }
+            if (host.endsWith(".example")) {
+                try { client.stream("123"); fail("lookalike host accepted") } catch (_: SoundCloudException) { }
+            } else assertTrue(client.stream("123")!!.hls)
+        }
+    }
+
     @Test fun `client id refreshes once on forbidden and is reused`() = runTest {
         var scrapes = 0
         val apiIds = CopyOnWriteArrayList<String?>()
