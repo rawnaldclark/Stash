@@ -57,7 +57,7 @@ class LinkImportViewModel @Inject constructor(
         _state.value = LinkImportUiState.Loading
         viewModelScope.launch {
             _state.value = when (val r = importer.load(link)) {
-                is LinkLoad.Ok -> LinkImportUiState.Ready(r.preview, importer.existing(r.preview))
+                is LinkLoad.Ok -> LinkImportUiState.Ready(r.preview, importer.existing(r.preview), download = r.preview.soundCloudSongs?.any { !it.preview } ?: true)
                 is LinkLoad.Failed -> LinkImportUiState.Failed(r.message, retryable = r.message == LinkImporter.CANT_OPEN)
             }
         }

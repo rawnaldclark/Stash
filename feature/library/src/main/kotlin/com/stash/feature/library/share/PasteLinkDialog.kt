@@ -34,7 +34,7 @@ fun PasteLinkDialog(onDismiss: () -> Unit, onOpen: (String) -> Unit) {
         text = {
             Column {
                 Text(
-                    "A Spotify or YouTube playlist, album or song.",
+                    "A Spotify, YouTube or SoundCloud link.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -46,7 +46,7 @@ fun PasteLinkDialog(onDismiss: () -> Unit, onOpen: (String) -> Unit) {
                     singleLine = true,
                     isError = text.isNotBlank() && link == null,
                     supportingText = if (text.isNotBlank() && link == null) {
-                        { Text("That isn't a Spotify or YouTube link") }
+                        { Text("That isn't a supported music link") }
                     } else {
                         null
                     },

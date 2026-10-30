@@ -40,6 +40,7 @@ data class LinkPreview(
     val partial: Boolean = false,
     /** A song link opened from a playlist or album: that list, to offer instead. */
     val fromList: MusicLink? = null,
+    val soundCloudSongs: List<SoundCloudLinkSong>? = null,
 )
 
 sealed interface LinkLoad {
@@ -72,11 +73,13 @@ class LinkImporter @Inject constructor(
     private val importer: WebLibraryImporter,
     private val playlists: PlaylistDao,
     private val musicRepository: MusicRepository,
+    private val soundCloud: SoundCloudLinkImport? = null,
 ) {
 
     /** Reads [link]; never throws but a cancellation. */
     suspend fun load(link: MusicLink): LinkLoad = try {
         when (link) {
+            is MusicLink.SoundCloud -> soundCloud?.load(link.url) ?: LinkLoad.Failed(CANT_OPEN)
             is MusicLink.SpotifyShort -> {
                 val target = spotifyEmbed.resolveShortLink(link.url)?.let(MusicLinks::parse)
                 if (target == null || target is MusicLink.SpotifyShort) LinkLoad.Failed(NOT_MUSIC) else load(target)
@@ -118,6 +121,7 @@ class LinkImporter @Inject constructor(
      * so far of all. Safe to run again: the playlist gains only what it lacks.
      */
     suspend fun add(preview: LinkPreview, download: Boolean, progress: (done: Int, total: Int) -> Unit): LinkAdded {
+        if (preview.soundCloudSongs != null) return requireNotNull(soundCloud).add(preview, download, progress)
         val now = System.currentTimeMillis()
         val content = WebLibraryContent(
             likes = emptyList(),
