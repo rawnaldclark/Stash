@@ -256,8 +256,8 @@ class HomeViewModelTest {
 
     /** qbdlx has missed enough consecutive resolves to read as down. */
     private fun downHealth() = com.stash.core.media.streaming.LosslessSourceHealth().apply {
-        repeat(com.stash.core.media.streaming.LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) {
-            recordQbdlxMiss()
+        repeat(com.stash.core.media.streaming.LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) {
+            recordLosslessMiss()
         }
     }
 

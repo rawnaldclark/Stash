@@ -634,12 +634,52 @@ class StreamSourceRegistryTest {
             kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
             health, losslessPrefs, Dispatchers.IO, log, null, quota,
         )
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 1L)) }
-        assertThat(health.qbdlxLooksDown.first()).isFalse()
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 1L)) }
+        assertThat(health.losslessLooksDown.first()).isFalse()
 
         spent = false
-        repeat(LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 100L)) }
-        assertThat(health.qbdlxLooksDown.first()).isTrue()
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 100L)) }
+        assertThat(health.losslessLooksDown.first()).isTrue()
+    }
+
+    /** 10-29: the banner said "No lossless right now" while Tidal served every song qbdlx missed. */
+    @Test
+    fun `songs Tidal serves after qbdlx missed are lossless - no banner - and a Tidal miss too counts`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        var tidalServes = true
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { needsRelay(any()) } returns true
+            coEvery { resolve(any()) } answers { if (tidalServes) stubStreamUrl("tidal") else null }
+        }
+        val health = LosslessSourceHealth()
+        val registry = StreamSourceRegistry(
+            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            health, losslessPrefs, Dispatchers.IO, log, tidal,
+        )
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD * 2) { registry.resolve(stubTrack().copy(id = it + 1L)) }
+        assertThat(health.losslessLooksDown.first()).isFalse()
+
+        tidalServes = false
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) { registry.resolve(stubTrack().copy(id = it + 100L)) }
+        assertThat(health.losslessLooksDown.first()).isTrue()
+    }
+
+    @Test
+    fun `a speculative walk stopped before Tidal counts as no miss`() = runTest {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { qbdlx.resolve(any()) } returns null
+        val tidal: TidalStreamResolver = mockk { coEvery { needsRelay(any()) } returns true }
+        val health = LosslessSourceHealth()
+        val registry = StreamSourceRegistry(
+            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            health, losslessPrefs, Dispatchers.IO, log, tidal,
+        )
+        repeat(LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) {
+            registry.resolve(stubTrack().copy(id = it + 1L), speculative = true)
+        }
+        assertThat(health.losslessLooksDown.first()).isFalse()
     }
 
     @Test

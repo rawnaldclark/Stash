@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
 /**
- * Process-lifetime health signal for the qbdlx (direct Qobuz) source, fed by
- * [StreamSourceRegistry] as it works through the resolver chain.
+ * Process-lifetime health signal for lossless as a whole (qbdlx, direct Qobuz, and the
+ * Tidal rung after it), fed by [StreamSourceRegistry] as it works through the resolver chain.
  *
  * Drives exactly one thing: the Home lossless-offline banner. When the shared
  * path dies (as the shipped token pool did at scale in 2026-08 — community
@@ -21,9 +21,11 @@ import kotlinx.coroutines.flow.update
  * matters. Whether the user already owns a source is
  * `LosslessAvailability.anyUserOwned`, combined with this in HomeViewModel.
  *
- * "Down" means a streak of consecutive resolves where qbdlx produced
- * nothing. A single miss is routinely a catalog gap; [QBDLX_DOWN_THRESHOLD]
- * misses in a row across arbitrary tracks is the shared path being dead.
+ * "Down" means a streak of consecutive resolves where EVERY lossless rung in the
+ * chain produced nothing: a song Tidal serves after qbdlx missed is lossless all the
+ * same (the banner said "No lossless" while Tidal served FLAC, 10-29). A single miss is
+ * routinely a catalog gap; [LOSSLESS_DOWN_THRESHOLD] misses in a row across arbitrary
+ * tracks is the shared path being dead.
  * In-memory only, deliberately: a fresh process re-detects within a few
  * tracks, and persisting an "outage" flag risks a stale banner outliving
  * the outage.
@@ -36,22 +38,24 @@ import kotlinx.coroutines.flow.update
 @Singleton
 class LosslessSourceHealth @Inject constructor() {
 
-    private val consecutiveQbdlxMisses = MutableStateFlow(0)
+    private val consecutiveLosslessMisses = MutableStateFlow(0)
 
-    /** True while the last [QBDLX_DOWN_THRESHOLD]+ qbdlx attempts all produced nothing. */
-    val qbdlxLooksDown: Flow<Boolean> = consecutiveQbdlxMisses
-        .map { it >= QBDLX_DOWN_THRESHOLD }
+    /** True while the last [LOSSLESS_DOWN_THRESHOLD]+ resolves all came out of the lossless rungs with nothing. */
+    val losslessLooksDown: Flow<Boolean> = consecutiveLosslessMisses
+        .map { it >= LOSSLESS_DOWN_THRESHOLD }
         .distinctUntilChanged()
 
-    fun recordQbdlxServed() {
-        consecutiveQbdlxMisses.value = 0
+    /** A lossless rung (qbdlx or Tidal) served the song. */
+    fun recordLosslessServed() {
+        consecutiveLosslessMisses.value = 0
     }
 
-    fun recordQbdlxMiss() {
-        consecutiveQbdlxMisses.update { it + 1 }
+    /** Every lossless rung in the chain missed the song. */
+    fun recordLosslessMiss() {
+        consecutiveLosslessMisses.update { it + 1 }
     }
 
     companion object {
-        const val QBDLX_DOWN_THRESHOLD = 6
+        const val LOSSLESS_DOWN_THRESHOLD = 6
     }
 }
