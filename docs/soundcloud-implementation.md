@@ -3,50 +3,44 @@
 Work on `feat/soundcloud`, based on master including playlist ordering (#742), database 74.
 Do not install a database-73 build on either phone. Do not release, merge or deploy this branch.
 
-## Current integration boundary
+## Current implementation and remaining gate
 
-- Client foundation: implemented, 12 fixture tests pass.
-- Account storage: implemented through TokenManager and the existing encrypted store. Public
-  profiles have null credentials. Latest connection intent wins; disconnect invalidates pending
-  validations. The complete core/auth suite passes (24 tests, including seven SoundCloud tests).
-- Database identity: migration 74 to 75 adds exact SoundCloud identity, permalink, and preview
-  status on tracks and track snapshots. Playlist snapshots carry a connection ID so a future diff
-  can reject results from a previous account connection. Domain/Library mappings retain the fields.
-- Source enum and sync worker entry points are implemented. A connected public profile passes
-  the worker's connection gate without pretending to have an OAuth credential. Full likes are
-  published transactionally, and the diff checks the connection ID before any playlist writes.
-- SoundCloud has its own sync mode (default Accumulate). Exact upload IDs are batched, verified
-  ISRCs can reuse an existing recording/file, and loose title matches never replace an upload.
-- Playback now has a dedicated SoundCloud resolver, explicit HLS source selection, preview
-  metadata, a bounded URL cache lifetime, and manifest-only URL refresh. Phone and Android Auto
-  placeholders select the source after resolution; usable local files still win. Download-mode
-  gates cover manifests and segments. Cached URLs from other services cannot bypass SoundCloud
-  routing, and recap cards cannot substitute a YouTube title match.
-- Dedicated downloading, preview controls and phone connection controls remain unwired. Guards
-  reject generic downloading and lossless upgrades for SoundCloud rows; the diff does not enqueue
-  them. Keep the PR draft and do not install this slice.
+All phase-one code is implemented; PR #744 remains draft until phone verification.
 
-The sync implementation covers both PlaylistFetchWorker's initial "no authenticated services"
-gate and its auth-probe short circuit: a public SoundCloud profile is connected but has no OAuth
-token, so `isAuthenticated(SOUNDCLOUD)` intentionally returns false. Read `soundCloudSession`
-instead. Fetch all pages before writing a snapshot, then use `withCurrentSession(connectionId)`
-around its short database transaction. DiffWorker must check the same connection ID under that
-guard **before findOrCreatePlaylist**, and keep the guard through the membership transaction.
-Do not hold the account lock while fetching network data. Give SoundCloud its own sync mode;
-the existing diff's fallback to Spotify's account mode must not apply to it.
+- `data/soundcloud` resolves public links, profiles, likes, playlists and stream transcodings.
+  Requests, pagination and retries are bounded; cancellation propagates. Credentials are sent
+  only to trusted API endpoints. An opt-in live test resolved a real public upload and read its
+  HLS manifest successfully, including the current SoundCloud playback CDN.
+- Encrypted account storage supports OAuth or a public profile with no token. Connection attempts
+  are cancellable; account generations prevent stale fetches/diffs from writing after disconnect
+  or switching accounts. The connection sheet uses existing account components, supports public
+  profile URLs, restricts sign-in navigation and clears stale OAuth cookies before login.
+- Migration 74 to 75 stores exact upload IDs, permalinks and preview flags on tracks and snapshots,
+  plus connection IDs on playlist snapshots. Migration tests preserve existing files and custom
+  order. Exact IDs survive playback, Android Auto and saving a queued song after its row disappears.
+- Likes sync is wired through PlaylistFetchWorker and DiffWorker, with its own Accumulate default.
+  Fetches finish before snapshots are published; both refresh and accumulate preserve custom order.
+  Exact uploads remain distinct. Verified ISRC reuse retains existing files but rejects cloud-only,
+  flagged and dismissed candidates. No title-based substitute is allowed.
+- Dedicated HLS playback is wired for the phone and Android Auto. Download-mode gates cover every
+  open; usable local files win. Expiring root manifests can refresh once. Failed segment
+  authorization invalidates the cached URL and fails that load; a new playback attempt is required.
+  Seamless recovery after a long pause is not implemented or claimed.
+- Full-track downloads use the canonical SoundCloud permalink and OAuth through yt-dlp, then
+  existing file validation and commit. Preview metadata, resolved preview formats and truncated
+  duration are rejected. Temporary files are cleaned up on failure/cancellation. Background queue
+  partitioning recognizes SoundCloud IDs even when an ISRC-reused row started on another service.
+- Public track/set/profile/likes/short links reach the existing paste/share entry points. Re-paste
+  appends missing songs, keeps exact upload identity and honors the Download toggle for full tracks.
+  The Library Liked filter includes SoundCloud. Shared rows and Now Playing show a separate Preview
+  badge; preview download and wrong-recording actions are hidden.
+- The web player protocol is unchanged. SoundCloud-only rows are phone-only in mirroring and
+  excluded from web export rather than converted into title matches. Full Room backups retain them.
 
-MusicSource.SOUNDCLOUD is present with temporary routing guards. Audit exhaustive source branches,
-title matching, lossless upgrade/sweep queries, stream registry, and DownloadManager before
-enabling row creation. The shared word-matching rule now refuses SoundCloud/unlinked pairs;
-SoundCloud-to-existing-recording reuse must use verified ISRC identity explicitly.
-
-Playback integration also requires HLS support. `StreamUrl` currently marks DASH only, and
-`StashMediaSourceFactory` selects a DASH child or the progressive lazy data source. Add an
-explicit HLS marker, the matching Media3 HLS dependency and media source, and route cached and
-fresh resolutions through that child. Do not send SoundCloud manifests into the progressive
-byte pipe. Cover the initial resolve, cached URL, expired URL refresh, local-file preference,
-and Download-mode rejection. Check whether other StreamUrl consumers (recap and preview)
-need the same routing before allowing them to consume SoundCloud streams.
+The account lock surrounds short database commits, never network work. Public-profile mode is
+connected but not OAuth-authenticated; worker and queue gates use the session/connection state.
+SoundCloud identity takes precedence over a reused row's original source in download routing,
+matching exclusions and cancellation. Keep these rules when extending this integration.
 
 ## Scope
 
@@ -128,31 +122,36 @@ Web sleeve flip/browser checks, web dependency repair, relay PRs, playlist-order
 follow-ups, and release preparation are separate work. Do not alter them during SoundCloud work.
 Do not build a combined custom order for Liked Songs. Do not fix contributor AutoMix #720.
 
-Integration verification: the complete `:app:assembleDebug --max-workers=3` build passed on
-2026-10-30, with Gradle exit 0 and a fresh `app/build/outputs/apk/debug/app-debug.apk`
-(187,297,340 bytes). This verifies the current client/account/database integration across the
-app; it does not verify SoundCloud playback or likes sync, which remain unwired. No installation.
+## Validation and phone checklist
 
-Likes-sync validation: 66 selected tests passed (SoundCloudLikesFetcherTest, DiffWorkerTest,
-PlaylistFetchWorkerRevisionSkipTest), including the real public-profile worker entry point,
-failed/stale fetch rejection, both modes with a custom order, distinct upload identities, and
-ISRC reuse retaining the existing file. The full assembleDebug build passed in the same Gradle
-invocation. No phone install or live-account check. Dedicated playback/download controls remain
-pending, so keep PR #744 draft.
+Affected JVM tests and full debug assembly pass, including client/security fixtures, account races,
+DB migration, likes worker entry points, revision skips, custom-order sync, exact-ID/ISRC behavior,
+HLS selection and manifest recovery, Download mode, Android Auto metadata, native-download guards,
+link re-paste, queue source partitioning, web export exclusions, settings cancellation and UI actions.
+The live public-API/HLS test is opt-in with `STASH_SOUNDCLOUD_LIVE=1`; ordinary CI skips it.
+It prints no tokens or signed URLs. This proves live metadata/manifest access, not Android playback
+or yt-dlp/FFmpeg execution.
 
+Before marking the PR ready, on a phone:
 
-Playback recovery boundary: an expired root manifest may be re-resolved once, provided the
-codec and full/preview status stay the same. Segment authorization failures invalidate the
-cached URL and fail that load; they do not transparently remap segment URLs or splice playlist
-bytes into an audio segment. A new playback attempt is required. Live SoundCloud playback,
-long-pause/seek expiry behavior, and release readiness still require device checks.
+- Visually check the SoundCloud account sheet, progress, errors and Preview badges.
+- Connect a public profile, cancel a connection, disconnect and switch accounts during sync.
+- Sign in with the owner's account; verify private likes and reconnect after process death.
+- Sync in refresh and accumulate modes; preserve custom order and existing verified downloaded files.
+- Stream a full track and a Go+ preview; check local-file preference, Android Auto, seek and long pause.
+  Segment expiry currently requires another playback attempt; verify it fails without substitution.
+- Download a full track using the Android yt-dlp/FFmpeg runtime; reject a preview and partial file.
+  Cancel mid-download, retry, disconnect, and test low storage and airplane/Download mode.
+- Paste/share track, set, profile/likes and short links; re-paste without duplicates, including while
+  offline; verify Download toggle and exact same-title upload separation.
+- Round-trip a full backup and confirm web mirroring never substitutes a title-matched recording.
 
-The selected playback run passed 81 tests: direct SoundCloud routing/cancellation/preview state,
-manifest refresh, cached-source identity, cold and cached HLS source selection, local-file
-preference, Download mode, and recap exclusions. Follow-up tests cover the actual HLS factory,
-existing player streaming, and Android Auto placeholder construction.
+A fresh debug APK may be installed on the existing DB74 phones after a successful build. Installing,
+logcat and screenshots are allowed; ask the owner before driving UI or changing app data. No release,
+merge, destructive install or relay changes are authorized.
 
-Final playback validation: 118 distinct tests passed across the focused playback and regression
-runs, including the refreshed-manifest URI case. The latest full debug APK build exited 0.
-No device installation or live-account playback validation was performed. Dedicated SoundCloud
-streaming is implemented; downloading, connection controls, link import and preview labels remain.
+Latest verification (2026-10-30): the final persistence/import/diff run passed 58 tests;
+`:app:assembleDebug --max-workers=3` exited 0. The fresh APK was 191,571,550 bytes and was
+installed successfully with `adb -s 192.168.137.230:5555 install -r` on the verified Pixel 5.
+No UI navigation, account sign-in or private app-data inspection was performed. UI permission
+and the owner's SoundCloud sign-in are the next gate. PR #744 remains draft.
