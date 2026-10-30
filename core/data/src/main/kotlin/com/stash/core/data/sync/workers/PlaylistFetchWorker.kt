@@ -175,6 +175,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
     private val soundCloudLikes: com.stash.core.data.sync.SoundCloudLikesFetcher? = null,
+    private val soundCloudPlaylists: com.stash.core.data.sync.SoundCloudPlaylistsFetcher? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -422,6 +423,30 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 } catch (_: Exception) {
                     diagnostics.add(SyncStepResult("SOUNDCLOUD", "getLikedSongs", StepStatus.ERROR,
                         errorMessage = "SoundCloud likes could not be fetched; library kept unchanged"))
+                }
+            }
+            if (soundCloudSession != null && soundCloudPlaylists != null) {
+                val steps: List<Pair<String, suspend () -> com.stash.core.data.sync.SoundCloudPlaylistFetchResult>> = listOf(
+                    "getPlaylists" to { soundCloudPlaylists.fetchPlaylists(syncId, soundCloudSession) },
+                    "getPersonalMixes" to { soundCloudPlaylists.fetchMixes(syncId, soundCloudSession) },
+                )
+                for ((name, fetch) in steps) {
+                    try {
+                        val fetched = fetch()
+                        if (fetched.published > 0 || fetched.failed == 0) {
+                            diagnostics.add(SyncStepResult("SOUNDCLOUD", name, when {
+                                fetched.skipped -> StepStatus.SKIPPED
+                                fetched.published == 0 -> StepStatus.EMPTY
+                                else -> StepStatus.SUCCESS
+                            }, itemCount = fetched.published))
+                        }
+                        if (fetched.failed > 0) diagnostics.add(SyncStepResult("SOUNDCLOUD", "${name}Details", StepStatus.ERROR,
+                            errorMessage = "${fetched.failed} SoundCloud lists could not be fetched; their existing contents were kept"))
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) {
+                        diagnostics.add(SyncStepResult("SOUNDCLOUD", name, StepStatus.ERROR,
+                            errorMessage = "SoundCloud lists could not be fetched; existing lists kept unchanged"))
+                    }
                 }
             }
 
