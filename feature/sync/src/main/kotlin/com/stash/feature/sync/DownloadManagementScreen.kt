@@ -37,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.theme.StashTheme
@@ -75,10 +77,12 @@ fun DownloadManagementScreen(
                     state = state,
                     onCancel = viewModel::cancel,
                     onRetry = viewModel::retry,
+                    onClearQueue = viewModel::clearQueue,
                 )
                 DownloadManagementTab.HISTORY -> HistoryContent(
                     state = state,
                     onRetry = viewModel::retry,
+                    onClearHistory = viewModel::clearHistory,
                 )
             }
         }
@@ -138,6 +142,7 @@ private fun QueueContent(
     state: DownloadManagementUiState,
     onCancel: (Long) -> Unit,
     onRetry: (Long) -> Unit,
+    onClearQueue: () -> Unit,
 ) {
     if (!state.isLoading && state.active.isEmpty()) {
         EmptyDownloads(
@@ -151,6 +156,14 @@ private fun QueueContent(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "clear_queue") {
+            ClearButton(
+                label = "Clear queue",
+                onClick = onClearQueue,
+                confirm = "Every waiting download is cancelled and the ones running now stop. " +
+                    "Cancelled songs come back the next time you download them.",
+            )
+        }
         if (state.downloading.isNotEmpty()) {
             item(key = "downloading_label") { SectionLabel("Downloading") }
             items(state.downloading, key = { "active_${it.queueId}" }) { item ->
@@ -181,6 +194,7 @@ private fun QueueContent(
 private fun HistoryContent(
     state: DownloadManagementUiState,
     onRetry: (Long) -> Unit,
+    onClearHistory: () -> Unit,
 ) {
     if (!state.isLoading && state.history.isEmpty()) {
         EmptyDownloads(title = "No download history yet", subtitle = "Completed and failed downloads will appear here.")
@@ -191,6 +205,9 @@ private fun HistoryContent(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item(key = "clear_history") {
+            ClearButton(label = "Clear history", onClick = onClearHistory)
+        }
         item(key = "recent_label") { SectionLabel("Recent") }
         items(state.history, key = { "history_${it.queueId}" }) { item ->
             DownloadRowCard(item, onCancel = {}, onRetry = onRetry)
@@ -216,6 +233,31 @@ private fun DownloadRowCard(
             queuePosition = queuePosition,
             onCancel = onCancel,
             onRetry = onRetry,
+        )
+    }
+}
+
+/**
+ * A quiet text button at the end of the list's first line. With [confirm] it asks
+ * first: clearing can't be undone.
+ */
+@Composable
+private fun ClearButton(label: String, onClick: () -> Unit, confirm: String? = null) {
+    var asking by remember { mutableStateOf(false) }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        androidx.compose.material3.TextButton(onClick = { if (confirm == null) onClick() else asking = true }) { Text(label) }
+    }
+    if (asking && confirm != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text("$label?") },
+            text = { Text(confirm) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { asking = false; onClick() }) { Text(label) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { asking = false }) { Text("Keep") }
+            },
         )
     }
 }
