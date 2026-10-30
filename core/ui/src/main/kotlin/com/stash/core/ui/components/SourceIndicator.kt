@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -62,6 +63,16 @@ fun SourceIndicator(
             if (showLabel) {
                 Text(
                     text = "YouTube",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extendedColors.textTertiary,
+                )
+            }
+        }
+        if (source == MusicSource.SOUNDCLOUD) {
+            Box(Modifier.size(size).clip(CircleShape).background(Color(0xFFFF5500)))
+            if (showLabel) {
+                Text(
+                    text = "SoundCloud",
                     style = MaterialTheme.typography.labelSmall,
                     color = extendedColors.textTertiary,
                 )
