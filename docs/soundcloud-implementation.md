@@ -5,7 +5,8 @@ Do not install a database-73 build on either phone. Do not release, merge or dep
 
 ## Current implementation and remaining gate
 
-All phase-one code is implemented; PR #744 remains draft until phone verification.
+The initial phase-one implementation and owner-requested expansion to account-created playlists
+and personalized Home mixes are implemented. PR #744 remains draft for the remaining gates below.
 
 - `data/soundcloud` resolves public links, profiles, likes, playlists and stream transcodings.
   Requests, pagination and retries are bounded; cancellation propagates. Credentials are sent
@@ -18,7 +19,9 @@ All phase-one code is implemented; PR #744 remains draft until phone verificatio
 - Migration 74 to 75 stores exact upload IDs, permalinks and preview flags on tracks and snapshots,
   plus connection IDs on playlist snapshots. Migration tests preserve existing files and custom
   order. Exact IDs survive playback, Android Auto and saving a queued song after its row disappears.
-- Likes sync is wired through PlaylistFetchWorker and DiffWorker, with its own Accumulate default.
+- Library sync is wired through PlaylistFetchWorker and DiffWorker: likes, account-created
+  playlists, and the personalized Mixed for shelf. Likes and owned playlists use the account
+  mode (default Accumulate); rotating mixes refresh. Custom order survives all modes.
   Fetches finish before snapshots are published; both refresh and accumulate preserve custom order.
   Exact uploads remain distinct. Verified ISRC reuse retains existing files but rejects cloud-only,
   flagged and dismissed candidates. No title-based substitute is allowed.
@@ -30,7 +33,7 @@ All phase-one code is implemented; PR #744 remains draft until phone verificatio
   existing file validation and commit. Preview metadata, resolved preview formats and truncated
   duration are rejected. Temporary files are cleaned up on failure/cancellation. Background queue
   partitioning recognizes SoundCloud IDs even when an ISRC-reused row started on another service.
-- Public track/set/profile/likes/short links reach the existing paste/share entry points. Re-paste
+- Public track/set/mix/profile/likes/short links reach the existing paste/share entry points. Re-paste
   appends missing songs, keeps exact upload identity and honors the Download toggle for full tracks.
   The Library Liked filter includes SoundCloud. Shared rows and Now Playing show a separate Preview
   badge; preview download and wrong-recording actions are hidden.
@@ -45,9 +48,10 @@ matching exclusions and cancellation. Keep these rules when extending this integ
 ## Scope
 
 Connect a SoundCloud account using its WebView `oauth_token`, or use a public profile's likes.
-Sync liked tracks, stream the actual SoundCloud recording, download full tracks, and import
-track/set/likes/profile/short links. Mark previews and never download them. No SoundCloud search,
-reposts, automatic user-playlist sync, web player changes, or title-based replacement recordings.
+Sync liked tracks, account-created playlists and personalized Home mixes; stream the actual
+SoundCloud recording, download full tracks, and import track/set/mix/likes/profile/short links.
+Mark previews and never download them. No SoundCloud search, reposts, general Home recommendations,
+web player changes, or title-based replacement recordings.
 
 ## Build sequence and acceptance gates
 
@@ -216,3 +220,63 @@ WebView automatically and displayed the owner's connected account. No second man
 Authenticated follow-up: Sync now completed with 140 liked tracks for the owner's account.
 Force-stopped and restarted the app after sync; Accounts still showed the owner connected.
 The phone is left in Accounts with playback paused and the original Stream-only preference.
+
+## Account playlists and personalized mixes (owner scope expansion)
+
+Use the account's existing Playlists / Mixes / Liked tabs, without a new settings page.
+Own playlist inventory comes from the paged users/{id}/playlists endpoint; OAuth includes private
+owned playlists, while public-profile mode can fetch public owned playlists. Only the matching
+owner is accepted. Personalized mixes require OAuth: read the Mixed for shelf
+(soundcloud:selections:your-moods), require made_for.id to match the connected account, and ignore
+stations, charts and unrelated recommendations. Home discovery is capped at five pages; every
+selected mix is fetched/hydrated completely before membership reconciliation.
+
+Own playlists and mix source IDs contain both account ID and remote identity. Reconnecting to
+a different account cannot make its lists adopt the previous account's snapshots. A failed or
+cancelled playlist fetch never publishes incomplete membership. Sync never deactivates a whole
+SoundCloud playlist just because it disappears from the discovery shelf or a capped listing.
+Owned playlists keep account refresh/accumulate behavior; mixes refresh through the existing
+DAILY_MIX path. Both preserve the custom order overlay and append arrivals. No new migration or
+Stack control is required for this expansion.
+
+System-playlist links under /discover/sets/... accept the service's colon-delimited IDs and resolve
+through the existing paste/share importer. Normal track and user-created set links keep their
+existing behavior. Re-paste remains idempotent. Hydrate track stubs in batches of 50, restore source
+order afterward, deduplicate repeated upload IDs, and fail closed on silently missing IDs or a
+truncated track array. A blocked stub fails that playlist fetch, preserving its existing membership
+and downloaded files: a region/subscription block is not evidence that a song was removed.
+Other healthy playlists continue; no replacement recording is chosen.
+
+Live API inspection found one personalized 30-track mix on the owner's account and no owned
+playlists. The batch track endpoint returned all 30 expected IDs. No credential values were
+printed or saved. An empty owned-playlist inventory is valid; fixture tests cover nonempty/paged
+inventories and private-account worker wiring. Device sync and mix-link preview were verified on the Pixel 5 as described below.
+
+Failure isolation uses one complete playlist per transaction and keeps only that playlist's hydrated
+tracks in memory. The worker records both successful list counts and per-list failure counts, so
+healthy snapshots still reach DiffWorker when another list or Likes fails. The owned-list inventory
+must finish paging before details are fetched. Cancellation propagates, and every commit rechecks
+the account generation. Tests cover failed, cancelled and stale fetches plus partial success.
+
+Expansion verification:
+- Focused client run: 27 tests passed (the opt-in live smoke test was skipped).
+- Regression runs: 42 DiffWorker, 6 SoundCloud link-import, 31 SyncViewModel, 8 playlist-fetcher,
+  26 real fetch-worker/revision and 8 Home-classifier tests passed. This includes custom order,
+  both account modes, mix refresh, failure isolation, account switching/cancellation, mix links,
+  discovery preference and Home rail placement. Full debug assembly exited 0.
+- Installed the fresh APK on the Pixel 5 without wiping data; the existing OAuth account remained
+  connected. Sync brought in Your Mix 1 with 30 songs, alongside the owner's 140 liked tracks.
+- SoundCloud management visibly shows Playlists 0 / Mixes 1 / Liked. The owner currently has no
+  created playlists to check live; nonempty and paged owned inventories are covered by fixtures.
+- Pasting the actual /discover/sets/your-moods:... link through Library + opens Your Mix 1 with
+  30 songs and the existing Download toggle. No duplicate local copy was added during this check.
+- The existing shared Discover mixes automatically preference now gates SoundCloud discovery.
+  It leaves owned-playlist and Likes sync enabled. Turning it off keeps already imported mixes.
+- Home classifies account-scoped SoundCloud mixes as Made for you by identity, independently of
+  their localized title; user-created playlists remain regular playlists.
+
+Final device recheck: installed the fresh final debug APK (193,080,116 bytes, build exit 0).
+Home visibly places Your Mix 1 under Made for you. Opening that card shows SoundCloud / 30 tracks;
+Play All starts the correct first upload, and Android's media session reports PLAYING with an
+advancing position and queue size 30. Paused playback afterward. The phone is left on the native
+Your Mix 1 detail screen; the account is connected and Stream-only mode is unchanged.
