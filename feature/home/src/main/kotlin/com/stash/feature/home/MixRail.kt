@@ -2,6 +2,7 @@ package com.stash.feature.home
 
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
+import com.stash.core.model.MusicSource
 
 /** The four Home mix rails, in display order. */
 enum class MixRail { MADE_FOR_YOU, RADIOS, MOOD_DECADES, YOUR_MIXES }
@@ -20,6 +21,9 @@ private val DAILY_OR_MYMIX = Regex("""^(daily mix|my mix)\s*\d+$""", RegexOption
 fun mixRail(playlist: Playlist): MixRail? {
     if (playlist.type == PlaylistType.STASH_MIX) return MixRail.YOUR_MIXES
     if (playlist.type != PlaylistType.DAILY_MIX) return null
+    if (playlist.source == MusicSource.SOUNDCLOUD && playlist.sourceId.startsWith("soundcloud_mix_")) {
+        return MixRail.MADE_FOR_YOU
+    }
     val n = playlist.name.trim()
     if (n.endsWith("Radio", ignoreCase = true)) return MixRail.RADIOS
     if (DAILY_OR_MYMIX.matches(n) || n.lowercase() in MADE_FOR_YOU_NAMES) return MixRail.MADE_FOR_YOU

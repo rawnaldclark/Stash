@@ -27,6 +27,16 @@ class MixRailClassifierTest {
         assertThat(mixRail(pl("Motown", PlaylistType.DAILY_MIX))).isEqualTo(MixRail.MOOD_DECADES)
         assertThat(mixRail(pl("This Is Rohne", PlaylistType.DAILY_MIX))).isEqualTo(MixRail.MOOD_DECADES)
     }
+    @Test fun `account scoped SoundCloud mixes are Made for you independently of localized title`() {
+        val playlist = pl("A localized mix title", PlaylistType.DAILY_MIX, MusicSource.SOUNDCLOUD)
+            .copy(sourceId = "soundcloud_mix_7_soundcloud:system-playlists:your-moods:7:1")
+        assertThat(mixRail(playlist)).isEqualTo(MixRail.MADE_FOR_YOU)
+    }
+    @Test fun `SoundCloud owned playlists and ordinary stations are not treated as personal mixes`() {
+        assertThat(mixRail(pl("Your Mix 1", PlaylistType.CUSTOM, MusicSource.SOUNDCLOUD)
+            .copy(sourceId = "soundcloud_playlist_7_11"))).isNull()
+        assertThat(mixRail(pl("Artist Radio", PlaylistType.DAILY_MIX, MusicSource.SOUNDCLOUD))).isEqualTo(MixRail.RADIOS)
+    }
     @Test fun `non-mix playlists are not classified`() {
         assertThat(mixRail(pl("Road Trip 2024", PlaylistType.CUSTOM))).isNull()
         assertThat(mixRail(pl("Liked Songs", PlaylistType.LIKED_SONGS))).isNull()
