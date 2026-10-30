@@ -153,5 +153,46 @@ merge, destructive install or relay changes are authorized.
 Latest verification (2026-10-30): the final persistence/import/diff run passed 58 tests;
 `:app:assembleDebug --max-workers=3` exited 0. The fresh APK was 191,571,550 bytes and was
 installed successfully with `adb -s 192.168.137.230:5555 install -r` on the verified Pixel 5.
-No UI navigation, account sign-in or private app-data inspection was performed. UI permission
-and the owner's SoundCloud sign-in are the next gate. PR #744 remains draft.
+The owner subsequently authorized Pixel 5 UI navigation. PR #744 remains draft until the
+remaining device checks below are complete.
+
+## Pixel 5 verification (2026-10-30)
+
+Verified through the real UI and worker/runtime results:
+
+- Public profile `soundcloud.com/forss` connects; the account card shows Connected as Forss.
+- Sync now fetches 199 liked tracks. Source management shows one SoundCloud Liked playlist with
+  199 songs. Library's SoundCloud Liked filter shows the synced uploads.
+- Warm by Joey Pecoraro streams: Android media session reports PLAYING with advancing position
+  and buffered media. A Phil Collins Go+ preview plays a roughly 30-second clip with a separate
+  Preview badge in shared rows and Now Playing. Playback was paused after testing.
+- Downloading Warm through the row's Download action runs the Android yt-dlp path with exit 0;
+  TrackDownloadWorker reports success, and the Library row shows Downloaded after refresh.
+- Pasting `soundcloud.com/forss/flickermood` through Library + resolves the correct upload.
+  With Download off, import adds one song to Songs from links. Re-pasting and adding again says
+  Already all in your library; it does not add a second occurrence.
+
+Phone QA caught and fixed missing first-run SoundCloud connection entry, stale Not connected
+Settings summary, a downloaded-song count limited to Spotify/YouTube, and incorrect imported
+playlist source badges. Both follow-up full debug builds exited 0; visual rechecks continue.
+
+Private OAuth login is still unverified. The public-profile checks do not establish private or
+Go+ subscriber access, Android Auto behavior, long-pause recovery, low-storage cleanup, or full
+backup round-trip on the device. Keep these gates explicit rather than inferring them from unit tests.
+
+Additional device results:
+- In Download mode, the SoundCloud Liked filter contains only downloaded Warm; undownloaded
+  uploads/previews disappear. Warm plays successfully; Now Playing shows local M4A at 160 kbps,
+  with no streaming indicator. Restored the original Stream-only preference after the test.
+- The Settings hub now correctly shows SoundCloud as connected after returning from Accounts.
+- Installed the source-badge follow-up APK successfully (build exit 0, fresh output at 18:04).
+
+- Verified the corrected imported-playlist header visually: orange SoundCloud badge, one track,
+  three minutes. Cards omit the generic BOTH badge for locally imported playlists; detail uses
+  actual track sources. The follow-up full debug build passed.
+- Disconnecting the test public profile returns the account card to Not connected. The local
+  downloaded file and imported playlist are retained. Playback is paused.
+
+- Fresh-install recheck shows Connect SoundCloud on Sync's first-run screen; it opens Accounts.
+  The layout was checked visually on the Pixel 5. Final card-label build exited 0 and installed
+  successfully; no database wipe or destructive install was used.
