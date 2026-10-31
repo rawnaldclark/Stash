@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.CircleShape
@@ -68,9 +69,11 @@ import com.stash.core.ui.components.bottomChromePadding
  * Layout (top → bottom):
  *  1. [ArtistHero] — paints from nav args on first frame.
  *  2. "Popular"   — up to 5 [PreviewDownloadRow]s from `popular`.
- *  3. "Albums"    — [AlbumsRow] horizontal rail.
- *  4. "Singles & EPs" — [SinglesRow] horizontal rail.
- *  5. "Fans also like" — [RelatedArtistsRow].
+ *  3. "Latest releases" — [LatestReleasesRow]: the newest albums and singles
+ *     together, when both shelves have dated ones.
+ *  4. "Albums"    — [AlbumsRow] horizontal rail.
+ *  5. "Singles & EPs" — [SinglesRow] horizontal rail.
+ *  6. "Fans also like" — [RelatedArtistsRow].
  *
  * While the first cache emission is in flight the sections render
  * shimmer skeletons rather than jumping layout when the data arrives.
@@ -120,12 +123,13 @@ fun ArtistProfileScreen(
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
     // Outer LazyColumn item index of the section header to reveal. Section
-    // order is fixed: hero(0); Popular header+row (if popular); Albums
-    // header+row; Singles header+row.
-    val sectionOuterIndex = remember(focus, state.popular, state.albums) {
+    // order is fixed: hero(0); Popular header+row (if popular); Latest
+    // releases header+row (if any); Albums header+row; Singles header+row.
+    val sectionOuterIndex = remember(focus, state.popular, state.latest, state.albums) {
         if (focus == null) return@remember null
         var idx = 1 // hero occupies index 0
         if (state.popular.isNotEmpty()) idx += 2 // Popular header + row
+        if (state.latest.isNotEmpty()) idx += 2 // Latest releases header + row
         when (focus.shelf) {
             AlbumShelf.ALBUMS -> idx
             AlbumShelf.SINGLES -> idx + if (state.albums.isNotEmpty()) 2 else 0
@@ -360,6 +364,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 onRequestAddToPlaylist = onRequestAddToPlaylist,
             )
         }
+    }
+    if (state.latest.isNotEmpty()) {
+        item { SectionHeader(title = stringResource(R.string.artist_latest_releases)) }
+        item { LatestReleasesRow(releases = state.latest, onClick = onNavigateToAlbum) }
     }
     if (state.albums.isNotEmpty()) {
         item { SectionHeader(title = "Albums") }
