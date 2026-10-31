@@ -1,0 +1,22 @@
+<!--
+  ListenBrainz logo. Source: https://github.com/metabrainz/listenbrainz-server/blob/master/frontend/img/listenbrainz_logo_icon.svg
+  The mark is two half-hexagons (navy and orange) with a gap between them; here
+  both halves are one tint-friendly silhouette (fillColor=#FFFFFF). The points
+  are the original's, and the group fits its 25x28 shape (in a 27x30 box) to
+  the 24-unit viewport the other brand logos fill.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.857142857"
+        android:scaleY="0.857142857"
+        android:translateX="0.428571"
+        android:translateY="-0.857143">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M13 1L1 8v14l12 7zM14 1l12 7v14l-12 7z" />
+    </group>
+</vector>

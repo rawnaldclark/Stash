@@ -5,14 +5,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.UserInfo
+import com.stash.core.ui.R as UiR
 import com.stash.feature.settings.R
 import com.stash.feature.settings.SoundCloudAccountViewModel
 import kotlinx.coroutines.delay
@@ -31,7 +32,7 @@ fun SoundCloudAccountCard(viewModel: SoundCloudAccountViewModel = hiltViewModel(
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     var profile by rememberSaveable { mutableStateOf("") }
     var disconnect by rememberSaveable { mutableStateOf(false) }
-    AccountConnectionCard(serviceName = "SoundCloud", icon = Icons.Rounded.MusicNote,
+    AccountConnectionCard(serviceName = "SoundCloud", icon = ImageVector.vectorResource(UiR.drawable.ic_brand_soundcloud),
         accentColor = Color(0xFFFF5500),
         authState = if (ui.busy) AuthState.Connecting else account?.let {
             AuthState.Connected(UserInfo(it.userId, it.displayName, it.avatarUrl))
