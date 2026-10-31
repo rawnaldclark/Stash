@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,10 +46,12 @@ import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.util.formatDuration
 import com.stash.core.ui.util.formatTotalDuration
+import com.stash.feature.library.R
 
 /**
  * A pasted or shared Spotify / YouTube link: its cover full width as a shared mix shows it, what it is and how long, a
- * Download switch and Add to library, then its songs. Once added, Open goes to the playlist it became.
+ * Download switch and Add to library, then its songs. Once added, Open goes to the playlist it became. A playlist file picked
+ * from the Library's "+" shows here the same way, "From a file".
  */
 @Composable
 fun LinkImportScreen(
@@ -64,7 +67,11 @@ fun LinkImportScreen(
         }
         is LinkImportUiState.Failed -> {
             BareScreen(onBack) {
-                Text(st.message, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                Text(
+                    st.messageRes?.let { stringResource(it) } ?: st.message,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
                 if (st.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text("Retry") } }
             }
             return
@@ -77,7 +84,8 @@ fun LinkImportScreen(
             SharedHeroCover(listOfNotNull(p.coverUrl), onBack)
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                 Text(
-                    "${p.service} ${kindWord(p.kind)}",
+                    // A file has no service: just what it is.
+                    if (p.fromFile) stringResource(R.string.playlist_file_kind) else "${p.service} ${kindWord(p.kind)}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -94,7 +102,7 @@ fun LinkImportScreen(
                 val total = p.songs.sumOf { it.durationMs ?: 0L }
                 Text(
                     listOfNotNull(
-                        p.byline,
+                        p.byline ?: if (p.fromFile) stringResource(R.string.playlist_file_from) else null,
                         pluralize(p.songs.size, "song").takeIf { p.kind != LinkKind.SONG },
                         total.takeIf { it > 0 }?.let { if (p.kind == LinkKind.SONG) formatDuration(it) else formatTotalDuration(it) },
                     ).joinToString(" · "),
