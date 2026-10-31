@@ -1,6 +1,5 @@
 package com.stash.feature.search
 
-import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 
@@ -37,7 +36,9 @@ internal const val LATEST_RELEASES_MAX = 10
 internal fun latestReleases(albums: List<AlbumSummary>, singles: List<AlbumSummary>): List<LatestRelease> {
     // Qobuz files any release of 5+ tracks as an album, so the merge can add one YouTube
     // lists under Singles & EPs; side by side here it would read as a duplicate card.
-    // YouTube's copy stays, as in the merge itself. Lazy: most artists have no Qobuz album.
+    // YouTube's copy stays, as in the merge itself. Only a copy goes: the album screen's
+    // key sets an edition aside ("(Deluxe)") but keeps "(The Album)" or "(Live)", which
+    // can be the artist's newest release. Lazy: most artists have no Qobuz album.
     val youTubeTitles by lazy {
         (albums + singles)
             .filter { it.source == AlbumSource.YOUTUBE }
@@ -81,7 +82,7 @@ private fun kindOf(album: AlbumSummary, albumShelf: Boolean): ReleaseKind? =
 private fun releaseYear(date: String?): Int? =
     date?.let { YEAR.find(it) }?.value?.toInt()?.takeIf { it > 0 }
 
-/** The key the Qobuz merge compares titles by ("" when nothing of the title is left). */
-private fun titleKey(title: String): String = QobuzCandidateMatcher.normalize(title)
+/** The album screen's title key (#481); "" when nothing of the title is left. */
+private fun titleKey(title: String): String = albumTitleKey(title).key
 
 private val YEAR = Regex("""\b\d{4}\b""")

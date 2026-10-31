@@ -108,6 +108,31 @@ class LatestReleasesTest {
         assertEquals(ReleaseKind.EP, r.last().kind)
     }
 
+    @Test fun `a Qobuz album only named like a YouTube EP is a newer release, not a copy`() {
+        // Holy drill, as the phone had it: YouTube lists the EP "In Christ We Trust" (2024);
+        // the merge adds that release again and "In Christ We Trust (The Album)" (2026),
+        // the newest of everything, which YouTube doesn't have at all.
+        val r = latestReleases(
+            albums = listOf(
+                qobuz("q-album", "In Christ We Trust (The Album)", "2026-09-11"),
+                qobuz("q-ep", "In Christ We Trust", "2024-03-22"),
+            ),
+            singles = listOf(
+                yt("trust-god-acoustic", "2025", "Single", title = "Trust God (Acoustic version)"),
+                yt("icwt", "2024", "EP", title = "In Christ We Trust"),
+            ),
+        )
+        assertEquals(listOf("q-album", "trust-god-acoustic", "icwt"), ids(r))
+    }
+
+    @Test fun `an edition of a YouTube EP is still a copy`() {
+        val r = latestReleases(
+            albums = listOf(yt("a", "2020", "Album"), qobuz("q", "My Iron Lung (Deluxe Edition)", "1994-09-26")),
+            singles = listOf(yt("mil", "1994", "EP", title = "My Iron Lung")),
+        )
+        assertEquals(listOf("a", "mil"), ids(r))
+    }
+
     @Test fun `a YouTube single named like the album is a release of its own`() {
         val r = latestReleases(
             albums = listOf(yt("lover-album", "2019", "Album", title = "Lover")),
