@@ -134,6 +134,7 @@ class LibraryViewModelShuffleLikedTest {
             musicRepository = musicRepository,
             playerRepository = playerRepository,
             tokenManager = mock {
+                on { soundCloudSession } doReturn flowOf(null)
                 on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
                 on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
             },

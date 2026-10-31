@@ -15,8 +15,15 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SoundCloudAccountViewModelTest {
-    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-    @After fun cleanup() { Dispatchers.resetMain() }
+    @Before fun setup() {
+        val main = UnconfinedTestDispatcher()
+        Dispatchers.setMain(main)
+        SoundCloudAccountViewModel.io = main
+    }
+    @After fun cleanup() {
+        SoundCloudAccountViewModel.io = Dispatchers.IO
+        Dispatchers.resetMain()
+    }
 
     @Test fun `a second tap is ignored while busy and cancel closes validation`() = runTest {
         val started = CompletableDeferred<Unit>()

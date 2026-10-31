@@ -33,7 +33,7 @@ class SoundCloudAccountViewModel @Inject constructor(private val tokens: TokenMa
         mutable.value = mutable.value.copy(busy = true, web = false, failed = false)
         connectJob = viewModelScope.launch {
             try {
-                val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val ok = kotlinx.coroutines.withContext(io) {
                     kotlinx.coroutines.withTimeoutOrNull(30_000) { action() } ?: false
                 }
                 mutable.value = if (ok) SoundCloudConnectionUi() else mutable.value.copy(busy = false, failed = true)
@@ -52,5 +52,14 @@ class SoundCloudAccountViewModel @Inject constructor(private val tokens: TokenMa
             catch (_: Exception) { mutable.value = mutable.value.copy(open = true, failed = true) }
             finally { mutable.value = mutable.value.copy(busy = false) }
         }
+    }
+
+    companion object {
+        /**
+         * Where the connect check runs. A test points it at its Main test dispatcher, so a
+         * cancelled check unwinds inside the test instead of resuming onto Main after the test
+         * has reset it (an uncaught exception in whichever test class ran next).
+         */
+        internal var io: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO
     }
 }
