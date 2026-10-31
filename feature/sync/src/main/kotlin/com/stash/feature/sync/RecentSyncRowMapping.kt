@@ -38,5 +38,6 @@ fun SyncHistoryInfo.toRecentSyncRow(relativeTime: String): RecentSyncRow {
         },
         errorMessage = errorMessage,
         diagnostics = diagnostics,
+        unreadPlaylists = unreadPlaylists,
     )
 }

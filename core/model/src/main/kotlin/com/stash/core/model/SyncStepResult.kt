@@ -20,6 +20,12 @@ data class SyncStepResult(
      * only; null for most steps, and left out of the JSON then.
      */
     val note: String? = null,
+    /**
+     * The playlists this step listed but couldn't read the songs of, by name. Each
+     * was kept as it was and is read again next sync; the Sync History row counts
+     * and names them. Empty for most steps, and left out of the JSON then.
+     */
+    val unreadPlaylists: List<String> = emptyList(),
 )
 
 /**

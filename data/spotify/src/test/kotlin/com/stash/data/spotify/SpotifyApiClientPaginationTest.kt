@@ -34,6 +34,9 @@ class SpotifyApiClientPaginationTest {
     /** Response per (operation, offset); anything unlisted answers HTTP 500. */
     private val pages = mutableMapOf<Pair<String, Int>, Pair<Int, String>>()
 
+    /** Web API `/v1/playlists/{id}/tracks` response per playlist id; unlisted answers HTTP 500. */
+    private val webApiPages = mutableMapOf<String, Pair<Int, String>>()
+
     private val tokenManager = mockk<TokenManager> {
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
@@ -51,10 +54,14 @@ class SpotifyApiClientPaginationTest {
 
     private val http = OkHttpClient.Builder().addInterceptor { chain ->
         val url = chain.request().url
-        val operation = url.queryParameter("operationName").orEmpty()
-        val offset = Regex(""""offset":(\d+)""")
-            .find(url.queryParameter("variables").orEmpty())!!.groupValues[1].toInt()
-        val (code, body) = pages[operation to offset] ?: (500 to """{"error":"boom"}""")
+        val (code, body) = if (url.encodedPath.startsWith("/v1/playlists/")) {
+            webApiPages[url.pathSegments[2]] ?: (500 to """{"error":"boom"}""")
+        } else {
+            val operation = url.queryParameter("operationName").orEmpty()
+            val offset = Regex(""""offset":(\d+)""")
+                .find(url.queryParameter("variables").orEmpty())!!.groupValues[1].toInt()
+            pages[operation to offset] ?: (500 to """{"error":"boom"}""")
+        }
         Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(code).message("")
             .body(body.toResponseBody("application/json".toMediaType())).build()
     }.build()
@@ -186,6 +193,100 @@ class SpotifyApiClientPaginationTest {
         assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
     }
 
+    // ── No songs: an answer only when Spotify's own count says so (#747) ──
+
+    @Test fun `an empty playlist is read fine, with no songs`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 0, totalCount = 0, revisionId = "AAAAAEmpty")
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.tracks.isEmpty())
+        assertFalse(result.data.partial)
+        assertTrue("its count proves it complete, so a later sync can skip it", result.data.countVerified)
+        assertEquals("AAAAAEmpty", result.data.revisionId)
+    }
+
+    @Test fun `an empty playlist answered with its count and no song list is read fine too`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to """{"data":{"playlistV2":{"content":{"totalCount":0}}}}"""
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.tracks.isEmpty())
+        assertTrue(result.data.countVerified)
+    }
+
+    @Test fun `a playlist of only local files and episodes is read fine, with no songs`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPageOf(
+            items = listOf(trackData(0, local = true), EPISODE_DATA, trackData(2, local = true)),
+            totalCount = 3,
+        )
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.tracks.isEmpty())
+        assertFalse(result.data.partial)
+    }
+
+    @Test fun `an empty page while Spotify still counts songs is an error`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 0, totalCount = 40)
+
+        assertTrue("must never mirror a playlist down to nothing", client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `an empty page with no count is an error`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 0, totalCount = null)
+
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `no song list is an error unless Spotify counts zero with no errors`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to """{"data":{"playlistV2":{"content":{"totalCount":40}}}}"""
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+
+        pages["fetchPlaylist" to 0] = 200 to
+            """{"data":{"playlistV2":{"content":{"totalCount":0}}},"errors":[{"message":"rate limited"}]}"""
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `only local files on the first page, then a failed page, is an error`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPageOf(items = (0 until 100).map { trackData(it, local = true) }, totalCount = 150)
+        // offset 100 is unlisted: HTTP 500, so the walk is partial with nothing read.
+
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    // ── The Web API prong asks for no count, so an empty answer goes to GraphQL ──
+
+    @Test fun `an empty Web API answer is confirmed by the GraphQL count`() = runBlocking {
+        coEvery { authManager.getClientCredentialsToken() } returns "cc-token"
+        webApiPages["pl"] = 200 to """{"items":[],"next":null}"""
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 0, totalCount = 0)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.tracks.isEmpty())
+        assertTrue("only the GraphQL walk can verify a count", result.data.countVerified)
+    }
+
+    @Test fun `an empty Web API answer GraphQL can't confirm is an error`() = runBlocking {
+        coEvery { authManager.getClientCredentialsToken() } returns "cc-token"
+        // A page that doesn't parse ends the Web API walk with nothing, like an empty one.
+        webApiPages["pl"] = 200 to "<html>not json</html>"
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 0, totalCount = 25)
+
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `a Web API answer with songs is still taken as it is`() = runBlocking {
+        coEvery { authManager.getClientCredentialsToken() } returns "cc-token"
+        webApiPages["pl"] = 200 to
+            """{"items":[{"track":{"id":"t1","name":"One","uri":"spotify:track:t1","artists":[{"id":"a","name":"A"}]}}],"next":null}"""
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertEquals(listOf("t1"), result.data.tracks.map { it.track?.id })
+    }
+
     // ── fetchLibraryTracks (Liked Songs) ─────────────────────────────────
 
     @Test fun `a liked page with a filtered item reports the raw count`() = runBlocking {
@@ -221,6 +322,11 @@ class SpotifyApiClientPaginationTest {
 
     // ── fixtures ─────────────────────────────────────────────────────────
 
+    private companion object {
+        /** A podcast episode saved to a playlist: walked, then left out by the parser. */
+        const val EPISODE_DATA = """{"__typename":"Episode","uri":"spotify:episode:ep1","name":"An episode"}"""
+    }
+
     private fun trackData(i: Int, local: Boolean): String {
         val uri = if (local) "spotify:local:Artist:Album:Local+$i:200" else "spotify:track:track$i"
         return """{"__typename":"Track","uri":"$uri","name":"Track $i",""" +
@@ -231,13 +337,15 @@ class SpotifyApiClientPaginationTest {
      * A `fetchPlaylist` page; [totalCount] null leaves the count out, as an older
      * shape would, and [revisionId] null leaves the playlist's version out.
      */
-    private fun playlistPage(range: IntRange, totalCount: Int?, localAt: Int? = null, revisionId: String? = null): String {
-        val items = range.joinToString(",") { i ->
-            """{"itemV2":{"data":${trackData(i, local = i == localAt)}}}"""
-        }
+    private fun playlistPage(range: IntRange, totalCount: Int?, localAt: Int? = null, revisionId: String? = null): String =
+        playlistPageOf(range.map { i -> trackData(i, local = i == localAt) }, totalCount, revisionId)
+
+    /** A `fetchPlaylist` page holding [items], each an item's `data` object. */
+    private fun playlistPageOf(items: List<String>, totalCount: Int?, revisionId: String? = null): String {
+        val list = items.joinToString(",") { """{"itemV2":{"data":$it}}""" }
         val count = totalCount?.let { """"totalCount":$it,""" }.orEmpty()
         val revision = revisionId?.let { """"revisionId":"$it",""" }.orEmpty()
-        return """{"data":{"playlistV2":{$revision"content":{$count"items":[$items]}}}}"""
+        return """{"data":{"playlistV2":{$revision"content":{$count"items":[$list]}}}}"""
     }
 
     private fun likedPage(

@@ -169,6 +169,15 @@
     <!-- Sync tab overhaul: History screen -->
     <string name="sync_history_title">History</string>
     <string name="sync_history_mixes_section">Your playlists</string>
+    <!-- A recent sync that couldn't read some playlists' songs, each left as it was. In the detail, %2$s is their names. -->
+    <plurals name="sync_history_not_read">
+        <item quantity="one">%d playlist not read</item>
+        <item quantity="other">%d playlists not read</item>
+    </plurals>
+    <plurals name="sync_history_not_read_detail">
+        <item quantity="one">Couldn\'t read %1$d playlist: %2$s (kept as it was)</item>
+        <item quantity="other">Couldn\'t read %1$d playlists: %2$s (kept as they were)</item>
+    </plurals>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>
