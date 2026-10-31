@@ -117,7 +117,11 @@ fun FailedMatchesScreen(
         scope.launch { listState.animateScrollToItem(index, revealOffset) }
     }
     val openTrackId = manualSearch?.trackId
-    LaunchedEffect(openTrackId) {
+    // Again once YouTube Music answers: while a search runs the box has no rows
+    // under it, so when the song is the last in the list (one flagged song, the
+    // usual case) the list can't scroll it up yet and the rows land below the fold.
+    val musicAnswered = manualSearch?.searchingMusic == false
+    LaunchedEffect(openTrackId, musicAnswered) {
         val trackId = openTrackId ?: return@LaunchedEffect
         // The row keys used below: an unmatched row's queue id, else the flagged row's.
         reveal(state.tracks.firstOrNull { it.trackId == trackId }?.id ?: "flagged_$trackId")
