@@ -13,10 +13,10 @@ class LatestReleasesTest {
     private fun yt(id: String, year: String?, type: String? = null, title: String = id) =
         AlbumSummary(id = id, title = title, artist = "", thumbnailUrl = null, year = year, releaseType = type)
 
-    /** A Qobuz album the merge adds to the Albums shelf: a full date, no label, a track count. */
-    private fun qobuz(id: String, title: String, date: String?) = AlbumSummary(
+    /** A Qobuz release the merge adds to the Albums shelf: a full date, no label, a track count. */
+    private fun qobuz(id: String, title: String, date: String?, tracks: Int? = 10) = AlbumSummary(
         id = id, title = title, artist = "Radiohead", thumbnailUrl = null, year = date,
-        source = AlbumSource.QOBUZ, trackCount = 10,
+        source = AlbumSource.QOBUZ, trackCount = tracks,
     )
 
     private fun ids(r: List<LatestRelease>) = r.map { it.album.id }
@@ -164,5 +164,71 @@ class LatestReleasesTest {
         assertEquals(ReleaseKind.EP, kinds["ep"])
         // A single can't be told from an EP without the label, so the card says neither.
         assertNull(kinds["unlabelled-single"])
+    }
+
+    @Test fun `a Qobuz album named like a YouTube single is the album, the single its title track`() {
+        // Holy drill's shape without "(The Album)": YouTube lists no albums, and the lead
+        // single shares the album's name. As in #481, a single named like a longer release
+        // is its title track, not a copy, so the album stays and leads the row.
+        val r = latestReleases(
+            albums = listOf(qobuz("q-holy", "Holy", "2026-09-11", tracks = 12)),
+            singles = listOf(yt("holy-single", "2026", "Single", title = "Holy"), yt("s", "2025", "Single")),
+        )
+        assertEquals(listOf("q-holy", "holy-single", "s"), ids(r))
+        assertEquals(ReleaseKind.ALBUM, r.first().kind)
+    }
+
+    @Test fun `a Qobuz album years after a YouTube EP of its name is a new release`() {
+        val r = latestReleases(
+            albums = listOf(qobuz("q-album", "Persona", "2026-03-09", tracks = 12)),
+            singles = listOf(yt("ep", "2024", "EP", title = "Persona")),
+        )
+        assertEquals(listOf("q-album", "ep"), ids(r))
+        // A year apart is still the same release: the two catalogs can date it differently.
+        val sameRelease = latestReleases(
+            albums = listOf(yt("a", "2026", "Album"), qobuz("q-ep", "Persona", "2025-01-10", tracks = 5)),
+            singles = listOf(yt("ep", "2024", "EP", title = "Persona")),
+        )
+        assertEquals(listOf("a", "ep"), ids(sameRelease))
+    }
+
+    @Test fun `a Qobuz release of single length named like a YouTube single is that single`() {
+        // The Weeknd's "Dancing In The Flames" is five tracks on Qobuz: the single's bundle.
+        val r = latestReleases(
+            albums = listOf(yt("a", "2025", "Album"), qobuz("q", "Dancing In The Flames", "2024-09-13", tracks = 5)),
+            singles = listOf(yt("ditf", "2024", "Single", title = "Dancing In The Flames")),
+        )
+        assertEquals(listOf("a", "ditf"), ids(r))
+    }
+
+    @Test fun `a Qobuz release reads as an album only at album length`() {
+        val r = latestReleases(
+            albums = listOf(
+                qobuz("q12", "Zero Point", "2026-01-23", tracks = 12),
+                qobuz("q5", "Persona", "2025-03-09", tracks = 5),
+                qobuz("q-unknown", "Kirai", "2024-12-31", tracks = null),
+            ),
+            singles = listOf(yt("s", "2023", "Single")),
+        )
+        assertEquals(listOf("q12", "q5", "q-unknown", "s"), ids(r))
+        assertEquals(ReleaseKind.ALBUM, r[0].kind)
+        // Up to six tracks it may be a single's CD or an EP, so the card shows the year alone.
+        assertNull(r[1].kind)
+        assertNull(r[2].kind)
+    }
+
+    @Test fun `ten albums and no single would only repeat the Albums row, so the row hides`() {
+        val albums = (2011..2022).map { yt("a$it", "$it", "Album") }.reversed()
+        assertTrue(latestReleases(albums, listOf(yt("s2005", "2005", "Single"))).isEmpty())
+        // One single among the newest ten is enough.
+        val r = latestReleases(albums, listOf(yt("s2014", "2014", "Single")))
+        assertEquals(LATEST_RELEASES_MAX, r.size)
+        assertEquals("s2014", r.last().album.id)
+    }
+
+    @Test fun `ten singles still show, since the Albums row stands between them and Popular`() {
+        val singles = (2011..2022).map { yt("s$it", "$it", "Single") }.reversed()
+        val r = latestReleases(listOf(yt("a2005", "2005", "Album")), singles)
+        assertEquals((2022 downTo 2013).map { "s$it" }, ids(r))
     }
 }

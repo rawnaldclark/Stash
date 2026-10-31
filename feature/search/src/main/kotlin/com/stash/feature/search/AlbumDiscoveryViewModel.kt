@@ -704,8 +704,11 @@ private fun isEdition(part: String): Boolean {
     return words.isNotEmpty() && words.all { it in EDITION_WORDS || NUMBERING.matches(it) }
 }
 
-/** Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04". */
-private fun yearsAgree(candidate: String?, wanted: String?): Boolean {
+/**
+ * Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04".
+ * The artist page's Latest releases row ([latestReleases]) dates a copy by it too.
+ */
+internal fun yearsAgree(candidate: String?, wanted: String?): Boolean {
     val a = candidate?.let { YEAR.find(it) }?.value?.toInt() ?: return true
     val b = wanted?.let { YEAR.find(it) }?.value?.toInt() ?: return true
     return abs(a - b) <= 1

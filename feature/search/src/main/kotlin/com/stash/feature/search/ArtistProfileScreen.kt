@@ -344,9 +344,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     focus: AlbumFocusTarget?,
 ) {
+    // Keyed, so a section added above the one in view leaves the view where it is. An
+    // uncached artist's enriched profile can add Albums and Latest releases a moment after
+    // the first paint, by when the Now Playing jump to an album may already have landed.
     if (state.popular.isNotEmpty()) {
-        item { SectionHeader(title = "Popular") }
-        item {
+        item(key = "popular_header") { SectionHeader(title = "Popular") }
+        item(key = "popular") {
             PopularTracksSection(
                 tracks = state.popular,
                 previewState = previewState,
@@ -366,12 +369,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.latest.isNotEmpty()) {
-        item { SectionHeader(title = stringResource(R.string.artist_latest_releases)) }
-        item { LatestReleasesRow(releases = state.latest, onClick = onNavigateToAlbum) }
+        item(key = "latest_header") { SectionHeader(title = stringResource(R.string.artist_latest_releases)) }
+        item(key = "latest") { LatestReleasesRow(releases = state.latest, onClick = onNavigateToAlbum) }
     }
     if (state.albums.isNotEmpty()) {
-        item { SectionHeader(title = "Albums") }
-        item {
+        item(key = "albums_header") { SectionHeader(title = "Albums") }
+        item(key = "albums") {
             AlbumsRow(
                 albums = state.albums,
                 onClick = onNavigateToAlbum,
@@ -380,8 +383,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.singles.isNotEmpty()) {
-        item { SectionHeader(title = "Singles & EPs") }
-        item {
+        item(key = "singles_header") { SectionHeader(title = "Singles & EPs") }
+        item(key = "singles") {
             SinglesRow(
                 singles = state.singles,
                 onClick = onNavigateToAlbum,
@@ -390,8 +393,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.related.isNotEmpty()) {
-        item { SectionHeader(title = "Fans also like") }
-        item {
+        item(key = "related_header") { SectionHeader(title = "Fans also like") }
+        item(key = "related") {
             RelatedArtistsRow(
                 artists = state.related,
                 onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
@@ -400,8 +403,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     }
     val about = state.about
     if (about != null) {
-        item { SectionHeader(title = "About") }
-        item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl, artistName = state.hero.name) }
+        item(key = "about_header") { SectionHeader(title = "About") }
+        item(key = "about") { AboutSection(about = about, avatarUrl = state.hero.avatarUrl, artistName = state.hero.name) }
     }
 }
 

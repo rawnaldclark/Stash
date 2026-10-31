@@ -21,6 +21,14 @@ data class LatestRelease(
 internal const val LATEST_RELEASES_MAX = 10
 
 /**
+ * The most tracks a single or an EP has by the stores' rule. Qobuz sends no release
+ * type, and the merge files any release of 5+ tracks under Albums, so one of up to six
+ * may be a single's bundle or CD single (The Weeknd's "Dancing In The Flames" and
+ * Radiohead's "Creep" have five tracks each) as well as an EP or a short album.
+ */
+private const val SINGLE_OR_EP_MAX_TRACKS = 6
+
+/**
  * The artist's newest releases, albums and singles/EPs together, newest first: the row
  * under Popular. Built from the two shelves the page already has, so it costs no request.
  *
@@ -30,40 +38,71 @@ internal const val LATEST_RELEASES_MAX = 10
  * lists newest first), that year's albums ahead of its singles: an album usually follows
  * its lead singles. A release with no year can't be placed, so it is left out.
  *
- * Empty, and the row hidden, unless both shelves have a dated release: with one shelf the
- * row would only repeat it just below, and with none there is nothing to put in order.
+ * Empty, and the row hidden, when it would only repeat the shelf right below it: with no
+ * dated album, Singles & EPs follows Popular directly, and ten albums without a single
+ * are the Albums row's own first cards. Ten singles do show: the Albums row stands
+ * between them and Popular, which is how a new single went unseen.
  */
 internal fun latestReleases(albums: List<AlbumSummary>, singles: List<AlbumSummary>): List<LatestRelease> {
-    // Qobuz files any release of 5+ tracks as an album, so the merge can add one YouTube
-    // lists under Singles & EPs; side by side here it would read as a duplicate card.
-    // YouTube's copy stays, as in the merge itself. Only a copy goes: the album screen's
-    // key sets an edition aside ("(Deluxe)") but keeps "(The Album)" or "(Live)", which
-    // can be the artist's newest release. Lazy: most artists have no Qobuz album.
-    val youTubeTitles by lazy {
+    // YouTube's releases by the album screen's title key, for telling a Qobuz copy from a
+    // new release ([isYouTubeCopy]). Lazy: most artists have no Qobuz album.
+    val youTubeByKey by lazy {
         (albums + singles)
             .filter { it.source == AlbumSource.YOUTUBE }
-            .map { titleKey(it.title) }
-            .filterTo(HashSet()) { it.isNotEmpty() }
+            .groupBy { albumTitleKey(it.title).key }
     }
     val seenIds = HashSet<String>()
     fun dated(shelf: List<AlbumSummary>, albumShelf: Boolean) = shelf.mapNotNull { album ->
         val year = releaseYear(album.year) ?: return@mapNotNull null
-        if (album.source != AlbumSource.YOUTUBE && titleKey(album.title) in youTubeTitles) return@mapNotNull null
+        // Of a release both catalogs list, YouTube's card stays, as in the merge itself.
+        if (album.source != AlbumSource.YOUTUBE && isYouTubeCopy(album, youTubeByKey)) return@mapNotNull null
         // The same release on both shelves shows once, as its album-shelf card.
         if (!seenIds.add(album.id)) return@mapNotNull null
         LatestRelease(album, year, kindOf(album, albumShelf))
     }
     val fromAlbums = dated(albums, albumShelf = true)
+    if (fromAlbums.isEmpty()) return emptyList()
     val fromSingles = dated(singles, albumShelf = false)
-    if (fromAlbums.isEmpty() || fromSingles.isEmpty()) return emptyList()
     // A stable sort: within a year the albums (listed first) stay ahead of the singles,
     // and each shelf keeps YouTube's order.
-    return (fromAlbums + fromSingles)
+    val newest = (fromAlbums + fromSingles)
         .sortedByDescending { it.year }
         .take(LATEST_RELEASES_MAX)
+    val singleIds = fromSingles.mapTo(HashSet()) { it.album.id }
+    return if (newest.any { it.album.id in singleIds }) newest else emptyList()
 }
 
-/** YouTube's label when the card had one; else the Albums shelf's own heading says it. */
+/**
+ * Whether [qobuz], a release the Qobuz merge added to Albums, is one YouTube lists too:
+ * #481's test ([isSameAlbum]) less the artist, which the page settles. It takes the same
+ * title key, so an edition ("(Deluxe)") is the same release but "(The Album)" or "(Live)"
+ * another; a year within one of YouTube's ([yearsAgree]) unless an edition was set aside;
+ * and YouTube's "Single" only for a release of single or EP length, since named like a
+ * longer release, a single is its title track. So Holy drill's "In Christ We Trust (The
+ * Album)", an album named like its lead single, and an album out years after an EP of
+ * its name all stay: each can be the artist's newest release.
+ */
+private fun isYouTubeCopy(qobuz: AlbumSummary, youTubeByKey: Map<String, List<AlbumSummary>>): Boolean {
+    val key = albumTitleKey(qobuz.title)
+    if (key.key.isEmpty()) return false
+    return youTubeByKey[key.key].orEmpty().any { youTube ->
+        (!youTube.releaseType.equals("Single", ignoreCase = true) || isSingleOrEpLength(qobuz.trackCount)) &&
+            (key.dropsEdition || albumTitleKey(youTube.title).dropsEdition || yearsAgree(youTube.year, qobuz.year))
+    }
+}
+
+/** Up to six tracks. An unknown length isn't, as in #481: a single of the name stays its title track. */
+private fun isSingleOrEpLength(trackCount: Int?): Boolean =
+    trackCount != null && trackCount in 1..SINGLE_OR_EP_MAX_TRACKS
+
+/**
+ * YouTube's label when the card had one. Unlabelled is the usual case on the Albums
+ * shelf, where YouTube's carousel gives the year alone (only its View all grid says
+ * "Album"). A Qobuz release says Album only at album length: up to six tracks it may as
+ * well be a single's CD or an EP. YouTube labels every Singles & EPs card, so one without
+ * (a profile cached before the label was kept) says neither. Unsaid, the card shows the
+ * year alone.
+ */
 private fun kindOf(album: AlbumSummary, albumShelf: Boolean): ReleaseKind? =
     when (album.releaseType?.lowercase()) {
         "album" -> ReleaseKind.ALBUM
@@ -71,18 +110,16 @@ private fun kindOf(album: AlbumSummary, albumShelf: Boolean): ReleaseKind? =
         "ep" -> ReleaseKind.EP
         "mixtape" -> ReleaseKind.MIXTAPE
         "compilation" -> ReleaseKind.COMPILATION
-        // Unlabelled is the usual case on the Albums shelf: YouTube's Albums carousel gives
-        // the year alone (only its View all grid says "Album"), and the Qobuz albums merged
-        // in are album-length by rule. YouTube labels every Singles & EPs card, so one
-        // without (a profile cached before the label was kept) says neither.
-        else -> if (albumShelf) ReleaseKind.ALBUM else null
+        else -> when {
+            !albumShelf -> null
+            album.source == AlbumSource.YOUTUBE -> ReleaseKind.ALBUM
+            (album.trackCount ?: 0) > SINGLE_OR_EP_MAX_TRACKS -> ReleaseKind.ALBUM
+            else -> null
+        }
     }
 
 /** The year in YouTube's "2021" or Qobuz's "2017-06-23"; null when there is none. */
 private fun releaseYear(date: String?): Int? =
-    date?.let { YEAR.find(it) }?.value?.toInt()?.takeIf { it > 0 }
-
-/** The album screen's title key (#481); "" when nothing of the title is left. */
-private fun titleKey(title: String): String = albumTitleKey(title).key
+    date?.let { YEAR.find(it) }?.value?.toIntOrNull()?.takeIf { it > 0 }
 
 private val YEAR = Regex("""\b\d{4}\b""")
