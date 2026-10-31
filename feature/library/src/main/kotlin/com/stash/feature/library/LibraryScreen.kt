@@ -2706,14 +2706,15 @@ private fun AlbumArtwork(
 }
 
 /**
- * What "+" › Import a playlist file offers: the playlist types (M3U, XSPF, CSV, tab-separated, text), and every file as well,
- * because phones and apps label an .m3u or a .csv differently (often just "application/octet-stream").
+ * What "+" › Import a playlist file offers: the playlist types (M3U, PLS, XSPF, CSV, tab-separated, text), and every file as
+ * well, because phones and apps label an .m3u or a .csv differently (often just "application/octet-stream").
  */
 private val PLAYLIST_FILE_TYPES = arrayOf(
     "audio/x-mpegurl",
     "audio/mpegurl",
     "application/x-mpegurl",
     "application/vnd.apple.mpegurl",
+    "audio/x-scpls",
     "application/xspf+xml",
     "text/csv",
     "text/comma-separated-values",

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Library's "+" menu: bring in a playlist from an .m3u, .xspf, .csv or .txt file (another service's export, issue #61). -->
+    <!-- Library's "+" menu: bring in a playlist from an .m3u, .pls, .xspf, .csv or .txt file (another service's export, issue #61). -->
     <string name="library_import_playlist_file">Import a playlist file</string>
 
     <!-- The preview a picked playlist file opens (the one a pasted link opens). Above its name, where a link's says "Spotify playlist". -->

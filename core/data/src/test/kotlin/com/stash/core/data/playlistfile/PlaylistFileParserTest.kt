@@ -195,6 +195,29 @@ class PlaylistFileParserTest {
             .containsExactly(WireSong("Группа крови", "Кино", durationMs = 285_000L))
     }
 
+    // ------------------------------------------------------------------------------------------------------- PLS
+
+    @Test fun `a PLS reads its numbered entries in order, a file's name where a title says no artist`() {
+        val pls = """
+            [playlist]
+            NumberOfEntries=3
+            File2=C:\Music\Daft Punk - One More Time.mp3
+            Title2=One More Time
+            Length2=-1
+            File1=http://example.com/creep.mp3
+            Title1=Radiohead - Creep
+            Length1=238
+            File3=C:\Music\untitled.mp3
+            Version=2
+        """.trimIndent()
+        val file = parse(pls, "mix.pls")
+        assertThat(file.format).isEqualTo(PlaylistFileFormat.PLS)
+        assertThat(file.songs).containsExactly(
+            WireSong("Creep", "Radiohead", durationMs = 238_000L),
+            WireSong("One More Time", "Daft Punk"),
+        ).inOrder()
+    }
+
     // ------------------------------------------------------------------------------------------------------ XSPF
 
     private val xspf = """

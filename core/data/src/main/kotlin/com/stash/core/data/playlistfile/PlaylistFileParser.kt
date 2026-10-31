@@ -7,7 +7,7 @@ import java.net.URLDecoder
 import kotlin.math.roundToLong
 
 /** The kinds of playlist file "+" › Import a playlist file reads (issue #61). */
-enum class PlaylistFileFormat { M3U, XSPF, CSV, TEXT }
+enum class PlaylistFileFormat { M3U, PLS, XSPF, CSV, TEXT }
 
 /**
  * A playlist file, read: the name it gives itself (M3U `#PLAYLIST:`, XSPF's `<title>`, a CSV's one "Playlist name"), else null;
@@ -25,7 +25,7 @@ internal class ReadPlaylist(val title: String?, val songs: List<WireSong>)
 
 /**
  * Reads a playlist file another app or service exported (issue #61): Exportify, TuneMyMusic and Soundiiz spreadsheets, Apple
- * Music's exported text (tab-separated), M3U / M3U8 from players, XSPF, and plain "Artist - Title" lists. Pure Kotlin: no file
+ * Music's exported text (tab-separated), M3U / M3U8 and PLS from players, XSPF, and plain "Artist - Title" lists. Pure Kotlin: no file
  * access ([PlaylistFileImport] reads the document) and no network. Each song is a [WireSong] for the link import's matcher, with
  * its ISRC or Spotify id when the file has one (matched by identity), else its words alone.
  */
@@ -46,6 +46,7 @@ object PlaylistFileParser {
         val limit = MAX_SONGS + 1 // one past the cap tells that there was more
         val read = when (format) {
             PlaylistFileFormat.M3U -> M3uPlaylist.read(text, limit)
+            PlaylistFileFormat.PLS -> PlsPlaylist.read(text, limit)
             PlaylistFileFormat.XSPF -> XspfPlaylist.read(text, limit)
             PlaylistFileFormat.CSV -> CsvPlaylist.read(text, limit)
             PlaylistFileFormat.TEXT -> TextPlaylist.read(text, limit)
@@ -61,12 +62,14 @@ object PlaylistFileParser {
     internal fun formatOf(text: String, fileName: String?): PlaylistFileFormat {
         val head = text.trimStart().take(SNIFF_CHARS)
         if (head.startsWith("#EXTM3U", ignoreCase = true) || EXTINF_LINE.containsMatchIn(head)) return PlaylistFileFormat.M3U
+        if (head.startsWith("[playlist]", ignoreCase = true)) return PlaylistFileFormat.PLS
         if (head.startsWith("<") && (TRACK_LIST.containsMatchIn(head) || head.contains("xspf.org/ns", ignoreCase = true))) {
             return PlaylistFileFormat.XSPF
         }
         if (CsvPlaylist.recognises(head)) return PlaylistFileFormat.CSV
         return when (fileName?.substringAfterLast('.', "")?.lowercase()) {
             "m3u", "m3u8" -> PlaylistFileFormat.M3U
+            "pls" -> PlaylistFileFormat.PLS
             "xspf" -> PlaylistFileFormat.XSPF
             "csv", "tsv" -> PlaylistFileFormat.CSV
             else -> PlaylistFileFormat.TEXT

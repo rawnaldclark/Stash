@@ -44,7 +44,7 @@ internal object CsvPlaylist {
 
     /**
      * An artist cell as it should read: an older Exportify escaped commas in names ("Tyler\, The Creator"), and some exports
-     * join several artists without a space ("Daft Punk,Pharrell Williams").
+     * join several artists without a space ("Daft Punk,Pharrell Williams", "Daft Punk;Pharrell Williams").
      */
     private fun artistOf(cell: String): String = cell.replace("\\,", ",").replace(JOINED_ARTISTS, ", ")
 
@@ -142,7 +142,7 @@ internal object CsvPlaylist {
     private val SEPARATORS = charArrayOf(',', '\t', ';')
     private val SEPARATOR_HINT = Regex("^\"?sep=(.)\"?$", RegexOption.IGNORE_CASE)
     private val SPACES = Regex("\\s+")
-    private val JOINED_ARTISTS = Regex(",(?=\\p{L})")
+    private val JOINED_ARTISTS = Regex("[,;](?=\\p{L})")
 
     // Column names, lower-cased, most specific first: "Title" before "Track", which in some files is the track's number.
     private val TITLE = listOf("track name", "title", "song name", "song title", "song", "name", "track title", "track")
