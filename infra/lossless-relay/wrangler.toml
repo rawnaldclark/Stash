@@ -10,6 +10,10 @@ GLOBAL_DAILY_CAP = "34667"
 INSTALL_DAILY_CAP = "500"      # doubled 300→600 on 09-11; raised to 800 (~33%) on 10-03; lowered to 500 on 10-08
 ACCOUNT_HOURLY_CAP = "621"
 ACCOUNT_DAILY_CAP = "11000"
+# Pool-wide pacing is atomic in D1. These guardrails apply even to override/uncapped labels.
+ACCOUNT_MIN_INTERVAL_SEC = "30"
+ACCOUNT_SAFETY_HOURLY_CAP = "120"
+ACCOUNT_SAFETY_DAILY_CAP = "2400"
 ACCOUNT_CAP_OVERRIDE_LABEL = "acct-qobuz-cooldownchess-20261030"
 ACCOUNT_HOURLY_CAP_OVERRIDE = "1000"
 ACCOUNT_DAILY_CAP_OVERRIDE = "24000"
@@ -80,6 +84,6 @@ crons = ["17 * * * *"]
 #   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
 #   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
 #   QOBUZ_ACCOUNTS_EXTRA  optional additive JSON array; lets the pool grow without replacing QOBUZ_ACCOUNTS.
-#   QOBUZ_ACCOUNTS_RECOVERED through QOBUZ_ACCOUNTS_RECOVERED_5 are optional additive JSON arrays.
+#   QOBUZ_ACCOUNTS_RECOVERED through QOBUZ_ACCOUNTS_RECOVERED_9 are optional additive JSON arrays.
 #   IP_SALT         random secret salting the stored network hash. Turns on the per-network caps above and the
 #                   IP column `npm run report` reads. Never the relay key (that one is public).

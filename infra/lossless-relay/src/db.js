@@ -56,7 +56,9 @@ export function bumpQuotaStmt(db, day, key, ip = null) {
  * up at the front of the rotation and hide each other.
  * SET expressions read the pre-update row, so `hour_key = ?2` on the right-hand
  * side compares the OLD key. Atomic under concurrent invocations because D1 runs
- * one statement at a time. Returns the label, or null when nothing is eligible.
+ * one statement at a time. The mandatory safety caps and last_used_at gap apply
+ * even to legacy uncapped/no-cooldown labels. A gap longer than the upstream timeout
+ * also prevents concurrent mints on one account. Returns null when none is eligible.
  */
 export async function selectAccount(db, nowSec, caps, exclude = null, labels = null, uncappedLabels = null, noCooldownLabels = null) {
     const row = await db.prepare(`
@@ -68,12 +70,15 @@ UPDATE accounts SET
 WHERE label = (
   SELECT label FROM accounts
   WHERE state = 'live' AND (cooling_until <= ?1 OR label IN (SELECT value FROM json_each(?9)))
+    AND (?28 <= 0 OR last_used_at <= ?1 - ?28)
+    AND (hour_key != ?2 OR hour_n < ?29)
+    AND (day_key != ?3 OR day_n < ?30)
     AND (label IN (SELECT value FROM json_each(?8)) OR (hour_key != ?2 OR hour_n < CASE WHEN label = ?10 AND ?10 != '' THEN ?11 WHEN label = ?13 AND ?13 != '' THEN ?14 WHEN label = ?16 AND ?16 != '' THEN ?17 WHEN label = ?19 AND ?19 != '' THEN ?20 WHEN label = ?22 AND ?22 != '' THEN ?23 WHEN label = ?25 AND ?25 != '' THEN ?26 ELSE ?4 END))
     AND (label IN (SELECT value FROM json_each(?8)) OR (day_key  != ?3 OR day_n  < CASE WHEN label = ?10 AND ?10 != '' THEN ?12 WHEN label = ?13 AND ?13 != '' THEN ?15 WHEN label = ?16 AND ?16 != '' THEN ?18 WHEN label = ?19 AND ?19 != '' THEN ?21 WHEN label = ?22 AND ?22 != '' THEN ?24 WHEN label = ?25 AND ?25 != '' THEN ?27 ELSE ?5 END))
     AND label IS NOT ?6
     AND (?7 IS NULL OR label IN (SELECT value FROM json_each(?7)))
   ORDER BY CASE WHEN ?6 IS NULL THEN rotation_seq ELSE -rotation_seq END ASC, label ASC LIMIT 1)
-RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels), uncappedLabels?.length ? JSON.stringify(uncappedLabels) : null, noCooldownLabels?.length ? JSON.stringify(noCooldownLabels) : null, caps.overrideLabel || "", caps.overrideHourly || caps.hourly, caps.overrideDaily || caps.daily, caps.overrideLabel2 || "", caps.overrideHourly2 || caps.hourly, caps.overrideDaily2 || caps.daily, caps.overrideLabel3 || "", caps.overrideHourly3 || caps.hourly, caps.overrideDaily3 || caps.daily, caps.overrideLabel4 || "", caps.overrideHourly4 || caps.hourly, caps.overrideDaily4 || caps.daily, caps.overrideLabel5 || "", caps.overrideHourly5 || caps.hourly, caps.overrideDaily5 || caps.daily, caps.overrideLabel6 || "", caps.overrideHourly6 || caps.hourly, caps.overrideDaily6 || caps.daily).first();
+RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels), uncappedLabels?.length ? JSON.stringify(uncappedLabels) : null, noCooldownLabels?.length ? JSON.stringify(noCooldownLabels) : null, caps.overrideLabel || "", caps.overrideHourly || caps.hourly, caps.overrideDaily || caps.daily, caps.overrideLabel2 || "", caps.overrideHourly2 || caps.hourly, caps.overrideDaily2 || caps.daily, caps.overrideLabel3 || "", caps.overrideHourly3 || caps.hourly, caps.overrideDaily3 || caps.daily, caps.overrideLabel4 || "", caps.overrideHourly4 || caps.hourly, caps.overrideDaily4 || caps.daily, caps.overrideLabel5 || "", caps.overrideHourly5 || caps.hourly, caps.overrideDaily5 || caps.daily, caps.overrideLabel6 || "", caps.overrideHourly6 || caps.hourly, caps.overrideDaily6 || caps.daily, caps.paceSec ?? 0, caps.safetyHourly ?? 2147483647, caps.safetyDaily ?? 2147483647).first();
     return row ? row.label : null;
 }
 

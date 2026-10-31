@@ -9,19 +9,35 @@ import {
 const CAPS = { hourly: 2, daily: 3 };
 const T0 = 1788282000; // 2026-09-01T17:00:00Z
 
-test("last standby waits until every older designated account is dead", async () => {
+test("atomic selection spaces requests per account and applies safety caps to uncapped labels", async () => {
     const db = fakeD1();
-    const others = ["acct-qobuz-cooldownchess-20261030", "acct-qobuz-cooldownchess2-20261030", "acct-qobuz-grifties1-20261030", "acct-qobuz-grifties2-20261030", "acct-qobuz-hippojobava-20261031"];
-    const standby = "acct-qobuz-hippojobava2-20261031";
-    await ensureAccounts(db, [...others, standby]);
-    await db.prepare("UPDATE accounts SET state='reserve' WHERE label=?1").bind(standby).run();
-    for (const label of others) {
-        await killAccount(db, label, "UserUnauthenticated");
-        const dead = (await db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE state='dead' AND label IN (SELECT value FROM json_each(?1))").bind(JSON.stringify(others)).first()).n;
-        assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(standby).first()).state, dead === others.length ? "live" : "reserve");
-    }
-    await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(others[4]).run();
-    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(standby).first()).state, "reserve");
+    await ensureAccounts(db, ["a", "b"]);
+    const caps = { hourly: 1000, daily: 24000, paceSec: 30, safetyHourly: 2, safetyDaily: 3 };
+    const labels = ["a", "b"];
+    assert.equal(await selectAccount(db, T0, caps, null, labels, labels, labels), "a");
+    assert.equal(await selectAccount(db, T0, caps, null, labels, labels, labels), "b");
+    assert.equal(await selectAccount(db, T0 + 29, caps, null, labels, labels, labels), null);
+    assert.equal(await selectAccount(db, T0 + 30, caps, null, labels, labels, labels), "a");
+    assert.equal(await selectAccount(db, T0 + 30, caps, null, labels, labels, labels), "b");
+    assert.equal(await selectAccount(db, T0 + 60, caps, null, labels, labels, labels), null);
+    assert.equal(await selectAccount(db, T0 + 3600, caps, null, labels, labels, labels), "a");
+    assert.equal(await selectAccount(db, T0 + 3600, caps, null, labels, labels, labels), "b");
+    assert.equal(await selectAccount(db, T0 + 3630, caps, null, labels, labels, labels), null);
+});
+
+test("last reserve follows jobavachess1 after every older designated account dies", async () => {
+    const db = fakeD1();
+    const old = ["acct-qobuz-cooldownchess-20261030", "acct-qobuz-cooldownchess2-20261030", "acct-qobuz-grifties1-20261030", "acct-qobuz-grifties2-20261030", "acct-qobuz-hippojobava-20261031"];
+    const current = "acct-qobuz-jobavachess1-20261031";
+    const reserve = "acct-qobuz-hippojobava2-20261031";
+    await ensureAccounts(db, [...old, current, reserve]);
+    await db.prepare("UPDATE accounts SET state='reserve' WHERE label=?1").bind(reserve).run();
+    for (const label of old) await killAccount(db, label, "UserUnauthenticated");
+    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "reserve");
+    await killAccount(db, current, "USER_BLOCKED");
+    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "live");
+    await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(current).run();
+    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "reserve");
 });
 
 test("fifth and sixth account overrides apply their own caps", async () => {
