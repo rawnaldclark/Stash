@@ -126,7 +126,8 @@ sealed interface TidalLookup {
 /**
  * Client for a BitChord Lossless Relay (the owner-hosted one from the signed config, or a user override) (upstream
  * `R1Blmmakan/music_addon`, a FastAPI service), used as the Tidal rung of the
- * streaming chain — after Qobuz, before the lossy sources.
+ * streaming chain — after Qobuz, before the lossy sources; a user override with none of
+ * the user's own Qobuz set up goes ahead of Qobuz ([com.stash.data.download.lossless.LosslessAvailability.ownTidalFirst]).
  *
  * Contract used (all derived from upstream `app/main.py`):
  *  - `GET {base}/search?q=` → `{tracks:[{id:"td:<n>"|"dz:<n>", title, artist,

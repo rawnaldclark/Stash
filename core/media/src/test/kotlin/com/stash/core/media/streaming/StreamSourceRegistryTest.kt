@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.quota.LosslessQuota
 import io.mockk.coEvery
@@ -791,5 +792,122 @@ class StreamSourceRegistryTest {
 
         assertThat(result!!.origin).isEqualTo("qbdlx")
         coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    // -- The user's own Tidal server leads (LosslessAvailability.ownTidalFirst) --
+    // The rule itself (own server set, none of their own Qobuz) is LosslessAvailabilityTest's;
+    // here the registry sees its answer.
+
+    private fun registryWithOwnTidal(tidal: TidalStreamResolver, ownTidalFirst: Boolean, tidalAac: Boolean = true): StreamSourceRegistry {
+        coEvery { streamingPreference.isForceYouTubeFallback() } returns false
+        coEvery { losslessPrefs.tidalAacFallbackNow() } returns tidalAac
+        return StreamSourceRegistry(
+            kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
+            LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal,
+            availability = mockk<LosslessAvailability> { coEvery { ownTidalFirstNow() } returns ownTidalFirst },
+        )
+    }
+
+    @Test
+    fun `own Tidal server and no own Qobuz - Tidal is asked before qbdlx`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk { coEvery { resolveLossless(any()) } returns stubStreamUrl("tidal") }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server first - a miss falls back to qbdlx, then to the server's AAC`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveLossless(any()) } returns null
+            coEvery { resolve(any()) } returns aacStream()
+        }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = true).resolve(stubTrack())
+
+        assertThat(result!!.codec).isEqualTo("aac")
+        coVerifyOrder {
+            tidal.resolveLossless(any())
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+        }
+    }
+
+    /** Tidal's AAC for a CD-only song must not stand in for a FLAC Qobuz still has. */
+    @Test
+    fun `own Tidal server first never serves its AAC ahead of a Qobuz FLAC`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveLossless(any()) } returns null // a CD-only song: no FLAC from this server
+            coEvery { resolve(any()) } returns aacStream()
+        }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("qbdlx")
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server first with Tidal AAC off asks it once, FLAC only`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val tidal: TidalStreamResolver = mockk { coEvery { resolveLossless(any()) } returns null }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = true, tidalAac = false).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("youtube")
+        coVerify(exactly = 1) { tidal.resolveLossless(any()) }
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server and own Qobuz - the chain is unchanged, qbdlx then Tidal`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk { coEvery { resolve(any()) } returns stubStreamUrl("tidal") }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = false).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        coVerifyOrder {
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+        }
+        coVerify(exactly = 0) { tidal.resolveLossless(any()) }
+    }
+
+    /** The look-ahead stop spares Stash's shared pool; in the lead it would prefetch no song at all. */
+    @Test
+    fun `a look-ahead asks the user's own Tidal server when it leads`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk { coEvery { resolveLossless(any()) } returns stubStreamUrl("tidal") }
+
+        val result = registryWithOwnTidal(tidal, ownTidalFirst = true)
+            .resolve(stubTrack(), allowYouTube = true, allowYtDlp = true, speculative = true)
+
+        assertThat(result!!.origin).isEqualTo("tidal")
+        coVerify(exactly = 0) { tidal.needsRelay(any()) }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `the background fill asks no Tidal server, leading or not`() = runTest {
+        coEvery { youtube.resolve(any(), any()) } returns null
+        val tidal: TidalStreamResolver = mockk()
+
+        registryWithOwnTidal(tidal, ownTidalFirst = true).resolve(stubTrack(), allowYouTube = true, allowYtDlp = false)
+
+        coVerify(exactly = 0) { tidal.resolveLossless(any()) }
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
     }
 }

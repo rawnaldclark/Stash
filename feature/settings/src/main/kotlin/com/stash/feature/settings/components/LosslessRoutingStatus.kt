@@ -31,11 +31,12 @@ import com.stash.feature.settings.R
 /**
  * ROUTING status block for the lossless source chain.
  *
- * Renders [rows] verbatim — they are built in
+ * Renders [rows] verbatim and in their order — they are built in
  * [com.stash.data.download.lossless.LosslessAvailability] from the same predicates
  * the source and downloads read, so this block cannot claim a path the resolver
- * does not have. It used to hardcode a single "Qobuz — active" row, which was only
- * ever true while a token pool shipped.
+ * does not have. They come in the order a song asks them, which is what the `↳`
+ * rows say; never sort them here. It used to hardcode a single "Qobuz — active"
+ * row, which was only ever true while a token pool shipped.
  *
  * Two rules this block has to follow, both learned the hard way:
  *  - **Say what is true right now.** It previously advertised a second source that

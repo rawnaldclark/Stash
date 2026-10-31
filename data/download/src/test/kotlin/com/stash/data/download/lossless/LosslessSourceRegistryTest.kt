@@ -1,10 +1,16 @@
 package com.stash.data.download.lossless
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
+import com.stash.data.download.lossless.quota.LosslessQuota
+import com.stash.data.download.lossless.relay.LosslessConfigFetcher
+import com.stash.data.download.lossless.relay.RelayEntry
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -24,10 +30,35 @@ class LosslessSourceRegistryTest {
             coEvery { isSkipQobuz() } returns false
         }
 
+    // What the user has of their own; nothing by default.
+    private val ownQobuzLogin = MutableStateFlow(false)
+    private val customQobuzEndpoint = MutableStateFlow<String?>(null)
+    private val ownTidalServer = MutableStateFlow<String?>(null)
+
+    init {
+        every { prefs.customLosslessEndpoint } returns customQobuzEndpoint
+        every { prefs.bitchordEndpoint } returns ownTidalServer
+        coEvery { prefs.hasSavedPriorityOrder() } returns false
+    }
+
+    /** The real rule ([LosslessAvailability.ownTidalFirst]), read from the flows above. */
+    private val availability = LosslessAvailability(
+        credentialStore = mockk<QbdlxCredentialStore> {
+            every { hasLogin } returns ownQobuzLogin
+            every { connectedEmailFlow } returns MutableStateFlow(null)
+        },
+        config = mockk<LosslessConfigFetcher> {
+            every { relays } returns MutableStateFlow(listOf(RelayEntry("https://relay.example")))
+        },
+        prefs = prefs,
+        relayClient = mockk(),
+        quota = LosslessQuota.inMemory { 0L },
+    )
+
     private val query = TrackQuery(artist = "A", title = "B")
 
     private fun registry(sources: Set<LosslessSource>) =
-        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference)
+        LosslessSourceRegistry(sources, prefs, healthGate, streamingPreference, availability)
 
     private fun flacResult(srcId: String) = SourceResult(
         sourceId = srcId,
@@ -231,5 +262,106 @@ class LosslessSourceRegistryTest {
 
         assertThat(result).isEqualTo(qbdlxResult)
         coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    // -- The user's own Tidal server ([LosslessAvailability.ownTidalFirst]) --
+
+    private fun defaultOrderAnyQuality() {
+        coEvery { prefs.priorityOrderNow() } returns LosslessSourcePreferences.DEFAULT_PRIORITY
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+    }
+
+    @Test
+    fun `own Tidal server and no own Qobuz - Tidal is asked before Qobuz`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        val tidalResult = flacResult("tidal_bitchord")
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val tidal = fakeSource("tidal_bitchord", tidalResult)
+
+        val result = registry(linkedSetOf(qbdlx, tidal)).resolve(query)
+
+        assertThat(result).isEqualTo(tidalResult)
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server first - a Tidal miss still falls back to Qobuz`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        val qbdlxResult = flacResult("qbdlx_qobuz")
+        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
+        val tidal = fakeSource("tidal_bitchord", null)
+
+        val result = registry(linkedSetOf(qbdlx, tidal)).resolve(query)
+
+        assertThat(result).isEqualTo(qbdlxResult)
+        coVerifyOrder {
+            tidal.resolve(any())
+            qbdlx.resolve(any())
+        }
+    }
+
+    @Test
+    fun `own Tidal server and own Qobuz login - Qobuz keeps the lead`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        ownQobuzLogin.value = true
+        val qbdlxResult = flacResult("qbdlx_qobuz")
+        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+
+        val result = registry(linkedSetOf(tidal, qbdlx)).resolve(query)
+
+        assertThat(result).isEqualTo(qbdlxResult)
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server and a custom Qobuz endpoint - Qobuz keeps the lead`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        customQobuzEndpoint.value = "https://qobuz.mine.example"
+        val qbdlxResult = flacResult("qbdlx_qobuz")
+        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+
+        assertThat(registry(linkedSetOf(tidal, qbdlx)).resolve(query)).isEqualTo(qbdlxResult)
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `a saved source order is never rearranged`() = runTest {
+        coEvery { prefs.priorityOrderNow() } returns listOf("qbdlx_qobuz", "tidal_bitchord")
+        coEvery { prefs.hasSavedPriorityOrder() } returns true
+        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
+        coEvery { healthGate.isDegraded(any()) } returns false
+        ownTidalServer.value = "https://tidal.mine.example"
+        val qbdlxResult = flacResult("qbdlx_qobuz")
+        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
+        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+
+        assertThat(registry(linkedSetOf(tidal, qbdlx)).resolve(query)).isEqualTo(qbdlxResult)
+        coVerify(exactly = 0) { tidal.resolve(any()) }
+    }
+
+    @Test
+    fun `own Tidal server first moves only Tidal - every other source keeps its place`() = runTest {
+        defaultOrderAnyQuality()
+        ownTidalServer.value = "https://tidal.mine.example"
+        val misses = linkedSetOf(
+            fakeSource("lucida", null), // unranked: appended after the default order
+            fakeSource("tidal_bitchord", null),
+            fakeSource("qbdlx_qobuz", null),
+        )
+
+        assertThat(registry(misses).resolve(query)).isNull()
+        val (lucida, tidal, qbdlx) = misses.toList()
+        coVerifyOrder {
+            tidal.resolve(any())
+            qbdlx.resolve(any())
+            lucida.resolve(any())
+        }
     }
 }

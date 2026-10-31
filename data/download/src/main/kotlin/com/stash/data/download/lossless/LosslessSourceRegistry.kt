@@ -20,6 +20,9 @@ import javax.inject.Singleton
  * Sources that don't appear in [LosslessSourcePreferences.priorityOrder]
  * are appended at the end in registration-order — so a fresh install with
  * no priority configured still tries every available source.
+ *
+ * A user's own Tidal server, with none of their own Qobuz set up, is asked before
+ * the Qobuz source ([LosslessAvailability.ownTidalFirst]) — see [withOwnTidalFirst].
  */
 @Singleton
 class LosslessSourceRegistry @Inject constructor(
@@ -27,6 +30,7 @@ class LosslessSourceRegistry @Inject constructor(
     private val prefs: LosslessSourcePreferences,
     private val healthGate: LosslessSourceHealthGate,
     private val streamingPreference: StreamingPreference,
+    private val availability: LosslessAvailability,
 ) {
 
     /**
@@ -107,7 +111,7 @@ class LosslessSourceRegistry @Inject constructor(
             // LosslessAvailability. The force toggle above bypasses the filter so
             // a manual test can still reach a source on demand, and
             // orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }.let { normal ->
+            withOwnTidalFirst(orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }).let { normal ->
                 // "Test: skip Qobuz (Tidal first)" — debug builds only (the accessor is
                 // gated). Leaves out the Qobuz source so a download goes to Tidal.
                 if (streamingPreference.isSkipQobuz()) {
@@ -119,6 +123,22 @@ class LosslessSourceRegistry @Inject constructor(
                 }
             }
         }
+
+    /**
+     * [ordered] with the Tidal source moved to just ahead of the Qobuz one when the Tidal
+     * server is the user's own and none of their own Qobuz is set up
+     * ([LosslessAvailability.ownTidalFirst]). Otherwise the Qobuz source's file URL comes
+     * from Stash's shared relay before the user's own server is ever asked. Stash's relay
+     * stays the fallback, right after it; nothing else moves. Never in an order the user
+     * saved ([LosslessSourcePreferences.hasSavedPriorityOrder]).
+     */
+    private suspend fun withOwnTidalFirst(ordered: List<LosslessSource>): List<LosslessSource> {
+        val qobuzAt = ordered.indexOfFirst { it.id == QBDLX_SOURCE_ID }
+        val tidalAt = ordered.indexOfFirst { it.id == TIDAL_SOURCE_ID }
+        if (qobuzAt < 0 || tidalAt < qobuzAt) return ordered // already ahead, or either one absent
+        if (!availability.ownTidalFirstNow() || prefs.hasSavedPriorityOrder()) return ordered
+        return ordered.toMutableList().apply { add(qobuzAt, removeAt(tidalAt)) }
+    }
 
     /**
      * All registered sources, in user-configured priority order. Sources
@@ -167,6 +187,9 @@ class LosslessSourceRegistry @Inject constructor(
 
         /** [com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource.SOURCE_ID]. */
         private const val QBDLX_SOURCE_ID = "qbdlx_qobuz"
+
+        /** [com.stash.data.download.lossless.tidal.TidalLosslessSource.SOURCE_ID]. */
+        private const val TIDAL_SOURCE_ID = "tidal_bitchord"
 
         /**
          * Lossless sources parked out of the NORMAL resolve chain because their
