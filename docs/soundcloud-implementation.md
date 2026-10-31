@@ -325,12 +325,22 @@ the owner's songs, and tapping SoundCloud Liked in Sync opens the 140-track play
 Full auth suite: 31 passed. SoundCloud client suite: 30 passed, one opt-in smoke skipped. Library VM:
 25 passed. Fetch worker/revision suite: 26 passed. Full debug APK build exited 0 and installed.
 
-Spotify report is not reproduced on Pixel 5: Idioteque by Radiohead and Pink + White by Frank Ocean
-both played successfully through the existing Spotify/YouTube library path. Owner was asked for a
-failing song/device; do not claim a general Spotify playback bug fixed without that reproduction.
+The owner clarified that the playback report referred to SoundCloud, not Spotify. No Spotify
+playback reproduction is outstanding. Idioteque by Radiohead and Pink + White by Frank Ocean
+also played through the existing Spotify/YouTube library path during the earlier investigation.
 
 Your Mix 1 source-art probe: t500x500 returns 500x500, 22,298 bytes; original returns that same
 500x500 image and byte count. t1080x1080 returns an upscaled 1080x1080, 65,441 bytes. The service
 has not supplied more original detail for this cover. Keep the authentic service cover; requesting
 larger dimensions is not evidence of sharper source content. This corrects the earlier implication
 that every 1080px response necessarily improves this specific cover.
+
+## SoundCloud download follow-up (2026-10-31)
+
+On Pixel 5 with the renewed session, downloaded Earl Sweatshirt - Balance by skyfish_ from the
+existing SoundCloud playlist menu. TrackDownloadWorker completed successfully: full hls_aac_160k
+audio, 1,596,316-byte M4A. Library Songs displayed its Downloaded badge and Recently Downloaded card.
+Switched to Download mode, selected that downloaded row, and verified the active media session
+reported PLAYING with advancing position and the full 79,088 ms buffered. Download mode also hid
+the current undownloaded SoundCloud Likes. Paused playback and restored the owner's Stream only
+setting afterward. Kept the downloaded song; no existing downloads or playlists were removed.
