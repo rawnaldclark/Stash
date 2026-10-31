@@ -606,9 +606,8 @@ class SpotifyApiClient @Inject constructor(
                         if (!id.startsWith(SPOTIFY_OWNED_ID_PREFIX)) continue // stranger's copy
                         if (id.startsWith(EDITORIAL_ID_PREFIX)) continue      // curated for everyone
                         if (!isSearchedMixName(name)) continue
-                        val art = d["images"]?.jsonObject?.get("items")?.jsonArray?.firstOrNull()
-                            ?.jsonObject?.get("sources")?.jsonArray?.firstOrNull()
-                            ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        val art = SpotifyArtwork.largestSource(d["images"]?.jsonObject?.get("items")?.jsonArray?.firstOrNull()
+                            ?.jsonObject?.get("sources"))
                         out.putIfAbsent(
                             id,
                             SpotifyPlaylistItem(
@@ -789,9 +788,8 @@ class SpotifyApiClient @Inject constructor(
                         val playlistId = uri.removePrefix("spotify:playlist:")
 
                         val images = data["images"]?.jsonObject?.get("items")?.jsonArray
-                        val artUrl = images?.firstOrNull()
-                            ?.jsonObject?.get("sources")?.jsonArray?.firstOrNull()
-                            ?.jsonObject?.get("url")?.jsonPrimitive?.contentOrNull
+                        val artUrl = SpotifyArtwork.largestSource(images?.firstOrNull()
+                            ?.jsonObject?.get("sources"))
 
                         val trackCount = data["content"]
                             ?.jsonObject?.get("totalCount")
@@ -1706,11 +1704,8 @@ class SpotifyApiClient @Inject constructor(
                             ""
                         }
                         val albumName = albumData["name"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val coverArtUrl = albumData["coverArt"]
-                            ?.jsonObject?.get("sources")
-                            ?.jsonArray?.firstOrNull()
-                            ?.jsonObject?.get("url")
-                            ?.jsonPrimitive?.contentOrNull
+                        val coverArtUrl = SpotifyArtwork.largestSource(albumData["coverArt"]
+                            ?.jsonObject?.get("sources"))
                         val albumImages = if (coverArtUrl != null) {
                             listOf(SpotifyImage(url = coverArtUrl))
                         } else {

@@ -126,13 +126,10 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
 
                 // Soft casts: `images` is JsonNull for artless playlists and a
                 // hard .jsonObject cast would throw and drop the whole row.
-                val imageUrl = (data["images"] as? JsonObject)
+                val imageUrl = SpotifyArtwork.largestSource((data["images"] as? JsonObject)
                     ?.let { it["items"] as? JsonArray }
                     ?.firstOrNull()
-                    ?.let { (it as? JsonObject)?.get("sources") as? JsonArray }
-                    ?.firstOrNull()
-                    ?.let { (it as? JsonObject)?.get("url") }
-                    ?.jsonPrimitive?.contentOrNull
+                    ?.let { (it as? JsonObject)?.get("sources") })
 
                 val images = if (imageUrl != null) {
                     listOf(SpotifyImage(url = imageUrl))
