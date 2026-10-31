@@ -66,9 +66,9 @@ interface AlbumBackCovers {
  * 1. The album's release group: from the song's ISRC when it has one (one search, and sure of the
  *    recording), else a title search by artist ([releaseGroupFromSearch]), the plain title first.
  * 2. The release group's cover, which names the album's main edition, and that edition's listing
- *    (not asked for when MusicBrainz says it holds a front alone): its back is the likeliest to
- *    match the front on screen. When it has both a back and inside pages, the lookup ends here, at
- *    three or four calls. A group with no art at all goes to step 4.
+ *    (set aside when MusicBrainz says it holds a front alone): its back is the likeliest to match
+ *    the front on screen. When it has both a back and inside pages, the lookup ends here, at three
+ *    or four calls. A group with no art at all goes to step 4.
  * 3. Else its other releases, vinyl first ([rankReleasesForBack]), [PARALLEL_CHECKS] at a time, up
  *    to [MAX_RELEASES_CHECKED], read in rank order until it has both: the first back and the first
  *    inside pages ([insidePages]), which may come from different releases.
@@ -83,10 +83,10 @@ interface AlbumBackCovers {
  * inside) is looked up again after [MISS_TTL_MS], since scans are uploaded all the time. What came
  * from Discogs is forgotten after [DISCOGS_TTL_MS] (its API terms: no Discogs data older than six
  * hours), the album then looked up again when it next plays. A failure (offline, MusicBrainz or
- * the archive down, every listing that could hold the back failing, a reply that can't be read)
- * stores nothing new and holds the album back for [FAILURE_BACKOFF_MS], so a flaky network doesn't
- * repeat the walk on every song. Concurrent calls for one album (the mini player's and Now
- * Playing's ViewModels) run it once.
+ * the archive down, a listing that may hold the missing back failing with no back from Discogs
+ * either, a reply that can't be read) stores nothing new and holds the album back for
+ * [FAILURE_BACKOFF_MS], so a flaky network doesn't repeat the walk on every song. Concurrent calls
+ * for one album (the mini player's and Now Playing's ViewModels) run it once.
  */
 @Singleton
 class AlbumBackCoverRepository @Inject constructor(
@@ -244,7 +244,13 @@ class AlbumBackCoverRepository @Inject constructor(
         var back: Found? = null
         var inside: List<String>? = null
         var answered = false
-        suspend fun read(id: String, listing: CaaListing) {
+        // Releases whose listing failed: any of them may hold the back the answers lacked.
+        val failed = mutableListOf<String>()
+        suspend fun read(id: String, listing: CaaListing?) {
+            if (listing == null) {
+                failed += id
+                return
+            }
             answered = true
             var foundBack = false
             if (back == null) {
@@ -263,45 +269,47 @@ class AlbumBackCoverRepository @Inject constructor(
         }
         fun done() = back != null && inside != null
 
-        // Releases MusicBrainz says hold no more than a front aren't asked about: on Reach Out,
-        // seven of its eight official releases are skipped this way (2026-10-25). Nor is such a
-        // main edition: good kid, m.A.A.d city's is a digital release with a front alone
-        // (2026-10-31). When the releases can't be listed, the main edition is still read: it may
-        // answer it all.
+        // The main edition alone first: when it has both, its releases needn't be read. Its listing
+        // is asked for while the releases are listed, and set aside unread when they say it holds a
+        // front alone: good kid, m.A.A.d city's is a digital release with nothing but its front
+        // (2026-10-31), an answer that says nothing of the album. When the releases can't be
+        // listed, it is read all the same: it may answer it all.
+        val main = cover?.releaseMbid
+        val mainListing = main?.let { async { coverArt.release(it) } }
         val releases = browse.await()
+        // Releases MusicBrainz says hold no more than a front aren't asked about: on Reach Out,
+        // seven of its eight official releases are skipped this way (2026-10-25).
         val bare = releases?.let { releasesWithoutMoreArt(it) }.orEmpty()
-
-        // The main edition alone first: when it has both, its releases needn't be read.
-        val main = cover?.releaseMbid?.takeIf { it !in bare }
-        main?.let { id -> coverArt.release(id)?.let { read(id, it) } }
+        val mainRead = main?.takeIf { it !in bare }
+        if (mainRead != null && mainListing != null) read(mainRead, mainListing.await()) else mainListing?.cancel()
         if (done()) return Walk(back, inside.orEmpty())
 
         if (releases == null) throw lookupFailed("MusicBrainz releases of $group")
         val candidates = rankReleasesForBack(releases).filter { it != main && it !in bare }.take(MAX_RELEASES_CHECKED)
-        var failed = 0
         for (batch in candidates.chunked(PARALLEL_CHECKS)) {
             coroutineScope {
                 val pending = batch.map { id -> id to async { coverArt.release(id) } }
                 // In rank order, so a better-ranked release wins over a faster reply; once both are
                 // in hand, the slower listings still out are cancelled.
                 for ((id, listing) in pending) {
-                    val got = listing.await()
-                    if (got == null) failed++ else read(id, got)
+                    read(id, listing.await())
                     if (done()) break
                 }
                 pending.forEach { it.second.cancel() }
             }
             if (done()) break
         }
-        if (!answered && (main != null || candidates.isNotEmpty())) throw lookupFailed("every archive listing of $group")
-        // A main edition without a back says nothing of the other releases: when every one of
-        // their listings failed (archive.org's 500s and timeouts, most reads for good kid, m.A.A.d
-        // city on 2026-10-31), the back may be on any of them. Kept, the miss would hide it for
-        // 30 days; failed, the album is asked again after the backoff.
-        if (back == null && candidates.isNotEmpty() && failed == candidates.size) {
-            throw lookupFailed("every other archive listing of $group")
-        }
-        return withDiscogs(group, releases, back, inside, discogsOn)
+        // The archive failing is no answer: when no listing could be read, or no back was found
+        // while a listing that failed may hold one (MusicBrainz doesn't say that release has none).
+        // archive.org failed most reads for good kid, m.A.A.d city on 2026-10-31, and the miss kept
+        // then hid its back for 30 days. A back from Discogs still stands in; without one, nothing
+        // is stored and the album is asked again after the backoff.
+        val noBack = releasesWithoutBack(releases)
+        val archiveFailed = (!answered && (mainRead != null || candidates.isNotEmpty())) ||
+            (back == null && failed.any { it !in noBack })
+        val walk = withDiscogs(group, releases, back, inside, discogsOn)
+        if (archiveFailed && walk.back == null) throw lookupFailed("archive listings of $group")
+        return walk
     }
 
     /**
