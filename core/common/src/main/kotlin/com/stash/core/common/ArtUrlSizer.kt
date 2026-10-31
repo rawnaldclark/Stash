@@ -156,6 +156,7 @@ object ArtUrlSizer {
         val host = afterScheme.substringBefore('/').lowercase()
         val cap = maxVariantPx.coerceAtLeast(1)
         return when {
+            host.matches(Regex("i[0-9]+\\.sndcdn\\.com")) -> soundCloud(url, px, cap)
             GOOGLE_HOST.matches(host) -> google(url, px, cap)
             host == "i.ytimg.com" || host.endsWith(".ytimg.com") -> youtube(url, px)
             host == "i.scdn.co" || host.endsWith(".spotifycdn.com") -> spotify(url, px, cap)
@@ -166,6 +167,15 @@ object ArtUrlSizer {
             host.endsWith(".dzcdn.net") -> deezer(url, px, cap)
             else -> url
         }
+    }
+
+    private fun soundCloud(url: String, px: Int, cap: Int): String {
+        val match = Regex("-(large|t500x500|t1080x1080)(\\.(?:jpg|png|webp))(?=$|[?#])").find(url) ?: return url
+        val stored = when (match.groupValues[1]) { "large" -> 100; "t500x500" -> 500; else -> 1080 }
+        if (bigEnough(stored, px)) return url
+        val target = tierFor(px, intArrayOf(100, 500, 1080), cap)
+        if (target <= stored) return url
+        return url.replaceRange(match.range, "-t${target}x$target${match.groupValues[2]}")
     }
 
     /**
