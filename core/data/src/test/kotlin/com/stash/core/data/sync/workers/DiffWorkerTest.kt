@@ -1429,8 +1429,79 @@ class DiffWorkerTest {
         assertEquals(false, db.playlistDao().getById(mix)!!.stackSongs)
     }
 
+    @Test fun `SoundCloud preserves custom order across both modes and keeps upload identities distinct`() = runBlocking {
+        val accounts = mockk<com.stash.core.auth.soundcloud.SoundCloudAccountManager>()
+        coEvery { accounts.withCurrentSession<Unit>("current", any()) } coAnswers { secondArg<suspend () -> Unit>().invoke() }
+        for (mode in SyncMode.entries) {
+            every { syncPreferencesManager.soundCloudSyncMode } returns flowOf(mode)
+            val suffix = mode.name
+            val playlist = db.playlistDao().insert(PlaylistEntity(name = "SC", source = MusicSource.SOUNDCLOUD,
+                sourceId = "soundcloud_$suffix", type = PlaylistType.LIKED_SONGS, syncEnabled = true))
+            suspend fun song(id: String) = db.trackDao().insert(TrackEntity(title = "Same title", artist = "Artist",
+                source = MusicSource.SOUNDCLOUD, soundCloudId = "$suffix$id", filePath = if (id == "A") "/existing.flac" else null,
+                isDownloaded = id == "A"))
+            val a = song("A"); val b = song("B"); val x = song("X")
+            db.trackDao().update(db.trackDao().getById(a)!!.copy(source = MusicSource.SPOTIFY, soundCloudId = null, isrc = "USABC2400001"))
+            for ((position, id) in listOf(a, b, x).withIndex()) db.playlistDao().insertCrossRef(
+                PlaylistTrackCrossRef(playlistId = playlist, trackId = id, position = position))
+            db.playlistOrderDao().move(playlist, b, a, null)
+            coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(RemotePlaylistSnapshotEntity(
+                id = 99, syncId = 1, source = MusicSource.SOUNDCLOUD, sourcePlaylistId = "soundcloud_$suffix",
+                soundCloudConnectionId = "current", playlistName = "SC", playlistType = PlaylistType.LIKED_SONGS))
+            coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(99) } returns listOf("A", "B", "C").mapIndexed { i, id ->
+                RemoteTrackSnapshotEntity(syncId = 1, snapshotPlaylistId = 99, title = "Same title", artist = "Artist",
+                    soundCloudId = "$suffix$id", isrc = if (id == "A") "USABC2400001" else null, position = i)
+            }
+            assertTrue(buildWorker(soundCloudAccounts = accounts).doWork() is androidx.work.ListenableWorker.Result.Success)
+            val c = db.trackDao().findBySoundCloudId("${suffix}C")!!.id
+            val expected = if (mode == SyncMode.REFRESH) listOf(b, a, c) else listOf(b, a, x, c)
+            assertEquals(expected, db.playlistOrderDao().memberIdsInOrder(playlist))
+            assertEquals("/existing.flac", db.trackDao().getById(a)!!.filePath)
+            assertEquals("${suffix}A", db.trackDao().getById(a)!!.soundCloudId)
+        }
+    }
+
+    @Test fun `SoundCloud owned playlists follow account mode while mixes refresh without losing custom order`() = runBlocking {
+        val accounts = mockk<com.stash.core.auth.soundcloud.SoundCloudAccountManager>()
+        coEvery { accounts.withCurrentSession<Unit>("current", any()) } coAnswers { secondArg<suspend () -> Unit>().invoke() }
+        var number = 1000
+        for (type in listOf(PlaylistType.CUSTOM, PlaylistType.DAILY_MIX)) for (mode in SyncMode.entries) {
+            every { syncPreferencesManager.soundCloudSyncMode } returns flowOf(mode)
+            val sourceId = "soundcloud_${type}_$mode"
+            val playlist = db.playlistDao().insert(PlaylistEntity(name = "SC", source = MusicSource.SOUNDCLOUD,
+                sourceId = sourceId, type = type, syncEnabled = true))
+            val remoteIds = (1..4).map { (++number).toString() }
+            val localIds = remoteIds.take(3).map { remote -> db.trackDao().insert(TrackEntity(title = "Track $remote",
+                artist = "Artist", source = MusicSource.SOUNDCLOUD, soundCloudId = remote)) }
+            localIds.forEachIndexed { i, id -> db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlist, id, i)) }
+            db.playlistOrderDao().move(playlist, localIds[1], localIds[0], null)
+            coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(RemotePlaylistSnapshotEntity(
+                id = 99, syncId = 1, source = MusicSource.SOUNDCLOUD, sourcePlaylistId = sourceId,
+                soundCloudConnectionId = "current", playlistName = "SC", playlistType = type))
+            coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(99) } returns listOf(remoteIds[0], remoteIds[1], remoteIds[3]).mapIndexed { i, id ->
+                RemoteTrackSnapshotEntity(syncId = 1, snapshotPlaylistId = 99, title = "Track $id", artist = "Artist", soundCloudId = id, position = i)
+            }
+            assertTrue(buildWorker(soundCloudAccounts = accounts).doWork() is androidx.work.ListenableWorker.Result.Success)
+            val added = db.trackDao().findBySoundCloudId(remoteIds[3])!!.id
+            val retained = if (type == PlaylistType.CUSTOM && mode == SyncMode.ACCUMULATE) listOf(localIds[2]) else emptyList()
+            assertEquals(listOf(localIds[1], localIds[0]) + retained + added, db.playlistOrderDao().memberIdsInOrder(playlist))
+        }
+    }
+
+    @Test fun `stale SoundCloud snapshot cannot create a playlist`() = runBlocking {
+        every { syncPreferencesManager.soundCloudSyncMode } returns flowOf(SyncMode.REFRESH)
+        val accounts = mockk<com.stash.core.auth.soundcloud.SoundCloudAccountManager>()
+        coEvery { accounts.withCurrentSession<Unit>("old", any()) } returns null
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(RemotePlaylistSnapshotEntity(
+            id = 99, syncId = 1, source = MusicSource.SOUNDCLOUD, sourcePlaylistId = "stale",
+            soundCloudConnectionId = "old", playlistName = "Stale"))
+        buildWorker(soundCloudAccounts = accounts).doWork()
+        assertNull(db.playlistDao().findBySourceId("stale"))
+    }
+
     private fun buildWorker(
         canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),
+        soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager? = null,
     ): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
@@ -1457,6 +1528,7 @@ class DiffWorkerTest {
                 syncUndoDao = db.syncUndoDao(),
                 syncLog = com.stash.core.data.sync.SyncLog(),
                 canonicalRecompute = canonicalRecompute,
+                soundCloudAccounts = soundCloudAccounts,
             )
         })
         .build()

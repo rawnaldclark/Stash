@@ -27,6 +27,7 @@ import java.time.Instant
     indices = [
         Index(value = ["spotify_uri"], unique = true),
         Index(value = ["youtube_id"], unique = true),
+        Index(value = ["soundcloud_id"], unique = true),
         Index(value = ["artist"]),
         Index(value = ["album"]),
         Index(value = ["date_added"]),
@@ -87,6 +88,16 @@ data class TrackEntity(
 
     @ColumnInfo(name = "youtube_id")
     val youtubeId: String? = null,
+
+    @ColumnInfo(name = "soundcloud_id")
+    val soundCloudId: String? = null,
+
+    @ColumnInfo(name = "soundcloud_permalink")
+    val soundCloudPermalink: String? = null,
+
+    /** Preview status of the SoundCloud recording, not of an existing local file. */
+    @ColumnInfo(name = "soundcloud_preview", defaultValue = "0")
+    val soundCloudPreview: Boolean = false,
 
     @ColumnInfo(name = "album_art_url")
     val albumArtUrl: String? = null,

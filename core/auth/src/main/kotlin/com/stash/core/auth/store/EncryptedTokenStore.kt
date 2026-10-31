@@ -64,6 +64,7 @@ class EncryptedTokenStore @Inject constructor(
         val SPOTIFY = stringPreferencesKey("spotify_token")
         val YOUTUBE = stringPreferencesKey("youtube_token")
         val DISCORD = stringPreferencesKey("discord_token")
+        val SOUNDCLOUD = stringPreferencesKey("soundcloud_session")
     }
 
     // ── Spotify ──────────────────────────────────────────────────────────
@@ -156,6 +157,26 @@ class EncryptedTokenStore @Inject constructor(
         context.authDataStore.edit { it.remove(cloudKey(accountKey)) }
     }
 
+    val soundCloudSession: Flow<com.stash.core.auth.soundcloud.SoundCloudSession?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.SOUNDCLOUD]?.let { encrypted ->
+            try {
+                val bytes = encryption.decrypt(Base64.decode(encrypted, Base64.NO_WRAP))
+                json.decodeFromString<com.stash.core.auth.soundcloud.SoundCloudSession>(String(bytes, Charsets.UTF_8))
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    suspend fun saveSoundCloudSession(session: com.stash.core.auth.soundcloud.SoundCloudSession) {
+        val bytes = json.encodeToString(com.stash.core.auth.soundcloud.SoundCloudSession.serializer(), session).toByteArray(Charsets.UTF_8)
+        saveBlob(Keys.SOUNDCLOUD, Base64.encodeToString(encryption.encrypt(bytes), Base64.NO_WRAP))
+    }
+
+    suspend fun clearSoundCloud() {
+        context.authDataStore.edit { it.remove(Keys.SOUNDCLOUD) }
+    }
+
     private fun cloudKey(accountKey: String): Preferences.Key<String> {
         require(accountKey.matches(CLOUD_ACCOUNT_KEY)) { "bad cloud account key" }
         return stringPreferencesKey(CLOUD_PREFIX + accountKey)
@@ -173,6 +194,7 @@ class EncryptedTokenStore @Inject constructor(
                 prefs.remove(Keys.SPOTIFY)
                 prefs.remove(Keys.YOUTUBE)
                 prefs.remove(Keys.DISCORD)
+                prefs.remove(Keys.SOUNDCLOUD)
                 prefs.asMap().keys.map { it.name }.filter { it.startsWith(CLOUD_PREFIX) }
                     .forEach { prefs.remove(stringPreferencesKey(it)) }
             }

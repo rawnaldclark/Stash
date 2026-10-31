@@ -222,9 +222,9 @@ class RoomMirrorLibrary internal constructor(
         /** A playlist made from the mirror (spec §4.3); Library shows every `custom_%` playlist. */
         const val SOURCE_PREFIX = "custom_sync_"
 
-        /** Synced from Spotify or YouTube Music: it mirrors phone → web only and is read-only on the web (spec §2.4). */
+        /** Service-synced playlists mirror phone → web only and are read-only on the web (spec §2.4). */
         fun isSynced(p: PlaylistEntity): Boolean =
-            (p.source == MusicSource.SPOTIFY || p.source == MusicSource.YOUTUBE) &&
+            (p.source == MusicSource.SPOTIFY || p.source == MusicSource.YOUTUBE || p.source == MusicSource.SOUNDCLOUD) &&
                 !p.sourceId.startsWith("custom_") && !p.sourceId.startsWith("share:")
 
         fun nameOf(name: String) = name.trim().ifEmpty { "Playlist" }.let { com.stash.core.data.weblink.merge.FirstMerge.cutUnits(it, MirrorWire.NAME_MAX) }
@@ -235,13 +235,15 @@ class RoomMirrorLibrary internal constructor(
          */
         fun songOf(row: MirrorDao.MirrorSong): WireSong? {
             val t = row.toTrack()
+            if (t.source == MusicSource.SOUNDCLOUD) return WireSong(t.title, t.artist,
+                album = t.album, durationMs = t.durationMs, isrc = t.isrc, phoneOnly = true)
             val song = WebLibraryFile.song(t, addedAt = null) ?: return null
             val noIds = song.isrc == null && song.spotifyId == null && song.refs.isNullOrEmpty()
             // A cloud song plays from the user's own cloud account, which the web can't reach: phone-only,
             // so the web never looks it up by its words.
             return WireSong.of(
                 song,
-                phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.source == MusicSource.CLOUD,
+                phoneOnly = (noIds && (t.source == MusicSource.LOCAL || t.isDownloaded)) || t.source == MusicSource.CLOUD || t.source == MusicSource.SOUNDCLOUD,
             )
         }
     }

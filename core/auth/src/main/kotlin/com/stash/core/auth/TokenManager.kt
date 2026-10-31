@@ -13,6 +13,16 @@ import kotlinx.coroutines.flow.StateFlow
  * for each service so that UI layers can respond to authentication changes immediately.
  */
 interface TokenManager {
+    /** Atomic account and credential record; null token inside it means public likes only. */
+    val soundCloudSession: kotlinx.coroutines.flow.Flow<com.stash.core.auth.soundcloud.SoundCloudSession?>
+
+    suspend fun connectSoundCloudWithToken(token: String): Boolean
+
+    suspend fun connectSoundCloudPublicProfile(url: String): Boolean
+
+    suspend fun getSoundCloudToken(): String?
+
+    suspend fun hasSoundCloudConnection(): Boolean
 
     /** Current authentication state for Spotify. */
     val spotifyAuthState: StateFlow<AuthState>

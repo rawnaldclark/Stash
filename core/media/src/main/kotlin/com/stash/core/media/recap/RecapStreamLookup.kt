@@ -47,12 +47,15 @@ class RecapStreamLookup internal constructor(
     /** A playable URL for [track], or null (the card stays quiet). */
     suspend fun lookup(track: Track): RecapSource.Url? {
         cached(track.id)?.let { hit ->
+            if ((track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) && hit.origin != "soundcloud") return null
+            if (hit.isHls) return null // Recap uses a progressive byte pipe, not the main HLS source.
             return RecapSource.Url(
                 url = hit.url,
                 isDash = hit.isDash,
                 noRedirects = hit.origin == JioSaavnStreamResolver.ORIGIN,
             )
         }
+        if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) return null
         val yt = youTubeFastLane(track.toEntity()) ?: return null
         return RecapSource.Url(url = yt.url)
     }

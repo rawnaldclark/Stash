@@ -44,6 +44,23 @@ import java.util.zip.ZipOutputStream
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class DatabaseBackupMergeTest {
+    @Test fun `merge identifies SoundCloud by upload id and keeps namesakes separate`() = runTest {
+        val localId = live.trackDao().insert(track("Same title").copy(soundCloudId = "123", filePath = "/existing.flac", isDownloaded = true))
+        val uri = buildBackupZip { backup ->
+            backup.trackDao().insert(track("Renamed upload").copy(soundCloudId = "123"))
+            backup.trackDao().insert(track("Same title").copy(source = MusicSource.SOUNDCLOUD,
+                soundCloudId = "456", soundCloudPreview = true,
+                soundCloudPermalink = "https://soundcloud.com/artist/another-upload"))
+        }
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+        assertTrue(result.isSuccess)
+        assertEquals(2, live.trackDao().getAllForIntegrityScan().size)
+        assertEquals(localId, live.trackDao().findBySoundCloudId("123")?.id)
+        assertEquals("/existing.flac", live.trackDao().findBySoundCloudId("123")?.filePath)
+        assertEquals(true, live.trackDao().findBySoundCloudId("456")?.soundCloudPreview)
+        assertEquals("https://soundcloud.com/artist/another-upload", live.trackDao().findBySoundCloudId("456")?.soundCloudPermalink)
+        assertEquals(MusicSource.SOUNDCLOUD, live.trackDao().findBySoundCloudId("456")?.source)
+    }
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var tmpDir: File

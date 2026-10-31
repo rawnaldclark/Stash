@@ -216,6 +216,27 @@ class DownloadExecutor @Inject constructor(
         }
     }
 
+    suspend fun downloadSoundCloud(
+        permalink: String, token: String?, outputDir: File, filename: String,
+        onProgress: (Float) -> Unit = {},
+    ): DownloadResult = withContext(Dispatchers.IO) {
+        val link = com.stash.data.soundcloud.SoundCloudLinks.parse(permalink)
+        val template = outputTemplateFor(outputDir, filename)
+        if (link?.kind != com.stash.data.soundcloud.SoundCloudLink.Kind.TRACK || template == null)
+            return@withContext DownloadResult.Error("Invalid SoundCloud download")
+        deleteStaleOutputs(outputDir, filename)
+        var success = false
+        try {
+            ytDlpManager.ensureFreshened()
+            runYtDlp(link.url, outputDir, template, filename,
+                listOf("-f", "bestaudio[acodec^=mp4a][format_id!*=preview]/bestaudio[format_id!*=preview]",
+                    "-x", "--audio-format", "m4a"), null, null, onProgress,
+                soundCloud = true, soundCloudToken = token).also { success = it is DownloadResult.Success }
+        } finally {
+            if (!success) deleteStaleOutputs(outputDir, filename)
+        }
+    }
+
     /**
      * One yt-dlp download invocation. [playerClient] pins the YouTube extractor
      * to a single client (e.g. `android_vr`); null leaves the default client
@@ -232,6 +253,8 @@ class DownloadExecutor @Inject constructor(
         cookiePath: String?,
         playerClient: String?,
         onProgress: (Float) -> Unit,
+        soundCloud: Boolean = false,
+        soundCloudToken: String? = null,
     ): DownloadResult {
         return try {
             val request = YoutubeDLRequest(url).apply {
@@ -240,6 +263,13 @@ class DownloadExecutor @Inject constructor(
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
+                if (soundCloud) {
+                    addOption("--extractor-args", "soundcloud:formats=hls_aac,http_aac,hls_opus,http_opus,hls_mp3,http_mp3")
+                    if (soundCloudToken != null) {
+                        addOption("--username", "oauth")
+                        addOption("--password", soundCloudToken)
+                    }
+                }
                 // A stalled connection fails the attempt instead of hanging on it.
                 addOption("--socket-timeout", YTDLP_SOCKET_TIMEOUT_SEC.toString())
                 playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
@@ -248,7 +278,7 @@ class DownloadExecutor @Inject constructor(
                 // Without a JS runtime, yt-dlp can't decrypt stream URLs and
                 // downloads fail with "Signature solving failed". (android_vr
                 // usually needs none, but the default-client fallback does.)
-                val qjsPath = ytDlpManager.quickJsPath
+                val qjsPath = if (soundCloud) null else ytDlpManager.quickJsPath
                 if (qjsPath != null) {
                     addOption("--js-runtimes", "quickjs:$qjsPath")
                     addOption("--remote-components", "ejs:github")
@@ -319,18 +349,18 @@ class DownloadExecutor @Inject constructor(
             } else {
                 val dirContents = outputDir.listFiles()?.map { "${it.name} (${it.length()}b)" }
                 Log.w(TAG, "download: no output file (client=${playerClient ?: "default"}). Dir: $dirContents")
-                DownloadResult.NoOutput(stdout.take(2000), stderr.take(2000))
+                DownloadResult.NoOutput(if (soundCloud) null else stdout.take(2000), if (soundCloud) null else stderr.take(2000))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: YoutubeDLException) {
             // yt-dlp exited with non-zero code. The exception message IS the stderr.
-            val errMsg = e.message ?: "Unknown yt-dlp error"
+            val errMsg = if (soundCloud) "SoundCloud could not download this track" else e.message ?: "Unknown yt-dlp error"
             Log.e(TAG, "download: YT-DLP ERROR client=${playerClient ?: "default"} url=$url\n$errMsg")
             DownloadResult.YtDlpError(errMsg)
         } catch (e: Exception) {
-            Log.e(TAG, "download: UNEXPECTED ERROR url=$url", e)
-            DownloadResult.Error(e.message ?: "Unknown error", e)
+            if (!soundCloud) Log.e(TAG, "download: UNEXPECTED ERROR url=$url", e)
+            if (soundCloud) DownloadResult.Error("SoundCloud download failed") else DownloadResult.Error(e.message ?: "Unknown error", e)
         }
     }
 }

@@ -347,6 +347,7 @@ private fun StashNavGraph(
                 ManagePlaylistsScreen(
                     source = com.stash.feature.sync.SyncSource.valueOf(it.toRoute<ManagePlaylistsRoute>().source),
                     onBack = { navController.popBackStack() },
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
                 )
             }
         }

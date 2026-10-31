@@ -24,6 +24,33 @@ import org.junit.Test
  */
 class MusicRepositoryEnsureTrackPersistedTest {
 
+    @Test fun `SoundCloud uses its upload id before a stale positive room id`() = runTest {
+        val dao = mockk<TrackDao>(relaxed = true)
+        coEvery { dao.findBySoundCloudId("123") } returns TrackEntity(id = 42, title = "Song", artist = "Artist", soundCloudId = "123")
+        assertEquals(42L, buildRepo(dao).ensureTrackPersisted(Track(id = 99, title = "Song", artist = "Artist", soundCloudId = "123")))
+        coVerify(exactly = 0) { dao.getById(99) }
+        coVerify(exactly = 0) { dao.findAllByCanonicalIdentity(any(), any()) }
+    }
+
+    @Test fun `missing SoundCloud row gets an exact stub instead of a title match`() = runTest {
+        val dao = mockk<TrackDao>(relaxed = true)
+        coEvery { dao.findBySoundCloudId("123") } returns null
+        coEvery { dao.insert(any()) } returns 88L
+        val guard = mockk<BlocklistGuard> { coEvery { isKeyBlocked(any(), any()) } returns false }
+        assertEquals(88L, buildRepo(dao, guard).ensureTrackPersisted(Track(title = "Song", artist = "Artist", soundCloudId = "123")))
+        coVerify { dao.insert(match { it.soundCloudId == "123" && it.source == MusicSource.SOUNDCLOUD && it.youtubeId == null && it.spotifyUri == null }) }
+        coVerify(exactly = 0) { dao.findAllByCanonicalIdentity(any(), any()) }
+    }
+
+    @Test fun `concurrent saves adopt the winning SoundCloud upload row`() = runTest {
+        val dao = mockk<TrackDao>(relaxed = true)
+        coEvery { dao.findBySoundCloudId("123") } returnsMany listOf(null,
+            TrackEntity(id = 42, title = "Song", artist = "Artist", soundCloudId = "123"))
+        coEvery { dao.insert(any()) } throws SQLiteConstraintException("duplicate")
+        val guard = mockk<BlocklistGuard> { coEvery { isKeyBlocked(any(), any()) } returns false }
+        assertEquals(42L, buildRepo(dao, guard).ensureTrackPersisted(Track(title = "Song", artist = "Artist", soundCloudId = "123")))
+    }
+
     @Test fun `ensureTrackPersisted returns the existing id on a spotify_uri match and does not insert`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         // No id, no youtube match, no canonical match — only the spotify_uri hits.

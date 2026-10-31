@@ -46,10 +46,18 @@ class StreamSourceRegistryTest {
 
     private val log = PlaybackDiagnosticsLog()
 
-    private fun registry(dispatcher: CoroutineDispatcher = Dispatchers.IO) = StreamSourceRegistry(
+    private fun registry(dispatcher: CoroutineDispatcher = Dispatchers.IO, soundCloud: SoundCloudStreamResolver? = null) = StreamSourceRegistry(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
-        LosslessSourceHealth(), losslessPrefs, dispatcher, log,
+        LosslessSourceHealth(), losslessPrefs, dispatcher, log, soundCloud = soundCloud,
     )
+
+    @Test fun `SoundCloud miss never searches another service`() = runTest {
+        val sc = mockk<SoundCloudStreamResolver> { coEvery { resolve(any()) } returns null }
+        val track = stubTrack().copy(soundCloudId = "123")
+        assertThat(registry(soundCloud = sc).resolve(track)).isNull()
+        coVerify(exactly = 0) { youtube.resolve(any(), any()) }
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
 
     private fun registryWithTidal(tidal: TidalStreamResolver) = StreamSourceRegistry(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,

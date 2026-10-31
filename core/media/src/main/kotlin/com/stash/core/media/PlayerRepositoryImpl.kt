@@ -1112,7 +1112,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // have been cached by LazyResolvingDataSource (cold jump), which can't
         // touch item metadata, so the placeholder would keep its unstamped
         // extras and Now Playing would read the "opus" fallback for it.
-        val cached = streamUrlCache.get(next.id)
+        val cached = streamUrlCache.get(next.id)?.takeIf {
+            (next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+        }
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
             refreshControllerMediaItem(controller, nextTimelineIndex, next, cached)
@@ -1209,7 +1211,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         val refreshed = item.buildUpon()
             // A cloud copy keeps the placeholder (its source has the fallback); see buildMediaItemForTrack.
-            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) setUri(resolved.url) }
+            .apply { if (resolved.origin != com.stash.core.media.streaming.CloudCopyFinder.ORIGIN && resolved.origin != "soundcloud") setUri(resolved.url) }
             .setMediaMetadata(refreshedMeta.build())
             .build()
         replaceMediaItemKeepingShuffle(controller, timelineIndex, refreshed)
@@ -2521,6 +2523,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             )
                             .setExtras(Bundle().apply {
                                 putLong(EXTRA_TRACK_ID, track.id)
+                            putSoundCloudMetadata(track.toDomain())
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                                 if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
                                 // This branch plays the local file, so it is never "stream-only",
@@ -2544,7 +2547,9 @@ class PlayerRepositoryImpl @Inject constructor(
             return StreamRoutingResult.Item(track.toDomain().toStreamPlaceholderMediaItem())
         }
 
-        val cached = streamUrlCache.get(track.id)
+        val cached = streamUrlCache.get(track.id)?.takeIf {
+            (track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+        }
         val stream = cached ?: streamResolver.resolve(
             track,
             allowYouTube = allowYouTube,
@@ -2596,10 +2601,12 @@ class PlayerRepositoryImpl @Inject constructor(
                 // A cloud copy plays through the placeholder, whose source falls back to the stream
                 // chain when the copy won't open; the stash-cloud:// address itself has no fallback.
                 .setUri(
-                    if (stream.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN) {
+                    if (stream.origin == com.stash.core.media.streaming.CloudCopyFinder.ORIGIN || stream.origin == "soundcloud") {
                         com.stash.core.media.streaming.stashResolveUri(
                             track.id, track.youtubeId, track.title, track.artist, track.album, track.durationMs, track.isrc,
-                        )
+                        ).let { uri ->
+                            if (stream.origin == "soundcloud") uri.buildUpon().appendQueryParameter("sc", "1").build() else uri
+                        }
                     } else {
                         Uri.parse(stream.url)
                     },
@@ -2614,6 +2621,7 @@ class PlayerRepositoryImpl @Inject constructor(
                         )
                         .setExtras(Bundle().apply {
                             putLong(EXTRA_TRACK_ID, track.id)
+                            putSoundCloudMetadata(track.toDomain())
                             track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                             if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
                             putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
@@ -2625,6 +2633,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             stream.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
                             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
                             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+                            if (stream.origin == "soundcloud") putBoolean(EXTRA_SOUNDCLOUD_PREVIEW, stream.isPreview)
                         })
                         .build()
                 )
@@ -3116,7 +3125,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 isrc = track.isrc,
             )
         }
-        val replacement = failedItem.buildUpon().setUri(placeholder).build()
+        val replacement = failedItem.buildUpon().setUri(
+            if (track.soundCloudId != null) placeholder.buildUpon().appendQueryParameter("sc", "1").build() else placeholder,
+        ).build()
         replaceMediaItemKeepingShuffle(controller, failedIndex, replacement)
         controller.prepare()
         controller.play()
@@ -3300,6 +3311,7 @@ class PlayerRepositoryImpl @Inject constructor(
             stream.sampleRateHz?.let { putInt(EXTRA_STREAM_SAMPLE_RATE, it) }
             stream.bitrateKbps?.let { putInt(EXTRA_STREAM_BITRATE, it) }
             stream.origin?.let { putString(EXTRA_STREAM_ORIGIN, it) }
+            if (stream.origin == "soundcloud") putBoolean(EXTRA_SOUNDCLOUD_PREVIEW, stream.isPreview)
         }
         // Upgrade the artwork to the source's square cover (e.g. the high-res
         // Qobuz cover) when the current art is a blank/low-res YouTube video
@@ -3345,7 +3357,8 @@ class PlayerRepositoryImpl @Inject constructor(
      * short-circuits the moment the extras DO carry an origin.
      */
     private fun withLiveStreamQuality(track: Track, item: MediaItem?): Track {
-        if (track.streamOrigin != null) return track // extras already carried it
+        if (item?.localConfiguration?.uri?.scheme in listOf("file", "content")) return track
+        if (track.streamOrigin != null && track.streamOrigin != "soundcloud") return track
         val trackId = item?.mediaMetadata?.extras?.getLong(EXTRA_TRACK_ID, 0L) ?: 0L
         if (trackId == 0L) return track
         // A downloaded row has no cache entry and must keep Room's truth — its
@@ -3358,6 +3371,8 @@ class PlayerRepositoryImpl @Inject constructor(
             sampleRateHz = stream.sampleRateHz ?: track.sampleRateHz,
             qualityKbps = stream.bitrateKbps ?: track.qualityKbps,
             streamOrigin = stream.origin ?: track.streamOrigin,
+            soundCloudPreview = if (stream.origin == "soundcloud") stream.isPreview else track.soundCloudPreview,
+            isDownloaded = if (stream.origin == "soundcloud") false else track.isDownloaded,
         )
     }
 
@@ -3653,7 +3668,9 @@ class PlayerRepositoryImpl @Inject constructor(
             durationMs = durationMs,
             isrc = isrc,
         )
-        return toMediaItem().buildUpon().setUri(placeholder).build()
+        return toMediaItem().buildUpon().setUri(
+            if (soundCloudId != null) placeholder.buildUpon().appendQueryParameter("sc", "1").build() else placeholder,
+        ).build()
     }
 
     /**
@@ -3671,6 +3688,7 @@ class PlayerRepositoryImpl @Inject constructor(
             )
             .setExtras(Bundle().apply {
                 putLong(EXTRA_TRACK_ID, id)
+                putSoundCloudMetadata(this@toMediaItem)
                 youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                 if (durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, durationMs)
                 // "Stream-only" means no local file (as AutoBrowse computes it): a
@@ -3745,10 +3763,15 @@ class PlayerRepositoryImpl @Inject constructor(
             // code (Now Playing's like-state observation, ensure-persisted
             // upsert) can resolve identity without a real DB row
             // (issue #105 follow-up).
+            soundCloudId = extras?.getString(EXTRA_SOUNDCLOUD_ID),
+            soundCloudPermalink = extras?.getString(EXTRA_SOUNDCLOUD_PERMALINK),
+            soundCloudPreview = extras?.getBoolean(EXTRA_SOUNDCLOUD_PREVIEW, false) == true,
+            isDownloaded = extras?.getBoolean(EXTRA_SOUNDCLOUD_LOCAL, false) == true,
             youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID)
                 ?: if (trackId == 0L) mediaId else null,
             source = when {
                 isCloud -> com.stash.core.model.MusicSource.CLOUD
+                extras?.getString(EXTRA_SOUNDCLOUD_ID) != null -> com.stash.core.model.MusicSource.SOUNDCLOUD
                 trackId == 0L -> com.stash.core.model.MusicSource.YOUTUBE
                 else -> com.stash.core.model.MusicSource.SPOTIFY
             },

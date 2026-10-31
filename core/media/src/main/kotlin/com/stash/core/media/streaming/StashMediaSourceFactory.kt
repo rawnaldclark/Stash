@@ -68,6 +68,7 @@ class StashMediaSourceFactory(
      * this is the last line behind them.
      */
     private val streamAllowed: () -> Boolean = { true },
+    resolveDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) : MediaSource.Factory {
 
     private val resolver = resolver
@@ -76,7 +77,7 @@ class StashMediaSourceFactory(
 
     /** Where [ResolveFirstMediaSource] resolves; outlives any one source. */
     private val resolveScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+        kotlinx.coroutines.SupervisorJob() + resolveDispatcher,
     )
 
     // Every network source below is gated when it OPENS ([DownloadModeGate]), not only here when its
@@ -205,22 +206,28 @@ class StashMediaSourceFactory(
         if (uri?.scheme == com.stash.core.model.STASH_CLOUD_SCHEME) return cloudFactory.createMediaSource(mediaItem)
         if (uri?.scheme == STASH_RESOLVE_SCHEME) {
             val trackId = uri.lastPathSegment?.toLongOrNull()
-            if (trackId != null && !isRowOverride(uri) && streamAllowed() && resolveBeforeSourcePick()) {
+            if (trackId != null && !isRowOverride(uri) && streamAllowed() &&
+                (resolveBeforeSourcePick() || uri.getQueryParameter("sc") == "1" || urlCache.get(trackId)?.origin == "soundcloud")) {
                 return ResolveFirstMediaSource(
                     mediaItem = mediaItem,
                     scope = resolveScope,
                     resolve = {
                         // A downloaded file needs no resolve: the lazy child opens it.
-                        if (trackDao.getById(trackId)?.usableDownload(context) != null) {
+                        val row = trackDao.getById(trackId)
+                        if (row?.usableDownload(context) != null) {
                             null
                         } else {
-                            urlCache.get(trackId) ?: placeholderEntity(trackDao, trackId, uri)
+                            urlCache.get(trackId)?.takeIf {
+                                (row?.soundCloudId == null && row?.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
+                            } ?: (if (uri.getQueryParameter("sc") == "1" && row?.soundCloudId == null) null else placeholderEntity(trackDao, trackId, uri))
                                 ?.let { resolver.resolve(it, allowYouTube = true, allowYtDlp = true) }
                                 ?.also { urlCache.put(trackId, it) }
                         }
                     },
                     childFor = { item, resolved ->
-                        if (resolved?.isDash == true) {
+                        if (resolved?.isHls == true) {
+                            streamingFactory.createHlsMediaSource(item, resolved)
+                        } else if (resolved?.isDash == true) {
                             streamingFactory.createDashMediaSource(item, resolved.url)
                         } else {
                             lazyFactory.createMediaSource(item)

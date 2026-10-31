@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
@@ -67,6 +68,16 @@ fun SourceIndicator(
                 )
             }
         }
+        if (source == MusicSource.SOUNDCLOUD) {
+            Box(Modifier.size(size).clip(CircleShape).background(Color(0xFFFF5500)))
+            if (showLabel) {
+                Text(
+                    text = "SoundCloud",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extendedColors.textTertiary,
+                )
+            }
+        }
         if (source == MusicSource.LOCAL) {
             Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
             if (showLabel) {
@@ -105,4 +116,5 @@ internal fun sourceIndicatorLabels(source: MusicSource): List<String> = when (so
     MusicSource.BOTH -> listOf("Spotify", "YouTube")
     MusicSource.LOCAL -> listOf("Local")
     MusicSource.CLOUD -> listOf("Cloud")
+    MusicSource.SOUNDCLOUD -> listOf("SoundCloud")
 }

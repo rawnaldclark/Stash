@@ -3,6 +3,7 @@ package com.stash.core.model
 enum class MusicSource {
     SPOTIFY,
     YOUTUBE,
+    SOUNDCLOUD,
 
     /**
      * User-imported audio files from the local device (files picked via

@@ -10,6 +10,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import com.stash.core.data.db.dao.TrackDao
@@ -114,6 +115,29 @@ class StreamingMediaSourceFactory @Inject constructor(
             .setMimeType(MimeTypes.APPLICATION_MPD)
             .build()
         return DashMediaSource.Factory(DownloadModeGate.gate(httpFactory, { streamAllowed() })).createMediaSource(item)
+    }
+
+    fun createHlsMediaSource(mediaItem: MediaItem, stream: StreamUrl): MediaSource {
+        val current = java.util.concurrent.atomic.AtomicReference(stream.url)
+        val trackId = mediaItem.mediaId.toLongOrNull()
+        val http = DefaultHttpDataSource.Factory().setConnectTimeoutMs(10_000).setReadTimeoutMs(30_000)
+            .setAllowCrossProtocolRedirects(false)
+        val source = DataSource.Factory {
+            HlsManifestDataSource(http.createDataSource(), stream.url, current, { streamAllowed() },
+                refresh = {
+                    if (trackId == null) null else kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                        kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                            trackDao.getById(trackId)?.let { resolver.resolve(it) }
+                                ?.takeIf { it.isHls && it.origin == "soundcloud" && it.codec == stream.codec && it.isPreview == stream.isPreview }
+                                ?.also { urlCache.put(trackId, it) }?.url
+                        }
+                    }
+                },
+                invalidate = { trackId?.let(urlCache::invalidate) },
+            )
+        }
+        val item = mediaItem.buildUpon().setUri(stream.url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+        return HlsMediaSource.Factory(DownloadModeGate.gate(source, { streamAllowed() })).createMediaSource(item)
     }
 
     /**

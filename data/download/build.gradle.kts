@@ -63,6 +63,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":data:soundcloud"))
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:data"))

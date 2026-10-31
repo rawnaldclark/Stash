@@ -126,6 +126,7 @@ data class WebLibraryFile(
          * (a local file without tags): the web can't find or show such a song.
          */
         fun song(track: Track, addedAt: Long?): Song? {
+            if (track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) return null
             if (track.title.isBlank() || track.artist.isBlank()) return null
             val s = track.toSharedTrackWithArt()
             return Song(

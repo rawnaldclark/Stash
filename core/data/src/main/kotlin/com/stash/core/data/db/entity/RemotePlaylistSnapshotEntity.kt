@@ -38,6 +38,10 @@ data class RemotePlaylistSnapshotEntity(
     @ColumnInfo(name = "source_playlist_id")
     val sourcePlaylistId: String,
 
+    /** Account generation that fetched this list; rejects stale sync work after reconnect/disconnect. */
+    @ColumnInfo(name = "soundcloud_connection_id")
+    val soundCloudConnectionId: String? = null,
+
     /** Display name of the playlist as reported by the source. */
     @ColumnInfo(name = "playlist_name")
     val playlistName: String,

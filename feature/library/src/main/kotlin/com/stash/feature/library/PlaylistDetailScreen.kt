@@ -1023,7 +1023,19 @@ private fun PlaylistHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SourceIndicator(source = playlist.source, size = 8.dp, showLabel = true)
+                // Link imports are locally owned (BOTH); describe their songs' actual services.
+                val sources = remember(playlist.sourceId, playlist.source, state.tracks) {
+                    if (playlist.sourceId.startsWith("custom_link_")) {
+                        state.tracks.flatMap { track ->
+                            when {
+                                track.soundCloudId != null -> listOf(MusicSource.SOUNDCLOUD)
+                                track.source == MusicSource.BOTH -> listOf(MusicSource.SPOTIFY, MusicSource.YOUTUBE)
+                                else -> listOf(track.source)
+                            }
+                        }.distinct()
+                    } else listOf(playlist.source)
+                }
+                sources.forEach { SourceIndicator(source = it, size = 8.dp, showLabel = true) }
 
                 Text(
                     text = "\u2022",

@@ -44,8 +44,11 @@ object SameSongRule {
         title: String,
         youtubeId: String?,
         spotifyUri: String?,
+        soundCloudId: String? = null,
     ): Boolean =
-        idsAgree(row.youtubeId, youtubeId) &&
+        // SoundCloud uploads (especially remixes) must never be identified by loose words.
+        (if (row.soundCloudId != null || soundCloudId != null) row.soundCloudId == soundCloudId else true) &&
+            idsAgree(row.youtubeId, youtubeId) &&
             idsAgree(row.spotifyUri, spotifyUri) &&
             TrackCanonical.sameVersion(row.title, title)
 
@@ -61,7 +64,8 @@ object SameSongRule {
         youtubeId: String?,
         spotifyUri: String?,
         forDownload: Boolean,
-    ): Boolean = isSameSong(row, title, youtubeId, spotifyUri) && (!forDownload || !holdsFile(row))
+        soundCloudId: String? = null,
+    ): Boolean = isSameSong(row, title, youtubeId, spotifyUri, soundCloudId) && (!forDownload || !holdsFile(row))
 
     /** Whether [row] has audio of its own on this phone. */
     fun holdsFile(row: TrackEntity): Boolean = row.isDownloaded || !row.filePath.isNullOrBlank()

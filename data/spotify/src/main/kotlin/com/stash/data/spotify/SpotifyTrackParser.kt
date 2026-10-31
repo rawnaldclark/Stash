@@ -333,11 +333,8 @@ internal fun parseLibraryTracksPage(responseJson: JsonObject): SpotifyLikedSongs
                     val albumUri = albumData["uri"]?.jsonPrimitive?.contentOrNull ?: ""
                     val albumId = albumUri.removePrefix("spotify:album:")
                     val albumName = albumData["name"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val coverArtUrl = albumData["coverArt"]
-                        ?.jsonObject?.get("sources")
-                        ?.jsonArray?.firstOrNull()
-                        ?.jsonObject?.get("url")
-                        ?.jsonPrimitive?.contentOrNull
+                    val coverArtUrl = SpotifyArtwork.largestSource(albumData["coverArt"]
+                        ?.jsonObject?.get("sources"))
                     SpotifyAlbum(
                         id = albumId,
                         name = albumName,

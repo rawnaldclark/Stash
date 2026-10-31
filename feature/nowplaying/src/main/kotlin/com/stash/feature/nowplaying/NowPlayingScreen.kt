@@ -558,7 +558,9 @@ fun NowPlayingScreen(
     val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
     val isScannedSong = track?.isScannedSong == true
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong) {
+    val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
+    val isPreview = track?.soundCloudPreview == true && !isDownloaded
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
@@ -567,6 +569,8 @@ fun NowPlayingScreen(
             castSupported = castSupported,
             isScannedSong = isScannedSong,
             isCloudSong = isCloudSong,
+            isSoundCloudSong = isSoundCloudSong,
+            isPreview = isPreview,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
@@ -1674,6 +1678,7 @@ private fun TitleLine(
                 .weight(1f, fill = false)
                 .marqueeWhileShown(),
         )
+        if (track?.soundCloudPreview == true && !track.isDownloaded) com.stash.core.ui.components.PreviewBadge()
         if (track != null) {
             Spacer(modifier = Modifier.width(6.dp))
             if (resolvingArtist) {

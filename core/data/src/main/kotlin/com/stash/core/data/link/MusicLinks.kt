@@ -5,6 +5,7 @@ import java.net.URLDecoder
 
 /** A Spotify or YouTube link a listener pasted or shared, as far as the link alone says what it is. */
 sealed interface MusicLink {
+    data class SoundCloud(val url: String) : MusicLink
     data class SpotifyPlaylist(val id: String) : MusicLink
     data class SpotifyAlbum(val id: String) : MusicLink
     data class SpotifyTrack(val id: String) : MusicLink
@@ -41,6 +42,7 @@ object MusicLinks {
 
     /** [url] (or a `spotify:` URI) as a music link, or null. */
     fun parse(url: String): MusicLink? {
+        com.stash.data.soundcloud.SoundCloudLinks.parse(url)?.let { return MusicLink.SoundCloud(it.url) }
         SPOTIFY_URI.matchEntire(url.trim())?.let { m -> return spotify(m.groupValues[1], m.groupValues[2]) }
         val uri = runCatching { URI(url.trim()) }.getOrNull() ?: return null
         val host = uri.host?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return null

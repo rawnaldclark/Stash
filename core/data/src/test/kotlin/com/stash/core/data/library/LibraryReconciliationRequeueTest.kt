@@ -37,7 +37,10 @@ class LibraryReconciliationRequeueTest {
     private lateinit var db: StashDatabase
 
     // No service connected: the requeue then looks at BOTH-source songs only.
-    private val tokens = mockk<TokenManager> { coEvery { isAuthenticated(any()) } returns false }
+    private val tokens = mockk<TokenManager> {
+        coEvery { isAuthenticated(any()) } returns false
+        coEvery { hasSoundCloudConnection() } returns false
+    }
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)

@@ -94,6 +94,7 @@ class SyncPreferencesManager @Inject constructor(
         val LEGACY_SYNC_MODE = stringPreferencesKey("sync_mode")
         val SPOTIFY_SYNC_MODE = stringPreferencesKey("spotify_sync_mode")
         val YOUTUBE_SYNC_MODE = stringPreferencesKey("youtube_sync_mode")
+        val SOUNDCLOUD_SYNC_MODE = stringPreferencesKey("soundcloud_sync_mode")
         val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
         val SYNC_DAYS = intPreferencesKey("sync_days")
         val DISCOVER_AUTO_MIXES = booleanPreferencesKey("discover_auto_mixes")
@@ -302,9 +303,18 @@ class SyncPreferencesManager @Inject constructor(
      * etc.) don't flow through the sync pipeline, but a sane default
      * keeps this total.
      */
+    val soundCloudSyncMode: Flow<SyncMode> = context.syncPrefsDataStore.data.map { prefs ->
+        prefs[Keys.SOUNDCLOUD_SYNC_MODE]?.let { parseMode(it) } ?: SyncMode.ACCUMULATE
+    }
+
+    suspend fun setSoundCloudSyncMode(mode: SyncMode) {
+        context.syncPrefsDataStore.edit { it[Keys.SOUNDCLOUD_SYNC_MODE] = mode.name }
+    }
+
     fun syncModeFor(source: MusicSource): Flow<SyncMode> = when (source) {
         MusicSource.SPOTIFY -> spotifySyncMode
         MusicSource.YOUTUBE -> youtubeSyncMode
+        MusicSource.SOUNDCLOUD -> soundCloudSyncMode
         MusicSource.LOCAL, MusicSource.BOTH, MusicSource.CLOUD -> spotifySyncMode
     }
 }

@@ -24,6 +24,13 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class AutoBrowseTest {
 
+    @Test fun `SoundCloud car queue marks manifest routing while a downloaded copy keeps its file URI`() {
+        val upload = track().copy(source = MusicSource.SOUNDCLOUD, soundCloudId = "123")
+        assertThat(upload.autoPlaybackUri().getQueryParameter("sc")).isEqualTo("1")
+        val local = upload.copy(isDownloaded = true, filePath = "/music/existing.flac")
+        assertThat(local.autoPlaybackUri().scheme).isEqualTo("file")
+    }
+
     private fun track(
         id: Long = 1L,
         downloaded: Boolean = false,

@@ -225,6 +225,7 @@ private fun TrackListItemRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                if (track.soundCloudPreview && !track.isDownloaded) PreviewBadge()
                 if (fit.badge != BadgeFit.HIDDEN) {
                     FlacBadge(
                         fileFormat = track.fileFormat,

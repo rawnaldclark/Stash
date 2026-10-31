@@ -78,7 +78,10 @@ fun SettingsHubScreen(
     val listenBrainz by viewModel.listenBrainzState.collectAsStateWithLifecycle()
     val cloud: com.stash.feature.settings.cloud.CloudStorageViewModel = hiltViewModel()
     val cloudAccounts by cloud.accounts.collectAsStateWithLifecycle()
+    val soundCloud: SoundCloudAccountViewModel = hiltViewModel()
+    val soundCloudSession by soundCloud.session.collectAsStateWithLifecycle()
     val otherAccounts = buildList {
+        if (soundCloudSession != null) add("SoundCloud")
         if (listenBrainz is com.stash.feature.settings.components.ListenBrainzState.Connected) add("ListenBrainz")
         cloudAccounts.map { it.account.provider.displayName }.distinct().forEach(::add)
     }

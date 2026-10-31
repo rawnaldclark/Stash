@@ -55,7 +55,7 @@ class TokenManagerRefreshSingleFlightTest {
                 ServiceToken("new", "sp_dc", expiresAtEpoch = now + 3_600)
             }
         }
-        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
+        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true), mockk(relaxed = true))
 
         val callers = List(3) { async { manager.getSpotifyAccessToken() } }
         advanceUntilIdle()

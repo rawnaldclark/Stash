@@ -34,6 +34,17 @@ class StreamingMediaSourceFactoryTest {
     private val urlCache: StreamUrlCache = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
 
+    @Test fun `SoundCloud manifest builds a real HLS source with its identity and MIME type`() {
+        val item = androidx.media3.common.MediaItem.Builder().setMediaId("42")
+            .setUri("stash-resolve://track/42?sc=1").build()
+        val stream = StreamUrl("https://cf-media.sndcdn.com/playlist", Long.MAX_VALUE,
+            origin = "soundcloud", isHls = true)
+        val source = newFactory().createHlsMediaSource(item, stream)
+        assertThat(source).isInstanceOf(androidx.media3.exoplayer.hls.HlsMediaSource::class.java)
+        assertThat(source.mediaItem.mediaId).isEqualTo("42")
+        assertThat(source.mediaItem.localConfiguration!!.mimeType).isEqualTo(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+    }
+
     private fun newFactory(): StreamingMediaSourceFactory = StreamingMediaSourceFactory(
         streamCache = streamCache,
         resolver = resolver,

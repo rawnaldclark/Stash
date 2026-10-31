@@ -5,6 +5,7 @@ import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -79,6 +80,7 @@ class SyncViewModelTest {
         every { syncUndoDao.latestPoint() } returns emptyFlow()
         every { playlistDao.getSpotifyPlaylistsForPreferences() } returns emptyFlow()
         every { playlistDao.getYouTubePlaylistsForPreferences() } returns emptyFlow()
+        every { playlistDao.getBySource(MusicSource.SOUNDCLOUD) } returns emptyFlow()
         every { musicRepository.getUnmatchedCount() } returns emptyFlow()
         every { musicRepository.getFlaggedCount() } returns emptyFlow()
         every { musicRepository.observeLatestSync() } returns emptyFlow()
@@ -109,6 +111,7 @@ class SyncViewModelTest {
     )
 
     @Before fun setUp() {
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(null)
         Dispatchers.setMain(UnconfinedTestDispatcher())
         stubInitFlows()
     }
@@ -433,7 +436,29 @@ class SyncViewModelTest {
         assertEquals(SyncSource.SPOTIFY, vm.uiState.value.openManageFor)
     }
 
+    @Test fun `SoundCloud public profile is connected and opens its likes for Download mode`() = runTest {
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(
+            com.stash.core.auth.soundcloud.SoundCloudSession("7", "Public", connectionId = "current"))
+        every { playlistDao.getBySource(MusicSource.SOUNDCLOUD) } returns kotlinx.coroutines.flow.flowOf(emptyList())
+        val vm = newVm()
+        assertTrue(vm.uiState.value.soundCloudConnected)
+        vm.onArrivalChosen(streamEverything = false)
+        advanceUntilIdle()
+        assertEquals(SyncSource.SOUNDCLOUD, vm.uiState.value.openManageFor)
+    }
+
     /** Save in Stream only keeps the playlist on the phone and leaves its sync switch alone. */
+    @Test fun `SoundCloud management includes account playlists and mixes but not another accounts lists`() = runTest {
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(
+            com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", connectionId = "current"))
+        every { playlistDao.getBySource(MusicSource.SOUNDCLOUD) } returns kotlinx.coroutines.flow.flowOf(listOf(
+            com.stash.core.data.db.entity.PlaylistEntity(id = 1, name = "My set", sourceId = "soundcloud_playlist_7_11", source = MusicSource.SOUNDCLOUD),
+            com.stash.core.data.db.entity.PlaylistEntity(id = 2, name = "Your Mix 1", sourceId = "soundcloud_mix_7_urn", source = MusicSource.SOUNDCLOUD, type = PlaylistType.DAILY_MIX),
+            com.stash.core.data.db.entity.PlaylistEntity(id = 3, name = "Another account", sourceId = "soundcloud_playlist_77_11", source = MusicSource.SOUNDCLOUD),
+        ))
+        assertEquals(listOf(1L, 2L), newVm().uiState.value.soundCloudPlaylists.map { it.id })
+    }
+
     @Test
     fun `Save in Stream only only keeps the playlist on the phone`() = runTest {
         coEvery { streamingPreference.current() } returns true

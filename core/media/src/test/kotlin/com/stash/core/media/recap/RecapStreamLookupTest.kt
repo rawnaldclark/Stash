@@ -28,6 +28,17 @@ class RecapStreamLookupTest {
 
     private val track = Track(id = 42, title = "Idioteque", artist = "Radiohead", youtubeId = "svwJTnZOaco")
 
+    @Test fun `SoundCloud never falls back to another recording on YouTube`() = runTest {
+        assertThat(lookup.lookup(track.copy(soundCloudId = "123"))).isNull()
+        confirmVerified(youtube)
+    }
+
+    @Test fun `cached HLS is not treated as progressive preview audio`() = runTest {
+        cache.put(42, url("https://cf-media.sndcdn.com/playlist", "soundcloud").copy(isHls = true))
+        assertThat(lookup.lookup(track.copy(soundCloudId = "123"))).isNull()
+        confirmVerified(youtube)
+    }
+
     private fun url(u: String, origin: String? = null, isDash: Boolean = false) = StreamUrl(
         url = u,
         expiresAtMs = System.currentTimeMillis() + 3_600_000L,

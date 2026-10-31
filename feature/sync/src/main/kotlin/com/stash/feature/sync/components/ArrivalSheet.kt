@@ -60,6 +60,7 @@ internal fun ArrivalSheet(
     youTubeConnected: Boolean,
     onChoose: (streamEverything: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    soundCloudConnected: Boolean = false,
 ) {
     var streamEverything by rememberSaveable { mutableStateOf(true) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -79,6 +80,7 @@ internal fun ArrivalSheet(
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     if (spotifyConnected) BrandDotLabel(StashTheme.extendedColors.spotifyGreen, "Spotify")
                     if (youTubeConnected) BrandDotLabel(StashTheme.extendedColors.youtubeRed, "YouTube Music")
+                    if (soundCloudConnected) BrandDotLabel(androidx.compose.ui.graphics.Color(0xFFFF5500), "SoundCloud")
                 }
                 Text(
                     text = stringResource(R.string.sync_arrival_title),

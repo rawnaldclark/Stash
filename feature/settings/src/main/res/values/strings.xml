@@ -1060,4 +1060,12 @@
     <string name="settings_your_record_show">Show on Home</string>
     <string name="settings_your_record_show_subtitle">Press your record is hidden on Home.</string>
     <string name="settings_your_record_shown">Press your record is back on Home</string>
+    <string name="soundcloud_connect">Connect SoundCloud</string>
+    <string name="soundcloud_public_profile">Or use a public profile</string>
+    <string name="soundcloud_profile_url">Profile URL</string>
+    <string name="soundcloud_use_public_likes">Use public likes</string>
+    <string name="soundcloud_connect_failed">Could not connect. Try again or use a public profile.</string>
+    <string name="soundcloud_disconnect">Disconnect SoundCloud</string>
+    <string name="soundcloud_disconnect_body">Stop syncing this account. Your library and downloaded files stay here.</string>
+    <string name="soundcloud_cancel">Cancel</string>
 </resources>

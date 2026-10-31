@@ -101,6 +101,9 @@ fun LinkImportScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (p.soundCloudSongs?.any { it.preview } == true) {
+                    Text("Previews are marked in your library and cannot be downloaded.", style = MaterialTheme.typography.bodySmall)
+                }
                 if (p.partial) {
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -116,7 +119,7 @@ fun LinkImportScreen(
                 Spacer(Modifier.height(16.dp))
                 DownloadRow(
                     on = s.download,
-                    enabled = s.progress == null && s.added == null,
+                    enabled = s.progress == null && s.added == null && (p.soundCloudSongs?.any { !it.preview } ?: true),
                     kind = p.kind,
                     onChange = viewModel::setDownload,
                 )

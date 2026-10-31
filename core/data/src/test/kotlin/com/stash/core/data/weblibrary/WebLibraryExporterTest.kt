@@ -51,6 +51,11 @@ import java.time.ZoneOffset
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class WebLibraryExporterTest {
+    @Test fun `SoundCloud only recordings are not exported as web title matches`() {
+        assertNull(WebLibraryFile.song(com.stash.core.model.Track(title = "Remix", artist = "Artist",
+            source = MusicSource.SOUNDCLOUD, soundCloudId = "123"), null))
+    }
+
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: StashDatabase

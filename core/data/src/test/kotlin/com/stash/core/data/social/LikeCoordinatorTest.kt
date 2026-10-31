@@ -255,6 +255,18 @@ class LikeCoordinatorTest {
         coVerify(exactly = 1) { dispatcher.like(any(), setOf(Destination.LAST_FM)) }
     }
 
+    @Test fun `SoundCloud never resolves missing ids by words for like mirroring`() = runTest {
+        mirrorPrefs(spotify = true, yt = true, lastFm = true)
+        coEvery { trackDao.getById(7L) } returns entity(spotifyUri = null, youtubeId = null)
+            .copy(source = com.stash.core.model.MusicSource.SOUNDCLOUD, soundCloudId = "123")
+        coEvery { dispatcher.like(any(), any()) } returns mapOf(Destination.LAST_FM to Result.success(Unit))
+        coordinator().setLiked(7L, liked = true)
+        advanceTimeBy(10_000L); runCurrent()
+        coVerify(exactly = 0) { resolver.ensureSpotifyUri(any()) }
+        coVerify(exactly = 0) { resolver.ensureYoutubeId(any()) }
+        coVerify(exactly = 1) { dispatcher.like(any(), setOf(Destination.LAST_FM)) }
+    }
+
     @Test fun `track gone from DB is a silent skip`() = runTest {
         mirrorPrefs(spotify = true, yt = false)
         coEvery { trackDao.getById(7L) } returns null

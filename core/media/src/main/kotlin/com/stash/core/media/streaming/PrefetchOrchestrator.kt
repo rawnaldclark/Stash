@@ -110,6 +110,8 @@ class PrefetchOrchestrator @Inject constructor(
                 } else {
                     Log.w(TAG, "Prefetch resolve returned null for track $nextTrackId")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Prefetch failed for track $nextTrackId", e)
             }

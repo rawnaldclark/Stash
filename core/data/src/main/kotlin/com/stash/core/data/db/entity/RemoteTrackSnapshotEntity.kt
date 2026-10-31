@@ -55,6 +55,15 @@ data class RemoteTrackSnapshotEntity(
     @ColumnInfo(name = "youtube_id")
     val youtubeId: String? = null,
 
+    @ColumnInfo(name = "soundcloud_id")
+    val soundCloudId: String? = null,
+
+    @ColumnInfo(name = "soundcloud_permalink")
+    val soundCloudPermalink: String? = null,
+
+    @ColumnInfo(name = "soundcloud_preview", defaultValue = "0")
+    val soundCloudPreview: Boolean = false,
+
     /** Album artwork URL. */
     @ColumnInfo(name = "album_art_url")
     val albumArtUrl: String? = null,

@@ -21,6 +21,12 @@ import org.junit.Test
 
 class NowPlayingActionsTest {
 
+    @Test fun `preview downloads and wrong-match actions for exact SoundCloud uploads stay hidden`() {
+        assertFalse(isActionAvailable(DOWNLOAD, ActionContext(isPreview = true)))
+        assertFalse(isActionAvailable(FLAG_WRONG_MATCH, ActionContext(isSoundCloudSong = true)))
+        assertTrue(isActionAvailable(DOWNLOAD, ActionContext(isSoundCloudSong = true)))
+    }
+
     private val solo = ActionContext()
 
     /** A phone with Play Services: Cast can show. */

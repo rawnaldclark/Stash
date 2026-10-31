@@ -122,12 +122,14 @@ data class SyncUiState(
     val syncPreferences: SyncPreferences = SyncPreferences(),
     val spotifyConnected: Boolean = false,
     val youTubeConnected: Boolean = false,
+    val soundCloudConnected: Boolean = false,
     val recentSyncs: List<SyncHistoryInfo> = emptyList(),
     val isSyncing: Boolean = false,
     /** Spotify playlists available for sync preference toggles. */
     val spotifyPlaylists: List<SpotifySyncPlaylist> = emptyList(),
     /** YouTube Music playlists available for sync preference toggles. */
     val youTubePlaylists: List<YouTubeSyncPlaylist> = emptyList(),
+    val soundCloudPlaylists: List<YouTubeSyncPlaylist> = emptyList(),
     /**
      * Per-source sync modes. Each service's Sync Preferences card
      * renders its own Refresh/Accumulate chip row bound to one of
@@ -484,6 +486,7 @@ class SyncViewModel @Inject constructor(
         observeLastSync()
         observeSpotifyPlaylists()
         observeYouTubePlaylists()
+        observeSoundCloud()
         observeUnmatchedCount()
         observeFlaggedCount()
         observeSyncStatusCard()
@@ -555,6 +558,7 @@ class SyncViewModel @Inject constructor(
                 val source = when {
                     state.spotifyConnected -> SyncSource.SPOTIFY
                     state.youTubeConnected -> SyncSource.YOUTUBE
+                    state.soundCloudConnected -> SyncSource.SOUNDCLOUD
                     else -> null
                 }
                 _uiState.update { it.copy(openManageFor = source) }
@@ -768,6 +772,7 @@ class SyncViewModel @Inject constructor(
             when (source) {
                 MusicSource.YOUTUBE -> syncPreferencesManager.setYoutubeSyncMode(SyncMode.REFRESH)
                 MusicSource.SPOTIFY -> syncPreferencesManager.setSpotifySyncMode(SyncMode.REFRESH)
+                MusicSource.SOUNDCLOUD -> syncPreferencesManager.setSoundCloudSyncMode(SyncMode.REFRESH)
                 MusicSource.LOCAL, MusicSource.BOTH, MusicSource.CLOUD -> Unit
             }
         }
@@ -977,6 +982,21 @@ class SyncViewModel @Inject constructor(
                         }
                     )
                 }
+            }
+        }
+    }
+
+    private fun observeSoundCloud() {
+        viewModelScope.launch {
+            combine(tokenManager.soundCloudSession, playlistDao.getBySource(MusicSource.SOUNDCLOUD)) { session, entities ->
+                session to entities.filter { session != null && com.stash.core.data.sync.SoundCloudPlaylistIds.belongsTo(it.sourceId, session.userId) }
+            }.collect { (session, entities) ->
+                _uiState.update { state -> state.copy(soundCloudConnected = session != null,
+                    soundCloudPlaylists = entities.map { e ->
+                        YouTubeSyncPlaylist(id = e.id, name = e.name, trackCount = e.trackCount, type = e.type,
+                            syncEnabled = e.syncEnabled, artUrl = e.artUrl, keepOffline = e.keepOffline,
+                            userHidden = e.userHidden, dateAdded = e.dateAdded.toEpochMilli())
+                    }) }
             }
         }
     }

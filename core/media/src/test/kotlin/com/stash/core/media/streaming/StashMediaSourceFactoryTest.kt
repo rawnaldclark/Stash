@@ -29,6 +29,35 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class StashMediaSourceFactoryTest {
 
+    @Test fun `cold and cached SoundCloud placeholders prepare an HLS child`() {
+        for (cached in listOf("cold", "soundcloud", "qbdlx")) {
+            val streaming = mockk<StreamingMediaSourceFactory>(relaxed = true)
+            val resolver = mockk<StreamSourceRegistry>()
+            val dao = mockk<com.stash.core.data.db.dao.TrackDao>()
+            val stream = StreamUrl("https://cf-media.sndcdn.com/playlist", System.currentTimeMillis() + 300_000,
+                origin = "soundcloud", isHls = true)
+            val cache = StreamUrlCache()
+            if (cached != "cold") cache.put(42, stream.copy(origin = cached))
+            io.mockk.coEvery { dao.getById(42) } returns com.stash.core.data.db.entity.TrackEntity(
+                id = 42, title = "Remix", artist = "Artist", soundCloudId = "123")
+            io.mockk.coEvery { resolver.resolve(any(), any(), any(), any()) } returns stream
+            val item = MediaItem.Builder().setMediaId("42").setUri("stash-resolve://track/42?sc=1").build()
+            val kid = mockk<MediaSource>(relaxed = true) {
+                every { mediaItem } returns item.buildUpon().setUri(stream.url).build()
+            }
+            every { streaming.createHlsMediaSource(any(), stream) } returns kid
+            val factory = StashMediaSourceFactory(ApplicationProvider.getApplicationContext(), streaming,
+                { null }, { false }, OkHttpClient(), resolver, cache, dao,
+                resolveDispatcher = kotlinx.coroutines.Dispatchers.Unconfined)
+            val source = factory.createMediaSource(item)
+            val caller = MediaSource.MediaSourceCaller { _, _ -> }
+            source.prepareSource(caller, null, androidx.media3.exoplayer.analytics.PlayerId.UNSET)
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            verify(exactly = 1) { streaming.createHlsMediaSource(any(), stream) }
+            source.releaseSource(caller)
+        }
+    }
+
     private val streamingFactory: StreamingMediaSourceFactory = mockk(relaxed = true)
 
     private fun item(uri: String): MediaItem = MediaItem.fromUri(uri)

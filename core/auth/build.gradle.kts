@@ -17,6 +17,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":data:soundcloud"))
     implementation(project(":core:common"))
     implementation(project(":core:network"))
 

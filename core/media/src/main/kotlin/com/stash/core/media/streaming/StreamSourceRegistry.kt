@@ -90,6 +90,7 @@ class StreamSourceRegistry internal constructor(
     private val qualityPolicy: StreamQualityPolicy? = null,
     /** "Play my cloud copies first" (#679); null in hand-built tests (no cloud copies). */
     private val cloudCopies: CloudCopyFinder? = null,
+    private val soundCloud: SoundCloudStreamResolver? = null,
 ) {
     @Inject
     constructor(
@@ -106,10 +107,11 @@ class StreamSourceRegistry internal constructor(
         losslessQuota: LosslessQuota,
         qualityPolicy: StreamQualityPolicy,
         cloudCopies: CloudCopyFinder,
+        soundCloud: SoundCloudStreamResolver,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
-        qualityPolicy, cloudCopies,
+        qualityPolicy, cloudCopies, soundCloud,
     )
     /**
      * The user's own lossless copy of [track] in their cloud storage, as a [StreamUrl] whose url is
@@ -162,6 +164,7 @@ class StreamSourceRegistry internal constructor(
     ): StreamUrl? {
         // Last line of defence: a cloud song (the user's own file) is never looked up on the
         // lossless relays, JioSaavn or YouTube. Its player item streams from stash-cloud://.
+        if (track.soundCloudId != null || track.source == com.stash.core.model.MusicSource.SOUNDCLOUD) return soundCloud?.resolve(track)
         if (track.source == com.stash.core.model.MusicSource.CLOUD) return null
         // "Play my cloud copies first": the user's own lossless file, before any relay is asked.
         // A local lookup (no network), so it runs ahead of the single-flight and for look-aheads too.

@@ -74,6 +74,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     private val syncPreferencesManager = mockk<SyncPreferencesManager>()
     private val streamingPreference = mockk<StreamingPreference>()
     private val tokenManager = mockk<TokenManager> {
+        coEvery { getSoundCloudToken() } returns "secret"
         coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
     }
@@ -470,7 +471,61 @@ class PlaylistFetchWorkerRevisionSkipTest {
         runFetchOutput().getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
 
     /** Runs the fetch step; returns its output data. */
-    private suspend fun runFetchOutput(): androidx.work.Data {
+    @Test fun `public SoundCloud profile enters the real fetch worker without Spotify or YouTube auth`() = runBlocking {
+        coEvery { tokenManager.isAuthenticated(any()) } returns false
+        val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Public", connectionId = "current")
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
+        val fetcher = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
+        coEvery { fetcher.fetch(any(), session) } returns true
+        runFetchOutput(fetcher)
+        coVerify(exactly = 1) { fetcher.fetch(any(), session) }
+    }
+
+    @Test fun `authenticated SoundCloud runs likes playlists and mix fetches from the real worker`() = runBlocking {
+        every { syncPreferencesManager.discoverAutoMixes } returns flowOf(true)
+        coEvery { tokenManager.isAuthenticated(any()) } returns false
+        val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
+        val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
+        val lists = mockk<com.stash.core.data.sync.SoundCloudPlaylistsFetcher>()
+        coEvery { likes.fetch(any(), session) } returns true
+        coEvery { lists.fetchPlaylists(any(), session) } returns com.stash.core.data.sync.SoundCloudPlaylistFetchResult(published = 1)
+        coEvery { lists.fetchMixes(any(), session) } returns com.stash.core.data.sync.SoundCloudPlaylistFetchResult(published = 1)
+        runFetchOutput(likes, lists)
+        coVerify(exactly = 1) { lists.fetchPlaylists(any(), session) }
+        coVerify(exactly = 1) { lists.fetchMixes(any(), session) }
+    }
+
+    @Test fun `healthy SoundCloud playlists continue when likes and one playlist fail`() = runBlocking {
+        every { syncPreferencesManager.discoverAutoMixes } returns flowOf(true)
+        coEvery { tokenManager.isAuthenticated(any()) } returns false
+        val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
+        val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
+        val lists = mockk<com.stash.core.data.sync.SoundCloudPlaylistsFetcher>()
+        coEvery { likes.fetch(any(), session) } throws java.io.IOException("Unavailable")
+        coEvery { lists.fetchPlaylists(any(), session) } returns com.stash.core.data.sync.SoundCloudPlaylistFetchResult(published = 1, failed = 1)
+        coEvery { lists.fetchMixes(any(), session) } returns com.stash.core.data.sync.SoundCloudPlaylistFetchResult(skipped = true)
+        runFetchOutput(likes, lists) // Success means the good snapshots can still reach DiffWorker.
+        Unit
+    }
+
+    @Test fun `discovery off skips SoundCloud Home mixes but still fetches owned playlists and likes`() = runBlocking {
+        every { syncPreferencesManager.discoverAutoMixes } returns flowOf(false)
+        coEvery { tokenManager.isAuthenticated(any()) } returns false
+        val session = com.stash.core.auth.soundcloud.SoundCloudSession("7", "Listener", oauthToken = "secret", connectionId = "current")
+        every { tokenManager.soundCloudSession } returns kotlinx.coroutines.flow.flowOf(session)
+        val likes = mockk<com.stash.core.data.sync.SoundCloudLikesFetcher>()
+        val lists = mockk<com.stash.core.data.sync.SoundCloudPlaylistsFetcher>()
+        coEvery { likes.fetch(any(), session) } returns true
+        coEvery { lists.fetchPlaylists(any(), session) } returns com.stash.core.data.sync.SoundCloudPlaylistFetchResult(published = 1)
+        runFetchOutput(likes, lists)
+        coVerify(exactly = 0) { lists.fetchMixes(any(), any()) }
+        coVerify(exactly = 1) { lists.fetchPlaylists(any(), session) }
+    }
+
+    private suspend fun runFetchOutput(soundCloud: com.stash.core.data.sync.SoundCloudLikesFetcher? = null,
+        lists: com.stash.core.data.sync.SoundCloudPlaylistsFetcher? = null): androidx.work.Data {
         val result = TestListenableWorkerBuilder<PlaylistFetchWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
@@ -494,6 +549,8 @@ class PlaylistFetchWorkerRevisionSkipTest {
                     youtubeAuthHealthProbe = mockk(relaxed = true),
                     streamingPreference = streamingPreference,
                     syncUndoDao = db.syncUndoDao(),
+                    soundCloudLikes = soundCloud,
+                    soundCloudPlaylists = lists,
                 )
             })
             .build()

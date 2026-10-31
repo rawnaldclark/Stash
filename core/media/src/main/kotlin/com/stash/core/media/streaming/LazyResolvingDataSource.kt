@@ -193,7 +193,7 @@ class LazyResolvingDataSource(
             // DASH source up front; reaching here means it was bypassed (an override
             // item, or a server configured after this item was built). The URL is
             // cached, so the player's retry of this item builds the DASH source.
-            if (next.isDash) {
+            if (next.isDash || next.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source")
             }
             if (pin != null && !next.isSameFileAs(pin)) {
@@ -219,7 +219,7 @@ class LazyResolvingDataSource(
             urlCache.invalidate(trackId)
             stream = resolveBlocking(trackId, uri)?.takeIf { it.origin != CloudCopyFinder.ORIGIN }
                 ?: throw IOException("stream resolve failed for track $trackId after its cloud copy failed", e)
-            if (stream.isDash) {
+            if (stream.isDash || stream.isHls) {
                 throw IOException("track $trackId resolved to a DASH manifest; needs a DASH media source", e)
             }
             openStream(stream, dataSpec)
