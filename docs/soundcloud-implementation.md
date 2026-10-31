@@ -280,3 +280,22 @@ Home visibly places Your Mix 1 under Made for you. Opening that card shows Sound
 Play All starts the correct first upload, and Android's media session reports PLAYING with an
 advancing position and queue size 30. Paused playback afterward. The phone is left on the native
 Your Mix 1 detail screen; the account is connected and Stream-only mode is unchanged.
+
+## Artwork quality follow-up (2026-10-31)
+
+Spotify track, playlist-library, playlist-track, mix-search and Home-mix parsers now choose the
+widest usable HTTPS source rather than the first entry. Public SpotifyArtwork keeps that selection
+consistent without adding cross-file internal calls. Existing Spotify album-CDN sizing/fallback
+remains in place. Stored Spotify metadata picks up the corrected source on its next sync.
+
+SoundCloud's -large cover is only 100x100. Live CDN checks returned the same image at 500x500
+and 1080x1080 (larger byte payloads too). Shared ArtUrlSizer now requests those variants according
+to display size, on exact SoundCloud image hosts, without downgrading larger URLs. Small rows
+keep their original URL; caps and existing network-failure fallback remain effective. This repairs
+existing SoundCloud covers at load time without database changes, re-sync or cache deletion.
+
+Verification: all 84 Spotify module tests and 45 focused shared artwork-sizing tests passed.
+Full debug assembly exited 0; fresh APK installed successfully on Pixel 5. Visually checked the
+existing Your Mix 1 detail cover and Sync fan: the previous blocky 100px image is visibly sharper.
+Spotify is not connected on the Pixel 5, so fresh Spotify sync/artwork was not claimed as device
+verified. The phone remains on the mix detail page with playback paused.
