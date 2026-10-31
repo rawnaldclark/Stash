@@ -185,7 +185,7 @@ class SettingsHubSummariesTest {
 
     @Test fun `appearance SYSTEM → Follow system`() {
         val s = settingsHubSummaries(
-            state = SettingsUiState(themeMode = ThemeMode.SYSTEM),
+            state = SettingsUiState(themeMode = ThemeMode.SYSTEM, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
@@ -195,7 +195,7 @@ class SettingsHubSummariesTest {
 
     @Test fun `appearance DARK → Dark`() {
         val s = settingsHubSummaries(
-            state = SettingsUiState(themeMode = ThemeMode.DARK),
+            state = SettingsUiState(themeMode = ThemeMode.DARK, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
