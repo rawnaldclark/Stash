@@ -552,7 +552,14 @@ class LibraryViewModel @Inject constructor(
     fun setLikedFilter(filter: LikedFilter) { _likedFilter.update { filter } }
 
     private val stashLikedFlow = musicRepository.getPlaylistsByType(PlaylistType.STASH_LIKED)
-    private val externalLikedFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
+    private val externalLikedFlow = combine(
+        musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS), tokenManager.soundCloudSession,
+    ) { playlists, session ->
+        playlists.filter { playlist ->
+            playlist.source != MusicSource.SOUNDCLOUD || session == null ||
+                com.stash.core.data.sync.SoundCloudPlaylistIds.belongsTo(playlist.sourceId, session.userId)
+        }
+    }
 
     /** Which like-origins actually have songs — drives the sift chips' visibility. */
     val likedSources: StateFlow<Set<LikedFilter>> =

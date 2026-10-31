@@ -49,6 +49,25 @@ import org.mockito.kotlin.whenever
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryViewModelTest {
+    @Test fun `connected SoundCloud likes exclude another accounts retained likes`() = runTest {
+        val own = com.stash.core.model.Playlist(id = 7, name = "SoundCloud Liked", source = com.stash.core.model.MusicSource.SOUNDCLOUD,
+            sourceId = "soundcloud_liked_7", type = com.stash.core.model.PlaylistType.LIKED_SONGS, trackCount = 1)
+        val previous = own.copy(id = 8, sourceId = "soundcloud_liked_8")
+        val repo = musicRepoMock().stub {
+            on { getPlaylistsByType(com.stash.core.model.PlaylistType.LIKED_SONGS) } doReturn flowOf(listOf(previous, own))
+            on { getPlaylistsByType(com.stash.core.model.PlaylistType.STASH_LIKED) } doReturn flowOf(emptyList())
+            on { getShownTracksByPlaylist(7) } doReturn flowOf(listOf(track(70)))
+            on { getShownTracksByPlaylist(8) } doReturn flowOf(listOf(track(80)))
+        }
+        val tokens = tokenManagerMock().stub {
+            on { soundCloudSession } doReturn flowOf(com.stash.core.auth.soundcloud.SoundCloudSession("7", "Current", connectionId = "current"))
+        }
+        val vm = buildVm(musicRepository = repo, tokenManager = tokens)
+        val likes = kotlinx.coroutines.withContext(Dispatchers.Default) {
+            kotlinx.coroutines.withTimeout(5000) { vm.likedTracks.first { it.isNotEmpty() } }
+        }
+        assertEquals(listOf(70L), likes.map { it.id })
+    }
 
     private val dispatcher = StandardTestDispatcher()
 
@@ -489,6 +508,7 @@ class LibraryViewModelTest {
     }
 
     private fun tokenManagerMock(): TokenManager = mock {
+        on { soundCloudSession } doReturn flowOf(null)
         on { spotifyAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
         on { youTubeAuthState } doReturn MutableStateFlow<AuthState>(AuthState.NotConnected)
     }

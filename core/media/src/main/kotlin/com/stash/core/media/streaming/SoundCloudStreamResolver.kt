@@ -34,7 +34,9 @@ class SoundCloudStreamResolver @Inject constructor(
                 )
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.w("SoundCloudStream", "Upload resolve failed; HTTP=" +
+                    ((e as? com.stash.data.soundcloud.SoundCloudException)?.status?.toString() ?: "unavailable"))
                 // A missing or blocked upload never falls through to title-based matching.
                 null
             }

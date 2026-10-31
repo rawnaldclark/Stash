@@ -74,6 +74,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     private val syncPreferencesManager = mockk<SyncPreferencesManager>()
     private val streamingPreference = mockk<StreamingPreference>()
     private val tokenManager = mockk<TokenManager> {
+        coEvery { getSoundCloudToken() } returns "secret"
         coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
     }

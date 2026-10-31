@@ -350,7 +350,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val isSpotifyAuthenticated = tokenManager.isAuthenticated(AuthService.SPOTIFY)
             val isYouTubeAuthenticated = tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC)
 
-            val soundCloudSession = if (soundCloudLikes != null) tokenManager.soundCloudSession.first() else null
+            val soundCloudSession = if (soundCloudLikes != null) try {
+                if (tokenManager.soundCloudSession.first()?.oauthToken != null) tokenManager.getSoundCloudToken()
+                tokenManager.soundCloudSession.first()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                diagnostics.add(SyncStepResult("SOUNDCLOUD", "authenticate", StepStatus.ERROR,
+                    errorMessage = "SoundCloud session could not be renewed. Reconnect SoundCloud in Accounts."))
+                null
+            } else null
             if (!isSpotifyAuthenticated && !isYouTubeAuthenticated && soundCloudSession == null) {
                 syncHistoryDao.updateStatus(
                     id = syncId,

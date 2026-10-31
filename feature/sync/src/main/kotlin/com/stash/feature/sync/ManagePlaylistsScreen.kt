@@ -85,6 +85,7 @@ private enum class ManageTab { PLAYLISTS, MIXES, LIKED }
 fun ManagePlaylistsScreen(
     source: SyncSource,
     onBack: () -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -166,9 +167,11 @@ fun ManagePlaylistsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Box(Modifier.size(8.dp).clip(CircleShape).background(brand))
                                 Text(
-                                    text = stringResource(
-                                        if (streamOnly) R.string.sync_manage_all_in_library else R.string.sync_manage_pick_to_save,
-                                    ),
+                                    text = when {
+                                        !streamOnly -> stringResource(R.string.sync_manage_pick_to_save)
+                                        rows.isNotEmpty() && rows.none { it.userHidden } -> stringResource(R.string.sync_manage_all_in_library)
+                                        else -> stringResource(R.string.sync_manage_in_library_count, rows.count { !it.userHidden }, rows.size)
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -306,6 +309,7 @@ fun ManagePlaylistsScreen(
                         onToggle = { viewModel.onSavePlaylist(row.id, it) },
                         onSetInLibrary = { viewModel.onSetInLibrary(row.id, it) },
                         onSetStack = { viewModel.onSetStack(row.id, it) },
+                        onOpen = { onOpenPlaylist(row.id) },
                     )
                 }
                 val (out, inLibrary) = shown.partition { it.userHidden }
@@ -330,6 +334,7 @@ private fun PlaylistSaveRow(
     onToggle: (Boolean) -> Unit,
     onSetInLibrary: (Boolean) -> Unit,
     onSetStack: (Boolean) -> Unit,
+    onOpen: () -> Unit,
 ) {
     val inLibrary = !row.userHidden
     Row(
@@ -345,8 +350,9 @@ private fun PlaylistSaveRow(
             offState = stringResource(R.string.sync_in_library_off),
             onToggle = onSetInLibrary,
         )
-        CoverTile(url = row.artUrl, modifier = Modifier.size(56.dp).alpha(if (inLibrary) 1f else 0.4f))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        CoverTile(url = row.artUrl, modifier = Modifier.size(56.dp).alpha(if (inLibrary) 1f else 0.4f)
+            .clickable(role = Role.Button, onClick = onOpen))
+        Column(Modifier.weight(1f).clickable(role = Role.Button, onClick = onOpen), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = row.name,
                 style = MaterialTheme.typography.bodyLarge,
