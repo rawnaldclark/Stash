@@ -392,3 +392,25 @@ On Pixel 5, Riot streamed through its end into King Of The Dead. Forward seek to
 and backward seek to about 17 seconds both reported PLAYING on the same undownloaded upload.
 Paused afterward. Long-pause authorization expiry and a full on-device backup/mirror round-trip
 remain separate from these checks; Android Auto is deferred by the owner.
+
+## Low-storage failure coverage (2026-10-31)
+
+Added an executor-level disk-full simulation that creates .part/.ytdl files before throwing:
+the SoundCloud attempt returns failure, removes both files and leaves another download unchanged.
+Added coverage through the real TrackFinalizer for a disk-full library commit: temporary audio is
+discarded, and a subsequent attempt can succeed after storage becomes available. Existing SAF
+commit and old-file preservation tests verify a failed write retains the previous usable audio.
+All 16 focused tests passed (SoundCloud downloads 6, executor 2, SAF commit 3, old-file preservation 5).
+No production change or new phone installation was needed; the owner's storage was not filled.
+Actual low-storage device behavior remains unverified, distinct from these failure-path simulations.
+
+Focused review covered the added auth renewal/account guards, API/paging and URL trust boundaries,
+sync snapshot commits and exact-upload matching, link imports, HLS retry/Download-mode checks and
+download cleanup. No further concrete issue was found in that pass. No release or merge performed.
+
+Next outside SoundCloud, from the Claude handoff and current repository state: web sleeve-flip PR
+rawnaldclark/stash-player#33 remains open with its sizing fix uncommitted in player-sleeve; visually
+verify wide/narrow layouts before committing. The base web player's node_modules/.bin is still
+missing. Relay PRs #703/#708/#734/#743 remain open. Playlist-order mirroring/backup/undo follow-ups
+require separate owner authorization. AutoMix stays with the contributor. Deployment and release
+remain separate approval steps.

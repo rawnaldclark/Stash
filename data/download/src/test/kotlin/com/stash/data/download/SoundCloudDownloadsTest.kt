@@ -72,6 +72,31 @@ class SoundCloudDownloadsTest {
         try { downloader().download(track) {}; fail("cancellation swallowed") } catch (_: CancellationException) { }
     }
 
+    @Test fun `full storage during commit discards temporary audio and permits a later retry`() = runTest {
+        coEvery { client.track("123", any()) } returns metadata()
+        coEvery { client.stream("123", any()) } returns SoundCloudStream("https://cf-media.sndcdn.com/full", "audio/mp4", true, false)
+        every { files.getTempDir() } returns temp.root
+        val first = temp.newFile("first.m4a").also { it.writeBytes(ByteArray(10000)) }
+        val retry = temp.newFile("retry.m4a").also { it.writeBytes(ByteArray(10000)) }
+        coEvery { executor.downloadSoundCloud(any(), any(), any(), any(), any()) } returnsMany listOf(
+            DownloadResult.Success(first), DownloadResult.Success(retry))
+        coEvery { probe.extract(any()) } returns AudioMetadata(180000, 160, "aac")
+        val embedder = mockk<com.stash.data.download.files.MetadataEmbedder>(relaxed = true)
+        val art = mockk<com.stash.data.download.files.AlbumArtCache>()
+        coEvery { art.resolveArt(any()) } returns null
+        val actualFinalizer = TrackFinalizer(embedder, files, probe, art)
+        coEvery { files.commitDownload(any(), any(), any(), any(), any(), any()) } throws java.io.IOException("No space left on device")
+        val subject = SoundCloudDownloads(client, tokens, executor, files, probe, actualFinalizer, dao, localFiles)
+
+        assertTrue(subject.download(track) {} is TrackDownloadResult.Failed)
+        assertFalse("failed commit must discard downloaded temporary audio", first.exists())
+
+        coEvery { files.commitDownload(any(), any(), any(), any(), any(), any()) } returns
+            FileOrganizer.CommittedTrack("/music/Remix.m4a", 10000)
+        assertEquals(TrackDownloadResult.Success("/music/Remix.m4a"), subject.download(track) {})
+        assertFalse(retry.exists())
+    }
+
     @Test fun `length gate rejects unknown truncated and overlong audio`() {
         assertFalse(SoundCloudDownloads.fullLength(30000, 180000))
         assertFalse(SoundCloudDownloads.fullLength(180000, 0))

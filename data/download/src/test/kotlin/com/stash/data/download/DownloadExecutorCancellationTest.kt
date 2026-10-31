@@ -18,6 +18,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -39,6 +40,27 @@ class DownloadExecutorCancellationTest {
     @After
     fun tearDown() {
         unmockkObject(YoutubeDL)
+    }
+
+    @Test fun `SoundCloud disk full removes attempt files without touching other downloads`() = runBlocking {
+        val executor = DownloadExecutor(ytDlpManager, context, tokenManager, remuxer)
+        val unrelated = tmp.newFile("another-download.m4a").apply { writeText("keep this audio") }
+        val partial = File(tmp.root, "sc_42_attempt.m4a.part")
+        val state = File(tmp.root, "sc_42_attempt.m4a.ytdl")
+        mockkObject(YoutubeDL)
+        every { YoutubeDL.execute(any(), any(), any()) } answers {
+            partial.writeText("incomplete")
+            state.writeText("resume state")
+            throw java.io.IOException("No space left on device")
+        }
+
+        val result = executor.downloadSoundCloud("https://soundcloud.com/artist/song", null, tmp.root, "sc_42_attempt")
+
+        assertTrue(result !is DownloadResult.Success)
+        assertTrue("partial audio must be removed", !partial.exists())
+        assertTrue("resume state must be removed", !state.exists())
+        assertTrue("another download must remain unchanged", unrelated.readText() == "keep this audio")
+        io.mockk.verify(exactly = 1) { YoutubeDL.execute(any(), any(), any()) }
     }
 
     @Test(timeout = 30_000)
