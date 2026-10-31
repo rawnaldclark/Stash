@@ -50,6 +50,8 @@ internal fun StreamingQualitySheet(
             Text(
                 text = stringResource(R.string.np_quality_title),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                // As the Track Options header: the sheet's default content colour is the subtitles' grey.
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 4.dp).align(Alignment.CenterHorizontally),
             )
             Text(
