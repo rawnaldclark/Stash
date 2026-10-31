@@ -399,6 +399,7 @@ class ArtistProfileViewModel @Inject constructor(
                 subscribersText = profile.subscribersText ?: currentHero.subscribersText,
             ),
             popular = profile.popular,
+            latest = latestReleases(profile.albums, profile.singles),
             albums = profile.albums,
             singles = profile.singles,
             related = profile.related,

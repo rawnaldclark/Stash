@@ -224,6 +224,25 @@ class YTMusicApiClientTest {
     }
 
     @Test
+    fun `getArtist keeps each release card's year and YouTube's type label`() = runTest {
+        val client = fakeBrowseClient(loadFixture("artist_rich.json"))
+
+        val profile = client.getArtist("UCLOOTPACKID1")
+
+        // Cards read "Album • 1999" / "Single • 2001": the label is the release type,
+        // never the artist, and the year stays the year.
+        val album = profile.albums.first()
+        assertEquals("Soundpieces: Da Antidote", album.title)
+        assertEquals("Album", album.releaseType)
+        assertEquals("1999", album.year)
+        assertEquals("", album.artist)
+        val single = profile.singles.first()
+        assertEquals("The Anthem", single.title)
+        assertEquals("Single", single.releaseType)
+        assertEquals("2001", single.year)
+    }
+
+    @Test
     fun `getArtist tolerates sparse artist with only popular shelf`() = runTest {
         val client = fakeBrowseClient(loadFixture("artist_sparse.json"))
 
