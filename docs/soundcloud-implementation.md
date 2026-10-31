@@ -295,7 +295,42 @@ keep their original URL; caps and existing network-failure fallback remain effec
 existing SoundCloud covers at load time without database changes, re-sync or cache deletion.
 
 Verification: all 84 Spotify module tests and 45 focused shared artwork-sizing tests passed.
-Full debug assembly exited 0; fresh APK installed successfully on Pixel 5. Visually checked the
-existing Your Mix 1 detail cover and Sync fan: the previous blocky 100px image is visibly sharper.
+Full debug assembly exited 0; fresh APK installed successfully on Pixel 5. Visually inspected the existing mix cover and Sync fan. A later original-image probe below
+established that Your Mix 1 itself has only a 500px source; requesting 1080px cannot add detail.
 Spotify is not connected on the Pixel 5, so fresh Spotify sync/artwork was not claimed as device
 verified. The phone remains on the mix detail page with playback paused.
+
+## Playback, Likes visibility and source-art investigation (2026-10-31)
+
+Reproduced SoundCloud failures during upload resolution on the Pixel 5. The stored/browser OAuth
+JWT had expired; the account still appeared connected because credentials existed. Added automatic
+rotation through the fixed secure SoundCloud OAuth endpoint using the token's own client ID.
+Persist access/refresh credentials atomically in the encrypted session, preserve connectionId, verify
+the returned user, serialize concurrent rotations, and finish a bounded in-flight rotation even when
+playback is cancelled. An existing installation can adopt a browser refresh cookie only when its
+access cookie exactly matches the connected native token. Browser rotation is kept in step. No
+credentials are logged, stored in fixtures or included in exception diagnostics.
+
+Sync renews credentials before capturing its account snapshot; failures leave membership intact.
+Library Likes now excludes retained SoundCloud playlists belonging to another account while an
+account is connected. The earlier public-profile test's retained likes had been leading the merged
+list. No old tracks or files were deleted. Sync management cover/title rows now open Playlist Detail;
+its header uses real membership counts when lists are empty or hidden instead of always claiming
+All in your library in streaming mode.
+
+Device verification: expired session renewed without another sign-in; introduction by XXXTENTACION
+played with advancing position and buffered media. After force-stop/restart it played again, proving
+the renewed native session survived. A fresh sync completed; Library -> Liked -> SoundCloud shows
+the owner's songs, and tapping SoundCloud Liked in Sync opens the 140-track playlist. Playback paused.
+Full auth suite: 31 passed. SoundCloud client suite: 30 passed, one opt-in smoke skipped. Library VM:
+25 passed. Fetch worker/revision suite: 26 passed. Full debug APK build exited 0 and installed.
+
+Spotify report is not reproduced on Pixel 5: Idioteque by Radiohead and Pink + White by Frank Ocean
+both played successfully through the existing Spotify/YouTube library path. Owner was asked for a
+failing song/device; do not claim a general Spotify playback bug fixed without that reproduction.
+
+Your Mix 1 source-art probe: t500x500 returns 500x500, 22,298 bytes; original returns that same
+500x500 image and byte count. t1080x1080 returns an upscaled 1080x1080, 65,441 bytes. The service
+has not supplied more original detail for this cover. Keep the authentic service cover; requesting
+larger dimensions is not evidence of sharper source content. This corrects the earlier implication
+that every 1080px response necessarily improves this specific cover.
