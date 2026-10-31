@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,6 +52,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -72,6 +72,7 @@ import com.stash.core.ui.components.streaming.StreamingModeChip
 import com.stash.core.ui.components.streaming.StreamingModeSheet
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.R as UiR
 import com.stash.feature.sync.components.AccountCard
 import com.stash.feature.sync.components.ArrivalSheet
 import com.stash.feature.sync.components.AttentionRow
@@ -537,7 +538,8 @@ private fun FirstRunContent(onConnect: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         ConnectButton(
             label = stringResource(R.string.sync_connect_soundcloud),
-            mark = { Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color(0xFFFF5500), modifier = Modifier.size(34.dp)) },
+            // Full-bleed at 34 dp, like SpotifyMark's disc beside it.
+            mark = { Icon(painterResource(UiR.drawable.ic_brand_soundcloud), contentDescription = null, tint = Color(0xFFFF5500), modifier = Modifier.size(34.dp)) },
             onClick = onConnect,
         )
         Spacer(Modifier.height(28.dp))

@@ -1,9 +1,5 @@
 package com.stash.feature.settings
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -14,11 +10,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.social.Destination
+import com.stash.core.ui.R as UiR
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.LastFmAccountCard
 import com.stash.feature.settings.components.LikeMirrorToggleRow
@@ -224,7 +223,7 @@ fun SettingsAccountsScreen(
 
         AccountConnectionCard(
             serviceName = "Spotify",
-            icon = Icons.Rounded.MusicNote,
+            icon = ImageVector.vectorResource(UiR.drawable.ic_brand_spotify),
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
             expired = authExpiry.spotifyExpired,
@@ -245,7 +244,7 @@ fun SettingsAccountsScreen(
 
         AccountConnectionCard(
             serviceName = "YouTube Music",
-            icon = Icons.Rounded.PlayCircle,
+            icon = ImageVector.vectorResource(UiR.drawable.ic_brand_youtube_music),
             accentColor = extendedColors.youtubeRed,
             authState = uiState.youTubeAuthState,
             expired = authExpiry.youtubeExpired,
@@ -316,7 +315,7 @@ fun SettingsAccountsScreen(
         }
         AccountConnectionCard(
             serviceName = "Discord",
-            icon = Icons.Rounded.Forum,
+            icon = ImageVector.vectorResource(UiR.drawable.ic_brand_discord),
             accentColor = androidx.compose.ui.graphics.Color(0xFF5865F2), // Discord blurple
             authState = uiState.discordAuthState,
             onConnect = { showDiscordRisk = true },

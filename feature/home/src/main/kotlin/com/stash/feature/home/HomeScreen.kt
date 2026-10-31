@@ -303,7 +303,7 @@ fun HomeScreen(
                 ) {
                     androidx.compose.material3.Icon(
                         painter = androidx.compose.ui.res.painterResource(
-                            id = R.drawable.ic_discord,
+                            id = com.stash.core.ui.R.drawable.ic_brand_discord,
                         ),
                         contentDescription = "Join the Stash Discord",
                         tint = androidx.compose.ui.graphics.Color(0xFF5865F2),

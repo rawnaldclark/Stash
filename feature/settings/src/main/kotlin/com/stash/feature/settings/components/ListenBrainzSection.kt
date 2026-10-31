@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -21,10 +19,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.stash.feature.settings.R
+import com.stash.core.ui.R as UiR
 
 /** Connection state for the ListenBrainz section. Mirrors LastFmAuthState's shape. */
 sealed interface ListenBrainzState {
@@ -90,7 +91,7 @@ fun ListenBrainzAccountCard(
     }
     AccountCard(
         serviceName = stringResource(R.string.settings_listenbrainz_title),
-        icon = Icons.Rounded.Headphones,
+        icon = ImageVector.vectorResource(UiR.drawable.ic_brand_listenbrainz),
         accentColor = ListenBrainzOrange,
         statusText = statusText,
         statusTone = tone,

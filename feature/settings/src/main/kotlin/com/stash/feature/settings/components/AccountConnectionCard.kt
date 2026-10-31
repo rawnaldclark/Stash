@@ -43,7 +43,7 @@ import com.stash.feature.settings.R
  * the [AuthState.Connecting] state is active.
  *
  * @param serviceName   Human-readable service name (e.g. "Spotify").
- * @param icon          Material icon representing the service.
+ * @param icon          The service's logo (core:ui's `ic_brand_*`), tinted [accentColor].
  * @param accentColor   Brand colour for the service (green for Spotify, red for YouTube).
  * @param authState     Current authentication state for this service.
  * @param onConnect     Callback invoked when the user taps "Connect".
@@ -105,8 +105,10 @@ fun AccountConnectionCard(
     }
 }
 
+private val LogoSize = 32.dp
+
 /**
- * The shell every account on Accounts & Sync shares: brand icon, name, one
+ * The shell every account on Accounts & Sync shares: brand logo, name, one
  * status line, a trailing action, and optional sub-settings under a hairline.
  * [AccountConnectionCard] fills it from an [AuthState]; accounts with their own
  * sign-in flow (Last.fm, ListenBrainz) fill it directly so they look the same.
@@ -143,7 +145,10 @@ fun AccountCard(
                     imageVector = icon,
                     contentDescription = serviceName,
                     tint = accentColor,
-                    modifier = Modifier.size(32.dp),
+                    // Brand logos fill their whole 24-unit box where Material icons
+                    // keep 2 units clear; the same inset keeps them the size the
+                    // generic icons were.
+                    modifier = Modifier.size(LogoSize).padding(LogoSize / 12),
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
