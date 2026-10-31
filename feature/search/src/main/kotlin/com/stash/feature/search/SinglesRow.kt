@@ -18,11 +18,15 @@ fun SinglesRow(
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
     focusIndex: Int? = null,
+    focusShown: Boolean = false,
+    onFocusShown: () -> Unit = {},
 ) {
     AlbumsRow(
         albums = singles,
         onClick = onClick,
         modifier = modifier,
         focusIndex = focusIndex,
+        focusShown = focusShown,
+        onFocusShown = onFocusShown,
     )
 }
