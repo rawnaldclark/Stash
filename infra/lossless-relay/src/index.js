@@ -472,7 +472,8 @@ function parseAccounts(env) {
     return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4, env.QOBUZ_ACCOUNTS_RECOVERED_5, env.QOBUZ_ACCOUNTS_RECOVERED_6, env.QOBUZ_ACCOUNTS_RECOVERED_7, env.QOBUZ_ACCOUNTS_RECOVERED_8, env.QOBUZ_ACCOUNTS_RECOVERED_9, env.QOBUZ_ACCOUNTS_RECOVERED_10].flatMap((raw) => {
         try {
             const a = JSON.parse(raw || "[]");
-            return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];
+            const entries = Array.isArray(a) ? a : a && typeof a === "object" ? [a] : [];
+            return entries.filter((x) => x && x.label && x.token && x.app_id && x.app_secret);
         } catch {
             return [];
         }

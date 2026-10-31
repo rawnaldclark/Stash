@@ -156,6 +156,14 @@ test("new recovered secret slots join the pool", async () => {
     }
 });
 
+test("a single-account secret object is still eligible for rotation", async () => {
+    const account = { label: "single", token: "single-token", app_id: "222222222", app_secret: "single-secret" };
+    const e = env({ QOBUZ_ACCOUNTS: "[]", QOBUZ_ACCOUNTS_RECOVERED_10: JSON.stringify(account) });
+    const q = qobuz([200, GOOD]);
+    assert.equal((await handle(mintReq(46, 27), e, q, NOW)).status, 200);
+    assert.equal(q.calls[0].init.headers["X-User-Auth-Token"], "single-token");
+});
+
 test("a dead account is retired and the next one serves the same request", async () => {
     const e = env(); const q = qobuz([401, {}], [200, GOOD]);
     assert.equal((await handle(mintReq(42, 27), e, q, NOW)).status, 200);
