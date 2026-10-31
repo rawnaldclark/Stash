@@ -35,10 +35,13 @@ class LosslessSourceRegistryTest {
     private val customQobuzEndpoint = MutableStateFlow<String?>(null)
     private val ownTidalServer = MutableStateFlow<String?>(null)
 
+    /** The download quality setting; Hi-Res unless a test picks another. */
+    private var downloadTier = LosslessQualityTier.HI_RES
+
     init {
         every { prefs.customLosslessEndpoint } returns customQobuzEndpoint
         every { prefs.bitchordEndpoint } returns ownTidalServer
-        coEvery { prefs.hasSavedPriorityOrder() } returns false
+        coEvery { prefs.qualityTierNow() } answers { downloadTier }
     }
 
     /** The real rule ([LosslessAvailability.ownTidalFirst]), read from the flows above. */
@@ -331,19 +334,34 @@ class LosslessSourceRegistryTest {
         coVerify(exactly = 0) { tidal.resolve(any()) }
     }
 
+    /** Tidal has no quality setting: it would save its best, usually 24-bit, where CD was asked for. */
     @Test
-    fun `a saved source order is never rearranged`() = runTest {
-        coEvery { prefs.priorityOrderNow() } returns listOf("qbdlx_qobuz", "tidal_bitchord")
-        coEvery { prefs.hasSavedPriorityOrder() } returns true
-        coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
-        coEvery { healthGate.isDegraded(any()) } returns false
+    fun `CD downloads - Qobuz keeps the lead, the user's own Tidal server right after`() = runTest {
+        defaultOrderAnyQuality()
+        downloadTier = LosslessQualityTier.CD
         ownTidalServer.value = "https://tidal.mine.example"
-        val qbdlxResult = flacResult("qbdlx_qobuz")
-        val qbdlx = fakeSource("qbdlx_qobuz", qbdlxResult)
-        val tidal = fakeSource("tidal_bitchord", flacResult("tidal_bitchord"))
+        val tidalResult = flacResult("tidal_bitchord")
+        val qbdlx = fakeSource("qbdlx_qobuz", null)
+        val tidal = fakeSource("tidal_bitchord", tidalResult)
 
-        assertThat(registry(linkedSetOf(tidal, qbdlx)).resolve(query)).isEqualTo(qbdlxResult)
-        coVerify(exactly = 0) { tidal.resolve(any()) }
+        assertThat(registry(linkedSetOf(qbdlx, tidal)).resolve(query)).isEqualTo(tidalResult)
+        coVerifyOrder {
+            qbdlx.resolve(any())
+            tidal.resolve(any())
+        }
+    }
+
+    @Test
+    fun `Max downloads - the user's own Tidal server leads`() = runTest {
+        defaultOrderAnyQuality()
+        downloadTier = LosslessQualityTier.MAX
+        ownTidalServer.value = "https://tidal.mine.example"
+        val tidalResult = flacResult("tidal_bitchord")
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        val tidal = fakeSource("tidal_bitchord", tidalResult)
+
+        assertThat(registry(linkedSetOf(qbdlx, tidal)).resolve(query)).isEqualTo(tidalResult)
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
     }
 
     @Test

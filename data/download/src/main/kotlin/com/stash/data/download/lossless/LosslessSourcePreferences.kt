@@ -127,7 +127,7 @@ class LosslessSourcePreferences @Inject constructor(
      * The user's own self-hosted BitChord Lossless Relay (Tidal), or null = the Tidal
      * rung uses Stash's relay from the signed config, when it carries one. Set, it
      * replaces that relay and, with none of the user's own Qobuz set up, leads the
-     * lossless chain ([LosslessAvailability.ownTidalFirst]). Same normalisation as
+     * lossless chain above CD quality ([LosslessAvailability.ownTidalFirst]). Same normalisation as
      * [customLosslessEndpoint] (https only, no query, no trailing slash), so a path
      * prefix survives: BitChord's own `https://host/<ACCESS_TOKEN>` form works as-is.
      * The APK ships no default — the user's server spends ONE person's Tidal account,
@@ -401,15 +401,6 @@ class LosslessSourcePreferences @Inject constructor(
     /** One-shot read for callers that want the current value without subscribing. */
     suspend fun priorityOrderNow(): List<String> = priorityOrder.first()
 
-    /**
-     * True when an order was saved with [setPriorityOrder] ([priorityOrder] is then the
-     * user's, not [DEFAULT_PRIORITY]). The registry moves a user's own Tidal server ahead
-     * of Qobuz only in the default order, never in one somebody chose.
-     */
-    suspend fun hasSavedPriorityOrder(): Boolean = context.losslessDataStore.data.map { prefs ->
-        prefs[priorityKey]?.split(",")?.any { it.isNotBlank() } == true
-    }.first()
-
     suspend fun setPriorityOrder(order: List<String>) {
         context.losslessDataStore.edit { prefs ->
             prefs[priorityKey] = order.joinToString(",")
@@ -466,8 +457,11 @@ class LosslessSourcePreferences @Inject constructor(
          *    operator and no client-side decryption.
          * 2. tidal_bitchord — Tidal FLAC through a BitChord server (the user's own,
          *    or Stash's from the signed config). The registry moves it ahead of 1
-         *    when it is the user's own server and none of their own Qobuz is set up
-         *    ([LosslessAvailability.ownTidalFirst]): their endpoint is asked first.
+         *    when it is the user's own server, none of their own Qobuz is set up and
+         *    the tier is above CD ([LosslessAvailability.ownTidalFirstNow]): their
+         *    endpoint is asked first. Nothing calls [setPriorityOrder] today; if a
+         *    manual order is ever offered, that rule has to respect it, so streaming
+         *    and Settings follow it too.
          * 3. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
          * 4. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
          *    3–4 are currently PARKED (hosts down for us) — see

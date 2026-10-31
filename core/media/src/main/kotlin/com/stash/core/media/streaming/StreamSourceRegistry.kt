@@ -39,8 +39,9 @@ import javax.inject.Singleton
  *   1b. [TidalStreamResolver]  — Tidal lossless through a BitChord server: the
  *      user's own, or Stash's (progressive FLAC or a DASH MPD). Same gates as qbdlx;
  *      inert with no server. The user's own server, with none of their own Qobuz set
- *      up ([LosslessAvailability.ownTidalFirst]), goes ahead of 1 instead (FLAC only),
- *      and is asked again for its AAC after 1, when "Tidal AAC when no FLAC" is on.
+ *      up ([LosslessAvailability.ownTidalFirst]), goes ahead of 1 instead above CD
+ *      quality (FLAC only), and is asked again for its AAC after 1, when "Tidal AAC
+ *      when no FLAC" is on.
  *   While the day's Tidal & Qobuz allowance is spent ([LosslessQuota]) neither relay rung
  *   asks the owner's relays for anything: qbdlx skips them (a user's own account still
  *   serves), and Tidal asks for neither FLAC nor AAC, since AAC counts toward the same
@@ -94,7 +95,10 @@ class StreamSourceRegistry internal constructor(
     /** "Play my cloud copies first" (#679); null in hand-built tests (no cloud copies). */
     private val cloudCopies: CloudCopyFinder? = null,
     private val soundCloud: SoundCloudStreamResolver? = null,
-    /** Whose lossless paths are set up ([LosslessAvailability.ownTidalFirst]); null in hand-built tests (Qobuz first). */
+    /**
+     * Whose lossless paths are set up ([LosslessAvailability.ownTidalFirst]); null in hand-built
+     * tests (Qobuz first). Read with [qualityPolicy]'s tier: without a policy, Qobuz stays first too.
+     */
     private val availability: LosslessAvailability? = null,
 ) {
     @Inject
@@ -343,11 +347,14 @@ class StreamSourceRegistry internal constructor(
                 // The user's own server, with none of their own Qobuz set up, goes
                 // BEFORE qbdlx, whose file URL would otherwise come from Stash's shared
                 // relay before their server was ever asked; qbdlx stays the fallback
-                // right behind it. FLAC only there: Tidal's AAC for a CD-only song must
-                // not stand in for a FLAC Qobuz still has. Look-aheads ask it too: the
-                // stop further down spares Stash's shared pool, and in the lead it would
-                // leave every next-up song unprefetched.
-                val ownTidalFirst = tidalRung != null && availability?.ownTidalFirstNow() == true
+                // right behind it. Above CD only: Tidal serves its best (usually 24-bit)
+                // where qbdlx asks for this tier, so at CD (Save Data, mobile data by
+                // default) qbdlx keeps the lead. FLAC only there: Tidal's AAC for a
+                // CD-only song must not stand in for a FLAC Qobuz still has. Look-aheads
+                // ask it too: the stop further down spares Stash's shared pool, and in
+                // the lead it would leave every next-up song unprefetched.
+                val ownTidalFirst = tidalRung != null && availability != null &&
+                    qualityPolicy?.streamingTier()?.let { availability.ownTidalFirstNow(it) } == true
                 if (tidalRung != null && ownTidalFirst) {
                     add("tidal" to { t: TrackEntity -> tidalRung.resolveLossless(t) })
                 }

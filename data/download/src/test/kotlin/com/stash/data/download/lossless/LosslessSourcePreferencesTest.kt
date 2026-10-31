@@ -22,19 +22,6 @@ class LosslessSourcePreferencesTest {
     @Before fun clear() = runBlocking {
         prefs.setCustomLosslessEndpoint(null)
         prefs.setLosslessOfflineDismissed(false)
-        prefs.setPriorityOrder(emptyList()) // an empty save reads as the default order
-    }
-
-    /** The registry moves a user's own Tidal server first only in the default order, never in a saved one. */
-    @Test fun `a saved source order is told apart from the default one`() = runTest {
-        assertThat(prefs.hasSavedPriorityOrder()).isFalse()
-        prefs.setPriorityOrder(listOf("qbdlx_qobuz", "tidal_bitchord"))
-        assertThat(prefs.hasSavedPriorityOrder()).isTrue()
-        assertThat(prefs.priorityOrderNow()).containsExactly("qbdlx_qobuz", "tidal_bitchord").inOrder()
-        // Saved empty, the order IS the default (priorityOrder falls back), so it is not a saved one.
-        prefs.setPriorityOrder(emptyList())
-        assertThat(prefs.hasSavedPriorityOrder()).isFalse()
-        assertThat(prefs.priorityOrderNow()).isEqualTo(LosslessSourcePreferences.DEFAULT_PRIORITY)
     }
 
     @Test fun `custom endpoint is null by default, normalised on set, cleared on blank`() = runTest {

@@ -22,7 +22,7 @@ import javax.inject.Singleton
  * no priority configured still tries every available source.
  *
  * A user's own Tidal server, with none of their own Qobuz set up, is asked before
- * the Qobuz source ([LosslessAvailability.ownTidalFirst]) — see [withOwnTidalFirst].
+ * the Qobuz source above CD quality ([LosslessAvailability.ownTidalFirst]) — see [withOwnTidalFirst].
  */
 @Singleton
 class LosslessSourceRegistry @Inject constructor(
@@ -126,17 +126,17 @@ class LosslessSourceRegistry @Inject constructor(
 
     /**
      * [ordered] with the Tidal source moved to just ahead of the Qobuz one when the Tidal
-     * server is the user's own and none of their own Qobuz is set up
-     * ([LosslessAvailability.ownTidalFirst]). Otherwise the Qobuz source's file URL comes
-     * from Stash's shared relay before the user's own server is ever asked. Stash's relay
-     * stays the fallback, right after it; nothing else moves. Never in an order the user
-     * saved ([LosslessSourcePreferences.hasSavedPriorityOrder]).
+     * server is the user's own, none of their own Qobuz is set up and the download tier is
+     * above CD ([LosslessAvailability.ownTidalFirstNow]). Otherwise the Qobuz source's file
+     * URL comes from Stash's shared relay before the user's own server is ever asked. Stash's
+     * relay stays the fallback, right after it; nothing else moves.
      */
     private suspend fun withOwnTidalFirst(ordered: List<LosslessSource>): List<LosslessSource> {
         val qobuzAt = ordered.indexOfFirst { it.id == QBDLX_SOURCE_ID }
         val tidalAt = ordered.indexOfFirst { it.id == TIDAL_SOURCE_ID }
         if (qobuzAt < 0 || tidalAt < qobuzAt) return ordered // already ahead, or either one absent
-        if (!availability.ownTidalFirstNow() || prefs.hasSavedPriorityOrder()) return ordered
+        // The tier the Qobuz source asks for on downloads (QbdlxQobuzSource): Tidal has no tier.
+        if (!availability.ownTidalFirstNow(prefs.qualityTierNow())) return ordered
         return ordered.toMutableList().apply { add(qobuzAt, removeAt(tidalAt)) }
     }
 

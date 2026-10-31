@@ -209,8 +209,15 @@ class BitchordClient @Inject constructor(
      * account is capped or cooling) or a 429 opens it, and until it closes NO request goes to
      * the relay from any path: streaming, downloads, sweeps. Before this, those answers read
      * as "no match", so a saturated pool was asked again for every track and every rung.
+     * The user's own server giving no answer opens it too ([ownServerUnreachable]).
      */
     @Volatile private var busyUntilMs: Long = 0L
+
+    /**
+     * The user's own server timing out or refusing in a row, since it last answered: sets how long
+     * [ownServerUnreachable] pauses it. Nothing else reads it.
+     */
+    @Volatile private var ownServerMisses = 0
 
     /**
      * Relays that refused this app build ([RelaySigner.APP_TOO_OLD]), by base, epoch-ms (review on #736). Only
@@ -426,12 +433,26 @@ class BitchordClient @Inject constructor(
         return TidalLookup.Busy(until)
     }
 
-    private fun busy(untilMs: Long): TidalLookup {
+    private fun busy(untilMs: Long, why: String = "relay pool busy"): TidalLookup {
         if (untilMs > busyUntilMs) {
             busyUntilMs = untilMs
-            Log.i(TAG, "relay pool busy; pausing Tidal for ${(untilMs - nowMs()) / 1000}s")
+            Log.i(TAG, "$why; pausing Tidal for ${(untilMs - nowMs()) / 1000}s")
         }
         return TidalLookup.Busy(busyUntilMs)
+    }
+
+    /**
+     * The user's own server timed out or refused the connection: a box that is off, or a home
+     * address away from home. Every path then skips it through the busy circuit, for
+     * [OWN_SERVER_PAUSE_MS], doubling while it stays unreachable, up to [OWN_SERVER_MAX_PAUSE_MS];
+     * any answer from it starts over ([get]). Leading the chain, it held up every play by
+     * [TIMEOUT_S] before Stash's relay was asked; now a dead server costs that once a pause.
+     * Stash's relay is not paused this way: its outages are the owner's to fix, not the user's.
+     */
+    private fun ownServerUnreachable(e: IOException) {
+        val pause = (OWN_SERVER_PAUSE_MS shl ownServerMisses.coerceAtMost(3)).coerceAtMost(OWN_SERVER_MAX_PAUSE_MS)
+        ownServerMisses++
+        busy(nowMs() + pause, "own Tidal server unreachable (${e.javaClass.simpleName})")
     }
 
     /**
@@ -572,7 +593,7 @@ class BitchordClient @Inject constructor(
      * install headers ([RelaySigner], message `<install>:td:<numeric id>:<ts>`) and a stored
      * supporter token; a 401 that names the relay's time re-signs once on that clock, like a
      * Qobuz mint. Only an [owner] relay's answers feed the daily allowance: a user's own server
-     * keeps no shared count.
+     * keeps no shared count. A user's own server that gives no answer is paused ([ownServerUnreachable]).
      */
     private suspend fun get(url: HttpUrl, token: String?, owner: Boolean, signPayload: String? = null): Reply {
         var mayRetrySkew = true
@@ -583,7 +604,16 @@ class BitchordClient @Inject constructor(
             if (url.encodedPath.startsWith("/stream/")) signer.appBuild(b)
             val signed = signPayload != null && signer.sign(b, signPayload, nowMs())
             if (signPayload != null && owner) signer.entitle(b)
-            val reply = httpClient.newCall(b.build()).execute().use { r ->
+            val response = try {
+                httpClient.newCall(b.build()).execute()
+            } catch (e: IOException) {
+                // No answer at all (timeout, refused, no route, unknown host). The caller still
+                // gets [TidalLookup.Failed] for this request; the pause covers the ones after it.
+                if (!owner) ownServerUnreachable(e)
+                throw e
+            }
+            if (!owner) ownServerMisses = 0
+            val reply = response.use { r ->
                 if (r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
                     null
                 } else {
@@ -670,6 +700,13 @@ class BitchordClient @Inject constructor(
         /** Bounds on a 503's Retry-After: the relay's shortest pacing wait up to a long pause. */
         const val BUSY_MIN_RETRY_AFTER_MS = 15_000L
         const val BUSY_MAX_RETRY_AFTER_MS = 15 * 60_000L
+        /**
+         * The user's own server gave no answer: skip it this long, doubling per miss in a row up to
+         * [OWN_SERVER_MAX_PAUSE_MS]. Short at first, so a blip on the network costs little; longer
+         * while it stays down, so a tap minutes after the last miss doesn't wait on it again.
+         */
+        const val OWN_SERVER_PAUSE_MS = 60_000L
+        const val OWN_SERVER_MAX_PAUSE_MS = 5 * 60_000L
         /**
          * Bounds on a 429's Retry-After, so a junk header can neither hammer nor park us for a day.
          * The ceiling covers `network_daily_cap` (Retry-After 3600).

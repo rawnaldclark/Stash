@@ -84,12 +84,12 @@ class LosslessDiagnosticsContributorTest {
         every { availability.routingRows } returns flowOf(
             listOf(
                 RoutingRow("qobuz", "Your Qobuz account", "not connected", RoutingState.NOT_CONFIGURED),
-                RoutingRow("tidal", "Custom Tidal server", "configured", RoutingState.CONFIGURED),
+                RoutingRow("tidal", "Custom Tidal server", "first above CD", RoutingState.CONFIGURED),
                 RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
             ),
         )
         val s = contributor().section()
-        assertThat(s).contains("Custom Tidal server: configured")
+        assertThat(s).contains("Custom Tidal server: first above CD")
         assertThat(s.indexOf("Custom Tidal server")).isLessThan(s.indexOf("Stash lossless"))
     }
 
