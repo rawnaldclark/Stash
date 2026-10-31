@@ -30,7 +30,7 @@ data class SettingsUiState(
     val audioQuality: QualityTier = QualityTier.MAX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Pure-black (AMOLED) backgrounds whenever the effective theme is dark. */
-    val amoledDark: Boolean = false,
+    val amoledDark: Boolean = true,
     /**
      * Network + power conditions under which Stash runs background
      * downloads (Stash Discover, tag enrichment). Changing this in

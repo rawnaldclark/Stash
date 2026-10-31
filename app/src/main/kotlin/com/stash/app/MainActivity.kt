@@ -221,7 +221,8 @@ class MainActivity : AppCompatActivity() {
         val initialThemeMode = themeSnapshot.getString(KEY_THEME_MODE, null)
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
             ?: ThemeMode.SYSTEM
-        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+        // Pure black is the default, so a first launch's first frame is black too, not a grey flash.
+        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, true)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
