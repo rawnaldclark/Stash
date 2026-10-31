@@ -142,7 +142,7 @@ Before marking the PR ready, on a phone:
 - Connect a public profile, cancel a connection, disconnect and switch accounts during sync.
 - Sign in with the owner's account; verify private likes and reconnect after process death.
 - Sync in refresh and accumulate modes; preserve custom order and existing verified downloaded files.
-- Stream a full track and a Go+ preview; check local-file preference, Android Auto, seek and long pause.
+- Stream a full track and a Go+ preview; check local-file preference, seek and long pause.
   Segment expiry currently requires another playback attempt; verify it fails without substitution.
 - Download a full track using the Android yt-dlp/FFmpeg runtime; reject a preview and partial file.
   Cancel mid-download, retry, disconnect, and test low storage and airplane/Download mode.
@@ -367,6 +367,28 @@ setting afterward. Kept the downloaded song; no existing downloads or playlists 
 - Android SEND invocation was blocked by tool execution policy; share-receiver device verification
   remains open. Paste entry points above were exercised through the real UI.
 
-Remaining device gates: actual Android Auto, Go+ subscriber access, low storage, long-pause/seek
+Remaining device gates: Go+ subscriber access, low storage, long-pause/seek
 expiry, shared-link entry and full backup/mirroring round-trip. Keep the PR draft; do not manufacture
 low storage or restore over the owner's library just to close a checklist.
+
+Owner decision: Android Auto device testing is deferred and is not a release gate for this PR.
+Its implementation remains in place; no hardware verification is claimed.
+
+## Backup, mirroring and seek checks (2026-10-31)
+
+Found and fixed SoundCloud account playlists being marked web-editable: RoomMirrorLibrary.isSynced
+now includes SOUNDCLOUD, so service-managed playlists mirror phone to web read-only just like
+Spotify/YouTube. Local custom_link copies remain editable. Added real Room tests for the chooser
+and playlist read paths, and for SoundCloud uploads carrying phoneOnly=true without Spotify/YouTube
+substitute IDs in mirrored playlist and Likes output. The web wire format is unchanged.
+
+Extended the real backup ZIP/import test to verify upload permalink, Preview status and source
+survive library merge while an exact existing upload retains its downloaded file and a namesake
+upload remains separate. No restore was performed over the owner's phone library.
+
+Verification: DatabaseBackupMergeTest 24 passed; WebLibraryExporterTest 19 passed;
+RoomMirrorLibraryTest 17 passed; MirrorEngineTest 47 passed. Full debug assembly succeeded.
+On Pixel 5, Riot streamed through its end into King Of The Dead. Forward seek to about 156 seconds
+and backward seek to about 17 seconds both reported PLAYING on the same undownloaded upload.
+Paused afterward. Long-pause authorization expiry and a full on-device backup/mirror round-trip
+remain separate from these checks; Android Auto is deferred by the owner.

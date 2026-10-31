@@ -69,6 +69,36 @@ class RoomMirrorLibraryTest {
 
     @After fun tearDown() = db.close()
 
+    @Test fun `SoundCloud account playlists mirror read only while imported copies remain editable`() = runTest {
+        val synced = db.playlistDao().insert(PlaylistEntity(name = "My set", source = MusicSource.SOUNDCLOUD,
+            sourceId = "soundcloud_playlist_7_11", type = PlaylistType.CUSTOM))
+        val imported = db.playlistDao().insert(PlaylistEntity(name = "Imported set", source = MusicSource.SOUNDCLOUD,
+            sourceId = "custom_link_soundcloud_playlist_11", type = PlaylistType.CUSTOM))
+        val member = track("Member")
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(synced, member, 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(imported, member, 0))
+
+        assertThat(lib.playlist(synced)!!.ro).isTrue()
+        assertThat(lib.playlists().single { it.id == synced }.ro).isTrue()
+        assertThat(lib.playlist(imported)!!.ro).isFalse()
+    }
+
+    @Test fun `SoundCloud uploads reach mirror as phone only without playable substitute identifiers`() = runTest {
+        val id = db.trackDao().insert(TrackEntity(title = "Exact remix", artist = "Artist",
+            source = MusicSource.SOUNDCLOUD, soundCloudId = "123", soundCloudPermalink = "https://soundcloud.com/artist/remix",
+            spotifyUri = "spotify:track:other", youtubeId = "AAAAAAAAAAA", stashLikedAt = 5L,
+            canonicalTitle = "exact remix", canonicalArtist = "artist"))
+        val pid = db.playlistDao().insert(PlaylistEntity(name = "Set", source = MusicSource.SOUNDCLOUD,
+            sourceId = "soundcloud_playlist_7_11", type = PlaylistType.CUSTOM))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(pid, id, 0))
+
+        val song = lib.playlist(pid)!!.items.single()
+        assertThat(song.phoneOnly).isTrue()
+        assertThat(song.spotifyId).isNull()
+        assertThat(song.youtubeId).isNull()
+        assertThat(lib.likes().single().s).isEqualTo(song)
+    }
+
     private suspend fun track(title: String, stashLiked: Boolean = false) = db.trackDao().insert(
         TrackEntity(title = title, artist = "Artist", stashLikedAt = if (stashLiked) 5L else null, source = MusicSource.SPOTIFY, isStreamable = true, canonicalTitle = canonTitle(title), canonicalArtist = "artist"),
     )

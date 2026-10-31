@@ -222,9 +222,9 @@ class RoomMirrorLibrary internal constructor(
         /** A playlist made from the mirror (spec §4.3); Library shows every `custom_%` playlist. */
         const val SOURCE_PREFIX = "custom_sync_"
 
-        /** Synced from Spotify or YouTube Music: it mirrors phone → web only and is read-only on the web (spec §2.4). */
+        /** Service-synced playlists mirror phone → web only and are read-only on the web (spec §2.4). */
         fun isSynced(p: PlaylistEntity): Boolean =
-            (p.source == MusicSource.SPOTIFY || p.source == MusicSource.YOUTUBE) &&
+            (p.source == MusicSource.SPOTIFY || p.source == MusicSource.YOUTUBE || p.source == MusicSource.SOUNDCLOUD) &&
                 !p.sourceId.startsWith("custom_") && !p.sourceId.startsWith("share:")
 
         fun nameOf(name: String) = name.trim().ifEmpty { "Playlist" }.let { com.stash.core.data.weblink.merge.FirstMerge.cutUnits(it, MirrorWire.NAME_MAX) }
