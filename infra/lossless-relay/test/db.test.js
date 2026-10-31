@@ -25,18 +25,21 @@ test("atomic selection spaces requests per account and applies safety caps to un
     assert.equal(await selectAccount(db, T0 + 3630, caps, null, labels, labels, labels), null);
 });
 
-test("last reserve follows jobavachess1 after every older designated account dies", async () => {
+test("last reserve waits until both jobavachess seats and older accounts die", async () => {
     const db = fakeD1();
     const old = ["acct-qobuz-cooldownchess-20261030", "acct-qobuz-cooldownchess2-20261030", "acct-qobuz-grifties1-20261030", "acct-qobuz-grifties2-20261030", "acct-qobuz-hippojobava-20261031"];
     const current = "acct-qobuz-jobavachess1-20261031";
+    const peer = "acct-qobuz-jobavachess2-20261031";
     const reserve = "acct-qobuz-hippojobava2-20261031";
-    await ensureAccounts(db, [...old, current, reserve]);
+    await ensureAccounts(db, [...old, current, peer, reserve]);
     await db.prepare("UPDATE accounts SET state='reserve' WHERE label=?1").bind(reserve).run();
     for (const label of old) await killAccount(db, label, "UserUnauthenticated");
     assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "reserve");
     await killAccount(db, current, "USER_BLOCKED");
+    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "reserve");
+    await killAccount(db, peer, "USER_BLOCKED");
     assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "live");
-    await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(current).run();
+    await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(peer).run();
     assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(reserve).first()).state, "reserve");
 });
 

@@ -84,6 +84,6 @@ crons = ["17 * * * *"]
 #   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
 #   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
 #   QOBUZ_ACCOUNTS_EXTRA  optional additive JSON array; lets the pool grow without replacing QOBUZ_ACCOUNTS.
-#   QOBUZ_ACCOUNTS_RECOVERED through QOBUZ_ACCOUNTS_RECOVERED_9 are optional additive JSON arrays.
+#   QOBUZ_ACCOUNTS_RECOVERED through QOBUZ_ACCOUNTS_RECOVERED_10 are optional additive JSON arrays.
 #   IP_SALT         random secret salting the stored network hash. Turns on the per-network caps above and the
 #                   IP column `npm run report` reads. Never the relay key (that one is public).

@@ -146,12 +146,14 @@ test("QOBUZ_ACCOUNTS_EXTRA accounts join the pool and can serve a miss", async (
     assert.deepEqual(await e.DB.prepare("SELECT label FROM accounts").all(), { results: [{ label: "extra" }] });
 });
 
-test("ninth recovered secret slot joins the pool", async () => {
-    const account = { label: "jobavachess1", token: "jobava-token", app_id: "222222222", app_secret: "jobava-secret" };
-    const e = env({ QOBUZ_ACCOUNTS: "[]", QOBUZ_ACCOUNTS_RECOVERED_9: JSON.stringify([account]) });
-    const q = qobuz([200, GOOD]);
-    assert.equal((await handle(mintReq(45, 27), e, q, NOW)).status, 200);
-    assert.equal(q.calls[0].init.headers["X-User-Auth-Token"], "jobava-token");
+test("new recovered secret slots join the pool", async () => {
+    for (const slot of [9, 10]) {
+        const account = { label: `jobavachess${slot}`, token: `jobava-token-${slot}`, app_id: "222222222", app_secret: "jobava-secret" };
+        const e = env({ QOBUZ_ACCOUNTS: "[]", [`QOBUZ_ACCOUNTS_RECOVERED_${slot}`]: JSON.stringify([account]) });
+        const q = qobuz([200, GOOD]);
+        assert.equal((await handle(mintReq(45, 27), e, q, NOW)).status, 200);
+        assert.equal(q.calls[0].init.headers["X-User-Auth-Token"], `jobava-token-${slot}`);
+    }
 });
 
 test("a dead account is retired and the next one serves the same request", async () => {

@@ -192,7 +192,7 @@ async function mint(request, url, env, fetchImpl, nowSec, ctx) {
     const accounts = parseAccounts(env);
     // Every label needs a D1 row BEFORE selection, or the LRU never reaches an account added to the
     // secret while the old ones are still under their caps. Once per isolate per secret value.
-    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || "", env.QOBUZ_ACCOUNTS_RECOVERED_4 || "", env.QOBUZ_ACCOUNTS_RECOVERED_5 || "", env.QOBUZ_ACCOUNTS_RECOVERED_6 || "", env.QOBUZ_ACCOUNTS_RECOVERED_7 || "", env.QOBUZ_ACCOUNTS_RECOVERED_8 || "", env.QOBUZ_ACCOUNTS_RECOVERED_9 || ""]);
+    const accountSecretVersion = JSON.stringify([env.QOBUZ_ACCOUNTS || "", env.QOBUZ_ACCOUNTS_EXTRA || "", env.QOBUZ_ACCOUNTS_RECOVERED || "", env.QOBUZ_ACCOUNTS_RECOVERED_2 || "", env.QOBUZ_ACCOUNTS_RECOVERED_3 || "", env.QOBUZ_ACCOUNTS_RECOVERED_4 || "", env.QOBUZ_ACCOUNTS_RECOVERED_5 || "", env.QOBUZ_ACCOUNTS_RECOVERED_6 || "", env.QOBUZ_ACCOUNTS_RECOVERED_7 || "", env.QOBUZ_ACCOUNTS_RECOVERED_8 || "", env.QOBUZ_ACCOUNTS_RECOVERED_9 || "", env.QOBUZ_ACCOUNTS_RECOVERED_10 || ""]);
     if (ensured.get(env.DB) !== accountSecretVersion) {
         await ensureAccounts(env.DB, accounts.map((a) => a.label));
         ensured.set(env.DB, accountSecretVersion);
@@ -469,7 +469,7 @@ function vars(env) {
 
 /** Account secrets are operator-written JSON arrays; malformed values degrade to no entries, not a 500 loop. */
 function parseAccounts(env) {
-    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4, env.QOBUZ_ACCOUNTS_RECOVERED_5, env.QOBUZ_ACCOUNTS_RECOVERED_6, env.QOBUZ_ACCOUNTS_RECOVERED_7, env.QOBUZ_ACCOUNTS_RECOVERED_8, env.QOBUZ_ACCOUNTS_RECOVERED_9].flatMap((raw) => {
+    return [env.QOBUZ_ACCOUNTS, env.QOBUZ_ACCOUNTS_EXTRA, env.QOBUZ_ACCOUNTS_RECOVERED, env.QOBUZ_ACCOUNTS_RECOVERED_2, env.QOBUZ_ACCOUNTS_RECOVERED_3, env.QOBUZ_ACCOUNTS_RECOVERED_4, env.QOBUZ_ACCOUNTS_RECOVERED_5, env.QOBUZ_ACCOUNTS_RECOVERED_6, env.QOBUZ_ACCOUNTS_RECOVERED_7, env.QOBUZ_ACCOUNTS_RECOVERED_8, env.QOBUZ_ACCOUNTS_RECOVERED_9, env.QOBUZ_ACCOUNTS_RECOVERED_10].flatMap((raw) => {
         try {
             const a = JSON.parse(raw || "[]");
             return Array.isArray(a) ? a.filter((x) => x && x.label && x.token && x.app_id && x.app_secret) : [];
