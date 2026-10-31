@@ -1,6 +1,7 @@
 package com.stash.feature.settings.cloud
 
 import android.widget.Toast
+import androidx.annotation.DrawableRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
@@ -44,9 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,12 +65,20 @@ import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.data.cloud.provider.gdrive.GoogleDriveProvider
 import com.stash.data.cloud.upload.UploadStatus
+import com.stash.core.ui.R as UiR
 
 /** Brand accents, as the Discord card does inline. */
 private fun accentOf(provider: CloudProvider): Color = when (provider) {
     CloudProvider.DROPBOX -> Color(0xFF0061FE)
     CloudProvider.ONEDRIVE -> Color(0xFF0078D4)
     CloudProvider.GOOGLE_DRIVE -> Color(0xFF1FA463)
+}
+
+@DrawableRes
+private fun logoOf(provider: CloudProvider): Int = when (provider) {
+    CloudProvider.DROPBOX -> UiR.drawable.ic_brand_dropbox
+    CloudProvider.ONEDRIVE -> UiR.drawable.ic_brand_onedrive
+    CloudProvider.GOOGLE_DRIVE -> UiR.drawable.ic_brand_google_drive
 }
 
 /**
@@ -115,7 +125,7 @@ fun CloudAccountsSection(viewModel: CloudStorageViewModel) {
         val row = accounts.firstOrNull { it.account.provider == provider }
         AccountConnectionCard(
             serviceName = provider.displayName,
-            icon = Icons.Rounded.Cloud,
+            icon = ImageVector.vectorResource(logoOf(provider)),
             accentColor = accentOf(provider),
             authState = row?.let { AuthState.Connected(UserInfo(it.account.id.toString(), it.account.email ?: it.account.displayName)) }
                 ?: AuthState.NotConnected,

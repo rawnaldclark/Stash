@@ -46,7 +46,7 @@ fun socialIconFor(kind: String): Int? = when (kind.lowercase()) {
     "tiktok" -> R.drawable.ic_social_tiktok
     "youtube" -> R.drawable.ic_social_youtube
     "facebook" -> R.drawable.ic_social_facebook
-    "soundcloud" -> R.drawable.ic_social_soundcloud
+    "soundcloud" -> com.stash.core.ui.R.drawable.ic_brand_soundcloud
     "bandcamp" -> R.drawable.ic_social_bandcamp
     else -> null // website + unknown -> Material globe fallback
 }
