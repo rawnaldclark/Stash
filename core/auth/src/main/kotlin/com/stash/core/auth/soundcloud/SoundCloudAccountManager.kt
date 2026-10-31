@@ -21,10 +21,39 @@ import kotlinx.coroutines.withContext
 class SoundCloudAccountManager @Inject constructor(
     private val store: EncryptedTokenStore,
     private val client: SoundCloudClient,
+    private val browser: SoundCloudBrowserSession? = null,
 ) {
     private val lock = Mutex()
+    private val renewal = Mutex()
     private var generation = 0L
     val session = store.soundCloudSession.flowOn(Dispatchers.IO)
+
+    suspend fun accessToken(): String? = withContext(Dispatchers.IO) {
+        renewal.withLock {
+            val current = session.first() ?: return@withLock null
+            val access = current.oauthToken ?: return@withLock null
+            val expires = client.tokenExpiresAt(access)
+            if (expires == null || expires > System.currentTimeMillis() + 60_000) return@withLock access
+            val refresh = current.refreshToken ?: browser?.refreshToken(access)
+                ?: throw com.stash.data.soundcloud.SoundCloudException(401)
+            // A refresh rotates the server credential. Finish the bounded rotation even if playback
+            // is cancelled, otherwise the valid replacement could be lost after the server accepts it.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                kotlinx.coroutines.withTimeout(65_000) {
+                    val fresh = client.refreshCredentials(access, refresh)
+                    val user = client.authenticatedUser(fresh.accessToken)
+                    check(user.id == current.userId) { "SoundCloud refreshed account did not match" }
+                    lock.withLock account@ {
+                        if (session.first()?.connectionId != current.connectionId) return@account null
+                        store.saveSoundCloudSession(current.copy(oauthToken = fresh.accessToken, refreshToken = fresh.refreshToken))
+                        // Keep the account lock until browser rotation finishes; disconnect cannot interleave.
+                        browser?.update(access, fresh)
+                        fresh.accessToken
+                    }
+            }
+            }
+        }
+    }
 
     suspend fun connect(token: String): Boolean = connectValidated(token) { client.validateToken(token) }
 
@@ -64,11 +93,12 @@ class SoundCloudAccountManager @Inject constructor(
                 // Preserve a working account on validation/network failure. Never log the token.
                 return@withContext false
             }
+            val refresh = token?.let { browser?.refreshToken(it) }
             lock.withLock {
                 if (intent != generation) return@withLock false
                 store.saveSoundCloudSession(SoundCloudSession(
                     userId = user.id, displayName = user.name, avatarUrl = user.avatarUrl,
-                    oauthToken = token, connectionId = UUID.randomUUID().toString(),
+                    oauthToken = token, connectionId = UUID.randomUUID().toString(), refreshToken = refresh,
                 ))
                 true
             }

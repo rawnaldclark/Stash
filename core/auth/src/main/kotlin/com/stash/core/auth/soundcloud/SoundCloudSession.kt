@@ -11,6 +11,7 @@ data class SoundCloudSession(
     val oauthToken: String? = null,
     /** Changes on every connection, even reconnecting the same account. */
     val connectionId: String,
+    val refreshToken: String? = null,
 ) {
     override fun toString(): String = "SoundCloudSession(publicOnly=${oauthToken == null})"
 }

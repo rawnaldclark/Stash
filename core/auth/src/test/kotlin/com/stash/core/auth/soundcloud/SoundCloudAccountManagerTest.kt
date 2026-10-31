@@ -17,6 +17,82 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SoundCloudAccountManagerTest {
+    @Test fun `simultaneous token requests share one rotation`() = runTest {
+        stored.value = old.copy(refreshToken = "refresh-old")
+        every { client.tokenExpiresAt("private-secret") } returns 0L
+        every { client.tokenExpiresAt("fresh") } returns Long.MAX_VALUE
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        coEvery { client.refreshCredentials(any(), any()) } coAnswers {
+            started.complete(Unit); release.await(); com.stash.data.soundcloud.SoundCloudCredentials("fresh", "rotated")
+        }
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("1", "Old", null)
+        val first = async { manager.accessToken() }; val second = async { manager.accessToken() }
+        started.await(); release.complete(Unit)
+        assertEquals("fresh", first.await()); assertEquals("fresh", second.await())
+        io.mockk.coVerify(exactly = 1) { client.refreshCredentials(any(), any()) }
+    }
+
+    @Test fun `cancelling playback does not lose a rotated credential`() = runTest {
+        stored.value = old.copy(refreshToken = "refresh-old")
+        every { client.tokenExpiresAt(any()) } returns 0L
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>(); val saved = CompletableDeferred<Unit>()
+        coEvery { client.refreshCredentials(any(), any()) } coAnswers {
+            started.complete(Unit); release.await(); com.stash.data.soundcloud.SoundCloudCredentials("fresh", "rotated")
+        }
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("1", "Old", null)
+        coEvery { store.saveSoundCloudSession(any()) } answers { stored.value = firstArg(); saved.complete(Unit); Unit }
+        val result = async { manager.accessToken() }
+        started.await(); result.cancel(); release.complete(Unit); saved.await(); result.join()
+        assertEquals("rotated", stored.value!!.refreshToken)
+    }
+    @Test fun `expired credentials rotate atomically without changing account generation`() = runTest {
+        stored.value = old.copy(refreshToken = "refresh-old")
+        every { client.tokenExpiresAt(any()) } returns 0L
+        coEvery { client.refreshCredentials("private-secret", "refresh-old") } returns com.stash.data.soundcloud.SoundCloudCredentials("fresh", "refresh-new")
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("1", "Old", null)
+        assertEquals("fresh", manager.accessToken())
+        assertEquals("old", stored.value!!.connectionId)
+        assertEquals("refresh-new", stored.value!!.refreshToken)
+    }
+
+    @Test fun `upgrade adopts a matching browser refresh credential`() = runTest {
+        val browser = mockk<SoundCloudBrowserSession>(relaxed = true)
+        coEvery { browser.refreshToken("private-secret") } returns "browser-refresh"
+        every { client.tokenExpiresAt(any()) } returns 0L
+        coEvery { client.refreshCredentials("private-secret", "browser-refresh") } returns com.stash.data.soundcloud.SoundCloudCredentials("fresh", "rotated")
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("1", "Old", null)
+        assertEquals("fresh", SoundCloudAccountManager(store, client, browser).accessToken())
+        assertEquals("rotated", stored.value!!.refreshToken)
+    }
+
+    @Test fun `refresh cannot replace a disconnected account`() = runTest {
+        stored.value = old.copy(refreshToken = "refresh-old")
+        every { client.tokenExpiresAt(any()) } returns 0L
+        val started = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        coEvery { client.refreshCredentials(any(), any()) } coAnswers {
+            started.complete(Unit); release.await(); com.stash.data.soundcloud.SoundCloudCredentials("fresh", "rotated")
+        }
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("1", "Old", null)
+        val result = async { manager.accessToken() }
+        started.await(); manager.disconnect(); release.complete(Unit)
+        assertNull(result.await()); assertNull(stored.value)
+    }
+
+    @Test fun `another accounts refresh response never replaces the current session`() = runTest {
+        stored.value = old.copy(refreshToken = "refresh-old")
+        every { client.tokenExpiresAt(any()) } returns 0L
+        coEvery { client.refreshCredentials(any(), any()) } returns com.stash.data.soundcloud.SoundCloudCredentials("fresh", "rotated")
+        coEvery { client.authenticatedUser("fresh") } returns SoundCloudUser("2", "Other", null)
+        try { manager.accessToken(); fail("Wrong account accepted") } catch (_: IllegalStateException) { }
+        assertEquals("private-secret", stored.value!!.oauthToken)
+    }
+
+    @Test fun `unexpired credentials do not request rotation`() = runTest {
+        every { client.tokenExpiresAt(any()) } returns Long.MAX_VALUE
+        assertEquals("private-secret", manager.accessToken())
+        io.mockk.coVerify(exactly = 0) { client.refreshCredentials(any(), any()) }
+    }
+
     private val old = SoundCloudSession("1", "Old", oauthToken = "private-secret", connectionId = "old")
     private val stored = MutableStateFlow<SoundCloudSession?>(old)
     private val store = mockk<EncryptedTokenStore> {

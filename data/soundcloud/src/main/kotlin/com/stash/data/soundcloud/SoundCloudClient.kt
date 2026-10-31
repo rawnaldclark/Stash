@@ -21,6 +21,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.FormBody
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -41,6 +42,10 @@ data class SoundCloudTrack(
     val authorization: String?,
 )
 data class SoundCloudStream(val url: String, val mimeType: String, val hls: Boolean, val preview: Boolean)
+
+data class SoundCloudCredentials(val accessToken: String, val refreshToken: String) {
+    override fun toString() = "SoundCloudCredentials(redacted)"
+}
 
 data class SoundCloudPlaylist(val id: String, val title: String, val permalink: String,
     val artworkUrl: String?, val system: Boolean)
@@ -72,6 +77,35 @@ class SoundCloudClient(
         val payload = buildJsonObject { putJsonObject("session") { put("access_token", token) } }.toString()
         api("https://api-auth.soundcloud.com/connect/session".toHttpUrl(), null, payload)
         return user(api("https://api-v2.soundcloud.com/me".toHttpUrl(), token))
+    }
+
+    fun tokenExpiresAt(token: String): Long? = tokenClaims(token)?.get("exp")?.let { (it as? JsonPrimitive)?.longOrNull }?.times(1000)
+
+    private fun tokenClaims(token: String): JsonObject? = runCatching {
+        val payload = token.split('.').takeIf { it.size == 3 }?.get(1) ?: return null
+        json.parseToJsonElement(String(java.util.Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)) as? JsonObject
+    }.getOrNull()
+
+    suspend fun refreshCredentials(accessToken: String, refreshToken: String): SoundCloudCredentials {
+        val id = tokenClaims(accessToken)?.string("client_id")?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,128}")) }
+            ?: throw SoundCloudException()
+        require(refreshToken.isNotBlank() && refreshToken.length <= 16384 && refreshToken.none { it.isISOControl() })
+        val body = FormBody.Builder().add("client_id", id).add("grant_type", "refresh_token")
+            .add("refresh_token", refreshToken).build()
+        val reply = request(Request.Builder().url("https://secure.soundcloud.com/oauth/token").post(body).build())
+        if (reply.code !in 200..299) throw SoundCloudException(reply.code)
+        val value = json.parseToJsonElement(reply.body) as? JsonObject ?: throw SoundCloudException()
+        fun credential(name: String) = value.string(name)?.takeIf {
+            it.isNotBlank() && it.length <= 16384 && it.none { c -> c.isISOControl() || c == ';' }
+        } ?: throw SoundCloudException()
+        return SoundCloudCredentials(credential("access_token"), credential("refresh_token"))
+    }
+
+    suspend fun authenticatedUser(token: String): SoundCloudUser {
+        val reply = request(Request.Builder().url("https://api-v2.soundcloud.com/me")
+            .header("Authorization", "OAuth $token").build())
+        if (reply.code !in 200..299) throw SoundCloudException(reply.code)
+        return user(json.parseToJsonElement(reply.body) as? JsonObject ?: throw SoundCloudException())
     }
 
     suspend fun track(id: String, token: String? = null): SoundCloudTrack {
