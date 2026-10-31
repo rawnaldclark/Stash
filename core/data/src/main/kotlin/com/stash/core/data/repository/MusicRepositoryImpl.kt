@@ -1532,8 +1532,9 @@ class MusicRepositoryImpl @Inject constructor(
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     override suspend fun cleanOrphanedMixTracks(): Int {
-        // ACCUMULATE = never auto-delete. While any source accumulates, the
-        // library is append-only — a deselected playlist, a rotated mix, or a
+        // ACCUMULATE = never auto-delete. While any account that counts
+        // accumulates (signed in, or its playlists still here; see anyAccumulate),
+        // the library is append-only — a deselected playlist, a rotated mix, or a
         // disconnected source must not delete a downloaded track or its files.
         // This single gate covers BOTH callers (DiffWorker per-sync + the startup
         // sweep). See SyncMode / the refresh-accumulate design.
