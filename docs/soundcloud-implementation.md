@@ -344,3 +344,29 @@ Switched to Download mode, selected that downloaded row, and verified the active
 reported PLAYING with advancing position and the full 79,088 ms buffered. Download mode also hid
 the current undownloaded SoundCloud Likes. Paused playback and restored the owner's Stream only
 setting afterward. Kept the downloaded song; no existing downloads or playlists were removed.
+
+## Link and interruption checks (2026-10-31)
+
+- Flickermood re-paste reports Already all in your library; its existing Songs from links membership
+  is reused. The import's default Download-on setting downloaded the existing song successfully.
+- Imported the authenticated Your Mix 1 system-playlist URL into its separate local link copy:
+  30 members. Re-pasting offers Add what's new and reports Already all in your library after adding.
+  A later run explicitly verified the switch's checked=false state before re-adding; the local copy
+  retains keep_offline=false. Initial label taps did not toggle the switch and started downloads;
+  stopped that playlist's Download button and retained completed files. No existing songs were deleted.
+- Force-stopped during PlaylistFetchWorker. On restart WorkManager retried fetch, then DiffWorker
+  and SyncFinalizeWorker succeeded: two synced playlists, zero new tracks and zero failures.
+- Added introduction through its exact upload link with Download on and force-stopped during its
+  native download. Startup reset one stale IN_PROGRESS row to PENDING, retried it and saved the full
+  2,080,089-byte M4A. An earlier interrupted mix download left a 14 MB .part/.ytdl pair in cache;
+  FileOrganizer already sweeps files older than 24 hours once per process on temp-directory access.
+  Recovery does not reuse a previous attempt's partial file.
+- Found and removed duplicate synced-ago text in the Sync hero: librarySummary now supplies only
+  counts; SyncedHero owns the single timestamp. Full debug build succeeded; fresh APK is 193,083,237
+  bytes (2026-10-31 04:15:21), installed successfully on Pixel 5.
+- Android SEND invocation was blocked by tool execution policy; share-receiver device verification
+  remains open. Paste entry points above were exercised through the real UI.
+
+Remaining device gates: actual Android Auto, Go+ subscriber access, low storage, long-pause/seek
+expiry, shared-link entry and full backup/mirroring round-trip. Keep the PR draft; do not manufacture
+low storage or restore over the owner's library just to close a checklist.

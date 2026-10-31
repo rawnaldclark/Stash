@@ -396,17 +396,12 @@ private fun librarySummary(uiState: SyncUiState, rows: List<SyncPlaylistRow>): S
     val songs = uiState.syncStatus.totalTracks
     val playlists = rows.count { it.isOwnPlaylist() }
     val mixes = rows.count { it.isMix() }
-    val counts = stringResource(
+    return stringResource(
         R.string.sync_home_summary,
         pluralStringResource(R.plurals.sync_songs_count, songs, songs),
         pluralStringResource(R.plurals.sync_playlists_count, playlists, playlists),
         pluralStringResource(R.plurals.sync_mixes_count, mixes, mixes),
     )
-    return if (uiState.lastSyncRelativeTime.isBlank()) {
-        counts
-    } else {
-        counts + " · " + stringResource(R.string.sync_home_synced_ago, uiState.lastSyncRelativeTime.lowercase())
-    }
 }
 
 @Composable
