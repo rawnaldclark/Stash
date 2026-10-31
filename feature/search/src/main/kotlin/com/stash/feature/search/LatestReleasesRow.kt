@@ -32,15 +32,19 @@ fun LatestReleasesRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(releases, key = { it.album.id }) { release ->
+            // The year alone, a Qobuz album's full date included, so the cards read alike.
+            val year = release.year.toString()
+            val kind = release.kind?.let { stringResource(it.label) }
             AlbumSquareCard(
                 title = release.album.title,
                 // The card's second line reads "2021 • Single". The row mixes albums with
                 // singles, so it says which; on the artist's own page their name would only
                 // repeat (Home's Qobuz rows put a track count there for the same reason).
-                artist = release.kind?.let { stringResource(it.label) }.orEmpty(),
+                // A card with no type (a profile cached before types were kept, or a word
+                // YouTube adds later) shows the year alone, not a dangling "2021 •".
+                artist = kind ?: year,
                 thumbnailUrl = release.album.thumbnailUrl,
-                // The year alone, a Qobuz album's full date included, so the cards read alike.
-                year = release.year.toString(),
+                year = if (kind != null) year else null,
                 onClick = { onClick(release.album) },
             )
         }
