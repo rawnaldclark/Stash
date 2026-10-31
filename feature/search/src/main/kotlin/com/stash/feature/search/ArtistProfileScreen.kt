@@ -140,6 +140,10 @@ fun ArtistProfileScreen(
             listState.animateScrollToItem(target)
         }
     }
+    // The rail's scroll to the album and its ring, once too. Kept here, not in the rail: the
+    // rail is composed afresh on Back from an album and whenever it scrolls back into view, and
+    // each time it jumped the user back to this album (saveable, so Back keeps it).
+    var railFocusShown by rememberSaveable { mutableStateOf(false) }
 
     // The hero's photo runs under the status bar, so this screen takes no top inset; the
     // hero and the collapsed bar below pad for it themselves.
@@ -217,6 +221,8 @@ fun ArtistProfileScreen(
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                         focus = focus,
+                        focusShown = railFocusShown,
+                        onFocusShown = { railFocusShown = true },
                     )
                 }
                 ArtistProfileStatus.Fresh,
@@ -256,6 +262,8 @@ fun ArtistProfileScreen(
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                         focus = focus,
+                        focusShown = railFocusShown,
+                        onFocusShown = { railFocusShown = true },
                     )
                 }
             }
@@ -339,6 +347,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     focus: AlbumFocusTarget?,
+    focusShown: Boolean,
+    onFocusShown: () -> Unit,
 ) {
     if (state.popular.isNotEmpty()) {
         item { SectionHeader(title = "Popular") }
@@ -368,6 +378,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 albums = state.albums,
                 onClick = onNavigateToAlbum,
                 focusIndex = focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index,
+                focusShown = focusShown,
+                onFocusShown = onFocusShown,
             )
         }
     }
@@ -378,6 +390,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                 singles = state.singles,
                 onClick = onNavigateToAlbum,
                 focusIndex = focus?.takeIf { it.shelf == AlbumShelf.SINGLES }?.index,
+                focusShown = focusShown,
+                onFocusShown = onFocusShown,
             )
         }
     }
