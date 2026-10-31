@@ -60,6 +60,8 @@ class AlbumBackCoverRepositoryTest {
         val discogsMaster: Long? = null,
         /** The Discogs releases the group's releases link to, by MusicBrainz release; none by default. */
         val discogsReleases: Map<String, Long> = emptyMap(),
+        /** Releases the browse's archive summary lists with a front alone; none by default (no summary). */
+        val frontOnly: Set<String> = emptySet(),
     ) : MusicBrainzClient {
         var calls = 0
         var browses = 0
@@ -104,7 +106,8 @@ class AlbumBackCoverRepositoryTest {
             if (failing) return null
             val items = releases.joinToString(",") { (id, format) ->
                 val rel = discogsReleases[id]?.let { """{"type":"discogs","url":{"resource":"https://www.discogs.com/release/$it"}}""" }
-                """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}],"relations":[${rel.orEmpty()}]}"""
+                val art = if (id in frontOnly) ""","cover-art-archive":{"artwork":true,"count":1,"front":true,"back":false}""" else ""
+                """{"id":"$id","media":[{"format":"${format.replace("\"", "\\\"")}"}],"relations":[${rel.orEmpty()}]$art}"""
             }
             return json("""{"releases":[$items]}""")
         }
@@ -401,6 +404,46 @@ class AlbumBackCoverRepositoryTest {
         }
         assertThat(AlbumBackCoverRepository(dao, FakeMusicBrainz(), caa, FakeDiscogs()).also { it.now = { clock } }.resolve(NEVERMIND)).isNull()
         assertThat(dao.get(NEVERMIND.key)).isNull()
+    }
+
+    @Test fun `a front-only main edition plus failing candidates is a failed lookup, not a cached miss`() = runTest {
+        // good kid, m.A.A.d city (2026-10-31): the main edition holds a front alone, and archive.org
+        // failed the listing of every other release. Stored, that miss hid the back for 30 days.
+        val dao = FakeDao()
+        val caa = object : CoverArtArchiveClient {
+            var down = true
+            override suspend fun release(mbid: String): CaaListing? = when {
+                mbid == "main-1" -> listing(front())
+                down -> null
+                else -> listing(front(), back("https://caa/vinyl-back.jpg"))
+            }
+            override suspend fun releaseGroup(mbid: String): CaaListing? = CaaListing(listOf(front()), "main-1")
+        }
+        val repo = AlbumBackCoverRepository(dao, FakeMusicBrainz(), caa, FakeDiscogs(), FakeSources(on = false))
+            .also { it.now = { clock } }
+
+        assertThat(repo.resolve(NEVERMIND)).isNull()
+        assertThat(dao.get(NEVERMIND.key)).isNull()
+
+        // Past the backoff, with archive.org answering again, the back is found.
+        clock += AlbumBackCoverRepository.FAILURE_BACKOFF_MS + 1
+        caa.down = false
+        assertThat(repo.resolve(NEVERMIND)?.back).isEqualTo("https://caa/vinyl-back.jpg")
+    }
+
+    @Test fun `a main edition MusicBrainz lists with a front alone isn't read`() = runTest {
+        // good kid, m.A.A.d city (2026-10-31): its main edition is a digital release with a front
+        // alone; reading it could only cost a call.
+        val mb = FakeMusicBrainz(
+            releases = listOf("digital-1" to "Digital Media", "vinyl-1" to "12\" Vinyl"),
+            frontOnly = setOf("digital-1"),
+        )
+        val caa = FakeCoverArt(
+            canonical = "digital-1",
+            listings = mapOf("vinyl-1" to listing(front(), back("https://caa/vinyl-back.jpg"))),
+        )
+        assertThat(repo(mb = mb, caa = caa).resolve(NEVERMIND)?.back).isEqualTo("https://caa/vinyl-back.jpg")
+        assertThat(caa.asked).containsExactly("group:rg-1", "vinyl-1").inOrder()
     }
 
     @Test fun `without an ISRC the album is found by its title, edition and all`() = runTest {
