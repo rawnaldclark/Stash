@@ -288,16 +288,25 @@ private fun HideButton(onHide: () -> Unit, label: String = stringResource(R.stri
     }
 }
 
-/** The sources that can come in, as small chips (HomeCard.svelte's `rc-chips`): Spotify's export, Last.fm, Stash's own plays. */
+/**
+ * The sources that can come in, as small chips (HomeCard.svelte's `rc-chips`): Spotify's export, Last.fm, Stash's own plays.
+ * A chip that doesn't fit goes to the next line whole: in a Row, a large font broke "Stash" into three lines on a Pixel 6 Pro.
+ */
 @Composable
 private fun SourceChips() {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.clearAndSetSemantics { }) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.clearAndSetSemantics { },
+    ) {
         val names = listOf(R.string.record_source_spotify, R.string.record_source_lastfm, R.string.record_source_stash)
         for (name in names.map { stringResource(it) }) {
             Text(
                 name,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                 color = Color.White.copy(alpha = 0.82f),
+                maxLines = 1,
+                softWrap = false,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(Color.White.copy(alpha = 0.12f))
