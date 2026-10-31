@@ -9,6 +9,34 @@ import {
 const CAPS = { hourly: 2, daily: 3 };
 const T0 = 1788282000; // 2026-09-01T17:00:00Z
 
+test("last standby waits until every older designated account is dead", async () => {
+    const db = fakeD1();
+    const others = ["acct-qobuz-cooldownchess-20261030", "acct-qobuz-cooldownchess2-20261030", "acct-qobuz-grifties1-20261030", "acct-qobuz-grifties2-20261030", "acct-qobuz-hippojobava-20261031"];
+    const standby = "acct-qobuz-hippojobava2-20261031";
+    await ensureAccounts(db, [...others, standby]);
+    await db.prepare("UPDATE accounts SET state='reserve' WHERE label=?1").bind(standby).run();
+    for (const label of others) {
+        await killAccount(db, label, "UserUnauthenticated");
+        const dead = (await db.prepare("SELECT COUNT(*) AS n FROM accounts WHERE state='dead' AND label IN (SELECT value FROM json_each(?1))").bind(JSON.stringify(others)).first()).n;
+        assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(standby).first()).state, dead === others.length ? "live" : "reserve");
+    }
+    await db.prepare("UPDATE accounts SET state='live' WHERE label=?1").bind(others[4]).run();
+    assert.equal((await db.prepare("SELECT state FROM accounts WHERE label=?1").bind(standby).first()).state, "reserve");
+});
+
+test("fifth and sixth account overrides apply their own caps", async () => {
+    for (const suffix of [5, 6]) {
+        const db = fakeD1();
+        await ensureAccounts(db, ["new"]);
+        const caps = { hourly: 1, daily: 1, [`overrideLabel${suffix}`]: "new", [`overrideHourly${suffix}`]: 2, [`overrideDaily${suffix}`]: 3 };
+        assert.equal(await selectAccount(db, T0, caps), "new");
+        assert.equal(await selectAccount(db, T0 + 1, caps), "new");
+        assert.equal(await selectAccount(db, T0 + 2, caps), null);
+        assert.equal(await selectAccount(db, T0 + 3600, caps), "new");
+        assert.equal(await selectAccount(db, T0 + 3601, caps), null);
+    }
+});
+
 test("second standby activates only after all three designated accounts are dead", async () => {
     for (const order of [[0, 1, 2], [2, 1, 0], [1, 0, 2], [1, 2, 0], [2, 0, 1], [0, 2, 1]]) {
         const db = fakeD1();
