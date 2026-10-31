@@ -9,9 +9,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Stream-URL resolver for Tidal lossless via the user's self-hosted BitChord
- * Lossless Relay ([BitchordClient]). The second lossless rung: after qbdlx
- * (Qobuz), before the lossy JioSaavn / YouTube rungs.
+ * Stream-URL resolver for Tidal lossless via a BitChord Lossless Relay
+ * ([BitchordClient]): the user's self-hosted one, or Stash's. The second lossless
+ * rung: after qbdlx (Qobuz), before the lossy JioSaavn / YouTube rungs. The user's
+ * own server, with none of their own Qobuz set up, leads instead ([resolveLossless]).
  *
  * Returns either a progressive FLAC URL or, for most Hi-Res tracks, a DASH MPD
  * ([StreamUrl.isDash]); the server patches the fMP4 init segment's zero sample
@@ -98,13 +99,23 @@ class TidalStreamResolver @Inject constructor(
         explicit = explicit,
     ).forLibrarySource(source, musicVideoType, hasVideoId = !youtubeId.isNullOrBlank())
 
-    suspend fun resolve(track: TrackEntity): StreamUrl? {
+    suspend fun resolve(track: TrackEntity): StreamUrl? = resolve(track, losslessOnly = false)
+
+    /**
+     * [resolve] without the AAC fallback: Tidal's FLAC or nothing. For the user's own server
+     * leading the chain ahead of Qobuz ([StreamSourceRegistry]): there, an AAC answer for a
+     * CD-only song would stand in for a FLAC that Qobuz still has. The AAC is asked for after
+     * Qobuz has missed too, through [resolve].
+     */
+    suspend fun resolveLossless(track: TrackEntity): StreamUrl? = resolve(track, losslessOnly = true)
+
+    private suspend fun resolve(track: TrackEntity, losslessOnly: Boolean): StreamUrl? {
         if (!client.isConfigured()) return null
         val query = track.toQuery()
         // allowAac: a CD-only track streams as Tidal's 320 kbps AAC rather than
         // falling through to the lossy rungs below (JioSaavn / YouTube) — unless
         // the user switched "Tidal AAC when no FLAC" off (Tidal = FLAC only).
-        val allowAac = losslessPrefs.tidalAacFallbackNow()
+        val allowAac = !losslessOnly && losslessPrefs.tidalAacFallbackNow()
         val s = client.resolve(query, allowAac = allowAac) ?: run {
             Log.d(TAG, "no_result id=${track.id}")
             return null

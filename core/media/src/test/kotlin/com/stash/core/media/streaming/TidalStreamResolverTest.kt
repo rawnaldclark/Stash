@@ -28,6 +28,17 @@ class TidalStreamResolverTest {
         }
     }
 
+    /** Leading the chain, ahead of Qobuz, an AAC answer would stand in for a FLAC Qobuz still has. */
+    @Test
+    fun `the lossless-only resolve never asks for AAC, whatever the switch says`() = runTest {
+        val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns true }
+
+        TidalStreamResolver(client, prefs).resolveLossless(TrackEntity(title = "Get Lucky", artist = "Daft Punk"))
+
+        coVerify(exactly = 1) { client.resolve(any(), allowAac = false) }
+        coVerify(exactly = 0) { client.resolve(any(), allowAac = true) }
+    }
+
     private val track = TrackEntity(title = "Get Lucky", artist = "Daft Punk")
     private val prefs: LosslessSourcePreferences = mockk { coEvery { tidalAacFallbackNow() } returns false }
 
