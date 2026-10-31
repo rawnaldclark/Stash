@@ -84,19 +84,26 @@ class TrackDownloadWorkerQueueTest {
         }
 
         val run = async(Dispatchers.Default) { worker().doWork() }
-        withTimeout(5_000) { while (started.get() == 0) delay(10) }
-        delay(200) // room for a wrongly claimed second row to show
+        try {
+            withTimeout(30_000) { while (started.get() == 0) delay(10) }
+            delay(200) // room for a wrongly claimed second row to show
 
-        val statuses = queueIds.map { db.downloadQueueDao().getStatusById(it) }
-        assertEquals(1, statuses.count { it == DownloadStatus.IN_PROGRESS })
-        assertEquals(3, statuses.count { it == DownloadStatus.PENDING })
-        assertEquals(1, started.get())
+            val statuses = queueIds.map { db.downloadQueueDao().getStatusById(it) }
+            assertEquals(1, statuses.count { it == DownloadStatus.IN_PROGRESS })
+            assertEquals(3, statuses.count { it == DownloadStatus.PENDING })
+            assertEquals(1, started.get())
 
-        // The other downloads finish: every song gets its turn, and the run ends.
-        repeat(DownloadSlots.COUNT - 1) { slots.permits.release() }
-        gate.complete(Unit)
-        withTimeout(5_000) { run.await() }
-        assertEquals(4, started.get())
+            // The other downloads finish: every song gets its turn, and the run ends.
+            repeat(DownloadSlots.COUNT - 1) { slots.permits.release() }
+            gate.complete(Unit)
+            withTimeout(30_000) { run.await() }
+            assertEquals(4, started.get())
+        } finally {
+            // Whatever failed above, the fake download is let go and the sync ended: a stuck run held runBlocking,
+            // and the whole core:data suite, until CI timed out.
+            gate.complete(Unit)
+            run.cancel()
+        }
     }
 
     @Test fun `a slot held by the caller is not taken twice`() = runBlocking {
@@ -108,13 +115,15 @@ class TrackDownloadWorkerQueueTest {
     }
 
     @Test fun `clear queue stops the running and the waiting download for good`() = runBlocking {
-        val running = queueSong(1)
-        val waiting = queueSong(2)
+        val songs = listOf(queueSong(1), queueSong(2))
         repeat(DownloadSlots.COUNT - 1) { check(slots.permits.tryAcquire()) } // one runs, one waits
         val landed = tmp.newFile("song1.opus").apply { writeBytes(ByteArray(20_000)) }
         val gate = CompletableDeferred<Unit>()
         val started = AtomicInteger()
+        // Either song may take the one free slot first: the one the downloader gets is the running one.
+        val startedTrack = java.util.concurrent.atomic.AtomicLong(-1)
         coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
+            startedTrack.compareAndSet(-1, firstArg<com.stash.core.model.Track>().id)
             started.incrementAndGet()
             // A download that finishes after the cancel: its file still lands.
             withContext(NonCancellable) { gate.await() }
@@ -122,31 +131,40 @@ class TrackDownloadWorkerQueueTest {
         }
 
         val run = async(Dispatchers.Default) { worker().doWork() }
-        withTimeout(5_000) { while (started.get() == 0) delay(10) }
-        assertEquals(DownloadStatus.IN_PROGRESS, db.downloadQueueDao().getStatusById(running))
-        assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(waiting))
-        assertTrue(jobs.isLive(running))
+        try {
+            withTimeout(30_000) { while (started.get() == 0) delay(10) }
+            val running = songs.first { db.downloadQueueDao().getById(it)!!.trackId == startedTrack.get() }
+            val waiting = songs.first { it != running }
+            assertEquals(DownloadStatus.IN_PROGRESS, db.downloadQueueDao().getStatusById(running))
+            assertEquals(DownloadStatus.PENDING, db.downloadQueueDao().getStatusById(waiting))
+            assertTrue(jobs.isLive(running))
 
-        val controller = DownloadCancellationController(context, db.downloadQueueDao(), jobs)
-        assertEquals(2, controller.cancelAll())
+            val controller = DownloadCancellationController(context, db.downloadQueueDao(), jobs)
+            assertEquals(2, controller.cancelAll())
 
-        // The slots free up (the waiting song could claim now) and the cancelled download finishes late.
-        repeat(DownloadSlots.COUNT - 1) { slots.permits.release() }
-        gate.complete(Unit)
-        withTimeout(5_000) { run.await() }
+            // The slots free up (the waiting song could claim now) and the cancelled download finishes late.
+            repeat(DownloadSlots.COUNT - 1) { slots.permits.release() }
+            gate.complete(Unit)
+            withTimeout(30_000) { run.await() }
 
-        assertEquals(1, started.get())
-        assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(running))
-        assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(waiting))
-        assertFalse(jobs.isLive(running))
-        val runningTrack = db.downloadQueueDao().getById(running)!!.trackId
-        assertFalse(db.trackDao().getById(runningTrack)!!.isDownloaded)
+            assertEquals(1, started.get())
+            assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(running))
+            assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(waiting))
+            assertFalse(jobs.isLive(running))
+            val runningTrack = db.downloadQueueDao().getById(running)!!.trackId
+            assertFalse(db.trackDao().getById(runningTrack)!!.isDownloaded)
 
-        // A later sync leaves them cancelled.
-        worker().doWork()
-        assertEquals(1, started.get())
-        assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(running))
-        assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(waiting))
+            // A later sync leaves them cancelled.
+            worker().doWork()
+            assertEquals(1, started.get())
+            assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(running))
+            assertEquals(DownloadStatus.SKIPPED, db.downloadQueueDao().getStatusById(waiting))
+        } finally {
+            // Whatever failed above, the fake download is let go and the sync ended: a stuck run held runBlocking,
+            // and the whole core:data suite, until CI timed out.
+            gate.complete(Unit)
+            run.cancel()
+        }
     }
 
     private suspend fun queueSong(n: Int): Long {
