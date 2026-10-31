@@ -46,6 +46,13 @@ internal data class BitchordTrack(
     val artwork: String? = null,
     val audioQuality: String = "",
     val isrc: String? = null,
+    /**
+     * Tidal's parental advisory: which of a song's clean and explicit twins (same title, album
+     * and length, so the same score) this is. The matcher breaks ties on it
+     * ([QobuzCandidateMatcher.pickBest]). Null until the relay passes Tidal's `explicit` through,
+     * and from any server that doesn't: the pick then falls back to length and search order.
+     */
+    val explicit: Boolean? = null,
 )
 
 @Serializable
@@ -204,6 +211,13 @@ class BitchordClient @Inject constructor(
      */
     @Volatile private var busyUntilMs: Long = 0L
 
+    /**
+     * Relays that refused this app build ([RelaySigner.APP_TOO_OLD]), by base, epoch-ms (review on #736). Only
+     * that relay is skipped, by every path, for [RelaySigner.APP_TOO_OLD_BACKOFF_MS]: a user's own server is
+     * not the owner's relay, and asking again before an update can't help.
+     */
+    private val appTooOldUntilMs = ConcurrentHashMap<String, Long>()
+
     /** Wall clock; tests drive it. */
     internal var nowMs: () -> Long = System::currentTimeMillis
 
@@ -262,6 +276,10 @@ class BitchordClient @Inject constructor(
         if (quota.isSpent() && prefs.bitchordEndpointNow() == null) return TidalLookup.Spent(quota.resetsAtMs())
         if (cacheOnly) return TidalLookup.NeedsRelay
         val server = server() ?: return TidalLookup.Off
+        appTooOldUntilMs[server.base]?.let { until ->
+            if (now < until) return TidalLookup.Busy(until)
+            appTooOldUntilMs.remove(server.base, until)
+        }
 
         val flightKey = "$key|aac=${if (aacOnly) "only" else aac.toString()}"
         inFlight[flightKey]?.let { return it.await() }
@@ -303,13 +321,22 @@ class BitchordClient @Inject constructor(
                         is Reply.Ok -> r.body
                         is Reply.Busy -> return@withContext busy(r.untilMs)
                         Reply.Spent -> return@withContext TidalLookup.Spent(quota.resetsAtMs())
+                        Reply.AppTooOld -> return@withContext appTooOld(server)
                         else -> return@withContext TidalLookup.Failed
                     }
                     val tracks = json.decodeFromString<BitchordSearchResponse>(body).tracks
+                    val lossless = tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
+                    // The row's own recording when Tidal lists it. The search is by words, so a
+                    // song's twins both come back, and an ISRC match scores 0.95 against 1.0 for a
+                    // twin that matches on words and length: the clean twin beat the explicit
+                    // recording the row names. The Qobuz sources look the ISRC up first.
+                    val sameRecording = query.isrc?.takeIf { it.isNotBlank() }
+                        ?.let { isrc -> lossless.filter { it.isrc.equals(isrc, ignoreCase = true) } }
+                        .orEmpty()
                     val best = QobuzCandidateMatcher.pickBest(
                         query,
-                        tracks.filter { it.id.startsWith("td:") && it.audioQuality in LOSSLESS_TIERS }
-                            .map { it to confidence(query, it) },
+                        sameRecording.ifEmpty { lossless }.map { it to confidence(query, it) },
+                        explicit = { it.explicit },
                     ) { it.duration }
                     if (best == null) {
                         Log.d(TAG, "no confident match among ${tracks.size} for '${query.artist} - ${query.title}'")
@@ -377,6 +404,7 @@ class BitchordClient @Inject constructor(
                     }
                     is Reply.Busy -> busy(r.untilMs)
                     Reply.Spent -> TidalLookup.Spent(quota.resetsAtMs())
+                    Reply.AppTooOld -> appTooOld(server)
                     is Reply.Error -> TidalLookup.Failed
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -388,6 +416,14 @@ class BitchordClient @Inject constructor(
                 TidalLookup.Failed
             }
         }
+
+    /** [server] refused this app build: it is left alone for [RelaySigner.APP_TOO_OLD_BACKOFF_MS]. */
+    private fun appTooOld(server: TidalRelay): TidalLookup {
+        val until = nowMs() + RelaySigner.APP_TOO_OLD_BACKOFF_MS
+        appTooOldUntilMs[server.base] = until
+        Log.w(TAG, "relay refuses this app build; pausing it for ${RelaySigner.APP_TOO_OLD_BACKOFF_MS / 60_000} min")
+        return TidalLookup.Busy(until)
+    }
 
     private fun busy(untilMs: Long): TidalLookup {
         if (untilMs > busyUntilMs) {
@@ -524,6 +560,8 @@ class BitchordClient @Inject constructor(
         data class Busy(val untilMs: Long) : Reply
         /** 429 `daily_lossless_cap`: the day's lossless allowance is used up. Never a miss, never busy. */
         data object Spent : Reply
+        /** 426 `app_too_old`: this build is below the relay's minimum. Never a miss; only this relay pauses. */
+        data object AppTooOld : Reply
         /** Anything else (5xx, other 4xx): transient, never cached as a miss. */
         data class Error(val code: Int) : Reply
     }
@@ -541,8 +579,9 @@ class BitchordClient @Inject constructor(
             val b = Request.Builder().url(url).get()
                 .header("Accept", "application/json")
                 .apply { if (token != null) header("X-Access-Token", token) }
+            if (url.encodedPath.startsWith("/stream/")) signer.appBuild(b)
             val signed = signPayload != null && signer.sign(b, signPayload, nowMs())
-            if (signPayload != null) signer.entitle(b)
+            if (signPayload != null && owner) signer.entitle(b)
             val reply = httpClient.newCall(b.build()).execute().use { r ->
                 if (r.code == 401 && signed && mayRetrySkew && signer.adoptServerTime(r, nowMs())) {
                     null
@@ -565,6 +604,7 @@ class BitchordClient @Inject constructor(
             val now = nowMs()
             return when (r.code) {
                 404 -> Reply.NotFound(definitive = errorCode(r) == "lossless_unavailable")
+                RelaySigner.APP_TOO_OLD -> Reply.AppTooOld
                 // The relay says how long: 15 s when only seat pacing blocks, 30 s for its
                 // per-network limiter, 300 / 600 s when capped or paused. A flat 5 min turned
                 // a 15 s pacing blip into a device-wide Tidal blackout.
@@ -642,13 +682,40 @@ class BitchordClient @Inject constructor(
 
         /**
          * The song's cache identity: ISRC when known (the strongest identity across catalogs),
-         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown).
+         * else normalised artist|title plus a 10 s duration bucket ("?" when unknown, "~" before
+         * it when the length is only a hint, [TrackQuery.durationReliable]); then the version the
+         * pick prefers, `|explicit` or `|clean` ([explicitWant]).
+         *
+         * A hinted length picks differently from an exact one of the same value, so the two don't
+         * share an answer. A search tap once asked with a music video's 4:25 as exact, got the
+         * compilation copy nearest it, and would otherwise keep being served that pick.
+         *
+         * The preference is in the key, rather than a bare version prefix, for two reasons:
+         *  - [QobuzCandidateMatcher.pickBest] takes the explicit twin unless the row is known
+         *    clean, so a clean row and an explicit (or unknown) row with the same words can pick
+         *    different Tidal ids and must not share one cached answer;
+         *  - keys written before that tie-break (no suffix) no longer match. Those picks went by
+         *    search order alone, sometimes to the clean twin, and would otherwise be served for
+         *    [MATCH_TTL_MS]. Their rows are never read again and go with the 30-day prune.
+         * Old misses are dropped with them although the tie-break can't turn a miss into a match:
+         * keeping them would cost a second read on every lookup, and [MISS_TTL_MS] would re-ask
+         * most of them within two weeks anyway. No migration: the table and its rows are unchanged.
          */
         fun cacheKey(q: TrackQuery): String {
-            q.isrc?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }?.let { return "isrc:$it" }
+            val want = explicitWant(q)
+            q.isrc?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }?.let { return "isrc:$it|$want" }
             fun norm(s: String) = s.lowercase().trim().replace(WHITESPACE, " ")
-            val bucket = q.durationMs?.takeIf { it > 0 }?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
-            return "t:${norm(q.artist)}|${norm(q.title)}|${bucket ?: "?"}"
+            val bucket = q.durationMs?.takeIf { it > 0 }
+                ?.let { ((it / 1000L) + DURATION_BUCKET_S / 2) / DURATION_BUCKET_S }
+                ?.let { if (q.durationReliable) "$it" else "~$it" }
+            return "t:${norm(q.artist)}|${norm(q.title)}|${bucket ?: "?"}|$want"
         }
+
+        /**
+         * The twin [cacheKey] is for: "clean" only for a row known to be clean
+         * ([TrackQuery.explicit] false), "explicit" otherwise. Unknown reads as explicit, as it
+         * does in the pick: the two make the same pick, so they share one cached answer.
+         */
+        private fun explicitWant(q: TrackQuery): String = if (q.explicit == false) "clean" else "explicit"
     }
 }

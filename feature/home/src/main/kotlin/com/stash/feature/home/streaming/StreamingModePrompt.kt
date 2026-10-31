@@ -12,7 +12,7 @@ import com.stash.core.ui.theme.StashTheme
  * v0.9.30 as a streaming disclosure; reworded 2026-09-17 when streaming
  * became unconditional). Single button, informational only — the switch has
  * already flipped by the time this renders. It explains what the switch
- * now decides: whether Sync writes files, never whether music plays.
+ * decides: whether Sync writes files, and so (since 2026-10-29) whether anything streams.
  */
 @Composable
 fun StreamingDisclosureDialog(
@@ -24,9 +24,9 @@ fun StreamingDisclosureDialog(
         text = {
             Text(
                 "Sync will keep your playlists up to date without saving " +
-                    "music to this phone. Everything still plays — it streams " +
-                    "instead. Switch back to Download any time to save your " +
-                    "switched-on playlists and mixes again.",
+                    "music to this phone, and everything streams. Switch back " +
+                    "to Download any time: it saves your switched-on playlists " +
+                    "and mixes and plays only what's saved.",
             )
         },
         confirmButton = {

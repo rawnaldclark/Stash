@@ -26,7 +26,7 @@ class JioSaavnStreamResolver @Inject constructor(
                     album = track.album.takeIf { it.isNotBlank() },
                     durationMs = track.durationMs.takeIf { it > 0 },
                     explicit = track.explicit,
-                ).forLibrarySource(track.source, track.musicVideoType),
+                ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank()),
                 // Save Data streams JioSaavn's lowest variant, as it does YouTube's
                 // lowest audio. Read through the policy so a flip clears cached URLs.
                 kbps = if (qualityPolicy.saveData()) 96 else 320,

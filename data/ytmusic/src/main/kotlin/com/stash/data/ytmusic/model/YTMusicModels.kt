@@ -15,6 +15,10 @@ package com.stash.data.ytmusic.model
  *   null when the renderer omits the field. This is the signal that Mode B
  *   canonicalization uses to decide whether a YT-library import needs to be
  *   reconciled to an ATV equivalent.
+ * @property explicit      `true` when the row carries YouTube Music's explicit
+ *   badge, null otherwise (an unbadged song may be a clean edit or never
+ *   explicit). Synced into the track's parental advisory so the matchers can
+ *   prefer the explicit original for it.
  */
 data class YTMusicTrack(
     val videoId: String,
@@ -24,6 +28,7 @@ data class YTMusicTrack(
     val durationMs: Long? = null,
     val thumbnailUrl: String? = null,
     val musicVideoType: MusicVideoType? = null,
+    val explicit: Boolean? = null,
 )
 
 /**

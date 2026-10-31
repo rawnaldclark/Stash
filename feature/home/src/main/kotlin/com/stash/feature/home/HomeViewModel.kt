@@ -360,7 +360,7 @@ class HomeViewModel @Inject constructor(
                             flowOf(LikedCardState(trackCount = 0))
                         } else {
                             combine(
-                                likedPlaylists.map { musicRepository.getTracksByPlaylist(it.id) },
+                                likedPlaylists.map { musicRepository.getShownTracksByPlaylist(it.id) },
                             ) { arrays ->
                                 LikedCardState(
                                     trackCount = arrays.flatMap { it }.distinctBy { it.id }.size,
@@ -400,7 +400,7 @@ class HomeViewModel @Inject constructor(
      * account — is exactly what that user still needs to do.
      */
     private val losslessOfflineFlow = combine(
-        losslessSourceHealth.qbdlxLooksDown,
+        losslessSourceHealth.losslessLooksDown,
         losslessAvailability.anyUserOwned,
         losslessPrefs.enabled,
         losslessPrefs.losslessOfflineDismissed,

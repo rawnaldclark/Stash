@@ -1,0 +1,2892 @@
+[
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Evergreen",
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "old friend|evergreen": 1,
+    "remastered|evergreen": 0.2244567030231151,
+    "remaster|evergreen": 0.22466978333070953,
+    "song 2011 remastered version live|band": 0.22552413059915769,
+    "song 2011 remaster|band": 0.22573822433708204,
+    "song remaster|band": 0.22616702217437962,
+    "song|band": 0.5851882728451469
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [
+    "skit|band"
+   ],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [
+   "skit|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [
+   "skit|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [
+   "skit|band",
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [],
+  "kept": [
+   "skit|band"
+  ],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [
+   "skit|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "putBack": [],
+  "kept": [
+   "skit|band",
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "avoid": [],
+   "weights": {
+    "duet four|ana feat ben": 1,
+    "duet three|ana feat ben": 0.9905562087262012,
+    "duet two|ana with ben": 0.9812016005827572,
+    "duet|ana wıth ben": 0.9719353377710712,
+    "song 2011 remaster versıon|band": 0.46920230265091106,
+    "song 2011 remaster|band": 0.7415541408589791,
+    "song ٢٠١١ remaster|band": 0.4669815230448152,
+    "song|band": 0.9392954503361354
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "commentary track|band",
+    "eintro|band",
+    "interlude|band",
+    "intro 1|band",
+    "introe|band",
+    "intro|band",
+    "outro|band",
+    "track intro|band"
+   ],
+   "weights": {
+    "interludes|band": 0.6678920371250139,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "skit|band": 0.6742596037740457
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [
+   "intro|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "commentary track|band",
+    "eintro|band",
+    "interlude|band",
+    "intro 1|band",
+    "introe|band",
+    "outro|band",
+    "track intro|band"
+   ],
+   "weights": {
+    "interludes|band": 0.6678920371250139,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "intro|band": 1,
+    "skit|band": 0.6742596037740457
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [
+   "intro|band",
+   "track intro|band",
+   "interlude|band",
+   "commentary track|band",
+   "outro|band",
+   "intro 1|band",
+   "eintro|band",
+   "introe|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "commentary track|band": 0.6553367341825179,
+    "eintro|band": 0.6249713850442896,
+    "interludes|band": 0.6678920371250139,
+    "interlude|band": 0.6615846031189042,
+    "intro 1|band": 0.6430174536588761,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "introe|band": 0.6190692840171128,
+    "intro|band": 1,
+    "outro|band": 0.6491478696925327,
+    "skit|band": 0.6742596037740457,
+    "track intro|band": 0.6806878799056997
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [
+   "intro|band",
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "commentary track|band",
+    "eintro|band",
+    "interlude|band",
+    "intro 1|band",
+    "introe|band",
+    "outro|band",
+    "track intro|band"
+   ],
+   "weights": {
+    "interludes|band": 0.6678920371250139,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "intro|band": 1,
+    "skit|band": 0.6742596037740457
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [],
+  "kept": [
+   "intro|band"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "commentary track|band",
+    "eintro|band",
+    "interlude|band",
+    "intro 1|band",
+    "introe|band",
+    "outro|band",
+    "track intro|band"
+   ],
+   "weights": {
+    "interludes|band": 0.6678920371250139,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "intro|band": 1,
+    "skit|band": 0.6742596037740457
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [
+   "intro|band"
+  ],
+  "kept": [
+   "track intro|band"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "commentary track|band",
+    "eintro|band",
+    "interlude|band",
+    "intro 1|band",
+    "introe|band",
+    "outro|band"
+   ],
+   "weights": {
+    "interludes|band": 0.6678920371250139,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "intro|band": 1,
+    "skit|band": 0.6742596037740457,
+    "track intro|band": 0.6806878799056997
+   }
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "putBack": [],
+  "kept": [
+   "intro|band",
+   "track intro|band",
+   "interlude|band",
+   "commentary track|band",
+   "outro|band",
+   "intro 1|band",
+   "eintro|band",
+   "introe|band",
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "commentary track|band": 0.6553367341825179,
+    "eintro|band": 0.6249713850442896,
+    "interludes|band": 0.6678920371250139,
+    "interlude|band": 0.6615846031189042,
+    "intro 1|band": 0.6430174536588761,
+    "intro1|band": 0.6369449300914762,
+    "introduction|band": 0.6871774400430499,
+    "introe|band": 0.6190692840171128,
+    "intro|band": 1,
+    "outro|band": 0.6491478696925327,
+    "skit|band": 0.6742596037740457,
+    "track intro|band": 0.6806878799056997
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "same|band": 0.6852019263033599,
+    "song|band": 1,
+    "tie|band": 0.8638085367601489
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [
+    "edge|artist y",
+    "never again|artist y"
+   ],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [
+   "edge|artist y"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [
+    "never again|artist y"
+   ],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [
+   "edge|artist y",
+   "never again|artist y"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [
+   "edge|artist y",
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [
+    "never again|artist y"
+   ],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [],
+  "kept": [
+   "edge|artist y"
+  ],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [
+    "never again|artist y"
+   ],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [
+   "edge|artist y"
+  ],
+  "kept": [
+   "never again|artist y"
+  ],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "putBack": [],
+  "kept": [
+   "edge|artist y",
+   "never again|artist y",
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Artist Y"
+   ],
+   "avoid": [],
+   "weights": {
+    "account|artist y": 0.9812016005827572,
+    "almost|artist y": 0.7479139813586702,
+    "phone|artist y": 0.9905562087262012,
+    "scrobbled|artist y": 1
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "emoji|": 1,
+    "later|": 0.8418058450216858,
+    "real|band": 0.8177071952538962,
+    "strange|": 0.9094759926142961
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [
+    "hidden|band"
+   ],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [
+   "hidden|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [
+   "hidden|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [
+   "hidden|band",
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [],
+  "kept": [
+   "hidden|band"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [
+   "hidden|band"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "putBack": [],
+  "kept": [
+   "hidden|band",
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "hidden back|band": 0.3092099563033175,
+    "hidden kept|band": 0.3092099563033175,
+    "hidden|band": 0.3092099563033175,
+    "just lost|band": 0.9905562080001734,
+    "lost back|band": 0.26577838601538933,
+    "lost kept|band": 0.26577838601538933,
+    "lost|band": 0.26577838601538933,
+    "not yet lost|band": 1
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "avoid": [],
+   "weights": {
+    "constant|forever": 1,
+    "few 0|few 0": 0.0733275195348295,
+    "few 10|few 10": 0.07335651596454884,
+    "few 11|few 11": 0.07335941624384071,
+    "few 12|few 12": 0.07336231685803782,
+    "few 13|few 13": 0.07336521747223493,
+    "few 14|few 14": 0.07336811808643202,
+    "few 15|few 15": 0.07337101870062912,
+    "few 16|few 16": 0.07337391964973146,
+    "few 17|few 17": 0.0733768205988338,
+    "few 18|few 18": 0.07337972154793612,
+    "few 19|few 19": 0.07338262283194368,
+    "few 1|few 1": 0.07333041880940568,
+    "few 2|few 2": 0.07333331774907663,
+    "few 3|few 3": 0.07333621735855804,
+    "few 4|few 4": 0.07333911663313422,
+    "few 5|few 5": 0.07334201624261563,
+    "few 6|few 6": 0.07334491618700227,
+    "few 7|few 7": 0.07334781579648368,
+    "few 8|few 8": 0.07335071574087032,
+    "few 9|few 9": 0.0733536160201622,
+    "fortnight and a bit|peak": 0.3648309386844687,
+    "fortnight|peak": 0.3318049801432512,
+    "month end|edge": 0.14649923646798588,
+    "new 0|artist 0": 0.03668115842901891,
+    "new 10|artist 10": 0.0366956635094358,
+    "new 11|artist 11": 0.03669711431889219,
+    "new 12|artist 12": 0.03669856512834859,
+    "new 13|artist 13": 0.03670001627271022,
+    "new 14|artist 14": 0.036701467082166615,
+    "new 15|artist 15": 0.03670291822652824,
+    "new 16|artist 16": 0.03670436937088987,
+    "new 17|artist 17": 0.036705820515251494,
+    "new 18|artist 18": 0.03670727199451835,
+    "new 19|artist 19": 0.036708723138879976,
+    "new 1|artist 1": 0.03668260856866485,
+    "new 20|artist 20": 0.03671017461814683,
+    "new 21|artist 21": 0.03671162576250846,
+    "new 22|artist 22": 0.03671307724177531,
+    "new 23|artist 23": 0.03671452872104217,
+    "new 2|artist 2": 0.03668405904321601,
+    "new 3|artist 3": 0.036685509182861946,
+    "new 4|artist 4": 0.036686959657413115,
+    "new 5|artist 5": 0.036688410131964284,
+    "new 6|artist 6": 0.036689860941420675,
+    "new 7|artist 7": 0.03669131141597184,
+    "new 8|artist 8": 0.036692762225428235,
+    "new 9|artist 9": 0.036694212699979405,
+    "newer 0|later 0": 0.051862687462490814,
+    "newer 10|later 10": 0.051883196054060846,
+    "newer 11|later 11": 0.05188524734859464,
+    "newer 12|later 12": 0.051887298643128445,
+    "newer 13|later 13": 0.05188935027256747,
+    "newer 14|later 14": 0.0518914019020065,
+    "newer 15|later 15": 0.05189345353144554,
+    "newer 16|later 16": 0.05189550516088457,
+    "newer 17|later 17": 0.0518975567903236,
+    "newer 18|later 18": 0.051899608754667856,
+    "newer 19|later 19": 0.051901660719012116,
+    "newer 1|later 1": 0.05186473808721415,
+    "newer 20|later 20": 0.051903712683356376,
+    "newer 21|later 21": 0.05190576498260588,
+    "newer 22|later 22": 0.05190781694695014,
+    "newer 23|later 23": 0.05190986924619963,
+    "newer 24|later 24": 0.051911921545449116,
+    "newer 2|later 2": 0.051866788711937506,
+    "newer 3|later 3": 0.051868839336660845,
+    "newer 4|later 4": 0.051870889961384184,
+    "newer 5|later 5": 0.05187294092101276,
+    "newer 6|later 6": 0.0518749915457361,
+    "newer 7|later 7": 0.051877042505364665,
+    "newer 8|later 8": 0.05187909379989847,
+    "newer 9|later 9": 0.05188114475952704,
+    "three years|forever": 0.12291243782530453,
+    "year end|edge": 0.15915047711620525
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "avoid": [],
+   "weights": {
+    "filler a tune|filler a": 0.9998418678615163,
+    "filler b tune|filler b": 0.9998813984201815,
+    "filler c tune|filler c": 0.9999209311796963,
+    "filler d tune|filler d": 0.9999604650396358,
+    "filler e tune|filler e": 1,
+    "glass harbor song 0|glass harbor": 0.2479845074015081,
+    "glass harbor song 1|glass harbor": 0.24804334051089416,
+    "glass harbor song 2|glass harbor": 0.24810218682537735,
+    "glass harbor song 3|glass harbor": 0.24816104854580723,
+    "glass harbor song 4|glass harbor": 0.24821992347133418,
+    "glass harbor song 5|glass harbor": 0.24827881160195828,
+    "northern lights song 0|northern lights": 0.32917606357425866,
+    "northern lights song 1|northern lights": 0.3031713758506128,
+    "northern lights song 2|northern lights": 0.3032433018137972,
+    "northern lights song 3|northern lights": 0.3033152442833531,
+    "northern lights song 4|northern lights": 0.30338720435970506,
+    "northern lights song 5|northern lights": 0.3034591820428532,
+    "velvet static song 0|velvet static": 0.36074403010516526,
+    "velvet static song 1|velvet static": 0.3608296156408996,
+    "velvet static song 2|velvet static": 0.36091521988385494,
+    "velvet static song 3|velvet static": 0.36100084503488067,
+    "velvet static song 4|velvet static": 0.36108649109397684,
+    "velvet static song 5|velvet static": 0.36117215696071875
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "avoid": [],
+   "weights": {
+    "a1 song 0|a1": 0.6270089650386261,
+    "a1 song 1|a1": 0.6271577198384118,
+    "a2 song 0|a2": 0.6270089650386261,
+    "a2 song 1|a2": 0.6271577198384118,
+    "a3 song 0|a3": 0.6270089650386261,
+    "a3 song 1|a3": 0.6271577198384118,
+    "a4 song 0|a4": 0.6270089650386261,
+    "a4 song 1|a4": 0.6271577198384118,
+    "alpha song|alpha": 0.6937528561666624,
+    "beta song|beta": 0.6872011974640674,
+    "coral choir song 0|coral choir": 0.28733017476004247,
+    "coral choir song 1|coral choir": 0.28739834190303,
+    "coral choir song 2|coral choir": 0.2874665256954999,
+    "filler a tune|filler a": 0.9998418694604831,
+    "filler b tune|filler b": 0.9998813994938807,
+    "filler c tune|filler c": 0.9999209316084636,
+    "filler d tune|filler d": 0.9999604658042318,
+    "filler e tune|filler e": 1,
+    "filler f tune|filler f": 0.3206370208481904,
+    "paper moons song 0|paper moons": 0.7069152438539373,
+    "paper moons song 1|paper moons": 0.7070829540893439,
+    "paper moons song 2|paper moons": 0.7072507059484563,
+    "paper moons song 3|paper moons": 0.7074184973500892,
+    "paper moons song 4|paper moons": 0.707586330375428,
+    "paper moons song 5|paper moons": 0.7077542008621018
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "avoid": [],
+   "weights": {
+    "f a tune|f a": 0.6723212266531218,
+    "f b tune|f b": 0.6723478076286433,
+    "f c tune|f c": 0.6723743905687604,
+    "f d tune|f d": 0.6724009735088773,
+    "f e tune|f e": 0.6724275584135896,
+    "lead song|lead": 1,
+    "other song|other": 0.68325420388442
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [
+   "not|a song"
+  ],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "putBack": [],
+  "kept": [
+   "not|a song"
+  ],
+  "out": {
+   "artists": [
+    "Band"
+   ],
+   "avoid": [],
+   "weights": {
+    "ancient|band": 0.000737782064429542,
+    "fresh|band": 0.994322975167154,
+    "future|band": 1,
+    "two years|band": 0.5000000002790552
+   }
+  }
+ }
+]

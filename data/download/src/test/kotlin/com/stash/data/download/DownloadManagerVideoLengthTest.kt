@@ -103,6 +103,8 @@ class DownloadManagerVideoLengthTest {
         album = album,
         durationMs = 280_000L,
         source = MusicSource.YOUTUBE,
+        // A YouTube Music library row always has its video.
+        youtubeId = "dQw4w9WgXcQ",
         musicVideoType = musicVideoType,
     )
 
@@ -167,6 +169,25 @@ class DownloadManagerVideoLengthTest {
         assertNull(newSubject().tryTidalAacDownload(youTubeRow(musicVideoType = "ATV")))
         tidalServes(fileMs = 275_000L)
         assertEquals(TrackDownloadResult.Success(SAVED), newSubject().tryTidalAacDownload(youTubeRow(musicVideoType = "ATV")))
+    }
+
+    @Test
+    fun `a mix song with no video asks with its Last fm length as a hint, album or not`() = runTest {
+        // A mix's song: title and artist, then Last.fm's length and album (ArtBackfillWorker).
+        val asked = slot<TrackQuery>()
+        coEvery { tidalAacResolver.resolve(capture(asked), any(), any()) } returns com.stash.data.download.lossless.tidal.TidalAac.NoAac
+        val mixSong = Track(
+            id = 9L,
+            title = "Shook Ones, Pt. II",
+            artist = "Mobb Deep",
+            album = "Reminisce Hip Hop Classics",
+            durationMs = 241_000L,
+            source = MusicSource.YOUTUBE,
+        )
+
+        newSubject().tryTidalAacDownload(mixSong)
+
+        assertFalse(asked.captured.durationReliable)
     }
 
     @Test

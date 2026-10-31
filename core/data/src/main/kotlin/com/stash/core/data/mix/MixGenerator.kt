@@ -1,5 +1,6 @@
 package com.stash.core.data.mix
 
+import android.util.Log
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackDao
@@ -7,6 +8,7 @@ import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.DiscoveryQueueEntity
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.record.MixTaste
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.ln
@@ -71,6 +73,8 @@ class MixGenerator @Inject constructor(
 ) {
 
     companion object {
+        private const val TAG = "StashMixRefresh"
+
         /** Recency window for affinity. Decay half-life is what controls "current"-ness. */
         private const val AFFINITY_WINDOW_MS = 180L * 24 * 60 * 60 * 1000
 
@@ -114,10 +118,15 @@ class MixGenerator @Inject constructor(
      * refresh worker iterates multiple recipes back-to-back, it accumulates
      * track ids already claimed by earlier recipes and passes them here so
      * the current recipe can't re-pick them.
+     *
+     * [taste]: Your record's taste ([com.stash.core.data.record.RecordMixTaste], read once per run), or null. With one, the songs
+     * it keeps out leave the pool, and a song's affinity is the larger of its own and its taste weight's (stash-player
+     * `discover/mix.ts` `librarySlice`). Null: exactly as before.
      */
     suspend fun generate(
         recipe: StashMixRecipeEntity,
         excludeIds: Set<Long> = emptySet(),
+        taste: MixTaste? = null,
     ): List<TrackEntity> {
         // Library slots = targetLength * (1 - discoveryRatio); see Step 7.
         val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
@@ -132,7 +141,15 @@ class MixGenerator @Inject constructor(
         // non-blacklisted track in the library. v0.9.20: filter through
         // excludeIds first (cheap O(n) set lookup, before any other filtering).
         val rawPool = trackDao.getAllDownloaded()
-        val pool0 = if (excludeIds.isEmpty()) rawPool else rawPool.filter { it.id !in excludeIds }
+        val pool00 = if (excludeIds.isEmpty()) rawPool else rawPool.filter { it.id !in excludeIds }
+        // Your record's taste: the songs it keeps out (hidden on Spotify, always skipped) never enter the pool
+        val pool0 = if (taste == null || taste.avoid.isEmpty()) {
+            pool00
+        } else {
+            pool00.filterNot { taste.avoids(it.title, it.artist) }.also { kept ->
+                Log.i(TAG, "'${recipe.name}': your record avoided ${pool00.size - kept.size} of ${pool00.size} library songs")
+            }
+        }
 
         // Step 2: the era filter runs last (Step 5b), because it may be relaxed
         // when nothing in what the other filters left matches it.
@@ -166,11 +183,12 @@ class MixGenerator @Inject constructor(
         pool = filterByEra(pool, recipe)
         pool = filterByMood(pool, recipe)
 
+        if (taste != null) Log.i(TAG, "'${recipe.name}': library pool ${pool.size} of ${rawPool.size} downloaded (with your record)")
         if (pool.isEmpty()) return emptyList()
 
         // Step 6: score + sort.
         val userVector = buildUserTagAffinityVector()
-        val affinityMap = buildAffinityMap(pool)
+        val affinityMap = buildAffinityMap(pool, taste)
         val tagCosineMap = buildTagCosineMap(pool, userVector)
         val completionMap = buildCompletionMap(pool)
         val skipPenaltyMap = buildSkipPenaltyMap(pool)
@@ -244,14 +262,21 @@ class MixGenerator @Inject constructor(
      *
      * Tracks the user has neither played in-Stash nor scrobbled to
      * Last.fm get a zero entry (omitted from the map).
+     *
+     * With Your record's [taste], a track's affinity is the larger of that and
+     * `0.6 · its taste weight` (stash-player `discover/mix.ts` `librarySlice`),
+     * and a pool with no other signal yet still gets the taste's. Internal for
+     * its tests.
      */
-    private suspend fun buildAffinityMap(pool: List<TrackEntity>): Map<Long, Float> {
+    internal suspend fun buildAffinityMap(pool: List<TrackEntity>, taste: MixTaste? = null): Map<Long, Float> {
         val now = System.currentTimeMillis()
         val since = now - AFFINITY_WINDOW_MS
         val rows = listeningEventDao.getPlayCountsSinceWithLatest(since)
         val poolIds = pool.mapTo(HashSet(pool.size)) { it.id }
+        // Your record's weights count even when nothing else has signal yet (a first mix after an import)
+        val tasteWeights = taste != null && taste.weights.isNotEmpty()
 
-        if (rows.isEmpty() && pool.none { (it.lastfmUserPlaycount ?: 0) > 0 }) {
+        if (rows.isEmpty() && pool.none { (it.lastfmUserPlaycount ?: 0) > 0 } && !tasteWeights) {
             return emptyMap()
         }
 
@@ -276,7 +301,13 @@ class MixGenerator @Inject constructor(
                 (ln(1f + lpc.toFloat()) /
                     ln(1f + maxLfmPlays.toFloat())).coerceIn(0f, 1f) * LFM_PLAYCOUNT_W
             } ?: 0f
-            val combined = (localTerm + lfmTerm).coerceIn(0f, 1f)
+            val own = (localTerm + lfmTerm).coerceIn(0f, 1f)
+            // What this phone plays, or what the imported years say, whichever is more (mix.ts: max(own, 0.6 · w / max))
+            val combined = if (tasteWeights) {
+                maxOf(own, (taste!!.weightOf(track.title, track.artist) * MixTaste.TASTE_AFFINITY).toFloat()).coerceIn(0f, 1f)
+            } else {
+                own
+            }
             if (combined > 0f) result[track.id] = combined
         }
         return result
@@ -508,9 +539,16 @@ class MixGenerator @Inject constructor(
     suspend fun queueDiscoveryCandidates(
         recipe: StashMixRecipeEntity,
         similarArtistSuggestions: List<DiscoveryCandidate>,
+        taste: MixTaste? = null,
     ) {
         if (similarArtistSuggestions.isEmpty()) return
+        var avoided = 0
         val toInsert = similarArtistSuggestions.mapNotNull { cand ->
+            // Your record's taste never offers a song it keeps out (mix.ts `discoveryWindow`)
+            if (taste != null && taste.avoids(cand.title, cand.artist)) {
+                avoided++
+                return@mapNotNull null
+            }
             // v0.9.15: Skip blocklisted identities so the same blocked
             // artist+title doesn't get re-queued every refresh and end up
             // re-discovered via StashDiscoveryWorker.
@@ -534,6 +572,7 @@ class MixGenerator @Inject constructor(
                 seedArtist = cand.seedArtist,
             )
         }
+        if (taste != null) Log.i(TAG, "'${recipe.name}': your record avoided $avoided of ${similarArtistSuggestions.size} discovery candidates")
         if (toInsert.isNotEmpty()) discoveryQueueDao.insertAllIfNew(toInsert)
     }
 

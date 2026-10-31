@@ -96,6 +96,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val discoveryQueueDao: DiscoveryQueueDao,
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
     private val downloadQueueDao: DownloadQueueDao,
+    private val orderDao: com.stash.core.data.db.dao.PlaylistOrderDao,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -114,6 +115,44 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private val _bulkPlayInFlight = MutableStateFlow<BulkPlayAction?>(null)
     val bulkPlayInFlight: StateFlow<BulkPlayAction?> = _bulkPlayInFlight.asStateFlow()
+
+    private val _editingOrder = MutableStateFlow(false)
+
+    /** Edit order: rows show drag handles, taps don't play. */
+    val editingOrder: StateFlow<Boolean> = _editingOrder.asStateFlow()
+
+    /** The playlist is in the listener's own order (so its Use … order button shows). */
+    val customOrder: StateFlow<Boolean> = orderDao.observeIsCustom(playlistId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Edit order starts on the whole list: the search closes. */
+    fun startEditOrder() {
+        _searchQuery.value = ""
+        _showSearch.value = false
+        _editingOrder.value = true
+    }
+
+    fun stopEditOrder() { _editingOrder.value = false }
+
+    /**
+     * [trackId] dropped between [afterTrackId] (above it now) and [beforeTrackId] (below it). Each drop is saved
+     * as it lands; Done only leaves editing.
+     */
+    fun moveTrack(trackId: Long, beforeTrackId: Long?, afterTrackId: Long?) {
+        viewModelScope.launch {
+            val moved = runCatching { orderDao.move(playlistId, trackId, beforeTrackId, afterTrackId) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            when {
+                moved.isFailure -> _userMessages.tryEmit("Couldn't change the order. Try again.")
+                moved.getOrNull() == false -> _userMessages.tryEmit("That song is no longer in this playlist.")
+            }
+        }
+    }
+
+    /** Back to the service's order: the listener's order is forgotten. */
+    fun resetOrder() {
+        viewModelScope.launch { orderDao.reset(playlistId) }
+    }
 
     fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
     fun clearSearch() { _searchQuery.value = "" }
@@ -233,7 +272,8 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<PlaylistDetailUiState> = combine(
         _playlist,
-        playlistTracks.withSearchFilter(_searchQuery),
+        // Download mode lists only what it plays: the downloaded songs.
+        musicRepository.getShownTracksByPlaylist(playlistId).withSearchFilter(_searchQuery),
         playerRepository.playerState,
         _searchQuery,
         _showSearch,
@@ -313,8 +353,7 @@ class PlaylistDetailViewModel @Inject constructor(
         // A track with no local audio needs a live connection; without one the
         // player would fail it silently, so bail out early with a Snackbar so
         // the user knows *why* nothing happened. Downloaded tracks always play.
-        // (The Download button is not consulted: it decides what gets written
-        // to disk, never what plays.)
+        // (In Download mode such a track isn't listed, and the player refuses it.)
         viewModelScope.launch {
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
@@ -337,10 +376,9 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
-     * The tracks to enqueue: the whole list. Streaming is always allowed, so a
-     * track that is not downloaded resolves when it is reached (a
-     * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
-     * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
+     * The tracks to enqueue: the list shown. In Stream only a track that is not
+     * downloaded resolves when it is reached (a `stash-resolve://` placeholder inside
+     * [PlayerRepository.setQueue]); in Download mode the list holds downloads only.
      */
     private suspend fun playableTracks(): List<Track> = uiState.value.tracks
 

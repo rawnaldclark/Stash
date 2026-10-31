@@ -681,10 +681,11 @@ class SearchDownloadCoordinator @Inject constructor(
                 album = row.album.takeIf { it.isNotBlank() },
                 isrc = row.isrc?.takeIf { it.isNotBlank() },
                 durationMs = row.durationMs.takeIf { it > 0 },
+                explicit = row.explicit,
                 trackId = row.id,
-            ).forLibrarySource(row.source, row.musicVideoType)
+            ).forLibrarySource(row.source, row.musicVideoType, hasVideoId = !row.youtubeId.isNullOrBlank())
         } else {
-            track.toQuery().forLibrarySource(MusicSource.YOUTUBE)
+            track.toQuery()
         }
         Log.d(
             TAG,
@@ -875,6 +876,9 @@ class SearchDownloadCoordinator @Inject constructor(
                 durationMs = (track.durationSeconds * 1_000).toLong(),
                 source = com.stash.core.model.MusicSource.YOUTUBE,
                 albumArtUrl = track.thumbnailUrl,
+                // So a later play from the Library reads the length as this download did.
+                musicVideoType = track.musicVideoType,
+                explicit = track.explicit,
             )
         )
 
@@ -967,7 +971,12 @@ class SearchDownloadCoordinator @Inject constructor(
         // duration only) — no Spotify URI exists, so search-tab downloads
         // correctly skip antra (which requires a spotify track URL).
         spotifyUri = null,
-    )
+        // YouTube Music's badge: true, or null (it marks only explicit songs, and unknown already
+        // prefers the explicit original, QobuzCandidateMatcher.pickBest).
+        explicit = explicit,
+        // A YouTube result's length is the upload's: a music video's is often an edit's, so only
+        // an official audio upload's is taken as the song's (forLibrarySource).
+    ).forLibrarySource(MusicSource.YOUTUBE, musicVideoType)
 
     /**
      * Whether the user blocked this song. A failed lookup reads as not
@@ -1080,6 +1089,8 @@ class SearchDownloadCoordinator @Inject constructor(
         durationMs = (durationSeconds * 1_000).toLong(),
         albumArtUrl = thumbnailUrl,
         youtubeId = videoId,
+        musicVideoType = musicVideoType,
+        explicit = explicit,
     )
 
     /**

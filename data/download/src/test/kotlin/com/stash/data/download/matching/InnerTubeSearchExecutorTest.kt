@@ -1,5 +1,6 @@
 package com.stash.data.download.matching
 
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.coroutines.CancellationException
@@ -210,5 +211,42 @@ class InnerTubeSearchExecutorTest {
         }
 
         runBlocking { InnerTubeSearchExecutor(inner).verifyVideo("abc") }
+    }
+
+    // ── explicit badge ───────────────────────────────────────────────────
+    //
+    // `innertube_search_explicit_twins.json` is the songs-filtered live answer
+    // (2026-10-26) for "Kanye West Father Stretch My Hands Pt. 1", trimmed to its
+    // first four rows: the explicit twin wuO4_P_8p-Q (badged), the clean twin
+    // _MIsk8VoNhM (same title, artist, album and 2:16), then two other songs.
+
+    @Test
+    fun `search reads the explicit badge, and no badge as unknown`() = runTest {
+        val results = executorFor("innertube_search_explicit_twins.json").search("fsmh")
+
+        assertEquals(true, results.single { it.id == "wuO4_P_8p-Q" }.explicit)
+        assertEquals(null, results.single { it.id == "_MIsk8VoNhM" }.explicit)
+    }
+
+    @Test
+    fun `scored, the explicit twin wins unless the track is known clean`() = runTest {
+        val results = executorFor("innertube_search_explicit_twins.json").search("fsmh")
+        val scorer = MatchScorer(TrackMatcher())
+        fun winner(explicit: Boolean?, rows: List<com.stash.data.download.ytdlp.YtDlpSearchResult>) =
+            scorer.scoreResults(
+                targetTitle = "Father Stretch My Hands Pt. 1",
+                targetArtist = "Kanye West",
+                targetDurationMs = 136_000,
+                results = rows,
+                targetAlbum = "The Life Of Pablo",
+                targetExplicit = explicit,
+            ).first().videoId
+
+        for (explicit in listOf(true, null)) {
+            // Reversed too: the twins score alike, so input order alone mustn't decide.
+            assertEquals("explicit=$explicit", "wuO4_P_8p-Q", winner(explicit, results))
+            assertEquals("explicit=$explicit, reversed", "wuO4_P_8p-Q", winner(explicit, results.reversed()))
+        }
+        assertEquals("_MIsk8VoNhM", winner(false, results))
     }
 }

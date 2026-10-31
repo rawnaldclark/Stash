@@ -59,6 +59,10 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.db.entity.TrackFts
 import com.stash.core.data.db.entity.TrackSkipEventEntity
 import com.stash.core.data.db.entity.TrackTagEntity
+import com.stash.core.data.lastfm.LastFmLookupRules
+import com.stash.core.data.lastfm.LastFmTrackInfo
+import com.stash.core.data.lastfm.lastFmCacheKey
+import kotlinx.serialization.json.Json
 
 /**
  * Central Room database for the Stash application.
@@ -112,8 +116,16 @@ import com.stash.core.data.db.entity.TrackTagEntity
         com.stash.core.data.db.entity.CloudItemEntity::class,
         com.stash.core.data.db.entity.CloudUploadEntity::class,
         com.stash.core.data.db.entity.AlbumBackCoverEntity::class,
+        com.stash.core.data.db.entity.RecordPlayEntity::class,
+        com.stash.core.data.db.entity.RecordLengthEntity::class,
+        com.stash.core.data.db.entity.RecordHiddenEntity::class,
+        com.stash.core.data.db.entity.RecordTasteSongEntity::class,
+        com.stash.core.data.db.entity.RecordTasteEntity::class,
+        com.stash.core.data.db.entity.RecordTasteKeepEntity::class,
+        com.stash.core.data.db.entity.PlaylistOrderEntity::class,
+        com.stash.core.data.db.entity.PlaylistOrderEntryEntity::class,
     ],
-    version = 65,
+    version = 74,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -167,6 +179,8 @@ abstract class StashDatabase : RoomDatabase() {
 
     abstract fun syncUndoDao(): SyncUndoDao
 
+    abstract fun playlistOrderDao(): com.stash.core.data.db.dao.PlaylistOrderDao
+
     abstract fun sharedMixDao(): SharedMixDao
 
     abstract fun webLibraryExportDao(): WebLibraryExportDao
@@ -176,6 +190,16 @@ abstract class StashDatabase : RoomDatabase() {
     abstract fun scannedSongDao(): ScannedSongDao
 
     abstract fun listeningHistoryDao(): com.stash.core.data.db.dao.ListeningHistoryDao
+
+    abstract fun recordPlayDao(): com.stash.core.data.db.dao.RecordPlayDao
+
+    abstract fun recordLengthDao(): com.stash.core.data.db.dao.RecordLengthDao
+
+    abstract fun recordHiddenDao(): com.stash.core.data.db.dao.RecordHiddenDao
+
+    abstract fun recordTasteDao(): com.stash.core.data.db.dao.RecordTasteDao
+
+    abstract fun libraryArtDao(): com.stash.core.data.db.dao.LibraryArtDao
 
     companion object {
         const val DATABASE_NAME = "stash.db"
@@ -1738,6 +1762,209 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v65 -> v66, data only: the explicit flag Spotify syncs stored is cleared. The web-player
+         * parsers every playlist and Liked Songs sync went through never read Spotify's parental
+         * advisory, and the model defaulted it to false, so every Spotify song read as clean and the
+         * matcher picked clean versions (2026-10-26: 10,548 of 10,548 on the owner's phone). A false
+         * can't be told from those, so every one becomes unknown (null), which prefers the explicit
+         * original; the next sync writes Spotify's real flag back. A Spotify song's stored YouTube
+         * video stays: on the owner's phone 762 of 846 were the owner's own YouTube Music picks.
+         */
+        val MIGRATION_65_66 = object : Migration(65, 66) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `tracks` SET `explicit` = NULL WHERE `explicit` = 0")
+                db.execSQL("UPDATE `remote_track_snapshots` SET `explicit` = NULL WHERE `explicit` = 0")
+            }
+        }
+
+        /**
+         * v66 -> v67, data only: the albums Last.fm guessed are taken back. From 0.9.120 a song with
+         * no album of its own (a mix's, a Last.fm playlist's, a Search play's) got the album
+         * `track.getInfo` names, and its album artist. That is Last.fm's most scrobbled release, often
+         * a compilation: "Blinding Lights" on "Now 35" by Various Artists, whose page the Now Playing
+         * artist tap then opened.
+         *
+         * A row is cleared when its album AND album artist are exactly the answer Last.fm's cache
+         * holds for it (the guess wrote both; the client's key, so the same cleaned names). A row with
+         * a file or a cloud copy keeps its album: an album downloaded whole stores its own artist,
+         * which Last.fm mostly agrees with, and Recap caches Last.fm's answer for every song it reads.
+         * On the owner's phone (2026-10-26) this clears 1,410 rows; checked against the same
+         * library's 10-21 copy, 5 of the 7,557 albums it already had go too, each one Last.fm
+         * agreed with ("Nude" on "In Rainbows").
+         */
+        val MIGRATION_66_67 = object : Migration(66, 67) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val guessed = mutableListOf<Long>()
+                db.query(
+                    "SELECT `id`, `artist`, `title`, `album`, `album_artist` FROM `tracks` " +
+                        "WHERE `album` != '' AND `album_artist` != '' " +
+                        "AND `file_path` IS NULL AND `cloud_uri` IS NULL",
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val key = lastFmCacheKey(
+                            mapOf(
+                                "method" to "track.getInfo",
+                                "artist" to LastFmLookupRules.cleanArtist(c.getString(1)),
+                                "track" to LastFmLookupRules.cleanTitle(c.getString(2)),
+                                "autocorrect" to "1",
+                            ),
+                        )
+                        val json = db.query(
+                            "SELECT `json` FROM `lastfm_response_cache` WHERE `cache_key` = ?",
+                            arrayOf<Any?>(key),
+                        ).use { if (it.moveToFirst()) it.getString(0) else null } ?: continue
+                        val info = runCatching { LastFmTrackInfo.parse(Json.parseToJsonElement(json)) }
+                            .getOrNull() ?: continue
+                        if (info.albumTitle == c.getString(3) && info.albumArtist == c.getString(4)) {
+                            guessed += c.getLong(0)
+                        }
+                    }
+                }
+                guessed.chunked(500).forEach { ids ->
+                    db.execSQL(
+                        "UPDATE `tracks` SET `album` = '', `album_artist` = '' " +
+                            "WHERE `id` IN (${ids.joinToString(",")})",
+                    )
+                }
+            }
+        }
+
+        /**
+         * v67 -> v68: Your record's imported plays (a Spotify data export), one new, empty table, `record_plays`, keyed by the
+         * play's id (no other index: every read is by id or a whole pass). Kept apart from `listening_events` on purpose: these
+         * plays are never scrobbled, mirrored or exported as this phone's own. Nothing existing changes.
+         */
+        val MIGRATION_67_68 = object : Migration(67, 68) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_plays` (" +
+                        "`id` TEXT NOT NULL, `t` TEXT NOT NULL, `a` TEXT NOT NULL, `al` TEXT, `sid` TEXT, " +
+                        "`s` INTEGER NOT NULL, `ms` INTEGER NOT NULL, `f` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+            }
+        }
+
+        /**
+         * v68 -> v69: Your record's lengths pass keeps the songs it couldn't time (`record_lengths`, keyed by song key): Last.fm
+         * had no length for them, or their ask kept failing, and when. Empty to begin with; nothing else changes.
+         */
+        val MIGRATION_68_69 = object : Migration(68, 69) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_lengths` (" +
+                        "`key` TEXT NOT NULL, `kind` INTEGER NOT NULL, `at` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+                )
+            }
+        }
+
+        /**
+         * v69 -> v70: Your record's songs hidden on Spotify (`record_hidden`, keyed by song key), from a Spotify export's
+         * YourLibrary.json. Empty to begin with; nothing else changes.
+         */
+        val MIGRATION_69_70 = object : Migration(69, 70) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_hidden` (" +
+                        "`key` TEXT NOT NULL, `t` TEXT NOT NULL, `a` TEXT NOT NULL, PRIMARY KEY(`key`))",
+                )
+            }
+        }
+
+        /**
+         * v70 -> v71: Your record's taste (phase 5b). The taste's songs (`record_taste_songs`, by song key, with an index on the
+         * folded primary artist), its one row (`record_taste`: version, when, and the rest as JSON), the songs put back into mixes
+         * (`record_taste_keep`), and an index on `record_plays(s)` for the reads by time. All empty: the taste is worked out by the
+         * app once it runs. And `record_hidden`'s keys worked out again from the stored `t` and `a`: v70 keyed them with Kotlin's
+         * Unicode `IGNORE_CASE` and ICU's `\d`, and the song key now spells out JavaScript's ASCII-only classes, so a key that
+         * differs moves to its new one (two that become one keep the first written, rowid order).
+         */
+        val MIGRATION_70_71 = object : Migration(70, 71) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_taste_songs` (`key` TEXT NOT NULL, `rank` INTEGER NOT NULL, " +
+                        "`title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT, `sid` TEXT, `artist_key` TEXT NOT NULL, " +
+                        "`starts` INTEGER NOT NULL, `plays` INTEGER NOT NULL, `full` INTEGER NOT NULL, `chosen` INTEGER NOT NULL, " +
+                        "`skips` INTEGER NOT NULL, `years` INTEGER NOT NULL, `listened_ms` INTEGER NOT NULL, `first` INTEGER NOT NULL, " +
+                        "`last` INTEGER NOT NULL, `peak` INTEGER NOT NULL, `peak_at` INTEGER NOT NULL, `weight` REAL NOT NULL, " +
+                        "`depth` REAL NOT NULL, `avoid` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_taste_songs_artist_key` ON `record_taste_songs` (`artist_key`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `record_taste` (`id` INTEGER NOT NULL, `v` INTEGER NOT NULL, " +
+                        "`computed_at` INTEGER NOT NULL, `body` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE TABLE IF NOT EXISTS `record_taste_keep` (`key` TEXT NOT NULL, `at` INTEGER NOT NULL, PRIMARY KEY(`key`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_record_plays_s` ON `record_plays` (`s`)")
+                rekeyHidden(db)
+            }
+        }
+
+        /**
+         * v71 -> v72: `playlists.user_hidden`, a playlist taken out of the library from its
+         * account's page (the Sync tab overhaul). 0 for every row: nothing was hidden before.
+         */
+        val MIGRATION_71_72 = object : Migration(71, 72) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * `playlists.stack_songs`: stacking moves from one setting per account to a switch per
+         * mix. Off here for everyone; the first sync after it turns it on for the mixes an
+         * account that was accumulating already had (DiffWorker, once), so nobody's collected
+         * mix shrinks back to this week's.
+         */
+        val MIGRATION_72_73 = object : Migration(72, 73) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN stack_songs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
+         * Edit order: `playlist_order` (a playlist in the listener's own order) and `playlist_order_entries` (each
+         * song's place). Both start empty: every playlist keeps its order until it's edited.
+         */
+        val MIGRATION_73_74 = object : Migration(73, 74) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlist_order` (`playlist_id` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`), " +
+                        "FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlist_order_entries` (`playlist_id` INTEGER NOT NULL, `track_id` INTEGER NOT NULL, " +
+                        "`rank` INTEGER NOT NULL, PRIMARY KEY(`playlist_id`, `track_id`), " +
+                        "FOREIGN KEY(`playlist_id`) REFERENCES `playlists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_order_entries_playlist_id_rank` ON `playlist_order_entries` (`playlist_id`, `rank`)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_order_entries_track_id` ON `playlist_order_entries` (`track_id`)")
+            }
+        }
+
+        /** `record_hidden` keyed by today's [com.stash.core.model.weblink.SongKey.songKey], the first spelling of each kept. */
+        internal fun rekeyHidden(db: SupportSQLiteDatabase) {
+            class Row(val key: String, val t: String, val a: String)
+            val rows = ArrayList<Row>()
+            db.query("SELECT `key`, t, a FROM record_hidden ORDER BY rowid").use { c ->
+                while (c.moveToNext()) rows += Row(c.getString(0), c.getString(1), c.getString(2))
+            }
+            val keyed = rows.map { it to com.stash.core.model.weblink.SongKey.songKey(it.t, it.a) }
+            if (keyed.all { (r, k) -> r.key == k }) return
+            db.execSQL("DELETE FROM record_hidden")
+            val insert = db.compileStatement("INSERT OR IGNORE INTO record_hidden (`key`, t, a) VALUES (?, ?, ?)")
+            for ((r, k) in keyed) {
+                insert.clearBindings()
+                insert.bindString(1, k)
+                insert.bindString(2, r.t)
+                insert.bindString(3, r.a)
+                insert.executeInsert()
+            }
+        }
+
+        /**
          * Master's v56 `tidal_match_cache`, for the steps above that heal the All Songs PR's debug
          * databases (they skipped master's 55 -> 56). Must stay identical to [MIGRATION_55_56]'s
          * table; the migration tests validate both against the exported schema.
@@ -1839,6 +2066,15 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_62_63,
                 MIGRATION_63_64,
                 MIGRATION_64_65,
+                MIGRATION_65_66,
+                MIGRATION_66_67,
+                MIGRATION_67_68,
+                MIGRATION_68_69,
+                MIGRATION_69_70,
+                MIGRATION_70_71,
+                MIGRATION_71_72,
+                MIGRATION_72_73,
+                MIGRATION_73_74,
             )
         }
     }

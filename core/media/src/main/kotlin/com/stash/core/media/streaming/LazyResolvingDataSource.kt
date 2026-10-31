@@ -116,6 +116,16 @@ class LazyResolvingDataSource(
     private val cloudDelegate: (() -> DataSource)? = null,
     /** Told when a cloud copy won't open, so it isn't offered again this session. */
     private val cloudCopies: CloudCopyFinder? = null,
+    /**
+     * The row's downloaded file, when it has a usable one. A song queued while its
+     * download ran was queued as a placeholder; once the file lands it plays from the
+     * file, not a stream. Null in tests: every placeholder then streams.
+     */
+    private val downloadedFile: ((TrackEntity) -> Uri?)? = null,
+    /** Opens [downloadedFile]'s `file://` / `content://` URI. */
+    private val localDelegate: (() -> DataSource)? = null,
+    /** False in Download mode: nothing is resolved, the open fails and the song is skipped. */
+    private val streamAllowed: () -> Boolean = { true },
 ) : DataSource {
 
     private var active: DataSource? = null
@@ -142,6 +152,9 @@ class LazyResolvingDataSource(
     private var pinnedLifetimeMs = 0L
     private var pinnedTotalLength = C.LENGTH_UNSET.toLong()
 
+    /** The downloaded file this instance first served: every later open reads it too, never a stream. */
+    private var pinnedFile: Uri? = null
+
     override fun addTransferListener(transferListener: TransferListener) {
         listeners += transferListener
         active?.addTransferListener(transferListener)
@@ -154,6 +167,17 @@ class LazyResolvingDataSource(
         }
         val trackId = uri.lastPathSegment?.toLongOrNull()
             ?: throw IOException("stash-resolve URI without a track id: $uri")
+
+        // The file is chosen on a first open only: a song already streaming keeps its
+        // stream to the end (its extractor was sniffed from it). An override item plays
+        // the host's recording, which the listener's own file may not be.
+        val file = pinnedFile ?: if (pinned == null && !overridesRow(uri)) downloadedFileBlocking(trackId) else null
+        if (file != null) {
+            val local = localDelegate ?: throw IOException("local playback isn't wired")
+            pinnedFile = file
+            return delegateTo(local(), dataSpec.buildUpon().setUri(file).build())
+        }
+        if (!streamAllowed()) throw IOException("Download mode: track $trackId isn't on the phone; not streaming it")
 
         val pin = pinned
         val fresh = if (pin != null && pinStillValid()) {
@@ -255,6 +279,13 @@ class LazyResolvingDataSource(
         }?.also { if (!overridesRow(uri)) urlCache.put(trackId, it) }
     } catch (e: TimeoutCancellationException) {
         throw IOException("stream resolve deadline (${resolveDeadlineMs}ms) for track $trackId", e)
+    }
+
+    /** The row's usable downloaded file; null when it has none (or nothing can open one). */
+    private fun downloadedFileBlocking(trackId: Long): Uri? {
+        val find = downloadedFile ?: return null
+        if (localDelegate == null) return null
+        return runBlocking { trackDao.getById(trackId) }?.let(find)
     }
 
     private fun overridesRow(uri: Uri): Boolean = isRowOverride(uri)

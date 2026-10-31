@@ -7,6 +7,7 @@ import androidx.room.Query
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.model.Track
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Read-only queries behind "Export for Stash on the web" (WebLibraryExporter). Nothing here writes.
@@ -94,6 +95,13 @@ interface WebLibraryExportDao {
         """,
     )
     suspend fun likes(): List<LikedRow>
+
+    /**
+     * The songs liked in Stash (`stash_liked_at`: the heart Now Playing shows), newest first, a blocked song left out. Your
+     * record's song rows show their hearts by it (a song only in a Liked Songs playlist synced from Spotify isn't one).
+     */
+    @Query("SELECT $SONG_COLUMNS FROM tracks t WHERE t.stash_liked_at IS NOT NULL AND $NOT_BLOCKED ORDER BY t.stash_liked_at DESC, t.id ASC")
+    suspend fun stashLikes(): List<SongColumns>
 
     /**
      * Your own playlists ([com.stash.core.model.PlaylistType.CUSTOM]) as Library shows them (online, see
@@ -311,7 +319,167 @@ interface WebLibraryExportDao {
     )
     suspend fun ownFirstPlayAt(): Long?
 
+    /** When the last of those plays started (Your record's import record: its last listen); null when there is none. */
+    @Query(
+        """
+        SELECT MAX(le.started_at) FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.origin_device IS NULL AND le.started_at > 0
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        """,
+    )
+    suspend fun ownLastPlayAt(): Long?
+
+    /**
+     * One artist and album of this phone's plays, totalled ([ownAlbumTotals]). Your record's Home card ranks albums and artists
+     * from these (stash-player record-card.ts `fromOwn`), so a decade of plays comes back as one row per album, not a row per play.
+     */
+    data class OwnAlbumTotal(
+        val artist: String,
+        val album: String,
+        /** One of its songs: the cover lookup's way in when the album isn't found by its name. */
+        val title: String,
+        /** A cover one of its songs has, when any does. */
+        @ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
+        val plays: Int,
+        /** Each play its song's length, else [GUESS_MS] (the web counts this browser's own plays so on its card). */
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        @ColumnInfo(name = "first_at") val firstAt: Long,
+        @ColumnInfo(name = "last_at") val lastAt: Long,
+    )
+
+    /**
+     * The plays [ownPlaysBefore] pages through, totalled by the song's artist and album as written, the album played last
+     * first (so a name spelled two ways is shown as it was spelled lately).
+     */
+    @Query(
+        """
+        SELECT t.artist AS artist, t.album AS album, MAX(t.title) AS title, MAX(t.album_art_url) AS album_art_url,
+               COUNT(*) AS plays,
+               SUM(CASE WHEN t.duration_ms > 0 THEN t.duration_ms ELSE $GUESS_MS END) AS listened_ms,
+               MIN(le.started_at) AS first_at, MAX(le.started_at) AS last_at
+        FROM listening_events le
+        JOIN tracks t ON t.id = le.track_id
+        WHERE le.origin_device IS NULL AND le.started_at > 0
+          AND TRIM(t.title) != '' AND TRIM(t.artist) != ''
+          AND $NOT_BLOCKED
+        GROUP BY t.artist, t.album
+        ORDER BY last_at DESC, t.artist ASC, t.album ASC
+        """,
+    )
+    suspend fun ownAlbumTotals(): List<OwnAlbumTotal>
+
+    /**
+     * What the phone's own history looks like from far off: how many plays and skips, the newest of each, the time played,
+     * and the blocklist's size. Any change to the plays, the skips or the blocklist changes it, so Your record's Home card
+     * reads the history again only then ([ownHistoryStamp]), never just because Home came back.
+     */
+    data class OwnHistoryStamp(
+        val plays: Int,
+        @ColumnInfo(name = "last_play") val lastPlay: Long,
+        @ColumnInfo(name = "listened_ms") val listenedMs: Long,
+        val skips: Int,
+        @ColumnInfo(name = "last_skip") val lastSkip: Long,
+        val blocked: Int,
+    )
+
+    /**
+     * [OwnHistoryStamp], again each time Room sees `listening_events`, `track_skip_events` or `track_blocklist` written (and
+     * only those: a sync rewriting `tracks` doesn't wake it). Cheap: counts and sums over indexed tables, no join.
+     */
+    @Query(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM listening_events WHERE origin_device IS NULL) AS plays,
+            (SELECT COALESCE(MAX(id), 0) FROM listening_events) AS last_play,
+            (SELECT COALESCE(SUM(listened_ms), 0) FROM listening_events WHERE origin_device IS NULL) AS listened_ms,
+            (SELECT COUNT(*) FROM track_skip_events) AS skips,
+            (SELECT COALESCE(MAX(id), 0) FROM track_skip_events) AS last_skip,
+            (SELECT COUNT(*) FROM track_blocklist) AS blocked
+        """,
+    )
+    fun ownHistoryStamp(): Flow<OwnHistoryStamp>
+
+    /**
+     * Emits each time Room sees `tracks` written (the newest id, which a rename doesn't move: read it as "tracks changed", not
+     * for its value). A song renamed, moved to another album or unblocked changes what Your record's card shows without
+     * touching [ownHistoryStamp]. Cheap: one index seek. A sync writes `tracks` many times a second: the card's reader settles
+     * and spaces these out.
+     */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM tracks")
+    fun tracksWritten(): Flow<Long>
+
+    /** A song's words as a library track has them, and the longest length any track with those words has. */
+    data class LibraryLength(
+        @ColumnInfo(name = "title") val title: String,
+        @ColumnInfo(name = "artist") val artist: String,
+        @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    )
+
+    /**
+     * The library's song lengths, for a Last.fm scrobble's length in Your record (plays.ts `libraryLengths`, spec §7 step 2: the
+     * web reads its likes, playlists and plays). The longest `duration_ms` by title and artist as written, of the tracks the
+     * library holds: liked, in a playlist (any kind: a mix's song lasts as long as anywhere else; never one taken out), on the
+     * phone, or played here. Kept to 1 s to 6 h, as the web keeps them: a length outside is broken. Grouped in the database, one
+     * row per spelling; the caller folds them by song key.
+     */
+    @Query(
+        """
+        SELECT t.title AS title, t.artist AS artist, MAX(t.duration_ms) AS duration_ms FROM tracks t
+        WHERE t.duration_ms BETWEEN 1000 AND 21600000
+          AND (
+              t.stash_liked_at IS NOT NULL
+              OR t.is_downloaded = 1
+              OR EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id AND pt.removed_at IS NULL)
+              OR EXISTS (SELECT 1 FROM listening_events e WHERE e.track_id = t.id)
+          )
+        GROUP BY t.title, t.artist
+        """,
+    )
+    suspend fun libraryLengths(): List<LibraryLength>
+
+    /**
+     * What the library here holds, in brief: the songs liked here, and the live songs of the listener's own playlists and of the
+     * Liked Songs lists (count and id sum each), as [likes] and [playlists] read them. Daily Mixes, Stash Mixes and the Downloads list are left out: a sync or a mix
+     * refresh rewrites them and changes nothing a library song is.
+     */
+    data class LibraryStamp(
+        @ColumnInfo(name = "liked") val liked: Long,
+        @ColumnInfo(name = "liked_ids") val likedIds: Long,
+        @ColumnInfo(name = "listed") val listed: Long,
+        @ColumnInfo(name = "listed_ids") val listedIds: Long,
+    )
+
+    /**
+     * [LibraryStamp], again each time Room sees `tracks`, `playlists` or `playlist_tracks` written (the caller keeps only the
+     * changes): Your record's mixes follow a song liked or added to one of your playlists, as the web's follow its library.
+     */
+    @Query(LIBRARY_STAMP)
+    fun libraryStamp(): Flow<LibraryStamp>
+
+    /** [libraryStamp] now (what the library read is kept by). */
+    @Query(LIBRARY_STAMP)
+    suspend fun libraryStampNow(): LibraryStamp
+
     companion object {
+        /**
+         * [LibraryStamp]'s query: the playlists [likes] and [playlists] read (Liked Songs lists, and your own CUSTOM ones while
+         * active), with the songs liked here.
+         */
+        const val LIBRARY_STAMP = """
+            SELECT
+                (SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked,
+                (SELECT COALESCE(SUM(id), 0) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked_ids,
+                (SELECT COUNT(*) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed,
+                (SELECT COALESCE(SUM(pt.track_id), 0) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed_ids
+        """
+
+        /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */
+        const val GUESS_MS = 210_000L
+
         /** [SongColumns] of a track (`t`). */
         const val SONG_COLUMNS =
             "t.id, t.title, t.artist, t.album, t.duration_ms, t.isrc, t.spotify_uri, t.youtube_id, t.album_art_url, t.date_added"

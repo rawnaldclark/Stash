@@ -214,8 +214,9 @@ class LosslessRetryWorker @AssistedInject constructor(
         album = track.album.takeIf { it.isNotBlank() },
         isrc = track.isrc,
         durationMs = track.durationMs.takeIf { it > 0 },
+        explicit = track.explicit,
         spotifyUri = track.spotifyUri,
-    ).forLibrarySource(track.source, track.musicVideoType)
+    ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
 
     /** Back to PENDING, and its download starts now. */
     private suspend fun requeue(queueId: Long) {

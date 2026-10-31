@@ -87,6 +87,31 @@ private const val WANTED_BY_A_PLAYLIST = """
 private const val ASKED_FOR = "(user_requested = 1 OR " + WANTED_BY_A_PLAYLIST + ")"
 
 /**
+ * A sync row a sync still downloads: its song sits in a switched-on, active playlist
+ * or mix (the rule [DownloadQueueDao.getAllPendingBySources] takes sync rows by).
+ */
+private const val WANTED_BY_A_SYNC = """
+    (sync_id IS NOT NULL AND track_id IN (
+        SELECT pt.track_id FROM playlist_tracks pt
+        INNER JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.removed_at IS NULL
+          AND p.sync_enabled = 1
+          AND p.is_active = 1
+          AND p.type != 'STASH_MIX'
+    ))
+"""
+
+/** The track is blocked ("Delete and block forever"): no download takes it. */
+private const val BLOCKED_TRACK = """
+    EXISTS (
+        SELECT 1 FROM track_blocklist bl
+        WHERE bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+           OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+           OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+    )
+"""
+
+/**
  * Data-access object for [DownloadQueueEntity].
  *
  * Manages the download work queue with insert, status updates,
@@ -118,7 +143,12 @@ interface DownloadQueueDao {
     /** Active queue, including deliberate lossless deferrals, oldest first.
      *  Bounded: a full-library sync queues thousands of rows and this feed
      *  re-emits on every queue write — an unbounded join would rebuild the
-     *  whole list each tick. 500 is far past what the screen can scroll. */
+     *  whole list each tick. 500 is far past what the screen can scroll.
+     *
+     *  Only rows a download will take: a running one, or a waiting one someone
+     *  asked for ([ASKED_FOR]) or a sync still wants ([WANTED_BY_A_SYNC]), whose
+     *  song isn't blocked. Anything else (a playlist switched off, a blocked song,
+     *  a leftover from an older version) sat in "Up next" forever. */
     @Transaction
     @Query("""
         SELECT dq.id AS queueId, dq.track_id AS trackId,
@@ -128,11 +158,22 @@ interface DownloadQueueDao {
                dq.created_at AS createdAt, dq.completed_at AS completedAt
           FROM download_queue dq
           INNER JOIN tracks t ON t.id = dq.track_id
-         WHERE dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+         WHERE dq.status = 'IN_PROGRESS'
+            OR (dq.status IN ('PENDING', 'WAITING_FOR_LOSSLESS')
+                AND (""" + ASKED_FOR + " OR " + WANTED_BY_A_SYNC + """)
+                AND NOT """ + BLOCKED_TRACK + """)
          ORDER BY dq.created_at ASC, dq.id ASC
          LIMIT 500
     """)
     fun observeActiveDownloadRows(): Flow<List<DownloadManagementRow>>
+
+    /** Every row a download could still take or is running: what Clear queue cancels. */
+    @Query("SELECT id FROM download_queue WHERE status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')")
+    suspend fun activeIds(): List<Long>
+
+    /** The rows marked downloading, live or not. */
+    @Query("SELECT id FROM download_queue WHERE status = 'IN_PROGRESS'")
+    suspend fun inProgressIds(): List<Long>
 
     /** Terminal download history, newest first and bounded for UI consumption. */
     @Query("""

@@ -46,8 +46,9 @@ class YtCanonicalResolver @Inject constructor(
             return CanonicalLookup.Found(CanonicalMatch(cached, thumbnailUrl = null))
         }
 
-        // Tier 3: search and cache.
-        val lookup = innerTubeClient.searchCanonicalLookup(track.artist, track.title)
+        // Tier 3: search and cache. The advisory picks the explicit or clean copy
+        // by the same rule as playback's YouTube search.
+        val lookup = innerTubeClient.searchCanonicalLookup(track.artist, track.title, track.explicit)
         if (lookup !is CanonicalLookup.Found) return lookup
         if (lookup.match.videoId.isBlank()) return CanonicalLookup.NoMatch
         trackDao.updateYtCanonicalVideoId(track.id, lookup.match.videoId)

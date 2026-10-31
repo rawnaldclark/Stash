@@ -98,7 +98,7 @@ class CrossPlatformLikeResolverTest {
     @Test fun `returns existing youtube id without searching`() = runTest {
         val id = resolver().ensureYoutubeId(track(ytId = "vidExisting"))
         assertEquals("vidExisting", id)
-        coVerify(exactly = 0) { yt.searchCanonicalVideoId(any(), any()) }
+        coVerify(exactly = 0) { yt.searchCanonicalVideoId(any(), any(), any()) }
     }
 
     @Test fun `resolves and persists the youtube id from canonical search`() = runTest {
@@ -111,7 +111,7 @@ class CrossPlatformLikeResolverTest {
     }
 
     @Test fun `null canonical search yields no id and no persist`() = runTest {
-        coEvery { yt.searchCanonicalVideoId(any(), any()) } returns null
+        coEvery { yt.searchCanonicalVideoId(any(), any(), any()) } returns null
 
         assertNull(resolver().ensureYoutubeId(track()))
         coVerify(exactly = 0) { dao.updateYoutubeId(any(), any()) }

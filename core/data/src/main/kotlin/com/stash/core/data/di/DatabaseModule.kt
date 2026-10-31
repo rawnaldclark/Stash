@@ -55,6 +55,9 @@ object DatabaseModule {
     fun providePlaylistDao(db: StashDatabase): PlaylistDao = db.playlistDao()
 
     @Provides
+    fun providePlaylistOrderDao(db: StashDatabase): com.stash.core.data.db.dao.PlaylistOrderDao = db.playlistOrderDao()
+
+    @Provides
     fun provideSyncHistoryDao(db: StashDatabase): SyncHistoryDao = db.syncHistoryDao()
 
     @Provides
@@ -144,4 +147,29 @@ object DatabaseModule {
     @Provides
     fun provideListeningHistoryDao(db: StashDatabase): com.stash.core.data.db.dao.ListeningHistoryDao =
         db.listeningHistoryDao()
+
+    /** This phone's own plays and skips, as the web export reads them; Your record (feature:record) reads them the same way. */
+    @Provides
+    fun provideWebLibraryExportDao(db: StashDatabase): com.stash.core.data.db.dao.WebLibraryExportDao =
+        db.webLibraryExportDao()
+
+    /** The library's covers by words, for Your record's own art (read only). */
+    @Provides
+    fun provideLibraryArtDao(db: StashDatabase): com.stash.core.data.db.dao.LibraryArtDao = db.libraryArtDao()
+
+    /** Your record's imported plays (`record_plays`): a Spotify export, kept apart from this phone's own history. */
+    @Provides
+    fun provideRecordPlayDao(db: StashDatabase): com.stash.core.data.db.dao.RecordPlayDao = db.recordPlayDao()
+
+    /** Your record's lengths pass: the songs it couldn't time (`record_lengths`). */
+    @Provides
+    fun provideRecordLengthDao(db: StashDatabase): com.stash.core.data.db.dao.RecordLengthDao = db.recordLengthDao()
+
+    /** Your record's songs hidden on Spotify (`record_hidden`), from a Spotify export. */
+    @Provides
+    fun provideRecordHiddenDao(db: StashDatabase): com.stash.core.data.db.dao.RecordHiddenDao = db.recordHiddenDao()
+
+    /** Your record's taste and the songs put back into mixes (`record_taste`, `record_taste_songs`, `record_taste_keep`). */
+    @Provides
+    fun provideRecordTasteDao(db: StashDatabase): com.stash.core.data.db.dao.RecordTasteDao = db.recordTasteDao()
 }

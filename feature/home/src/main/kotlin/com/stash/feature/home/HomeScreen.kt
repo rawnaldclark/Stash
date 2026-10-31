@@ -175,6 +175,10 @@ fun HomeScreen(
     communitySection: @Composable () -> Unit = {},
     /** "Your listening", from feature/listening; renders nothing until there's a listen. */
     yourListeningSection: @Composable () -> Unit = {},
+    /** "Your record", from feature/record: the way into the record, or its invitation. */
+    yourRecordSection: @Composable () -> Unit = {},
+    /** "From your record", from feature/record: three mixes only the record's years make; nothing without an import. */
+    recordMixesSection: @Composable () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
@@ -702,6 +706,8 @@ fun HomeScreen(
                 }
                 HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
                 HomeSection.YOUR_LISTENING -> item(key = "section_your_listening") { yourListeningSection() }
+                HomeSection.YOUR_RECORD -> item(key = "section_your_record") { yourRecordSection() }
+                HomeSection.RECORD_MIXES -> item(key = "section_record_mixes") { recordMixesSection() }
             }
         }
 

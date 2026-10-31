@@ -1,0 +1,622 @@
+{
+ "lists": [
+  {
+   "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+   "hidden": [],
+   "putBack": [],
+   "list": [
+    {
+     "key": "skit|band",
+     "title": "SKit",
+     "artist": "Band",
+     "why": {
+      "kind": "skips",
+      "skips": 8,
+      "starts": 8
+     },
+     "line": "Skipped 8 of 8 times"
+    }
+   ]
+  },
+  {
+   "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+   "hidden": [],
+   "putBack": [
+    "skit|band"
+   ],
+   "list": []
+  },
+  {
+   "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+   "hidden": [],
+   "putBack": [],
+   "list": [
+    {
+     "key": "intro|band",
+     "title": "Intro",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "track intro|band",
+     "title": "Track (intro)",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "interlude|band",
+     "title": "INTERLUDE",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "commentary track|band",
+     "title": "commentary track",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "outro|band",
+     "title": "Outro.",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "intro 1|band",
+     "title": "Intro-1",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "eintro|band",
+     "title": "éIntro",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "introe|band",
+     "title": "Introé",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    }
+   ]
+  },
+  {
+   "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+   "hidden": [],
+   "putBack": [
+    "intro|band"
+   ],
+   "list": [
+    {
+     "key": "track intro|band",
+     "title": "Track (intro)",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "interlude|band",
+     "title": "INTERLUDE",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "commentary track|band",
+     "title": "commentary track",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "outro|band",
+     "title": "Outro.",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "intro 1|band",
+     "title": "Intro-1",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "eintro|band",
+     "title": "éIntro",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    },
+    {
+     "key": "introe|band",
+     "title": "Introé",
+     "artist": "Band",
+     "why": {
+      "kind": "interlude"
+     },
+     "line": "An interlude you skip"
+    }
+   ]
+  },
+  {
+   "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+   "hidden": [],
+   "putBack": [],
+   "list": [
+    {
+     "key": "edge|artist y",
+     "title": "Edge",
+     "artist": "Artist Y",
+     "why": {
+      "kind": "skips",
+      "skips": 6,
+      "starts": 8
+     },
+     "line": "Skipped 6 of 8 times"
+    },
+    {
+     "key": "never again|artist y",
+     "title": "Never Again",
+     "artist": "Artist Y",
+     "why": {
+      "kind": "skips",
+      "skips": 6,
+      "starts": 6
+     },
+     "line": "Skipped 6 of 6 times"
+    }
+   ]
+  },
+  {
+   "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+   "hidden": [],
+   "putBack": [
+    "edge|artist y"
+   ],
+   "list": [
+    {
+     "key": "never again|artist y",
+     "title": "Never Again",
+     "artist": "Artist Y",
+     "why": {
+      "kind": "skips",
+      "skips": 6,
+      "starts": 6
+     },
+     "line": "Skipped 6 of 6 times"
+    }
+   ]
+  },
+  {
+   "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+   "hidden": [
+    "hidden kept|band",
+    "hidden back|band",
+    "hidden|band",
+    "lost back|band"
+   ],
+   "putBack": [],
+   "list": [
+    {
+     "key": "hidden|band",
+     "title": "Hidden",
+     "artist": "Band",
+     "why": {
+      "kind": "hidden"
+     },
+     "line": "Hidden on Spotify"
+    }
+   ]
+  },
+  {
+   "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+   "hidden": [
+    "hidden kept|band",
+    "hidden back|band",
+    "hidden|band",
+    "lost back|band"
+   ],
+   "putBack": [
+    "hidden|band"
+   ],
+   "list": []
+  }
+ ],
+ "why": [
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 6,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 5,
+    "starts": 6
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 6,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 5,
+    "starts": 6
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 6,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 5,
+    "starts": 6
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 6,
+   "skips": 4,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 6,
+   "skips": 4,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 6,
+   "skips": 4,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 8,
+   "skips": 6,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 6,
+    "starts": 8
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 8,
+   "skips": 6,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 6,
+    "starts": 8
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 8,
+   "skips": 6,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 6,
+    "starts": 8
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 5,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 5,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 5,
+   "skips": 5,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 3,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 3,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 3,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "interlude"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 3,
+   "skips": 1,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 3,
+   "skips": 1,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 3,
+   "skips": 1,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 2,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 2,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 2,
+   "skips": 2,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 12345,
+   "skips": 10000,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 10000,
+    "starts": 12345
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 12345,
+   "skips": 10000,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 10000,
+    "starts": 12345
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 12345,
+   "skips": 10000,
+   "hidden": false,
+   "why": {
+    "kind": "skips",
+    "skips": 10000,
+    "starts": 12345
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 0,
+   "skips": 0,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "intro|band",
+   "title": "Intro",
+   "starts": 0,
+   "skips": 0,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "interlude reprise|band",
+   "title": "Interlude (Reprise)",
+   "starts": 0,
+   "skips": 0,
+   "hidden": false,
+   "why": {
+    "kind": "hidden"
+   }
+  },
+  {
+   "key": "track|band",
+   "title": "Track",
+   "starts": 8,
+   "skips": 8,
+   "hidden": true,
+   "why": {
+    "kind": "hidden"
+   }
+  }
+ ],
+ "rules": [
+  {
+   "step": "put back with no import",
+   "result": false,
+   "keep": null,
+   "asked": null,
+   "import": false
+  },
+  {
+   "step": "put back",
+   "result": true,
+   "keep": [
+    "zed|band"
+   ],
+   "asked": 5,
+   "import": true
+  },
+  {
+   "step": "put back another, sorted",
+   "result": true,
+   "keep": [
+    "alpha|band",
+    "zed|band"
+   ],
+   "asked": 5,
+   "import": true
+  },
+  {
+   "step": "put back the same again: once",
+   "result": true,
+   "keep": [
+    "alpha|band",
+    "zed|band"
+   ],
+   "asked": 5,
+   "import": true
+  },
+  {
+   "step": "remove import: the songs put back go, asked stays",
+   "keep": null,
+   "asked": 5,
+   "import": false
+  },
+  {
+   "step": "remove Last.fm when it was all there was: they go",
+   "keep": null,
+   "asked": null,
+   "import": false
+  },
+  {
+   "step": "remove Last.fm beside Spotify plays: the songs put back stay",
+   "keep": [
+    "back|band"
+   ],
+   "asked": null,
+   "import": true
+  }
+ ]
+}

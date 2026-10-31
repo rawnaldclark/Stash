@@ -48,6 +48,12 @@ class QbdlxApiClientTest {
         assertThat(items.map { it.version }).containsExactly("Retro Mix", null).inOrder()
     }
 
+    @Test fun `search reads the track's parental warning, null when absent`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"tracks":{"items":[{"id":1,"title":"Song","parental_warning":true},{"id":2,"title":"Song","parental_warning":false},{"id":3,"title":"Song"}]}}"""))
+        val items = client.search("Artist Song")
+        assertThat(items.map { it.explicit }).containsExactly(true, false, null).inOrder()
+    }
+
     /**
      * Catalog browsing needs no account: Qobuz's own web player reads the catalog
      * logged-out under its web app_id (live-probed 2026-08-29 — all eight catalog

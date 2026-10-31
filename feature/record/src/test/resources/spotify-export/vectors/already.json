@@ -1,0 +1,756 @@
+[
+ {
+  "name": "all its songs",
+  "p": {
+   "name": "Road trip",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Road trip",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     },
+     {
+      "title": "B",
+      "artist": "Band"
+     },
+     {
+      "title": "C",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "exactly half",
+  "p": {
+   "name": "Road trip",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    },
+    {
+     "title": "D",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Road trip",
+    "items": [
+     {
+      "title": "D",
+      "artist": "Band"
+     },
+     {
+      "title": "B",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "under half",
+  "p": {
+   "name": "Road trip",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    },
+    {
+     "title": "D",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Road trip",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "odd, one short",
+  "p": {
+   "name": "Odd",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Odd",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "odd, enough",
+  "p": {
+   "name": "Odd",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Odd",
+    "items": [
+     {
+      "title": "C",
+      "artist": "Band"
+     },
+     {
+      "title": "A",
+      "artist": "Band"
+     },
+     {
+      "title": "X",
+      "artist": "Band"
+     },
+     {
+      "title": "Y",
+      "artist": "Band"
+     },
+     {
+      "title": "Z",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "another name",
+  "p": {
+   "name": "Road trip",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Road trips",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "case, accents and punctuation fold",
+  "p": {
+   "name": "Röad  Trip!",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "road trip",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "a featuring credit folds away",
+  "p": {
+   "name": "Summer (feat. Friends)",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "summer",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "other brackets are the name",
+  "p": {
+   "name": "Summer (2019)",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Summer",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "full-width and ligatures",
+  "p": {
+   "name": "ﬁve Ｍｉｘ",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "five mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "names that fold to nothing name no playlist",
+  "p": {
+   "name": "🔥🔥",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "💕",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "the same name of only emoji is still no name",
+  "p": {
+   "name": "🔥",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "🔥",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "punctuation alone is no name",
+  "p": {
+   "name": "!!!",
+   "items": []
+  },
+  "have": [
+   {
+    "name": "...",
+    "items": []
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "emoji around words fold away",
+  "p": {
+   "name": "🔥 Mix 🔥",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "empty, same name",
+  "p": {
+   "name": "Empty",
+   "items": []
+  },
+  "have": [
+   {
+    "name": "empty",
+    "items": []
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "empty, nothing here",
+  "p": {
+   "name": "Empty",
+   "items": []
+  },
+  "have": [],
+  "expect": false
+ },
+ {
+  "name": "nothing here",
+  "p": {
+   "name": "Road trip",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [],
+  "expect": false
+ },
+ {
+  "name": "a song twice needs two copies",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "a song twice, two copies",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     },
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "words fold",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "Café (feat. X)",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "cafe",
+      "artist": "BAND"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "an ISRC here still pairs by words",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "a",
+      "artist": "band",
+      "isrc": "USX1"
+     },
+     {
+      "title": "b",
+      "artist": "band",
+      "isrc": "USX2"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "another artist is another song",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Other"
+     },
+     {
+      "title": "B",
+      "artist": "Other"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "version words are the song",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "Song (Live)",
+     "artist": "Band"
+    },
+    {
+     "title": "Other",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "Song",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "two of the name, the second holds enough",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": []
+   },
+   {
+    "name": "mix",
+    "items": [
+     {
+      "title": "B",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ },
+ {
+  "name": "two of the name, neither enough",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "A",
+      "artist": "Band"
+     }
+    ]
+   },
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "B",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": false
+ },
+ {
+  "name": "held songs in another order",
+  "p": {
+   "name": "Mix",
+   "items": [
+    {
+     "title": "A",
+     "artist": "Band"
+    },
+    {
+     "title": "B",
+     "artist": "Band"
+    },
+    {
+     "title": "C",
+     "artist": "Band"
+    },
+    {
+     "title": "D",
+     "artist": "Band"
+    }
+   ]
+  },
+  "have": [
+   {
+    "name": "Mix",
+    "items": [
+     {
+      "title": "D",
+      "artist": "Band"
+     },
+     {
+      "title": "C",
+      "artist": "Band"
+     },
+     {
+      "title": "Q",
+      "artist": "Band"
+     }
+    ]
+   }
+  ],
+  "expect": true
+ }
+]

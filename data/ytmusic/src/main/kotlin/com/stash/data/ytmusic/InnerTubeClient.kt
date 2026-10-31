@@ -690,18 +690,22 @@ class InnerTubeClient @Inject constructor(
      * that the filter can run without a separate round-trip.
      *
      * Scoring is intentionally simple: the first ATV result wins, then the
-     * first OMV result. The kill-switch in `YouTubeHistoryScrobbler` and the
+     * first OMV result (or that result's explicit/clean twin, by the track's
+     * parental advisory: [searchCanonicalLookup]). The kill-switch in
+     * `YouTubeHistoryScrobbler` and the
      * strict ATV/OMV filter here are the real safeguards; replicating the
      * full [com.stash.data.download.matching.MatchScorer] heuristics would
      * be over-engineering for a caller that already has a confirmed
      * artist + title from the user's own watch history.
      *
-     * @param artist The track artist.
-     * @param title  The track title.
+     * @param artist   The track artist.
+     * @param title    The track title.
+     * @param explicit The track's parental advisory, which picks between the
+     *   explicit and clean copies of the song ([searchCanonicalLookup]).
      * @return The video id of the best ATV or OMV match, or null if none found.
      */
-    suspend fun searchCanonical(artist: String, title: String): String? =
-        searchCanonicalMatch(artist, title)?.videoId
+    suspend fun searchCanonical(artist: String, title: String, explicit: Boolean? = null): String? =
+        (searchCanonicalLookup(artist, title, explicit) as? CanonicalLookup.Found)?.match?.videoId
 
     /**
      * Like [searchCanonical] but also returns the matched song's square YT
@@ -719,97 +723,141 @@ class InnerTubeClient @Inject constructor(
      * ATV/OMV result" ([CanonicalLookup.NoMatch]). The YouTube history
      * scrobbler drops a play on NoMatch, so reading a failure as one silently
      * lost every play made offline or during a rate-limit storm.
+     *
+     * [explicit] is the source track's parental advisory. YouTube Music lists a
+     * song's explicit and clean copies as twins (same title, artist, album name
+     * and length; only the videoId differs) in no fixed order, so the first ATV
+     * result could be the clean edit. Within the tier picked
+     * (ATV, else OMV) a badged twin of its first result is now taken unless
+     * [explicit] is `false`, and an unbadged twin when it is ([preferExplicitTwin]).
+     * With no twin the first result stands, exactly as before.
      */
-    suspend fun searchCanonicalLookup(artist: String, title: String): CanonicalLookup =
+    suspend fun searchCanonicalLookup(
+        artist: String,
+        title: String,
+        explicit: Boolean? = null,
+    ): CanonicalLookup =
         withContext(Dispatchers.IO) {
             val query = "$artist $title"
             val response = searchWithStatus(query, params = songsFilterParams).body
                 ?: return@withContext CanonicalLookup.Failed
+            canonicalFromSongsSearch(response, query, explicit)
+        }
 
-            // Walk the Songs shelf(ves) inside the search response. Each row is a
-            // musicResponsiveListItemRenderer; we extract videoId and musicVideoType
-            // inline so no separate parser dependency is needed.
-            val shelves: JsonArray = response["contents"]
-                ?.jsonObject?.get("tabbedSearchResultsRenderer")
-                ?.jsonObject?.get("tabs")
-                ?.jsonArray?.firstOrNull()
-                ?.jsonObject?.get("tabRenderer")
-                ?.jsonObject?.get("content")
-                ?.jsonObject?.get("sectionListRenderer")
-                ?.jsonObject?.get("contents")
-                ?.jsonArray ?: return@withContext CanonicalLookup.NoMatch
+    /**
+     * [searchCanonicalLookup]'s pick from a songs-filtered search [response]
+     * ([query] is only logged). Split out so the pick can be tested against a
+     * captured response without an HTTP round-trip.
+     */
+    internal fun canonicalFromSongsSearch(
+        response: JsonObject,
+        query: String,
+        explicit: Boolean?,
+    ): CanonicalLookup {
+        // Walk the Songs shelf(ves) inside the search response. Each row is a
+        // musicResponsiveListItemRenderer; videoId and musicVideoType are read
+        // inline, title/artist/length through the search row parser.
+        val shelves: JsonArray = response["contents"]
+            ?.jsonObject?.get("tabbedSearchResultsRenderer")
+            ?.jsonObject?.get("tabs")
+            ?.jsonArray?.firstOrNull()
+            ?.jsonObject?.get("tabRenderer")
+            ?.jsonObject?.get("content")
+            ?.jsonObject?.get("sectionListRenderer")
+            ?.jsonObject?.get("contents")
+            ?.jsonArray ?: return CanonicalLookup.NoMatch
 
-            // Collect (videoId, musicVideoType, thumbnail) from Songs shelves only.
-            data class Candidate(val videoId: String, val type: MusicVideoType?, val thumbnailUrl: String?)
-            val candidates = mutableListOf<Candidate>()
+        // Collect (videoId, musicVideoType, thumbnail, twin key) from Songs shelves only.
+        data class Candidate(
+            val videoId: String,
+            val type: MusicVideoType?,
+            val thumbnailUrl: String?,
+            val twinKey: ExplicitTwinKey,
+        )
+        val candidates = mutableListOf<Candidate>()
 
-            for (shelf in shelves) {
-                val shelfObj = shelf.jsonObject
-                val renderer = shelfObj["musicShelfRenderer"]?.jsonObject ?: continue
-                // Only process the Songs shelf (skip Artists, Albums, etc.)
-                val shelfTitle = renderer["title"]?.jsonObject
-                    ?.get("runs")?.jsonArray
-                    ?.firstOrNull()?.jsonObject
-                    ?.get("text")?.jsonPrimitive?.content
-                if (shelfTitle != null && shelfTitle != "Songs") continue
+        for (shelf in shelves) {
+            val shelfObj = shelf.jsonObject
+            val renderer = shelfObj["musicShelfRenderer"]?.jsonObject ?: continue
+            // Only process the Songs shelf (skip Artists, Albums, etc.)
+            val shelfTitle = renderer["title"]?.jsonObject
+                ?.get("runs")?.jsonArray
+                ?.firstOrNull()?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content
+            if (shelfTitle != null && shelfTitle != "Songs") continue
 
-                val items = renderer["contents"]?.jsonArray ?: continue
-                for (item in items) {
-                    val row = item.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
-                        ?: continue
+            val items = renderer["contents"]?.jsonArray ?: continue
+            for (item in items) {
+                val row = item.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
+                    ?: continue
 
-                    val videoId = row["playlistItemData"]?.jsonObject
-                        ?.get("videoId")?.jsonPrimitive?.content
-                        ?: row["overlay"]?.jsonObject
-                            ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
-                            ?.get("content")?.jsonObject
-                            ?.get("musicPlayButtonRenderer")?.jsonObject
-                            ?.get("playNavigationEndpoint")?.jsonObject
-                            ?.get("watchEndpoint")?.jsonObject
-                            ?.get("videoId")?.jsonPrimitive?.content
-                        ?: continue
-
-                    val rawType = row["overlay"]?.jsonObject
+                val videoId = row["playlistItemData"]?.jsonObject
+                    ?.get("videoId")?.jsonPrimitive?.content
+                    ?: row["overlay"]?.jsonObject
                         ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
                         ?.get("content")?.jsonObject
                         ?.get("musicPlayButtonRenderer")?.jsonObject
                         ?.get("playNavigationEndpoint")?.jsonObject
                         ?.get("watchEndpoint")?.jsonObject
-                        ?.get("watchEndpointMusicSupportedConfigs")?.jsonObject
-                        ?.get("watchEndpointMusicConfig")?.jsonObject
-                        ?.get("musicVideoType")?.jsonPrimitive?.content
+                        ?.get("videoId")?.jsonPrimitive?.content
+                    ?: continue
 
-                    // Square album-art thumbnail (lh3) — largest of the set,
-                    // upgraded to high-res. Absent for some rows; that's fine.
-                    val thumbnailUrl = row["thumbnail"]?.jsonObject
-                        ?.get("musicThumbnailRenderer")?.jsonObject
-                        ?.get("thumbnail")?.jsonObject
-                        ?.get("thumbnails")?.jsonArray
-                        ?.lastOrNull()?.jsonObject
-                        ?.get("url")?.jsonPrimitive?.content
-                        ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
+                val rawType = row["overlay"]?.jsonObject
+                    ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
+                    ?.get("content")?.jsonObject
+                    ?.get("musicPlayButtonRenderer")?.jsonObject
+                    ?.get("playNavigationEndpoint")?.jsonObject
+                    ?.get("watchEndpoint")?.jsonObject
+                    ?.get("watchEndpointMusicSupportedConfigs")?.jsonObject
+                    ?.get("watchEndpointMusicConfig")?.jsonObject
+                    ?.get("musicVideoType")?.jsonPrimitive?.content
 
-                    candidates.add(Candidate(videoId, MusicVideoType.fromInnerTube(rawType), thumbnailUrl))
-                }
+                // Square album-art thumbnail (lh3) — largest of the set,
+                // upgraded to high-res. Absent for some rows; that's fine.
+                val thumbnailUrl = row["thumbnail"]?.jsonObject
+                    ?.get("musicThumbnailRenderer")?.jsonObject
+                    ?.get("thumbnail")?.jsonObject
+                    ?.get("thumbnails")?.jsonArray
+                    ?.lastOrNull()?.jsonObject
+                    ?.get("url")?.jsonPrimitive?.content
+                    ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
+
+                // Title, artist and length read the way search reads them, plus
+                // the explicit badge: what tells a song's explicit and clean
+                // twins apart. A row with no title is nobody's twin.
+                val summary = parseTrackSummaryFromListItem(row)
+                val twinKey = ExplicitTwinKey(
+                    title = summary?.title ?: videoId,
+                    artist = summary?.artist.orEmpty(),
+                    durationSeconds = summary?.durationSeconds ?: 0.0,
+                    explicitBadge = hasExplicitBadge(row),
+                )
+
+                candidates.add(Candidate(videoId, MusicVideoType.fromInnerTube(rawType), thumbnailUrl, twinKey))
             }
-
-            Log.d(TAG, "searchCanonical('$query'): ${candidates.size} candidates, " +
-                "atv=${candidates.count { it.type == MusicVideoType.ATV }}, " +
-                "omv=${candidates.count { it.type == MusicVideoType.OMV }}, " +
-                "ugc=${candidates.count { it.type == MusicVideoType.UGC }}")
-
-            // Prefer ATV first, then OMV; skip UGC and everything else.
-            val best = candidates.firstOrNull { it.type == MusicVideoType.ATV }
-                ?: candidates.firstOrNull { it.type == MusicVideoType.OMV }
-
-            if (best == null) {
-                Log.w(TAG, "searchCanonical('$query'): no ATV/OMV candidate found")
-            } else {
-                Log.d(TAG, "searchCanonical('$query'): resolved → ${best.videoId} (${best.type})")
-            }
-            best?.let { CanonicalLookup.Found(CanonicalMatch(it.videoId, it.thumbnailUrl)) }
-                ?: CanonicalLookup.NoMatch
         }
+
+        Log.d(TAG, "searchCanonical('$query'): ${candidates.size} candidates, " +
+            "atv=${candidates.count { it.type == MusicVideoType.ATV }}, " +
+            "omv=${candidates.count { it.type == MusicVideoType.OMV }}, " +
+            "ugc=${candidates.count { it.type == MusicVideoType.UGC }}")
+
+        // Prefer ATV first, then OMV; skip UGC and everything else. Within the
+        // tier, the first result unless an explicit/clean twin of it suits the
+        // source track's advisory better.
+        val tier = candidates.filter { it.type == MusicVideoType.ATV }
+            .ifEmpty { candidates.filter { it.type == MusicVideoType.OMV } }
+        val best = preferExplicitTwin(tier, explicit) { it.twinKey }
+
+        if (best == null) {
+            Log.w(TAG, "searchCanonical('$query'): no ATV/OMV candidate found")
+        } else {
+            Log.d(TAG, "searchCanonical('$query'): resolved → ${best.videoId} (${best.type}, " +
+                "badged=${best.twinKey.explicitBadge}, wanted explicit=$explicit)")
+        }
+        return best?.let { CanonicalLookup.Found(CanonicalMatch(it.videoId, it.thumbnailUrl)) }
+            ?: CanonicalLookup.NoMatch
+    }
 
     /**
      * Builds the InnerTube client context object required by every request.

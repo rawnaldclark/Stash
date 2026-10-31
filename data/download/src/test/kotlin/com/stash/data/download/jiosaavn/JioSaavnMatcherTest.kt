@@ -269,8 +269,9 @@ class JioSaavnMatcherTest {
     }
 
     @Test
-    fun `a clean and an explicit copy stay ambiguous when the request cannot tell`() {
-        // explicit = null, as search-tab downloads send it.
+    fun `a request that doesn't say gets the explicit original over its clean twin`() {
+        // explicit = null: a song synced from YouTube, or a search-tab download. The clean cut used
+        // to make the match ambiguous (2026-10-26: songs came back censored).
         val result = JioSaavnMatcher.best(
             TrackQuery("Artist", "Song", durationMs = 200_000L),
             listOf(
@@ -279,7 +280,30 @@ class JioSaavnMatcherTest {
             ),
         )
 
-        assertThat(result).isNull()
+        assertThat(result?.song?.id).isEqualTo("b")
+    }
+
+    @Test
+    fun `a known-clean request gets the clean cut and a known-explicit one the explicit cut`() {
+        val twins = listOf(
+            song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A"),
+            song(id = "b", name = "Song", artist = "Artist", duration = 200, album = "Album B", explicit = true),
+        )
+
+        assertThat(JioSaavnMatcher.best(TrackQuery("Artist", "Song", durationMs = 200_000L, explicit = false), twins)?.song?.id)
+            .isEqualTo("a")
+        assertThat(JioSaavnMatcher.best(TrackQuery("Artist", "Song", durationMs = 200_000L, explicit = true), twins)?.song?.id)
+            .isEqualTo("b")
+    }
+
+    @Test
+    fun `a clean song with no explicit twin is still found for a request that doesn't say`() {
+        val result = JioSaavnMatcher.best(
+            TrackQuery("Artist", "Song", durationMs = 200_000L),
+            listOf(song(id = "a", name = "Song", artist = "Artist", duration = 200, album = "Album A")),
+        )
+
+        assertThat(result?.song?.id).isEqualTo("a")
     }
 
     @Test

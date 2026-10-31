@@ -101,7 +101,8 @@ interface SyncUndoDao {
         SELECT COUNT(*) FROM playlists p
         WHERE p.source IN $SYNCED_SOURCES AND (
             EXISTS (SELECT 1 FROM sync_undo_playlists u
-                    WHERE u.sync_id = :syncId AND u.playlist_id = p.id AND u.is_active != p.is_active)
+                    WHERE u.sync_id = :syncId AND u.playlist_id = p.id AND u.is_active != p.is_active
+                      AND p.user_hidden = 0)
             OR (p.is_active = 1 AND p.date_added >= :sinceEpochMs
                 AND p.sync_enabled = 0 AND p.keep_offline = 0
                 AND p.id NOT IN (SELECT playlist_id FROM sync_undo_playlists WHERE sync_id = :syncId))
@@ -140,6 +141,8 @@ interface SyncUndoDao {
             is_active = (SELECT u.is_active FROM sync_undo_playlists u
                          WHERE u.sync_id = :syncId AND u.playlist_id = playlists.id)
         WHERE source IN $SYNCED_SOURCES
+          -- One the user took out of the library stays out: undo puts back what sync did.
+          AND user_hidden = 0
           AND id IN (SELECT playlist_id FROM sync_undo_playlists WHERE sync_id = :syncId)
         """
     )

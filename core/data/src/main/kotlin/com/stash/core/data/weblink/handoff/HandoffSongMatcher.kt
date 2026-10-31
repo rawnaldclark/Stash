@@ -30,9 +30,15 @@ class HandoffSongMatcher @Inject constructor(
     /**
      * [songs] matched in order, in transactions of [BATCH] songs: the stream-only rows a batch inserts invalidate the library
      * once per batch, not once per song (every library screen re-queries on each invalidation), and the write lock is never
-     * held for long. Same result as [match] one by one.
+     * held for long. Same result as [match] one by one. [onBatch] is told each batch's size once it is matched (an import's
+     * progress; it may throw to stop the call).
      */
-    suspend fun matchAll(songs: List<WireSong?>, mirror: Boolean = false, identities: MirrorIdentities? = null): List<TrackEntity?> = withContext(Dispatchers.IO) {
+    suspend fun matchAll(
+        songs: List<WireSong?>,
+        mirror: Boolean = false,
+        identities: MirrorIdentities? = null,
+        onBatch: (Int) -> Unit = {},
+    ): List<TrackEntity?> = withContext(Dispatchers.IO) {
         val out = ArrayList<TrackEntity?>(songs.size)
         // The song each row was taken for in this call: a row stands for one song only (final check F-B1).
         val claims = HashMap<Long, WireSong>()
@@ -55,6 +61,7 @@ class HandoffSongMatcher @Inject constructor(
                 chunk.map { null }
             }
             out += rows
+            onBatch(chunk.size)
         }
         out
     }
@@ -135,11 +142,22 @@ class HandoffSongMatcher @Inject constructor(
     private suspend fun byWords(song: WireSong): TrackEntity? =
         rowsWithWordsOf(song).firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
 
-    /** Every row with [song]'s canonical words, oldest first; none for a blank key, which would load every local import. */
+    /**
+     * Every row with [song]'s canonical words, oldest first. A blank key would load every local import, so it names no row. A song
+     * whose canonical words are blank (a title that is only brackets, "(Intro)") is looked up by its exact words instead only when
+     * nothing else can find it: it has no ISRC, Spotify or YouTube id (a local file in a Spotify playlist), or it is the mirror's
+     * phone-only song (found by its words, never made; [SongKey.sameSong] still holds it to its ISRC). Otherwise it got a new row
+     * each time it came (a Spotify export's liked local "(Intro)" and the same one in a playlist were two rows). One with an id is
+     * found by that id or made anew: two different "(Intro)"s by one artist, each with its own Spotify id, stay two songs.
+     */
     private suspend fun rowsWithWordsOf(song: WireSong): List<TrackEntity> {
         val title = TrackCanonical.title(song.title)
         val artist = TrackCanonical.artist(song.artist)
-        if (TrackCanonical.isBlankKey(title, artist)) return emptyList()
+        if (TrackCanonical.isBlankKey(title, artist)) {
+            val hasId = !song.isrc.isNullOrBlank() || !song.spotifyId.isNullOrBlank() || !song.youtubeId.isNullOrBlank()
+            if ((hasId && !song.phoneOnly) || song.title.isBlank() || song.artist.isBlank()) return emptyList()
+            return trackDao.findAllByExactWords(song.title, song.artist)
+        }
         return trackDao.findAllByCanonicalIdentity(title, artist)
     }
 

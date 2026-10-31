@@ -1,7 +1,7 @@
 /**
  * The daily lossless counter (spec docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md):
  * FREE_LOSSLESS_DAILY lossless answers per subject per UTC day, counted in ONE D1 database both relays share
- * (`stash-quota`, binding QUOTA_DB, schema in infra/lossless-quota/migrations), so a user's 500 covers Qobuz
+ * (`stash-quota`, binding QUOTA_DB, schema in infra/lossless-quota/migrations), so a user's 300 covers Qobuz
  * and Tidal together. Subject = "i:<verified install id>". Supporters (a valid X-Stash-Entitlement token,
  * entitlementOf) are unlimited up to a per-token daily ceiling (subject "t:<tid>"), unless their tid is revoked.
  *
@@ -11,15 +11,22 @@
 
 /** Usage rows kept (the cap only reads today's; the rest is for looking back). */
 export const USAGE_KEEP_DAYS = 7;
-const DEFAULT_FREE_DAILY = 500;
+const DEFAULT_FREE_DAILY = 300;
+let warnedFreeDailyFallback = false;
 
 export const quotaDay = (nowSec) => new Date(nowSec * 1000).toISOString().slice(0, 10); // "2026-10-17", UTC
 /** The next UTC midnight, epoch seconds: one reset moment for everyone. */
 export const nextResetSec = (nowSec) => (Math.floor(nowSec / 86400) + 1) * 86400;
 
 export function freeDailyLimit(env) {
-    const n = Number.parseInt(env.FREE_LOSSLESS_DAILY, 10);
-    return n > 0 ? n : DEFAULT_FREE_DAILY;
+    const raw = env?.FREE_LOSSLESS_DAILY;
+    const n = typeof raw === "string" && /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (Number.isSafeInteger(n) && n > 0) return n;
+    if (!warnedFreeDailyFallback) {
+        warnedFreeDailyFallback = true;
+        console.error(`FREE_LOSSLESS_DAILY missing or invalid; using safe default ${DEFAULT_FREE_DAILY}`);
+    }
+    return DEFAULT_FREE_DAILY;
 }
 
 export const ENTITLEMENT_HEADER = "X-Stash-Entitlement";

@@ -8,6 +8,7 @@ import com.stash.data.download.lossless.TrackQuery
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.lossless.relay.RelaySigner
+import com.stash.data.download.lossless.relay.appVersionProvider
 import com.stash.data.download.lossless.relay.supporter
 import com.stash.data.download.lossless.relay.TidalRelay
 import io.mockk.coEvery
@@ -77,7 +78,7 @@ class BitchordClientCacheTest {
         val config: LosslessConfigFetcher = mockk {
             every { tidalRelay } returns MutableStateFlow<TidalRelay?>(null)
         }
-        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter()), quota)
+        client = BitchordClient(OkHttpClient(), prefs, config, dao, RelaySigner(config, supporter(), appVersionProvider()), quota)
         client.nowMs = { now }
     }
 
@@ -376,12 +377,71 @@ class BitchordClientCacheTest {
         val a = TrackQuery(artist = "Daft  Punk", title = "Get Lucky ", durationMs = 248_000)
         val b = TrackQuery(artist = "daft punk", title = "get lucky", durationMs = 251_000)
         assertThat(BitchordClient.cacheKey(a)).isEqualTo(BitchordClient.cacheKey(b))
-        assertThat(BitchordClient.cacheKey(query)).isEqualTo("isrc:USQX91300108")
+        assertThat(BitchordClient.cacheKey(query)).isEqualTo("isrc:USQX91300108|explicit")
+    }
+
+    @Test fun `the key carries the twin the pick prefers, unknown reading as explicit`() {
+        val song = TrackQuery(artist = "Daft Punk", title = "Get Lucky", durationMs = 248_000)
+        assertThat(BitchordClient.cacheKey(song)).isEqualTo("t:daft punk|get lucky|25|explicit")
+        assertThat(BitchordClient.cacheKey(song.copy(explicit = true))).isEqualTo(BitchordClient.cacheKey(song))
+        assertThat(BitchordClient.cacheKey(song.copy(explicit = false))).isEqualTo("t:daft punk|get lucky|25|clean")
+        assertThat(BitchordClient.cacheKey(query.copy(explicit = false))).isEqualTo("isrc:USQX91300108|clean")
+    }
+
+    @Test fun `a length that is only a hint keys apart from the same length taken as exact`() {
+        // Shook Ones from Search: the top card is the 4:25 music video. Taken as exact, the
+        // pick was the 4:49 compilation edit; that answer must not serve the hinted lookup.
+        val video = TrackQuery(artist = "Mobb Deep", title = "Shook Ones, Pt. II", durationMs = 265_000)
+        assertThat(BitchordClient.cacheKey(video)).isEqualTo("t:mobb deep|shook ones, pt. ii|27|explicit")
+        assertThat(BitchordClient.cacheKey(video.copy(durationReliable = false)))
+            .isEqualTo("t:mobb deep|shook ones, pt. ii|~27|explicit")
+        assertThat(BitchordClient.cacheKey(video.copy(durationMs = null, durationReliable = false)))
+            .isEqualTo("t:mobb deep|shook ones, pt. ii|?|explicit")
+    }
+
+    @Test fun `twins go to the explicit one unless the row is known clean, each cached apart`() = runBlocking {
+        searchReply = { ok(TWINS) }
+        val song = TrackQuery(artist = "Daft Punk", title = "Get Lucky", durationMs = 248_000)
+
+        val unknown = client.lookup(song) as TidalLookup.Found
+        assertThat(unknown.stream.trackId).isEqualTo("td:2")
+        val clean = client.lookup(song.copy(explicit = false)) as TidalLookup.Found
+        assertThat(clean.stream.trackId).isEqualTo("td:1")
+        assertThat(searches.get()).isEqualTo(2)
+
+        // An explicit row reads the unknown row's cached pick: no third search.
+        val explicit = client.lookup(song.copy(explicit = true)) as TidalLookup.Found
+        assertThat(explicit.stream.trackId).isEqualTo("td:2")
+        assertThat(searches.get()).isEqualTo(2)
+    }
+
+    @Test fun `the row's own ISRC wins over a twin that matches on words and length`() = runBlocking {
+        // The clean twin (td:1) scores 1.0 on words and length; the row's ISRC is the explicit
+        // one's (td:2), which scores 0.95. A clean row naming it still gets it: the ISRC is the row.
+        searchReply = { ok(ISRC_TWINS) }
+
+        val found = client.lookup(query.copy(isrc = "USQX91300199", explicit = false)) as TidalLookup.Found
+
+        assertThat(found.stream.trackId).isEqualTo("td:2")
+    }
+
+    @Test fun `a match cached before the explicit tie-break is not served`() = runBlocking {
+        // The old key had no preference suffix; its pick was by search order alone.
+        dao.rows["isrc:USQX91300108"] = TidalMatchEntity(key = "isrc:USQX91300108", tidalId = "td:9", searchedAt = now)
+
+        val found = client.lookup(query) as TidalLookup.Found
+
+        assertThat(found.stream.trackId).isEqualTo("td:1")
+        assertThat(searches.get()).isEqualTo(1)
     }
 
     private companion object {
         fun ok(body: String) = MockResponse().setResponseCode(200).setBody(body)
         const val SEARCH_HIT = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300108"}]}"""
+        /** A song's clean (td:1, listed first) and explicit (td:2) twins: same words, same length. */
+        const val TWINS = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","explicit":false},{"id":"td:2","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","explicit":true}]}"""
+        /** [TWINS] with ISRCs: the explicit td:2 is USQX91300199. */
+        const val ISRC_TWINS = """{"tracks":[{"id":"td:1","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300198","explicit":false},{"id":"td:2","title":"Get Lucky","artist":"Daft Punk","duration":248,"audioQuality":"LOSSLESS","isrc":"USQX91300199","explicit":true}]}"""
         const val FLAC = """{"url":"https://cdn.example/a.flac","codec":"flac","manifest":"none","bitDepth":16,"sampleRate":44100}"""
         const val AAC = """{"url":"https://cdn.example/a.mp4","codec":"aac","manifest":"none","bitrate":320}"""
     }

@@ -27,7 +27,12 @@ data class LastFmTrackInfo(
     val userLoved: Boolean?,
     val bestImageUrl: String?,
     val tags: List<TagCount>,
-    /** The album Last.fm puts the track on, and that album's artist; null when it names none. */
+    /**
+     * The album Last.fm puts the track on, and that album's artist; null when it names none. It is
+     * Last.fm's most scrobbled release, often a compilation, so it is never stored as the song's
+     * album; [com.stash.core.data.db.StashDatabase.MIGRATION_66_67] reads it to take back the
+     * albums 0.9.120 stored from it.
+     */
     val albumTitle: String? = null,
     val albumArtist: String? = null,
 ) {

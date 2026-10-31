@@ -278,7 +278,7 @@ says a code is on its way sets one, listed or not.
 **The goal.** Every donation is its own key, `goal:<YYYY-MM>:kofi:<id>` (the tip jar) or
 `goal:<YYYY-MM>:manual:<id>` (`/admin`), with the amount in its metadata, so the two Workers never
 overwrite each other's totals. A month's total (UTC) is the sum of the keys listed under
-`goal:<YYYY-MM>:`, against `GOAL_CENTS` ($100). `/admin` can take a hand-added entry back out, not a
+`goal:<YYYY-MM>:`, against `GOAL_CENTS` ($200). `/admin` can take a hand-added entry back out, not a
 Ko-fi one. The pages show whole dollars, rounded down, and read the total at most once a minute.
 
 **Storage.** The Worker binds one KV namespace, `ACCESS_KV` (`stash-early-access`), shared with the tip
@@ -301,7 +301,7 @@ the Access session expired can be sent to its sign-in page.
 | `EMAIL_PEPPER` | secret, required | Keys the email hashes. The same value on the tip jar and for its import script. Without it, sign-in and requests are off |
 | `ACCESS_TEAM_DOMAIN` | var | `https://<team>.cloudflareaccess.com` |
 | `ACCESS_AUD` | var | The Access application's AUD tag |
-| `GOAL_CENTS` | var | The monthly goal in US cents (`10000`) |
+| `GOAL_CENTS` | var | The monthly goal in US cents (`20000`) |
 | `EMAIL_FROM` | var | `access@stashfm.app`, the only sender the `EMAIL` binding allows |
 
 | `PLAYER_URL` | var | The web player's origin, `https://play.stashfm.app`. https only, no path; anything else turns `/player` off |

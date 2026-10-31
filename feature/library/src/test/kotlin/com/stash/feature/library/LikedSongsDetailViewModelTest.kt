@@ -67,6 +67,7 @@ class LikedSongsDetailViewModelTest {
         val musicRepo = mock<MusicRepository> {
             on { getPlaylistsByType(any()) } doReturn flowOf(listOf(playlist))
             on { getTracksByPlaylist(playlist.id) } doReturn flowOf(listOf(track))
+            on { getShownTracksByPlaylist(playlist.id) } doReturn flowOf(listOf(track))
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         }
         val playerRepo = mock<PlayerRepository> {

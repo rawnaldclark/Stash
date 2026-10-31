@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Réorganisez les sections de l’accueil ou masquez celles que vous n’utilisez pas. La bannière « Daily Discover » reste en haut.</string>
     <string name="settings_home_section_community_desc">Playlists et titres appréciés par les autres utilisateurs de Stash. Vos publications affichent votre nom.</string>
     <string name="settings_home_section_listening_desc">Écoutes récentes et historique. Apparaît après votre première écoute.</string>
+    <string name="settings_home_section_record_desc">Chaque année d’écoute, pressée sur un disque.</string>
     <string name="settings_home_show_liked_title">Afficher les titres aimés sur l’accueil</string>
     <string name="settings_home_show_liked_subtitle">Vos J’aime Stash, Spotify et YouTube réunis dans une carte de Vos playlists</string>
     <string name="settings_home_section_discover">Daily Discover &amp; vos mixes</string>
@@ -197,6 +198,9 @@
     <string name="settings_home_section_mood_decades">Ambiances et décennies</string>
     <string name="settings_home_section_community">Communauté</string>
     <string name="settings_home_section_your_listening">Vos écoutes</string>
+    <string name="settings_home_section_your_record">Votre disque</string>
+    <string name="settings_home_section_record_mixes">De votre disque</string>
+    <string name="settings_home_section_record_mixes_desc">Des mix que seules vos années d’écoute peuvent faire. Apparaît une fois votre historique arrivé.</string>
     <string name="settings_home_section_move_up">Déplacer %1$s vers le haut</string>
     <string name="settings_home_section_move_down">Déplacer %1$s vers le bas</string>
     <string name="settings_home_section_show_desc">Afficher %1$s sur l’accueil</string>
@@ -662,4 +666,25 @@
     <string name="settings_equalizer_preset_classical">Classique</string>
     <string name="settings_equalizer_save_preset_dialog_title">Enregistrer le préréglage</string>
     <string name="settings_equalizer_preset_name_label">Nom du préréglage</string>
+    <string name="settings_your_record_section">Votre disque</string>
+    <string name="settings_your_record_open">Votre disque</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Depuis Spotify : %1$s écoute.</item>
+        <item quantity="other">Depuis Spotify : %1$s écoutes.</item>
+    </plurals>
+    <string name="settings_your_record_import">Importer depuis Spotify</string>
+    <string name="settings_your_record_newer">Ajouter une copie plus récente</string>
+    <string name="settings_your_record_import_subtitle">Votre historique d’écoute issu d’un téléchargement de données Spotify. Stash lit le fichier sur ce téléphone. Rien n’est envoyé.</string>
+    <string name="settings_your_record_remove">Supprimer l’historique importé</string>
+    <string name="settings_your_record_remove_subtitle">Votre disque revient à vos écoutes dans Stash.</string>
+    <string name="settings_your_record_remove_title">Supprimer votre historique importé ?</string>
+    <string name="settings_your_record_remove_body">Tout ce qui a été importé de Spotify et de Last.fm pour votre disque est supprimé de ce téléphone. Vos écoutes dans Stash restent. Les playlists et titres aimés que vous avez importés restent dans votre bibliothèque.</string>
+    <string name="settings_your_record_remove_confirm">Supprimer</string>
+    <string name="settings_your_record_cancel">Annuler</string>
+    <string name="settings_your_record_removed">Votre historique importé a été supprimé.</string>
+    <string name="settings_your_record_remove_busy">Une importation est en cours. Supprimez-le une fois qu’elle sera terminée.</string>
+    <string name="settings_your_record_remove_failed">Impossible de le supprimer pour l’instant. Réessayez.</string>
+    <string name="settings_your_record_show">Afficher sur l’accueil</string>
+    <string name="settings_your_record_show_subtitle">« Pressez votre disque » est masqué sur l’accueil.</string>
+    <string name="settings_your_record_shown">« Pressez votre disque » est de retour sur l’accueil</string>
 </resources>

@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Organiza las secciones de Inicio u oculta las que no uses. La tarjeta Discover permanece arriba.</string>
     <string name="settings_home_section_community_desc">Listas y canciones que les gustan a otros oyentes de Stash. Tus publicaciones muestran tu nombre.</string>
     <string name="settings_home_section_listening_desc">Reproducidos recientemente y tu Historial. Aparece después de tu primera escucha.</string>
+    <string name="settings_home_section_record_desc">Cada año que has escuchado, grabado en un disco.</string>
     <string name="settings_home_show_liked_title">Mostrar Canciones que te gustan en Inicio</string>
     <string name="settings_home_show_liked_subtitle">Tus Me gusta de Stash, Spotify y YouTube como una sola tarjeta en tus listas</string>
     <string name="settings_home_section_discover">Daily Discover y tus mezclas</string>
@@ -197,6 +198,9 @@
     <string name="settings_home_section_mood_decades">Estados de ánimo y décadas</string>
     <string name="settings_home_section_community">Comunidad</string>
     <string name="settings_home_section_your_listening">Actividad de escucha</string>
+    <string name="settings_home_section_your_record">Tu disco</string>
+    <string name="settings_home_section_record_mixes">De tu disco</string>
+    <string name="settings_home_section_record_mixes_desc">Mixes que solo tus años de escucha pueden hacer. Aparece cuando tu historial ya está.</string>
     <string name="settings_home_section_move_up">Subir %1$s</string>
     <string name="settings_home_section_move_down">Bajar %1$s</string>
     <string name="settings_home_section_show_desc">Mostrar %1$s en Inicio</string>
@@ -662,4 +666,25 @@
     <string name="settings_equalizer_preset_classical">Clásica</string>
     <string name="settings_equalizer_save_preset_dialog_title">Guardar preajuste</string>
     <string name="settings_equalizer_preset_name_label">Nombre del preajuste</string>
+    <string name="settings_your_record_section">Tu disco</string>
+    <string name="settings_your_record_open">Tu disco</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">De Spotify: %1$s reproducción.</item>
+        <item quantity="other">De Spotify: %1$s reproducciones.</item>
+    </plurals>
+    <string name="settings_your_record_import">Importar desde Spotify</string>
+    <string name="settings_your_record_newer">Añadir una copia más reciente</string>
+    <string name="settings_your_record_import_subtitle">Tu historial de escucha de una descarga de datos de Spotify. Stash lee el archivo en este teléfono. No se sube nada.</string>
+    <string name="settings_your_record_remove">Eliminar historial importado</string>
+    <string name="settings_your_record_remove_subtitle">Tu disco vuelve a tus reproducciones en Stash.</string>
+    <string name="settings_your_record_remove_title">¿Eliminar tu historial importado?</string>
+    <string name="settings_your_record_remove_body">Todo lo que se trajo de Spotify y Last.fm para tu disco se borra de este teléfono. Tus reproducciones en Stash se quedan. Las listas y canciones que te gustan que trajiste se quedan en tu biblioteca.</string>
+    <string name="settings_your_record_remove_confirm">Eliminar</string>
+    <string name="settings_your_record_cancel">Cancelar</string>
+    <string name="settings_your_record_removed">Se ha eliminado tu historial importado.</string>
+    <string name="settings_your_record_remove_busy">Hay una importación en curso. Elimínalo cuando termine.</string>
+    <string name="settings_your_record_remove_failed">No se ha podido eliminar ahora. Vuelve a intentarlo.</string>
+    <string name="settings_your_record_show">Mostrar en Inicio</string>
+    <string name="settings_your_record_show_subtitle">Graba tu disco está oculto en Inicio.</string>
+    <string name="settings_your_record_shown">Graba tu disco vuelve a estar en Inicio</string>
 </resources>

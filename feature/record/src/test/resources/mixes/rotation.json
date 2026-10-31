@@ -1,0 +1,1746 @@
+[
+ {
+  "name": "the golden fixture, its playlists and liked songs the library",
+  "rotation": [
+   "era:1717200000000",
+   "constants",
+   "year:2024",
+   "artist:paper moons",
+   "era:1677628800000",
+   "lost",
+   "year:2023",
+   "artist:northern lights",
+   "era:1640995200000",
+   "repeat",
+   "year:2022",
+   "artist:velvet static",
+   "era:1609459200000",
+   "started",
+   "year:2021",
+   "artist:glass harbor"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "era:1717200000000",
+     "constants",
+     "year:2024"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "constants",
+     "year:2024",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "year:2024"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "year:2024",
+     "artist:paper moons",
+     "era:1677628800000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2024",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "artist:paper moons",
+     "era:1677628800000",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "era:1677628800000"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "era:1677628800000",
+     "lost",
+     "year:2023"
+    ],
+    "withWeek": [
+     "week",
+     "era:1677628800000",
+     "lost"
+    ]
+   },
+   {
+    "day": 5,
+    "ids": [
+     "lost",
+     "year:2023",
+     "artist:northern lights"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "year:2023"
+    ]
+   },
+   {
+    "day": 6,
+    "ids": [
+     "year:2023",
+     "artist:northern lights",
+     "era:1640995200000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2023",
+     "artist:northern lights"
+    ]
+   },
+   {
+    "day": 7,
+    "ids": [
+     "artist:northern lights",
+     "era:1640995200000",
+     "repeat"
+    ],
+    "withWeek": [
+     "week",
+     "artist:northern lights",
+     "era:1640995200000"
+    ]
+   },
+   {
+    "day": 8,
+    "ids": [
+     "era:1640995200000",
+     "repeat",
+     "year:2022"
+    ],
+    "withWeek": [
+     "week",
+     "era:1640995200000",
+     "repeat"
+    ]
+   },
+   {
+    "day": 9,
+    "ids": [
+     "repeat",
+     "year:2022",
+     "artist:velvet static"
+    ],
+    "withWeek": [
+     "week",
+     "repeat",
+     "year:2022"
+    ]
+   },
+   {
+    "day": 10,
+    "ids": [
+     "year:2022",
+     "artist:velvet static",
+     "era:1609459200000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2022",
+     "artist:velvet static"
+    ]
+   },
+   {
+    "day": 11,
+    "ids": [
+     "artist:velvet static",
+     "era:1609459200000",
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "artist:velvet static",
+     "era:1609459200000"
+    ]
+   },
+   {
+    "day": 12,
+    "ids": [
+     "era:1609459200000",
+     "started",
+     "year:2021"
+    ],
+    "withWeek": [
+     "week",
+     "era:1609459200000",
+     "started"
+    ]
+   },
+   {
+    "day": 13,
+    "ids": [
+     "started",
+     "year:2021",
+     "artist:glass harbor"
+    ],
+    "withWeek": [
+     "week",
+     "started",
+     "year:2021"
+    ]
+   },
+   {
+    "day": 14,
+    "ids": [
+     "year:2021",
+     "artist:glass harbor",
+     "era:1717200000000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2021",
+     "artist:glass harbor"
+    ]
+   },
+   {
+    "day": 15,
+    "ids": [
+     "artist:glass harbor",
+     "era:1717200000000",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:glass harbor",
+     "era:1717200000000"
+    ]
+   },
+   {
+    "day": 16,
+    "ids": [
+     "era:1717200000000",
+     "constants",
+     "year:2024"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": 17,
+    "ids": [
+     "constants",
+     "year:2024",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "year:2024"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "lost",
+     "year:2023",
+     "artist:northern lights"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "year:2023",
+     "artist:northern lights",
+     "era:1640995200000"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:glass harbor",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "repeat",
+     "year:2022",
+     "artist:velvet static"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "the golden fixture, nothing in the library",
+  "rotation": [
+   "era:1717200000000",
+   "constants",
+   "year:2024",
+   "artist:paper moons",
+   "era:1677628800000",
+   "lost",
+   "year:2023",
+   "artist:northern lights",
+   "era:1640995200000",
+   "repeat",
+   "year:2022",
+   "artist:velvet static",
+   "era:1609459200000",
+   "started",
+   "year:2021",
+   "artist:glass harbor"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "era:1717200000000",
+     "constants",
+     "year:2024"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "constants",
+     "year:2024",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "year:2024"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "year:2024",
+     "artist:paper moons",
+     "era:1677628800000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2024",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "artist:paper moons",
+     "era:1677628800000",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "era:1677628800000"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "era:1677628800000",
+     "lost",
+     "year:2023"
+    ],
+    "withWeek": [
+     "week",
+     "era:1677628800000",
+     "lost"
+    ]
+   },
+   {
+    "day": 5,
+    "ids": [
+     "lost",
+     "year:2023",
+     "artist:northern lights"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "year:2023"
+    ]
+   },
+   {
+    "day": 6,
+    "ids": [
+     "year:2023",
+     "artist:northern lights",
+     "era:1640995200000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2023",
+     "artist:northern lights"
+    ]
+   },
+   {
+    "day": 7,
+    "ids": [
+     "artist:northern lights",
+     "era:1640995200000",
+     "repeat"
+    ],
+    "withWeek": [
+     "week",
+     "artist:northern lights",
+     "era:1640995200000"
+    ]
+   },
+   {
+    "day": 8,
+    "ids": [
+     "era:1640995200000",
+     "repeat",
+     "year:2022"
+    ],
+    "withWeek": [
+     "week",
+     "era:1640995200000",
+     "repeat"
+    ]
+   },
+   {
+    "day": 9,
+    "ids": [
+     "repeat",
+     "year:2022",
+     "artist:velvet static"
+    ],
+    "withWeek": [
+     "week",
+     "repeat",
+     "year:2022"
+    ]
+   },
+   {
+    "day": 10,
+    "ids": [
+     "year:2022",
+     "artist:velvet static",
+     "era:1609459200000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2022",
+     "artist:velvet static"
+    ]
+   },
+   {
+    "day": 11,
+    "ids": [
+     "artist:velvet static",
+     "era:1609459200000",
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "artist:velvet static",
+     "era:1609459200000"
+    ]
+   },
+   {
+    "day": 12,
+    "ids": [
+     "era:1609459200000",
+     "started",
+     "year:2021"
+    ],
+    "withWeek": [
+     "week",
+     "era:1609459200000",
+     "started"
+    ]
+   },
+   {
+    "day": 13,
+    "ids": [
+     "started",
+     "year:2021",
+     "artist:glass harbor"
+    ],
+    "withWeek": [
+     "week",
+     "started",
+     "year:2021"
+    ]
+   },
+   {
+    "day": 14,
+    "ids": [
+     "year:2021",
+     "artist:glass harbor",
+     "era:1717200000000"
+    ],
+    "withWeek": [
+     "week",
+     "year:2021",
+     "artist:glass harbor"
+    ]
+   },
+   {
+    "day": 15,
+    "ids": [
+     "artist:glass harbor",
+     "era:1717200000000",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:glass harbor",
+     "era:1717200000000"
+    ]
+   },
+   {
+    "day": 16,
+    "ids": [
+     "era:1717200000000",
+     "constants",
+     "year:2024"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": 17,
+    "ids": [
+     "constants",
+     "year:2024",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "year:2024"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "lost",
+     "year:2023",
+     "artist:northern lights"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "year:2023",
+     "artist:northern lights",
+     "era:1640995200000"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:glass harbor",
+     "era:1717200000000",
+     "constants"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "repeat",
+     "year:2022",
+     "artist:velvet static"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "a year still going is \"so far\"; a year of 7 songs makes no mix",
+  "rotation": [
+   "year:2026",
+   "artist:lumen",
+   "year:2025",
+   "artist:harbor lights",
+   "year:2023"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "year:2026",
+     "artist:lumen",
+     "year:2025"
+    ],
+    "withWeek": [
+     "week",
+     "year:2026",
+     "artist:lumen"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "artist:lumen",
+     "year:2025",
+     "artist:harbor lights"
+    ],
+    "withWeek": [
+     "week",
+     "artist:lumen",
+     "year:2025"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "year:2025",
+     "artist:harbor lights",
+     "year:2023"
+    ],
+    "withWeek": [
+     "week",
+     "year:2025",
+     "artist:harbor lights"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "artist:harbor lights",
+     "year:2023",
+     "year:2026"
+    ],
+    "withWeek": [
+     "week",
+     "artist:harbor lights",
+     "year:2023"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "year:2023",
+     "year:2026",
+     "artist:lumen"
+    ],
+    "withWeek": [
+     "week",
+     "year:2023",
+     "year:2026"
+    ]
+   },
+   {
+    "day": 5,
+    "ids": [
+     "year:2026",
+     "artist:lumen",
+     "year:2025"
+    ],
+    "withWeek": [
+     "week",
+     "year:2026",
+     "artist:lumen"
+    ]
+   },
+   {
+    "day": 6,
+    "ids": [
+     "artist:lumen",
+     "year:2025",
+     "artist:harbor lights"
+    ],
+    "withWeek": [
+     "week",
+     "artist:lumen",
+     "year:2025"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "year:2023",
+     "year:2026",
+     "artist:lumen"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "year:2026",
+     "artist:lumen",
+     "year:2025"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "year:2023",
+     "year:2026",
+     "artist:lumen"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "artist:harbor lights",
+     "year:2023",
+     "year:2026"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "eras newest first: across years, early, mid and late in one year, one month; an era of 7 songs makes no mix",
+  "rotation": [
+   "era:1717200000000",
+   "era:1690848000000",
+   "era:1648771200000",
+   "era:1609459200000",
+   "era:1572566400000"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "era:1717200000000",
+     "era:1690848000000",
+     "era:1648771200000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "era:1690848000000"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "era:1690848000000",
+     "era:1648771200000",
+     "era:1609459200000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1690848000000",
+     "era:1648771200000"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "era:1648771200000",
+     "era:1609459200000",
+     "era:1572566400000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1648771200000",
+     "era:1609459200000"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "era:1609459200000",
+     "era:1572566400000",
+     "era:1717200000000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1609459200000",
+     "era:1572566400000"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "era:1572566400000",
+     "era:1717200000000",
+     "era:1690848000000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1572566400000",
+     "era:1717200000000"
+    ]
+   },
+   {
+    "day": 5,
+    "ids": [
+     "era:1717200000000",
+     "era:1690848000000",
+     "era:1648771200000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1717200000000",
+     "era:1690848000000"
+    ]
+   },
+   {
+    "day": 6,
+    "ids": [
+     "era:1690848000000",
+     "era:1648771200000",
+     "era:1609459200000"
+    ],
+    "withWeek": [
+     "week",
+     "era:1690848000000",
+     "era:1648771200000"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "era:1572566400000",
+     "era:1717200000000",
+     "era:1690848000000"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "era:1717200000000",
+     "era:1690848000000",
+     "era:1648771200000"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "era:1572566400000",
+     "era:1717200000000",
+     "era:1690848000000"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "era:1609459200000",
+     "era:1572566400000",
+     "era:1717200000000"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "Rediscover leaves out what The ones that stayed plays",
+  "rotation": [
+   "constants",
+   "lost"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "constants",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "lost",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "constants",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "lost",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "constants"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "The ones that stayed with 7 songs is no mix, and Rediscover keeps them all",
+  "rotation": [
+   "lost"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "lost"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "lost"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "lost"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "lost"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "lost"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "lost"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "lost"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "an avoided constant is played by neither; the 11th constant goes to Rediscover",
+  "rotation": [
+   "constants",
+   "lost"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "constants",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "lost",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "constants",
+     "lost"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "lost",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "lost",
+     "constants"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "constants",
+     "lost"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "lost",
+     "constants"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "How it started: first-listen ties go to the key, an avoided first song gives way, the top 50 artists only",
+  "rotation": [
+   "started"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "started"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "started"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "started"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "started"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "started"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "started"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "started"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "an artist with 7 songs makes no mix, 8 does; plays then key; 50 at most; the first 10 artists only",
+  "rotation": [
+   "started",
+   "artist:eight fold",
+   "artist:many hands",
+   "artist:feat artist",
+   "artist:also 0",
+   "artist:also 1",
+   "artist:also 2",
+   "artist:also 3"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "started",
+     "artist:eight fold",
+     "artist:many hands"
+    ],
+    "withWeek": [
+     "week",
+     "started",
+     "artist:eight fold"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "artist:eight fold",
+     "artist:many hands",
+     "artist:feat artist"
+    ],
+    "withWeek": [
+     "week",
+     "artist:eight fold",
+     "artist:many hands"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "artist:many hands",
+     "artist:feat artist",
+     "artist:also 0"
+    ],
+    "withWeek": [
+     "week",
+     "artist:many hands",
+     "artist:feat artist"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "artist:feat artist",
+     "artist:also 0",
+     "artist:also 1"
+    ],
+    "withWeek": [
+     "week",
+     "artist:feat artist",
+     "artist:also 0"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "artist:also 0",
+     "artist:also 1",
+     "artist:also 2"
+    ],
+    "withWeek": [
+     "week",
+     "artist:also 0",
+     "artist:also 1"
+    ]
+   },
+   {
+    "day": 5,
+    "ids": [
+     "artist:also 1",
+     "artist:also 2",
+     "artist:also 3"
+    ],
+    "withWeek": [
+     "week",
+     "artist:also 1",
+     "artist:also 2"
+    ]
+   },
+   {
+    "day": 6,
+    "ids": [
+     "artist:also 2",
+     "artist:also 3",
+     "started"
+    ],
+    "withWeek": [
+     "week",
+     "artist:also 2",
+     "artist:also 3"
+    ]
+   },
+   {
+    "day": 7,
+    "ids": [
+     "artist:also 3",
+     "started",
+     "artist:eight fold"
+    ],
+    "withWeek": [
+     "week",
+     "artist:also 3",
+     "started"
+    ]
+   },
+   {
+    "day": 8,
+    "ids": [
+     "started",
+     "artist:eight fold",
+     "artist:many hands"
+    ],
+    "withWeek": [
+     "week",
+     "started",
+     "artist:eight fold"
+    ]
+   },
+   {
+    "day": 9,
+    "ids": [
+     "artist:eight fold",
+     "artist:many hands",
+     "artist:feat artist"
+    ],
+    "withWeek": [
+     "week",
+     "artist:eight fold",
+     "artist:many hands"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "artist:also 1",
+     "artist:also 2",
+     "artist:also 3"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "artist:also 2",
+     "artist:also 3",
+     "started"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:also 3",
+     "started",
+     "artist:eight fold"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "artist:eight fold",
+     "artist:many hands",
+     "artist:feat artist"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "nothing put back, nothing in the library: the avoided songs stay out",
+  "rotation": [
+   "constants",
+   "artist:evergreen"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "constants",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:evergreen"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "constants",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:evergreen"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:evergreen",
+     "constants"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "constants",
+     "artist:evergreen"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "artist:evergreen",
+     "constants"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "a song put back plays again; one in the library plays from your copy",
+  "rotation": [
+   "constants",
+   "artist:paper moons",
+   "artist:evergreen"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "constants",
+     "artist:paper moons",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "artist:evergreen"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "constants",
+     "artist:paper moons",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "artist:evergreen"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "put back and liked: every song plays, the library copies by key, by words and by ISRC",
+  "rotation": [
+   "constants",
+   "artist:paper moons",
+   "artist:evergreen"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "constants",
+     "artist:paper moons",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "artist:evergreen"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ],
+    "withWeek": [
+     "week",
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 3,
+    "ids": [
+     "constants",
+     "artist:paper moons",
+     "artist:evergreen"
+    ],
+    "withWeek": [
+     "week",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": 4,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ],
+    "withWeek": [
+     "week",
+     "artist:paper moons",
+     "artist:evergreen"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "artist:paper moons",
+     "artist:evergreen",
+     "constants"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "artist:evergreen",
+     "constants",
+     "artist:paper moons"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "On repeat, back then, its card naming the top obsession",
+  "rotation": [
+   "repeat"
+  ],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [
+     "repeat"
+    ],
+    "withWeek": [
+     "week",
+     "repeat"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [
+     "repeat"
+    ],
+    "withWeek": [
+     "week",
+     "repeat"
+    ]
+   },
+   {
+    "day": 2,
+    "ids": [
+     "repeat"
+    ],
+    "withWeek": [
+     "week",
+     "repeat"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": [
+     "repeat"
+    ]
+   },
+   {
+    "day": 20390,
+    "ids": [
+     "repeat"
+    ]
+   },
+   {
+    "day": -1,
+    "ids": [
+     "repeat"
+    ]
+   },
+   {
+    "day": -7,
+    "ids": [
+     "repeat"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "a taste with nothing makes nothing",
+  "rotation": [],
+  "picks": [
+   {
+    "day": 0,
+    "ids": [],
+    "withWeek": [
+     "week"
+    ]
+   },
+   {
+    "day": 1,
+    "ids": [],
+    "withWeek": [
+     "week"
+    ]
+   }
+  ],
+  "far": [
+   {
+    "day": 20389,
+    "ids": []
+   },
+   {
+    "day": 20390,
+    "ids": []
+   },
+   {
+    "day": -1,
+    "ids": []
+   },
+   {
+    "day": -7,
+    "ids": []
+   }
+  ]
+ }
+]

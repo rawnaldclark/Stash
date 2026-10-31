@@ -32,27 +32,28 @@ class HomeSectionsListeningPromotionTest {
         }
         val pref = HomeSectionsPreference(context)
         val order = pref.order.first()
-        // Discover stays on top; Your listening goes directly under it.
-        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING), order.take(2))
+        // Discover stays on top; Your record and Your listening go directly under it, From your record above the catalogs.
+        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.YOUR_LISTENING), order.take(3))
         assertEquals(
             listOf(
-                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
+                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.RECORD_MIXES, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
             ),
-            order.drop(2),
+            order.drop(3),
         )
-        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING), pref.visibleSections.first().take(2))
+        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.YOUR_LISTENING), pref.visibleSections.first().take(3))
     }
 
     @Test fun `moving it down saves the order, and it stays under discover on the next read`() = runTest {
         val pref = HomeSectionsPreference(context)
         pref.move(HomeSection.YOUR_LISTENING, up = false)
-        assertEquals(HomeSection.YOUR_LISTENING, pref.order.first()[2])
+        assertEquals(HomeSection.YOUR_LISTENING, pref.order.first()[3])
         // A fresh instance reads the saved order and keeps the promotion ended.
         val again = HomeSectionsPreference(context).order.first()
         assertEquals(HomeSection.DISCOVER, again[0])
-        assertEquals(HomeSection.YOUR_PLAYLISTS, again[1])
-        assertEquals(HomeSection.YOUR_LISTENING, again[2])
+        assertEquals(HomeSection.YOUR_RECORD, again[1])
+        assertEquals(HomeSection.YOUR_PLAYLISTS, again[2])
+        assertEquals(HomeSection.YOUR_LISTENING, again[3])
     }
 
     @Test fun `hidden stays hidden through the promotion`() = runTest {
@@ -63,10 +64,10 @@ class HomeSectionsListeningPromotionTest {
         assertEquals(HomeSection.DISCOVER, pref.order.first().first())
     }
 
-    @Test fun `a fresh install shows discover, then your listening`() = runTest {
+    @Test fun `a fresh install shows discover, your record, then your listening`() = runTest {
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING),
-            HomeSectionsPreference(context).visibleSections.first().take(2),
+            listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.YOUR_LISTENING),
+            HomeSectionsPreference(context).visibleSections.first().take(3),
         )
     }
 }

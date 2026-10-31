@@ -33,6 +33,10 @@ import com.stash.feature.listening.history.HistoryScreen
 import com.stash.feature.listening.recap.RecapScreen
 import com.stash.feature.listening.stats.ListeningStatsScreen
 import com.stash.feature.listening.top.TopScreen
+import com.stash.feature.record.RecordScreen
+import com.stash.feature.record.card.YourRecordSection
+import com.stash.feature.record.mixes.RecordMixScreen
+import com.stash.feature.record.mixes.RecordMixesSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -73,6 +77,8 @@ fun StashNavHost(
     // the same lambda will be wired to Liked/Album/Artist/Library detail screens
     // in later tasks — only the Playlist destination consumes it today.
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    // Your record's Mixes tab showing (the scaffold shows the mini player over it).
+    onRecordMixesShown: (Boolean) -> Unit = {},
     // The scaffold's canonical bottom-nav tab switch, for screens that trigger
     // one themselves (Home's Liked card → Library ▸ Liked).
     onNavigateToTab: (TopLevelDestination) -> Unit = {},
@@ -94,7 +100,7 @@ fun StashNavHost(
                 navController.popBackStack()) Unit
         }
     }
-    StashNavGraph(navController, modifier, onSelectionModeChanged, onNavigateToTab, posting, startDestination)
+    StashNavGraph(navController, modifier, onSelectionModeChanged, onRecordMixesShown, onNavigateToTab, posting, startDestination)
 }
 
 /**
@@ -116,6 +122,7 @@ private fun StashNavGraph(
     navController: NavHostController,
     modifier: Modifier,
     onSelectionModeChanged: (Boolean) -> Unit,
+    onRecordMixesShown: (Boolean) -> Unit,
     onNavigateToTab: (TopLevelDestination) -> Unit,
     posting: CommunityPosting,
     startDestination: Any,
@@ -126,7 +133,7 @@ private fun StashNavGraph(
         startDestination = startDestination,
         modifier = modifier,
     ) {
-        composable<HomeRoute> {
+        composable<HomeRoute> { homeEntry ->
             HomeScreen(
                 onNavigateToSettings = {
                     navController.navigate(SettingsRoute) {
@@ -196,6 +203,18 @@ private fun StashNavGraph(
                 },
                     )
                 },
+                yourRecordSection = {
+                    // A double tap opens one record, not two
+                    YourRecordSection(onOpen = { navController.openRecord() })
+                },
+                recordMixesSection = {
+                    RecordMixesSection(
+                        // Only from Home itself: two quick taps on two cards open one page (a single-top second would take over
+                        // the first page's entry, its view model and mix with it)
+                        onOpenMix = { id -> if (navController.currentBackStackEntry === homeEntry) navController.navigate(RecordMixRoute(id)) },
+                        onShowAll = { navController.openRecord(mixes = true) },
+                    )
+                },
             )
         }
         composable<PlaylistBrowseRoute> {
@@ -255,6 +274,7 @@ private fun StashNavGraph(
                 // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -267,6 +287,7 @@ private fun StashNavGraph(
         }
         composable<SearchRoute> {
             SearchScreen(
+                onOpenLink = { navController.navigate(LinkImportRoute(it)) },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },
@@ -289,21 +310,14 @@ private fun StashNavGraph(
                 onNavigateToFailedMatches = {
                     navController.navigate(FailedMatchesRoute)
                 },
-                // Phase 8: Library actions (Blocked Songs + Fix wrong-version)
-                // moved out of Settings into the Sync tab's Library section.
-                onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
                 onNavigateToFailedDownloads = {
                     navController.navigate(FailedDownloadsRoute)
                 },
-                onNavigateToDownloads = {
-                    navController.navigate(DownloadManagementRoute)
-                },
-                // "Re-authenticate" opens Accounts itself, where the expired card
-                // leads with Reconnect, instead of the Settings hub one tap short.
-                // Settings goes under it first: Accounts shares the ViewModel
-                // scoped to the SettingsRoute entry (getBackStackEntry throws
-                // without it), as the captcha deep link does. Back from Accounts
-                // lands on Settings, then Sync.
+                // Connecting, and "Re-authenticate", open Accounts itself, where an
+                // expired card leads with Reconnect. Settings goes under it first:
+                // Accounts shares the ViewModel scoped to the SettingsRoute entry
+                // (getBackStackEntry throws without it), as the captcha deep link
+                // does. Back from Accounts lands on Settings, then Sync.
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -313,7 +327,20 @@ private fun StashNavGraph(
                     }
                 },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+                onOpenHistory = { navController.navigate(SyncHistoryRoute) },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
             )
+        }
+        composable<SyncHistoryRoute> {
+            AboveChrome {
+                com.stash.feature.sync.SyncHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    // Blocked Songs + Downloads moved here from the Sync tab itself.
+                    onNavigateToBlockedSongs = { navController.navigate(BlockedSongsRoute) },
+                    onNavigateToDownloads = { navController.navigate(DownloadManagementRoute) },
+                    onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
+                )
+            }
         }
         composable<ManagePlaylistsRoute> {
             AboveChrome {
@@ -405,6 +432,13 @@ private fun StashNavGraph(
                 } else {
                     null
                 },
+                onOpenRecord = { navController.openRecord() },
+                // Not connected: the app's own Last.fm sign-in, on Accounts & Sync
+                yourRecordLastfm = {
+                    com.stash.feature.record.lastfm.recordLastfmSettingsRows(onConnect = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } })
+                },
+                // "Use your record in mixes" and "Kept out of your mixes" (owner decisions D2, D1)
+                yourRecordInMixes = { com.stash.feature.record.taste.recordInMixesSettingsRows() },
             )
         }
         composable<WebLinkRoute> {
@@ -520,6 +554,16 @@ private fun StashNavGraph(
             }
         }
 
+        composable<LinkImportRoute> {
+            AboveChrome {
+                com.stash.feature.library.share.LinkImportScreen(
+                    onBack = { navController.popBackStack() },
+                    // Back from the playlist skips the link's screen.
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<LinkImportRoute> { inclusive = true } } },
+                )
+            }
+        }
+
         composable<CommunityRoute> {
             CommunityScreen(
                 mine = it.toRoute<CommunityRoute>().mine,
@@ -564,6 +608,34 @@ private fun StashNavGraph(
                 },
                 onOpenLastFmRecap = { kind, year, month ->
                     navController.navigate(RecapRoute(kind, year, month, source = "lastfm")) { launchSingleTop = true }
+                },
+            )
+        }
+
+        // Full screen over everything (StashScaffold hides the bottom chrome on this route). Pops only while the record is
+        // the top entry: its close racing a back must not pop Home as well.
+        composable<YourRecordRoute> { entry ->
+            RecordScreen(
+                onClose = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenMix = { id -> if (navController.currentBackStackEntry === entry) navController.navigate(RecordMixRoute(id)) },
+                onMixesShown = onRecordMixesShown,
+            )
+        }
+
+        // A mix of Your record: a normal screen with the mini player (only the record itself is full screen)
+        composable<RecordMixRoute> { entry ->
+            RecordMixScreen(
+                onBack = { if (navController.currentBackStackEntry === entry) navController.popBackStack() },
+                onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
+                onOpenRecord = {
+                    if (navController.currentBackStackEntry === entry) {
+                        // Back to the record under it; a mix opened from Home gives its place to the record (closing that comes
+                        // back to Home, not to this page)
+                        if (!navController.popBackStack<YourRecordRoute>(inclusive = false)) {
+                            navController.popBackStack()
+                            navController.openRecord(mixes = true)
+                        }
+                    }
                 },
             )
         }

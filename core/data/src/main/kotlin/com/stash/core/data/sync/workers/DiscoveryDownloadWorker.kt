@@ -74,6 +74,8 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     private val syncNotificationManager: SyncNotificationManager,
     private val downloadJobs: DownloadJobRegistry,
     private val fileReplacement: TrackFileReplacement,
+    /** The songs downloading at once, shared with sync downloads and DownloadManager. */
+    private val downloadSlots: com.stash.core.data.sync.DownloadSlots = com.stash.core.data.sync.DownloadSlots(),
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -195,83 +197,86 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
 
     /** Runs one discovery row in its own cancellable child, never the worker Job. */
     private suspend fun processQueueItem(queueItem: DownloadQueueEntity): Boolean = supervisorScope {
+        // A row is claimed (shown as downloading) only once one of the shared download slots is free.
         val child = async {
-            val itemJob = currentCoroutineContext().job
-            // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
-            if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
-                    downloadQueueDao.claimForDownload(queueItem.id) != 0
+            downloadSlots.withSlot {
+                val itemJob = currentCoroutineContext().job
+                // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
+                if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
+                        downloadQueueDao.claimForDownload(queueItem.id) != 0
+                    }
+                ) return@async false
+                if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                    // Cancelled as it was claimed: a replacement keeps its file.
+                    fileReplacement.restoreAfterStop(queueItem.trackId)
+                    return@async false
                 }
-            ) return@async false
-            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
-                // Cancelled as it was claimed: a replacement keeps its file.
-                fileReplacement.restoreAfterStop(queueItem.trackId)
-                return@async false
-            }
 
-            val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async false
-            if (blocklistGuard.isBlocked(
-                    artist = trackEntity.artist,
-                    title = trackEntity.title,
-                    spotifyUri = null,
-                    youtubeId = null,
-                )) {
-                downloadQueueDao.deleteByTrackId(trackEntity.id)
-                return@async false
-            }
-            if (trackEntity.isDownloaded && trackEntity.filePath != null) {
-                return@async downloadQueueDao.completeIfInProgress(
-                    id = queueItem.id,
-                    completedAt = System.currentTimeMillis(),
-                ) == 1
-            }
+                val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async false
+                if (blocklistGuard.isBlocked(
+                        artist = trackEntity.artist,
+                        title = trackEntity.title,
+                        spotifyUri = null,
+                        youtubeId = null,
+                    )) {
+                    downloadQueueDao.deleteByTrackId(trackEntity.id)
+                    return@async false
+                }
+                if (trackEntity.isDownloaded && trackEntity.filePath != null) {
+                    return@async downloadQueueDao.completeIfInProgress(
+                        id = queueItem.id,
+                        completedAt = System.currentTimeMillis(),
+                    ) == 1
+                }
 
-            val track = trackEntity.toDomain()
-            val outcome = try {
-                trackDownloader.downloadTrack(track, queueItem.youtubeUrl)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", error)
-                TrackDownloadOutcome.Failed(error.message.orEmpty())
-            }
-            when (outcome) {
-                is TrackDownloadOutcome.Success -> {
-                    // NonCancellable: cancel() cancels this child, so an unwrapped
-                    // read would throw and strand the file that just landed.
-                    // A new file that replaced the track's own in place is its
-                    // only copy and stays (see discardCancelledDownload).
-                    val cancelledMidFlight = withContext(NonCancellable) {
-                        if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                val track = trackEntity.toDomain()
+                val outcome = try {
+                    downloadSlots.holding { trackDownloader.downloadTrack(track, queueItem.youtubeUrl) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.e(TAG, "downloadTrack threw for ${track.artist} - ${track.title}", error)
+                    TrackDownloadOutcome.Failed(error.message.orEmpty())
+                }
+                when (outcome) {
+                    is TrackDownloadOutcome.Success -> {
+                        // NonCancellable: cancel() cancels this child, so an unwrapped
+                        // read would throw and strand the file that just landed.
+                        // A new file that replaced the track's own in place is its
+                        // only copy and stays (see discardCancelledDownload).
+                        val cancelledMidFlight = withContext(NonCancellable) {
+                            if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
+                                false
+                            } else {
+                                fileReplacement.discardCancelledDownload(
+                                    trackId = trackEntity.id,
+                                    keptPath = trackEntity.filePath,
+                                    newPath = outcome.filePath,
+                                )
+                                true
+                            }
+                        }
+                        if (cancelledMidFlight) {
                             false
                         } else {
-                            fileReplacement.discardCancelledDownload(
-                                trackId = trackEntity.id,
-                                keptPath = trackEntity.filePath,
-                                newPath = outcome.filePath,
-                            )
-                            true
+                            handleSuccess(queueItem, trackEntity, outcome)
+                            downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.COMPLETED
                         }
                     }
-                    if (cancelledMidFlight) {
+                    is TrackDownloadOutcome.Unmatched -> {
+                        handleUnmatched(queueItem, track, outcome)
+                        // The row is FAILED: a file kept for this re-download
+                        // (TrackDao.markForReplacement) is the track's download again.
+                        fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
                         false
-                    } else {
-                        handleSuccess(queueItem, trackEntity, outcome)
-                        downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.COMPLETED
                     }
+                    is TrackDownloadOutcome.Failed -> {
+                        handleFailed(queueItem, track, outcome)
+                        fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
+                        false
+                    }
+                    is TrackDownloadOutcome.Deferred -> false
                 }
-                is TrackDownloadOutcome.Unmatched -> {
-                    handleUnmatched(queueItem, track, outcome)
-                    // The row is FAILED: a file kept for this re-download
-                    // (TrackDao.markForReplacement) is the track's download again.
-                    fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
-                    false
-                }
-                is TrackDownloadOutcome.Failed -> {
-                    handleFailed(queueItem, track, outcome)
-                    fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
-                    false
-                }
-                is TrackDownloadOutcome.Deferred -> false
             }
         }
         child.await()

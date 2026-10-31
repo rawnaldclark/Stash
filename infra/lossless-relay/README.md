@@ -34,8 +34,13 @@ actives thanks to the shared mint cache; see spec §6.
 
 ## Daily lossless counter (shared with the Tidal relay)
 
+`MIN_APP_BUILD` defaults to `"0"` (disabled). When enabled, `/v1/qobuz/file` requires
+`X-Stash-App-Build` to be an integer versionCode at least that value, otherwise it returns
+`426 {"error":"app_too_old","min_build":N}` before quota checks or upstream calls.
+`/v1/quota` is unaffected. The web player uses Tidal, not this mint endpoint.
+
 Design: [`../../docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md`](../../docs/superpowers/specs/2026-10-17-lossless-daily-counter-design.md).
-Every install gets `FREE_LOSSLESS_DAILY` (default 500) lossless answers per UTC day, **Qobuz and Tidal together**:
+Every install gets `FREE_LOSSLESS_DAILY` (default 300) lossless answers per UTC day, **Qobuz and Tidal together**:
 both relays count in one D1 database, `stash-quota` (binding `QUOTA_DB`, schema and migrate command in
 [`../lossless-quota/`](../lossless-quota/README.md)), table `usage(day, subject, n)`, subject `i:<install id>`.
 Code: `src/quota.js` (an identical copy lives in `tidal-worker/src/quota.js`).
@@ -43,7 +48,7 @@ Code: `src/quota.js` (an identical copy lives in `tidal-worker/src/quota.js`).
 - **Counts (one unit):** a `200` mint for a lossless format (6, 7, 27), a mint-cache `HIT` included. **Never:** format
   5 (Data Saver, answered 404), any 404, 401, 429, 503, `/v1/quota`, `/v1/status`.
 - **Check:** after the signature and the per-minute limiter, before the cache. At the limit:
-  `429 {"error":"daily_lossless_cap","used":500,"limit":500,"resetsAt":<epoch s>}` with `Retry-After` = seconds to
+  `429 {"error":"daily_lossless_cap","used":300,"limit":300,"resetsAt":<epoch s>}` with `Retry-After` = seconds to
   `resetsAt` (the next UTC midnight), no Qobuz call. The app should then skip the lossless rungs until `resetsAt`.
 - **Headers** on every counted `200`, the `daily_lossless_cap` 429 and `/v1/quota`:
   `X-Stash-Lossless: <used>/<limit>` (`used` after this answer; `<used>/unlimited` for a supporter) and
@@ -52,7 +57,7 @@ Code: `src/quota.js` (an identical copy lives in `tidal-worker/src/quota.js`).
   the header is the count read before serving plus one.
 - **`GET /v1/quota`:** headers `X-Stash-Install`, `X-Stash-Ts`, `X-Stash-Auth` =
   `hex(HMAC-SHA256(RELAY_KEY, "<install>:quota:<ts>"))` (key as its UTF-8 string, ±300 s, like a mint). Answers
-  `200 {"used":n,"limit":500,"resetsAt":T,"supporter":false}` (`limit: null` for a supporter) with the headers;
+  `200 {"used":n,"limit":300,"resetsAt":T,"supporter":false}` (`limit: null` for a supporter) with the headers;
   `401` + `X-Stash-Server-Time` for a bad signature; `404 {"error":"quota_off"}` when the counter is off (also what
   an older relay without the route answers: `not_found`).
 - **Supporters:** a request may carry `X-Stash-Entitlement: <token>` (mints and `/v1/quota`), the token the tip jar
@@ -65,7 +70,7 @@ Code: `src/quota.js` (an identical copy lives in `tidal-worker/src/quota.js`).
   skipped: headers read `<used>/unlimited` (`used` = the install's own count, which still counts every answer) and
   `/v1/quota` answers `{"supporter":true,"limit":null}`. The network, /48 and global caps still apply to supporters.
 - **Per-token ceiling:** every answer under a token also counts in `usage` as subject `t:<tid>`. At
-  `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free 500 and its
+  `SUPPORTER_DAILY_CAP` (default 5000) that day the token is treated as absent: the install's free 300 and its
   `INSTALL_DAILY_CAP` apply again (headers `<used>/500`). This keeps a posted token from being a free pass for everyone.
 - **Revocation:** table `revoked_tokens(tid, revoked_at, reason)` in `stash-quota` (migration
   `0002_revoked_tokens.sql`), checked in the same D1 read as the install's count. Revoke a token (takes effect on

@@ -572,6 +572,29 @@ class NowPlayingViewModelTrackTapTest {
             }
         }
 
+    /** Blinding Lights tapped in Search: Last.fm filled the row's album as "Now 35" by Various Artists. */
+    @Test fun `onTrackInfoTapped opens the song's artist, not its compilation's Various Artists`() =
+        runTest(dispatcher) {
+            val api = mockk<YTMusicApiClient>()
+            coEvery { api.resolveArtist(any()) } returns
+                ArtistSummary(id = "UC0WP5P-ufpRfjbNrmOWwLBQ", name = "The Weeknd", avatarUrl = "http://a")
+            playerStateFlow.value = playerStateFlow.value.copy(
+                currentTrack = Track(
+                    id = 20023L, title = "Blinding Lights", artist = "The Weeknd",
+                    album = "Now 35", albumArtist = "Various Artists",
+                ),
+            )
+            val vm = newViewModel(api)
+            advanceUntilIdle()
+
+            vm.artistNavEvents.test {
+                vm.onTrackInfoTapped()
+                assertEquals("The Weeknd", awaitItem().name)
+                cancelAndIgnoreRemainingEvents()
+            }
+            coVerify(exactly = 1) { api.resolveArtist("The Weeknd") }
+        }
+
     @Test fun `onTrackInfoTapped emits toast and no nav on null resolve`() =
         runTest(dispatcher) {
             val api = mockk<YTMusicApiClient>()

@@ -45,7 +45,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
@@ -140,7 +139,7 @@ internal fun lossyAacLengthMatches(probedMs: Long?, expectedMs: Long, lengthReli
  * 3. Download native Opus audio via yt-dlp (metadata embedded via --embed-metadata).
  * 4. Move the file to the organized artist/album directory.
  *
- * Concurrency is limited to 8 simultaneous downloads via a [Semaphore].
+ * Concurrency is limited to 8 simultaneous downloads, shared with the workers ([com.stash.core.data.sync.DownloadSlots]).
  * Real-time progress is emitted through the [progress] shared flow.
  */
 @Singleton
@@ -188,10 +187,9 @@ class DownloadManager @Inject constructor(
     /** A match the retry sweep just found for this song: taken instead of asking again. */
     private val handoff: com.stash.data.download.lossless.ResolvedSourceHandoff =
         com.stash.data.download.lossless.ResolvedSourceHandoff(),
+    /** The downloads that run at once, shared with every worker that claims a queue row first. */
+    private val downloadSlots: com.stash.core.data.sync.DownloadSlots = com.stash.core.data.sync.DownloadSlots(),
 ) {
-    /** Limits concurrent downloads. 8 parallel slots — with native opus (no FFmpeg
-     *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
-    private val concurrencySemaphore = Semaphore(8)
 
     // The extra buffer keeps intermediate tryEmit()s from being dropped whenever the
     // Main-thread collector is a step behind (8 parallel downloads emit every ~64 KB);
@@ -249,22 +247,17 @@ class DownloadManager @Inject constructor(
     suspend fun downloadTrack(
         track: Track,
         preResolvedUrl: String? = null,
-    ): TrackDownloadResult {
-        concurrencySemaphore.acquire()
-        try {
-            val result = try {
-                executeDownload(track, preResolvedUrl)
-            } catch (e: Throwable) {
-                // Cancellation or a throw from a later step: without this the row
-                // kept its last live status (Downloading) indefinitely.
-                emitProgress(track.id, 0f, DownloadStatus.FAILED)
-                throw e
-            }
-            emitFinalStatus(track.id, result)
-            return result
-        } finally {
-            concurrencySemaphore.release()
+    ): TrackDownloadResult = downloadSlots.withSlot {
+        val result = try {
+            executeDownload(track, preResolvedUrl)
+        } catch (e: Throwable) {
+            // Cancellation or a throw from a later step: without this the row
+            // kept its last live status (Downloading) indefinitely.
+            emitProgress(track.id, 0f, DownloadStatus.FAILED)
+            throw e
         }
+        emitFinalStatus(track.id, result)
+        result
     }
 
     /**
@@ -666,7 +659,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
         // JioSaavnMatcher ignores durationReliable and only matches within max(8 s, 3%) of the
         // row's length, so its file is held to that same window ([lossyAacLengthMatches] with a
         // reliable length) and a match here is never fetched to be thrown away.
@@ -699,7 +692,7 @@ class DownloadManager @Inject constructor(
             durationMs = track.durationMs.takeIf { it > 0 },
             explicit = track.explicit,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
         // The query has the words, ISRC and length TidalStreamResolver asks with for this row
         // (both through forLibrarySource), so it reads the same cached Tidal match the
         // stream played. A YouTube music-video row's length is the video's: the matcher allows
@@ -845,7 +838,7 @@ class DownloadManager @Inject constructor(
             explicit = track.explicit,
             spotifyUri = track.spotifyUri,
             trackId = track.id,
-        ).forLibrarySource(track.source, track.musicVideoType)
+        ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank())
 
         // Bounded failover loop: the duration backstop can reject a degraded
         // source's preview-stub and record it degraded, after which the
@@ -1060,6 +1053,8 @@ class DownloadManager @Inject constructor(
                 targetArtist = track.artist,
                 targetAlbum = track.album,
                 targetDurationMs = track.durationMs,
+                // Picks the album's explicit edition unless the track is known clean.
+                targetExplicit = track.explicit,
             )?.takeIf { YouTubeVideoId.isValid(it.id) }
             if (albumResult != null) {
                 val scored = matchScorer.scoreResults(

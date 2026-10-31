@@ -95,13 +95,14 @@ data class SpotifyTrackObject(
     val duration_ms: Long = 0,
     val uri: String = "",
     /**
-     * Parental-advisory flag from Spotify. Always present on Web API track
-     * objects; defaults to `false` for responses that predate the field or
-     * for sources that don't expose it (e.g. the GraphQL fallback, which
-     * currently does not parse it). Threaded through to domain [Track] so
-     * the YouTube matcher can distinguish clean vs. explicit uploads.
+     * Parental-advisory flag from Spotify: the Web API's `explicit`, the web player's GraphQL
+     * `contentRating.label` ([contentRatingExplicit]). Null when the response doesn't say: not
+     * known, so nothing is steered toward the clean version. It used to default to false, and the
+     * GraphQL parsers (every playlist and Liked Songs sync since 2026-04) never set it, so every
+     * synced song read as clean and the matcher preferred clean versions (2026-10-26). Threaded
+     * through to domain [Track] so the matcher can tell clean from explicit.
      */
-    val explicit: Boolean = false,
+    val explicit: Boolean? = null,
     /**
      * International Standard Recording Code — a per-master unique identifier
      * Spotify exposes via `external_ids.isrc`. Populated only when the Web

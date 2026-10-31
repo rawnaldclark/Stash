@@ -174,11 +174,10 @@ class MixOfflineTapGuardTest {
     }
 
     @Test
-    fun `playTrack in Download mode + stream-only mix track is enqueued`() = runTest {
-        // The Download switch decides what sync writes to disk, never what
-        // plays: with a connection, a stream-only track is queued whichever
-        // way it is set. (Until 2026-09-17 Offline mode refused it with a
-        // "Switch to Online mode" prompt.)
+    fun `playTrack queues a stream-only mix track the list shows`() = runTest {
+        // The view model queues what the list shows. In Download mode the list doesn't
+        // show such a track (getShownTracksByPlaylist) and the player refuses it
+        // (PlayerRepositoryImpl.streamAllowed, 2026-10-29); neither is this test's.
         val downloaded = Track(
             id = 1L, title = "Local", artist = "A",
             isStreamable = true, isDownloaded = true,
@@ -283,6 +282,7 @@ class MixOfflineTapGuardTest {
     ): PlaylistDetailViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getTracksByPlaylist(playlistId) } doReturn flowOf(tracks)
+            on { getShownTracksByPlaylist(playlistId) } doReturn flowOf(tracks)
             on { observePlaylist(any()) } doReturn flowOf(null)
             onBlocking { getPlaylistWithTracks(playlistId) } doReturn playlist
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
@@ -307,6 +307,9 @@ class MixOfflineTapGuardTest {
             },
             downloadQueueDao = mock {
                 on { observeGivenUpTrackIds(any()) } doReturn flowOf(emptyList())
+            },
+            orderDao = mock {
+                on { observeIsCustom(any()) } doReturn flowOf(false)
             },
         )
     }

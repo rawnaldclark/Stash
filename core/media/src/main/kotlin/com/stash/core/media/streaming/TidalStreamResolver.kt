@@ -93,7 +93,10 @@ class TidalStreamResolver @Inject constructor(
         album = album.takeIf { it.isNotBlank() },
         isrc = isrc?.takeIf { it.isNotBlank() },
         durationMs = durationMs,
-    ).forLibrarySource(source, musicVideoType)
+        // In the Tidal cache key too (BitchordClient.cacheKey): the download's query passes it,
+        // so the stream and the download keep reading one cached match.
+        explicit = explicit,
+    ).forLibrarySource(source, musicVideoType, hasVideoId = !youtubeId.isNullOrBlank())
 
     suspend fun resolve(track: TrackEntity): StreamUrl? {
         if (!client.isConfigured()) return null

@@ -43,6 +43,9 @@ sealed class StreamRoutingResult {
      */
     data object NoConnectivity : StreamRoutingResult()
 
+    /** Download mode: the song isn't on the phone, and Download mode never streams. */
+    data object DownloadMode : StreamRoutingResult()
+
     /**
      * Rapid duplicate tap while a prior resolve for the same videoId is
      * still in flight. Caller should NOT emit any user-visible feedback:
@@ -145,6 +148,13 @@ interface PlayerRepository {
         startIndex: Int = 0,
         source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
     )
+
+    /**
+     * Covers learnt after the queue was set (Your record's songs come with their words only, their covers found as they play):
+     * each queued track [arts] names by id that has no cover yet takes its URL, on the queue's rows and on the player's items,
+     * the playing one and the media session's included. A track's own cover is never replaced. Nothing for tracks not queued.
+     */
+    suspend fun learnArtwork(arts: Map<Long, String>) = Unit
 
     /**
      * Restore the last-played queue — full queue, saved current track,

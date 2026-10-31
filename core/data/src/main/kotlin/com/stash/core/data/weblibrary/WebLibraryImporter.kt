@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.room.withTransaction
+import com.stash.core.common.TrackCanonical
+import com.stash.core.data.blocklist.BlocklistKey
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.PlaylistEntity
@@ -129,21 +131,64 @@ class WebLibraryImporter internal constructor(
      * [ORIGIN_FILE] for a file.
      */
     suspend fun import(content: WebLibraryContent, selection: ImportSelection, origin: String): WebLibraryImportResult =
-        withContext(Dispatchers.IO) {
-            lock.withLock {
-                val plan = WebLibraryMergePlanner.plan(content, selection, local(content, selection))
-                var result = WebLibraryImportResult(likesSkipped = plan.likesSkipped, playsSkipped = plan.playsSkipped)
-                result = importLikes(plan, result)
-                for (action in plan.playlists) result = importPlaylist(action, result)
-                result = importPlays(plan, origin, result)
-                Log.i(TAG, "imported: $result")
-                result
+        import(content, selection, origin, { sourceIdOf(it) }) { _, _ -> }
+
+    /**
+     * [import] with each new playlist's `source_id` from [idOf] (a Spotify export's playlists are `custom_spotify_…`, never
+     * `custom_web_…`: [com.stash.core.data.record.SpotifyLibraryImport]), and [progress] told the songs matched so far of all
+     * (the likes and the playlists' songs), a batch at a time. [progress] may throw to stop the import where it is (a
+     * [CancellationException]: what was written stays, and importing again finishes it without doubling anything).
+     */
+    suspend fun import(
+        content: WebLibraryContent,
+        selection: ImportSelection,
+        origin: String,
+        idOf: (ImportedPlaylist) -> String,
+        progress: (done: Int, total: Int) -> Unit,
+    ): WebLibraryImportResult = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val plan = WebLibraryMergePlanner.plan(content, selection, local(content, selection, idOf))
+            val ticks = Ticks(plan.likes.size + plan.playlists.sumOf { songsToMatch(it) }, progress)
+            ticks.add(0)
+            var result = WebLibraryImportResult(likesSkipped = plan.likesSkipped, playsSkipped = plan.playsSkipped)
+            result = importLikes(plan, result, ticks)
+            for (action in plan.playlists) {
+                val from = ticks.done
+                result = importPlaylist(action, result, idOf, ticks)
+                ticks.reach(from + songsToMatch(action))
             }
+            result = importPlays(plan, origin, result)
+            Log.i(TAG, "imported: $result")
+            result
         }
+    }
+
+    /** How far an import is: the songs matched so far of all, told on as each batch lands (never past [total]). */
+    private class Ticks(val total: Int, private val report: (Int, Int) -> Unit) {
+        var done = 0
+            private set
+
+        fun add(n: Int) {
+            done = minOf(total, done + n)
+            report(done, total)
+        }
+
+        /** At least [mark] done (a playlist over, however many of its songs were matched). */
+        fun reach(mark: Int) {
+            if (mark > done) add(mark - done)
+        }
+    }
+
+    /** The songs [action] matches: a new playlist's every song, one already here only those it lacks. */
+    private fun songsToMatch(action: PlaylistAction): Int = when (action) {
+        is PlaylistAction.Append -> action.songs.size
+        is PlaylistAction.Skip -> 0
+        is PlaylistAction.Create, is PlaylistAction.Follow -> action.playlist.items.size
+    }
 
     // -------------------------------------------------------------------------------------------- what is here
 
-    private suspend fun local(content: WebLibraryContent, selection: ImportSelection): LocalLibrary {
+    private suspend fun local(content: WebLibraryContent, selection: ImportSelection, idOf: (ImportedPlaylist) -> String): LocalLibrary {
         val dao = database.webLibraryExportDao()
         val likes = if (selection.likes && content.likes.isNotEmpty()) {
             dao.likes().map { SongRef(it.track.title, it.track.artist, it.track.isrc) }
@@ -165,14 +210,14 @@ class WebLibraryImporter internal constructor(
                 if (database.sharedMixDao().byShareId(follow.id) != null) followed += follow.id
                 continue
             }
-            val id = targetOf(p) ?: continue
+            val id = targetOf(p, idOf) ?: continue
             targets[p.id] = LocalPlaylist(id, dao.playlistItems(id, WebLibraryFile.MAX_PLAYLIST_ITEMS).map { SongRef(it.track.title, it.track.artist, it.track.isrc) })
         }
         return LocalLibrary(likes, playKeys, targets, followed)
     }
 
     /** This phone's playlist an incoming one merges into, or null for a new one. */
-    private suspend fun targetOf(p: ImportedPlaylist): Long? {
+    private suspend fun targetOf(p: ImportedPlaylist, idOf: (ImportedPlaylist) -> String): Long? {
         val playlists = database.playlistDao()
         // This phone's own export coming back: the same playlist when it still exists here under the same name. Another
         // phone's `app-42` is a different playlist that happens to share the number, so the name must agree too.
@@ -190,22 +235,39 @@ class WebLibraryImporter internal constructor(
                 }
             }
         }
-        return playlists.findBySourceId(sourceIdOf(p))?.takeIf { it.isActive }?.id
+        return playlists.findBySourceId(idOf(p))?.takeIf { it.isActive }?.id
     }
 
     // -------------------------------------------------------------------------------------------- writing
 
-    /** The matched rows of [songs], null for one that can't be held here or that this phone blocked. */
-    private suspend fun rows(songs: List<WireSong>): List<TrackEntity?> {
+    /** The matched rows of [songs], null for one that can't be held here or that this phone blocked. [ticks]: told each batch. */
+    private suspend fun rows(songs: List<WireSong>, ticks: Ticks? = null): List<TrackEntity?> {
         val blocklist = database.trackBlocklistDao()
-        return matcher.matchAll(songs).map { t ->
+        // A song this phone blocked is left out before it is matched. Blocking deleted its row, so matching it would make a new
+        // one, stored under its strict words because its usual key is blocked (canonicalWordsForSave), and the check on the
+        // row below would then miss it (`queen|don t stop me now` is not `queen|don't stop me now`), and leave a row behind
+        // A song whose loose words are blank ("(Intro)") is checked by its ids alone: its words' key ("x|") would name every
+        // title by that artist that is only brackets, so blocking one "(Intro)" would drop every "[Outro]" too
+        val wanted = songs.map { s ->
+            val title = TrackCanonical.title(s.title)
+            val artist = TrackCanonical.artist(s.artist)
+            val spotifyUri = s.spotifyId?.let { id -> "spotify:track:$id" }
+            val blocked = if (TrackCanonical.isBlankKey(title, artist)) {
+                blocklist.isIdBlocked(spotifyUri, s.youtubeId)
+            } else {
+                blocklist.isBlocked(BlocklistKey.fromStoredCanonicals(artist, title), spotifyUri, s.youtubeId)
+            }
+            s.takeUnless { blocked }
+        }
+        return matcher.matchAll(wanted, onBatch = { ticks?.add(it) }).map { t ->
+            // The row it matched may be blocked under its own words or ids
             t?.takeUnless { blocklist.isBlocked("${it.canonicalArtist}|${it.canonicalTitle}", it.spotifyUri, it.youtubeId) }
         }
     }
 
-    private suspend fun importLikes(plan: MergePlan, r: WebLibraryImportResult): WebLibraryImportResult {
+    private suspend fun importLikes(plan: MergePlan, r: WebLibraryImportResult, ticks: Ticks): WebLibraryImportResult {
         if (plan.likes.isEmpty()) return r
-        val rows = rows(plan.likes.map { it.song })
+        val rows = rows(plan.likes.map { it.song }, ticks)
         val pairs = plan.likes.indices.mapNotNull { i -> rows[i]?.let { it.id to plan.likes[i].likedAt } }
         // In transactions of [LIKES_BATCH]: one commit (and one library invalidation) per batch, not two writes per like (review S1).
         var added = 0
@@ -217,17 +279,17 @@ class WebLibraryImporter internal constructor(
         return r.copy(likesAdded = added, likesSkipped = r.likesSkipped + plan.likes.size - added)
     }
 
-    private suspend fun importPlaylist(action: PlaylistAction, r: WebLibraryImportResult): WebLibraryImportResult = try {
+    private suspend fun importPlaylist(action: PlaylistAction, r: WebLibraryImportResult, idOf: (ImportedPlaylist) -> String, ticks: Ticks): WebLibraryImportResult = try {
         when (action) {
             is PlaylistAction.Skip -> r.copy(playlistsSkipped = r.playlistsSkipped + 1)
             is PlaylistAction.Append -> {
-                val n = append(action.localId, action.songs)
+                val n = append(action.localId, action.songs, ticks)
                 if (n == 0) r.copy(playlistsSkipped = r.playlistsSkipped + 1) else r.copy(playlistsUpdated = r.playlistsUpdated + 1, songsAdded = r.songsAdded + n)
             }
-            is PlaylistAction.Create -> create(action.playlist, r)
+            is PlaylistAction.Create -> create(action.playlist, r, idOf, ticks)
             is PlaylistAction.Follow -> {
                 val follow = action.playlist.follow!!
-                if (followMix(follow.id)) r.copy(playlistsAdded = r.playlistsAdded + 1) else create(action.playlist, r)
+                if (followMix(follow.id)) r.copy(playlistsAdded = r.playlistsAdded + 1) else create(action.playlist, r, idOf, ticks)
             }
         }
     } catch (e: CancellationException) {
@@ -238,15 +300,18 @@ class WebLibraryImporter internal constructor(
         r
     }
 
-    /** A new CUSTOM playlist `custom_web_<id>` with [p]'s songs (or, when one was made meanwhile, the songs it lacks). */
-    private suspend fun create(p: ImportedPlaylist, r: WebLibraryImportResult): WebLibraryImportResult {
-        val sourceId = sourceIdOf(p)
+    /**
+     * A new CUSTOM playlist ([idOf]: `custom_web_<id>` for a web library) with [p]'s songs (or, when one was made meanwhile, the
+     * songs it lacks).
+     */
+    private suspend fun create(p: ImportedPlaylist, r: WebLibraryImportResult, idOf: (ImportedPlaylist) -> String, ticks: Ticks): WebLibraryImportResult {
+        val sourceId = idOf(p)
         val existing = database.playlistDao().findBySourceId(sourceId)
         if (existing != null) {
-            val n = append(existing.id, p.items)
+            val n = append(existing.id, p.items, ticks)
             return r.copy(playlistsUpdated = r.playlistsUpdated + (if (n > 0) 1 else 0), playlistsSkipped = r.playlistsSkipped + (if (n > 0) 0 else 1), songsAdded = r.songsAdded + n)
         }
-        val ids = rows(p.items).mapNotNull { it?.id }.distinct()
+        val ids = rows(p.items, ticks).mapNotNull { it?.id }.distinct()
         val playlists = database.playlistDao()
         val playlistId = database.withTransaction {
             val id = playlists.ensurePlaylist(
@@ -270,10 +335,10 @@ class WebLibraryImporter internal constructor(
     }
 
     /** Adds the songs of [songs] that [playlistId] doesn't already hold (by row), at the end. Returns how many. */
-    private suspend fun append(playlistId: Long, songs: List<WireSong>): Int {
+    private suspend fun append(playlistId: Long, songs: List<WireSong>, ticks: Ticks? = null): Int {
         if (songs.isEmpty()) return 0
         val have = database.playlistDao().getCrossRefsForPlaylist(playlistId).filter { it.removedAt == null }.mapTo(HashSet()) { it.trackId }
-        val ids = rows(songs).mapNotNull { it?.id }.filter { have.add(it) }
+        val ids = rows(songs, ticks).mapNotNull { it?.id }.filter { have.add(it) }
         if (ids.isNotEmpty()) musicRepository.addTracksToPlaylist(ids, playlistId)
         return ids.size
     }

@@ -23,7 +23,8 @@ import androidx.room.PrimaryKey
  * Only definitive answers land here; a busy pool, a 5xx or an I/O error is never a miss.
  *
  * [key] is the song's identity: `isrc:<ISRC>` when known, else
- * `t:<artist>|<title>|<duration bucket>` (see BitchordClient.cacheKey).
+ * `t:<artist>|<title>|<duration bucket>`, then `|explicit` or `|clean` for the twin the pick
+ * prefers (see BitchordClient.cacheKey). Rows keyed before that suffix are no longer read.
  */
 @Entity(tableName = "tidal_match_cache")
 data class TidalMatchEntity(

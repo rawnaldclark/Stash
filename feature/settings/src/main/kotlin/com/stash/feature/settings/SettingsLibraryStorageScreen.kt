@@ -201,10 +201,17 @@ fun SettingsLibraryStorageScreen(
     modifier: Modifier = Modifier,
     /** Link Stash on the web (spec 2026-10-10 link-sync §2.1); null while the feature is switched off (release builds). */
     onNavigateToWebLink: (() -> Unit)? = null,
+    /** Your record, full screen (its Settings rows open it once something was imported); null where it can't be opened. */
+    onOpenRecord: (() -> Unit)? = null,
+    /** Your record's Last.fm rows (feature:record's, handed over by the app so Settings needs no dependency on it). */
+    yourRecordLastfm: (@Composable () -> List<@Composable () -> Unit>)? = null,
+    /** Your record's rows for the mixes (feature:record's: "Use your record in mixes", "Kept out of your mixes"). */
+    yourRecordInMixes: (@Composable () -> List<@Composable () -> Unit>)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
     webExport: WebLibraryExportViewModel = hiltViewModel(),
     webImport: WebLibraryImportViewModel = hiltViewModel(),
     listeningHistory: ListeningHistorySettingsViewModel = hiltViewModel(),
+    yourRecord: YourRecordSettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val webExportState by webExport.state.collectAsStateWithLifecycle()
@@ -370,6 +377,9 @@ fun SettingsLibraryStorageScreen(
                 onDismiss = { showListeningHistory = false },
             )
         }
+
+        // -- Your record: a Spotify export brought in, a newer copy, removing it, the Home card's invitation --
+        YourRecordSettingsSection(yourRecord, onOpenRecord, yourRecordLastfm, yourRecordInMixes)
 
         // -- Cloud folders (Dropbox / OneDrive; only once an account is connected) --
         com.stash.feature.settings.cloud.CloudFoldersSection(

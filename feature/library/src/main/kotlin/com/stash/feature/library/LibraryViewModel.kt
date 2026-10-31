@@ -585,7 +585,7 @@ class LibraryViewModel @Inject constructor(
             if (playlists.isEmpty()) {
                 flowOf(emptyList())
             } else {
-                combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
+                combine(playlists.map { musicRepository.getShownTracksByPlaylist(it.id) }) { arrays ->
                     arrays.flatMap { it.toList() }.distinctBy { it.id }
                 }
             }
@@ -695,8 +695,6 @@ class LibraryViewModel @Inject constructor(
      */
     fun playTrack(track: Track, allTracks: List<Track>) {
         viewModelScope.launch {
-            // Streaming is always allowed: every track is playable, and a
-            // not-downloaded one streams when it is reached.
             // Download mode: a downloaded tap queues only downloaded rows, so offline playback
             // never walks into online neighbours. Stream-only: every row shown is playable, so
             // the queue is exactly the list shown, whatever row was tapped.

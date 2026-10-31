@@ -43,7 +43,22 @@ enum class HomeSection(val key: String) {
      * a stale saved order appends it; Home shows it first until the user reorders Home
      * ([effectiveHomeSectionOrder]). Home renders it only once there's a listen.
      */
-    YOUR_LISTENING("your_listening");
+    YOUR_LISTENING("your_listening"),
+
+    /**
+     * Your record (PLAN record-in-app 2026-10-26: "Home card, like the web"): the way into the record. Like the web, directly
+     * under Daily Discover: a saved order without it gets it there ([resolveHomeSectionOrder]), so it shows for everyone who
+     * already has one. Last in the enum only so the enum's order stays the old default's.
+     */
+    YOUR_RECORD("your_record"),
+
+    /**
+     * "From your record" (record-in-app phase 5c, like the web's shelf): three mixes only years of history make, a different few
+     * each day, with Show all into the record's Mixes tab. Only with an import (Home renders nothing without picks). Like the web,
+     * above the catalogs: a saved order without it gets it before the first of New releases, Qobuz playlists and Top albums
+     * ([resolveHomeSectionOrder]). Last in the enum so the enum's order stays the old default's.
+     */
+    RECORD_MIXES("record_mixes");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
@@ -56,30 +71,45 @@ enum class HomeSection(val key: String) {
  * from the saved order are appended in default order (added in an
  * update) — so a stale preference can never hide a new section.
  *
- * The exception is DISCOVER when it's missing: every order saved before it
+ * Three exceptions. DISCOVER when it's missing: every order saved before it
  * existed had Discover pinned on top, so a missing DISCOVER goes to the FRONT.
+ * YOUR_RECORD when it's missing: the web's card sits directly under Daily
+ * Discover, so it goes there when Discover is first, otherwise first.
+ * RECORD_MIXES when it's missing: the web's "From your record" shelf sits
+ * above the catalogs, so it goes right before the first of [CATALOG_SECTIONS]
+ * (the end when there is none).
  */
 fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     val known = savedKeys.mapNotNull(HomeSection::fromKey).distinct()
     val missing = HomeSection.entries.filter { it !in known }
     val front = if (HomeSection.DISCOVER in missing) listOf(HomeSection.DISCOVER) else emptyList()
-    return front + known + (missing - HomeSection.DISCOVER)
+    val order = front + known + (missing - HomeSection.DISCOVER - HomeSection.YOUR_RECORD - HomeSection.RECORD_MIXES)
+    val withRecord = when {
+        HomeSection.YOUR_RECORD !in missing -> order
+        order.firstOrNull() == HomeSection.DISCOVER -> listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD) + order.drop(1)
+        else -> listOf(HomeSection.YOUR_RECORD) + order
+    }
+    if (HomeSection.RECORD_MIXES !in missing) return withRecord
+    val catalog = withRecord.indexOfFirst { it in CATALOG_SECTIONS }
+    return if (catalog < 0) withRecord + HomeSection.RECORD_MIXES else withRecord.take(catalog) + HomeSection.RECORD_MIXES + withRecord.drop(catalog)
 }
+
+/** Home's catalogs (Qobuz's): the web's shelf "From your record" sits above them. */
+val CATALOG_SECTIONS: Set<HomeSection> = setOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS)
 
 /**
  * The order Home uses. Until the user reorders Home after this update ([promoted] false), Your listening
  * leads (owner 2026-10-19: show the new feature first, once); any reorder saves the order and ends that.
- * It goes directly under Discover when Discover is first, otherwise first.
+ * It goes directly under Discover when Discover is first, otherwise first; and under Your record when
+ * that sits right there (Discover, Your record, Your listening).
  */
 fun effectiveHomeSectionOrder(savedKeys: List<String>, promoted: Boolean): List<HomeSection> {
     val resolved = resolveHomeSectionOrder(savedKeys)
     if (promoted) return resolved
     val rest = resolved - HomeSection.YOUR_LISTENING
-    return if (rest.firstOrNull() == HomeSection.DISCOVER) {
-        listOf(HomeSection.DISCOVER, HomeSection.YOUR_LISTENING) + rest.drop(1)
-    } else {
-        listOf(HomeSection.YOUR_LISTENING) + rest
-    }
+    var lead = if (rest.firstOrNull() == HomeSection.DISCOVER) 1 else 0
+    if (rest.getOrNull(lead) == HomeSection.YOUR_RECORD) lead++
+    return rest.take(lead) + HomeSection.YOUR_LISTENING + rest.drop(lead)
 }
 
 /** Home before the preference loads, and when it can't be read: every section but Community, which is opt-in. */

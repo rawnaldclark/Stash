@@ -1,5 +1,7 @@
 package com.stash.app.navigation
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import com.stash.core.ui.icons.StashNavIcons
 import kotlinx.serialization.Serializable
 
@@ -41,6 +43,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class MixBuilderRoute(val recipeId: Long? = null)
 @Serializable data class SharedMixRoute(val shareId: String)
 @Serializable data class SharedTrackRoute(val link: String)
+/** A pasted or shared Spotify / YouTube link ([com.stash.core.data.link.MusicLinks]): its preview and Add to library. */
+@Serializable data class LinkImportRoute(val link: String)
 @Serializable data class ListenJoinRoute(val code: String)
 /** Settings › Library & Storage › Link Stash on the web; [link] is a pairing link opened from outside (spec 2026-10-10 link-sync §2.2). */
 @Serializable data class WebLinkRoute(val link: String? = null)
@@ -75,6 +79,30 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
  * (separate from Stash's own listening); anything else is Stash's own.
  */
 @Serializable data class RecapRoute(val kind: String = "month", val year: Int = 0, val month: Int = 0, val source: String = "stash")
+
+/**
+ * Your record (feature:record): the bundled record from Stash on the web, in a WebView, and its Mixes tab. Full screen like
+ * [RecapRoute]: the scaffold hides the mini player and the tab bar. [tab]: the tab to open on ("mixes": Home's Show all), else the
+ * one picked last (RecordViewModel reads it by this name).
+ */
+@Serializable data class YourRecordRoute(val tab: String? = null)
+
+/** One of Your record's history mixes ("era:1693526400000", "year:2018", "week"): a normal screen, the mini player stays. */
+@Serializable data class RecordMixRoute(val id: String)
+
+/**
+ * Opens Your record, from anywhere (Home's card and shelf, Settings, a finished import, a mix's page), and never again over itself:
+ * an import finished over the record (its own "Bring your Spotify") has nothing to open, and a page opened from the record goes
+ * back to that one, wherever it is in the back stack. Navigating to it again replaced its back-stack entry in place, which crashed
+ * the app while the NavHost was the Haze source (StashScaffold now keeps the source off the NavHost). [mixes]: on its Mixes tab (a
+ * record already open keeps its own).
+ */
+fun NavController.openRecord(mixes: Boolean = false) {
+    if (currentDestination?.hasRoute<YourRecordRoute>() == true) return
+    // Anywhere under the page showing: that record, as it was (never a second one, with a second WebView, over it)
+    if (popBackStack<YourRecordRoute>(inclusive = false)) return
+    navigate(YourRecordRoute(tab = if (mixes) "mixes" else null)) { launchSingleTop = true }
+}
 
 @Serializable
 data class SearchArtistRoute(
@@ -112,3 +140,6 @@ data class MixBrowseRoute(val rail: String)
 /** Full-screen per-source playlist management; [source] is a [SyncSource] name. */
 @Serializable
 data class ManagePlaylistsRoute(val source: String)
+
+/** The Sync tab's "History, blocked songs, undo" screen. */
+@Serializable data object SyncHistoryRoute

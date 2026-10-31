@@ -256,8 +256,8 @@ class HomeViewModelTest {
 
     /** qbdlx has missed enough consecutive resolves to read as down. */
     private fun downHealth() = com.stash.core.media.streaming.LosslessSourceHealth().apply {
-        repeat(com.stash.core.media.streaming.LosslessSourceHealth.QBDLX_DOWN_THRESHOLD) {
-            recordQbdlxMiss()
+        repeat(com.stash.core.media.streaming.LosslessSourceHealth.LOSSLESS_DOWN_THRESHOLD) {
+            recordLosslessMiss()
         }
     }
 
@@ -390,6 +390,7 @@ class HomeViewModelTest {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
             on { getTracksByPlaylist(any()) } doReturn flowOf(heroTracks)
+            on { getShownTracksByPlaylist(any()) } doReturn flowOf(heroTracks)
             // Feeds likedCardFlow when showLikedOnHome is on — an unstubbed
             // (null) flow would NPE that combine (same trap as below).
             on { getPlaylistsByType(eq(PlaylistType.STASH_LIKED)) } doReturn

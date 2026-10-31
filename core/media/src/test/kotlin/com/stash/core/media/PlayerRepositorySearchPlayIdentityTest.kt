@@ -114,4 +114,42 @@ class PlayerRepositorySearchPlayIdentityTest {
             musicRepository.ensureTrackPersisted(match { it.youtubeId == "_uofQD-N6UI" && it.title == "Reckoner" && it.id == 0L })
         }
     }
+
+    /**
+     * Shook Ones' top card is the 4:25 music video, and a tap landed on the library's mix row.
+     * The played row defaulted to a Spotify row's trust in its length, so Tidal picked the 4:49
+     * compilation edit over the 5:26 album cut, and the edit's cover replaced the row's because
+     * the swap judged the video's thumbnail rather than the row's art.
+     */
+    @Test
+    fun `a music video tapped in Search plays as a YouTube video, over the library row's art`() = runTest {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } returns 18205L
+        coEvery { trackDao.getById(18205L) } returns com.stash.core.data.db.entity.TrackEntity(
+            id = 18205L, title = "Shook Ones, Pt. II", artist = "Mobb Deep",
+            albumArtUrl = "https://lastfm.example/reminisce.jpg", explicit = true,
+        )
+        coEvery { streamingPreference.current() } returns true
+        every { streamingPreference.streamOnCellular } returns flowOf(true)
+        every { connectivity.isConnected() } returns true
+        every { connectivity.isCellular() } returns false
+        val played = slot<com.stash.core.data.db.entity.TrackEntity>()
+        coEvery { streamResolver.resolve(capture(played), any(), any()) } returns StreamUrl(
+            url = "https://cdn.example/shook-ones",
+            expiresAtMs = 42_000L,
+            coverArtUrl = "https://resources.tidal.example/pizza-king.jpg",
+        )
+        val item = TrackItem(
+            videoId = "yoYZf-lBF_U", title = "Shook Ones, Pt. II", artist = "Mobb Deep",
+            durationSeconds = 265.0, thumbnailUrl = "https://i.ytimg.com/vi/yoYZf-lBF_U/hqdefault.jpg",
+            musicVideoType = "OMV",
+        )
+
+        repo.playFromStream(item)
+
+        assertThat(played.captured.source).isEqualTo(com.stash.core.model.MusicSource.YOUTUBE)
+        assertThat(played.captured.musicVideoType).isEqualTo("OMV")
+        assertThat(played.captured.explicit).isTrue()
+        assertThat(played.captured.albumArtUrl).isEqualTo("https://lastfm.example/reminisce.jpg")
+        coVerify(exactly = 0) { trackDao.updateAlbumArtUrl(any(), any()) }
+    }
 }

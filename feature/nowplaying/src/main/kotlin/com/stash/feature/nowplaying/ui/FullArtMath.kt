@@ -40,7 +40,9 @@ internal data class FullArtSchedule(val pages: List<Int>, val holdMs: Long, val 
  * many times as that takes; a short one shows the first pages it has time for (the front and the
  * back first). An unknown length goes round at [FULL_ART_UNKNOWN_HOLD_MS].
  */
-internal fun fullArtSchedule(durationMs: Long, pageCount: Int): FullArtSchedule {
+internal fun fullArtSchedule(durationMs: Long, pageCount: Int, cycle: Boolean = true): FullArtSchedule {
+    // Cycle album art off: the page shown stays the whole song (one stretch, never past it); a swipe still turns it
+    if (!cycle) return FullArtSchedule(listOf(0), if (durationMs > 0L) durationMs else FULL_ART_UNKNOWN_HOLD_MS)
     val count = pageCount.coerceAtLeast(1)
     if (durationMs <= 0L) return FullArtSchedule((0 until count).toList(), FULL_ART_UNKNOWN_HOLD_MS, endless = true)
     val pages = if (durationMs / count < FULL_ART_MIN_HOLD_MS) {

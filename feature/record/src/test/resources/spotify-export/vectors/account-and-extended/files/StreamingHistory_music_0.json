@@ -1,0 +1,44 @@
+[
+ {
+  "endTime": "2024-11-10 10:00",
+  "artistName": "Song Artist",
+  "trackName": "Twin",
+  "msPlayed": 200000
+ },
+ {
+  "endTime": "2024-11-10 10:01",
+  "artistName": "Song Artist",
+  "trackName": "Twin",
+  "msPlayed": 200000
+ },
+ {
+  "endTime": "2024-11-10 09:59",
+  "artistName": "Other",
+  "trackName": "TWIN!",
+  "msPlayed": 200000
+ },
+ {
+  "endTime": "2024-11-10 10:02",
+  "artistName": "Song Artist",
+  "trackName": "Twin",
+  "msPlayed": 200000
+ },
+ {
+  "endTime": "2024-11-10 13:00",
+  "artistName": "Song Artist",
+  "trackName": "Only here",
+  "msPlayed": 150000
+ },
+ {
+  "endTime": "2024-11-10 13:00",
+  "artistName": "Song Artist",
+  "trackName": "Only here",
+  "msPlayed": 150000
+ },
+ {
+  "endTime": "2024-11-10 14:00",
+  "artistName": "Song Artist",
+  "trackName": "Short",
+  "msPlayed": 10000
+ }
+]

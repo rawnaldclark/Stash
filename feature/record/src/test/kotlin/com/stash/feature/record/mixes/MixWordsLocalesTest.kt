@@ -1,0 +1,98 @@
+package com.stash.feature.record.mixes
+
+import android.content.Context
+import android.content.res.Configuration
+import androidx.test.core.app.ApplicationProvider
+import com.google.common.truth.Truth.assertWithMessage
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.util.Locale
+
+/**
+ * Every language the record speaks makes every word of the mixes without a format error (an argument of the wrong kind, or one
+ * too few), and says it in its own words: the titles aren't the English left in place.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
+class MixWordsLocalesTest {
+    private val app = ApplicationProvider.getApplicationContext<Context>()
+    private val tags = listOf("en-US", "ar-SA", "de-DE", "es-ES", "fa-IR", "fil-PH", "fr-FR", "hi-IN", "ko-KR", "mr-IN", "pl-PL", "pt-BR", "ru-RU", "zh-CN")
+
+    private fun words(tag: String): ResourceMixWords {
+        val c = Configuration(app.resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) }
+        return ResourceMixWords(app.createConfigurationContext(c))
+    }
+
+    /** Every word with every count that picks another plural form somewhere (0, 1, 2, 3, 5, 11, 21, 22, 100). */
+    private fun all(w: MixWords): List<String> {
+        val counts = listOf(0, 1, 2, 3, 5, 11, 21, 22, 100)
+        return listOf(
+            w.monthYear(1_656_633_600_000), w.span("June 2022", "March 2023"), w.early(2018), w.mid(2018), w.late(2018), w.dot("A", "B"),
+            w.and("A, B", "C"), w.comma, w.constantsTitle, w.constantsSub, w.lostTitle, w.lostSub, w.repeatTitle, w.repeatSub, w.startedTitle,
+            w.startedSub, w.year(2019), w.yearSoFar(2026), w.artistTitle("Radiohead"), w.artistSub(2009), w.weekTitle, w.weekOneYear(9, 28, 2019),
+            w.weekOneYear(1, 29, 2024), w.about(5), w.about(60), w.about(170), w.cardWith("A & B"), w.cardShare(34), w.cardConstants, w.cardRepeat,
+            w.cardWeek, w.cardYearNow, w.cardYear, w.cardStarted, w.cardFromTo("Radiohead", 2009, "Mitski", 2021), w.cardLost, w.number(2019),
+        ) + counts.flatMap { n ->
+            listOf(
+                w.weekYears(9, 28, n), w.songs(n), w.cardUpToYears("Sub", n), w.cardObsession("Ivy", n, "June 2022"), w.cardHours(n.toLong()),
+                w.artistLine(n * 3_600_000L, n), w.lostLine(n),
+            )
+        }
+    }
+
+    @Test fun `every language makes every word`() {
+        val english = all(words("en-US"))
+        for (tag in tags) {
+            val said = all(words(tag))
+            assertWithMessage(tag).that(said.none { it.isEmpty() }).isTrue()
+            if (tag != "en-US") {
+                // the mixes' own titles are translated
+                val w = words(tag)
+                for (title in listOf(w.constantsTitle, w.lostTitle, w.repeatTitle, w.startedTitle, w.weekTitle)) {
+                    assertWithMessage("$tag: $title").that(title).isNotIn(english)
+                }
+            }
+        }
+    }
+
+    @Test fun `the day of the year is the language's own, and 29 February is one`() {
+        assertWithMessage("en").that(words("en-GB").weekOneYear(9, 28, 2019)).isEqualTo("Around October 28, 2019")
+        assertWithMessage("ru").that(words("ru-RU").weekOneYear(9, 28, 2019)).contains("28 октября")
+        assertWithMessage("pl").that(words("pl-PL").weekOneYear(9, 28, 2019)).contains("28 października")
+        assertWithMessage("de").that(words("de-DE").weekOneYear(9, 28, 2019)).contains("28. Oktober")
+        assertWithMessage("zh").that(words("zh-CN").weekOneYear(9, 28, 2019)).contains("10月28日")
+        assertWithMessage("29 Feb").that(words("en-US").weekOneYear(1, 29, 2024)).isEqualTo("Around February 29, 2024")
+    }
+
+    @Test fun `a line's numbers are in one script - the language's own`() {
+        for (tag in listOf("ar-SA", "fa-IR")) {
+            val w = words(tag)
+            for (line in listOf(w.weekOneYear(9, 28, 2019), w.weekYears(9, 28, 7), w.span(w.monthYear(1_656_633_600_000), w.monthYear(1_680_307_199_999)), w.early(2018))) {
+                assertWithMessage("$tag: $line").that(line.none { it in '0'..'9' }).isTrue()
+            }
+        }
+        // English keeps its own
+        assertWithMessage("en").that(words("en-US").span(words("en-US").monthYear(1_654_041_600_000), "x")).isEqualTo("June 2022 – x")
+    }
+
+    @Test fun `a device language with no strings writes the English whole - no Italian months, no Bengali digits`() {
+        val english = words("en-US")
+        for (tag in listOf("it-IT", "bn-BD", "ja-JP")) {
+            val w = words(tag)
+            assertWithMessage(tag).that(w.weekOneYear(9, 28, 2019)).isEqualTo("Around October 28, 2019")
+            assertWithMessage(tag).that(w.weekYears(9, 28, 3)).isEqualTo("Around October 28, in 3 past years")
+            assertWithMessage(tag).that(w.monthYear(1_654_041_600_000)).isEqualTo("June 2022")
+            assertWithMessage(tag).that(w.early(2018)).isEqualTo("Early 2018")
+            assertWithMessage(tag).that(w.songs(12)).isEqualTo("12 songs")
+            // the plural's form by English's rules (Bengali's "one" takes 0 too)
+            assertWithMessage(tag).that(w.songs(0)).isEqualTo(english.songs(0))
+            assertWithMessage(tag).that(w.songs(1)).isEqualTo(english.songs(1))
+            assertWithMessage(tag).that(w.cardHours(1_204)).isEqualTo("1,204 hours of listening")
+            assertWithMessage(tag).that(w.artistLine(1_204 * 3_600_000L, 9_021)).isEqualTo("1,204 hours · 9,021 plays")
+            assertWithMessage(tag).that(w.lostLine(12)).isEqualTo("12 songs you loved and haven’t played in a year. Like one to keep it.")
+            assertWithMessage(tag).that(w.number(2019)).isEqualTo(english.number(2019))
+        }
+    }
+}

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -12,6 +13,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -393,6 +396,14 @@ suspend fun updateNowPlaying(
         username: String? = null,
         /** Called when the answer (a success or a remembered miss) came from the local cache. */
         onCacheHit: () -> Unit = {},
+        /**
+         * Through Stash's proxy or not at all (Your record's lengths pass, which asks about thousands of songs): a proxy that is
+         * throttled, unreachable or missing fails the read ([LastFmRateLimitedException], the network's own error, or
+         * [LastFmProxyMissingException]) instead of falling back to a direct read on the app's own keys. Needs no [username].
+         * Its rate limits open a breaker of its own, never the one mixes, radios and the recap read through; the request is
+         * cancelled when the caller is, so a stopped pass never waits out an HTTP timeout.
+         */
+        proxyOnly: Boolean = false,
     ): Result<LastFmTrackInfo> = runCatching {
         val params = sortedMapOf(
             "method" to "track.getInfo",
@@ -401,10 +412,12 @@ suspend fun updateNowPlaying(
             "track" to title,
             "autocorrect" to "1",
         )
+        // Only a shared (cacheable) read can go through the proxy
+        require(!proxyOnly || username.isNullOrBlank()) { "a proxy-only read can't be a user's" }
         if (!username.isNullOrBlank()) params["username"] = username
         // Cacheable only without a username — with one, the response carries
         // that user's personal playcount/loved flags and must stay per-user.
-        val response = unsignedGet(params, cacheable = username.isNullOrBlank(), onCacheHit = onCacheHit)
+        val response = unsignedGet(params, cacheable = username.isNullOrBlank(), onCacheHit = onCacheHit, direct = !proxyOnly)
         LastFmTrackInfo.parse(response)
     }
 
@@ -483,6 +496,61 @@ suspend fun updateNowPlaying(
         )
         LastFmRecentTracksParser.parse(signedReadPost(params))
     }
+
+    /**
+     * One page of [username]'s scrobbles as Last.fm wrote it, for Your record's Last.fm import, which reads every field by the
+     * web player's own rules (stash-player `worker/lastfm-history.ts`) rather than [LastFmRecentTracksParser]'s. Newest first,
+     * up to [toSec] and, when given, from [fromSec] (UNIX seconds): a whole history fixes `to` for the run so new scrobbles don't
+     * shift its pages, and a top-up reads only what is newer. The same request as [getUserRecentTracks]: unsigned, on the bulk
+     * read keys, direct to Last.fm (never the Stash proxy, never cached). Read-only.
+     *
+     * @throws LastFmApiException Last.fm's `{ error }` answer (17: a profile that hides its listening; 6: no such user).
+     * @throws LastFmRateLimitedException HTTP 429, or every read key's breaker open.
+     * @throws LastFmHttpException any other HTTP failure.
+     * @throws java.io.IOException no connection.
+     */
+    suspend fun userRecentTracksJson(
+        username: String,
+        fromSec: Long?,
+        toSec: Long,
+        page: Int,
+        limit: Int = 200,
+    ): JsonObject = unsignedGet(historyParams(username, fromSec, toSec, page, limit), keys = recapReadKeys)
+
+    /**
+     * [userRecentTracksJson] signed with the connected account's own [sessionKey], for a profile that hides its listening
+     * (unsigned reads answer error 17): Last.fm shows a user their own history with their session. A POST, so the session key
+     * stays out of every URL. Only ever for the session's own username. Read-only.
+     *
+     * @throws LastFmApiException Last.fm's `{ error }` answer (9: the session is no longer valid).
+     */
+    suspend fun userRecentTracksSignedJson(
+        sessionKey: String,
+        username: String,
+        fromSec: Long?,
+        toSec: Long,
+        page: Int,
+        limit: Int = 200,
+    ): JsonObject = signedReadPost(historyParams(username, fromSec, toSec, page, limit) + ("sk" to sessionKey))
+
+    private fun historyParams(username: String, fromSec: Long?, toSec: Long, page: Int, limit: Int): Map<String, String> =
+        sortedMapOf(
+            "method" to "user.getRecentTracks",
+            "api_key" to credentials.apiKey,
+            "user" to username,
+            "to" to toSec.toString(),
+            "page" to page.toString(),
+            "limit" to limit.toString(),
+        ).apply { if (fromSec != null) put("from", fromSec.toString()) }
+
+    /**
+     * Whether this build can connect to Last.fm at all (an API key and its secret, as Settings' Last.fm card asks): Your record
+     * offers its Last.fm part only then, as the web shows it only where the server has Last.fm set up.
+     */
+    val isConfigured: Boolean get() = credentials.isConfigured
+
+    /** Whether this build has Stash's Last.fm proxy to read through (a proxy-only read has nothing to ask without it). */
+    val hasProxy: Boolean get() = !credentials.proxyUrl.isNullOrBlank()
 
     /**
      * A signed read sent as a POST form (secrets stay out of the URL), with Last.fm's
@@ -625,6 +693,8 @@ suspend fun updateNowPlaying(
         onCacheHit: () -> Unit = {},
         /** The read keys a direct request may use (round-robin, breakers respected). */
         keys: List<String> = credentials.readApiKeys,
+        /** False: through the proxy or not at all, never a direct read (see [getTrackInfo]'s `proxyOnly`). Needs [cacheable]. */
+        direct: Boolean = true,
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheKey = if (cacheable) lastFmCacheKey(params) else null
@@ -646,7 +716,8 @@ suspend fun updateNowPlaying(
 
             // The network part is shared by identical concurrent reads.
             if (cacheKey == null) return@withContext fetchUnsigned(params, null, keys)
-            coalesced(cacheKey) { fetchUnsigned(params, cacheKey, keys) }
+            // (a proxy-only read never hands its failure to a caller that could have read direct)
+            coalesced(if (direct) cacheKey else "$cacheKey#proxy-only") { fetchUnsigned(params, cacheKey, keys, direct) }
         }
 
     /**
@@ -701,6 +772,8 @@ suspend fun updateNowPlaying(
         params: Map<String, String>,
         cacheKey: String?,
         keys: List<String>,
+        /** False: the proxy only; its failure is the read's (no direct fallback), and with no proxy nothing is sent. */
+        direct: Boolean = true,
     ): JsonObject =
         withContext(Dispatchers.IO) {
             val cacheable = cacheKey != null
@@ -716,6 +789,8 @@ suspend fun updateNowPlaying(
                 targetBase: String,
                 breakerKey: String,
                 outgoing: MutableMap<String, String>,
+                /** The call ends when the caller's coroutine is cancelled (a bulk read stopped part way). */
+                cancellable: Boolean = false,
             ): JsonObject {
                 outgoing["format"] = "json"
                 val url = targetBase.toHttpUrl().newBuilder().apply {
@@ -724,12 +799,15 @@ suspend fun updateNowPlaying(
                 val request = Request.Builder().url(url).get().apply {
                     // Lets the proxy's logs attribute traffic to a build. Only the
                     // owner's proxy sees it; Last.fm direct gets nothing extra.
-                    if (breakerKey == PROXY_BREAKER_KEY) {
+                    if (targetBase == proxyUrl) {
                         credentials.appVersion?.takeIf { it.isNotBlank() }?.let { header(VERSION_HEADER, it) }
                     }
                 }.build()
-                val (code, body) = okHttpClient.newCall(request).execute().use {
-                    it.code to it.body?.string()
+                val call = okHttpClient.newCall(request)
+                val (code, body) = if (cancellable) {
+                    call.awaitCodeAndBody()
+                } else {
+                    call.execute().use { it.code to it.body?.string() }
                 }
                 // HTTP 429 — hard rate limit. Trip this source's breaker, then throw.
                 if (code == 429) {
@@ -795,6 +873,13 @@ suspend fun updateNowPlaying(
             // FALL BACK to a direct read key instead of failing — a throttled proxy
             // must not kill discovery (radios, mixes). Breaker keyed by "proxy".
             val useProxy = cacheable && !proxyUrl.isNullOrBlank()
+            if (!direct) {
+                // A bulk lookup: the proxy's answer or failure is the read's own, never one more read on the app's keys; its
+                // rate limits trip a breaker of its own, so they never hold up the app's other lookups
+                if (!useProxy) throw LastFmProxyMissingException("Last.fm proxy not configured; not reading direct")
+                if (rateLimitGate.isOpen(PROXY_BULK_BREAKER_KEY, now)) throw LastFmRateLimitedException("Last.fm proxy rate-limited; skipping request")
+                return@withContext send(proxyUrl!!, PROXY_BULK_BREAKER_KEY, params.toMutableMap().apply { remove("api_key") }, cancellable = true)
+            }
             if (useProxy && !rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
                 val proxyOutgoing = params.toMutableMap().apply { remove("api_key") }
                 try {
@@ -937,6 +1022,29 @@ suspend fun updateNowPlaying(
 
         /** Synthetic breaker key for the Worker proxy source (vs. real api keys). */
         private const val PROXY_BREAKER_KEY = "__proxy__"
+
+        /** The proxy's breaker for bulk proxy-only reads (Your record's lengths pass): apart from [PROXY_BREAKER_KEY]. */
+        private const val PROXY_BULK_BREAKER_KEY = "__proxy_bulk__"
+
+        /**
+         * This call's code and body, run on OkHttp's own threads and cancelled with the caller's coroutine (a blocking
+         * `execute()` can't be: the coroutine would wait out the HTTP timeouts).
+         */
+        private suspend fun Call.awaitCodeAndBody(): Pair<Int, String?> = suspendCancellableCoroutine { cont ->
+            cont.invokeOnCancellation { cancel() }
+            enqueue(
+                object : Callback {
+                    override fun onFailure(call: Call, e: java.io.IOException) {
+                        if (cont.isActive) cont.resumeWith(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: Call, response: okhttp3.Response) {
+                        val read = runCatching { response.use { it.code to it.body?.string() } }
+                        if (cont.isActive) cont.resumeWith(read)
+                    }
+                },
+            )
+        }
     }
 }
 

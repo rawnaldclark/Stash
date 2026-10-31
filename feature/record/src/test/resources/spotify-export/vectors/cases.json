@@ -1,0 +1,3724 @@
+{
+ "now": 1792756800000,
+ "cases": [
+  {
+   "name": "extended-rows",
+   "files": [
+    "Streaming_History_Audio_2023.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 1,
+     "account": 0,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 14,
+    "preview": {
+     "plays": 42,
+     "same": 1,
+     "overlap": 0,
+     "listenedMs": 29760000,
+     "first": 1677715000000,
+     "last": 1792929400000,
+     "years": 2,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 14
+    },
+    "rows": [
+     [
+      "a day|artist|1682985400000",
+      "A day",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682985400000,
+      200000,
+      34
+     ],
+     [
+      "a space|artist|1682929285000",
+      "A space",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682929285000,
+      200000,
+      34
+     ],
+     [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|artist|1682961400000",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682961400000,
+      200000,
+      34
+     ],
+     [
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|artist|1682962000000",
+      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682962000000,
+      200000,
+      34
+     ],
+     [
+      "cafe|artist|1682963800000",
+      "Café",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682963800000,
+      200000,
+      34
+     ],
+     [
+      "cafe|artist|1682964400000",
+      "Café",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682964400000,
+      200000,
+      34
+     ],
+     [
+      "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc|artist|1682962600000",
+      "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc ",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682962600000,
+      200000,
+      34
+     ],
+     [
+      "clicked then next|artist|1682951800000",
+      "Clicked then next",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682951800000,
+      200000,
+      37
+     ],
+     [
+      "empty reasons|artist|1682953000000",
+      "Empty reasons",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682953000000,
+      200000,
+      0
+     ],
+     [
+      "esce q|artist|1682970420000",
+      "Escé / \"q\" \\ 😀 \ud800",
+      "Artist",
+      null,
+      null,
+      1682970420000,
+      180000,
+      0
+     ],
+     [
+      "exponent|artist|1682951399750",
+      "Exponent",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682951399750,
+      250,
+      34
+     ],
+     [
+      "featuring|artist|1682963200000",
+      "Featuring",
+      "Artist (feat. Guest)",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682963200000,
+      200000,
+      34
+     ],
+     [
+      "february 30|artist|1677715000000",
+      "February 30",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1677715000000,
+      200000,
+      34
+     ],
+     [
+      "first moment|artist|1136073600000",
+      "First moment",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1136073600000,
+      0,
+      34
+     ],
+     [
+      "five song|artist|1682966200000",
+      "ﬁve Ｓｏｎｇ",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682966200000,
+      200000,
+      34
+     ],
+     [
+      "half up|artist|1682950198765",
+      "Half up",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682950198765,
+      1235,
+      34
+     ],
+     [
+      "istanbul|artist|1682965600000",
+      "İstanbul",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682965600000,
+      200000,
+      34
+     ],
+     [
+      "long fraction|artist|1682929225123",
+      "Long fraction",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682929225123,
+      200000,
+      34
+     ],
+     [
+      "lower case|artist|1682929225000",
+      "Lower case",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682929225000,
+      200000,
+      34
+     ],
+     [
+      "minus nothing|artist|1682950800000",
+      "Minus nothing",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682950800000,
+      0,
+      34
+     ],
+     [
+      "no album|artist|1682966800000",
+      "No album",
+      "Artist",
+      null,
+      "0123456789abcdefghijAB",
+      1682966800000,
+      200000,
+      34
+     ],
+     [
+      "no offset|artist|1682942200000",
+      "No offset",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682942200000,
+      200000,
+      34
+     ],
+     [
+      "no reasons|artist|1682953600000",
+      "No reasons",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682953600000,
+      200000,
+      4
+     ],
+     [
+      "null album|artist|1682967400000",
+      "Null album",
+      "Artist",
+      null,
+      "0123456789abcdefghijAB",
+      1682967400000,
+      200000,
+      34
+     ],
+     [
+      "number album|artist|1682968000000",
+      "Number album",
+      "Artist",
+      null,
+      "0123456789abcdefghijAB",
+      1682968000000,
+      200000,
+      34
+     ],
+     [
+      "odd reasons|artist|1682955400000",
+      "Odd reasons",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682955400000,
+      200000,
+      32
+     ],
+     [
+      "offset|artist|1682935000500",
+      "Offset",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682935000500,
+      200000,
+      34
+     ],
+     [
+      "play button|artist|1682952400000",
+      "Play button",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682952400000,
+      200000,
+      33
+     ],
+     [
+      "remote|artist|1682954200000",
+      "Remote",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682954200000,
+      200000,
+      42
+     ],
+     [
+      "second|artist|1682969220000",
+      "Second",
+      "Artist",
+      null,
+      null,
+      1682969220000,
+      180000,
+      0
+     ],
+     [
+      "six hours|artist|1682926200000",
+      "Six hours",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682926200000,
+      21600000,
+      34
+     ],
+     [
+      "song|artist|1682935000000",
+      "Song",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682935000000,
+      200000,
+      34
+     ],
+     [
+      "song|artist|1682938000000",
+      "Song",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682938000000,
+      200000,
+      34
+     ],
+     [
+      "spaced|artist|1682960200000",
+      "Spaced",
+      "Artist",
+      null,
+      "0123456789abcdefghijAB",
+      1682960200000,
+      200000,
+      34
+     ],
+     [
+      "start only|artist|1682954800000",
+      "Start only",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682954800000,
+      200000,
+      33
+     ],
+     [
+      "tab bed song|artist|1682959600000",
+      "Tab bed  Song",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682959600000,
+      200000,
+      34
+     ],
+     [
+      "twice|artist|1685613400000",
+      "Twice",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1685613400000,
+      200000,
+      34
+     ],
+     [
+      "two days on|artist|1792929400000",
+      "Two days on",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1792929400000,
+      200000,
+      34
+     ],
+     [
+      "uri episode|artist|1682957800000",
+      "Uri episode",
+      "Artist",
+      "Album",
+      null,
+      1682957800000,
+      200000,
+      34
+     ],
+     [
+      "uri link|artist|1682956600000",
+      "Uri link",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682956600000,
+      200000,
+      34
+     ],
+     [
+      "uri long|artist|1682958400000",
+      "Uri long",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682958400000,
+      200000,
+      34
+     ],
+     [
+      "uri newline|artist|1682956000000",
+      "Uri newline",
+      "Artist",
+      "Album",
+      null,
+      1682956000000,
+      200000,
+      34
+     ],
+     [
+      "uri none|artist|1682959000000",
+      "Uri none",
+      "Artist",
+      "Album",
+      null,
+      1682959000000,
+      200000,
+      34
+     ],
+     [
+      "uri short|artist|1682957200000",
+      "Uri short",
+      "Artist",
+      "Album",
+      null,
+      1682957200000,
+      200000,
+      34
+     ],
+     [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|artist|1682960800000",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682960800000,
+      200000,
+      34
+     ],
+     [
+      "σοφος|artist|1682965000000",
+      "ΣΟΦΟΣ",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682965000000,
+      200000,
+      34
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "account-rows",
+   "files": [
+    "StreamingHistory_music_0.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 1,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 8,
+    "preview": {
+     "plays": 9,
+     "same": 1,
+     "overlap": 0,
+     "listenedMs": 1800000,
+     "first": 1709287000000,
+     "last": 1735725400000,
+     "years": 2,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": false,
+     "unreadable": 8
+    },
+    "rows": [
+     [
+      "day 32|artist|1733133400000",
+      "Day 32",
+      "Artist",
+      null,
+      null,
+      1733133400000,
+      200000,
+      16
+     ],
+     [
+      "february 30|artist|1709287000000",
+      "February 30",
+      "Artist",
+      null,
+      null,
+      1709287000000,
+      200000,
+      16
+     ],
+     [
+      "half|artist|1730801699998",
+      "Half",
+      "Artist",
+      null,
+      null,
+      1730801699998,
+      2,
+      16
+     ],
+     [
+      "hour 25|artist|1730854600000",
+      "Hour 25",
+      "Artist",
+      null,
+      null,
+      1730854600000,
+      200000,
+      16
+     ],
+     [
+      "junk after|artist|1730801620000",
+      "Junk after",
+      "Artist",
+      null,
+      null,
+      1730801620000,
+      200000,
+      16
+     ],
+     [
+      "minute 99|artist|1730806540000",
+      "Minute 99",
+      "Artist",
+      null,
+      null,
+      1730806540000,
+      200000,
+      16
+     ],
+     [
+      "month 13|artist|1735725400000",
+      "Month 13",
+      "Artist",
+      null,
+      null,
+      1735725400000,
+      200000,
+      16
+     ],
+     [
+      "plain|artist|1730801500000",
+      "Plain",
+      "Artist",
+      null,
+      null,
+      1730801500000,
+      200000,
+      16
+     ],
+     [
+      "same twice|artist|1730883400000",
+      "Same twice",
+      "Artist",
+      null,
+      null,
+      1730883400000,
+      200000,
+      16
+     ],
+     [
+      "seconds and t|artist|1730801590000",
+      "Seconds and T",
+      "Artist",
+      null,
+      null,
+      1730801590000,
+      200000,
+      16
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "account-and-extended",
+   "files": [
+    "StreamingHistory_music_0.json",
+    "Streaming_History_Audio_2024.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 1,
+     "account": 1,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 5,
+     "same": 2,
+     "overlap": 3,
+     "listenedMs": 770000,
+     "first": 1731232630000,
+     "last": 1731243450000,
+     "years": 1,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 0
+    },
+    "rows": [
+     [
+      "lonely|album artist|1731236280000",
+      "Lonely",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731236280000,
+      120000,
+      34
+     ],
+     [
+      "only here|song artist|1731243450000",
+      "Only here",
+      "Song Artist",
+      null,
+      null,
+      1731243450000,
+      150000,
+      16
+     ],
+     [
+      "repeat|artist|1731239900000",
+      "Repeat",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731239900000,
+      100000,
+      34
+     ],
+     [
+      "short|song artist|1731247190000",
+      "Short",
+      "Song Artist",
+      null,
+      null,
+      1731247190000,
+      10000,
+      16
+     ],
+     [
+      "twin|album artist|1731232630000",
+      "Twin",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731232630000,
+      200000,
+      34
+     ],
+     [
+      "twin|song artist|1731232720000",
+      "Twin",
+      "Song Artist",
+      null,
+      null,
+      1731232720000,
+      200000,
+      16
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "account-then-extended",
+   "before": [
+    "StreamingHistory_music_0.json"
+   ],
+   "files": [
+    "Streaming_History_Audio_2024.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 1,
+     "account": 0,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 3,
+     "same": 1,
+     "overlap": 0,
+     "listenedMs": 420000,
+     "first": 1731232630000,
+     "last": 1731239900000,
+     "years": 1,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 0
+    },
+    "rows": [
+     [
+      "lonely|album artist|1731236280000",
+      "Lonely",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731236280000,
+      120000,
+      34
+     ],
+     [
+      "only here|song artist|1731243450000",
+      "Only here",
+      "Song Artist",
+      null,
+      null,
+      1731243450000,
+      150000,
+      16
+     ],
+     [
+      "repeat|artist|1731239900000",
+      "Repeat",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731239900000,
+      100000,
+      34
+     ],
+     [
+      "short|song artist|1731247190000",
+      "Short",
+      "Song Artist",
+      null,
+      null,
+      1731247190000,
+      10000,
+      16
+     ],
+     [
+      "twin|album artist|1731232630000",
+      "Twin",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731232630000,
+      200000,
+      34
+     ],
+     [
+      "twin|song artist|1731232720000",
+      "Twin",
+      "Song Artist",
+      null,
+      null,
+      1731232720000,
+      200000,
+      16
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "extended-then-account",
+   "before": [
+    "Streaming_History_Audio_2024.json"
+   ],
+   "files": [
+    "StreamingHistory_music_0.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 1,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 2,
+     "same": 4,
+     "overlap": 0,
+     "listenedMs": 350000,
+     "first": 1731232720000,
+     "last": 1731243450000,
+     "years": 1,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": false,
+     "unreadable": 0
+    },
+    "rows": [
+     [
+      "lonely|album artist|1731236280000",
+      "Lonely",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731236280000,
+      120000,
+      34
+     ],
+     [
+      "only here|song artist|1731243450000",
+      "Only here",
+      "Song Artist",
+      null,
+      null,
+      1731243450000,
+      150000,
+      16
+     ],
+     [
+      "repeat|artist|1731239900000",
+      "Repeat",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731239900000,
+      100000,
+      34
+     ],
+     [
+      "short|song artist|1731247190000",
+      "Short",
+      "Song Artist",
+      null,
+      null,
+      1731247190000,
+      10000,
+      16
+     ],
+     [
+      "twin|album artist|1731232630000",
+      "Twin",
+      "Album Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1731232630000,
+      200000,
+      34
+     ],
+     [
+      "twin|song artist|1731232720000",
+      "Twin",
+      "Song Artist",
+      null,
+      null,
+      1731232720000,
+      200000,
+      16
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "nested-zips",
+   "files": [
+    "my_spotify_data.zip"
+   ],
+   "expected": {
+    "files": {
+     "extended": 5,
+     "account": 2,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 5
+    },
+    "unreadable": 1,
+    "preview": {
+     "plays": 7,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 1198000,
+     "first": 1580551000000,
+     "last": 1641290301000,
+     "years": 3,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 1
+    },
+    "rows": [
+     [
+      "backslash|artist|1614592600000",
+      "Backslash",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1614592600000,
+      200000,
+      34
+     ],
+     [
+      "endsong upper|artist|1580637400000",
+      "Endsong upper",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1580637400000,
+      200000,
+      34
+     ],
+     [
+      "old account name|artist|1580723901000",
+      "Old account name",
+      "Artist",
+      null,
+      null,
+      1580723901000,
+      99000,
+      16
+     ],
+     [
+      "one deep|artist|1641290301000",
+      "One deep",
+      "Artist",
+      null,
+      null,
+      1641290301000,
+      99000,
+      16
+     ],
+     [
+      "three deep|artist|1641031000000",
+      "Three deep",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1641031000000,
+      200000,
+      34
+     ],
+     [
+      "two deep stored|artist|1641203800000",
+      "Two deep, stored",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1641203800000,
+      200000,
+      34
+     ],
+     [
+      "upper case name|artist|1580551000000",
+      "Upper case name",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1580551000000,
+      200000,
+      34
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "broken-files",
+   "files": [
+    "Streaming_History_Audio_2019.json",
+    "Streaming_History_Audio_2021_9.json",
+    "Streaming_History_Audio_2020.json",
+    "StreamingHistory_music_1.json",
+    "Streaming_History_Audio_2018.json",
+    "Streaming_History_Audio_2017.json",
+    "Streaming_History_Audio_2016.json",
+    "Playlist1.json",
+    "YourLibrary.json",
+    "broken.zip",
+    "notes.txt"
+   ],
+   "expected": {
+    "files": {
+     "extended": 3,
+     "account": 1,
+     "playlists": 1,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 9,
+    "preview": {
+     "plays": 2,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 400000,
+     "first": 1554112600000,
+     "last": 1682973400000,
+     "years": 2,
+     "playlists": [
+      {
+       "name": "Mixed",
+       "songs": 6
+      },
+      {
+       "name": "No items",
+       "songs": 0
+      },
+      {
+       "name": "Items not a list",
+       "songs": 0
+      },
+      {
+       "name": "Mixed",
+       "songs": 1
+      }
+     ],
+     "likes": 0,
+     "hidden": 1,
+     "extended": true,
+     "unreadable": 9
+    },
+    "rows": [
+     [
+      "after a bom|artist|1682973400000",
+      "After a BOM",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1682973400000,
+      200000,
+      34
+     ],
+     [
+      "kept beside the broken|artist|1554112600000",
+      "Kept beside the broken",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1554112600000,
+      200000,
+      34
+     ]
+    ],
+    "bundle": {
+     "playlists": [
+      {
+       "name": "Mixed",
+       "description": null,
+       "items": [
+        {
+         "title": "One",
+         "artist": "A",
+         "album": "X",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": null
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Title😀",
+         "artist": "Artist Name",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "C",
+         "artist": "A",
+         "album": "B",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Zero",
+         "artist": "A",
+         "album": "B",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Two",
+         "artist": "B",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "No items",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Items not a list",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Mixed",
+       "description": null,
+       "items": [
+        {
+         "title": "Again",
+         "artist": "C",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      }
+     ],
+     "likes": [],
+     "hidden": [
+      {
+       "title": "Hidden",
+       "artist": "A",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ]
+    },
+    "commit": {
+     "playlists": [
+      {
+       "key": "Mixed#0",
+       "name": "Mixed",
+       "songs": 6
+      },
+      {
+       "key": "No items#0",
+       "name": "No items",
+       "songs": 0
+      },
+      {
+       "key": "Items not a list#0",
+       "name": "Items not a list",
+       "songs": 0
+      },
+      {
+       "key": "Mixed#1",
+       "name": "Mixed",
+       "songs": 1
+      }
+     ],
+     "likes": [],
+     "record": {
+      "playlists": 4,
+      "likes": 0
+     }
+    },
+    "hidden": [
+     "hidden|a"
+    ],
+    "library": {
+     "playlists": [
+      {
+       "key": "Mixed#0",
+       "name": "Mixed",
+       "items": [
+        {
+         "title": "One",
+         "artist": "A",
+         "album": "X",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Title😀",
+         "artist": "Artist Name",
+         "album": "Album",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "C",
+         "artist": "A",
+         "album": "B",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Zero",
+         "artist": "A",
+         "album": "B",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Two",
+         "artist": "B",
+         "album": null,
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "No items#0",
+       "name": "No items",
+       "items": []
+      },
+      {
+       "key": "Items not a list#0",
+       "name": "Items not a list",
+       "items": []
+      },
+      {
+       "key": "Mixed#1",
+       "name": "Mixed",
+       "items": [
+        {
+         "title": "Again",
+         "artist": "C",
+         "album": null,
+         "addedAt": 1792756800000
+        }
+       ]
+      }
+     ],
+     "likes": [],
+     "keys": [
+      "Mixed#0",
+      "No items#0",
+      "Items not a list#0",
+      "Mixed#1"
+     ]
+    }
+   }
+  },
+  {
+   "name": "not-an-export",
+   "files": [
+    "my_spotify_data.zip"
+   ],
+   "expected": {
+    "error": "NotAnExport"
+   }
+  },
+  {
+   "name": "only-broken",
+   "files": [
+    "Streaming_History_Audio_2023.json"
+   ],
+   "expected": {
+    "error": "NotAnExport"
+   }
+  },
+  {
+   "name": "a-newer-export",
+   "before": [
+    "endsong_0.json"
+   ],
+   "files": [
+    "endsong_0.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 1,
+     "account": 0,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 1,
+     "same": 2,
+     "overlap": 0,
+     "listenedMs": 200000,
+     "first": 1609667800000,
+     "last": 1609667800000,
+     "years": 1,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 0
+    },
+    "rows": [
+     [
+      "new four|artist|1609754395000",
+      "New four",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609754395000,
+      5000,
+      34
+     ],
+     [
+      "new three|artist|1609667800000",
+      "New three",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609667800000,
+      200000,
+      34
+     ],
+     [
+      "old one|artist|1609495000000",
+      "Old one",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609495000000,
+      200000,
+      34
+     ],
+     [
+      "old two|artist|1609581400000",
+      "Old two",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609581400000,
+      200000,
+      34
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "the-same-again",
+   "before": [
+    "endsong_0.json"
+   ],
+   "files": [
+    "endsong_0.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 1,
+     "account": 0,
+     "playlists": 0,
+     "library": 0,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 0,
+     "same": 4,
+     "overlap": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "years": 0,
+     "playlists": [],
+     "likes": 0,
+     "hidden": 0,
+     "extended": true,
+     "unreadable": 0
+    },
+    "rows": [
+     [
+      "new four|artist|1609754395000",
+      "New four",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609754395000,
+      5000,
+      34
+     ],
+     [
+      "new three|artist|1609667800000",
+      "New three",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609667800000,
+      200000,
+      34
+     ],
+     [
+      "old one|artist|1609495000000",
+      "Old one",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609495000000,
+      200000,
+      34
+     ],
+     [
+      "old two|artist|1609581400000",
+      "Old two",
+      "Artist",
+      "Album",
+      "0123456789abcdefghijAB",
+      1609581400000,
+      200000,
+      34
+     ]
+    ],
+    "bundle": {
+     "playlists": [],
+     "likes": [],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [],
+     "record": {
+      "playlists": 0,
+      "likes": 0
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "library-all",
+   "files": [
+    "StreamingHistory_music_0.json",
+    "Playlist1.json",
+    "Playlist2.json",
+    "YourLibrary.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 1,
+     "playlists": 2,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 4,
+    "preview": {
+     "plays": 2,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 400000,
+     "first": 1731232600000,
+     "last": 1731232660000,
+     "years": 1,
+     "playlists": [
+      {
+       "name": "Chill",
+       "songs": 25
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "Road",
+       "songs": 0
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "songs": 1
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "songs": 2
+      },
+      {
+       "name": "No items field",
+       "songs": 0
+      },
+      {
+       "name": "Items not a list",
+       "songs": 0
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": 6,
+     "hidden": 4,
+     "extended": false,
+     "unreadable": 4
+    },
+    "rows": [
+     [
+      "twin|song artist|1731232600000",
+      "Twin",
+      "Song Artist",
+      null,
+      null,
+      1731232600000,
+      200000,
+      16
+     ],
+     [
+      "twin|song artist|1731232660000",
+      "Twin",
+      "Song Artist",
+      null,
+      null,
+      1731232660000,
+      200000,
+      16
+     ]
+    ],
+    "bundle": {
+     "playlists": [
+      {
+       "name": "Chill",
+       "description": "Sunday mornings",
+       "items": [
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Dated",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680344430000
+        },
+        {
+         "title": "Offset",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680343200000
+        },
+        {
+         "title": "No zone",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400000
+        },
+        {
+         "title": "Fraction",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400123
+        },
+        {
+         "title": "Month only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Year only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1672531200000
+        },
+        {
+         "title": "February 30",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1677715200000
+        },
+        {
+         "title": "Hour 24",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680393600000
+        },
+        {
+         "title": "Not a date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Number date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Empty date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Null date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Link uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": null
+        },
+        {
+         "title": "Bad uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Spaced",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo Tape",
+         "sid": null,
+         "addedAt": 1682899200000
+        },
+        {
+         "title": "A+B & C",
+         "artist": "100% Band",
+         "album": "Album+",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Malformed album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Emoji artist",
+         "artist": "😀",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "No album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Only three",
+         "artist": "Band",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Both",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "String track",
+         "artist": "L",
+         "album": "L",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Second chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Road",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Third chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "No items field",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Items not a list",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Fourth chill, in the second file",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "road",
+       "description": null,
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      }
+     ],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijCD",
+       "addedAt": null
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "hidden": [
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again (Remastered)",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "never again",
+       "artist": "BAND",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again - 2015 Remaster",
+       "artist": "Band",
+       "album": "Best of",
+       "sid": null,
+       "addedAt": null
+      }
+     ]
+    },
+    "commit": {
+     "playlists": [
+      {
+       "key": "Chill#0",
+       "name": "Chill",
+       "songs": 25
+      },
+      {
+       "key": "Chill#1",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "Road#0",
+       "name": "Road",
+       "songs": 0
+      },
+      {
+       "key": "Chill#2",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more#0",
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "songs": 1
+      },
+      {
+       "key": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää#0",
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "songs": 2
+      },
+      {
+       "key": "No items field#0",
+       "name": "No items field",
+       "songs": 0
+      },
+      {
+       "key": "Items not a list#0",
+       "name": "Items not a list",
+       "songs": 0
+      },
+      {
+       "key": "Chill#3",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijCD",
+       "addedAt": null
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "record": {
+      "playlists": 10,
+      "likes": 6
+     }
+    },
+    "hidden": [
+     "hidden and liked|band",
+     "never again|band"
+    ],
+    "library": {
+     "playlists": [
+      {
+       "key": "Chill#0",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Dated",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680344430000
+        },
+        {
+         "title": "Offset",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680343200000
+        },
+        {
+         "title": "No zone",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680350400000
+        },
+        {
+         "title": "Fraction",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680350400123
+        },
+        {
+         "title": "Month only",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Year only",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1672531200000
+        },
+        {
+         "title": "February 30",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1677715200000
+        },
+        {
+         "title": "Hour 24",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1680393600000
+        },
+        {
+         "title": "Not a date",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Number date",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Empty date",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Null date",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Link uri",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Bad uri",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Spaced",
+         "artist": "Band",
+         "album": null,
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo Tape",
+         "addedAt": 1682899200000
+        },
+        {
+         "title": "A+B & C",
+         "artist": "100% Band",
+         "album": "Album+",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Malformed album",
+         "artist": "Band",
+         "album": null,
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Emoji artist",
+         "artist": "😀",
+         "album": "Album",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "No album",
+         "artist": "Band",
+         "album": null,
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Only three",
+         "artist": "Band",
+         "album": "Album",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "Both",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "String track",
+         "artist": "L",
+         "album": "L",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "Chill#1",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Second chill",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "Road#0",
+       "name": "Road",
+       "items": []
+      },
+      {
+       "key": "Chill#2",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Third chill",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more#0",
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d",
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää#0",
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        },
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "No items field#0",
+       "name": "No items field",
+       "items": []
+      },
+      {
+       "key": "Items not a list#0",
+       "name": "Items not a list",
+       "items": []
+      },
+      {
+       "key": "Chill#3",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Fourth chill, in the second file",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      }
+     ],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "likedAt": 1792756800000
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "likedAt": 1792756799999
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "likedAt": 1792756799998
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799997
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799996
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799995
+      }
+     ],
+     "keys": [
+      "Chill#0",
+      "Chill#1",
+      "Road#0",
+      "Chill#2",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more#0",
+      "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää#0",
+      "No items field#0",
+      "Items not a list#0",
+      "Chill#3",
+      "road#0"
+     ]
+    }
+   }
+  },
+  {
+   "name": "library-chosen",
+   "files": [
+    "Playlist1.json",
+    "Playlist2.json",
+    "YourLibrary.json"
+   ],
+   "choose": {
+    "playlists": [
+     1,
+     3,
+     9
+    ],
+    "likes": false
+   },
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 0,
+     "playlists": 2,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 4,
+    "preview": {
+     "plays": 0,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "years": 0,
+     "playlists": [
+      {
+       "name": "Chill",
+       "songs": 25
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "Road",
+       "songs": 0
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "songs": 1
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "songs": 2
+      },
+      {
+       "name": "No items field",
+       "songs": 0
+      },
+      {
+       "name": "Items not a list",
+       "songs": 0
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": 6,
+     "hidden": 4,
+     "extended": false,
+     "unreadable": 4
+    },
+    "rows": [],
+    "bundle": {
+     "playlists": [
+      {
+       "name": "Chill",
+       "description": "Sunday mornings",
+       "items": [
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Dated",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680344430000
+        },
+        {
+         "title": "Offset",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680343200000
+        },
+        {
+         "title": "No zone",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400000
+        },
+        {
+         "title": "Fraction",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400123
+        },
+        {
+         "title": "Month only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Year only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1672531200000
+        },
+        {
+         "title": "February 30",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1677715200000
+        },
+        {
+         "title": "Hour 24",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680393600000
+        },
+        {
+         "title": "Not a date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Number date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Empty date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Null date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Link uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": null
+        },
+        {
+         "title": "Bad uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Spaced",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo Tape",
+         "sid": null,
+         "addedAt": 1682899200000
+        },
+        {
+         "title": "A+B & C",
+         "artist": "100% Band",
+         "album": "Album+",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Malformed album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Emoji artist",
+         "artist": "😀",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "No album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Only three",
+         "artist": "Band",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Both",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "String track",
+         "artist": "L",
+         "album": "L",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Second chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Road",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Third chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "No items field",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Items not a list",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Fourth chill, in the second file",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "road",
+       "description": null,
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      }
+     ],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijCD",
+       "addedAt": null
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "hidden": [
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again (Remastered)",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "never again",
+       "artist": "BAND",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again - 2015 Remaster",
+       "artist": "Band",
+       "album": "Best of",
+       "sid": null,
+       "addedAt": null
+      }
+     ]
+    },
+    "commit": {
+     "playlists": [
+      {
+       "key": "Chill#1",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "Chill#2",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": [],
+     "record": {
+      "playlists": 3,
+      "likes": 0
+     }
+    },
+    "hidden": [
+     "hidden and liked|band",
+     "never again|band"
+    ],
+    "library": {
+     "playlists": [
+      {
+       "key": "Chill#1",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Second chill",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "Chill#2",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Third chill",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      }
+     ],
+     "likes": [],
+     "keys": [
+      "Chill#1",
+      "Chill#2",
+      "road#0"
+     ]
+    }
+   }
+  },
+  {
+   "name": "library-none-chosen",
+   "files": [
+    "Playlist1.json",
+    "YourLibrary.json"
+   ],
+   "choose": {
+    "playlists": [],
+    "likes": true
+   },
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 0,
+     "playlists": 1,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 4,
+    "preview": {
+     "plays": 0,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "years": 0,
+     "playlists": [
+      {
+       "name": "Chill",
+       "songs": 25
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "Road",
+       "songs": 0
+      },
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "songs": 1
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "songs": 2
+      },
+      {
+       "name": "No items field",
+       "songs": 0
+      },
+      {
+       "name": "Items not a list",
+       "songs": 0
+      }
+     ],
+     "likes": 6,
+     "hidden": 4,
+     "extended": false,
+     "unreadable": 4
+    },
+    "rows": [],
+    "bundle": {
+     "playlists": [
+      {
+       "name": "Chill",
+       "description": "Sunday mornings",
+       "items": [
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Dated",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680344430000
+        },
+        {
+         "title": "Offset",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680343200000
+        },
+        {
+         "title": "No zone",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400000
+        },
+        {
+         "title": "Fraction",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680350400123
+        },
+        {
+         "title": "Month only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680307200000
+        },
+        {
+         "title": "Year only",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1672531200000
+        },
+        {
+         "title": "February 30",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1677715200000
+        },
+        {
+         "title": "Hour 24",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": 1680393600000
+        },
+        {
+         "title": "Not a date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Number date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Empty date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Null date",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Link uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": "0123456789abcdefghijAB",
+         "addedAt": null
+        },
+        {
+         "title": "Bad uri",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Spaced",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Slow",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Garage Song",
+         "artist": "My Band",
+         "album": "Demo Tape",
+         "sid": null,
+         "addedAt": 1682899200000
+        },
+        {
+         "title": "A+B & C",
+         "artist": "100% Band",
+         "album": "Album+",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Malformed album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Emoji artist",
+         "artist": "😀",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "No album",
+         "artist": "Band",
+         "album": null,
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Only three",
+         "artist": "Band",
+         "album": "Album",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "Both",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "String track",
+         "artist": "L",
+         "album": "L",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Second chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "Road",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Third chill",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 and more",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "ääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääääää",
+       "description": null,
+       "items": [
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        },
+        {
+         "title": "In a long one",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "No items field",
+       "description": null,
+       "items": []
+      },
+      {
+       "name": "Items not a list",
+       "description": null,
+       "items": []
+      }
+     ],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijCD",
+       "addedAt": null
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "hidden": [
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again (Remastered)",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "never again",
+       "artist": "BAND",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Never Again - 2015 Remaster",
+       "artist": "Band",
+       "album": "Best of",
+       "sid": null,
+       "addedAt": null
+      }
+     ]
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "sid": "0123456789abcdefghijCD",
+       "addedAt": null
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "sid": "0123456789abcdefghijAB",
+       "addedAt": null
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "record": {
+      "playlists": 0,
+      "likes": 6
+     }
+    },
+    "hidden": [
+     "hidden and liked|band",
+     "never again|band"
+    ],
+    "library": {
+     "playlists": [],
+     "likes": [
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": "LP",
+       "likedAt": 1792756800000
+      },
+      {
+       "title": "Hidden and liked",
+       "artist": "Band",
+       "album": "LP",
+       "likedAt": 1792756799999
+      },
+      {
+       "title": "Liked one",
+       "artist": "Band",
+       "album": null,
+       "likedAt": 1792756799998
+      },
+      {
+       "title": "Old Friend - 2011 Remaster",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799997
+      },
+      {
+       "title": "Spaces",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799996
+      },
+      {
+       "title": "Bad uri",
+       "artist": "Other",
+       "album": null,
+       "likedAt": 1792756799995
+      }
+     ],
+     "keys": []
+    }
+   }
+  },
+  {
+   "name": "library-in-a-zip",
+   "before": [
+    "YourLibrary.json"
+   ],
+   "files": [
+    "my_spotify_data.zip"
+   ],
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 0,
+     "playlists": 1,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 0,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "years": 0,
+     "playlists": [
+      {
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": 1,
+     "hidden": 0,
+     "extended": false,
+     "unreadable": 0
+    },
+    "rows": [],
+    "bundle": {
+     "playlists": [
+      {
+       "name": "Chill",
+       "description": null,
+       "items": [
+        {
+         "title": "Fourth chill, in the second file",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      },
+      {
+       "name": "road",
+       "description": null,
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "sid": null,
+         "addedAt": null
+        }
+       ]
+      }
+     ],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [
+      {
+       "key": "Chill#0",
+       "name": "Chill",
+       "songs": 1
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "songs": 1
+      }
+     ],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "record": {
+      "playlists": 2,
+      "likes": 7
+     }
+    },
+    "hidden": [
+     "hidden and liked|band",
+     "never again|band"
+    ],
+    "library": {
+     "playlists": [
+      {
+       "key": "Chill#0",
+       "name": "Chill",
+       "items": [
+        {
+         "title": "Fourth chill, in the second file",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      },
+      {
+       "key": "road#0",
+       "name": "road",
+       "items": [
+        {
+         "title": "Lower case road",
+         "artist": "Band",
+         "album": "LP",
+         "addedAt": 1792756800000
+        }
+       ]
+      }
+     ],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "likedAt": 1792756800000
+      }
+     ],
+     "keys": [
+      "Chill#0",
+      "road#0"
+     ]
+    }
+   }
+  },
+  {
+   "name": "library-only-likes",
+   "files": [
+    "YourLibrary.json"
+   ],
+   "expected": {
+    "files": {
+     "extended": 0,
+     "account": 0,
+     "playlists": 0,
+     "library": 1,
+     "stash": 0,
+     "ignored": 0
+    },
+    "unreadable": 0,
+    "preview": {
+     "plays": 0,
+     "same": 0,
+     "overlap": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "years": 0,
+     "playlists": [],
+     "likes": 1,
+     "hidden": 0,
+     "extended": false,
+     "unreadable": 0
+    },
+    "rows": [],
+    "bundle": {
+     "playlists": [],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "hidden": []
+    },
+    "commit": {
+     "playlists": [],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "sid": null,
+       "addedAt": null
+      }
+     ],
+     "record": {
+      "playlists": 0,
+      "likes": 1
+     }
+    },
+    "hidden": [],
+    "library": {
+     "playlists": [],
+     "likes": [
+      {
+       "title": "Just a like",
+       "artist": "Band",
+       "album": null,
+       "likedAt": 1792756800000
+      }
+     ],
+     "keys": []
+    }
+   }
+  }
+ ]
+}

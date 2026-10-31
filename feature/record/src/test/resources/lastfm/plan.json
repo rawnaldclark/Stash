@@ -1,0 +1,851 @@
+{
+ "plan": [
+  {
+   "name": "covered by a Spotify play, kept, and known lengths",
+   "have": [
+    {
+     "id": "song|band|1714564800000",
+     "t": "Song",
+     "a": "Band",
+     "s": 1714564800000,
+     "ms": 200000,
+     "f": 34
+    },
+    {
+     "id": "other|band|1714568400000",
+     "t": "Other",
+     "a": "Band",
+     "s": 1714568400000,
+     "ms": 250000,
+     "f": 34
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Song",
+     "a": "Band",
+     "uts": 1714564830
+    },
+    {
+     "t": "Song",
+     "a": "Band",
+     "uts": 1714564680
+    },
+    {
+     "t": "Song",
+     "a": "Band",
+     "uts": 1714572000
+    },
+    {
+     "t": "Other",
+     "a": "Band",
+     "uts": 1714573800
+    },
+    {
+     "t": "New One",
+     "a": "Band",
+     "al": "Its Album",
+     "uts": 1714574300
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {
+    "other|band": 250000,
+    "song|band": 200000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "song|band|1714572000000",
+      "t": "Song",
+      "a": "Band",
+      "s": 1714572000000,
+      "ms": 200000,
+      "f": 64
+     },
+     {
+      "id": "other|band|1714573800000",
+      "t": "Other",
+      "a": "Band",
+      "s": 1714573800000,
+      "ms": 250000,
+      "f": 64
+     },
+     {
+      "id": "new one|band|1714574300000",
+      "t": "New One",
+      "a": "Band",
+      "s": 1714574300000,
+      "ms": 210000,
+      "f": 192,
+      "al": "Its Album"
+     }
+    ],
+    "same": 0,
+    "covered": 2
+   }
+  },
+  {
+   "name": "the 180 s edges: before the start and after the end",
+   "have": [
+    {
+     "id": "edge|band|1714564800000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714564800000,
+     "ms": 200000,
+     "f": 34
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Edge",
+     "a": "Band",
+     "uts": 1714564620
+    },
+    {
+     "t": "Edge",
+     "a": "Band",
+     "uts": 1714564619
+    },
+    {
+     "t": "Edge",
+     "a": "Band",
+     "uts": 1714565180
+    },
+    {
+     "t": "Edge",
+     "a": "Band",
+     "uts": 1714565181
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {
+    "edge|band": 200000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "edge|band|1714564619000",
+      "t": "Edge",
+      "a": "Band",
+      "s": 1714564619000,
+      "ms": 200000,
+      "f": 64
+     },
+     {
+      "id": "edge|band|1714565181000",
+      "t": "Edge",
+      "a": "Band",
+      "s": 1714565181000,
+      "ms": 200000,
+      "f": 64
+     }
+    ],
+    "same": 0,
+    "covered": 2
+   }
+  },
+  {
+   "name": "titles folded alike, the artist ignored",
+   "have": [
+    {
+     "id": "unicode song|album artist|1714564800000",
+     "t": "Ünïcode Song (feat. Someone)",
+     "a": "Album Artist",
+     "s": 1714564800000,
+     "ms": 200000,
+     "f": 34
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "unicode song",
+     "a": "Song Artist",
+     "uts": 1714564810
+    },
+    {
+     "t": "UNICODE SONG!",
+     "a": "Other",
+     "uts": 1714564820
+    },
+    {
+     "t": "Unicode Songs",
+     "a": "Song Artist",
+     "uts": 1714564830
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {
+    "unicode song|album artist": 200000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "unicode songs|song artist|1714564830000",
+      "t": "Unicode Songs",
+      "a": "Song Artist",
+      "s": 1714564830000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 0,
+    "covered": 2
+   }
+  },
+  {
+   "name": "a remaster is the same song for its length; an Account play or one not done gives none",
+   "have": [
+    {
+     "id": "hit 2011 remaster|band|1714564800000",
+     "t": "Hit - 2011 Remaster",
+     "a": "Band",
+     "s": 1714564800000,
+     "ms": 230000,
+     "f": 34
+    },
+    {
+     "id": "hit|band|1714664800000",
+     "t": "Hit",
+     "a": "Band",
+     "s": 1714664800000,
+     "ms": 225000,
+     "f": 34
+    },
+    {
+     "id": "half|band|1714564800000",
+     "t": "Half",
+     "a": "Band",
+     "s": 1714564800000,
+     "ms": 90000,
+     "f": 32
+    },
+    {
+     "id": "acc|band|1714614800000",
+     "t": "Acc",
+     "a": "Band",
+     "s": 1714614800000,
+     "ms": 199000,
+     "f": 16
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Hit",
+     "a": "Band",
+     "uts": 1715464800
+    },
+    {
+     "t": "Hit (Remastered)",
+     "a": "Band",
+     "uts": 1715465800
+    },
+    {
+     "t": "Half",
+     "a": "Band",
+     "uts": 1715466800
+    },
+    {
+     "t": "Acc",
+     "a": "Band",
+     "uts": 1715467800
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {
+    "hit|band": 230000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "hit|band|1715464800000",
+      "t": "Hit",
+      "a": "Band",
+      "s": 1715464800000,
+      "ms": 230000,
+      "f": 64
+     },
+     {
+      "id": "hit remastered|band|1715465800000",
+      "t": "Hit (Remastered)",
+      "a": "Band",
+      "s": 1715465800000,
+      "ms": 230000,
+      "f": 64
+     },
+     {
+      "id": "half|band|1715466800000",
+      "t": "Half",
+      "a": "Band",
+      "s": 1715466800000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "acc|band|1715467800000",
+      "t": "Acc",
+      "a": "Band",
+      "s": 1715467800000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 0,
+    "covered": 0
+   }
+  },
+  {
+   "name": "the same scrobble twice in one page, and an id kept already",
+   "have": [],
+   "scrobbles": [
+    {
+     "t": "Twice",
+     "a": "Band",
+     "al": "B Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "Twice",
+     "a": "Band",
+     "al": "A Album",
+     "uts": 1714564800
+    },
+    {
+     "t": "twice",
+     "a": "band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Kept",
+     "a": "Band",
+     "uts": 1714564860
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {},
+   "plan": {
+    "add": [
+     {
+      "id": "twice|band|1714564800000",
+      "t": "Twice",
+      "a": "Band",
+      "s": 1714564800000,
+      "ms": 210000,
+      "f": 192,
+      "al": "B Album"
+     },
+     {
+      "id": "kept|band|1714564860000",
+      "t": "Kept",
+      "a": "Band",
+      "s": 1714564860000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 2,
+    "covered": 0
+   }
+  },
+  {
+   "name": "a scrobble kept already is the same, not covered",
+   "have": [
+    {
+     "id": "kept|band|1714564860000",
+     "t": "Kept",
+     "a": "Band",
+     "s": 1714564860000,
+     "ms": 210000,
+     "f": 192
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Kept",
+     "a": "Band",
+     "uts": 1714564860
+    },
+    {
+     "t": "Kept",
+     "a": "Band",
+     "uts": 1714564920
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {},
+   "plan": {
+    "add": [
+     {
+      "id": "kept|band|1714564920000",
+      "t": "Kept",
+      "a": "Band",
+      "s": 1714564920000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 1,
+    "covered": 0
+   }
+  },
+  {
+   "name": "a scrobble never covers a scrobble",
+   "have": [
+    {
+     "id": "near|band|1714564800000",
+     "t": "Near",
+     "a": "Band",
+     "s": 1714564800000,
+     "ms": 210000,
+     "f": 192
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Near",
+     "a": "Band",
+     "uts": 1714564830
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {},
+   "plan": {
+    "add": [
+     {
+      "id": "near|band|1714564830000",
+      "t": "Near",
+      "a": "Band",
+      "s": 1714564830000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 0,
+    "covered": 0
+   }
+  },
+  {
+   "name": "order: by time, then title, then artist",
+   "have": [],
+   "scrobbles": [
+    {
+     "t": "b",
+     "a": "Band",
+     "uts": 1714564801
+    },
+    {
+     "t": "a",
+     "a": "Z",
+     "uts": 1714564801
+    },
+    {
+     "t": "a",
+     "a": "A",
+     "uts": 1714564801
+    },
+    {
+     "t": "c",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "B",
+     "a": "Band",
+     "uts": 1714564801
+    }
+   ],
+   "library": [],
+   "libraryLengths": {},
+   "lengths": {},
+   "plan": {
+    "add": [
+     {
+      "id": "c|band|1714564800000",
+      "t": "c",
+      "a": "Band",
+      "s": 1714564800000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "b|band|1714564801000",
+      "t": "B",
+      "a": "Band",
+      "s": 1714564801000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "a|a|1714564801000",
+      "t": "a",
+      "a": "A",
+      "s": 1714564801000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "a|z|1714564801000",
+      "t": "a",
+      "a": "Z",
+      "s": 1714564801000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 1,
+    "covered": 0
+   }
+  },
+  {
+   "name": "a finished Spotify play, else the library, else the guess; a scrobble is a listen however short",
+   "have": [
+    {
+     "id": "both|band|1714464800000",
+     "t": "Both",
+     "a": "Band",
+     "s": 1714464800000,
+     "ms": 201000,
+     "f": 34
+    },
+    {
+     "id": "quick|band|1714474800000",
+     "t": "Quick",
+     "a": "Band",
+     "s": 1714474800000,
+     "ms": 12500,
+     "f": 34
+    }
+   ],
+   "scrobbles": [
+    {
+     "t": "Both",
+     "a": "Band",
+     "uts": 1714564800
+    },
+    {
+     "t": "Library",
+     "a": "Band",
+     "uts": 1714565400
+    },
+    {
+     "t": "Short",
+     "a": "Band",
+     "uts": 1714566000
+    },
+    {
+     "t": "Broken",
+     "a": "Band",
+     "uts": 1714566600
+    },
+    {
+     "t": "Guessed",
+     "a": "Band",
+     "uts": 1714567200
+    },
+    {
+     "t": "Quick",
+     "a": "Band",
+     "uts": 1714567800
+    },
+    {
+     "t": "Second",
+     "a": "Band",
+     "uts": 1714568400
+    },
+    {
+     "t": "Longest",
+     "a": "Band",
+     "uts": 1714569000
+    },
+    {
+     "t": "Tiny",
+     "a": "Band",
+     "uts": 1714569600
+    },
+    {
+     "t": "Frac",
+     "a": "Band",
+     "uts": 1714570200
+    },
+    {
+     "t": "None",
+     "a": "Band",
+     "uts": 1714570800
+    }
+   ],
+   "library": [
+    {
+     "title": "Both",
+     "artist": "Band",
+     "durationMs": 999000
+    },
+    {
+     "title": "Library",
+     "artist": "Band",
+     "durationMs": 187400
+    },
+    {
+     "title": "Library",
+     "artist": "Band",
+     "durationMs": 186000
+    },
+    {
+     "title": "library - 2011 remaster",
+     "artist": "BAND",
+     "durationMs": 187900
+    },
+    {
+     "title": "Short",
+     "artist": "Band",
+     "durationMs": 12000
+    },
+    {
+     "title": "Second",
+     "artist": "Band",
+     "durationMs": 1000
+    },
+    {
+     "title": "Broken",
+     "artist": "Band",
+     "durationMs": 25200000
+    },
+    {
+     "title": "Longest",
+     "artist": "Band",
+     "durationMs": 21600000
+    },
+    {
+     "title": "Tiny",
+     "artist": "Band",
+     "durationMs": 999
+    },
+    {
+     "title": "Frac",
+     "artist": "Band",
+     "durationMs": 200000.5
+    },
+    {
+     "title": "None",
+     "artist": "Band"
+    }
+   ],
+   "libraryLengths": {
+    "both|band": 999000,
+    "frac|band": 200001,
+    "library|band": 187900,
+    "longest|band": 21600000,
+    "second|band": 1000,
+    "short|band": 12000
+   },
+   "lengths": {
+    "both|band": 201000,
+    "frac|band": 200001,
+    "library|band": 187900,
+    "longest|band": 21600000,
+    "quick|band": 12500,
+    "second|band": 1000,
+    "short|band": 12000
+   },
+   "plan": {
+    "add": [
+     {
+      "id": "both|band|1714564800000",
+      "t": "Both",
+      "a": "Band",
+      "s": 1714564800000,
+      "ms": 201000,
+      "f": 64
+     },
+     {
+      "id": "library|band|1714565400000",
+      "t": "Library",
+      "a": "Band",
+      "s": 1714565400000,
+      "ms": 187900,
+      "f": 64
+     },
+     {
+      "id": "short|band|1714566000000",
+      "t": "Short",
+      "a": "Band",
+      "s": 1714566000000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "broken|band|1714566600000",
+      "t": "Broken",
+      "a": "Band",
+      "s": 1714566600000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "guessed|band|1714567200000",
+      "t": "Guessed",
+      "a": "Band",
+      "s": 1714567200000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "quick|band|1714567800000",
+      "t": "Quick",
+      "a": "Band",
+      "s": 1714567800000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "second|band|1714568400000",
+      "t": "Second",
+      "a": "Band",
+      "s": 1714568400000,
+      "ms": 30000,
+      "f": 64
+     },
+     {
+      "id": "longest|band|1714569000000",
+      "t": "Longest",
+      "a": "Band",
+      "s": 1714569000000,
+      "ms": 21600000,
+      "f": 64
+     },
+     {
+      "id": "tiny|band|1714569600000",
+      "t": "Tiny",
+      "a": "Band",
+      "s": 1714569600000,
+      "ms": 210000,
+      "f": 192
+     },
+     {
+      "id": "frac|band|1714570200000",
+      "t": "Frac",
+      "a": "Band",
+      "s": 1714570200000,
+      "ms": 200001,
+      "f": 64
+     },
+     {
+      "id": "none|band|1714570800000",
+      "t": "None",
+      "a": "Band",
+      "s": 1714570800000,
+      "ms": 210000,
+      "f": 192
+     }
+    ],
+    "same": 0,
+    "covered": 0
+   }
+  }
+ ],
+ "covered": [
+  {
+   "name": "a play here covers its scrobble",
+   "rows": [
+    {
+     "id": "here|band|1714564810000",
+     "t": "Here",
+     "a": "Band",
+     "s": 1714564810000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "there|band|1714564810000",
+     "t": "There",
+     "a": "Band",
+     "s": 1714564810000,
+     "ms": 210000,
+     "f": 192
+    }
+   ],
+   "plays": [
+    {
+     "t": "Here",
+     "s": 1714564800000,
+     "ms": 180000
+    }
+   ],
+   "covered": [
+    "here|band|1714564810000"
+   ]
+  },
+  {
+   "name": "the edges, folded titles, and only scrobbles",
+   "rows": [
+    {
+     "id": "edge|band|1714564619000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714564619000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "edge|band|1714564620000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714564620000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "edge|other|1714564850000",
+     "t": "ÉDGE",
+     "a": "Other",
+     "s": 1714564850000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "edge|band|1714565080000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714565080000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "edge|band|1714565081000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714565081000,
+     "ms": 210000,
+     "f": 192
+    },
+    {
+     "id": "edge|band|1714564820000",
+     "t": "Edge",
+     "a": "Band",
+     "s": 1714564820000,
+     "ms": 200000,
+     "f": 34
+    }
+   ],
+   "plays": [
+    {
+     "t": "edge",
+     "s": 1714564800000,
+     "ms": 100000
+    }
+   ],
+   "covered": [
+    "edge|band|1714564620000",
+    "edge|other|1714564850000",
+    "edge|band|1714565080000"
+   ]
+  }
+ ]
+}

@@ -36,6 +36,9 @@ androidxTestCore = "1.6.1"
 mockk = "1.13.13"
 camerax = "1.4.2"
 zxing = "3.5.3"
+# Your record's WebView bridge (addWebMessageListener) and asset loader. 1.17.0 (2026-08-12): minCompileSdk 33, Kotlin
+# stdlib 2.1; 1.18.0 was days old when it was picked (2026-10-26).
+webkit = "1.17.0"
 
 [libraries]
 # Link Stash on the web: the QR scanner (CameraX + ZXing core, no Google Play services)
@@ -43,6 +46,8 @@ camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.r
 camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+# Your record (feature:record): the bundled record in a WebView
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 # Compose
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }

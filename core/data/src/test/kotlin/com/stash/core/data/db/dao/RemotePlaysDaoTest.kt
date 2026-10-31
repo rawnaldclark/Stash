@@ -99,6 +99,8 @@ class RemotePlaysDaoTest {
         assertEquals(listOf("Borderline"), export.ownPlaysBefore(Long.MAX_VALUE, Long.MAX_VALUE, 10).map { it.title })
         assertEquals(1, export.ownPlayCount())
         assertEquals(T, export.ownFirstPlayAt())
+        // Your record's Home card ranks albums and artists from these
+        assertEquals(listOf("Tame Impala"), export.ownAlbumTotals().map { it.artist })
     }
 
     private companion object {

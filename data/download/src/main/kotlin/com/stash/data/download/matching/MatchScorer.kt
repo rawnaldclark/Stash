@@ -68,14 +68,23 @@ class MatchScorer @Inject constructor(
         const val VIDEO_TYPE_PODCAST_PENALTY = 1.0f
 
         /**
-         * Demotion applied when the Spotify target's parental-advisory flag
-         * disagrees with the candidate title's `(Clean)` / `(Explicit)`
-         * keyword. Imperfect (InnerTube doesn't expose a candidate-side
-         * explicit enum on search results), but enough signal to let the
-         * explicit master out-rank the radio edit and vice-versa when the
-         * title is labelled.
+         * Demotion applied when a candidate is the wrong side of the target's
+         * parental advisory: a `(Clean)` title for an explicit or unknown target,
+         * or an explicit candidate (YouTube Music's badge, or an `(Explicit)`
+         * title) for a target known to be clean.
          */
         const val EXPLICIT_MISMATCH_PENALTY = 0.15f
+
+        /**
+         * Lift for an explicit candidate (badged, or titled `(Explicit)`) when the
+         * target is explicit or doesn't say. YouTube Music's explicit and clean
+         * twins share title, artist, album and length, so they tie on every other
+         * signal and the tie went to whichever row came first. This only has to
+         * break that tie, so it sits under the smallest step any other signal
+         * takes (a duration tier, 0.04; an uploader or album-in-title nudge, 0.05):
+         * it only reorders candidates already within 0.03 of each other.
+         */
+        const val EXPLICIT_MATCH_BONUS = 0.03f
     }
 
     /**
@@ -127,7 +136,6 @@ class MatchScorer @Inject constructor(
             val uploaderPenalty = computeUploaderMismatchPenalty(targetArtist, result.uploader, result.channel)
             val albumBonus = computeAlbumBonus(targetAlbum, result.album, result.title)
             val videoTypeAdjustment = computeVideoTypeAdjustment(result.musicVideoType)
-            val explicitMismatch = computeExplicitMismatchPenalty(targetExplicit, result.title)
 
             // coerceAtLeast(0f) floors negative contributions so a catastrophic
             // candidate doesn't accidentally sort ABOVE a better one (a -1.0
@@ -137,19 +145,24 @@ class MatchScorer @Inject constructor(
             // match past 1.0, and clamping collapses tie-breaks — e.g. a
             // (Sped Up) variant and its original would both hit the ceiling
             // and sort by input order rather than by quality.
-            val finalScore = (
+            val baseScore = (
                 titleScore * TITLE_WEIGHT +
                     artistScore * ARTIST_WEIGHT +
                     durationScore * DURATION_WEIGHT +
                     popularityScore * POPULARITY_WEIGHT +
                     topicBonus + albumBonus + videoTypeAdjustment -
-                    penalty - uploaderPenalty - explicitMismatch
+                    penalty - uploaderPenalty
                 ).coerceAtLeast(0f)
+            val finalScore = applyExplicitAdjustment(
+                baseScore,
+                computeExplicitAdjustment(targetExplicit, result.title, result.explicit),
+            )
 
-            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} (album=${result.album ?: "?"}, mvt=${result.musicVideoType}) | " +
-                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f alb=%.2f vt=%+.2f pen=%.2f uplPen=%.2f xpl=%.2f → %.2f".format(
+            Log.d("MatchScorer", "  ${result.title} by ${result.uploader} (album=${result.album ?: "?"}, mvt=${result.musicVideoType}, badge=${result.explicit}) | " +
+                "title=%.2f art=%.2f dur=%.2f pop=%.2f topic=%.2f alb=%.2f vt=%+.2f pen=%.2f uplPen=%.2f xpl=%+.2f → %.2f".format(
                     titleScore, artistScore, durationScore, popularityScore,
-                    topicBonus, albumBonus, videoTypeAdjustment, penalty, uploaderPenalty, explicitMismatch, finalScore))
+                    topicBonus, albumBonus, videoTypeAdjustment, penalty, uploaderPenalty,
+                    finalScore - baseScore, finalScore))
 
             MatchResult(
                 youtubeUrl = result.webpageUrl.ifEmpty {
@@ -443,32 +456,61 @@ class MatchScorer @Inject constructor(
         }
 
     /**
-     * Demotes candidates whose title disagrees with the target's explicit
-     * flag. When the target is explicit and the candidate title contains
-     * "(Clean)" / " clean version" / "[clean]", apply the penalty; same
-     * the other way for non-explicit targets vs. "(Explicit)" titles.
+     * How the candidate sits against the target's parental advisory
+     * ([targetExplicit]: the source track's flag, null when it doesn't say).
      *
-     * Null target (unknown) returns 0 — we can't enforce a preference we
-     * don't have. This is the best we can do until InnerTube exposes a
-     * candidate-side explicit flag we can extract on the search side.
+     * A candidate is explicit when YouTube Music badges it ([candidateExplicit])
+     * or its title says "(Explicit)"; it is clean only when its title says
+     * "(Clean)" / "[Clean Version]". An unbadged, unlabelled candidate is
+     * unknown, and gets nothing either way: most songs are never explicit.
+     *
+     * - Target explicit or unknown (play the original when the source doesn't
+     *   say): an explicit candidate gets [EXPLICIT_MATCH_BONUS], a clean one
+     *   [EXPLICIT_MISMATCH_PENALTY].
+     * - Target clean: an explicit candidate gets [EXPLICIT_MISMATCH_PENALTY].
+     *
+     * The result is applied by [applyExplicitAdjustment], which keeps it from
+     * deciding whether a candidate is accepted at all.
      */
-    private fun computeExplicitMismatchPenalty(
+    private fun computeExplicitAdjustment(
         targetExplicit: Boolean?,
         candidateTitle: String,
+        candidateExplicit: Boolean?,
     ): Float {
-        if (targetExplicit == null) return 0f
         val title = candidateTitle.lowercase()
-        val cleanMarker = Regex("""[\(\[]\s*clean(\s+version)?\s*[\)\]]""")
-        val explicitMarker = Regex("""[\(\[]\s*explicit\s*[\)\]]""")
-        val candidateIsClean = cleanMarker.containsMatchIn(title)
-        val candidateIsExplicit = explicitMarker.containsMatchIn(title)
+        val titleSaysClean = cleanTitleMarker.containsMatchIn(title)
+        val candidateIsExplicit = candidateExplicit == true || explicitTitleMarker.containsMatchIn(title)
 
-        return when {
-            targetExplicit && candidateIsClean -> EXPLICIT_MISMATCH_PENALTY
-            !targetExplicit && candidateIsExplicit -> EXPLICIT_MISMATCH_PENALTY
-            else -> 0f
+        return if (targetExplicit == false) {
+            if (candidateIsExplicit) -EXPLICIT_MISMATCH_PENALTY else 0f
+        } else {
+            when {
+                titleSaysClean -> -EXPLICIT_MISMATCH_PENALTY
+                candidateIsExplicit -> EXPLICIT_MATCH_BONUS
+                else -> 0f
+            }
         }
     }
+
+    /**
+     * [score] with the explicitness [adjustment], applied only to order
+     * candidates that clear [AUTO_ACCEPT_THRESHOLD] on their own. One under it
+     * gets nothing, so explicitness never makes a match acceptable; a docked one
+     * floors at it, so explicitness never makes one unacceptable either. Between
+     * a song's explicit and clean twins, which score alike, it decides the order.
+     */
+    private fun applyExplicitAdjustment(score: Float, adjustment: Float): Float =
+        if (adjustment == 0f || score < AUTO_ACCEPT_THRESHOLD) {
+            score
+        } else {
+            (score + adjustment).coerceAtLeast(AUTO_ACCEPT_THRESHOLD)
+        }
+
+    /** A title labelled as the clean cut: "(Clean)", "[Clean Version]". Matched lowercased. */
+    private val cleanTitleMarker = Regex("""[\(\[]\s*clean(\s+version)?\s*[\)\]]""")
+
+    /** A title labelled as the explicit cut: "(Explicit)". Matched lowercased. */
+    private val explicitTitleMarker = Regex("""[\(\[]\s*explicit\s*[\)\]]""")
 
     /**
      * Bonus when the YouTube result's album matches the Spotify track's album.

@@ -76,7 +76,8 @@ class CrossPlatformLikeResolver @Inject constructor(
         if (track.title.isBlank() || track.artist.isBlank()) return null
 
         val videoId = try {
-            ytMusicApiClient.searchCanonicalVideoId(track.artist, track.title)
+            // The advisory picks the explicit copy of the song unless the track is known clean.
+            ytMusicApiClient.searchCanonicalVideoId(track.artist, track.title, track.explicit)
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {

@@ -1,0 +1,684 @@
+[
+ {
+  "name": "Queen: a namesake of 21 fans first, the band (12.8M) sixth",
+  "artist": "Queen",
+  "hits": [
+   {
+    "name": "Queen",
+    "nb_fan": 21,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queen + Adam Lambert",
+    "nb_fan": 1100000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/qal/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queen Naija",
+    "nb_fan": 700000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/qn/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queens of the Stone Age",
+    "nb_fan": 2400000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/qotsa/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queen",
+    "nb_fan": 1500,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/other/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queen",
+    "nb_fan": 12812442,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/band/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Queen",
+    "nb_fan": 40,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/later/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Queen&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/band/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Sia: 168 fans first, 8.7M fourth",
+  "artist": "Sia",
+  "hits": [
+   {
+    "name": "Sia",
+    "nb_fan": 168,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Sia Furler",
+    "nb_fan": 2000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/sf/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "SIA",
+    "nb_fan": 3000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/k/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Sia",
+    "nb_fan": 8712004,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Sia&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Muse",
+  "artist": "Muse",
+  "hits": [
+   {
+    "name": "Muse",
+    "nb_fan": 11034,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Muse Tribute",
+    "nb_fan": 900,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/mt/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Muse",
+    "nb_fan": 5017220,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Muse",
+    "nb_fan": 2,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tiny/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Muse&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Joji, a near name with more fans refused",
+  "artist": "Joji",
+  "hits": [
+   {
+    "name": "Joji",
+    "nb_fan": 101,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Jojo",
+    "nb_fan": 900000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/jojo/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Joji",
+    "nb_fan": 2000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/mid/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Joji",
+    "nb_fan": 565000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Joji&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Sia with only a near name bigger",
+  "artist": "Sia",
+  "hits": [
+   {
+    "name": "Sia",
+    "nb_fan": 168,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Sia Furler",
+    "nb_fan": 9000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/sf/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Sia&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Bush, Low, The Band, boygenius",
+  "artist": "boygenius",
+  "hits": [
+   {
+    "name": "Boy Genius",
+    "nb_fan": 50000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/bg/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "boygenius",
+    "nb_fan": 12,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "boygenius",
+    "nb_fan": 600000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=boygenius&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Low",
+  "artist": "Low",
+  "hits": [
+   {
+    "name": "Lowe",
+    "nb_fan": 900000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/l2/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Low",
+    "nb_fan": 3,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tiny/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Low",
+    "nb_fan": 210000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/band/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "LOW",
+    "nb_fan": 210000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/caps/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Low&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/band/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "The Band keeps its The",
+  "artist": "The Band",
+  "hits": [
+   {
+    "name": "Band",
+    "nb_fan": 9000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "The Band",
+    "nb_fan": 400000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tb/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=The%20Band&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/tb/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Bush, a feat. credit asked",
+  "artist": "Bush feat. Someone",
+  "hits": [
+   {
+    "name": "Bush",
+    "nb_fan": 5,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/small/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Kate Bush",
+    "nb_fan": 2000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/kb/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Bush",
+    "nb_fan": 700000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Bush&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "a tie, or no fans said: the first listed",
+  "artist": "Daft Punk",
+  "hits": [
+   {
+    "name": "Daft Punk Tribute",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/a/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "DAFT PUNK",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Daft Punk",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/c/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Daft%20Punk&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "a tie in fans",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 50,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 50,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n2/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "fans that aren't a number above 0 count 0",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": "9000",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": -5,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n2/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": null,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n3/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 0,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n4/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "a string of fans is 0, a 1 beats it",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": "9000",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 1,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n2/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/n2/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "the exact name among near ones",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana (UK)",
+    "nb_fan": 265,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/uk/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 10096192,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 10,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n2/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/n1/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "case, punctuation and spacing don't count",
+  "artist": "guns n' roses",
+  "hits": [
+   {
+    "name": "Guns N’ Roses",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/g/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=guns%20n'%20roses&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/g/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "AC/DC",
+  "artist": "AC DC",
+  "hits": [
+   {
+    "name": "AC/DC",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/ac/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=AC%20DC&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/ac/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "the first credit is the one asked",
+  "artist": "Nina Simone, Someone Else",
+  "hits": [
+   {
+    "name": "Nina Simone",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/ns/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nina%20Simone&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/ns/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "with and & : with cuts, & doesn't",
+  "artist": "Simon & Garfunkel with Friends",
+  "hits": [
+   {
+    "name": "Simon",
+    "nb_fan": 9000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/s/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Simon & Garfunkel",
+    "nb_fan": 3000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/sg/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Simon%20%26%20Garfunkel&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/sg/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "a near name: none",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana (UK)",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/uk/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana Tribute",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/nt/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ },
+ {
+  "name": "a name inside another: none",
+  "artist": "Nina Simone",
+  "hits": [
+   {
+    "name": "Nina",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nina Simone Tribute",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/t/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nina%20Simone&limit=10",
+  "picture": null
+ },
+ {
+  "name": "asked a part of a name: none",
+  "artist": "Radio",
+  "hits": [
+   {
+    "name": "Radiohead",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/r/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Radio&limit=10",
+  "picture": null
+ },
+ {
+  "name": "accents fold, both ways",
+  "artist": "Björk",
+  "hits": [
+   {
+    "name": "Bjork",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Bj%C3%B6rk&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "accents fold, the other way",
+  "artist": "Bjork",
+  "hits": [
+   {
+    "name": "Björk",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Bjork&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Sigur Rós",
+  "artist": "Sigur Ros",
+  "hits": [
+   {
+    "name": "Sigur Rós",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/s/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Sigur%20Ros&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/s/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Beyoncé",
+  "artist": "BEYONCE",
+  "hits": [
+   {
+    "name": "Beyoncé",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/y/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=BEYONCE&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/y/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "ø and æ stay what they are",
+  "artist": "Mø",
+  "hits": [
+   {
+    "name": "Mo",
+    "nb_fan": 9000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/mo/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "MØ",
+    "nb_fan": 400000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/moe/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=M%C3%B8&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/moe/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Bjork Gudmundsdottir is not Björk",
+  "artist": "Björk",
+  "hits": [
+   {
+    "name": "Bjork Gudmundsdottir",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/b/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Bj%C3%B6rk&limit=10",
+  "picture": null
+ },
+ {
+  "name": "The Cure is not Cure",
+  "artist": "The Cure",
+  "hits": [
+   {
+    "name": "Cure",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/c/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "The Cure",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tc/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=The%20Cure&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/tc/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "Cure alone, asked The Cure: none",
+  "artist": "The Cure",
+  "hits": [
+   {
+    "name": "Cure",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/c/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=The%20Cure&limit=10",
+  "picture": null
+ },
+ {
+  "name": "The Cure, asked Cure: none",
+  "artist": "Cure",
+  "hits": [
+   {
+    "name": "The Cure",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tc/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Cure&limit=10",
+  "picture": null
+ },
+ {
+  "name": "THE CURE",
+  "artist": "the cure",
+  "hits": [
+   {
+    "name": "THE CURE",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/tc/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=the%20cure&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/tc/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "a placeholder of few fans stands aside",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 10,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 10096192,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/real/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "the most fans with the placeholder: none, never the namesake",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 10096192,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 10,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/namesake/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ },
+ {
+  "name": "the placeholder alone",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 0,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ },
+ {
+  "name": "not https: none",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 9,
+    "picture_big": "http://cdn-images.dzcdn.net/images/artist/x/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 1,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/namesake/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ },
+ {
+  "name": "no picture at all: none",
+  "artist": "Nirvana",
+  "hits": [
+   {
+    "name": "Nirvana",
+    "nb_fan": 9
+   },
+   {
+    "name": "Nirvana",
+    "nb_fan": 1,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/namesake/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ },
+ {
+  "name": "what isn't a hit is passed over",
+  "artist": "Nirvana",
+  "hits": [
+   null,
+   7,
+   {
+    "name": 42,
+    "nb_fan": 1000000000,
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/n/500x500-000000-80-0-0.jpg"
+   },
+   {
+    "name": "Nirvana",
+    "picture_big": "https://cdn-images.dzcdn.net/images/artist/ok/500x500-000000-80-0-0.jpg"
+   }
+  ],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": "https://cdn-images.dzcdn.net/images/artist/ok/500x500-000000-80-0-0.jpg"
+ },
+ {
+  "name": "no hits",
+  "artist": "Nirvana",
+  "hits": [],
+  "search": "https://api.deezer.com/search/artist?q=Nirvana&limit=10",
+  "picture": null
+ }
+]

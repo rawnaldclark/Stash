@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Ordne die Bereiche der Startseite oder blende ungenutzte aus. Der Entdecken-Bereich bleibt oben.</string>
     <string name="settings_home_section_community_desc">Playlists und Titel, die andere Stash-Hörer mögen. Deine Beiträge zeigen deinen Namen.</string>
     <string name="settings_home_section_listening_desc">Kürzlich gespielt und dein Verlauf. Erscheint nach der ersten Wiedergabe.</string>
+    <string name="settings_home_section_record_desc">Jedes Jahr, das du gehört hast, auf eine Platte gepresst.</string>
     <string name="settings_home_show_liked_title">„Gefällt mir“-Titel auf Startseite zeigen</string>
     <string name="settings_home_show_liked_subtitle">Deine Stash-, Spotify- und YouTube-„Gefällt mir“-Angaben als eine Karte unter „Deine Playlists“</string>
     <string name="settings_home_section_discover">Daily Discover &amp; deine Mixes</string>
@@ -197,6 +198,9 @@
     <string name="settings_home_section_mood_decades">Stimmungen und Jahrzehnte</string>
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Dein Hörverlauf</string>
+    <string name="settings_home_section_your_record">Deine Platte</string>
+    <string name="settings_home_section_record_mixes">Aus deiner Platte</string>
+    <string name="settings_home_section_record_mixes_desc">Mixes, die nur deine Jahre des Hörens machen können. Erscheint, sobald dein Verlauf da ist.</string>
     <string name="settings_home_section_move_up">%1$s nach oben</string>
     <string name="settings_home_section_move_down">%1$s nach unten</string>
     <string name="settings_home_section_show_desc">%1$s auf Startseite zeigen</string>
@@ -662,4 +666,25 @@
     <string name="settings_equalizer_preset_classical">Klassik</string>
     <string name="settings_equalizer_save_preset_dialog_title">Preset speichern</string>
     <string name="settings_equalizer_preset_name_label">Preset-Name</string>
+    <string name="settings_your_record_section">Deine Platte</string>
+    <string name="settings_your_record_open">Deine Platte</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Von Spotify: %1$s Wiedergabe.</item>
+        <item quantity="other">Von Spotify: %1$s Wiedergaben.</item>
+    </plurals>
+    <string name="settings_your_record_import">Aus Spotify importieren</string>
+    <string name="settings_your_record_newer">Neuere Kopie hinzufügen</string>
+    <string name="settings_your_record_import_subtitle">Dein Hörverlauf aus einem Spotify-Datendownload. Stash liest die Datei auf diesem Telefon. Nichts wird hochgeladen.</string>
+    <string name="settings_your_record_remove">Importierten Verlauf entfernen</string>
+    <string name="settings_your_record_remove_subtitle">Deine Platte besteht dann wieder aus deinen Wiedergaben in Stash.</string>
+    <string name="settings_your_record_remove_title">Importierten Verlauf entfernen?</string>
+    <string name="settings_your_record_remove_body">Alles, was von Spotify und Last.fm für deine Platte übernommen wurde, wird von diesem Telefon gelöscht. Deine Wiedergaben in Stash bleiben. Die Playlists und Lieblingssongs, die du übernommen hast, bleiben in deiner Bibliothek.</string>
+    <string name="settings_your_record_remove_confirm">Entfernen</string>
+    <string name="settings_your_record_cancel">Abbrechen</string>
+    <string name="settings_your_record_removed">Dein importierter Verlauf wurde entfernt.</string>
+    <string name="settings_your_record_remove_busy">Gerade läuft ein Import. Entferne den Verlauf danach.</string>
+    <string name="settings_your_record_remove_failed">Konnte gerade nicht entfernt werden. Versuch es noch einmal.</string>
+    <string name="settings_your_record_show">Auf der Startseite zeigen</string>
+    <string name="settings_your_record_show_subtitle">„Presse deine Platte“ ist auf der Startseite ausgeblendet.</string>
+    <string name="settings_your_record_shown">„Presse deine Platte“ ist wieder auf der Startseite</string>
 </resources>

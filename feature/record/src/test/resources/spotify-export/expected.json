@@ -1,0 +1,315 @@
+{
+  "now": 1792756800000,
+  "files": {
+    "extended": 4,
+    "account": 1,
+    "playlists": 1,
+    "library": 1,
+    "stash": 0,
+    "ignored": 4
+  },
+  "unreadable": 1,
+  "preview": {
+    "plays": 6086,
+    "same": 5,
+    "overlap": 237,
+    "listenedMs": 1188334280,
+    "first": 1609498043414,
+    "last": 1735899341000,
+    "years": 5,
+    "playlists": [
+      {
+        "name": "Road trip",
+        "songs": 9
+      },
+      {
+        "name": "Glass Harbor era",
+        "songs": 8
+      }
+    ],
+    "likes": 8,
+    "hidden": 1,
+    "extended": true,
+    "phone": 0,
+    "unreadable": 1
+  },
+  "archive": {
+    "plays": 6814,
+    "first": [
+      "drive 10|artist j|1611220411765",
+      "drive 10|artist j|1623274473281",
+      "drive 10|artist j|1627201272483"
+    ],
+    "sha256": "ab5e451ccf63bdd14938ba4372115447332c76fc4b79e2721dd0f53b96007046"
+  },
+  "taste": {
+    "plays": 6086,
+    "listenedMs": 1188334280,
+    "songs": 159,
+    "artists": 31,
+    "top": [
+      {
+        "key": "still here|evergreen",
+        "weight": 4.364678
+      },
+      {
+        "key": "north star|evergreen",
+        "weight": 4.364678
+      },
+      {
+        "key": "old friend|evergreen",
+        "weight": 4.364678
+      },
+      {
+        "key": "morning 1|artist a",
+        "weight": 3.590168
+      },
+      {
+        "key": "drive 12|artist l",
+        "weight": 3.289977
+      },
+      {
+        "key": "evening 22|artist v",
+        "weight": 3.206457
+      },
+      {
+        "key": "rain 24|artist x",
+        "weight": 3.193653
+      },
+      {
+        "key": "evening 20|artist t",
+        "weight": 3.181526
+      },
+      {
+        "key": "drive 17|artist q",
+        "weight": 3.181294
+      },
+      {
+        "key": "home 23|artist w",
+        "weight": 3.171784
+      }
+    ],
+    "eras": [
+      {
+        "start": 1609459200000,
+        "end": 1619827199999,
+        "artists": [
+          "Northern Lights",
+          "Evergreen",
+          "Artist U"
+        ],
+        "songs": 50
+      },
+      {
+        "start": 1640995200000,
+        "end": 1648771199999,
+        "artists": [
+          "Glass Harbor",
+          "Evergreen",
+          "Artist V"
+        ],
+        "songs": 50
+      },
+      {
+        "start": 1677628800000,
+        "end": 1688169599999,
+        "artists": [
+          "Velvet Static",
+          "Evergreen",
+          "Artist S"
+        ],
+        "songs": 50
+      },
+      {
+        "start": 1717200000000,
+        "end": 1727740799999,
+        "artists": [
+          "Paper Moons",
+          "Evergreen",
+          "Artist F"
+        ],
+        "songs": 50
+      }
+    ],
+    "constants": [
+      "morning 1|artist a",
+      "north star|evergreen",
+      "old friend|evergreen",
+      "still here|evergreen",
+      "evening 20|artist t",
+      "evening 3|artist c",
+      "drive 3|artist c",
+      "evening 22|artist v",
+      "evening 10|artist j",
+      "drive 17|artist q"
+    ],
+    "lost": [
+      "morning 1|artist a",
+      "drive 12|artist l",
+      "home 23|artist w",
+      "evening 22|artist v",
+      "evening 3|artist c",
+      "evening 10|artist j",
+      "evening 20|artist t",
+      "evening 23|artist w",
+      "rain 24|artist x",
+      "drive 17|artist q"
+    ],
+    "obsessions": [
+      {
+        "key": "ocean tide|coral choir",
+        "n": 40,
+        "at": 1654214399313
+      },
+      {
+        "key": "paper three|paper moons",
+        "n": 17,
+        "at": 1724865754054
+      },
+      {
+        "key": "northern three|northern lights",
+        "n": 14,
+        "at": 1610972733866
+      },
+      {
+        "key": "northern five|northern lights",
+        "n": 13,
+        "at": 1614435200879
+      },
+      {
+        "key": "velvet one|velvet static",
+        "n": 13,
+        "at": 1677940002837
+      }
+    ],
+    "avoid": [
+      "harbor interlude|glass harbor",
+      "never again|artist y",
+      "static hum|artist z"
+    ],
+    "found": null,
+    "seedArtists": [
+      "Paper Moons",
+      "Artist A",
+      "Artist V",
+      "Artist S",
+      "Artist U",
+      "Artist C",
+      "Artist F",
+      "Artist H",
+      "Artist T",
+      "Artist E"
+    ],
+    "years": [
+      {
+        "year": 2021,
+        "plays": 1560,
+        "listenedMs": 304461350,
+        "newArtists": 26
+      },
+      {
+        "year": 2022,
+        "plays": 1549,
+        "listenedMs": 302653623,
+        "newArtists": 2
+      },
+      {
+        "year": 2023,
+        "plays": 1498,
+        "listenedMs": 292434214,
+        "newArtists": 2
+      },
+      {
+        "year": 2024,
+        "plays": 1477,
+        "listenedMs": 288385093,
+        "newArtists": 1
+      },
+      {
+        "year": 2025,
+        "plays": 2,
+        "listenedMs": 400000,
+        "newArtists": 0
+      }
+    ],
+    "yearTops": [
+      {
+        "year": 2021,
+        "artists": [
+          "Northern Lights",
+          "Evergreen",
+          "Artist F"
+        ],
+        "songs": 50,
+        "top": [
+          "northern three|northern lights",
+          "northern five|northern lights",
+          "northern six|northern lights"
+        ]
+      },
+      {
+        "year": 2022,
+        "artists": [
+          "Glass Harbor",
+          "Evergreen",
+          "Artist C"
+        ],
+        "songs": 50,
+        "top": [
+          "ocean tide|coral choir",
+          "glass five|glass harbor",
+          "glass four|glass harbor"
+        ]
+      },
+      {
+        "year": 2023,
+        "artists": [
+          "Velvet Static",
+          "Evergreen",
+          "Artist I"
+        ],
+        "songs": 50,
+        "top": [
+          "velvet one|velvet static",
+          "velvet five|velvet static",
+          "velvet seven|velvet static"
+        ]
+      },
+      {
+        "year": 2024,
+        "artists": [
+          "Paper Moons",
+          "Evergreen",
+          "Artist V"
+        ],
+        "songs": 50,
+        "top": [
+          "paper three|paper moons",
+          "paper seven|paper moons",
+          "paper five|paper moons"
+        ]
+      },
+      {
+        "year": 2025,
+        "artists": [
+          "Artist A"
+        ],
+        "songs": 1,
+        "top": [
+          "morning 1|artist a"
+        ]
+      }
+    ]
+  },
+  "playlists": [
+    {
+      "name": "Road trip",
+      "items": 9
+    },
+    {
+      "name": "Glass Harbor era",
+      "items": 8
+    }
+  ],
+  "likes": 8
+}

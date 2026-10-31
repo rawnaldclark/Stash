@@ -73,7 +73,7 @@ class LikedSongsDetailViewModel @Inject constructor(
             if (playlists.isEmpty()) {
                 flowOf(emptyList())
             } else {
-                combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
+                combine(playlists.map { musicRepository.getShownTracksByPlaylist(it.id) }) { arrays ->
                     arrays.flatMap { it.toList() }.distinctBy { it.id }
                 }
             }
@@ -109,8 +109,8 @@ class LikedSongsDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _tappedTrackId.value = trackId
             try {
-                // Streaming is always allowed: the whole list is playable, and
-                // streamable tracks resolve inside setQueue when reached.
+                // The list shown is the list played: downloads only in Download mode
+                // (getShownTracksByPlaylist); in Stream only the rest resolve when reached.
                 val playable = uiState.value.tracks
                 if (playable.isEmpty()) return@launch
                 val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)

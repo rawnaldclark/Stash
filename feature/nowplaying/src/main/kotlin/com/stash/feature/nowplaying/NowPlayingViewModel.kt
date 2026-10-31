@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.common.songArtist
 import com.stash.core.data.lossless.LosslessUpgrader
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.data.prefs.NowPlayingPreference
@@ -64,7 +65,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -119,7 +119,6 @@ class NowPlayingViewModel @Inject constructor(
     // The album back covers the art flips to. Hilt binds the Cover Art Archive lookup; tests leave
     // the default, which knows none.
     private val backCovers: AlbumBackCovers = AlbumBackCovers.None,
-    private val trackAlbums: com.stash.core.data.lastfm.TrackAlbums = com.stash.core.data.lastfm.TrackAlbums.None,
 ) : ViewModel() {
 
     /**
@@ -371,9 +370,11 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Tap on the Now Playing track block. Resolves the playing artist's NAME
      * to a YT browseId and emits an [ArtistNavTarget] carrying the current
-     * album as `focusAlbum`. Prefers the clean `albumArtist`, falling back to
-     * `artist`. No-op when nothing is playing or a resolve is already in
-     * flight (double-tap guard). Resolve miss/failure → snackbar, no nav.
+     * album as `focusAlbum`. Prefers the clean `albumArtist` when the song's
+     * credit names it, else `artist` ([songArtist]: a compilation's "Various
+     * Artists" isn't the song's artist). No-op when nothing is playing or a
+     * resolve is already in flight (double-tap guard). Resolve miss/failure →
+     * snackbar, no nav.
      */
     /** Live label of the active radio station (null when no station). */
     val radioSeedLabel: StateFlow<String?> = playerRepository.radioSeedLabel
@@ -412,6 +413,7 @@ class NowPlayingViewModel @Inject constructor(
         RadioStartResult.Started -> null
         RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
         RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
+        RadioStartResult.DownloadMode -> "Radio streams. Switch to Stream only to start one."
     }
 
     /** Stop the active radio station. */
@@ -447,7 +449,7 @@ class NowPlayingViewModel @Inject constructor(
     fun onTrackInfoTapped() {
         val track = _uiState.value.currentTrack ?: return
         if (_resolvingArtist.value) return
-        val name = track.albumArtist.ifBlank { track.artist }
+        val name = songArtist(track.artist, track.albumArtist)
         if (name.isBlank()) {
             _userMessages.tryEmit("Couldn't find this artist")
             return
@@ -684,7 +686,6 @@ class NowPlayingViewModel @Inject constructor(
      * Room's answer, as [lyricsTargets] does: the player's own track comes first without the ISRC
      * the library row holds, which finds the album more surely than its title.
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
     private val backCoverAlbums: Flow<BackCoverAlbum?> = uiState
         .filter { s -> s.currentTrack == null || s.currentTrackStored != null }
         .map { s -> s.currentTrack }
@@ -692,8 +693,9 @@ class NowPlayingViewModel @Inject constructor(
             a?.id == b?.id && a?.title == b?.title && a?.artist == b?.artist &&
                 a?.album == b?.album && a?.albumArtist == b?.albumArtist && a?.isrc == b?.isrc
         }
-        // A song with no album of its own (a Last.fm playlist's, a mix's) gets Last.fm's.
-        .mapLatest { track -> track?.let { BackCoverAlbum.of(it) ?: BackCoverAlbum.of(trackAlbums.withAlbum(it)) } }
+        // A song with no album of its own (a Last.fm playlist's, a mix's) has no back cover: the
+        // album Last.fm would name is its most scrobbled release, often a compilation.
+        .map { track -> track?.let { BackCoverAlbum.of(it) } }
         .distinctUntilChanged { old, new -> old?.key == new?.key }
 
     /**
@@ -758,7 +760,7 @@ class NowPlayingViewModel @Inject constructor(
     private suspend fun lookAhead(current: BackCoverAlbum) {
         val s = uiState.value
         val next = s.queue.getOrNull(s.currentIndex + 1) ?: return
-        val album = BackCoverAlbum.of(next) ?: BackCoverAlbum.of(trackAlbums.withAlbum(next)) ?: return
+        val album = BackCoverAlbum.of(next) ?: return
         if (album.key == current.key) return
         backCovers.resolve(album)?.back?.let(::fetchBackImage)
     }

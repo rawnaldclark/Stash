@@ -209,7 +209,7 @@ class TrackActionsDelegate @Inject constructor(
             // AlbumDiscoveryScreen, etc.) behaves identically when streaming
             // is enabled instead of falling back to the 30s preview clip.
             if (!isActivePreviewRequest(generation, videoId)) return@launch
-            // Streaming is always allowed, so a tap plays the full track and
+            // A tap plays the full track (Download mode refuses it with a message) and
             // returns here. The 30-second preview path below is now unreachable.
             // ponytail: delete the preview fallback (previewPlayer, PreviewState,
             // searchPreviewMediaSource) once this has shipped and the row
@@ -235,6 +235,8 @@ class TrackActionsDelegate @Inject constructor(
                             _userMessages.emit("Streaming on cellular is off in Settings.")
                         com.stash.core.media.StreamRoutingResult.NoConnectivity ->
                             _userMessages.emit("You're offline — can't stream this track.")
+                        com.stash.core.media.StreamRoutingResult.DownloadMode ->
+                            _userMessages.emit(com.stash.core.media.PlayerRepositoryImpl.DOWNLOAD_MODE_MESSAGE)
                     }
                 } finally {
                     if (isActivePreviewRequest(generation, videoId)) {

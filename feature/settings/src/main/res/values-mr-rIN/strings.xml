@@ -185,6 +185,7 @@
     <string name="settings_home_layout_desc">Arrange Home\'s sections or hide the ones you don\'t use. The Discover hero stays on top.</string>
     <string name="settings_home_section_community_desc">Playlists and songs other Stash listeners are into. Your posts show your name.</string>
     <string name="settings_home_section_listening_desc">Recently played and your History. Appears after your first listen.</string>
+    <string name="settings_home_section_record_desc">तुम्ही ऐकलेले प्रत्येक वर्ष, एका रेकॉर्डवर.</string>
     <string name="settings_home_show_liked_title">Show Liked Songs on Home</string>
     <string name="settings_home_show_liked_subtitle">Your Stash, Spotify and YouTube likes as one card in Your playlists</string>
     <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
@@ -197,6 +198,9 @@
     <string name="settings_home_section_mood_decades">Mood &amp; decades</string>
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
+    <string name="settings_home_section_your_record">तुमचा रेकॉर्ड</string>
+    <string name="settings_home_section_record_mixes">तुमच्या रेकॉर्डमधून</string>
+    <string name="settings_home_section_record_mixes_desc">फक्त तुमची ऐकण्याची वर्षेच बनवू शकतात असे मिक्स. तुमचा इतिहास आल्यावर दिसतात.</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>
@@ -662,4 +666,25 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">तुमचा रेकॉर्ड</string>
+    <string name="settings_your_record_open">तुमचा रेकॉर्ड</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="one">Spotify मधून: %1$s प्ले.</item>
+        <item quantity="other">Spotify मधून: %1$s प्ले.</item>
+    </plurals>
+    <string name="settings_your_record_import">Spotify मधून इंपोर्ट करा</string>
+    <string name="settings_your_record_newer">नवीन प्रत आणा</string>
+    <string name="settings_your_record_import_subtitle">Spotify डेटा डाउनलोडमधील तुमचा ऐकण्याचा इतिहास. Stash ही फाइल याच फोनवर वाचते. काहीही अपलोड होत नाही.</string>
+    <string name="settings_your_record_remove">इंपोर्ट केलेला इतिहास काढा</string>
+    <string name="settings_your_record_remove_subtitle">तुमचा रेकॉर्ड पुन्हा Stash मधील तुमच्या प्लेवर येईल.</string>
+    <string name="settings_your_record_remove_title">तुमचा इंपोर्ट केलेला इतिहास काढायचा?</string>
+    <string name="settings_your_record_remove_body">Spotify आणि Last.fm मधून तुमच्या रेकॉर्डसाठी आणलेले सर्व काही या फोनवरून हटवले जाईल. Stash मधील तुमचे प्ले राहतील. तुम्ही आणलेल्या प्लेलिस्ट आणि आवडलेली गाणी तुमच्या लायब्ररीत राहतील.</string>
+    <string name="settings_your_record_remove_confirm">काढा</string>
+    <string name="settings_your_record_cancel">रद्द करा</string>
+    <string name="settings_your_record_removed">तुमचा इंपोर्ट केलेला इतिहास काढला.</string>
+    <string name="settings_your_record_remove_busy">एक इंपोर्ट सुरू आहे. ते पूर्ण झाल्यावर इतिहास काढा.</string>
+    <string name="settings_your_record_remove_failed">आत्ता काढता आले नाही. पुन्हा प्रयत्न करा.</string>
+    <string name="settings_your_record_show">होमवर दाखवा</string>
+    <string name="settings_your_record_show_subtitle">“तुमचा रेकॉर्ड तयार करा” होमवर लपवले आहे.</string>
+    <string name="settings_your_record_shown">“तुमचा रेकॉर्ड तयार करा” पुन्हा होमवर आहे</string>
 </resources>

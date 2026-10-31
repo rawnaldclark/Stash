@@ -65,6 +65,22 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
     }?.url
         ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
 
+/**
+ * A link coin, as on the original header. The links' line under listeners + Support is this tall
+ * before they arrive too, so their landing a beat late never moves the name.
+ */
+private val LinkCoinSize = 32.dp
+
+/**
+ * Links the header leaves to About, so the few that fit beside play and radio stay a usable
+ * size (owner, 2026-10-29: Björk's 7 shrank to nothing). About still lists every link.
+ */
+private val HeaderSkippedLinks = setOf("soundcloud", "facebook", "youtube")
+
+/** The links the header shows: all but [HeaderSkippedLinks]. */
+internal fun headerLinks(socials: List<SocialLink>): List<SocialLink> =
+    socials.filterNot { it.kind.lowercase() in HeaderSkippedLinks }
+
 /** The photo's height below the status bar. */
 internal val ArtistHeroPhotoHeight = 340.dp
 
@@ -97,6 +113,8 @@ fun ArtistHero(
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
     onPlayArtist: () -> Unit,
+    /** The artist's album covers: the banner when there's no header photo anywhere. */
+    fallbackCovers: List<String> = emptyList(),
     onStartRadio: () -> Unit,
     streamingEnabled: Boolean,
     onStreamingClick: () -> Unit,
@@ -113,6 +131,7 @@ fun ArtistHero(
     val gold = Color(0xFFFFC947)
     val goldInk = if (dark) gold else Color(0xFF7A5A00)
     val support = remember(socials) { supportUrl(socials) }
+    val links = remember(socials) { headerLinks(socials) }
     val photo = remember(hero.avatarUrl) { ArtUrlUpgrader.banner(hero.avatarUrl) }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -135,6 +154,19 @@ fun ArtistHero(
                     Brush.verticalGradient(listOf(primary.copy(alpha = 0.45f), primary.copy(alpha = 0.08f))),
                 ),
         ) {
+            if (photo == null && fallbackCovers.isNotEmpty()) {
+                // No header photo on YouTube or Spotify: the artist's own covers, side by side.
+                Row(Modifier.fillMaxSize()) {
+                    fallbackCovers.forEach { cover ->
+                        AsyncImage(
+                            model = ArtUrlUpgrader.upgrade(cover),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
+                }
+            }
             if (photo != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalPlatformContext.current)
@@ -189,7 +221,10 @@ fun ArtistHero(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            // Play and radio on the left; listeners and Support on the right.
+            // Play and radio on the left; on the right, listeners and Support with the
+            // artist's links under them. The links arrive a beat after the page (MusicBrainz);
+            // their line is held open from the start, so the row never grows and the name never
+            // moves. Not a fixed row height: with a large font, that squashed the coins flat.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     onClick = onPlayArtist,
@@ -224,79 +259,87 @@ fun ArtistHero(
                         )
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                if (hero.subscribersText != null) {
-                    Text(
-                        text = hero.subscribersText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-                if (hero.subscribersText != null && support != null) Spacer(Modifier.width(10.dp))
-                if (support != null) {
-                    Surface(
-                        onClick = { runCatching { uriHandler.openUri(support) } },
-                        shape = RoundedCornerShape(99.dp),
-                        color = gold.copy(alpha = 0.28f),
-                        border = BorderStroke(1.dp, gold.copy(alpha = 0.55f)),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = null,
-                                tint = goldInk,
-                                modifier = Modifier.size(12.dp),
-                            )
+                Spacer(Modifier.width(16.dp))
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (hero.subscribersText != null) {
                             Text(
-                                text = "Support",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = goldInk,
+                                text = hero.subscribersText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
                             )
                         }
-                    }
-                }
-            }
-
-            // -- The artist's doors: a glass coin each, the full width ------------
-            if (socials.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    socials.forEach { social ->
-                        Surface(
-                            onClick = { runCatching { uriHandler.openUri(social.url) } },
-                            shape = CircleShape,
-                            color = background.copy(alpha = 0.45f),
-                            border = BorderStroke(1.dp, ink.copy(alpha = 0.18f)),
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                val brand = socialIconFor(social.kind)
-                                if (brand != null) {
+                        if (hero.subscribersText != null && support != null) Spacer(Modifier.width(10.dp))
+                        if (support != null) {
+                            Surface(
+                                onClick = { runCatching { uriHandler.openUri(support) } },
+                                shape = RoundedCornerShape(99.dp),
+                                color = gold.copy(alpha = 0.28f),
+                                border = BorderStroke(1.dp, gold.copy(alpha = 0.55f)),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                ) {
                                     Icon(
-                                        painter = painterResource(brand),
-                                        contentDescription = social.kind,
-                                        tint = ink.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(16.dp),
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = null,
+                                        tint = goldInk,
+                                        modifier = Modifier.size(12.dp),
                                     )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Public,
-                                        contentDescription = social.kind,
-                                        tint = ink.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(16.dp),
+                                    Text(
+                                        text = "Support",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = goldInk,
                                     )
                                 }
                             }
                         }
+                    }
+                    Box(Modifier.height(LinkCoinSize), contentAlignment = Alignment.CenterEnd) {
+                    if (links.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            // Many links scroll; reversed so the row starts from its right end.
+                            modifier = Modifier.horizontalScroll(rememberScrollState(), reverseScrolling = true),
+                        ) {
+                            links.forEach { social ->
+                                Surface(
+                                    onClick = { runCatching { uriHandler.openUri(social.url) } },
+                                    shape = CircleShape,
+                                    color = background.copy(alpha = 0.45f),
+                                    border = BorderStroke(1.dp, ink.copy(alpha = 0.18f)),
+                                    modifier = Modifier.size(LinkCoinSize),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        val brand = socialIconFor(social.kind)
+                                        if (brand != null) {
+                                            Icon(
+                                                painter = painterResource(brand),
+                                                contentDescription = social.kind,
+                                                tint = ink.copy(alpha = 0.85f),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Public,
+                                                contentDescription = social.kind,
+                                                tint = ink.copy(alpha = 0.85f),
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }

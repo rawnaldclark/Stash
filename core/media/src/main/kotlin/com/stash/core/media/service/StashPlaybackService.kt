@@ -87,6 +87,46 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var loudnessController: LoudnessController
     @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
     @Inject lateinit var trackDao: TrackDao
+    @Inject lateinit var streamingPreference: com.stash.core.data.prefs.StreamingPreference
+
+    /**
+     * Download mode just switched on (review on #731): a stream already open keeps reading on the connection it has, and
+     * the next song may already be buffered from the network. So a playing stream stops, and a streamed next song is put
+     * back in its place, which rebuilds its source: opening it then refuses ([com.stash.core.media.streaming.DownloadModeGate])
+     * and the player skips it. A song from a file plays on undisturbed.
+     */
+    private fun dropStreamsForDownloadMode() {
+        val engine = crossfadeEngine ?: return
+        if (engine.isTransitioning()) engine.cancelTransition()
+        val p = engine.masterPlayer
+        val isStream = { item: androidx.media3.common.MediaItem? ->
+            com.stash.core.media.streaming.DownloadModeGate.isNetwork(item?.localConfiguration?.uri)
+        }
+        if (isStream(p.currentMediaItem)) {
+            android.util.Log.i("StashPlayback", "Download mode on: stopping the stream that was playing")
+            p.stop()
+            return
+        }
+        val next = p.currentMediaItemIndex + 1
+        if (next < p.mediaItemCount) {
+            val item = p.getMediaItemAt(next)
+            if (isStream(item)) {
+                p.removeMediaItem(next)
+                p.addMediaItem(next, item)
+            }
+        }
+    }
+
+    /** The Download / Stream only switch as last seen; null until the first read. */
+    @Volatile private var streamAllowedCache: Boolean? = null
+
+    /**
+     * False in Download mode. Read on the playback thread when a song is opened, so the
+     * very first read (a cold-start resume, before [onCreate]'s collector has run) reads
+     * the store once rather than guessing.
+     */
+    private fun streamAllowedNow(): Boolean =
+        streamAllowedCache ?: kotlinx.coroutines.runBlocking { streamingPreference.current() }.also { streamAllowedCache = it }
     @Inject lateinit var playlistDao: PlaylistDao
     @Inject lateinit var likeCoordinator: LikeCoordinator
     @Inject lateinit var likeTargetResolver: LikeTargetResolver
@@ -560,6 +600,8 @@ class StashPlaybackService : MediaLibraryService() {
         // ~1 MB; without this they surface as onPlayerError and skip-storm the
         // queue. Lossless (Kennyy/Squid) and local/downloaded items stay on the
         // default factory, unchanged.
+        // The YouTube refresh chain and Tidal's DASH sources check Download mode when they open, too.
+        streamingMediaSourceFactory.streamAllowed = ::streamAllowedNow
         val mediaSourceFactory = StashMediaSourceFactory(
             context = this,
             streamingFactory = streamingMediaSourceFactory,
@@ -591,6 +633,8 @@ class StashPlaybackService : MediaLibraryService() {
             // Tidal may answer with a DASH MPD, so with a server set placeholders
             // resolve before their media source is chosen.
             resolveBeforeSourcePick = tidalStreamResolver::enabledHint,
+            // Download mode plays only files on the phone, whatever queued a stream.
+            streamAllowed = ::streamAllowedNow,
             // The user's own cloud files: pre-authenticated links (Dropbox, OneDrive), or Google
             // Drive's alt=media with a bearer header through the OkHttp source below.
             cloudDataSourceFactory = com.stash.core.media.streaming.CloudResolvingDataSource.factory(
@@ -695,6 +739,14 @@ class StashPlaybackService : MediaLibraryService() {
         // Link Stash on the web: publish what plays for the linked browsers, on events only, for as long as this service
         // lives (spec §8.1). A no-op unless the feature is built in, linked and switched on.
         handoffPublisher.start(serviceScope)
+
+        serviceScope.launch {
+            streamingPreference.enabled.collect { allowed ->
+                val was = streamAllowedCache
+                streamAllowedCache = allowed
+                if (was == true && !allowed) dropStreamsForDownloadMode()
+            }
+        }
 
         // Cache crossfade prefs for the poll's prepare/fire decisions.
         serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }
@@ -1137,6 +1189,16 @@ class StashPlaybackService : MediaLibraryService() {
                 decoderReuseEvaluation: DecoderReuseEvaluation?,
             ) {
                 hiResOutputController.onSourceFormat(session, format.toSourceFormat())
+            }
+
+            // The decoder's name, for the diagnostics bundle's log tail (#705: which one a phone picked)
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                android.util.Log.i("StashPlayback", "audio decoder: $decoderName")
             }
         })
         return player

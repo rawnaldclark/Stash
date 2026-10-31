@@ -1,0 +1,9522 @@
+[
+ {
+  "name": "remaster titles are one song; the words most seen win; a play picked counts twice",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Old Friend - 2011 Remaster",
+    "a": "Evergreen",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend - 2011 Remaster",
+    "a": "Evergreen",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend - 2011 Remaster",
+    "a": "Evergreen",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend (Remastered)",
+    "a": "Evergreen",
+    "s": 1706140800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend (Remastered)",
+    "a": "Evergreen",
+    "s": 1706227200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend",
+    "a": "Evergreen",
+    "s": 1707004800000,
+    "ms": 200000,
+    "f": 35
+   },
+   {
+    "t": "Old Friend",
+    "a": "Evergreen",
+    "s": 1707091200000,
+    "ms": 200000,
+    "f": 35
+   },
+   {
+    "t": "Old Friend",
+    "a": "Evergreen",
+    "s": 1707177600000,
+    "ms": 200000,
+    "f": 35
+   },
+   {
+    "t": "Old Friend",
+    "a": "Evergreen",
+    "s": 1707264000000,
+    "ms": 200000,
+    "f": 35
+   },
+   {
+    "t": "Old Friend – Remastered 2009",
+    "a": "Evergreen",
+    "s": 1707868800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend [2015 Remaster Version]",
+    "a": "Evergreen",
+    "s": 1707955200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend (Digitally Remastered)",
+    "a": "Evergreen",
+    "s": 1708041600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Old Friend - Digital Remaster",
+    "a": "Evergreen",
+    "s": 1708128000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Remastered",
+    "a": "Evergreen",
+    "s": 1708214400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": " - Remaster",
+    "a": "Evergreen",
+    "s": 1708300800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remaster ",
+    "a": "Band",
+    "s": 1708387200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song  -  2011   Remaster",
+    "a": "Band",
+    "s": 1708473600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remaster\n",
+    "a": "Band",
+    "s": 1708560000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remastered Version (Live)",
+    "a": "Band",
+    "s": 1708646400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song — 2011 Remaster",
+    "a": "Band",
+    "s": 1708732800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remaster",
+    "a": "Band",
+    "s": 1708819200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song-Remaster",
+    "a": "Band",
+    "s": 1708905600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song﻿- Remaster",
+    "a": "Band",
+    "s": 1708992000000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1705276800000,
+   "last": 1708992000000,
+   "plays": 23,
+   "listenedMs": 4600000,
+   "artists": 2,
+   "songs": [
+    {
+     "key": "old friend|evergreen",
+     "title": "Old Friend",
+     "artist": "Evergreen",
+     "starts": 13,
+     "plays": 13,
+     "full": 13,
+     "chosen": 4,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2600000,
+     "first": 1705276800000,
+     "last": 1708128000000,
+     "peak": 8,
+     "peakAt": 1707004800000,
+     "weight": 1.215673109,
+     "depth": 3.091042453,
+     "avoid": false
+    },
+    {
+     "key": "song|band",
+     "title": "Song - 2011 Remaster ",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1708387200000,
+     "last": 1708992000000,
+     "peak": 5,
+     "peakAt": 1708387200000,
+     "weight": 0.711397647,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "song remaster|band",
+     "title": "Song-Remaster",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708905600000,
+     "last": 1708905600000,
+     "peak": 1,
+     "peakAt": 1708905600000,
+     "weight": 0.274945167,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "song 2011 remaster|band",
+     "title": "Song — 2011 Remaster",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708732800000,
+     "last": 1708732800000,
+     "peak": 1,
+     "peakAt": 1708732800000,
+     "weight": 0.274423889,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "song 2011 remastered version live|band",
+     "title": "Song - 2011 Remastered Version (Live)",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708646400000,
+     "last": 1708646400000,
+     "peak": 1,
+     "peakAt": 1708646400000,
+     "weight": 0.274163621,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "remaster|evergreen",
+     "title": " - Remaster",
+     "artist": "Evergreen",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708300800000,
+     "last": 1708300800000,
+     "peak": 1,
+     "peakAt": 1708300800000,
+     "weight": 0.273125014,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "remastered|evergreen",
+     "title": "Remastered",
+     "artist": "Evergreen",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708214400000,
+     "last": 1708214400000,
+     "peak": 1,
+     "peakAt": 1708214400000,
+     "weight": 0.272865978,
+     "depth": 0.693147181,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [
+    "old friend|evergreen"
+   ],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 23,
+     "listenedMs": 4600000,
+     "newArtists": 2
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "evergreen",
+     "name": "Evergreen",
+     "plays": 15,
+     "listenedMs": 3000000
+    },
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 8,
+     "listenedMs": 1600000
+    }
+   ],
+   "seedArtists": [
+    "Evergreen",
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Evergreen",
+      "Band"
+     ],
+     "songs": [
+      "old friend|evergreen",
+      "song|band",
+      "remastered|evergreen",
+      "remaster|evergreen",
+      "song 2011 remastered version live|band",
+      "song 2011 remaster|band",
+      "song remaster|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "JavaScript folds ASCII letters only, and its \\d is 0-9: KELVIN SIGN, LONG S, a dotless i, Arabic-Indic and full-width digits",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Song - ٢٠١١ Remaster",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - ２０１１ Remaster",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remaſter",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 REMASTER",
+    "a": "Band",
+    "s": 1705536000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 remaster VERSION",
+    "a": "Band",
+    "s": 1705622400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - 2011 Remaster versıon",
+    "a": "Band",
+    "s": 1705708800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song - DIGITALLY Remastered",
+    "a": "Band",
+    "s": 1705795200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "SKit",
+    "a": "Band",
+    "s": 1706140800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "SKit",
+    "a": "Band",
+    "s": 1706227200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "SKit",
+    "a": "Band",
+    "s": 1706313600000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "SKit",
+    "a": "Band",
+    "s": 1706400000000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skit",
+    "a": "Band",
+    "s": 1707004800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skit",
+    "a": "Band",
+    "s": 1707091200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skit",
+    "a": "Band",
+    "s": 1707177600000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skit",
+    "a": "Band",
+    "s": 1707264000000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "İntro",
+    "a": "Band",
+    "s": 1707868800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "İntro",
+    "a": "Band",
+    "s": 1707955200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "İntro",
+    "a": "Band",
+    "s": 1708041600000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "İntro",
+    "a": "Band",
+    "s": 1708128000000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Duet",
+    "a": "Ana wıth Ben",
+    "s": 1708732800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet",
+    "a": "Ana wıth Ben",
+    "s": 1708819200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet",
+    "a": "Ana wıth Ben",
+    "s": 1708905600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Two",
+    "a": "Ana WITH Ben",
+    "s": 1709596800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Two",
+    "a": "Ana WITH Ben",
+    "s": 1709683200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Two",
+    "a": "Ana WITH Ben",
+    "s": 1709769600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Three",
+    "a": "Ana feat. Ben",
+    "s": 1710460800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Three",
+    "a": "Ana feat. Ben",
+    "s": 1710547200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Three",
+    "a": "Ana feat. Ben",
+    "s": 1710633600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Four",
+    "a": "Anafeat. Ben",
+    "s": 1711324800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Four",
+    "a": "Anafeat. Ben",
+    "s": 1711411200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Duet Four",
+    "a": "Anafeat. Ben",
+    "s": 1711497600000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1705276800000,
+   "last": 1711497600000,
+   "plays": 19,
+   "listenedMs": 3800000,
+   "artists": 4,
+   "songs": [
+    {
+     "key": "duet four|ana feat ben",
+     "title": "Duet Four",
+     "artist": "Anafeat. Ben",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1711324800000,
+     "last": 1711497600000,
+     "peak": 3,
+     "peakAt": 1711324800000,
+     "weight": 0.565768434,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "duet three|ana feat ben",
+     "title": "Duet Three",
+     "artist": "Ana feat. Ben",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1710460800000,
+     "last": 1710633600000,
+     "peak": 3,
+     "peakAt": 1710460800000,
+     "weight": 0.560425435,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "duet two|ana with ben",
+     "title": "Duet Two",
+     "artist": "Ana WITH Ben",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1709596800000,
+     "last": 1709769600000,
+     "peak": 3,
+     "peakAt": 1709596800000,
+     "weight": 0.555132893,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "duet|ana wıth ben",
+     "title": "Duet",
+     "artist": "Ana wıth Ben",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1708732800000,
+     "last": 1708905600000,
+     "peak": 3,
+     "peakAt": 1708732800000,
+     "weight": 0.549890334,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "song|band",
+     "title": "Song - 2011 REMASTER",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1705536000000,
+     "last": 1705795200000,
+     "peak": 3,
+     "peakAt": 1705536000000,
+     "weight": 0.531423716,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "song 2011 remaster|band",
+     "title": "Song - ２０１１ Remaster",
+     "artist": "Band",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 400000,
+     "first": 1705363200000,
+     "last": 1705449600000,
+     "peak": 2,
+     "peakAt": 1705363200000,
+     "weight": 0.419547925,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "song 2011 remaster versıon|band",
+     "title": "Song - 2011 Remaster versıon",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1705708800000,
+     "last": 1705708800000,
+     "peak": 1,
+     "peakAt": 1705708800000,
+     "weight": 0.265459852,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "song ٢٠١١ remaster|band",
+     "title": "Song - ٢٠١١ Remaster",
+     "artist": "Band",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1705276800000,
+     "last": 1705276800000,
+     "peak": 1,
+     "peakAt": 1705276800000,
+     "weight": 0.264203405,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "intro|band",
+     "title": "İntro",
+     "artist": "Band",
+     "starts": 4,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 4,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": false
+    },
+    {
+     "key": "skit|band",
+     "title": "SKit",
+     "artist": "Band",
+     "starts": 8,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 8,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": true
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 19,
+     "listenedMs": 3800000,
+     "newArtists": 4
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 7,
+     "listenedMs": 1400000
+    },
+    {
+     "key": "ana",
+     "name": "Ana",
+     "plays": 6,
+     "listenedMs": 1200000
+    },
+    {
+     "key": "ana feat ben",
+     "name": "Anafeat. Ben",
+     "plays": 3,
+     "listenedMs": 600000
+    },
+    {
+     "key": "ana wıth ben",
+     "name": "Ana wıth Ben",
+     "plays": 3,
+     "listenedMs": 600000
+    }
+   ],
+   "seedArtists": [
+    "Band",
+    "Ana",
+    "Anafeat. Ben",
+    "Ana wıth Ben"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Band",
+      "Ana",
+      "Anafeat. Ben"
+     ],
+     "songs": [
+      "duet four|ana feat ben",
+      "duet three|ana feat ben",
+      "duet two|ana with ben",
+      "duet|ana wıth ben",
+      "song|band",
+      "song 2011 remaster|band",
+      "song 2011 remaster versıon|band",
+      "song ٢٠١١ remaster|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "an interlude is a whole ASCII word: non-ASCII letters are boundaries, digits and _ are not",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Intro",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Introé",
+    "a": "Band",
+    "s": 1706140800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Introé",
+    "a": "Band",
+    "s": 1706227200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Introé",
+    "a": "Band",
+    "s": 1706313600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "éIntro",
+    "a": "Band",
+    "s": 1707004800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "éIntro",
+    "a": "Band",
+    "s": 1707091200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "éIntro",
+    "a": "Band",
+    "s": 1707177600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Intro_",
+    "a": "Band",
+    "s": 1707868800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro_",
+    "a": "Band",
+    "s": 1707955200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro_",
+    "a": "Band",
+    "s": 1708041600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Intro1",
+    "a": "Band",
+    "s": 1708732800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro1",
+    "a": "Band",
+    "s": 1708819200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro1",
+    "a": "Band",
+    "s": 1708905600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Intro-1",
+    "a": "Band",
+    "s": 1709596800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro-1",
+    "a": "Band",
+    "s": 1709683200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Intro-1",
+    "a": "Band",
+    "s": 1709769600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Outro.",
+    "a": "Band",
+    "s": 1710460800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Outro.",
+    "a": "Band",
+    "s": 1710547200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Outro.",
+    "a": "Band",
+    "s": 1710633600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "commentary track",
+    "a": "Band",
+    "s": 1711324800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "commentary track",
+    "a": "Band",
+    "s": 1711411200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "commentary track",
+    "a": "Band",
+    "s": 1711497600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "INTERLUDE",
+    "a": "Band",
+    "s": 1712188800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "INTERLUDE",
+    "a": "Band",
+    "s": 1712275200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "INTERLUDE",
+    "a": "Band",
+    "s": 1712361600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Interludes",
+    "a": "Band",
+    "s": 1713052800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Interludes",
+    "a": "Band",
+    "s": 1713139200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Interludes",
+    "a": "Band",
+    "s": 1713225600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Skït",
+    "a": "Band",
+    "s": 1713916800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skït",
+    "a": "Band",
+    "s": 1714003200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Skït",
+    "a": "Band",
+    "s": 1714089600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Track (intro)",
+    "a": "Band",
+    "s": 1714780800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Track (intro)",
+    "a": "Band",
+    "s": 1714867200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "Track (intro)",
+    "a": "Band",
+    "s": 1714953600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "introduction",
+    "a": "Band",
+    "s": 1715644800000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "introduction",
+    "a": "Band",
+    "s": 1715731200000,
+    "ms": 3000,
+    "f": 36
+   },
+   {
+    "t": "introduction",
+    "a": "Band",
+    "s": 1715817600000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1705449600000,
+   "last": 1715817600000,
+   "plays": 13,
+   "listenedMs": 2600000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "intro|band",
+     "title": "Intro",
+     "artist": "Band",
+     "starts": 6,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 4,
+     "years": 1,
+     "listenedMs": 400000,
+     "first": 1705449600000,
+     "last": 1708041600000,
+     "peak": 1,
+     "peakAt": 1705449600000,
+     "weight": 0.431662384,
+     "depth": 1.098612289,
+     "avoid": true
+    },
+    {
+     "key": "introduction|band",
+     "title": "introduction",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1715817600000,
+     "last": 1715817600000,
+     "peak": 1,
+     "peakAt": 1715817600000,
+     "weight": 0.296628652,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "track intro|band",
+     "title": "Track (intro)",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1714953600000,
+     "last": 1714953600000,
+     "peak": 1,
+     "peakAt": 1714953600000,
+     "weight": 0.293827353,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "skit|band",
+     "title": "Skït",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1714089600000,
+     "last": 1714089600000,
+     "peak": 1,
+     "peakAt": 1714089600000,
+     "weight": 0.291052508,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "interludes|band",
+     "title": "Interludes",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1713225600000,
+     "last": 1713225600000,
+     "peak": 1,
+     "peakAt": 1713225600000,
+     "weight": 0.288303869,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "interlude|band",
+     "title": "INTERLUDE",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1712361600000,
+     "last": 1712361600000,
+     "peak": 1,
+     "peakAt": 1712361600000,
+     "weight": 0.285581187,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "commentary track|band",
+     "title": "commentary track",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1711497600000,
+     "last": 1711497600000,
+     "peak": 1,
+     "peakAt": 1711497600000,
+     "weight": 0.282884217,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "outro|band",
+     "title": "Outro.",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1710633600000,
+     "last": 1710633600000,
+     "peak": 1,
+     "peakAt": 1710633600000,
+     "weight": 0.280212717,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "intro 1|band",
+     "title": "Intro-1",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1709769600000,
+     "last": 1709769600000,
+     "peak": 1,
+     "peakAt": 1709769600000,
+     "weight": 0.277566447,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "intro1|band",
+     "title": "Intro1",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1708905600000,
+     "last": 1708905600000,
+     "peak": 1,
+     "peakAt": 1708905600000,
+     "weight": 0.274945167,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "eintro|band",
+     "title": "éIntro",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1707177600000,
+     "last": 1707177600000,
+     "peak": 1,
+     "peakAt": 1707177600000,
+     "weight": 0.269776638,
+     "depth": 0.693147181,
+     "avoid": true
+    },
+    {
+     "key": "introe|band",
+     "title": "Introé",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 2,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1706313600000,
+     "last": 1706313600000,
+     "peak": 1,
+     "peakAt": 1706313600000,
+     "weight": 0.267228923,
+     "depth": 0.693147181,
+     "avoid": true
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 13,
+     "listenedMs": 2600000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 13,
+     "listenedMs": 2600000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "interludes|band",
+      "intro1|band",
+      "introduction|band",
+      "skit|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "the play order is UTF-16: an astral character comes before U+E000-U+FFFF, and the first spelling seen wins a tie",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Song ！",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34,
+    "al": "Album ！"
+   },
+   {
+    "t": "Song 🎵",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34,
+    "al": "Album 🎵"
+   },
+   {
+    "t": "Song ",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Song 😀",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Tie",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34,
+    "al": "B side",
+    "sid": "1111111111111111111111"
+   },
+   {
+    "t": "TIE",
+    "a": "Band",
+    "s": 1705536000000,
+    "ms": 200000,
+    "f": 34,
+    "al": "A side",
+    "sid": "2222222222222222222222"
+   },
+   {
+    "t": "tie",
+    "a": "BAND",
+    "s": 1705622400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Same",
+    "a": "Band",
+    "s": 1705708800000,
+    "ms": 250000,
+    "f": 34
+   },
+   {
+    "t": "Same",
+    "a": "Band",
+    "s": 1705708800000,
+    "ms": 240000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1705276800000,
+   "last": 1705708800000,
+   "plays": 9,
+   "listenedMs": 1890000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "song|band",
+     "title": "Song 🎵",
+     "artist": "Band",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 800000,
+     "first": 1705276800000,
+     "last": 1705363200000,
+     "peak": 4,
+     "peakAt": 1705276800000,
+     "weight": 0.614043678,
+     "depth": 1.609437912,
+     "avoid": false,
+     "album": "Album 🎵"
+    },
+    {
+     "key": "tie|band",
+     "title": "Tie",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1705449600000,
+     "last": 1705622400000,
+     "peak": 3,
+     "peakAt": 1705449600000,
+     "weight": 0.530416171,
+     "depth": 1.386294361,
+     "avoid": false,
+     "album": "B side",
+     "sid": "1111111111111111111111"
+    },
+    {
+     "key": "same|band",
+     "title": "Same",
+     "artist": "Band",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 490000,
+     "first": 1705708800000,
+     "last": 1705708800000,
+     "peak": 2,
+     "peakAt": 1705708800000,
+     "weight": 0.420743911,
+     "depth": 1.098612289,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 9,
+     "listenedMs": 1890000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 9,
+     "listenedMs": 1890000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "song|band",
+      "tie|band",
+      "same|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "songs only ever started: no listen, no weight, first and last 0; skips and the 75% rule",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705276800000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705363200000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705449600000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705536000000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705622400000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Never Again",
+    "a": "Artist Y",
+    "s": 1705708800000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1705276800000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1705363200000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1705449600000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1705536000000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1705622400000,
+    "ms": 5000,
+    "f": 36
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1706140800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Almost",
+    "a": "Artist Y",
+    "s": 1706227200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707004800000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707091200000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707177600000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707264000000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707350400000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707436800000,
+    "ms": 29999,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707868800000,
+    "ms": 30000,
+    "f": 32
+   },
+   {
+    "t": "Edge",
+    "a": "Artist Y",
+    "s": 1707955200000,
+    "ms": 30000,
+    "f": 32
+   },
+   {
+    "t": "Shuffled",
+    "a": "Artist Y",
+    "s": 1708732800000,
+    "ms": 200000,
+    "f": 32
+   },
+   {
+    "t": "Shuffled",
+    "a": "Artist Y",
+    "s": 1708819200000,
+    "ms": 200000,
+    "f": 32
+   },
+   {
+    "t": "Shuffled",
+    "a": "Artist Y",
+    "s": 1708905600000,
+    "ms": 200000,
+    "f": 32
+   },
+   {
+    "t": "Account",
+    "a": "Artist Y",
+    "s": 1709596800000,
+    "ms": 200000,
+    "f": 16
+   },
+   {
+    "t": "Account",
+    "a": "Artist Y",
+    "s": 1709683200000,
+    "ms": 200000,
+    "f": 16
+   },
+   {
+    "t": "Account",
+    "a": "Artist Y",
+    "s": 1709769600000,
+    "ms": 200000,
+    "f": 16
+   },
+   {
+    "t": "Phone",
+    "a": "Artist Y",
+    "s": 1710460800000,
+    "ms": 200000,
+    "f": 0
+   },
+   {
+    "t": "Phone",
+    "a": "Artist Y",
+    "s": 1710547200000,
+    "ms": 200000,
+    "f": 0
+   },
+   {
+    "t": "Phone",
+    "a": "Artist Y",
+    "s": 1710633600000,
+    "ms": 200000,
+    "f": 0
+   },
+   {
+    "t": "Scrobbled",
+    "a": "Artist Y",
+    "s": 1711324800000,
+    "ms": 210000,
+    "f": 192
+   },
+   {
+    "t": "Scrobbled",
+    "a": "Artist Y",
+    "s": 1711411200000,
+    "ms": 210000,
+    "f": 192
+   },
+   {
+    "t": "Scrobbled",
+    "a": "Artist Y",
+    "s": 1711497600000,
+    "ms": 210000,
+    "f": 192
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1706140800000,
+   "last": 1711497600000,
+   "plays": 16,
+   "listenedMs": 2890000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "scrobbled|artist y",
+     "title": "Scrobbled",
+     "artist": "Artist Y",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 630000,
+     "first": 1711324800000,
+     "last": 1711497600000,
+     "peak": 3,
+     "peakAt": 1711324800000,
+     "weight": 0.565768434,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "phone|artist y",
+     "title": "Phone",
+     "artist": "Artist Y",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1710460800000,
+     "last": 1710633600000,
+     "peak": 3,
+     "peakAt": 1710460800000,
+     "weight": 0.560425435,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "account|artist y",
+     "title": "Account",
+     "artist": "Artist Y",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1709596800000,
+     "last": 1709769600000,
+     "peak": 3,
+     "peakAt": 1709596800000,
+     "weight": 0.555132893,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "almost|artist y",
+     "title": "Almost",
+     "artist": "Artist Y",
+     "starts": 7,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 5,
+     "years": 1,
+     "listenedMs": 400000,
+     "first": 1706140800000,
+     "last": 1706227200000,
+     "peak": 2,
+     "peakAt": 1706140800000,
+     "weight": 0.423146122,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "shuffled|artist y",
+     "title": "Shuffled",
+     "artist": "Artist Y",
+     "starts": 3,
+     "plays": 3,
+     "full": 0,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1708732800000,
+     "last": 1708905600000,
+     "peak": 3,
+     "peakAt": 1708732800000,
+     "weight": 0,
+     "depth": 0,
+     "avoid": false
+    },
+    {
+     "key": "edge|artist y",
+     "title": "Edge",
+     "artist": "Artist Y",
+     "starts": 8,
+     "plays": 2,
+     "full": 0,
+     "chosen": 0,
+     "skips": 6,
+     "years": 1,
+     "listenedMs": 60000,
+     "first": 1707868800000,
+     "last": 1707955200000,
+     "peak": 2,
+     "peakAt": 1707868800000,
+     "weight": 0,
+     "depth": 0,
+     "avoid": true
+    },
+    {
+     "key": "never again|artist y",
+     "title": "Never Again",
+     "artist": "Artist Y",
+     "starts": 6,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 6,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": true
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 16,
+     "listenedMs": 2890000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "artist y",
+     "name": "Artist Y",
+     "plays": 16,
+     "listenedMs": 2890000
+    }
+   ],
+   "seedArtists": [
+    "Artist Y"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Artist Y"
+     ],
+     "songs": [
+      "account|artist y",
+      "phone|artist y",
+      "scrobbled|artist y",
+      "shuffled|artist y",
+      "almost|artist y"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "an artist that folds to nothing counts in the totals and the songs, never in the artists, months or years",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705536000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705622400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705708800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705795200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705881600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1705968000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Strange",
+    "a": "!!!",
+    "s": 1706054400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1713916800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714003200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714089600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714176000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714262400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714348800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714435200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714521600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714608000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Emoji",
+    "a": "🎵",
+    "s": 1714694400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Real",
+    "a": "Band",
+    "s": 1722556800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Real",
+    "a": "Band",
+    "s": 1722643200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Real",
+    "a": "Band",
+    "s": 1722729600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Real",
+    "a": "Band",
+    "s": 1722816000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Real",
+    "a": "Band",
+    "s": 1722902400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Later",
+    "a": "!!!",
+    "s": 1748736000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Later",
+    "a": "!!!",
+    "s": 1748822400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Later",
+    "a": "!!!",
+    "s": 1748908800000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1705276800000,
+   "last": 1748908800000,
+   "plays": 28,
+   "listenedMs": 5600000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "emoji|",
+     "title": "Emoji",
+     "artist": "🎵",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1713916800000,
+     "last": 1714694400000,
+     "peak": 10,
+     "peakAt": 1713916800000,
+     "weight": 1.013586248,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "strange|",
+     "title": "Strange",
+     "artist": "!!!",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1705276800000,
+     "last": 1706054400000,
+     "peak": 10,
+     "peakAt": 1705276800000,
+     "weight": 0.921832359,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "later|",
+     "title": "Later",
+     "artist": "!!!",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1748736000000,
+     "last": 1748908800000,
+     "peak": 3,
+     "peakAt": 1748736000000,
+     "weight": 0.853242828,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "real|band",
+     "title": "Real",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1722556800000,
+     "last": 1722902400000,
+     "peak": 5,
+     "peakAt": 1722556800000,
+     "weight": 0.828816768,
+     "depth": 1.791759469,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [
+    "emoji|",
+    "strange|"
+   ],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2024,
+     "plays": 5,
+     "listenedMs": 1000000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 5,
+     "listenedMs": 1000000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2024,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "emoji|",
+      "strange|",
+      "real|band"
+     ]
+    },
+    {
+     "year": 2025,
+     "artists": [],
+     "songs": [
+      "later|"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "kept beats hidden and the skip rules; put back beats hidden, and a put-back song can still be lost",
+  "now": 1793102400000,
+  "hidden": [
+   "hidden kept|band",
+   "hidden back|band",
+   "hidden|band",
+   "lost back|band"
+  ],
+  "kept": [
+   "hidden kept|band",
+   "skipped kept|band",
+   "lost kept|band"
+  ],
+  "putBack": [
+   "hidden back|band",
+   "lost back|band"
+  ],
+  "plays": [
+   {
+    "t": "Hidden Kept",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden Kept",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden Kept",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden Back",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden Back",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden Back",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1705363200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Hidden",
+    "a": "Band",
+    "s": 1705449600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706140800000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706227200000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706313600000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706400000000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706486400000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706572800000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706659200000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Skipped Kept",
+    "a": "Band",
+    "s": 1706745600000,
+    "ms": 2000,
+    "f": 36
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1640995200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641081600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641168000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641254400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641340800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641427200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641513600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641600000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641686400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Kept",
+    "a": "Band",
+    "s": 1641772800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1640995200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641081600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641168000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641254400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641340800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641427200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641513600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641600000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641686400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost Back",
+    "a": "Band",
+    "s": 1641772800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1640995200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641081600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641168000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641254400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641340800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641427200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641513600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641600000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641686400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Lost",
+    "a": "Band",
+    "s": 1641772800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1761652800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1761739200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1761825600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1761912000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1761998400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1762084800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1762171200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1762257600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1762344000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Not Yet Lost",
+    "a": "Band",
+    "s": 1762430400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1760788800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1760875200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1760961600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761048000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761134400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761220800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761307200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761393600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761480000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Just Lost",
+    "a": "Band",
+    "s": 1761566400000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1640995200000,
+   "last": 1762430400000,
+   "plays": 59,
+   "listenedMs": 11800000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "not yet lost|band",
+     "title": "Not Yet Lost",
+     "artist": "Band",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1761652800000,
+     "last": 1762430400000,
+     "peak": 10,
+     "peakAt": 1761652800000,
+     "weight": 1.712139361,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "just lost|band",
+     "title": "Just Lost",
+     "artist": "Band",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1760788800000,
+     "last": 1761566400000,
+     "peak": 10,
+     "peakAt": 1760788800000,
+     "weight": 1.695970273,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "hidden back|band",
+     "title": "Hidden Back",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1705276800000,
+     "last": 1705449600000,
+     "peak": 3,
+     "peakAt": 1705276800000,
+     "weight": 0.529410537,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "hidden kept|band",
+     "title": "Hidden Kept",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1705276800000,
+     "last": 1705449600000,
+     "peak": 3,
+     "peakAt": 1705276800000,
+     "weight": 0.529410537,
+     "depth": 1.386294361,
+     "avoid": false
+    },
+    {
+     "key": "hidden|band",
+     "title": "Hidden",
+     "artist": "Band",
+     "starts": 3,
+     "plays": 3,
+     "full": 3,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 600000,
+     "first": 1705276800000,
+     "last": 1705449600000,
+     "peak": 3,
+     "peakAt": 1705276800000,
+     "weight": 0.529410537,
+     "depth": 1.386294361,
+     "avoid": true
+    },
+    {
+     "key": "lost back|band",
+     "title": "Lost Back",
+     "artist": "Band",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1640995200000,
+     "last": 1641772800000,
+     "peak": 10,
+     "peakAt": 1640995200000,
+     "weight": 0.455049636,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "lost kept|band",
+     "title": "Lost Kept",
+     "artist": "Band",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1640995200000,
+     "last": 1641772800000,
+     "peak": 10,
+     "peakAt": 1640995200000,
+     "weight": 0.455049636,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "lost|band",
+     "title": "Lost",
+     "artist": "Band",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2000000,
+     "first": 1640995200000,
+     "last": 1641772800000,
+     "peak": 10,
+     "peakAt": 1640995200000,
+     "weight": 0.455049636,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "skipped kept|band",
+     "title": "Skipped Kept",
+     "artist": "Band",
+     "starts": 8,
+     "plays": 0,
+     "full": 0,
+     "chosen": 0,
+     "skips": 8,
+     "years": 0,
+     "listenedMs": 0,
+     "first": 0,
+     "last": 0,
+     "peak": 0,
+     "peakAt": 0,
+     "weight": 0,
+     "depth": 0,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [
+    "just lost|band",
+    "lost back|band",
+    "lost|band"
+   ],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2022,
+     "plays": 30,
+     "listenedMs": 6000000,
+     "newArtists": 1
+    },
+    {
+     "year": 2024,
+     "plays": 9,
+     "listenedMs": 1800000,
+     "newArtists": 0
+    },
+    {
+     "year": 2025,
+     "plays": 20,
+     "listenedMs": 4000000,
+     "newArtists": 0
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 59,
+     "listenedMs": 11800000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2022,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "lost back|band",
+      "lost kept|band",
+      "lost|band"
+     ]
+    },
+    {
+     "year": 2024,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "hidden back|band",
+      "hidden kept|band"
+     ]
+    },
+    {
+     "year": 2025,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "just lost|band",
+      "not yet lost|band"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "peak of exactly 14 days, and one millisecond more; obsessions; UTC year edges; the years, found and constants",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705276800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705280400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705284000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705287600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705291200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705294800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705298400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705302000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705305600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705309200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1705312800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight",
+    "a": "Peak",
+    "s": 1706486400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713916800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713920400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713924000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713927600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713931200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713934800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713938400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713942000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713945600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713949200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1713952800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fortnight And A Bit",
+    "a": "Peak",
+    "s": 1715126400001,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Year End",
+    "a": "Edge",
+    "s": 1704067199999,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Year End",
+    "a": "Edge",
+    "s": 1704067200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Month End",
+    "a": "Edge",
+    "s": 1709251199999,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Month End",
+    "a": "Edge",
+    "s": 1709251200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1554076800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1554163200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1585699200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1585785600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1617235200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1617321600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1648771200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1648857600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1680307200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1680393600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1711929600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1712016000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1743465600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Constant",
+    "a": "Forever",
+    "s": 1743552000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1554076800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1554163200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1585699200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1585785600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1617235200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Three Years",
+    "a": "Forever",
+    "s": 1617321600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 0",
+    "a": "Artist 0",
+    "s": 1625097600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 1",
+    "a": "Artist 1",
+    "s": 1625101200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 2",
+    "a": "Artist 2",
+    "s": 1625104800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 3",
+    "a": "Artist 3",
+    "s": 1625108400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 4",
+    "a": "Artist 4",
+    "s": 1625112000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 5",
+    "a": "Artist 5",
+    "s": 1625115600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 6",
+    "a": "Artist 6",
+    "s": 1625119200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 7",
+    "a": "Artist 7",
+    "s": 1625122800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 8",
+    "a": "Artist 8",
+    "s": 1625126400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 9",
+    "a": "Artist 9",
+    "s": 1625130000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 10",
+    "a": "Artist 10",
+    "s": 1625133600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 11",
+    "a": "Artist 11",
+    "s": 1625137200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 12",
+    "a": "Artist 12",
+    "s": 1625140800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 13",
+    "a": "Artist 13",
+    "s": 1625144400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 14",
+    "a": "Artist 14",
+    "s": 1625148000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 15",
+    "a": "Artist 15",
+    "s": 1625151600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 16",
+    "a": "Artist 16",
+    "s": 1625155200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 17",
+    "a": "Artist 17",
+    "s": 1625158800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 18",
+    "a": "Artist 18",
+    "s": 1625162400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 19",
+    "a": "Artist 19",
+    "s": 1625166000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 20",
+    "a": "Artist 20",
+    "s": 1625169600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 21",
+    "a": "Artist 21",
+    "s": 1625173200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 22",
+    "a": "Artist 22",
+    "s": 1625176800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "New 23",
+    "a": "Artist 23",
+    "s": 1625180400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 0",
+    "a": "Later 0",
+    "s": 1656633600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 1",
+    "a": "Later 1",
+    "s": 1656637200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 2",
+    "a": "Later 2",
+    "s": 1656640800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 3",
+    "a": "Later 3",
+    "s": 1656644400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 4",
+    "a": "Later 4",
+    "s": 1656648000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 5",
+    "a": "Later 5",
+    "s": 1656651600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 6",
+    "a": "Later 6",
+    "s": 1656655200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 7",
+    "a": "Later 7",
+    "s": 1656658800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 8",
+    "a": "Later 8",
+    "s": 1656662400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 9",
+    "a": "Later 9",
+    "s": 1656666000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 10",
+    "a": "Later 10",
+    "s": 1656669600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 11",
+    "a": "Later 11",
+    "s": 1656673200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 12",
+    "a": "Later 12",
+    "s": 1656676800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 13",
+    "a": "Later 13",
+    "s": 1656680400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 14",
+    "a": "Later 14",
+    "s": 1656684000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 15",
+    "a": "Later 15",
+    "s": 1656687600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 16",
+    "a": "Later 16",
+    "s": 1656691200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 17",
+    "a": "Later 17",
+    "s": 1656694800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 18",
+    "a": "Later 18",
+    "s": 1656698400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 19",
+    "a": "Later 19",
+    "s": 1656702000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 20",
+    "a": "Later 20",
+    "s": 1656705600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 21",
+    "a": "Later 21",
+    "s": 1656709200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 22",
+    "a": "Later 22",
+    "s": 1656712800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 23",
+    "a": "Later 23",
+    "s": 1656716400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Newer 24",
+    "a": "Later 24",
+    "s": 1656720000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 0",
+    "a": "Few 0",
+    "s": 1688169600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 1",
+    "a": "Few 1",
+    "s": 1688173200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 2",
+    "a": "Few 2",
+    "s": 1688176800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 3",
+    "a": "Few 3",
+    "s": 1688180400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 4",
+    "a": "Few 4",
+    "s": 1688184000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 5",
+    "a": "Few 5",
+    "s": 1688187600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 6",
+    "a": "Few 6",
+    "s": 1688191200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 7",
+    "a": "Few 7",
+    "s": 1688194800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 8",
+    "a": "Few 8",
+    "s": 1688198400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 9",
+    "a": "Few 9",
+    "s": 1688202000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 10",
+    "a": "Few 10",
+    "s": 1688205600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 11",
+    "a": "Few 11",
+    "s": 1688209200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 12",
+    "a": "Few 12",
+    "s": 1688212800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 13",
+    "a": "Few 13",
+    "s": 1688216400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 14",
+    "a": "Few 14",
+    "s": 1688220000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 15",
+    "a": "Few 15",
+    "s": 1688223600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 16",
+    "a": "Few 16",
+    "s": 1688227200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 17",
+    "a": "Few 17",
+    "s": 1688230800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 18",
+    "a": "Few 18",
+    "s": 1688234400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Few 19",
+    "a": "Few 19",
+    "s": 1688238000000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1554076800000,
+   "last": 1743552000000,
+   "plays": 117,
+   "listenedMs": 23400000,
+   "artists": 72,
+   "songs": [
+    {
+     "key": "constant|forever",
+     "title": "Constant",
+     "artist": "Forever",
+     "starts": 14,
+     "plays": 14,
+     "full": 14,
+     "chosen": 0,
+     "skips": 0,
+     "years": 7,
+     "listenedMs": 2800000,
+     "first": 1554076800000,
+     "last": 1743552000000,
+     "peak": 2,
+     "peakAt": 1554076800000,
+     "weight": 2.98591933,
+     "depth": 5.145295382,
+     "avoid": false
+    },
+    {
+     "key": "fortnight and a bit|peak",
+     "title": "Fortnight And A Bit",
+     "artist": "Peak",
+     "starts": 12,
+     "plays": 12,
+     "full": 12,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2400000,
+     "first": 1713916800000,
+     "last": 1715126400001,
+     "peak": 11,
+     "peakAt": 1713916800000,
+     "weight": 1.089355752,
+     "depth": 2.564949357,
+     "avoid": false
+    },
+    {
+     "key": "fortnight|peak",
+     "title": "Fortnight",
+     "artist": "Peak",
+     "starts": 12,
+     "plays": 12,
+     "full": 12,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2400000,
+     "first": 1705276800000,
+     "last": 1706486400000,
+     "peak": 12,
+     "peakAt": 1705276800000,
+     "weight": 0.990742904,
+     "depth": 2.564949357,
+     "avoid": false
+    },
+    {
+     "key": "year end|edge",
+     "title": "Year End",
+     "artist": "Edge",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 400000,
+     "first": 1704067199999,
+     "last": 1704067200000,
+     "peak": 2,
+     "peakAt": 1704067199999,
+     "weight": 0.475210486,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "month end|edge",
+     "title": "Month End",
+     "artist": "Edge",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 400000,
+     "first": 1709251199999,
+     "last": 1709251200000,
+     "peak": 2,
+     "peakAt": 1709251199999,
+     "weight": 0.437434902,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "three years|forever",
+     "title": "Three Years",
+     "artist": "Forever",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1200000,
+     "first": 1554076800000,
+     "last": 1617321600000,
+     "peak": 2,
+     "peakAt": 1554076800000,
+     "weight": 0.367006624,
+     "depth": 2.529683194,
+     "avoid": false
+    },
+    {
+     "key": "few 19|few 19",
+     "title": "Few 19",
+     "artist": "Few 19",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688238000000,
+     "last": 1688238000000,
+     "peak": 1,
+     "peakAt": 1688238000000,
+     "weight": 0.219114592,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 18|few 18",
+     "title": "Few 18",
+     "artist": "Few 18",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688234400000,
+     "last": 1688234400000,
+     "peak": 1,
+     "peakAt": 1688234400000,
+     "weight": 0.219105929,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 17|few 17",
+     "title": "Few 17",
+     "artist": "Few 17",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688230800000,
+     "last": 1688230800000,
+     "peak": 1,
+     "peakAt": 1688230800000,
+     "weight": 0.219097267,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 16|few 16",
+     "title": "Few 16",
+     "artist": "Few 16",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688227200000,
+     "last": 1688227200000,
+     "peak": 1,
+     "peakAt": 1688227200000,
+     "weight": 0.219088605,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 15|few 15",
+     "title": "Few 15",
+     "artist": "Few 15",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688223600000,
+     "last": 1688223600000,
+     "peak": 1,
+     "peakAt": 1688223600000,
+     "weight": 0.219079943,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 14|few 14",
+     "title": "Few 14",
+     "artist": "Few 14",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688220000000,
+     "last": 1688220000000,
+     "peak": 1,
+     "peakAt": 1688220000000,
+     "weight": 0.219071282,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 13|few 13",
+     "title": "Few 13",
+     "artist": "Few 13",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688216400000,
+     "last": 1688216400000,
+     "peak": 1,
+     "peakAt": 1688216400000,
+     "weight": 0.219062621,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 12|few 12",
+     "title": "Few 12",
+     "artist": "Few 12",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688212800000,
+     "last": 1688212800000,
+     "peak": 1,
+     "peakAt": 1688212800000,
+     "weight": 0.21905396,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 11|few 11",
+     "title": "Few 11",
+     "artist": "Few 11",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688209200000,
+     "last": 1688209200000,
+     "peak": 1,
+     "peakAt": 1688209200000,
+     "weight": 0.219045299,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 10|few 10",
+     "title": "Few 10",
+     "artist": "Few 10",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688205600000,
+     "last": 1688205600000,
+     "peak": 1,
+     "peakAt": 1688205600000,
+     "weight": 0.219036639,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 9|few 9",
+     "title": "Few 9",
+     "artist": "Few 9",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688202000000,
+     "last": 1688202000000,
+     "peak": 1,
+     "peakAt": 1688202000000,
+     "weight": 0.21902798,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 8|few 8",
+     "title": "Few 8",
+     "artist": "Few 8",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688198400000,
+     "last": 1688198400000,
+     "peak": 1,
+     "peakAt": 1688198400000,
+     "weight": 0.21901932,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 7|few 7",
+     "title": "Few 7",
+     "artist": "Few 7",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688194800000,
+     "last": 1688194800000,
+     "peak": 1,
+     "peakAt": 1688194800000,
+     "weight": 0.219010661,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 6|few 6",
+     "title": "Few 6",
+     "artist": "Few 6",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688191200000,
+     "last": 1688191200000,
+     "peak": 1,
+     "peakAt": 1688191200000,
+     "weight": 0.219002003,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 5|few 5",
+     "title": "Few 5",
+     "artist": "Few 5",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688187600000,
+     "last": 1688187600000,
+     "peak": 1,
+     "peakAt": 1688187600000,
+     "weight": 0.218993344,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 4|few 4",
+     "title": "Few 4",
+     "artist": "Few 4",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688184000000,
+     "last": 1688184000000,
+     "peak": 1,
+     "peakAt": 1688184000000,
+     "weight": 0.218984686,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 3|few 3",
+     "title": "Few 3",
+     "artist": "Few 3",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688180400000,
+     "last": 1688180400000,
+     "peak": 1,
+     "peakAt": 1688180400000,
+     "weight": 0.218976029,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 2|few 2",
+     "title": "Few 2",
+     "artist": "Few 2",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688176800000,
+     "last": 1688176800000,
+     "peak": 1,
+     "peakAt": 1688176800000,
+     "weight": 0.218967371,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 1|few 1",
+     "title": "Few 1",
+     "artist": "Few 1",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688173200000,
+     "last": 1688173200000,
+     "peak": 1,
+     "peakAt": 1688173200000,
+     "weight": 0.218958715,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "few 0|few 0",
+     "title": "Few 0",
+     "artist": "Few 0",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1688169600000,
+     "last": 1688169600000,
+     "peak": 1,
+     "peakAt": 1688169600000,
+     "weight": 0.218950058,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 24|later 24",
+     "title": "Newer 24",
+     "artist": "Later 24",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656720000000,
+     "last": 1656720000000,
+     "peak": 1,
+     "peakAt": 1656720000000,
+     "weight": 0.15500481,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 23|later 23",
+     "title": "Newer 23",
+     "artist": "Later 23",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656716400000,
+     "last": 1656716400000,
+     "peak": 1,
+     "peakAt": 1656716400000,
+     "weight": 0.154998682,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 22|later 22",
+     "title": "Newer 22",
+     "artist": "Later 22",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656712800000,
+     "last": 1656712800000,
+     "peak": 1,
+     "peakAt": 1656712800000,
+     "weight": 0.154992554,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 21|later 21",
+     "title": "Newer 21",
+     "artist": "Later 21",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656709200000,
+     "last": 1656709200000,
+     "peak": 1,
+     "peakAt": 1656709200000,
+     "weight": 0.154986427,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 20|later 20",
+     "title": "Newer 20",
+     "artist": "Later 20",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656705600000,
+     "last": 1656705600000,
+     "peak": 1,
+     "peakAt": 1656705600000,
+     "weight": 0.154980299,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 19|later 19",
+     "title": "Newer 19",
+     "artist": "Later 19",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656702000000,
+     "last": 1656702000000,
+     "peak": 1,
+     "peakAt": 1656702000000,
+     "weight": 0.154974172,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 18|later 18",
+     "title": "Newer 18",
+     "artist": "Later 18",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656698400000,
+     "last": 1656698400000,
+     "peak": 1,
+     "peakAt": 1656698400000,
+     "weight": 0.154968045,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 17|later 17",
+     "title": "Newer 17",
+     "artist": "Later 17",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656694800000,
+     "last": 1656694800000,
+     "peak": 1,
+     "peakAt": 1656694800000,
+     "weight": 0.154961918,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 16|later 16",
+     "title": "Newer 16",
+     "artist": "Later 16",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656691200000,
+     "last": 1656691200000,
+     "peak": 1,
+     "peakAt": 1656691200000,
+     "weight": 0.154955792,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 15|later 15",
+     "title": "Newer 15",
+     "artist": "Later 15",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656687600000,
+     "last": 1656687600000,
+     "peak": 1,
+     "peakAt": 1656687600000,
+     "weight": 0.154949666,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 14|later 14",
+     "title": "Newer 14",
+     "artist": "Later 14",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656684000000,
+     "last": 1656684000000,
+     "peak": 1,
+     "peakAt": 1656684000000,
+     "weight": 0.15494354,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 13|later 13",
+     "title": "Newer 13",
+     "artist": "Later 13",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656680400000,
+     "last": 1656680400000,
+     "peak": 1,
+     "peakAt": 1656680400000,
+     "weight": 0.154937414,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 12|later 12",
+     "title": "Newer 12",
+     "artist": "Later 12",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656676800000,
+     "last": 1656676800000,
+     "peak": 1,
+     "peakAt": 1656676800000,
+     "weight": 0.154931288,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 11|later 11",
+     "title": "Newer 11",
+     "artist": "Later 11",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656673200000,
+     "last": 1656673200000,
+     "peak": 1,
+     "peakAt": 1656673200000,
+     "weight": 0.154925163,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 10|later 10",
+     "title": "Newer 10",
+     "artist": "Later 10",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656669600000,
+     "last": 1656669600000,
+     "peak": 1,
+     "peakAt": 1656669600000,
+     "weight": 0.154919038,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 9|later 9",
+     "title": "Newer 9",
+     "artist": "Later 9",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656666000000,
+     "last": 1656666000000,
+     "peak": 1,
+     "peakAt": 1656666000000,
+     "weight": 0.154912913,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 8|later 8",
+     "title": "Newer 8",
+     "artist": "Later 8",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656662400000,
+     "last": 1656662400000,
+     "peak": 1,
+     "peakAt": 1656662400000,
+     "weight": 0.154906789,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 7|later 7",
+     "title": "Newer 7",
+     "artist": "Later 7",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656658800000,
+     "last": 1656658800000,
+     "peak": 1,
+     "peakAt": 1656658800000,
+     "weight": 0.154900664,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 6|later 6",
+     "title": "Newer 6",
+     "artist": "Later 6",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656655200000,
+     "last": 1656655200000,
+     "peak": 1,
+     "peakAt": 1656655200000,
+     "weight": 0.15489454,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 5|later 5",
+     "title": "Newer 5",
+     "artist": "Later 5",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656651600000,
+     "last": 1656651600000,
+     "peak": 1,
+     "peakAt": 1656651600000,
+     "weight": 0.154888417,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 4|later 4",
+     "title": "Newer 4",
+     "artist": "Later 4",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656648000000,
+     "last": 1656648000000,
+     "peak": 1,
+     "peakAt": 1656648000000,
+     "weight": 0.154882293,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 3|later 3",
+     "title": "Newer 3",
+     "artist": "Later 3",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656644400000,
+     "last": 1656644400000,
+     "peak": 1,
+     "peakAt": 1656644400000,
+     "weight": 0.15487617,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 2|later 2",
+     "title": "Newer 2",
+     "artist": "Later 2",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656640800000,
+     "last": 1656640800000,
+     "peak": 1,
+     "peakAt": 1656640800000,
+     "weight": 0.154870047,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 1|later 1",
+     "title": "Newer 1",
+     "artist": "Later 1",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656637200000,
+     "last": 1656637200000,
+     "peak": 1,
+     "peakAt": 1656637200000,
+     "weight": 0.154863924,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "newer 0|later 0",
+     "title": "Newer 0",
+     "artist": "Later 0",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1656633600000,
+     "last": 1656633600000,
+     "peak": 1,
+     "peakAt": 1656633600000,
+     "weight": 0.154857801,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 23|artist 23",
+     "title": "New 23",
+     "artist": "Artist 23",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625180400000,
+     "last": 1625180400000,
+     "peak": 1,
+     "peakAt": 1625180400000,
+     "weight": 0.109626621,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 22|artist 22",
+     "title": "New 22",
+     "artist": "Artist 22",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625176800000,
+     "last": 1625176800000,
+     "peak": 1,
+     "peakAt": 1625176800000,
+     "weight": 0.109622287,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 21|artist 21",
+     "title": "New 21",
+     "artist": "Artist 21",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625173200000,
+     "last": 1625173200000,
+     "peak": 1,
+     "peakAt": 1625173200000,
+     "weight": 0.109617953,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 20|artist 20",
+     "title": "New 20",
+     "artist": "Artist 20",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625169600000,
+     "last": 1625169600000,
+     "peak": 1,
+     "peakAt": 1625169600000,
+     "weight": 0.10961362,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 19|artist 19",
+     "title": "New 19",
+     "artist": "Artist 19",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625166000000,
+     "last": 1625166000000,
+     "peak": 1,
+     "peakAt": 1625166000000,
+     "weight": 0.109609286,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 18|artist 18",
+     "title": "New 18",
+     "artist": "Artist 18",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625162400000,
+     "last": 1625162400000,
+     "peak": 1,
+     "peakAt": 1625162400000,
+     "weight": 0.109604953,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 17|artist 17",
+     "title": "New 17",
+     "artist": "Artist 17",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625158800000,
+     "last": 1625158800000,
+     "peak": 1,
+     "peakAt": 1625158800000,
+     "weight": 0.109600619,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 16|artist 16",
+     "title": "New 16",
+     "artist": "Artist 16",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625155200000,
+     "last": 1625155200000,
+     "peak": 1,
+     "peakAt": 1625155200000,
+     "weight": 0.109596286,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 15|artist 15",
+     "title": "New 15",
+     "artist": "Artist 15",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625151600000,
+     "last": 1625151600000,
+     "peak": 1,
+     "peakAt": 1625151600000,
+     "weight": 0.109591953,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 14|artist 14",
+     "title": "New 14",
+     "artist": "Artist 14",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625148000000,
+     "last": 1625148000000,
+     "peak": 1,
+     "peakAt": 1625148000000,
+     "weight": 0.10958762,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 13|artist 13",
+     "title": "New 13",
+     "artist": "Artist 13",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625144400000,
+     "last": 1625144400000,
+     "peak": 1,
+     "peakAt": 1625144400000,
+     "weight": 0.109583288,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 12|artist 12",
+     "title": "New 12",
+     "artist": "Artist 12",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625140800000,
+     "last": 1625140800000,
+     "peak": 1,
+     "peakAt": 1625140800000,
+     "weight": 0.109578955,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 11|artist 11",
+     "title": "New 11",
+     "artist": "Artist 11",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625137200000,
+     "last": 1625137200000,
+     "peak": 1,
+     "peakAt": 1625137200000,
+     "weight": 0.109574623,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 10|artist 10",
+     "title": "New 10",
+     "artist": "Artist 10",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625133600000,
+     "last": 1625133600000,
+     "peak": 1,
+     "peakAt": 1625133600000,
+     "weight": 0.109570291,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 9|artist 9",
+     "title": "New 9",
+     "artist": "Artist 9",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625130000000,
+     "last": 1625130000000,
+     "peak": 1,
+     "peakAt": 1625130000000,
+     "weight": 0.109565959,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 8|artist 8",
+     "title": "New 8",
+     "artist": "Artist 8",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625126400000,
+     "last": 1625126400000,
+     "peak": 1,
+     "peakAt": 1625126400000,
+     "weight": 0.109561628,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 7|artist 7",
+     "title": "New 7",
+     "artist": "Artist 7",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625122800000,
+     "last": 1625122800000,
+     "peak": 1,
+     "peakAt": 1625122800000,
+     "weight": 0.109557296,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 6|artist 6",
+     "title": "New 6",
+     "artist": "Artist 6",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625119200000,
+     "last": 1625119200000,
+     "peak": 1,
+     "peakAt": 1625119200000,
+     "weight": 0.109552965,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 5|artist 5",
+     "title": "New 5",
+     "artist": "Artist 5",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625115600000,
+     "last": 1625115600000,
+     "peak": 1,
+     "peakAt": 1625115600000,
+     "weight": 0.109548633,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 4|artist 4",
+     "title": "New 4",
+     "artist": "Artist 4",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625112000000,
+     "last": 1625112000000,
+     "peak": 1,
+     "peakAt": 1625112000000,
+     "weight": 0.109544302,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 3|artist 3",
+     "title": "New 3",
+     "artist": "Artist 3",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625108400000,
+     "last": 1625108400000,
+     "peak": 1,
+     "peakAt": 1625108400000,
+     "weight": 0.109539971,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 2|artist 2",
+     "title": "New 2",
+     "artist": "Artist 2",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625104800000,
+     "last": 1625104800000,
+     "peak": 1,
+     "peakAt": 1625104800000,
+     "weight": 0.109535641,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 1|artist 1",
+     "title": "New 1",
+     "artist": "Artist 1",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625101200000,
+     "last": 1625101200000,
+     "peak": 1,
+     "peakAt": 1625101200000,
+     "weight": 0.10953131,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "new 0|artist 0",
+     "title": "New 0",
+     "artist": "Artist 0",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 200000,
+     "first": 1625097600000,
+     "last": 1625097600000,
+     "peak": 1,
+     "peakAt": 1625097600000,
+     "weight": 0.10952698,
+     "depth": 0.693147181,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [
+    "constant|forever"
+   ],
+   "lost": [
+    "constant|forever",
+    "fortnight and a bit|peak",
+    "fortnight|peak"
+   ],
+   "obsessions": [
+    {
+     "key": "fortnight|peak",
+     "n": 12,
+     "at": 1705276800000
+    }
+   ],
+   "found": {
+    "year": 2022,
+    "artists": 25
+   },
+   "years": [
+    {
+     "year": 2019,
+     "plays": 4,
+     "listenedMs": 800000,
+     "newArtists": 1
+    },
+    {
+     "year": 2020,
+     "plays": 4,
+     "listenedMs": 800000,
+     "newArtists": 0
+    },
+    {
+     "year": 2021,
+     "plays": 28,
+     "listenedMs": 5600000,
+     "newArtists": 24
+    },
+    {
+     "year": 2022,
+     "plays": 27,
+     "listenedMs": 5400000,
+     "newArtists": 25
+    },
+    {
+     "year": 2023,
+     "plays": 23,
+     "listenedMs": 4600000,
+     "newArtists": 21
+    },
+    {
+     "year": 2024,
+     "plays": 29,
+     "listenedMs": 5800000,
+     "newArtists": 1
+    },
+    {
+     "year": 2025,
+     "plays": 2,
+     "listenedMs": 400000,
+     "newArtists": 0
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "peak",
+     "name": "Peak",
+     "plays": 24,
+     "listenedMs": 4800000
+    },
+    {
+     "key": "forever",
+     "name": "Forever",
+     "plays": 20,
+     "listenedMs": 4000000
+    },
+    {
+     "key": "edge",
+     "name": "Edge",
+     "plays": 4,
+     "listenedMs": 800000
+    },
+    {
+     "key": "artist 0",
+     "name": "Artist 0",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 1",
+     "name": "Artist 1",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 10",
+     "name": "Artist 10",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 11",
+     "name": "Artist 11",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 12",
+     "name": "Artist 12",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 13",
+     "name": "Artist 13",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 14",
+     "name": "Artist 14",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 15",
+     "name": "Artist 15",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 16",
+     "name": "Artist 16",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 17",
+     "name": "Artist 17",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 18",
+     "name": "Artist 18",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 19",
+     "name": "Artist 19",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 2",
+     "name": "Artist 2",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 20",
+     "name": "Artist 20",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 21",
+     "name": "Artist 21",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 22",
+     "name": "Artist 22",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 23",
+     "name": "Artist 23",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 3",
+     "name": "Artist 3",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 4",
+     "name": "Artist 4",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 5",
+     "name": "Artist 5",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 6",
+     "name": "Artist 6",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 7",
+     "name": "Artist 7",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 8",
+     "name": "Artist 8",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "artist 9",
+     "name": "Artist 9",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 0",
+     "name": "Few 0",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 1",
+     "name": "Few 1",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 10",
+     "name": "Few 10",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 11",
+     "name": "Few 11",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 12",
+     "name": "Few 12",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 13",
+     "name": "Few 13",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 14",
+     "name": "Few 14",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 15",
+     "name": "Few 15",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 16",
+     "name": "Few 16",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 17",
+     "name": "Few 17",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 18",
+     "name": "Few 18",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 19",
+     "name": "Few 19",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 2",
+     "name": "Few 2",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 3",
+     "name": "Few 3",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 4",
+     "name": "Few 4",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 5",
+     "name": "Few 5",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 6",
+     "name": "Few 6",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 7",
+     "name": "Few 7",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 8",
+     "name": "Few 8",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "few 9",
+     "name": "Few 9",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 0",
+     "name": "Later 0",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 1",
+     "name": "Later 1",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 10",
+     "name": "Later 10",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 11",
+     "name": "Later 11",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 12",
+     "name": "Later 12",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 13",
+     "name": "Later 13",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 14",
+     "name": "Later 14",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 15",
+     "name": "Later 15",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 16",
+     "name": "Later 16",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 17",
+     "name": "Later 17",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 18",
+     "name": "Later 18",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 19",
+     "name": "Later 19",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 2",
+     "name": "Later 2",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 20",
+     "name": "Later 20",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 21",
+     "name": "Later 21",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 22",
+     "name": "Later 22",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 23",
+     "name": "Later 23",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 24",
+     "name": "Later 24",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 3",
+     "name": "Later 3",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 4",
+     "name": "Later 4",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 5",
+     "name": "Later 5",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 6",
+     "name": "Later 6",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 7",
+     "name": "Later 7",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 8",
+     "name": "Later 8",
+     "plays": 1,
+     "listenedMs": 200000
+    },
+    {
+     "key": "later 9",
+     "name": "Later 9",
+     "plays": 1,
+     "listenedMs": 200000
+    }
+   ],
+   "seedArtists": [
+    "Forever",
+    "Peak",
+    "Edge",
+    "Few 19",
+    "Few 18",
+    "Few 17",
+    "Few 16",
+    "Few 15",
+    "Few 14",
+    "Few 13",
+    "Few 12",
+    "Few 11",
+    "Few 10",
+    "Few 9",
+    "Few 8",
+    "Few 7",
+    "Few 6",
+    "Few 5",
+    "Few 4",
+    "Few 3",
+    "Few 2",
+    "Few 1",
+    "Few 0",
+    "Later 24",
+    "Later 23",
+    "Later 22",
+    "Later 21",
+    "Later 20",
+    "Later 19",
+    "Later 18"
+   ],
+   "yearTops": [
+    {
+     "year": 2019,
+     "artists": [
+      "Forever"
+     ],
+     "songs": [
+      "constant|forever",
+      "three years|forever"
+     ]
+    },
+    {
+     "year": 2020,
+     "artists": [
+      "Forever"
+     ],
+     "songs": [
+      "constant|forever",
+      "three years|forever"
+     ]
+    },
+    {
+     "year": 2021,
+     "artists": [
+      "Forever",
+      "Artist 0",
+      "Artist 1"
+     ],
+     "songs": [
+      "constant|forever",
+      "three years|forever",
+      "new 0|artist 0",
+      "new 10|artist 10",
+      "new 11|artist 11",
+      "new 12|artist 12",
+      "new 13|artist 13",
+      "new 14|artist 14",
+      "new 15|artist 15",
+      "new 16|artist 16",
+      "new 17|artist 17",
+      "new 18|artist 18",
+      "new 19|artist 19",
+      "new 1|artist 1",
+      "new 20|artist 20",
+      "new 21|artist 21",
+      "new 22|artist 22",
+      "new 23|artist 23",
+      "new 2|artist 2",
+      "new 3|artist 3",
+      "new 4|artist 4",
+      "new 5|artist 5",
+      "new 6|artist 6",
+      "new 7|artist 7",
+      "new 8|artist 8",
+      "new 9|artist 9"
+     ]
+    },
+    {
+     "year": 2022,
+     "artists": [
+      "Forever",
+      "Later 0",
+      "Later 1"
+     ],
+     "songs": [
+      "constant|forever",
+      "newer 0|later 0",
+      "newer 10|later 10",
+      "newer 11|later 11",
+      "newer 12|later 12",
+      "newer 13|later 13",
+      "newer 14|later 14",
+      "newer 15|later 15",
+      "newer 16|later 16",
+      "newer 17|later 17",
+      "newer 18|later 18",
+      "newer 19|later 19",
+      "newer 1|later 1",
+      "newer 20|later 20",
+      "newer 21|later 21",
+      "newer 22|later 22",
+      "newer 23|later 23",
+      "newer 24|later 24",
+      "newer 2|later 2",
+      "newer 3|later 3",
+      "newer 4|later 4",
+      "newer 5|later 5",
+      "newer 6|later 6",
+      "newer 7|later 7",
+      "newer 8|later 8",
+      "newer 9|later 9"
+     ]
+    },
+    {
+     "year": 2023,
+     "artists": [
+      "Forever",
+      "Edge",
+      "Few 0"
+     ],
+     "songs": [
+      "constant|forever",
+      "few 0|few 0",
+      "few 10|few 10",
+      "few 11|few 11",
+      "few 12|few 12",
+      "few 13|few 13",
+      "few 14|few 14",
+      "few 15|few 15",
+      "few 16|few 16",
+      "few 17|few 17",
+      "few 18|few 18",
+      "few 19|few 19",
+      "few 1|few 1",
+      "few 2|few 2",
+      "few 3|few 3",
+      "few 4|few 4",
+      "few 5|few 5",
+      "few 6|few 6",
+      "few 7|few 7",
+      "few 8|few 8",
+      "few 9|few 9",
+      "year end|edge"
+     ]
+    },
+    {
+     "year": 2024,
+     "artists": [
+      "Peak",
+      "Edge",
+      "Forever"
+     ],
+     "songs": [
+      "fortnight and a bit|peak",
+      "fortnight|peak",
+      "constant|forever",
+      "month end|edge",
+      "year end|edge"
+     ]
+    },
+    {
+     "year": 2025,
+     "artists": [
+      "Forever"
+     ],
+     "songs": [
+      "constant|forever"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "eras: a run, a quiet month that breaks nothing, a gap of 3 joins and of 4 does not, the era is at most 4 months",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1609545600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 1",
+    "a": "Northern Lights",
+    "s": 1609567200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 2",
+    "a": "Northern Lights",
+    "s": 1609588800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 3",
+    "a": "Northern Lights",
+    "s": 1609610400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 4",
+    "a": "Northern Lights",
+    "s": 1609632000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 5",
+    "a": "Northern Lights",
+    "s": 1609653600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1611100800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1611104400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1611108000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1611111600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1611115200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1612224000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1614643200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 1",
+    "a": "Northern Lights",
+    "s": 1614664800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 2",
+    "a": "Northern Lights",
+    "s": 1614686400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 3",
+    "a": "Northern Lights",
+    "s": 1614708000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 4",
+    "a": "Northern Lights",
+    "s": 1614729600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 5",
+    "a": "Northern Lights",
+    "s": 1614751200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1616198400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1616202000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1616205600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1616209200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1616212800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1617321600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 1",
+    "a": "Northern Lights",
+    "s": 1617343200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 2",
+    "a": "Northern Lights",
+    "s": 1617364800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 3",
+    "a": "Northern Lights",
+    "s": 1617386400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 4",
+    "a": "Northern Lights",
+    "s": 1617408000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 5",
+    "a": "Northern Lights",
+    "s": 1617429600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1618876800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1618880400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1618884000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1618887600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1618891200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1619913600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 1",
+    "a": "Northern Lights",
+    "s": 1619935200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 2",
+    "a": "Northern Lights",
+    "s": 1619956800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 3",
+    "a": "Northern Lights",
+    "s": 1619978400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 4",
+    "a": "Northern Lights",
+    "s": 1620000000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 5",
+    "a": "Northern Lights",
+    "s": 1620021600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1621468800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1621472400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1621476000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1621479600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1621483200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 0",
+    "a": "Northern Lights",
+    "s": 1622592000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 1",
+    "a": "Northern Lights",
+    "s": 1622613600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 2",
+    "a": "Northern Lights",
+    "s": 1622635200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 3",
+    "a": "Northern Lights",
+    "s": 1622656800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 4",
+    "a": "Northern Lights",
+    "s": 1622678400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Northern Lights song 5",
+    "a": "Northern Lights",
+    "s": 1622700000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1624147200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1624150800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1624154400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1624158000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1624161600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 0",
+    "a": "Glass Harbor",
+    "s": 1641081600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 1",
+    "a": "Glass Harbor",
+    "s": 1641103200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 2",
+    "a": "Glass Harbor",
+    "s": 1641124800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 3",
+    "a": "Glass Harbor",
+    "s": 1641146400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 4",
+    "a": "Glass Harbor",
+    "s": 1641168000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 5",
+    "a": "Glass Harbor",
+    "s": 1641189600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1642636800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1642640400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1642644000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1642647600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1642651200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 0",
+    "a": "Glass Harbor",
+    "s": 1648857600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 1",
+    "a": "Glass Harbor",
+    "s": 1648879200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 2",
+    "a": "Glass Harbor",
+    "s": 1648900800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 3",
+    "a": "Glass Harbor",
+    "s": 1648922400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 4",
+    "a": "Glass Harbor",
+    "s": 1648944000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Glass Harbor song 5",
+    "a": "Glass Harbor",
+    "s": 1648965600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1650412800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1650416400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1650420000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1650423600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1650427200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 0",
+    "a": "Velvet Static",
+    "s": 1672617600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 1",
+    "a": "Velvet Static",
+    "s": 1672639200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 2",
+    "a": "Velvet Static",
+    "s": 1672660800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 3",
+    "a": "Velvet Static",
+    "s": 1672682400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 4",
+    "a": "Velvet Static",
+    "s": 1672704000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 5",
+    "a": "Velvet Static",
+    "s": 1672725600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1674172800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1674176400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1674180000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1674183600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1674187200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 0",
+    "a": "Velvet Static",
+    "s": 1682985600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 1",
+    "a": "Velvet Static",
+    "s": 1683007200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 2",
+    "a": "Velvet Static",
+    "s": 1683028800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 3",
+    "a": "Velvet Static",
+    "s": 1683050400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 4",
+    "a": "Velvet Static",
+    "s": 1683072000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Velvet Static song 5",
+    "a": "Velvet Static",
+    "s": 1683093600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1684540800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1684544400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1684548000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1684551600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1684555200000,
+    "ms": 120000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1609545600000,
+   "last": 1684555200000,
+   "plays": 100,
+   "listenedMs": 203400000,
+   "artists": 8,
+   "songs": [
+    {
+     "key": "filler e tune|filler e",
+     "title": "Filler E tune",
+     "artist": "Filler E",
+     "starts": 9,
+     "plays": 9,
+     "full": 9,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1080000,
+     "first": 1611115200000,
+     "last": 1684555200000,
+     "peak": 1,
+     "peakAt": 1611115200000,
+     "weight": 0.908740003,
+     "depth": 2.993360621,
+     "avoid": false
+    },
+    {
+     "key": "filler d tune|filler d",
+     "title": "Filler D tune",
+     "artist": "Filler D",
+     "starts": 9,
+     "plays": 9,
+     "full": 9,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1080000,
+     "first": 1611111600000,
+     "last": 1684551600000,
+     "peak": 1,
+     "peakAt": 1611111600000,
+     "weight": 0.908704076,
+     "depth": 2.993360621,
+     "avoid": false
+    },
+    {
+     "key": "filler c tune|filler c",
+     "title": "Filler C tune",
+     "artist": "Filler C",
+     "starts": 9,
+     "plays": 9,
+     "full": 9,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1080000,
+     "first": 1611108000000,
+     "last": 1684548000000,
+     "peak": 1,
+     "peakAt": 1611108000000,
+     "weight": 0.90866815,
+     "depth": 2.993360621,
+     "avoid": false
+    },
+    {
+     "key": "filler b tune|filler b",
+     "title": "Filler B tune",
+     "artist": "Filler B",
+     "starts": 9,
+     "plays": 9,
+     "full": 9,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1080000,
+     "first": 1611104400000,
+     "last": 1684544400000,
+     "peak": 1,
+     "peakAt": 1611104400000,
+     "weight": 0.908632225,
+     "depth": 2.993360621,
+     "avoid": false
+    },
+    {
+     "key": "filler a tune|filler a",
+     "title": "Filler A tune",
+     "artist": "Filler A",
+     "starts": 9,
+     "plays": 9,
+     "full": 9,
+     "chosen": 0,
+     "skips": 0,
+     "years": 3,
+     "listenedMs": 1080000,
+     "first": 1611100800000,
+     "last": 1684540800000,
+     "peak": 1,
+     "peakAt": 1611100800000,
+     "weight": 0.908596302,
+     "depth": 2.993360621,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 5|velvet static",
+     "title": "Velvet Static song 5",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672725600000,
+     "last": 1683093600000,
+     "peak": 1,
+     "peakAt": 1672725600000,
+     "weight": 0.328211587,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 4|velvet static",
+     "title": "Velvet Static song 4",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672704000000,
+     "last": 1683072000000,
+     "peak": 1,
+     "peakAt": 1672704000000,
+     "weight": 0.328133739,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 3|velvet static",
+     "title": "Velvet Static song 3",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672682400000,
+     "last": 1683050400000,
+     "peak": 1,
+     "peakAt": 1672682400000,
+     "weight": 0.328055909,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 2|velvet static",
+     "title": "Velvet Static song 2",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672660800000,
+     "last": 1683028800000,
+     "peak": 1,
+     "peakAt": 1672660800000,
+     "weight": 0.327978098,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 1|velvet static",
+     "title": "Velvet Static song 1",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672639200000,
+     "last": 1683007200000,
+     "peak": 1,
+     "peakAt": 1672639200000,
+     "weight": 0.327900306,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "velvet static song 0|velvet static",
+     "title": "Velvet Static song 0",
+     "artist": "Velvet Static",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672617600000,
+     "last": 1682985600000,
+     "peak": 1,
+     "peakAt": 1672617600000,
+     "weight": 0.327822531,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 0|northern lights",
+     "title": "Northern Lights song 0",
+     "artist": "Northern Lights",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 21600000,
+     "first": 1609545600000,
+     "last": 1622592000000,
+     "peak": 1,
+     "peakAt": 1609545600000,
+     "weight": 0.299135457,
+     "depth": 1.945910149,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 5|northern lights",
+     "title": "Northern Lights song 5",
+     "artist": "Northern Lights",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 18000000,
+     "first": 1609653600000,
+     "last": 1622700000000,
+     "peak": 1,
+     "peakAt": 1609653600000,
+     "weight": 0.275765498,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 4|northern lights",
+     "title": "Northern Lights song 4",
+     "artist": "Northern Lights",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 18000000,
+     "first": 1609632000000,
+     "last": 1622678400000,
+     "peak": 1,
+     "peakAt": 1609632000000,
+     "weight": 0.275700089,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 3|northern lights",
+     "title": "Northern Lights song 3",
+     "artist": "Northern Lights",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 18000000,
+     "first": 1609610400000,
+     "last": 1622656800000,
+     "peak": 1,
+     "peakAt": 1609610400000,
+     "weight": 0.275634696,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 2|northern lights",
+     "title": "Northern Lights song 2",
+     "artist": "Northern Lights",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 18000000,
+     "first": 1609588800000,
+     "last": 1622635200000,
+     "peak": 1,
+     "peakAt": 1609588800000,
+     "weight": 0.275569319,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "northern lights song 1|northern lights",
+     "title": "Northern Lights song 1",
+     "artist": "Northern Lights",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 18000000,
+     "first": 1609567200000,
+     "last": 1622613600000,
+     "peak": 1,
+     "peakAt": 1609567200000,
+     "weight": 0.275503957,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 5|glass harbor",
+     "title": "Glass Harbor song 5",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641189600000,
+     "last": 1648965600000,
+     "peak": 1,
+     "peakAt": 1641189600000,
+     "weight": 0.225620888,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 4|glass harbor",
+     "title": "Glass Harbor song 4",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641168000000,
+     "last": 1648944000000,
+     "peak": 1,
+     "peakAt": 1641168000000,
+     "weight": 0.225567374,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 3|glass harbor",
+     "title": "Glass Harbor song 3",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641146400000,
+     "last": 1648922400000,
+     "peak": 1,
+     "peakAt": 1641146400000,
+     "weight": 0.225513872,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 2|glass harbor",
+     "title": "Glass Harbor song 2",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641124800000,
+     "last": 1648900800000,
+     "peak": 1,
+     "peakAt": 1641124800000,
+     "weight": 0.225460382,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 1|glass harbor",
+     "title": "Glass Harbor song 1",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641103200000,
+     "last": 1648879200000,
+     "peak": 1,
+     "peakAt": 1641103200000,
+     "weight": 0.225406906,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "glass harbor song 0|glass harbor",
+     "title": "Glass Harbor song 0",
+     "artist": "Glass Harbor",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1641081600000,
+     "last": 1648857600000,
+     "peak": 1,
+     "peakAt": 1641081600000,
+     "weight": 0.225353442,
+     "depth": 1.098612289,
+     "avoid": false
+    }
+   ],
+   "eras": [
+    {
+     "start": 1609459200000,
+     "end": 1625097599999,
+     "artist": "Northern Lights",
+     "artists": [
+      "Northern Lights",
+      "Filler A",
+      "Filler B"
+     ],
+     "share": 0.972972972972973,
+     "listenedMs": 111000000,
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "northern lights song 0|northern lights",
+      "northern lights song 1|northern lights",
+      "northern lights song 2|northern lights",
+      "northern lights song 3|northern lights",
+      "northern lights song 4|northern lights",
+      "northern lights song 5|northern lights"
+     ]
+    },
+    {
+     "start": 1640995200000,
+     "end": 1651363199999,
+     "artist": "Glass Harbor",
+     "artists": [
+      "Glass Harbor",
+      "Filler A",
+      "Filler B"
+     ],
+     "share": 0.972972972972973,
+     "listenedMs": 44400000,
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "glass harbor song 0|glass harbor",
+      "glass harbor song 1|glass harbor",
+      "glass harbor song 2|glass harbor",
+      "glass harbor song 3|glass harbor",
+      "glass harbor song 4|glass harbor",
+      "glass harbor song 5|glass harbor"
+     ]
+    }
+   ],
+   "constants": [
+    "filler a tune|filler a",
+    "filler b tune|filler b",
+    "filler c tune|filler c",
+    "filler d tune|filler d",
+    "filler e tune|filler e"
+   ],
+   "lost": [
+    "filler a tune|filler a",
+    "filler b tune|filler b",
+    "filler c tune|filler c",
+    "filler d tune|filler d",
+    "filler e tune|filler e"
+   ],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2021,
+     "plays": 56,
+     "listenedMs": 114600000,
+     "newArtists": 6
+    },
+    {
+     "year": 2022,
+     "plays": 22,
+     "listenedMs": 44400000,
+     "newArtists": 1
+    },
+    {
+     "year": 2023,
+     "plays": 22,
+     "listenedMs": 44400000,
+     "newArtists": 1
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "northern lights",
+     "name": "Northern Lights",
+     "plays": 31,
+     "listenedMs": 111600000
+    },
+    {
+     "key": "glass harbor",
+     "name": "Glass Harbor",
+     "plays": 12,
+     "listenedMs": 43200000
+    },
+    {
+     "key": "velvet static",
+     "name": "Velvet Static",
+     "plays": 12,
+     "listenedMs": 43200000
+    },
+    {
+     "key": "filler a",
+     "name": "Filler A",
+     "plays": 9,
+     "listenedMs": 1080000
+    },
+    {
+     "key": "filler b",
+     "name": "Filler B",
+     "plays": 9,
+     "listenedMs": 1080000
+    },
+    {
+     "key": "filler c",
+     "name": "Filler C",
+     "plays": 9,
+     "listenedMs": 1080000
+    },
+    {
+     "key": "filler d",
+     "name": "Filler D",
+     "plays": 9,
+     "listenedMs": 1080000
+    },
+    {
+     "key": "filler e",
+     "name": "Filler E",
+     "plays": 9,
+     "listenedMs": 1080000
+    }
+   ],
+   "seedArtists": [
+    "Velvet Static",
+    "Northern Lights",
+    "Glass Harbor",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A"
+   ],
+   "yearTops": [
+    {
+     "year": 2021,
+     "artists": [
+      "Northern Lights",
+      "Filler A",
+      "Filler B"
+     ],
+     "songs": [
+      "northern lights song 0|northern lights",
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "northern lights song 1|northern lights",
+      "northern lights song 2|northern lights",
+      "northern lights song 3|northern lights",
+      "northern lights song 4|northern lights",
+      "northern lights song 5|northern lights"
+     ]
+    },
+    {
+     "year": 2022,
+     "artists": [
+      "Glass Harbor",
+      "Filler A",
+      "Filler B"
+     ],
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "glass harbor song 0|glass harbor",
+      "glass harbor song 1|glass harbor",
+      "glass harbor song 2|glass harbor",
+      "glass harbor song 3|glass harbor",
+      "glass harbor song 4|glass harbor",
+      "glass harbor song 5|glass harbor"
+     ]
+    },
+    {
+     "year": 2023,
+     "artists": [
+      "Velvet Static",
+      "Filler A",
+      "Filler B"
+     ],
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "velvet static song 0|velvet static",
+      "velvet static song 1|velvet static",
+      "velvet static song 2|velvet static",
+      "velvet static song 3|velvet static",
+      "velvet static song 4|velvet static",
+      "velvet static song 5|velvet static"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "eras: a lead tie goes to the key first in string order; two eras in a row with one lead are one; an even spread is no era",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1609545600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1609632000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1609718400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1609804800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1609891200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1610409600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1610496000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1610582400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1610668800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1610755200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1611532800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1611536400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1611540000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1611543600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1611547200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler F tune",
+    "a": "Filler F",
+    "s": 1611550800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1612224000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1612310400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1612396800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1612483200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Beta song",
+    "a": "Beta",
+    "s": 1612569600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1613088000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1613174400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1613260800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1613347200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Alpha song",
+    "a": "Alpha",
+    "s": 1613433600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1614211200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1614214800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1614218400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1614222000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1614225600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler F tune",
+    "a": "Filler F",
+    "s": 1614229200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 0",
+    "a": "Paper Moons",
+    "s": 1641081600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 1",
+    "a": "Paper Moons",
+    "s": 1641103200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 2",
+    "a": "Paper Moons",
+    "s": 1641124800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 3",
+    "a": "Paper Moons",
+    "s": 1641146400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 4",
+    "a": "Paper Moons",
+    "s": 1641168000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 5",
+    "a": "Paper Moons",
+    "s": 1641189600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1642636800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1642640400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1642644000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1642647600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1642651200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 0",
+    "a": "Paper Moons",
+    "s": 1643760000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 1",
+    "a": "Paper Moons",
+    "s": 1643781600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 2",
+    "a": "Paper Moons",
+    "s": 1643803200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 3",
+    "a": "Paper Moons",
+    "s": 1643824800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 4",
+    "a": "Paper Moons",
+    "s": 1643846400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 5",
+    "a": "Paper Moons",
+    "s": 1643868000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1645315200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1645318800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1645322400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1645326000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1645329600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Coral Choir song 0",
+    "a": "Coral Choir",
+    "s": 1646179200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Coral Choir song 1",
+    "a": "Coral Choir",
+    "s": 1646200800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Coral Choir song 2",
+    "a": "Coral Choir",
+    "s": 1646222400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 0",
+    "a": "Paper Moons",
+    "s": 1648857600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 1",
+    "a": "Paper Moons",
+    "s": 1648879200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 2",
+    "a": "Paper Moons",
+    "s": 1648900800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 3",
+    "a": "Paper Moons",
+    "s": 1648922400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 4",
+    "a": "Paper Moons",
+    "s": 1648944000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 5",
+    "a": "Paper Moons",
+    "s": 1648965600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1650412800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1650416400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1650420000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1650423600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1650427200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 0",
+    "a": "Paper Moons",
+    "s": 1651449600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 1",
+    "a": "Paper Moons",
+    "s": 1651471200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 2",
+    "a": "Paper Moons",
+    "s": 1651492800000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 3",
+    "a": "Paper Moons",
+    "s": 1651514400000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 4",
+    "a": "Paper Moons",
+    "s": 1651536000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Paper Moons song 5",
+    "a": "Paper Moons",
+    "s": 1651557600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "Filler A tune",
+    "a": "Filler A",
+    "s": 1653004800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler B tune",
+    "a": "Filler B",
+    "s": 1653008400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler C tune",
+    "a": "Filler C",
+    "s": 1653012000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler D tune",
+    "a": "Filler D",
+    "s": 1653015600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Filler E tune",
+    "a": "Filler E",
+    "s": 1653019200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "A1 song 0",
+    "a": "A1",
+    "s": 1672617600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A1 song 1",
+    "a": "A1",
+    "s": 1672639200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A2 song 0",
+    "a": "A2",
+    "s": 1672617600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A2 song 1",
+    "a": "A2",
+    "s": 1672639200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A3 song 0",
+    "a": "A3",
+    "s": 1672617600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A3 song 1",
+    "a": "A3",
+    "s": 1672639200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A4 song 0",
+    "a": "A4",
+    "s": 1672617600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A4 song 1",
+    "a": "A4",
+    "s": 1672639200000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A1 song 0",
+    "a": "A1",
+    "s": 1675296000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A1 song 1",
+    "a": "A1",
+    "s": 1675317600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A2 song 0",
+    "a": "A2",
+    "s": 1675296000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A2 song 1",
+    "a": "A2",
+    "s": 1675317600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A3 song 0",
+    "a": "A3",
+    "s": 1675296000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A3 song 1",
+    "a": "A3",
+    "s": 1675317600000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A4 song 0",
+    "a": "A4",
+    "s": 1675296000000,
+    "ms": 3600000,
+    "f": 34
+   },
+   {
+    "t": "A4 song 1",
+    "a": "A4",
+    "s": 1675317600000,
+    "ms": 3600000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1609545600000,
+   "last": 1675317600000,
+   "plays": 95,
+   "listenedMs": 230640000,
+   "artists": 14,
+   "songs": [
+    {
+     "key": "filler e tune|filler e",
+     "title": "Filler E tune",
+     "artist": "Filler E",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 720000,
+     "first": 1611547200000,
+     "last": 1653019200000,
+     "peak": 1,
+     "peakAt": 1611547200000,
+     "weight": 0.48049542,
+     "depth": 2.237796671,
+     "avoid": false
+    },
+    {
+     "key": "filler d tune|filler d",
+     "title": "Filler D tune",
+     "artist": "Filler D",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 720000,
+     "first": 1611543600000,
+     "last": 1653015600000,
+     "peak": 1,
+     "peakAt": 1611543600000,
+     "weight": 0.480476424,
+     "depth": 2.237796671,
+     "avoid": false
+    },
+    {
+     "key": "filler c tune|filler c",
+     "title": "Filler C tune",
+     "artist": "Filler C",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 720000,
+     "first": 1611540000000,
+     "last": 1653012000000,
+     "peak": 1,
+     "peakAt": 1611540000000,
+     "weight": 0.480457428,
+     "depth": 2.237796671,
+     "avoid": false
+    },
+    {
+     "key": "filler b tune|filler b",
+     "title": "Filler B tune",
+     "artist": "Filler B",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 720000,
+     "first": 1611536400000,
+     "last": 1653008400000,
+     "peak": 1,
+     "peakAt": 1611536400000,
+     "weight": 0.480438433,
+     "depth": 2.237796671,
+     "avoid": false
+    },
+    {
+     "key": "filler a tune|filler a",
+     "title": "Filler A tune",
+     "artist": "Filler A",
+     "starts": 6,
+     "plays": 6,
+     "full": 6,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 720000,
+     "first": 1611532800000,
+     "last": 1653004800000,
+     "peak": 1,
+     "peakAt": 1611532800000,
+     "weight": 0.480419439,
+     "depth": 2.237796671,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 5|paper moons",
+     "title": "Paper Moons song 5",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641189600000,
+     "last": 1651557600000,
+     "peak": 1,
+     "peakAt": 1641189600000,
+     "weight": 0.340072652,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 4|paper moons",
+     "title": "Paper Moons song 4",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641168000000,
+     "last": 1651536000000,
+     "peak": 1,
+     "peakAt": 1641168000000,
+     "weight": 0.339991991,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 3|paper moons",
+     "title": "Paper Moons song 3",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641146400000,
+     "last": 1651514400000,
+     "peak": 1,
+     "peakAt": 1641146400000,
+     "weight": 0.339911348,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 2|paper moons",
+     "title": "Paper Moons song 2",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641124800000,
+     "last": 1651492800000,
+     "peak": 1,
+     "peakAt": 1641124800000,
+     "weight": 0.339830725,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 1|paper moons",
+     "title": "Paper Moons song 1",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641103200000,
+     "last": 1651471200000,
+     "peak": 1,
+     "peakAt": 1641103200000,
+     "weight": 0.339750121,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "paper moons song 0|paper moons",
+     "title": "Paper Moons song 0",
+     "artist": "Paper Moons",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 14400000,
+     "first": 1641081600000,
+     "last": 1651449600000,
+     "peak": 1,
+     "peakAt": 1641081600000,
+     "weight": 0.339669537,
+     "depth": 1.609437912,
+     "avoid": false
+    },
+    {
+     "key": "alpha song|alpha",
+     "title": "Alpha song",
+     "artist": "Alpha",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 36000000,
+     "first": 1610409600000,
+     "last": 1613433600000,
+     "peak": 5,
+     "peakAt": 1610409600000,
+     "weight": 0.33334507,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "beta song|beta",
+     "title": "Beta song",
+     "artist": "Beta",
+     "starts": 10,
+     "plays": 10,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 36000000,
+     "first": 1609545600000,
+     "last": 1612569600000,
+     "peak": 5,
+     "peakAt": 1609545600000,
+     "weight": 0.330197028,
+     "depth": 2.397895273,
+     "avoid": false
+    },
+    {
+     "key": "a1 song 1|a1",
+     "title": "A1 song 1",
+     "artist": "A1",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672639200000,
+     "last": 1675317600000,
+     "peak": 1,
+     "peakAt": 1672639200000,
+     "weight": 0.301346412,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a2 song 1|a2",
+     "title": "A2 song 1",
+     "artist": "A2",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672639200000,
+     "last": 1675317600000,
+     "peak": 1,
+     "peakAt": 1672639200000,
+     "weight": 0.301346412,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a3 song 1|a3",
+     "title": "A3 song 1",
+     "artist": "A3",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672639200000,
+     "last": 1675317600000,
+     "peak": 1,
+     "peakAt": 1672639200000,
+     "weight": 0.301346412,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a4 song 1|a4",
+     "title": "A4 song 1",
+     "artist": "A4",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672639200000,
+     "last": 1675317600000,
+     "peak": 1,
+     "peakAt": 1672639200000,
+     "weight": 0.301346412,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a1 song 0|a1",
+     "title": "A1 song 0",
+     "artist": "A1",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672617600000,
+     "last": 1675296000000,
+     "peak": 1,
+     "peakAt": 1672617600000,
+     "weight": 0.301274936,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a2 song 0|a2",
+     "title": "A2 song 0",
+     "artist": "A2",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672617600000,
+     "last": 1675296000000,
+     "peak": 1,
+     "peakAt": 1672617600000,
+     "weight": 0.301274936,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a3 song 0|a3",
+     "title": "A3 song 0",
+     "artist": "A3",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672617600000,
+     "last": 1675296000000,
+     "peak": 1,
+     "peakAt": 1672617600000,
+     "weight": 0.301274936,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "a4 song 0|a4",
+     "title": "A4 song 0",
+     "artist": "A4",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 7200000,
+     "first": 1672617600000,
+     "last": 1675296000000,
+     "peak": 1,
+     "peakAt": 1672617600000,
+     "weight": 0.301274936,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "filler f tune|filler f",
+     "title": "Filler F tune",
+     "artist": "Filler F",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 240000,
+     "first": 1611550800000,
+     "last": 1614229200000,
+     "peak": 1,
+     "peakAt": 1611550800000,
+     "weight": 0.15406462,
+     "depth": 1.098612289,
+     "avoid": false
+    },
+    {
+     "key": "coral choir song 2|coral choir",
+     "title": "Coral Choir song 2",
+     "artist": "Coral Choir",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 3600000,
+     "first": 1646222400000,
+     "last": 1646222400000,
+     "peak": 1,
+     "peakAt": 1646222400000,
+     "weight": 0.138126349,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "coral choir song 1|coral choir",
+     "title": "Coral Choir song 1",
+     "artist": "Coral Choir",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 3600000,
+     "first": 1646200800000,
+     "last": 1646200800000,
+     "peak": 1,
+     "peakAt": 1646200800000,
+     "weight": 0.138093587,
+     "depth": 0.693147181,
+     "avoid": false
+    },
+    {
+     "key": "coral choir song 0|coral choir",
+     "title": "Coral Choir song 0",
+     "artist": "Coral Choir",
+     "starts": 1,
+     "plays": 1,
+     "full": 1,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 3600000,
+     "first": 1646179200000,
+     "last": 1646179200000,
+     "peak": 1,
+     "peakAt": 1646179200000,
+     "weight": 0.138060833,
+     "depth": 0.693147181,
+     "avoid": false
+    }
+   ],
+   "eras": [
+    {
+     "start": 1609459200000,
+     "end": 1614556799999,
+     "artist": "Alpha",
+     "artists": [
+      "Alpha",
+      "Beta",
+      "Filler A"
+     ],
+     "share": 0.49019607843137253,
+     "listenedMs": 73440000,
+     "songs": [
+      "alpha song|alpha",
+      "beta song|beta",
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "filler f tune|filler f"
+     ]
+    },
+    {
+     "start": 1640995200000,
+     "end": 1654041599999,
+     "artist": "Paper Moons",
+     "artists": [
+      "Paper Moons",
+      "Filler A",
+      "Filler B"
+     ],
+     "share": 0.972972972972973,
+     "listenedMs": 88800000,
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "paper moons song 0|paper moons",
+      "paper moons song 1|paper moons",
+      "paper moons song 2|paper moons",
+      "paper moons song 3|paper moons",
+      "paper moons song 4|paper moons",
+      "paper moons song 5|paper moons"
+     ]
+    }
+   ],
+   "constants": [],
+   "lost": [
+    "alpha song|alpha",
+    "beta song|beta"
+   ],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2021,
+     "plays": 32,
+     "listenedMs": 73440000,
+     "newArtists": 8
+    },
+    {
+     "year": 2022,
+     "plays": 47,
+     "listenedMs": 99600000,
+     "newArtists": 2
+    },
+    {
+     "year": 2023,
+     "plays": 16,
+     "listenedMs": 57600000,
+     "newArtists": 4
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "paper moons",
+     "name": "Paper Moons",
+     "plays": 24,
+     "listenedMs": 86400000
+    },
+    {
+     "key": "alpha",
+     "name": "Alpha",
+     "plays": 10,
+     "listenedMs": 36000000
+    },
+    {
+     "key": "beta",
+     "name": "Beta",
+     "plays": 10,
+     "listenedMs": 36000000
+    },
+    {
+     "key": "a1",
+     "name": "A1",
+     "plays": 4,
+     "listenedMs": 14400000
+    },
+    {
+     "key": "a2",
+     "name": "A2",
+     "plays": 4,
+     "listenedMs": 14400000
+    },
+    {
+     "key": "a3",
+     "name": "A3",
+     "plays": 4,
+     "listenedMs": 14400000
+    },
+    {
+     "key": "a4",
+     "name": "A4",
+     "plays": 4,
+     "listenedMs": 14400000
+    },
+    {
+     "key": "coral choir",
+     "name": "Coral Choir",
+     "plays": 3,
+     "listenedMs": 10800000
+    },
+    {
+     "key": "filler a",
+     "name": "Filler A",
+     "plays": 6,
+     "listenedMs": 720000
+    },
+    {
+     "key": "filler b",
+     "name": "Filler B",
+     "plays": 6,
+     "listenedMs": 720000
+    },
+    {
+     "key": "filler c",
+     "name": "Filler C",
+     "plays": 6,
+     "listenedMs": 720000
+    },
+    {
+     "key": "filler d",
+     "name": "Filler D",
+     "plays": 6,
+     "listenedMs": 720000
+    },
+    {
+     "key": "filler e",
+     "name": "Filler E",
+     "plays": 6,
+     "listenedMs": 720000
+    },
+    {
+     "key": "filler f",
+     "name": "Filler F",
+     "plays": 2,
+     "listenedMs": 240000
+    }
+   ],
+   "seedArtists": [
+    "Paper Moons",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "Filler E",
+    "Filler D",
+    "Filler C",
+    "Filler B",
+    "Filler A",
+    "Coral Choir",
+    "Alpha",
+    "Beta",
+    "Filler F"
+   ],
+   "yearTops": [
+    {
+     "year": 2021,
+     "artists": [
+      "Alpha",
+      "Beta",
+      "Filler A"
+     ],
+     "songs": [
+      "alpha song|alpha",
+      "beta song|beta",
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "filler f tune|filler f"
+     ]
+    },
+    {
+     "year": 2022,
+     "artists": [
+      "Paper Moons",
+      "Coral Choir",
+      "Filler A"
+     ],
+     "songs": [
+      "filler a tune|filler a",
+      "filler b tune|filler b",
+      "filler c tune|filler c",
+      "filler d tune|filler d",
+      "filler e tune|filler e",
+      "paper moons song 0|paper moons",
+      "paper moons song 1|paper moons",
+      "paper moons song 2|paper moons",
+      "paper moons song 3|paper moons",
+      "paper moons song 4|paper moons",
+      "paper moons song 5|paper moons",
+      "coral choir song 0|coral choir",
+      "coral choir song 1|coral choir",
+      "coral choir song 2|coral choir"
+     ]
+    },
+    {
+     "year": 2023,
+     "artists": [
+      "A1",
+      "A2",
+      "A3"
+     ],
+     "songs": [
+      "a1 song 0|a1",
+      "a1 song 1|a1",
+      "a2 song 0|a2",
+      "a2 song 1|a2",
+      "a3 song 0|a3",
+      "a3 song 1|a3",
+      "a4 song 0|a4",
+      "a4 song 1|a4"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "eras: a cosine of exactly 0.4 after round9 joins (other 16497238429 ms), and one just under (16497238430 ms) does not",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Lead song",
+    "a": "Lead",
+    "s": 1609804800000,
+    "ms": 144000000,
+    "f": 34
+   },
+   {
+    "t": "F A tune",
+    "a": "F A",
+    "s": 1611100800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F B tune",
+    "a": "F B",
+    "s": 1611104400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F C tune",
+    "a": "F C",
+    "s": 1611108000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F D tune",
+    "a": "F D",
+    "s": 1611111600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F E tune",
+    "a": "F E",
+    "s": 1611115200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Lead song",
+    "a": "Lead",
+    "s": 1612483200000,
+    "ms": 7200000000,
+    "f": 34
+   },
+   {
+    "t": "Other song",
+    "a": "Other",
+    "s": 1612569600000,
+    "ms": 16497238429,
+    "f": 34
+   },
+   {
+    "t": "Lead song",
+    "a": "Lead",
+    "s": 1672876800000,
+    "ms": 144000000,
+    "f": 34
+   },
+   {
+    "t": "F A tune",
+    "a": "F A",
+    "s": 1674172800000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F B tune",
+    "a": "F B",
+    "s": 1674176400000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F C tune",
+    "a": "F C",
+    "s": 1674180000000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F D tune",
+    "a": "F D",
+    "s": 1674183600000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "F E tune",
+    "a": "F E",
+    "s": 1674187200000,
+    "ms": 120000,
+    "f": 34
+   },
+   {
+    "t": "Lead song",
+    "a": "Lead",
+    "s": 1675555200000,
+    "ms": 7200000000,
+    "f": 34
+   },
+   {
+    "t": "Other song",
+    "a": "Other",
+    "s": 1675641600000,
+    "ms": 16497238430,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1609804800000,
+   "last": 1675641600000,
+   "plays": 16,
+   "listenedMs": 47683676859,
+   "artists": 7,
+   "songs": [
+    {
+     "key": "lead song|lead",
+     "title": "Lead song",
+     "artist": "Lead",
+     "starts": 4,
+     "plays": 4,
+     "full": 4,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 14688000000,
+     "first": 1609804800000,
+     "last": 1675555200000,
+     "peak": 1,
+     "peakAt": 1609804800000,
+     "weight": 0.509010664,
+     "depth": 1.850853599,
+     "avoid": false
+    },
+    {
+     "key": "other song|other",
+     "title": "Other song",
+     "artist": "Other",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 32994476859,
+     "first": 1612569600000,
+     "last": 1675641600000,
+     "peak": 1,
+     "peakAt": 1612569600000,
+     "weight": 0.347783676,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "f e tune|f e",
+     "title": "F E tune",
+     "artist": "F E",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 240000,
+     "first": 1611115200000,
+     "last": 1674187200000,
+     "peak": 1,
+     "peakAt": 1611115200000,
+     "weight": 0.342272798,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "f d tune|f d",
+     "title": "F D tune",
+     "artist": "F D",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 240000,
+     "first": 1611111600000,
+     "last": 1674183600000,
+     "peak": 1,
+     "peakAt": 1611111600000,
+     "weight": 0.342259266,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "f c tune|f c",
+     "title": "F C tune",
+     "artist": "F C",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 240000,
+     "first": 1611108000000,
+     "last": 1674180000000,
+     "peak": 1,
+     "peakAt": 1611108000000,
+     "weight": 0.342245735,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "f b tune|f b",
+     "title": "F B tune",
+     "artist": "F B",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 240000,
+     "first": 1611104400000,
+     "last": 1674176400000,
+     "peak": 1,
+     "peakAt": 1611104400000,
+     "weight": 0.342232204,
+     "depth": 1.263404132,
+     "avoid": false
+    },
+    {
+     "key": "f a tune|f a",
+     "title": "F A tune",
+     "artist": "F A",
+     "starts": 2,
+     "plays": 2,
+     "full": 2,
+     "chosen": 0,
+     "skips": 0,
+     "years": 2,
+     "listenedMs": 240000,
+     "first": 1611100800000,
+     "last": 1674172800000,
+     "peak": 1,
+     "peakAt": 1611100800000,
+     "weight": 0.342218674,
+     "depth": 1.263404132,
+     "avoid": false
+    }
+   ],
+   "eras": [
+    {
+     "start": 1609459200000,
+     "end": 1614556799999,
+     "artist": "Other",
+     "artists": [
+      "Other",
+      "Lead",
+      "F A"
+     ],
+     "share": 0.6919448967045091,
+     "listenedMs": 23841838429,
+     "songs": [
+      "lead song|lead",
+      "f a tune|f a",
+      "f b tune|f b",
+      "f c tune|f c",
+      "f d tune|f d",
+      "f e tune|f e",
+      "other song|other"
+     ]
+    }
+   ],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2021,
+     "plays": 8,
+     "listenedMs": 23841838429,
+     "newArtists": 7
+    },
+    {
+     "year": 2023,
+     "plays": 8,
+     "listenedMs": 23841838430,
+     "newArtists": 0
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "other",
+     "name": "Other",
+     "plays": 2,
+     "listenedMs": 32994476859
+    },
+    {
+     "key": "lead",
+     "name": "Lead",
+     "plays": 4,
+     "listenedMs": 14688000000
+    },
+    {
+     "key": "f a",
+     "name": "F A",
+     "plays": 2,
+     "listenedMs": 240000
+    },
+    {
+     "key": "f b",
+     "name": "F B",
+     "plays": 2,
+     "listenedMs": 240000
+    },
+    {
+     "key": "f c",
+     "name": "F C",
+     "plays": 2,
+     "listenedMs": 240000
+    },
+    {
+     "key": "f d",
+     "name": "F D",
+     "plays": 2,
+     "listenedMs": 240000
+    },
+    {
+     "key": "f e",
+     "name": "F E",
+     "plays": 2,
+     "listenedMs": 240000
+    }
+   ],
+   "seedArtists": [
+    "Lead",
+    "Other",
+    "F E",
+    "F D",
+    "F C",
+    "F B",
+    "F A"
+   ],
+   "yearTops": [
+    {
+     "year": 2021,
+     "artists": [
+      "Other",
+      "Lead",
+      "F A"
+     ],
+     "songs": [
+      "lead song|lead",
+      "f a tune|f a",
+      "f b tune|f b",
+      "f c tune|f c",
+      "f d tune|f d",
+      "f e tune|f e",
+      "other song|other"
+     ]
+    },
+    {
+     "year": 2023,
+     "artists": [
+      "Other",
+      "Lead",
+      "F A"
+     ],
+     "songs": [
+      "lead song|lead",
+      "f a tune|f a",
+      "f b tune|f b",
+      "f c tune|f c",
+      "f d tune|f d",
+      "f e tune|f e",
+      "other song|other"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "recency halves every two years; a play from the future counts as now; constants need half the active years",
+  "now": 1793102400000,
+  "hidden": [],
+  "kept": [],
+  "putBack": [],
+  "plays": [
+   {
+    "t": "Fresh",
+    "a": "Band",
+    "s": 1792238400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fresh",
+    "a": "Band",
+    "s": 1792324800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fresh",
+    "a": "Band",
+    "s": 1792411200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fresh",
+    "a": "Band",
+    "s": 1792497600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Fresh",
+    "a": "Band",
+    "s": 1792584000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Two Years",
+    "a": "Band",
+    "s": 1729641600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Two Years",
+    "a": "Band",
+    "s": 1729728000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Two Years",
+    "a": "Band",
+    "s": 1729814400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Two Years",
+    "a": "Band",
+    "s": 1729900800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Two Years",
+    "a": "Band",
+    "s": 1729987200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Future",
+    "a": "Band",
+    "s": 1793361600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Future",
+    "a": "Band",
+    "s": 1793448000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Future",
+    "a": "Band",
+    "s": 1793534400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Future",
+    "a": "Band",
+    "s": 1793620800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Future",
+    "a": "Band",
+    "s": 1793707200000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Ancient",
+    "a": "Band",
+    "s": 1136073600000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Ancient",
+    "a": "Band",
+    "s": 1136160000000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Ancient",
+    "a": "Band",
+    "s": 1136246400000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Ancient",
+    "a": "Band",
+    "s": 1136332800000,
+    "ms": 200000,
+    "f": 34
+   },
+   {
+    "t": "Ancient",
+    "a": "Band",
+    "s": 1136419200000,
+    "ms": 200000,
+    "f": 34
+   }
+  ],
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1136073600000,
+   "last": 1793707200000,
+   "plays": 20,
+   "listenedMs": 4000000,
+   "artists": 1,
+   "songs": [
+    {
+     "key": "future|band",
+     "title": "Future",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1793361600000,
+     "last": 1793707200000,
+     "peak": 5,
+     "peakAt": 1793361600000,
+     "weight": 1.791759469,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "fresh|band",
+     "title": "Fresh",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1792238400000,
+     "last": 1792584000000,
+     "peak": 5,
+     "peakAt": 1792238400000,
+     "weight": 1.781587606,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "two years|band",
+     "title": "Two Years",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1729641600000,
+     "last": 1729987200000,
+     "peak": 5,
+     "peakAt": 1729641600000,
+     "weight": 0.895879735,
+     "depth": 1.791759469,
+     "avoid": false
+    },
+    {
+     "key": "ancient|band",
+     "title": "Ancient",
+     "artist": "Band",
+     "starts": 5,
+     "plays": 5,
+     "full": 5,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 1000000,
+     "first": 1136073600000,
+     "last": 1136419200000,
+     "peak": 5,
+     "peakAt": 1136073600000,
+     "weight": 0.001321928,
+     "depth": 1.791759469,
+     "avoid": false
+    }
+   ],
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [
+    {
+     "year": 2006,
+     "plays": 5,
+     "listenedMs": 1000000,
+     "newArtists": 1
+    },
+    {
+     "year": 2024,
+     "plays": 5,
+     "listenedMs": 1000000,
+     "newArtists": 0
+    },
+    {
+     "year": 2026,
+     "plays": 10,
+     "listenedMs": 2000000,
+     "newArtists": 0
+    }
+   ],
+   "topArtists": [
+    {
+     "key": "band",
+     "name": "Band",
+     "plays": 20,
+     "listenedMs": 4000000
+    }
+   ],
+   "seedArtists": [
+    "Band"
+   ],
+   "yearTops": [
+    {
+     "year": 2006,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "ancient|band"
+     ]
+    },
+    {
+     "year": 2024,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "two years|band"
+     ]
+    },
+    {
+     "year": 2026,
+     "artists": [
+      "Band"
+     ],
+     "songs": [
+      "fresh|band",
+      "future|band"
+     ]
+    }
+   ]
+  }
+ }
+]

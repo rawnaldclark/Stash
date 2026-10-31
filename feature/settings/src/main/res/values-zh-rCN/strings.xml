@@ -180,6 +180,7 @@
     <string name="settings_home_layout_desc">Arrange Home\'s sections or hide the ones you don\'t use. The Discover hero stays on top.</string>
     <string name="settings_home_section_community_desc">Playlists and songs other Stash listeners are into. Your posts show your name.</string>
     <string name="settings_home_section_listening_desc">Recently played and your History. Appears after your first listen.</string>
+    <string name="settings_home_section_record_desc">你听过的每一年，压制成一张唱片。</string>
     <string name="settings_home_show_liked_title">Show Liked Songs on Home</string>
     <string name="settings_home_show_liked_subtitle">Your Stash, Spotify and YouTube likes as one card in Your playlists</string>
     <string name="settings_home_section_discover">Daily Discover &amp; your mixes</string>
@@ -192,6 +193,9 @@
     <string name="settings_home_section_mood_decades">Mood &amp; decades</string>
     <string name="settings_home_section_community">Community</string>
     <string name="settings_home_section_your_listening">Your listening</string>
+    <string name="settings_home_section_your_record">你的唱片</string>
+    <string name="settings_home_section_record_mixes">来自你的唱片</string>
+    <string name="settings_home_section_record_mixes_desc">只有你多年的聆听才能做出的混音。导入你的历史后显示。</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>
@@ -631,4 +635,24 @@
     <string name="settings_equalizer_preset_classical">Classical</string>
     <string name="settings_equalizer_save_preset_dialog_title">Save Preset</string>
     <string name="settings_equalizer_preset_name_label">Preset name</string>
+    <string name="settings_your_record_section">你的唱片</string>
+    <string name="settings_your_record_open">你的唱片</string>
+    <plurals name="settings_your_record_summary">
+        <item quantity="other">来自 Spotify：%1$s 次播放。</item>
+    </plurals>
+    <string name="settings_your_record_import">从 Spotify 导入</string>
+    <string name="settings_your_record_newer">添加更新的副本</string>
+    <string name="settings_your_record_import_subtitle">来自 Spotify 数据下载的收听记录。Stash 在这部手机上读取文件。不会上传任何内容。</string>
+    <string name="settings_your_record_remove">移除导入的记录</string>
+    <string name="settings_your_record_remove_subtitle">你的唱片将恢复为你在 Stash 的播放记录。</string>
+    <string name="settings_your_record_remove_title">要移除导入的记录吗？</string>
+    <string name="settings_your_record_remove_body">从 Spotify 和 Last.fm 导入到你的唱片中的所有内容都会从这部手机上删除。你在 Stash 的播放记录会保留。你导入的歌单和已点赞的歌曲会保留在音乐库中。</string>
+    <string name="settings_your_record_remove_confirm">移除</string>
+    <string name="settings_your_record_cancel">取消</string>
+    <string name="settings_your_record_removed">已移除导入的记录。</string>
+    <string name="settings_your_record_remove_busy">正在导入中。完成后再移除。</string>
+    <string name="settings_your_record_remove_failed">暂时无法移除。请重试。</string>
+    <string name="settings_your_record_show">在首页显示</string>
+    <string name="settings_your_record_show_subtitle">“压制你的唱片”已在首页隐藏。</string>
+    <string name="settings_your_record_shown">“压制你的唱片”已回到首页</string>
 </resources>

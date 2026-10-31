@@ -131,16 +131,29 @@ data class TrackQuery(
  * on the labelled set ("Save Your Tears", a 249 s video, took an imitator's 264 s upload over the
  * 215 s album cut).
  *
+ * A YouTube row with no video id is never trusted either. YouTube Music didn't give it its length
+ * or album: a mix or a radio station made it from a title and an artist, and Last.fm's
+ * `track.getInfo` filled the rest (ArtBackfillWorker), naming the cut most scrobbled, on whichever
+ * album. On the owner's phone 42 of 313 such lengths were more than 8 s off Spotify's for the same
+ * song; "Shook Ones, Pt. II" took Last.fm's 241 s radio edit on "Reminisce Hip Hop Classics" over
+ * the 326 s album cut, so every source was asked for the censored edit (2026-10-26).
+ *
  * @param musicVideoType the row's stored InnerTube classification (`TrackEntity.musicVideoType`:
  *   "ATV", "OMV", "UGC"...), or null when it was never classified.
+ * @param hasVideoId whether the row has a YouTube video id. False for a mix's or a station's
+ *   song nobody has matched yet; a search result always has one.
  */
-fun TrackQuery.forLibrarySource(source: MusicSource, musicVideoType: String? = null): TrackQuery {
+fun TrackQuery.forLibrarySource(
+    source: MusicSource,
+    musicVideoType: String? = null,
+    hasVideoId: Boolean = true,
+): TrackQuery {
     if (source != MusicSource.YOUTUBE) return this
     val song = YouTubeSongTitle.parse(title, artist)
     return copy(
         artist = song.artist.ifBlank { artist },
         title = song.queryTitle.ifBlank { title },
-        durationReliable = isOfficialAudio(musicVideoType),
+        durationReliable = hasVideoId && isOfficialAudio(musicVideoType),
     )
 }
 

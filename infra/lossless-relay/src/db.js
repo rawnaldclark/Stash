@@ -67,12 +67,12 @@ UPDATE accounts SET
 WHERE label = (
   SELECT label FROM accounts
   WHERE state = 'live' AND (cooling_until <= ?1 OR label IN (SELECT value FROM json_each(?9)))
-    AND (label IN (SELECT value FROM json_each(?8)) OR (hour_key != ?2 OR hour_n < ?4))
-    AND (label IN (SELECT value FROM json_each(?8)) OR (day_key  != ?3 OR day_n  < ?5))
+    AND (label IN (SELECT value FROM json_each(?8)) OR (hour_key != ?2 OR hour_n < CASE WHEN label = ?10 AND ?10 != '' THEN ?11 WHEN label = ?13 AND ?13 != '' THEN ?14 WHEN label = ?16 AND ?16 != '' THEN ?17 ELSE ?4 END))
+    AND (label IN (SELECT value FROM json_each(?8)) OR (day_key  != ?3 OR day_n  < CASE WHEN label = ?10 AND ?10 != '' THEN ?12 WHEN label = ?13 AND ?13 != '' THEN ?15 WHEN label = ?16 AND ?16 != '' THEN ?18 ELSE ?5 END))
     AND label IS NOT ?6
     AND (?7 IS NULL OR label IN (SELECT value FROM json_each(?7)))
   ORDER BY CASE WHEN ?6 IS NULL THEN last_used_at ELSE -last_used_at END ASC, label ASC LIMIT 1)
-RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels), uncappedLabels?.length ? JSON.stringify(uncappedLabels) : null, noCooldownLabels?.length ? JSON.stringify(noCooldownLabels) : null).first();
+RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels), uncappedLabels?.length ? JSON.stringify(uncappedLabels) : null, noCooldownLabels?.length ? JSON.stringify(noCooldownLabels) : null, caps.overrideLabel || "", caps.overrideHourly || caps.hourly, caps.overrideDaily || caps.daily, caps.overrideLabel2 || "", caps.overrideHourly2 || caps.hourly, caps.overrideDaily2 || caps.daily, caps.overrideLabel3 || "", caps.overrideHourly3 || caps.hourly, caps.overrideDaily3 || caps.daily).first();
     return row ? row.label : null;
 }
 

@@ -96,6 +96,9 @@ class StashLikedPlaylistRepository @Inject constructor(
         return added
     }
 
+    /** Liked Songs is kept on this phone (its Download switch, #474): a song liked here is downloaded too. */
+    suspend fun keptOffline(): Boolean = playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.let { it.isActive && it.keepOffline } ?: false
+
     /** Recounts Liked Songs' cached song count (once after a batch of [addAllFrom] calls made with `recount = false`). */
     suspend fun recount() {
         val playlistId = playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.id ?: return

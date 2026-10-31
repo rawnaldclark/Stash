@@ -1,0 +1,626 @@
+{
+ "eraWhen": [
+  {
+   "start": 1472688000000,
+   "end": 1483228799999,
+   "when": "Late 2016"
+  },
+  {
+   "start": 1514764800000,
+   "end": 1522540799999,
+   "when": "Early 2018"
+  },
+  {
+   "start": 1514764800000,
+   "end": 1535759999999,
+   "when": "Mid 2018"
+  },
+  {
+   "start": 1514764800000,
+   "end": 1533081599999,
+   "when": "Early 2018"
+  },
+  {
+   "start": 1514764800000,
+   "end": 1538351999999,
+   "when": "Mid 2018"
+  },
+  {
+   "start": 1522540800000,
+   "end": 1546300799999,
+   "when": "Mid 2018"
+  },
+  {
+   "start": 1654041600000,
+   "end": 1656633599999,
+   "when": "June 2022"
+  },
+  {
+   "start": 1654041600000,
+   "end": 1680307199999,
+   "when": "June 2022 – March 2023"
+  },
+  {
+   "start": 1701388800000,
+   "end": 1706745599999,
+   "when": "December 2023 – January 2024"
+  },
+  {
+   "start": 1577836800000,
+   "end": 1598745599999,
+   "when": "Early 2020"
+  },
+  {
+   "start": 1577836800000,
+   "end": 1598745600000,
+   "when": "Mid 2020"
+  },
+  {
+   "start": 1590969600000,
+   "end": 1606867199999,
+   "when": "Mid 2020"
+  },
+  {
+   "start": 1590969600000,
+   "end": 1606867200000,
+   "when": "Late 2020"
+  }
+ ],
+ "andList": [
+  {
+   "xs": [],
+   "line": ""
+  },
+  {
+   "xs": [
+    "A"
+   ],
+   "line": "A"
+  },
+  {
+   "xs": [
+    "A",
+    "B"
+   ],
+   "line": "A & B"
+  },
+  {
+   "xs": [
+    "A",
+    "B",
+    "C"
+   ],
+   "line": "A, B & C"
+  },
+  {
+   "xs": [
+    "Sepultura",
+    "Slayer",
+    "Deftones",
+    "Death"
+   ],
+   "line": "Sepultura, Slayer, Deftones & Death"
+  }
+ ],
+ "about": {
+  "taste": {
+   "v": 1,
+   "computedAt": 1793102400000,
+   "first": 1546300800000,
+   "last": 1790812800000,
+   "plays": 0,
+   "listenedMs": 0,
+   "artists": 0,
+   "eras": [],
+   "constants": [],
+   "lost": [],
+   "obsessions": [],
+   "found": null,
+   "years": [],
+   "topArtists": [],
+   "seedArtists": [],
+   "yearTops": [],
+   "songs": [
+    {
+     "key": "known average|lengths",
+     "title": "Known Average",
+     "artist": "Lengths",
+     "starts": 10,
+     "plays": 4,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 965348,
+     "first": 1577836800000,
+     "last": 1704067200000,
+     "peak": 2,
+     "peakAt": 1577836800000,
+     "weight": 1,
+     "depth": 1,
+     "avoid": false
+    },
+    {
+     "key": "left playing|lengths",
+     "title": "Left Playing",
+     "artist": "Lengths",
+     "starts": 10,
+     "plays": 2,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 2400000,
+     "first": 1577836800000,
+     "last": 1704067200000,
+     "peak": 2,
+     "peakAt": 1577836800000,
+     "weight": 1,
+     "depth": 1,
+     "avoid": false
+    },
+    {
+     "key": "just under|lengths",
+     "title": "Just Under",
+     "artist": "Lengths",
+     "starts": 10,
+     "plays": 3,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 3599997,
+     "first": 1577836800000,
+     "last": 1704067200000,
+     "peak": 2,
+     "peakAt": 1577836800000,
+     "weight": 1,
+     "depth": 1,
+     "avoid": false
+    },
+    {
+     "key": "never listened|lengths",
+     "title": "Never Listened",
+     "artist": "Lengths",
+     "starts": 10,
+     "plays": 0,
+     "full": 10,
+     "chosen": 0,
+     "skips": 0,
+     "years": 1,
+     "listenedMs": 0,
+     "first": 1577836800000,
+     "last": 1704067200000,
+     "peak": 2,
+     "peakAt": 1577836800000,
+     "weight": 1,
+     "depth": 1,
+     "avoid": false
+    }
+   ]
+  },
+  "cases": [
+   {
+    "items": [],
+    "about": "about 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     }
+    ],
+    "about": "about 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Left Playing",
+      "artist": "Lengths"
+     }
+    ],
+    "about": "about 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Just Under",
+      "artist": "Lengths"
+     }
+    ],
+    "about": "about 20 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Never Listened",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     }
+    ],
+    "about": "about 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Own Length",
+      "artist": "Lengths",
+      "durationMs": 449999
+     }
+    ],
+    "about": "about 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Own Length",
+      "artist": "Lengths",
+      "durationMs": 450000
+     }
+    ],
+    "about": "about 10 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     },
+     {
+      "title": "Nobody",
+      "artist": "Knows"
+     }
+    ],
+    "about": "about 1 hr"
+   },
+   {
+    "items": [
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200000
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200002
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200004
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200006
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200008
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200010
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200012
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200014
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200016
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200018
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200020
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200022
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200024
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200026
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200028
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200030
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200032
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200034
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200036
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200038
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200040
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200042
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200044
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200046
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own",
+      "artist": "Lengths",
+      "durationMs": 200048
+     },
+     {
+      "title": "Known Average",
+      "artist": "Lengths"
+     }
+    ],
+    "about": "about 3 hr 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Known Average - 2011 Remaster",
+      "artist": "Lengths"
+     },
+     {
+      "title": "Own Length",
+      "artist": "Lengths",
+      "durationMs": 3600000
+     }
+    ],
+    "about": "about 1 hr 5 min"
+   },
+   {
+    "items": [
+     {
+      "title": "Own Length",
+      "artist": "Lengths",
+      "durationMs": 3300000
+     },
+     {
+      "title": "Own Length",
+      "artist": "Lengths",
+      "durationMs": 449999
+     }
+    ],
+    "about": "about 1 hr"
+   }
+  ]
+ },
+ "mixView": {
+  "Mix from your record": "Mix from your record",
+  "Save as playlist": "Save as playlist",
+  "Saving…": "Saving…",
+  "Open “{saved.name}”": "Open “{saved.name}”",
+  "Saved “${p.name}” to your playlists": "Saved “${p.name}” to your playlists",
+  "Couldn’t save it just now. Try again.": "Couldn’t save it just now. Try again.",
+  "That mix isn’t in your record any more: mixes change as your listening does.": "That mix isn’t in your record any more: mixes change as your listening does.",
+  "Back to Your record": "Back to Your record",
+  "aria-label=\"Play {mix.title}\"": "aria-label=\"Play {mix.title}\"",
+  "aria-label=\"Shuffle {mix.title}\"": "aria-label=\"Shuffle {mix.title}\""
+ },
+ "homeShelf": {
+  "From your record": "From your record",
+  "Show all": "Show all",
+  "label=\"Open {m.title}\"": "label=\"Open {m.title}\""
+ },
+ "recordPage": {
+  ">The record</button>": ">The record</button>",
+  ">Mixes</button>": ">Mixes</button>",
+  ">Mixes from your years</h2>": ">Mixes from your years</h2>",
+  ">Your years</h2>": ">Your years</h2>",
+  "Bring your listening": "Bring your listening",
+  "aria-label=\"Play {m.title}\"": "aria-label=\"Play {m.title}\""
+ }
+}

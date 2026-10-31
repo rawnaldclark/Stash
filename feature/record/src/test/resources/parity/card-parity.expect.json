@@ -1,0 +1,179 @@
+{
+  "plays": 77,
+  "totalMs": 131400000,
+  "hours": 37,
+  "streams": 71,
+  "first": 1118836800000,
+  "sinceYear": 2005,
+  "topArtists": [
+    {
+      "label": "Leif Inge",
+      "ms": 86400000
+    },
+    {
+      "label": "Ben UFO",
+      "ms": 25200000
+    },
+    {
+      "label": "Wye Oak",
+      "ms": 2100000
+    },
+    {
+      "label": "Alvvays",
+      "ms": 2100000
+    },
+    {
+      "label": "Hum",
+      "ms": 1500000
+    }
+  ],
+  "artists": [
+    {
+      "label": "Leif Inge",
+      "ms": 86400000,
+      "plays": 1
+    },
+    {
+      "label": "Ben UFO",
+      "ms": 25200000,
+      "plays": 1
+    },
+    {
+      "label": "Wye Oak",
+      "ms": 2100000,
+      "plays": 6
+    },
+    {
+      "label": "Alvvays",
+      "ms": 2100000,
+      "plays": 7
+    },
+    {
+      "label": "Hum",
+      "ms": 1500000,
+      "plays": 3
+    },
+    {
+      "label": "Low",
+      "ms": 1500000,
+      "plays": 3
+    },
+    {
+      "label": "Radiohead",
+      "ms": 1496999,
+      "plays": 6
+    },
+    {
+      "label": "Frank Ocean",
+      "ms": 921000,
+      "plays": 3
+    },
+    {
+      "label": "Sufjan Stevens",
+      "ms": 913001,
+      "plays": 3
+    },
+    {
+      "label": "Bj\u00f6rk",
+      "ms": 860000,
+      "plays": 3
+    },
+    {
+      "label": "Kendrick Lamar",
+      "ms": 800000,
+      "plays": 4
+    },
+    {
+      "label": "Phoebe Bridgers",
+      "ms": 783000,
+      "plays": 3
+    },
+    {
+      "label": "Simon & Garfunkel",
+      "ms": 737000,
+      "plays": 3
+    },
+    {
+      "label": "bjork",
+      "ms": 660000,
+      "plays": 2
+    },
+    {
+      "label": "Daft Punk",
+      "ms": 621000,
+      "plays": 2
+    },
+    {
+      "label": "Kendrick Lamar feat. SZA",
+      "ms": 600000,
+      "plays": 3
+    },
+    {
+      "label": "Bjo\u0308rk",
+      "ms": 584000,
+      "plays": 2
+    },
+    {
+      "label": "Beach House",
+      "ms": 530000,
+      "plays": 2
+    },
+    {
+      "label": "Kendrick Lamar, SZA",
+      "ms": 500000,
+      "plays": 3
+    },
+    {
+      "label": "Mac DeMarco",
+      "ms": 481000,
+      "plays": 2
+    },
+    {
+      "label": "ABBA",
+      "ms": 444000,
+      "plays": 2
+    },
+    {
+      "label": "BJ\u00d6RK",
+      "ms": 400000,
+      "plays": 2
+    },
+    {
+      "label": "Daft Punk & Pharrell Williams",
+      "ms": 369000,
+      "plays": 1
+    },
+    {
+      "label": "Snail Mail",
+      "ms": 250000,
+      "plays": 1
+    },
+    {
+      "label": "Avril Lavigne",
+      "ms": 228000,
+      "plays": 1
+    },
+    {
+      "label": "The Killers",
+      "ms": 222000,
+      "plays": 1
+    },
+    {
+      "label": "Just Long Enough",
+      "ms": 200000,
+      "plays": 1
+    }
+  ],
+  "leftOutRows": [
+    19,
+    31,
+    47,
+    53,
+    63,
+    79,
+    80,
+    82,
+    83,
+    86
+  ]
+}

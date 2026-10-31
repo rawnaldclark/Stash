@@ -138,10 +138,18 @@ object QobuzCandidateMatcher {
 
     /**
      * The candidate a source takes from [scored] (each candidate with its [confidence]): the highest
-     * score at or above [MIN_CONFIDENCE]. Equal scores go to the candidate whose length is closest to
-     * the query's, then to the first listed: two cuts within 5% of the song both score 1.0, and the
-     * first listed was whichever the catalog put first. A candidate of unknown length loses a tie to
-     * one of known length.
+     * score at or above [MIN_CONFIDENCE]. Equal scores go to the version the query wants
+     * ([isWantedVersion]: the explicit original unless the source track is known clean), then to the
+     * candidate whose length is closest to the query's, then to the first listed: two cuts within 5%
+     * of the song both score 1.0, and the first listed was whichever the catalog put first. A
+     * candidate of unknown length loses a tie to one of known length.
+     *
+     * Explicitness only ever breaks a tie. A song's clean and explicit twins usually have the same
+     * title, album and length, so they score alike, and the catalog lists the explicit one first
+     * often but not always: by order alone some explicit rows got the clean twin. It never lifts a
+     * lower score, so it can't change which candidates pass [MIN_CONFIDENCE] or which wins on words
+     * and length. It goes ahead of length because twins' lengths match, and a second's difference
+     * between them says nothing about which one the user has.
      *
      * Only a reliable length breaks ties ([TrackQuery.durationReliable]). A music video's length is
      * the video's, and on the labelled set the cut nearest to it was more often an alternate take
@@ -152,30 +160,53 @@ object QobuzCandidateMatcher {
      *
      * One helper for every pick site (squid/qbdlx Qobuz, the Tidal relay, kennyy), so they agree.
      *
+     * @param explicit a candidate's parental advisory from the catalog (Qobuz `parental_warning`,
+     *   Tidal `explicit`), null when the catalog doesn't say. The default says nothing for every
+     *   candidate, which leaves the pick to length and order as before.
      * @param durationSec a candidate's length in seconds, 0 or less when unknown.
      */
-    fun <T> pickBest(query: TrackQuery, scored: List<Pair<T, Float>>, durationSec: (T) -> Int): Pair<T, Float>? {
+    fun <T> pickBest(
+        query: TrackQuery,
+        scored: List<Pair<T, Float>>,
+        explicit: (T) -> Boolean? = { null },
+        durationSec: (T) -> Int,
+    ): Pair<T, Float>? {
         val querySec = query.durationMs?.takeIf { it > 0 && query.durationReliable }?.let { it / 1000.0 }
         var best: Pair<T, Float>? = null
+        var bestWanted = false
         var bestGap = Double.MAX_VALUE
         for (entry in scored) {
             if (entry.second < MIN_CONFIDENCE) continue
+            val wanted = isWantedVersion(query, explicit(entry.first))
             val gap = when {
                 querySec == null -> 0.0
                 durationSec(entry.first) <= 0 -> Double.MAX_VALUE
                 else -> abs(durationSec(entry.first) - querySec)
             }
             val current = best
+            val tied = current != null && abs(entry.second - current.second) <= SCORE_TIE
             val better = current == null ||
                 entry.second > current.second + SCORE_TIE ||
-                (abs(entry.second - current.second) <= SCORE_TIE && gap < bestGap)
+                (tied && wanted && !bestWanted) ||
+                (tied && wanted == bestWanted && gap < bestGap)
             if (better) {
                 best = entry
+                bestWanted = wanted
                 bestGap = gap
             }
         }
         return best
     }
+
+    /**
+     * Whether a candidate whose catalog advisory is [candExplicit] is the version [query] wants
+     * ([pickBest]'s first tie-break). A source track known to be clean ([TrackQuery.explicit] false)
+     * wants anything the catalog doesn't mark explicit; otherwise, explicit or unknown (a YouTube
+     * row), it wants the one marked explicit, the original most users know. A candidate the catalog
+     * doesn't mark either way is never taken for explicit.
+     */
+    internal fun isWantedVersion(query: TrackQuery, candExplicit: Boolean?): Boolean =
+        if (query.explicit == false) candExplicit != true else candExplicit == true
 
     /**
      * The named versions ([VersionWords.forCatalogMatch]: "<words> version") that only name the

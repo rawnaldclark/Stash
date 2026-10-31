@@ -85,6 +85,7 @@ class LibraryViewModelMixTest {
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
             on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
             on { getTracksByPlaylist(77L) } doReturn flowOf(tracks)
+            on { getShownTracksByPlaylist(77L) } doReturn flowOf(tracks)
             // Stub every invocation: an unstubbed suspend Boolean returns null
             // (mockito default) → NPE on Kotlin's primitive unbox. Only id 2 is
             // protected elsewhere.

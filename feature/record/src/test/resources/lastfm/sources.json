@@ -1,0 +1,1738 @@
+{
+ "read": [
+  {
+   "raw": null,
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "nope",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "null",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "[1]",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "7",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "{}",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "{\"spotify\":false,\"lastfm\":true}",
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "{\"stash\":\"false\"}",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "{\"stash\":0,\"lastfm\":null}",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   }
+  },
+  {
+   "raw": "{\"spotify\":false,\"stash\":false,\"lastfm\":false}",
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   }
+  },
+  {
+   "raw": "{\"lastfm\":false,\"evil\":1}",
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   }
+  }
+ ],
+ "rules": [
+  {
+   "counts": null,
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": null,
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": null,
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": null,
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 0,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": null,
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 3,
+    "stash": 2,
+    "lastfm": 0
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 0,
+    "stash": 5,
+    "lastfm": 9
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": null,
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": null,
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": false
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": null
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": false,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": false,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": false,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  },
+  {
+   "counts": {
+    "spotify": 6086,
+    "stash": 333,
+    "lastfm": 48210
+   },
+   "on": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "present": [
+    "spotify",
+    "stash",
+    "lastfm"
+   ],
+   "shown": {
+    "spotify": true,
+    "stash": true,
+    "lastfm": true
+   },
+   "toggle": {
+    "spotify": {
+     "spotify": false,
+     "stash": true,
+     "lastfm": true
+    },
+    "stash": {
+     "spotify": true,
+     "stash": false,
+     "lastfm": true
+    },
+    "lastfm": {
+     "spotify": true,
+     "stash": true,
+     "lastfm": false
+    }
+   }
+  }
+ ]
+}

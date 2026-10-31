@@ -1,5 +1,21 @@
 package com.stash.feature.library
 
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -69,7 +85,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,6 +101,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.media.BulkPlayAction
+import com.stash.core.model.MusicSource
+import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.VerticalScrollbar
@@ -169,6 +186,64 @@ fun PlaylistDetailScreen(
     }
 
     val listState = rememberLazyListState()
+
+    // ── Edit order ──────────────────────────────────────────────────────────
+    val editingOrder by viewModel.editingOrder.collectAsStateWithLifecycle()
+    val customOrder by viewModel.customOrder.collectAsStateWithLifecycle()
+    BackHandler(enabled = editingOrder) { viewModel.stopEditOrder() }
+    var confirmResetOrder by remember { mutableStateOf(false) }
+    // The rows while editing: a drag swaps them here; the drop saves one move.
+    val orderRows = remember { mutableStateListOf<Track>() }
+    var draggedIdx by remember { mutableIntStateOf(-1) }
+    var dragStartIdx by remember { mutableIntStateOf(-1) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var rowHeight by remember { mutableIntStateOf(0) }
+    var resyncTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.tracks, resyncTick) {
+        if (draggedIdx < 0) {
+            orderRows.clear()
+            orderRows.addAll(state.tracks)
+        }
+    }
+    val dragScope = rememberCoroutineScope()
+    var edgeScrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val swapDragged = { by: Int ->
+        val to = draggedIdx + by
+        orderRows.add(to, orderRows.removeAt(draggedIdx))
+        draggedIdx = to
+        dragOffsetY -= by * rowHeight
+    }
+    val normalizeSwaps = {
+        if (draggedIdx >= 0 && rowHeight > 0) {
+            val half = rowHeight / 2
+            while (dragOffsetY < -half && draggedIdx > 0) swapDragged(-1)
+            while (dragOffsetY > half && draggedIdx < orderRows.lastIndex) swapDragged(1)
+        }
+    }
+    /** Saves the drag as one move, by the neighbours it was dropped between. */
+    val commitOrderDrag = {
+        edgeScrollJob?.cancel()
+        val from = dragStartIdx
+        val to = draggedIdx
+        if (from >= 0 && to >= 0 && from != to) {
+            viewModel.moveTrack(orderRows[to].id, orderRows.getOrNull(to + 1)?.id, orderRows.getOrNull(to - 1)?.id)
+        }
+        dragStartIdx = -1
+        dragScope.launch {
+            androidx.compose.animation.core.animate(dragOffsetY, 0f, animationSpec = androidx.compose.animation.core.tween(150)) { v, _ -> dragOffsetY = v }
+            draggedIdx = -1
+            if (from == to) resyncTick++
+        }
+    }
+    /** TalkBack's moves: one place, or to either end. */
+    val moveByAction = { idx: Int, to: Int ->
+        val target = to.coerceIn(0, orderRows.lastIndex)
+        if (target != idx) {
+            orderRows.add(target, orderRows.removeAt(idx))
+            viewModel.moveTrack(orderRows[target].id, orderRows.getOrNull(target + 1)?.id, orderRows.getOrNull(target - 1)?.id)
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -184,6 +259,7 @@ fun PlaylistDetailScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = draggedIdx < 0,
                 // Task 7 hides the mini-player while selecting, but the bottom
                 // selection bar (~100dp + nav insets) then takes its place. Pad
                 // enough that the last row clears it in either state.
@@ -248,6 +324,30 @@ fun PlaylistDetailScreen(
                             onQueryChanged = viewModel::onSearchQueryChanged,
                             onClear = viewModel::clearSearch,
                         )
+                    }
+                }
+
+                // ── Edit order ──────────────────────────────────────────
+                if (editingOrder) {
+                    item(key = "order-bar") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = HeaderGutter, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Drag ≡ to move a song",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = extendedColors.textTertiary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.stopEditOrder() }) { Text("Done") }
+                        }
+                    }
+                } else if (!selection.isActive && state.searchQuery.isEmpty() && state.tracks.size >= 2) {
+                    item(key = "order-edit") {
+                        Box(Modifier.fillMaxWidth().padding(end = 8.dp), contentAlignment = Alignment.CenterEnd) {
+                            TextButton(onClick = { selection.clear(); viewModel.startEditOrder() }) { Text("Edit order") }
+                        }
                     }
                 }
 
@@ -324,8 +424,114 @@ fun PlaylistDetailScreen(
                     }
                 }
 
+                // ── Track list: editing ─────────────────────────────────
+                if (editingOrder) itemsIndexed(
+                    items = orderRows,
+                    key = { _, track -> track.id },
+                ) { index, track ->
+                    val isDragging = index == draggedIdx
+                    val liveIdx by rememberUpdatedState(index)
+                    Column(
+                        Modifier
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                if (isDragging) {
+                                    translationY = dragOffsetY
+                                    shadowElevation = 8.dp.toPx()
+                                }
+                            }
+                            .background(if (isDragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent),
+                    ) {
+                        DetailTrackRow(
+                            track = track,
+                            trackNumber = index + 1,
+                            isPlaying = track.id == state.currentlyPlayingTrackId,
+                            onClick = {},
+                            onLongPress = {},
+                            trailing = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .semantics {
+                                            contentDescription = "Move ${track.title}"
+                                            customActions = listOf(
+                                                CustomAccessibilityAction("Move up") { moveByAction(liveIdx, liveIdx - 1); true },
+                                                CustomAccessibilityAction("Move down") { moveByAction(liveIdx, liveIdx + 1); true },
+                                                CustomAccessibilityAction("Move to beginning") { moveByAction(liveIdx, 0); true },
+                                                CustomAccessibilityAction("Move to end") { moveByAction(liveIdx, orderRows.lastIndex); true },
+                                            )
+                                        }
+                                        .pointerInput(track.id) {
+                                            detectDragGestures(
+                                                onDragStart = {
+                                                    draggedIdx = liveIdx
+                                                    dragStartIdx = liveIdx
+                                                    dragOffsetY = 0f
+                                                    listState.layoutInfo.visibleItemsInfo
+                                                        .firstOrNull { it.key == track.id }?.let { rowHeight = it.size }
+                                                    // Near the top or bottom edge the list scrolls under the finger.
+                                                    edgeScrollJob?.cancel()
+                                                    edgeScrollJob = dragScope.launch {
+                                                        while (true) {
+                                                            androidx.compose.runtime.withFrameNanos { }
+                                                            val layout = listState.layoutInfo
+                                                            val row = layout.visibleItemsInfo
+                                                                .firstOrNull { it.key == orderRows.getOrNull(draggedIdx)?.id } ?: continue
+                                                            val top = row.offset + dragOffsetY
+                                                            val bottom = top + row.size
+                                                            val edge = row.size.toFloat()
+                                                            val step = when {
+                                                                top < layout.viewportStartOffset + edge -> -(edge - (top - layout.viewportStartOffset)).coerceIn(0f, edge) / 4
+                                                                bottom > layout.viewportEndOffset - edge -> (edge - (layout.viewportEndOffset - bottom)).coerceIn(0f, edge) / 4
+                                                                else -> 0f
+                                                            }
+                                                            if (step != 0f) {
+                                                                dragOffsetY += listState.scrollBy(step)
+                                                                normalizeSwaps()
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                onDrag = { change, amount ->
+                                                    change.consume()
+                                                    dragOffsetY += amount.y
+                                                    normalizeSwaps()
+                                                },
+                                                onDragEnd = { commitOrderDrag() },
+                                                onDragCancel = { commitOrderDrag() },
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Default.DragHandle,
+                                        contentDescription = null,
+                                        tint = if (isDragging) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            },
+                        )
+                        if (index < orderRows.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                                thickness = 0.5.dp,
+                                color = extendedColors.glassBorder,
+                            )
+                        }
+                    }
+                }
+                if (editingOrder && customOrder) {
+                    item(key = "order-reset") {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                            TextButton(onClick = { confirmResetOrder = true }) { Text(orderSourceLabel(state.playlist)) }
+                        }
+                    }
+                }
+
                 // ── Track list ──────────────────────────────────────────
-                itemsIndexed(
+                if (!editingOrder) itemsIndexed(
                     items = state.tracks,
                     key = { _, track -> track.id },
                 ) { index, track ->
@@ -663,12 +869,35 @@ fun PlaylistDetailScreen(
         )
     }
 
+    if (confirmResetOrder) {
+        val label = orderSourceLabel(state.playlist)
+        AlertDialog(
+            onDismissRequest = { confirmResetOrder = false },
+            title = { Text("$label?") },
+            text = { Text("Your order for this playlist is replaced. Songs keep downloading and playing as before.") },
+            confirmButton = {
+                TextButton(onClick = { confirmResetOrder = false; viewModel.resetOrder() }) { Text("Replace") }
+            },
+            dismissButton = { TextButton(onClick = { confirmResetOrder = false }) { Text("Cancel") } },
+        )
+    }
+
     SnackbarHost(
         hostState = snackbarHostState,
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 16.dp),
     ) { data -> Snackbar(snackbarData = data) }
+}
+
+/** Edit order's way back to the order the playlist came in: named after where that order comes from. */
+private fun orderSourceLabel(playlist: Playlist?): String = when {
+    playlist == null -> "Use original order"
+    playlist.type == PlaylistType.DAILY_MIX || playlist.type == PlaylistType.STASH_MIX -> "Use mix order"
+    playlist.sourceId.startsWith("album:") -> "Use album order"
+    playlist.source == MusicSource.SPOTIFY -> "Use Spotify order"
+    playlist.source == MusicSource.YOUTUBE -> "Use YouTube order"
+    else -> "Use original order"
 }
 
 // ── Header composable ───────────────────────────────────────────────────────

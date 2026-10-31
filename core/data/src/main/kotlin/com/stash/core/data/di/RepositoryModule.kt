@@ -56,6 +56,14 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
+    abstract fun bindRecordInMixesPreference(impl: com.stash.core.data.prefs.RecordInMixesPreferencesManager): com.stash.core.data.prefs.RecordInMixesPreference
+
+    @Binds
+    @Singleton
+    abstract fun bindRecordMixTaste(impl: com.stash.core.data.record.RoomRecordMixTaste): com.stash.core.data.record.RecordMixTaste
+
+    @Binds
+    @Singleton
     abstract fun bindPingSubmitter(impl: OkHttpPingSubmitter): PingSubmitter
 
     @Binds
