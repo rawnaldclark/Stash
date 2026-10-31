@@ -888,7 +888,8 @@ class YTMusicApiClient @Inject constructor(
                             singlesMore = parseCarouselMore(carousel)
                         }
                     }
-                    title.contains("Fans also like", ignoreCase = true) ->
+                    // YouTube Music renamed the shelf "Fans might also like" (seen 2026-10-31); match the part that stayed.
+                    title.contains("also like", ignoreCase = true) ->
                         related = parseArtistsCarousel(carousel)
                     // Surface locale regressions (e.g. a translated "Albumes"
                     // or a new shelf we don't dispatch yet) in logs instead of
