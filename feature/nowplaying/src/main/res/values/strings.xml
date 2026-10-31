@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Streaming quality sheet (⋮ › Streaming quality, #716). The rows say exactly what
+         Settings › Audio & Quality says for the same switches, so the two read as one setting. -->
+    <string name="np_quality_title">Streaming quality</string>
+    <string name="np_quality_when">Changes apply from the next song</string>
+    <string name="np_quality_lossless_title">Lossless</string>
+    <string name="np_quality_lossless_subtitle_active">Streams in FLAC</string>
+    <string name="np_quality_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
+    <string name="np_quality_lossless_subtitle_no_source">No lossless source set up yet</string>
+    <string name="np_quality_save_data_title">Save Data</string>
+    <string name="np_quality_save_data_lossless_subtitle">CD quality on every network</string>
+    <string name="np_quality_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="np_quality_prefer_tidal_aac_title">Prefer Tidal AAC while streaming</string>
+    <string name="np_quality_prefer_tidal_aac_subtitle">Smaller streams when Tidal has the song</string>
+    <string name="np_quality_allowance_note">FLAC and Tidal AAC both count toward today\'s Tidal &amp; Qobuz allowance. Lossless off saves it.</string>
+</resources>

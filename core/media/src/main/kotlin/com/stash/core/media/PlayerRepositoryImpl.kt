@@ -546,6 +546,12 @@ class PlayerRepositoryImpl @Inject constructor(
     private val prefetchInFlight: MutableSet<Long> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
+    /**
+     * Bumped by [reresolveNextStream]. A prefetch whose resolve was in flight across a bump may
+     * hold the old quality's URL, so it resolves again rather than put that in the next slot.
+     */
+    @Volatile private var streamQualityChanges = 0
+
     private val cascadeGuard = StreamErrorCascadeGuard()
     private val _streamingHaltedEvents = MutableSharedFlow<StreamingHaltedEvent>(
         replay = 1,
@@ -1129,6 +1135,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // capped lossless source (verified on-device 2026-06-21). Claim the id; a racing call for
         // the same next-up returns immediately and lets the winner cache it.
         if (!prefetchInFlight.add(next.id)) return
+        val qualityChangesAtStart = streamQualityChanges
 
         val t0 = System.currentTimeMillis()
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
@@ -1150,6 +1157,13 @@ class PlayerRepositoryImpl @Inject constructor(
             return
         }
         prefetchInFlight.remove(next.id)
+        if (qualityChangesAtStart != streamQualityChanges) {
+            // The streaming quality changed while this resolved (reresolveNextStream found it in
+            // flight and left it to finish): its answer may be the old quality's. Ask again.
+            Log.d("LATDIAG", "prefetch-next-end id=${next.id} outcome=quality-changed; resolving again")
+            prefetchNextTrack()
+            return
+        }
         if (resolved == null) {
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=null")
             return
@@ -1166,6 +1180,39 @@ class PlayerRepositoryImpl @Inject constructor(
         // The URL is also in StreamUrlCache, so even an unswapped placeholder
         // opens instantly on a cache hit.
         refreshControllerMediaItem(controller, nextTimelineIndex, next, resolved)
+    }
+
+    /**
+     * The next song was resolved when this one started, under the old setting: its URL is
+     * cached, and usually in its slot too, so a quality change would only have reached the
+     * song after it. The slot goes back to a placeholder and the cached URL is dropped, then
+     * the prefetch resolves it again under the new setting. Where that prefetch stops short
+     * (a speculative resolve never asks the Tidal relay), the placeholder resolves when the
+     * song plays, still under the new setting. Either resolve also drops every other cached
+     * URL ([com.stash.core.media.streaming.StreamQualityPolicy] sees the change).
+     */
+    override suspend fun reresolveNextStream() {
+        if (listenTogetherOwnsQueue) return
+        val controller = controllerDeferred ?: return
+        val index = controller.nextMediaItemIndex
+        // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
+        if (index !in 0 until controller.mediaItemCount || index == controller.currentMediaItemIndex) return
+        val item = controller.getMediaItemAt(index)
+        val nextId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        streamQualityChanges++
+        streamUrlCache.invalidate(nextId)
+        // Only a slot holding a resolved stream: a file, a placeholder or a cloud song is already right.
+        val scheme = item.localConfiguration?.uri?.scheme
+        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
+        if ((scheme == "https" || scheme == "http") && queued != null) {
+            val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply { streamStampKeys.forEach(::remove) }
+            val placeholder = item.buildUpon()
+                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
+                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+                .build()
+            replaceMediaItemKeepingShuffle(controller, index, placeholder)
+        }
+        prefetchNextTrack()
     }
 
     /**
@@ -1186,6 +1233,10 @@ class PlayerRepositoryImpl @Inject constructor(
         resolved: StreamUrl,
     ): Boolean {
         if (timelineIndex !in 0 until controller.mediaItemCount) return false
+        // Playback reached the slot while it resolved (a re-resolve late in a song, a short
+        // song), or it is the one playing (a one-song queue on repeat): a new source would
+        // restart it. The URL stays cached for the next time it is opened.
+        if (!isStillNextUp(controller.currentMediaItemIndex, controller.nextMediaItemIndex, timelineIndex)) return false
         val item = controller.getMediaItemAt(timelineIndex)
         val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: return false
         if (itemTrackId != next.id) return false
@@ -1237,8 +1288,7 @@ class PlayerRepositoryImpl @Inject constructor(
         if (item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) != next.id) return
         val fileItem = next.toMediaItem()
         val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-            listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
-                .forEach(::remove)
+            streamStampKeys.forEach(::remove)
             putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
         }
         val refreshed = item.buildUpon()
@@ -3572,6 +3622,11 @@ class PlayerRepositoryImpl @Inject constructor(
 
     companion object {
         private const val TAG = "StashPlayer"
+
+        /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
+        private val streamStampKeys = listOf(
+            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN,
+        )
 
         /**
          * Separate tag for the Now Playing quality stamp so its (chatty,
