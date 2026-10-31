@@ -79,6 +79,20 @@ class LosslessDiagnosticsContributorTest {
         assertThat(s).contains("Stash lossless: configured")
     }
 
+    /** Settings' order is the order a song asks them; the bundle must not tell a different story. */
+    @Test fun `routing keeps Settings' order - an own Tidal server ahead of Stash lossless`() = runTest {
+        every { availability.routingRows } returns flowOf(
+            listOf(
+                RoutingRow("qobuz", "Your Qobuz account", "not connected", RoutingState.NOT_CONFIGURED),
+                RoutingRow("tidal", "Custom Tidal server", "configured", RoutingState.CONFIGURED),
+                RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
+            ),
+        )
+        val s = contributor().section()
+        assertThat(s).contains("Custom Tidal server: configured")
+        assertThat(s.indexOf("Custom Tidal server")).isLessThan(s.indexOf("Stash lossless"))
+    }
+
     @Test fun `relays are listed by host with their cooldown and the config timestamp`() = runTest {
         every { relayClient.isCooled("https://relay.example.workers.dev") } returns true
         val s = contributor().section()
