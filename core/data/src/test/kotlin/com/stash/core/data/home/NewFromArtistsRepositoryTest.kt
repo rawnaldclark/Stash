@@ -24,6 +24,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.io.IOException
 import java.time.LocalDate
+import java.util.Collections
 
 /**
  * [NewFromArtistsRepository]: end to end on a real artist page and the real search that finds it (data:ytmusic's
@@ -84,8 +85,9 @@ class NewFromArtistsRepositoryTest {
 
     private val lookups = mutableMapOf<String, ArtistLookup>()
     private val pages = mutableMapOf<String, () -> ArtistProfile>()
-    private val looked = mutableListOf<String>()
-    private val read = mutableListOf<String>()
+    // A build looks artists up and reads their pages side by side (on Dispatchers.IO): record them thread-safely
+    private val looked: MutableList<String> = Collections.synchronizedList(mutableListOf())
+    private val read: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private var played = emptySet<String>()
 
     private fun found(name: String, exact: Boolean = true) = ArtistLookup.Found(ArtistSummary("UC-$name", name, null), exact)
