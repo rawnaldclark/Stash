@@ -43,7 +43,7 @@ class LikedSongsDetailViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
-    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    /** Start radio from a song's menu (null in tests that don't need it). */
     private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 

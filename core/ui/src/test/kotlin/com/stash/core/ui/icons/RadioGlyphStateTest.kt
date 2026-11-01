@@ -52,7 +52,7 @@ class RadioGlyphStateTest {
 
     @Test
     fun `the outer arc breathes after the inner one`() {
-        // The inner arc peaks a quarter of its active span in; the outer one later, by the lag.
+        // The inner arc peaks halfway through its active span; the outer one later, by the lag.
         val innerPeak = (0..1000).maxBy { ringBreath(it / 1000f, 0) } / 1000f
         val outerPeak = (0..1000).maxBy { ringBreath(it / 1000f, 1) } / 1000f
         assertThat(outerPeak).isGreaterThan(innerPeak)

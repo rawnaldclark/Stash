@@ -97,7 +97,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
     private val downloadQueueDao: DownloadQueueDao,
     private val orderDao: com.stash.core.data.db.dao.PlaylistOrderDao,
-    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    /** Start radio from a song's menu (null in tests that don't need it). */
     private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 

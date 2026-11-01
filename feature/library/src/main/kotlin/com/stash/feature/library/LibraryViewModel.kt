@@ -125,7 +125,7 @@ class LibraryViewModel @Inject constructor(
     private val connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor? = null,
     /** Artists and Albums' "Show" choice in Stream only (null in tests = Everything). */
     private val libraryScopePreference: com.stash.core.data.prefs.LibraryScopePreference? = null,
-    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    /** Start radio from a song's menu (null in tests that don't need it). */
     private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
