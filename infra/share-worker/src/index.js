@@ -57,7 +57,7 @@ export async function handle(request, env, ctx) {
     // Art write-backs run after the response when there's a ctx; tests have none, so there they finish first.
     const later = (p) => (ctx ? ctx.waitUntil(p) : p);
     // ART_RL: art lookups per IP a minute. Over it, a page uses hqdefault (or no image) instead of asking Spotify and Deezer.
-    const allowLookup = async () => (await env.ART_RL.limit({ key: ip(request) })).success;
+    const allowLookup = async () => (await env.ART_RL.limit({ key: ip(request, env) })).success;
 
     if (path === "/v1/mixes") return method === "POST" ? createMix(request, env, url) : methodNotAllowed();
     const m = MIX_API.exec(path);
@@ -131,7 +131,7 @@ async function readBody(request, max = MAX_BODY_BYTES) {
 }
 
 async function createMix(request, env, url) {
-    if (!(await env.CREATE_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(await env.CREATE_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { body, tooBig } = await readBody(request);
     if (tooBig) return json({ error: "too_large" }, 413);
     if (!body || !validEditKey(body.editKey)) return json({ error: "bad_request" }, 400);
@@ -149,7 +149,7 @@ async function createMix(request, env, url) {
  * before answers 200 with its existing link, and a new one 201.
  */
 async function createTrack(request, env, url) {
-    if (!(await env.TRACK_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(await env.TRACK_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { body, tooBig } = await readBody(request, MAX_TRACK_BODY_BYTES);
     if (tooBig) return json({ error: "too_large" }, 413);
     const problem = validateTrackLink(body);
@@ -213,7 +213,7 @@ async function authorised(request, record) {
 }
 
 async function updateMix(request, env, id) {
-    if (!(await env.WRITE_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(await env.WRITE_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { record, response } = await load(env, id);
     if (response) return response;
     if (!(await authorised(request, record))) return json({ error: "forbidden" }, 403);
@@ -233,7 +233,7 @@ async function updateMix(request, env, id) {
 }
 
 async function deleteMix(request, env, id) {
-    if (!(await env.WRITE_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(await env.WRITE_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { record, response } = await load(env, id);
     if (response) return response;
     if (!(await authorised(request, record))) return json({ error: "forbidden" }, 403);
@@ -242,7 +242,7 @@ async function deleteMix(request, env, id) {
 }
 
 /** JOIN_RL: 60 room lookups (preview, socket, invite page) a minute per IP, so live codes can't be found by walking. */
-const joinAllowed = async (request, env) => (await env.JOIN_RL.limit({ key: ip(request) })).success;
+const joinAllowed = async (request, env) => (await env.JOIN_RL.limit({ key: ip(request, env) })).success;
 
 async function roomPreview(stub) {
     const r = await stub.fetch(new Request("https://room/preview"));
@@ -251,7 +251,7 @@ async function roomPreview(stub) {
 
 /** POST /v1/rooms (spec 2026-09-24 §2): a fresh room, its code and the host key (only its SHA-256 is kept). */
 async function createRoom(request, env, url) {
-    if (!(await env.ROOM_RL.limit({ key: ip(request) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
+    if (!(await env.ROOM_RL.limit({ key: ip(request, env) })).success) return json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
     const { body, tooBig } = await readBody(request);
     if (tooBig) return json({ error: "too_large" }, 413);
     const hostName = typeof body?.hostName === "string" ? body.hostName.trim().slice(0, 40) || undefined : undefined;

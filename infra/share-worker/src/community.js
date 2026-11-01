@@ -3,7 +3,7 @@
  * D1 tables: posts, votes, blocked (migrations/). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
-import { json, networkOf, readCapped } from "./http.js";
+import { ip, json, readCapped } from "./http.js";
 import { validEditKey } from "./validate.js";
 import { newId, sha256Hex } from "./store.js";
 import { cleanPost, summaryOf } from "./community-post.js";
@@ -43,7 +43,7 @@ export const hiddenByVotes = (p) => p.up - p.down <= HIDE_AT && !p.vouched;
 /** Routes every /v1/community/* request. [method] has HEAD folded into GET. */
 export async function communityRoute(request, env, path, method) {
     const now = Date.now();
-    if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: network(request) })).success) return rateLimited();
+    if (method === "GET" && !(await env.COMMUNITY_READ_RL.limit({ key: network(request, env) })).success) return rateLimited();
     if (path === "/v1/community/feed") return method === "GET" ? feed(request, env, now) : notAllowed();
     if (path === "/v1/community/mine") return method === "GET" ? mine(request, env, now) : notAllowed();
     if (path === "/v1/community/me") return method === "GET" ? me(request, env, now) : notAllowed();
@@ -67,14 +67,15 @@ async function identity(request) {
 }
 
 /**
- * The caller's network (an IPv4 address, or an IPv6 /56). The per-minute limits count by it too (spec §2), so
- * hopping /64s inside one /56 doesn't dodge them; the stored form is salted and hashed.
+ * The caller's network (an IPv4 address, or an IPv6 /56): http.js's ip(), so a web listener behind the player's proxy
+ * is their own network when the proxy vouches for them (SHARE_PROXY_KEY). The per-minute limits count by it too
+ * (spec §2), so hopping /64s inside one /56 doesn't dodge them; the stored form is salted and hashed.
  */
-const network = (request) => networkOf(request.headers.get("CF-Connecting-IP") || "?");
+const network = (request, env) => ip(request, env);
 const networkHash = (request, env) => {
     // Unsalted, the stored IPv4 hashes could be reversed by trying every address (spec §2): refuse instead.
     if (!env.COMMUNITY_SALT) throw new Error("COMMUNITY_SALT is not set");
-    return sha256Hex(`${env.COMMUNITY_SALT}|${network(request)}`);
+    return sha256Hex(`${env.COMMUNITY_SALT}|${network(request, env)}`);
 };
 
 async function readJson(request) {
@@ -95,7 +96,7 @@ const LIMITS_SQL = `SELECT
     (SELECT COUNT(*) FROM posts WHERE ip_hash = ?4 AND created_at > ?2) AS network`;
 
 async function createPost(request, env, now) {
-    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request, env) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { body, tooBig } = await readJson(request);
@@ -194,7 +195,7 @@ export const RECOUNT_SQL = `UPDATE posts SET
     WHERE id = ?1 RETURNING up, down`;
 
 async function vote(request, env, id, now) {
-    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const { body, tooBig } = await readJson(request);
@@ -226,7 +227,7 @@ async function vote(request, env, id, now) {
 }
 
 async function takeDown(request, env, id, now) {
-    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request) })).success) return rateLimited();
+    if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request, env) })).success) return rateLimited();
     const who = await identity(request);
     if (!who.id) return json({ error: "bad_key" }, 401);
     const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, vouched, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
