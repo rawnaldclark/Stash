@@ -83,7 +83,7 @@ class NewFromArtistsRepositoryTest {
     }
 
     @Test
-    fun `built once a day: a second look reads the saved row, the next day builds again`() = runTest {
+    fun `built once a day - a second look reads the saved row, the next day builds again`() = runTest {
         val first = repo().shelf()
         assertEquals(1, browses)
         // A new repository (process death) reads the file
