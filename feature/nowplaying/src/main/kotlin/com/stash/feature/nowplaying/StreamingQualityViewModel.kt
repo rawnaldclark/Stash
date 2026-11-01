@@ -8,6 +8,8 @@ import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.prefs.StreamingQualityPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -71,14 +73,28 @@ class StreamingQualityViewModel @Inject constructor(
 
     fun onPreferTidalAacChanged(on: Boolean) = change { qualityPrefs.setPreferTidalAac(on) }
 
+    /** The next song's look-up waiting out [RERESOLVE_DEBOUNCE_MS]; only touched on the main thread. */
+    private var pendingReresolve: Job? = null
+
     /**
-     * Writes the setting, then has the next song resolved again under it. In the app-wide user
-     * action scope: closing the sheet, or Now Playing, right after a tap must not cancel either.
+     * Writes the setting at once, then has the next song resolved again under it, once the taps
+     * settle: each look-up can be a Tidal or Qobuz answer from the daily allowance, so flipping
+     * on, off and on again asks once, not three times. In the app-wide user action scope:
+     * closing the sheet, or Now Playing, right after a tap must not cancel either.
      */
     private fun change(write: suspend () -> Unit) {
         userActionScope.scope.launch {
             write()
-            playerRepository.reresolveNextStream()
+            pendingReresolve?.cancel()
+            pendingReresolve = userActionScope.scope.launch {
+                delay(RERESOLVE_DEBOUNCE_MS)
+                playerRepository.reresolveNextStream()
+            }
         }
+    }
+
+    internal companion object {
+        /** Long enough to cover a quick double flip, short enough to land well before a song ends. */
+        const val RERESOLVE_DEBOUNCE_MS = 600L
     }
 }

@@ -177,6 +177,22 @@ class PlayerRepositoryReresolveNextStreamTest {
     }
 
     @Test
+    fun `a downloaded next song keeps its file - nothing is swapped or looked up`() = runTest {
+        val file = "/storage/music/next.flac"
+        repo.currentQueueTracks = listOf(
+            playing,
+            next.copy(isDownloaded = true, filePath = file, fileSizeBytes = 30_000_000L),
+        )
+        every { controller.getMediaItemAt(1) } returns slot(2L, "file://$file")
+        repo.filePathExistsOnDisk = { it == file }
+
+        repo.reresolveNextStream()
+
+        verify(exactly = 0) { controller.replaceMediaItem(any(), any()) }
+        coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test
     fun `a one-song queue on repeat keeps its stream - the next song is the one playing`() = runTest {
         every { controller.nextMediaItemIndex } returns 0
         every { controller.mediaItemCount } returns 1

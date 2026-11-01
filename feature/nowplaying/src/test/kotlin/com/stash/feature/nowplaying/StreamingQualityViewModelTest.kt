@@ -5,6 +5,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.prefs.StreamingQualityPreferences
+import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
@@ -13,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -91,6 +94,7 @@ class StreamingQualityViewModelTest {
 
     @Test fun `turning Lossless off writes Settings' switch, then resolves the next song again`() = runTest(dispatcher) {
         viewModel.onLosslessChanged(false)
+        advanceUntilIdle() // the look-up waits for the taps to settle
         coVerifyOrder {
             losslessPrefs.setEnabled(false)
             player.reresolveNextStream()
@@ -99,14 +103,31 @@ class StreamingQualityViewModelTest {
 
     @Test fun `Save Data writes Settings' switch, then resolves the next song again`() = runTest(dispatcher) {
         viewModel.onSaveDataChanged(true)
+        advanceUntilIdle() // the look-up waits for the taps to settle
         coVerifyOrder {
             qualityPrefs.setSaveData(true)
             player.reresolveNextStream()
         }
     }
 
+    @Test fun `quick flips write each time but look the next song up once, after the last`() = runTest(dispatcher) {
+        viewModel.onSaveDataChanged(true)
+        advanceTimeBy(StreamingQualityViewModel.RERESOLVE_DEBOUNCE_MS / 2)
+        viewModel.onSaveDataChanged(false)
+        advanceTimeBy(StreamingQualityViewModel.RERESOLVE_DEBOUNCE_MS / 2)
+        viewModel.onSaveDataChanged(true)
+        coVerify(exactly = 0) { player.reresolveNextStream() }
+
+        advanceUntilIdle()
+
+        coVerify(exactly = 2) { qualityPrefs.setSaveData(true) }
+        coVerify(exactly = 1) { qualityPrefs.setSaveData(false) }
+        coVerify(exactly = 1) { player.reresolveNextStream() }
+    }
+
     @Test fun `Prefer Tidal AAC writes Settings' switch, then resolves the next song again`() = runTest(dispatcher) {
         viewModel.onPreferTidalAacChanged(true)
+        advanceUntilIdle() // the look-up waits for the taps to settle
         coVerifyOrder {
             qualityPrefs.setPreferTidalAac(true)
             player.reresolveNextStream()
