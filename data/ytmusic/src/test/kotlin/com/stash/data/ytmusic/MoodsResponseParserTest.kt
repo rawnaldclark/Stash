@@ -148,7 +148,9 @@ class MoodsResponseParserTest {
 
     private fun retitled(section: JsonObject, title: String): JsonObject {
         val grid = section["gridRenderer"]!!.asObject()!!
-        val header = JsonObject(mapOf("gridHeaderRenderer" to JsonObject(mapOf("title" to JsonObject(mapOf("runs" to JsonArray(listOf(JsonObject(mapOf("text" to JsonPrimitive(title))))))))))
+        val run = JsonObject(mapOf("text" to JsonPrimitive(title)))
+        val titleRuns = JsonObject(mapOf("runs" to JsonArray(listOf(run))))
+        val header = JsonObject(mapOf("gridHeaderRenderer" to JsonObject(mapOf("title" to titleRuns))))
         return JsonObject(mapOf("gridRenderer" to JsonObject(grid + ("header" to header))))
     }
 }
