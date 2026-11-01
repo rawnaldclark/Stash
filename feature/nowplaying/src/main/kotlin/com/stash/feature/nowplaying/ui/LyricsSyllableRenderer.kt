@@ -340,11 +340,21 @@ private fun SimpleSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle, 
         }
     }
     // Runs frames only while ACTIVE, or until the springs settle after a phase flip; never while
-    // Now Playing is parked under the mini player.
+    // Now Playing is parked under the mini player, and never with motion still (Remove animations,
+    // or Battery Saver): the word then takes its still look once per phase.
     val shown = LocalNowPlayingShown.current
-    LaunchedEffect(syl, phase, shown) {
+    val still = rememberNpReducedMotion()
+    LaunchedEffect(syl, phase, shown, still) {
         if (!shown) return@LaunchedEffect
         val ph = phase
+        if (still) {
+            val p = LyricsMotion.stillProgress(ph)
+            motion.settle(
+                LyricsMotion.WordScale.at(p), LyricsMotion.WordY.at(p), LyricsMotion.Glow.at(p),
+                LyricsMotion.stillGradient(ph),
+            )
+            return@LaunchedEffect
+        }
         frameLoop { dt ->
             val p = when (ph) { PHASE_ACTIVE -> progressOf(clock.value, syl.startMs, syl.endMs); PHASE_SUNG -> 1f; else -> 0f }
             motion.setGoals(
@@ -370,8 +380,13 @@ private fun EmphasisSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle
         }
     }
     val shown = LocalNowPlayingShown.current
-    LaunchedEffect(syl, phase, shown) {
+    val still = rememberNpReducedMotion()
+    LaunchedEffect(syl, phase, shown, still) {
         if (!shown) return@LaunchedEffect
+        if (still) {
+            motion.settleStill(phase)
+            return@LaunchedEffect
+        }
         frameLoop { dt -> motion.update(clock.value, syl.startMs, syl.endMs, dt) }
     }
     val fontPx = with(LocalDensity.current) { style.fontSize.toPx() }
@@ -504,9 +519,14 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
         }
     }
     val shown = LocalNowPlayingShown.current
-    LaunchedEffect(startMs, endMs, phase, shown) {
+    val still = rememberNpReducedMotion()
+    LaunchedEffect(startMs, endMs, phase, shown, still) {
         if (!shown) return@LaunchedEffect
         val ph = phase
+        if (still) {
+            motion.settle(LyricsMotion.stillProgress(ph))
+            return@LaunchedEffect
+        }
         frameLoop { dt ->
             val p = when (ph) { PHASE_ACTIVE -> progressOf(clock.value, startMs, endMs); PHASE_SUNG -> 1f; else -> 0f }
             motion.setGoals(p)

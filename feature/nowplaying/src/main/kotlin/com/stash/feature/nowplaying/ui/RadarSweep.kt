@@ -8,7 +8,10 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -45,13 +48,18 @@ fun RadarSweep(
     // long as Now Playing is open.
     if (!tuning && !lock) return
 
-    val transition = rememberInfiniteTransition(label = "radarSweep")
-    val angle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 1150, easing = LinearEasing)),
-        label = "radarAngle",
-    )
+    // With motion still (Remove animations, or Battery Saver) the arc holds at the top: the ring and
+    // the arc still say "tuning", without a frame per refresh for it. Read in draw, never composition.
+    val angle: State<Float> = if (com.stash.core.ui.ambient.rememberReducedMotion()) {
+        remember { mutableFloatStateOf(STILL_ARC_DEGREES) }
+    } else {
+        rememberInfiniteTransition(label = "radarSweep").animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 1150, easing = LinearEasing)),
+            label = "radarAngle",
+        )
+    }
     // Lock: arc sweeps open to a full circle quickly, then the caller
     // removes the composable (fade handled by state, not alpha here).
     // Tuning always precedes lock in practice, so this state exists before
@@ -76,7 +84,7 @@ fun RadarSweep(
         // Sweep arc (rotates while tuning; full circle on lock).
         drawArc(
             color = color.copy(alpha = if (lock) 0.95f else 0.8f),
-            startAngle = if (lock) 0f else angle,
+            startAngle = if (lock) 0f else angle.value,
             sweepAngle = sweepDegrees,
             useCenter = false,
             topLeft = topLeft, size = arcSize, style = stroke,
@@ -86,3 +94,6 @@ fun RadarSweep(
 
 /** How long the locked full circle holds before the caller clears it. */
 const val LOCK_HOLD_MS = 250L
+
+/** Where a still arc sits: its 40 degrees centred on the top of the ring (Canvas 0 degrees is 3 o'clock). */
+private const val STILL_ARC_DEGREES = 250f

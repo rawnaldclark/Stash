@@ -8,7 +8,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -59,24 +61,35 @@ fun ClassicAmbientBackground(
     // whether the orbs animate) is entirely gated by the caller's
     // ambientAnimationEnabled check in NowPlayingScreen.
 
-    // Infinite angular animations for the three orbital paths.
-    val infiniteTransition = rememberInfiniteTransition(label = "ambientOrbit")
-
-    val angle1 by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(12_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "orbit12s",
-    )
-    val angle2 by infiniteTransition.animateFloat(
-        initialValue = 120f, targetValue = 480f,
-        animationSpec = infiniteRepeatable(tween(16_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "orbit16s",
-    )
-    val angle3 by infiniteTransition.animateFloat(
-        initialValue = 240f, targetValue = 600f,
-        animationSpec = infiniteRepeatable(tween(20_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "orbit20s",
-    )
+    // Infinite angular animations for the three orbital paths. With motion still (Remove
+    // animations, or Battery Saver) the orbs stand at their start angles and no frame runs, as the
+    // Soft glow ambient's do.
+    // The angles are States read in the Canvas's draw, so an orbit frame redraws, never recomposes.
+    val orbit1: State<Float>
+    val orbit2: State<Float>
+    val orbit3: State<Float>
+    if (com.stash.core.ui.ambient.rememberReducedMotion()) {
+        orbit1 = remember { mutableFloatStateOf(0f) }
+        orbit2 = remember { mutableFloatStateOf(120f) }
+        orbit3 = remember { mutableFloatStateOf(240f) }
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "ambientOrbit")
+        orbit1 = infiniteTransition.animateFloat(
+            initialValue = 0f, targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(12_000, easing = LinearEasing), RepeatMode.Restart),
+            label = "orbit12s",
+        )
+        orbit2 = infiniteTransition.animateFloat(
+            initialValue = 120f, targetValue = 480f,
+            animationSpec = infiniteRepeatable(tween(16_000, easing = LinearEasing), RepeatMode.Restart),
+            label = "orbit16s",
+        )
+        orbit3 = infiniteTransition.animateFloat(
+            initialValue = 240f, targetValue = 600f,
+            animationSpec = infiniteRepeatable(tween(20_000, easing = LinearEasing), RepeatMode.Restart),
+            label = "orbit20s",
+        )
+    }
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -111,7 +124,7 @@ fun ClassicAmbientBackground(
         }
 
         // Gradient 1 — dominant, highest presence.
-        val center1 = orbitalCenter(angle1)
+        val center1 = orbitalCenter(orbit1.value)
         drawCircle(
             color = orbColor(colors.dom, darkAlpha = 0.35f, lightAlpha = 0.22f, liftToWhite = false),
             radius = gradientRadius,
@@ -119,7 +132,7 @@ fun ClassicAmbientBackground(
         )
 
         // Gradient 2 — vibrant, medium presence.
-        val center2 = orbitalCenter(angle2)
+        val center2 = orbitalCenter(orbit2.value)
         drawCircle(
             color = orbColor(colors.vib, darkAlpha = 0.25f, lightAlpha = 0.15f, liftToWhite = true),
             radius = gradientRadius * 0.85f,
@@ -127,7 +140,7 @@ fun ClassicAmbientBackground(
         )
 
         // Gradient 3 — muted, subtle presence.
-        val center3 = orbitalCenter(angle3)
+        val center3 = orbitalCenter(orbit3.value)
         drawCircle(
             color = orbColor(colors.mut, darkAlpha = 0.20f, lightAlpha = 0.11f, liftToWhite = false),
             radius = gradientRadius * 0.70f,

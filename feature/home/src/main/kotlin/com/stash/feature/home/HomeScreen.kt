@@ -1231,8 +1231,10 @@ private fun SupporterTicker(
     val epochMs = rememberSaveable { System.currentTimeMillis() }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Runs only while Home is in front: under the open player the tape holds still, and being
-    // wall-clock it picks up mid-flow when the player closes.
-    val tapeActive = com.stash.core.ui.components.rememberPageActive()
+    // wall-clock it picks up mid-flow when the player closes. With motion still (Remove
+    // animations, or Battery Saver) it holds too: the endless tape is a frame every refresh.
+    val tapeActive = com.stash.core.ui.components.rememberPageActive() &&
+        !com.stash.core.ui.ambient.rememberReducedMotion()
     LaunchedEffect(tapeActive) {
         if (!tapeActive) return@LaunchedEffect
         while (true) {

@@ -134,6 +134,10 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var likeCoordinator: LikeCoordinator
 
+    /** Android's Battery Saver: the whole UI's motion stands still while it is on (D19). */
+    @Inject
+    lateinit var batterySaver: com.stash.core.common.power.BatterySaver
+
     /** The daily lossless allowance: its once-a-day heads-ups (50 left, limit reached) snackbar in [StashScaffold]. */
     @Inject
     lateinit var losslessQuota: LosslessQuota
@@ -281,8 +285,10 @@ class MainActivity : AppCompatActivity() {
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
             // restored back stack always sits on the graph it was saved with.
             val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
+            val batterySaverOn by batterySaver.isOn.collectAsState()
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(
+                    com.stash.core.ui.ambient.LocalBatterySaverOn provides batterySaverOn,
                     LocalUiScaleMax provides UiScale.maxFor(unscaledSmallestWidthDp),
                     LocalListenTogetherRole provides role,
                     LocalCreateTrackLink provides createTrackLink,
