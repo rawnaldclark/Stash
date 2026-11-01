@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import com.stash.core.common.power.FakeBatterySaver
 import com.stash.data.download.preview.PreviewUrlExtractor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -93,5 +94,30 @@ class PreviewPrefetcherTest {
         verify(ex).extractStreamUrl(eq("b"), eq(false), any())
         verify(ex, never()).extractStreamUrl(any(), eq(true), any())
     }
-}
 
+    /**
+     * Battery Saver (D19): Popular rows, an album's first tracks and search results are warmed
+     * one player call each, most never played. While Saver is on nothing is warmed; once it is off
+     * the next prefetch works as before.
+     */
+    @Test
+    fun `prefetch warms nothing while Battery Saver is on, and resumes once it is off`() = runTest {
+        val ex = mock<PreviewUrlExtractor> {
+            onBlocking { extractStreamUrl(any(), any(), any()) } doAnswer { "u/" + it.getArgument<String>(0) }
+        }
+        val cache = mutableMapOf<String, String>()
+        val saver = FakeBatterySaver(on = true)
+        val pf = PreviewPrefetcher(ex, cache, CoroutineScope(StandardTestDispatcher(testScheduler)), saver)
+
+        pf.prefetch(listOf("a", "b"))
+        advanceUntilIdle()
+        verify(ex, never()).extractStreamUrl(any(), any(), any())
+        assertEquals(emptyMap<String, String>(), cache)
+
+        saver.isOn.value = false
+        pf.prefetch(listOf("a", "b"))
+        advanceUntilIdle()
+        verify(ex, times(2)).extractStreamUrl(any(), any(), any())
+        assertEquals("u/a", cache["a"])
+    }
+}

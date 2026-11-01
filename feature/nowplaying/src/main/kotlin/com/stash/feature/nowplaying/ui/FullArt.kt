@@ -125,6 +125,16 @@ private const val RESYNC_MS = 700L
 private const val MAX_SHOWN = 3
 
 /**
+ * With motion still (Remove animations, or Battery Saver) nothing pans or fades, so the clock ticks
+ * this often instead of every frame: a page's cut lands within half a second of its time.
+ */
+internal const val STILL_TICK_MS = 500L
+
+/** The longest step the clocks take in one tick: a frame's hiccup, or a still tick running late. */
+private const val MAX_STEP_MS = 100L
+private const val STILL_MAX_STEP_MS = 2 * STILL_TICK_MS
+
+/**
  * Just after a song changes the player can still report the last one's position for a tick: for
  * this long, only a position near the start is believed.
  */
@@ -241,9 +251,10 @@ internal class FullArtState {
 
     /** One frame: the clocks move, and the page the song has reached comes in once it's loaded. */
     fun tick(now: Long, position: Long, playing: Boolean, failed: Set<String>, still: Boolean) {
-        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, 100L)
+        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, if (still) STILL_MAX_STEP_MS else MAX_STEP_MS)
         lastFrameMs = now
-        frameMs = now
+        // Still, the art neither pans nor fades: nothing to redraw per tick (a cut redraws by itself).
+        if (!still) frameMs = now
         if (playing) playMs += dt
         // The last song's position, still reported a moment after the change, is passed over.
         val believed = now >= settleUntilMs || position < NEW_SONG_START_MS
@@ -417,13 +428,15 @@ internal fun FullArtLayer(
             state.newSong(withFrameMillis { it })
         }
     }
-    // The frame loop: while it's out and in sight.
-    LaunchedEffect(running) {
+    // The frame loop: while it's out and in sight. With motion still it ticks every STILL_TICK_MS
+    // rather than every frame: the pages only cut, so nothing needs the display's refresh rate.
+    LaunchedEffect(running, reducedMotion) {
         if (!running) return@LaunchedEffect
         while (true) {
             withFrameMillis { now ->
                 state.tick(now, currentPosition(), currentPlaying, failed.keys, reducedMotion)
             }
+            if (reducedMotion) delay(STILL_TICK_MS)
         }
     }
 

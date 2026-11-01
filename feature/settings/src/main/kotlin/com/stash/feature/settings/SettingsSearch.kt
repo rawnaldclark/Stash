@@ -70,6 +70,7 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_crossfade_title), SettingsPage.PLAYBACK, listOf("fade", "gapless", "transition")),
         SettingsSearchEntry(s(R.string.settings_lyrics_section), SettingsPage.PLAYBACK, listOf("lrc", "synced", "karaoke", "apple music")),
         SettingsSearchEntry(s(R.string.settings_stream_via_youtube_title), SettingsPage.PLAYBACK, listOf("fallback")),
+        SettingsSearchEntry(s(R.string.settings_search_battery_saver), SettingsPage.PLAYBACK, listOf("power saving", "animations", "prefetch")),
         // Audio & Quality
         SettingsSearchEntry(s(R.string.settings_lossless_title), SettingsPage.AUDIO, listOf("flac", "hifi", "hi res", "quality")),
         SettingsSearchEntry(s(R.string.settings_streaming_on_wifi_title), SettingsPage.AUDIO, listOf("quality", "bitrate")),

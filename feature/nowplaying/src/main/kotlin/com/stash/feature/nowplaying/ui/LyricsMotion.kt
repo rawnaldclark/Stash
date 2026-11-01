@@ -65,6 +65,9 @@ internal class MotionSpring(start: Float, private val frequency: Float, private 
 
     fun setGoal(goal: Float) { g = goal.toDouble() }
 
+    /** At [goal] and at rest at once: no frames to settle (motion still). */
+    fun snapTo(goal: Float) { g = goal.toDouble(); p = g; v = 0.0 }
+
     fun step(dt: Float): Float {
         val d = damping.toDouble()
         val f = frequency * 2.0 * PI                    // Hz -> rad/s
@@ -140,6 +143,15 @@ internal object LyricsMotion {
         else -> GRADIENT_START
     }
 
+    /**
+     * With motion still (Remove animations, or Battery Saver) a word has two looks and no motion
+     * between them: dim until it is sung, lit from the moment it starts. The progress it rests at.
+     */
+    fun stillProgress(phase: Int): Float = if (phase == PHASE_UPCOMING) 0f else 1f
+
+    /** The sweep a still word rests at: none before it is sung, all of it from its start. */
+    fun stillGradient(phase: Int): Float = if (phase == PHASE_UPCOMING) GRADIENT_START else 1f
+
     fun easeSinOut(t: Float): Float = sin(t * (PI / 2)).toFloat()
 }
 
@@ -172,6 +184,15 @@ internal class GlyphMotion(
     }
 
     fun asleep(): Boolean = scaleSpring.canSleep() && ySpring.canSleep() && glowSpring.canSleep()
+
+    /** Straight to these values, at rest: the still look, set once per phase instead of per frame. */
+    fun settle(scaleGoal: Float, yGoal: Float, glowGoal: Float, gradientValue: Float) {
+        scaleSpring.snapTo(scaleGoal); ySpring.snapTo(yGoal); glowSpring.snapTo(glowGoal)
+        scale = scaleGoal
+        yOffset = yGoal
+        glow = glowGoal
+        gradient = gradientValue
+    }
 }
 
 /** Interlude dot: own spring constants (Spicy `DotAnimations`) plus an opacity spring. */
@@ -201,6 +222,16 @@ internal class DotMotion(progress: Float) {
 
     fun asleep(): Boolean =
         scaleSpring.canSleep() && ySpring.canSleep() && glowSpring.canSleep() && opacitySpring.canSleep()
+
+    /** Straight to [progress]'s look, at rest (motion still). */
+    fun settle(progress: Float) {
+        setGoals(progress)
+        scaleSpring.snapTo(LyricsMotion.DotScale.at(progress))
+        ySpring.snapTo(LyricsMotion.DotY.at(progress))
+        glowSpring.snapTo(LyricsMotion.DotGlow.at(progress))
+        opacitySpring.snapTo(LyricsMotion.DotOpacity.at(progress))
+        scale = scaleSpring.value; yOffset = ySpring.value; glow = glowSpring.value; opacity = opacitySpring.value
+    }
 }
 
 /**
@@ -216,6 +247,17 @@ internal class EmphasisMotion(letterCount: Int, initialProgress: Float) {
             LyricsMotion.LetterScale, LyricsMotion.LetterY, initialProgress,
             if (initialProgress >= 1f) 1f else LyricsMotion.GRADIENT_START,
         )
+    }
+
+    /**
+     * The still look for [phase] (motion still): the word and every letter at rest, dim before it
+     * is sung and lit from its start, with no wave rolling through.
+     */
+    fun settleStill(phase: Int) {
+        val p = LyricsMotion.stillProgress(phase)
+        word.settle(LyricsMotion.WordScale.at(p), LyricsMotion.WordY.at(p), LyricsMotion.Glow.at(p), 0f)
+        val gradient = LyricsMotion.stillGradient(phase)
+        letters.forEach { it.settle(LyricsMotion.LetterScale.at(p), LyricsMotion.LetterY.at(p), LyricsMotion.Glow.at(p), gradient) }
     }
 
     /** Returns true when nothing is moving and the syllable is not ACTIVE (safe to stop the frame loop). */
@@ -303,7 +345,9 @@ internal class EmphasisMotion(letterCount: Int, initialProgress: Float) {
 internal fun rememberSmoothPositionMs(positionMs: Long, isPlaying: Boolean = true, speed: Float = 1f): State<Long> {
     val smooth = remember { mutableLongStateOf(positionMs) }
     // Parked under the mini player (LocalNowPlayingShown false) it holds at the tick: no frame loop.
-    val running = isPlaying && LocalNowPlayingShown.current
+    // So it does with motion still (Remove animations, or Battery Saver): the 250 ms ticks are
+    // enough for words that light without motion.
+    val running = isPlaying && LocalNowPlayingShown.current && !rememberNpReducedMotion()
     LaunchedEffect(positionMs, running, speed) {
         smooth.longValue = positionMs
         if (!running) return@LaunchedEffect

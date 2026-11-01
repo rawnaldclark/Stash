@@ -1672,7 +1672,8 @@ private fun TitleLine(
             color = npInk(),
             maxLines = 1,
             softWrap = false,
-            overflow = TextOverflow.Clip,
+            // Still motion has no marquee to carry the rest of a long title: it ends in "…".
+            overflow = if (com.stash.feature.nowplaying.ui.rememberNpReducedMotion()) TextOverflow.Ellipsis else TextOverflow.Clip,
             textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -2397,11 +2398,14 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
 /**
  * The title's endless marquee, only while the player sheet shows Now Playing: parked under the
  * mini player (composed but not placed) the marquee's frame loop kept running with nothing on
- * screen. It starts again from the title's beginning on each opening.
+ * screen. It starts again from the title's beginning on each opening. Never with motion still
+ * (Remove animations, or Battery Saver): the title then ends in "…" instead (see [TitleLine]).
  */
 @Composable
 private fun Modifier.marqueeWhileShown(): Modifier =
-    if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current) basicMarquee(
+    if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current &&
+        !com.stash.feature.nowplaying.ui.rememberNpReducedMotion()
+    ) basicMarquee(
         iterations = Int.MAX_VALUE,
         // Compose's default 1.2 s pause between loops plus 2 s (owner, 2026-10-22).
         repeatDelayMillis = 3_200,
