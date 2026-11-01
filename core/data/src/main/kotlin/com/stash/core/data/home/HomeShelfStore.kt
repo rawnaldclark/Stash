@@ -53,6 +53,19 @@ class HomeShelfStore internal constructor(private val root: File) {
         }
     }
 
+    /** Removes the shelf saved as [name] (a shelf with nothing left to show, like a history that's gone). */
+    fun delete(name: String) {
+        root.resolve("$name.json").delete()
+    }
+
+    /**
+     * Removes every saved shelf. Deleting the listening history calls it ([com.stash.core.data.listening.ListeningHistoryRepository.deleteAll]):
+     * the shelves were built from it (your artists, the songs you play), so they go with it.
+     */
+    fun clear() {
+        if (root.exists() && !root.deleteRecursively()) Log.w(TAG, "couldn't clear every saved shelf")
+    }
+
     companion object {
         private const val TAG = "HomeShelfStore"
         const val DIR = "home_shelves"

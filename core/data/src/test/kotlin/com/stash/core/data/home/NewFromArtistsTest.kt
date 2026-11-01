@@ -82,6 +82,21 @@ class NewFromArtistsTest {
     }
 
     @Test
+    fun `an album and a single of the same title and year show once, as the album`() {
+        val page = ArtistReleases(
+            "Sabrina Carpenter",
+            albums = listOf(AlbumSummary("MPREb_album", "Short n' Sweet", "", null, "2026", releaseType = "Album")),
+            singles = listOf(
+                AlbumSummary("MPREb_single", "Short n' sweet", "", null, "2026", releaseType = "Single"),
+                AlbumSummary("MPREb_old", "Short n' Sweet", "", null, "2025", releaseType = "Single"),
+                album("Espresso", "2025"),
+            ),
+        )
+        val row = NewFromArtists.pick(listOf(page), thisYear = 2026)
+        assertEquals(listOf("MPREb_album", "MPREb_old", "Espresso"), row.map { it.id })
+    }
+
+    @Test
     fun `the row caps at twenty`() {
         val pages = (1..10).map { a -> ArtistReleases("A$a", albums = emptyList(), singles = (1..4).map { album("$a-$it", "2026") }) }
         assertEquals(NewFromArtists.MAX, NewFromArtists.pick(pages, thisYear = 2026).size)

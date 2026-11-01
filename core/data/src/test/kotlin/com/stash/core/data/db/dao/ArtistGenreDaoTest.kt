@@ -126,15 +126,21 @@ class ArtistGenreDaoTest {
         assertEquals(listOf("Drake"), dao.missingArtists(limit = 300, now = now))
     }
 
-    @Test fun `Clear history also empties the genre cache`() = runTest {
+    @Test fun `Clear history also empties the genre cache and Home's saved shelves`() = runTest {
         listened("Drake", plays = 2)
         dao.upsertAll(listOf(row("Drake", STATUS_TAGGED, fetchedAt = now)))
+        val shelvesDir = kotlin.io.path.createTempDirectory("home_shelves").toFile()
+        val shelves = com.stash.core.data.home.HomeShelfStore(shelvesDir)
+        shelves.write("new_from_artists", kotlinx.serialization.serializer<String>(), "Drake")
         // The repository as Hilt builds it.
-        val history = com.stash.core.data.listening.ListeningHistoryRepository(db.listeningHistoryDao(), dao)
+        val history = com.stash.core.data.listening.ListeningHistoryRepository(db.listeningHistoryDao(), dao, shelves)
 
         assertEquals(2, history.deleteAll())
 
         assertTrue(dao.observeAll().first().isEmpty())
+        // "New from your artists" named Drake: it goes with the history
+        assertEquals(null, shelves.read("new_from_artists", kotlinx.serialization.serializer<String>()))
+        shelvesDir.deleteRecursively()
     }
 
     @Test fun `an untaggable artist waits its retry age`() = runTest {

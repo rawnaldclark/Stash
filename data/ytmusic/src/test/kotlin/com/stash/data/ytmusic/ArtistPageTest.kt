@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import com.stash.data.ytmusic.model.ArtistLookup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,7 +20,8 @@ import org.mockito.kotlin.whenever
  * [YTMusicApiClient.getArtistPage] against a real artist page (`artist_new_releases.json`: Sabrina Carpenter's
  * `UCz51ZodJbYUNfkdPHOjJKKw`, fetched signed out with hl=en gl=US on 2026-11-01 and trimmed: menus and tracking
  * params dropped, Popular, Albums, Singles & EPs and Videos kept). Its Singles & EPs carousel has a "View all" link,
- * which [YTMusicApiClient.getArtist] follows and the one-browse page must not.
+ * which [YTMusicApiClient.getArtist] follows and the one-browse page must not. `search_artists_sabrina.json` is the
+ * artists-filtered search that finds her (same day, same settings, trimmed), for [YTMusicApiClient.lookUpArtist].
  */
 class ArtistPageTest {
 
@@ -71,5 +73,34 @@ class ArtistPageTest {
             assertEquals(years.max(), years.first())
         }
         assertEquals(listOf("2015", "2020"), profile.albums.takeLast(2).map { it.year })
+    }
+
+    private fun searching(): InnerTubeClient {
+        val inner = mock<InnerTubeClient>()
+        val found = Json.parseToJsonElement(fixture("search_artists_sabrina.json")).jsonObject
+        runBlocking {
+            whenever(inner.searchWithStatus(any(), anyOrNull())).thenReturn(InnerTubeClient.RequestOutcome(found, 200))
+            whenever(inner.searchWithStatus(eq("Nobody"), anyOrNull()))
+                .thenReturn(InnerTubeClient.RequestOutcome(null, InnerTubeClient.RequestOutcome.STATUS_NETWORK_ERROR))
+        }
+        return inner
+    }
+
+    @Test
+    fun `looking an artist up tells an exact match, a loose one, no such artist and no answer apart`() = runTest {
+        val api = YTMusicApiClient(searching())
+        // The shelf answers with Sabrina Carpenter, for every name asked
+        val exact = api.lookUpArtist("Sabrina Carpenter") as ArtistLookup.Found
+        assertEquals("UCz51ZodJbYUNfkdPHOjJKKw", exact.artist.id)
+        assertTrue(exact.exact)
+        // A credit's main act is exact too
+        assertTrue((api.lookUpArtist("Sabrina Carpenter, Someone") as ArtistLookup.Found).exact)
+        // "Sabrina" is only contained in her name: found, but loose (the caller must confirm it)
+        assertEquals(false, (api.lookUpArtist("Sabrina") as ArtistLookup.Found).exact)
+        // Answered, and nobody on the shelf is Bon Iver: remembered by the caller as not there
+        assertEquals(ArtistLookup.NotFound, api.lookUpArtist("Bon Iver"))
+        // No answer at all: to be tried again, never remembered
+        assertEquals(ArtistLookup.NoAnswer, api.lookUpArtist("Nobody"))
+        assertEquals(ArtistLookup.NotFound, api.lookUpArtist(" "))
     }
 }

@@ -8,6 +8,7 @@ import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSearch
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistLookup
 import com.stash.data.ytmusic.model.ArtistPhotoResolution
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.PagedAlbums
@@ -702,6 +703,21 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
+     * Look an artist name up for a caller that remembers the answer (Home's "New from your artists"): the same
+     * artists-filtered search and name guard as [resolveArtist], but three-way ([ArtistLookup]), so "answered, no
+     * such artist" can be remembered while "no answer" is retried, and saying whether the match is exact
+     * ([ArtistLookup.Found.exact]): a loose one ("Bon" in "Bon Iver") is the caller's to confirm.
+     */
+    suspend fun lookUpArtist(name: String): ArtistLookup {
+        if (name.isBlank()) return ArtistLookup.NotFound
+        val outcome = innerTubeClient.searchWithStatus(name, params = ARTISTS_FILTER)
+        val body = outcome.body ?: return ArtistLookup.NoAnswer
+        val candidates = artistsOnShelf(body)
+        exactArtist(candidates, name)?.let { return ArtistLookup.Found(it, exact = true) }
+        return selectArtist(candidates, name)?.let { ArtistLookup.Found(it, exact = false) } ?: ArtistLookup.NotFound
+    }
+
+    /**
      * Resolve an artist name to its official photo for the artist-photo
      * backfill. Same artists-filtered search — and the same name-match
      * guard, so the worker never stamps an unrelated artist's photo — as
@@ -749,13 +765,9 @@ class YTMusicApiClient @Inject constructor(
      */
     private fun selectArtist(candidates: List<ArtistSummary>, wanted: String): ArtistSummary? {
         if (candidates.isEmpty()) return null
+        exactArtist(candidates, wanted)?.let { return it }
         val candidateKeys = candidates.map { artistMatchKey(it.name) }
-        val wantedParts = (listOf(wanted) + wanted.splitArtistCredits())
-            .map { artistMatchKey(it) }.filter { it.isNotEmpty() }.distinct()
-        for (part in wantedParts) {
-            val exact = candidateKeys.indexOf(part)
-            if (exact >= 0) return candidates[exact]
-        }
+        val wantedParts = wantedArtistKeys(wanted)
         for (part in wantedParts) {
             val overlap = candidateKeys.indexOfFirst { key ->
                 key.length >= 3 && part.length >= 3 && (key.contains(part) || part.contains(key))
@@ -769,6 +781,20 @@ class YTMusicApiClient @Inject constructor(
         )
         return null
     }
+
+    /** [selectArtist]'s first pass alone: the first of [candidates] whose name equals [wanted] or one of its credits. */
+    private fun exactArtist(candidates: List<ArtistSummary>, wanted: String): ArtistSummary? {
+        val candidateKeys = candidates.map { artistMatchKey(it.name) }
+        for (part in wantedArtistKeys(wanted)) {
+            val exact = candidateKeys.indexOf(part)
+            if (exact >= 0) return candidates[exact]
+        }
+        return null
+    }
+
+    /** [wanted] whole, then credit by credit, as [artistMatchKey]s. */
+    private fun wantedArtistKeys(wanted: String): List<String> =
+        (listOf(wanted) + wanted.splitArtistCredits()).map { artistMatchKey(it) }.filter { it.isNotEmpty() }.distinct()
 
     /**
      * Canonical key for artist-name equality: case- and diacritic-folded

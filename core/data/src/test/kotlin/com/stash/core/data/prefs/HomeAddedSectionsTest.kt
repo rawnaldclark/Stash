@@ -60,6 +60,16 @@ class HomeAddedSectionsTest {
     }
 
     @Test
+    fun `with new releases hidden, it still sits where new releases would be and shows`() {
+        // Hidden sections keep their place in the order: the anchor is still there, only not shown
+        val order = effectiveHomeSectionOrder(savedBy0_9_122, promoted = true)
+        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 1, order.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        val shown = visibleHomeSections(order, setOf(HomeSection.NEW_RELEASES), communityOn = false)
+        assertFalse(HomeSection.NEW_RELEASES in shown)
+        assertEquals(shown.indexOf(HomeSection.QOBUZ_PLAYLISTS) - 1, shown.indexOf(HomeSection.NEW_FROM_ARTISTS))
+    }
+
+    @Test
     fun `placing is idempotent and keeps a full permutation`() {
         for (saved in listOf(emptyList(), savedBy0_9_122, listOf("radios"), listOf("top_albums", "discover"))) {
             val resolved = resolveHomeSectionOrder(saved)

@@ -4,7 +4,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.home.NewFromArtistsRepository
+import com.stash.core.data.prefs.HomeSection
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.data.ytmusic.model.AlbumSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -14,14 +17,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * What Home's own streaming shelves show. Every list is empty in Offline mode (the app's Download mode plays only
- * what's on the phone, and these shelves are streaming content), so Home renders nothing for them there.
+ * What Home's own streaming shelves show. A list is empty when its section is hidden, and every list is empty in
+ * Offline mode (the app's Download mode plays only what's on the phone, and these shelves are streaming content),
+ * so Home renders nothing for them there.
  */
 data class HomeShelvesState(
     /** "New from your artists": album and single cards, newest first. */
@@ -31,47 +34,87 @@ data class HomeShelvesState(
 /**
  * Home's own shelves, apart from [com.stash.feature.home.HomeViewModel] (which carries the Discover hero, the synced
  * mixes and the Qobuz rows): "New from your artists". Each is built by its repository at most once a day and saved
- * to a file; this asks for it when Home is first shown, again on each return to Home (a file read until the day
- * turns), and when Offline mode is switched off. Nothing is fetched while in Offline mode.
+ * to a file.
+ *
+ * A shelf loads only while it's wanted: Streaming on and its section shown in Settings > Home layout, the rule the
+ * Qobuz rows follow (HomeViewModel's discovery flow): a hidden section costs no request. It loads when it becomes
+ * wanted (Home first shown, the section turned back on, Offline mode switched off) and on each return to Home (a file
+ * read until a rebuild is due); a shelf no longer wanted stops loading at once. With no network the saved row is
+ * shown and no build is tried, so a failed attempt (and the wait after it) only comes from a real network.
  */
 @HiltViewModel
 class HomeShelvesViewModel @Inject constructor(
-    private val newFromArtistsRepository: NewFromArtistsRepository,
-    private val streamingPreference: StreamingPreference,
+    newFromArtistsRepository: NewFromArtistsRepository,
+    streamingPreference: StreamingPreference,
+    homeSectionsPreference: HomeSectionsPreference,
+    private val connectivity: ConnectivityMonitor,
 ) : ViewModel() {
 
-    private val newFromArtists = MutableStateFlow<List<AlbumSummary>>(emptyList())
+    private val newFromArtists = Shelf(HomeSection.NEW_FROM_ARTISTS, newFromArtistsRepository::cached, newFromArtistsRepository::shelf)
+    private val shelves = listOf(newFromArtists)
 
-    val state: StateFlow<HomeShelvesState> = combine(streamingPreference.enabled, newFromArtists) { online, releases ->
-        if (online) HomeShelvesState(newFromArtists = releases) else HomeShelvesState()
+    /** The shelf sections Home shows now: none in Offline mode, else the visible ones. */
+    private val wanted: StateFlow<Set<HomeSection>> =
+        combine(streamingPreference.enabled, homeSectionsPreference.visibleSections) { online, visible ->
+            if (online) shelves.mapTo(HashSet()) { it.section }.filterTo(HashSet()) { it in visible } else emptySet()
+        }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    val state: StateFlow<HomeShelvesState> = combine(wanted, newFromArtists.items) { shown, releases ->
+        HomeShelvesState(newFromArtists = if (HomeSection.NEW_FROM_ARTISTS in shown) releases else emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeShelvesState())
 
-    private var building: Job? = null
-
     init {
-        // Online again (or online at launch): fill the shelves.
         viewModelScope.launch {
-            streamingPreference.enabled.distinctUntilChanged().collect { online -> if (online) refresh() }
+            var before = emptySet<HomeSection>()
+            wanted.collect { now ->
+                for (shelf in shelves) {
+                    when {
+                        // Shown again (or for the first time): fill it
+                        shelf.section in now && shelf.section !in before -> shelf.refresh()
+                        // Hidden, or Offline mode: stop what it's loading
+                        shelf.section !in now -> shelf.stop()
+                    }
+                }
+                before = now
+            }
         }
     }
 
-    /** Home is back in view: a new day builds the shelves again; otherwise this only reads the saved ones. */
+    /** Home is back in view: each wanted shelf is built again if due; otherwise this only reads the saved ones. */
     fun onResume() {
-        viewModelScope.launch { if (streamingPreference.enabled.first()) refresh() }
+        val now = wanted.value
+        shelves.filter { it.section in now }.forEach { it.refresh() }
     }
 
-    private fun refresh() {
-        if (building?.isActive == true) return
-        building = viewModelScope.launch {
-            try {
-                // Yesterday's row paints at once; today's replaces it when built.
-                if (newFromArtists.value.isEmpty()) newFromArtists.value = newFromArtistsRepository.cached()
-                newFromArtists.value = newFromArtistsRepository.shelf()
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                // A shelf is a nicety: whatever went wrong, Home keeps what it shows.
-                Log.w(TAG, "New from your artists failed: ${e.message}")
+    /** One shelf: its saved list painted at once, then the repository's current one; one load at a time. */
+    private inner class Shelf<T>(
+        val section: HomeSection,
+        private val cached: suspend () -> List<T>,
+        private val current: suspend () -> List<T>,
+    ) {
+        val items = MutableStateFlow<List<T>>(emptyList())
+        private var loading: Job? = null
+
+        fun refresh() {
+            if (loading?.isActive == true) return
+            loading = viewModelScope.launch {
+                try {
+                    // Yesterday's row paints at once; today's replaces it when built.
+                    if (items.value.isEmpty()) items.value = cached()
+                    // No network: keep the saved row, and don't spend an attempt the shelf would then wait out
+                    if (!connectivity.isConnected()) return@launch
+                    items.value = current()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    // A shelf is a nicety: whatever went wrong, Home keeps what it shows.
+                    Log.w(TAG, "$section failed: ${e.message}")
+                }
             }
+        }
+
+        fun stop() {
+            loading?.cancel()
+            loading = null
         }
     }
 
