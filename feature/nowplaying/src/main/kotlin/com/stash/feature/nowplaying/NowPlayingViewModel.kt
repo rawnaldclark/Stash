@@ -408,13 +408,12 @@ class NowPlayingViewModel @Inject constructor(
         }
     }
 
-    /** User-facing hint for a non-Started radio result; null for Started. */
-    private fun radioFailureMessage(result: RadioStartResult): String? = when (result) {
-        RadioStartResult.Started -> null
-        RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
-        RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
-        RadioStartResult.DownloadMode -> "Radio streams. Switch to Stream only to start one."
-    }
+    /**
+     * User-facing hint for a non-Started radio result; null for Started. The same lines the Library's
+     * Start radio shows ([com.stash.core.media.RadioStarter.failureMessage]): one set of strings.
+     */
+    private fun radioFailureMessage(result: RadioStartResult): String? =
+        com.stash.core.media.RadioStarter.failureMessage(result)?.let { appContext.getString(it) }
 
     /** Stop the active radio station. */
     fun stopRadio() = playerRepository.stopRadio()
