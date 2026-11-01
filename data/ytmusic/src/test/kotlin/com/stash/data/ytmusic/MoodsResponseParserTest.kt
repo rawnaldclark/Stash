@@ -4,8 +4,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -15,6 +17,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
@@ -25,6 +28,7 @@ import org.mockito.kotlin.whenever
  * - `moods_and_genres.json`: `browse FEmusic_moods_and_genres`, both grids whole (13 moods, 27 genres);
  * - `mood_chill.json`: the Chill tile's page (`FEmusic_moods_and_genres_category`), its first 4 rows of 3 playlists;
  * - `playlist_mood.json`: one of those playlists (`VLRDCLAK5uy_nBE4…`, "Coffee Shop Blend"), its first 5 songs.
+ * The page cap is read against sync's `playlist_long_page1.json` / `playlist_long_page2.json`.
  */
 class MoodsResponseParserTest {
 
@@ -62,6 +66,23 @@ class MoodsResponseParserTest {
         val genresOnly = withSections(response) { sections -> sections.filter { headerOf(it) == "Genres" } }
         assertTrue(MoodsResponseParser.tiles(genresOnly).isEmpty())
         assertTrue(MoodsResponseParser.tiles(JsonObject(emptyMap())).isEmpty())
+    }
+
+    @Test
+    fun `signed in, a For you grid above them is never taken for moods, reworded header or not`() {
+        val response = fixture("moods_and_genres.json")
+        val moods = MoodsResponseParser.tiles(response)
+        // Signed in, the page opens with a third grid of the same tiles; here a copy of the genres, retitled
+        fun signedIn(moodsHeader: String) = withSections(response) { sections ->
+            val forYou = retitled(sections.first { headerOf(it) == "Genres" }, "For you")
+            listOf(forYou) + sections.map { s -> if (headerOf(s) == "Moods & moments") retitled(s, moodsHeader) else s }
+        }
+        assertEquals(moods, MoodsResponseParser.tiles(signedIn("Moods & moments")))
+        // Three grids, the moods one reworded: still the one that is neither genres nor For you
+        assertEquals(moods, MoodsResponseParser.tiles(signedIn("Moments")))
+        // For you and genres alone: no moods, rather than either of them
+        val noMoods = withSections(signedIn("Moments")) { sections -> sections.filter { headerOf(it) != "Moments" } }
+        assertTrue(MoodsResponseParser.tiles(noMoods).isEmpty())
     }
 
     @Test
@@ -115,13 +136,88 @@ class MoodsResponseParserTest {
         assertEquals("Your Other Life", detail.tracks.first().title)
         assertEquals("Lord Huron", detail.tracks.first().artist)
         assertTrue(detail.tracks.all { it.durationSeconds > 0 })
-        // A radio-style playlist (VLRD…) is one page: no continuation was asked for
-        verifyBlocking(inner, times(1)) { browse(any(), anyOrNull()) }
         // No answer is the blank, song-less playlist AlbumCache treats as a failed load
         assertTrue(YTMusicApiClient(mock()).getPlaylistAlbum("PLx").tracks.isEmpty())
     }
 
+    @Test
+    fun `a radio-style playlist is its first page only, though the page offers more`() = runTest {
+        // The saved page was trimmed to 5 songs, its "more" token with them: put one back, as YouTube sends it
+        val page = withShelfToken(fixture("playlist_mood.json"), "NEXT_PAGE")
+        val radio = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(radio.browse(eq("VLRDCLAK5uy_nBE4bLuBHUXWZrF59ZrkPEToKt8M_I3Vc"), anyOrNull())).thenReturn(page)
+            whenever(radio.browseWithStatus(any())).thenReturn(InnerTubeClient.RequestOutcome(LAST_PAGE, 200))
+        }
+        assertEquals(5, YTMusicApiClient(radio).getPlaylistAlbum("VLRDCLAK5uy_nBE4bLuBHUXWZrF59ZrkPEToKt8M_I3Vc").tracks.size)
+        verifyBlocking(radio, times(1)) { browse(any(), anyOrNull()) }
+        verifyBlocking(radio, never()) { browseWithStatus(any()) }
+        // The same page as an ordinary playlist follows the token: the radio rule, not a missing token, stopped it
+        val ordinary = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(ordinary.browse(eq("VLPLmood"), anyOrNull())).thenReturn(page)
+            whenever(ordinary.browseWithStatus(any())).thenReturn(InnerTubeClient.RequestOutcome(LAST_PAGE, 200))
+        }
+        YTMusicApiClient(ordinary).getPlaylistAlbum("PLmood")
+        verifyBlocking(ordinary, times(1)) { browseWithStatus(eq("NEXT_PAGE")) }
+    }
+
+    @Test
+    fun `a playlist reads on for 3 pages at most`() = runTest {
+        // A real 3,000-song playlist: page 1 (the browse) and page 2 (a continuation), which ends in a token too
+        val page1 = fixture("playlist_long_page1.json")
+        val page2 = fixture("playlist_long_page2.json")
+        val alone = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(alone.browse(eq("VLPLlong"), anyOrNull())).thenReturn(page1)
+            // A refused continuation (a 4xx is never retried): the first page alone
+            whenever(alone.browseWithStatus(any())).thenReturn(InnerTubeClient.RequestOutcome(null, 404))
+        }
+        val firstPage = YTMusicApiClient(alone).getPlaylistAlbum("PLlong").tracks.size
+        assertTrue(firstPage > 0)
+        val inner = mock<InnerTubeClient>()
+        runBlocking {
+            whenever(inner.browse(eq("VLPLlong"), anyOrNull())).thenReturn(page1)
+            // Every continuation answers with a page that offers another: a playlist with no end
+            whenever(inner.browseWithStatus(any())).thenReturn(InnerTubeClient.RequestOutcome(page2, 200))
+        }
+        val client = YTMusicApiClient(inner)
+        val perPage = client.parseContinuationPageForTest(page2).size
+        assertTrue(perPage > 0)
+        val detail = client.getPlaylistAlbum("PLlong")
+        assertEquals(firstPage + 2 * perPage, detail.tracks.size)
+        verifyBlocking(inner, times(2)) { browseWithStatus(any()) }
+        assertEquals("VLPLlong", detail.id)
+    }
+
     // ── Helpers that rework a real response ────────────────────────────
+
+    /** A continuation that answers with no songs and no token: the end of a playlist. */
+    private val LAST_PAGE: JsonObject = Json.parseToJsonElement(
+        """{"onResponseReceivedActions":[{"appendContinuationItemsAction":{"continuationItems":[]}}]}""",
+    ).jsonObject
+
+    /** [response], a playlist's first page, with [token] as its shelf's last item: the way YouTube offers more. */
+    private fun withShelfToken(response: JsonObject, token: String): JsonObject {
+        val more = Json.parseToJsonElement(
+            """{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"$token"}}}}""",
+        )
+        return response.edit(
+            listOf("contents", "twoColumnBrowseResultsRenderer", "secondaryContents", "sectionListRenderer", "contents", 0, "musicPlaylistShelfRenderer", "contents"),
+        ) { JsonArray(it.jsonArray + more) }.jsonObject
+    }
+
+    /** This element with the one at [path] (object keys and array indexes) replaced by [change] of it. */
+    private fun JsonElement.edit(path: List<Any>, change: (JsonElement) -> JsonElement): JsonElement =
+        if (path.isEmpty()) {
+            change(this)
+        } else {
+            when (val key = path.first()) {
+                is String -> JsonObject(jsonObject + (key to jsonObject.getValue(key).edit(path.drop(1), change)))
+                is Int -> JsonArray(jsonArray.mapIndexed { i, e -> if (i == key) e.edit(path.drop(1), change) else e })
+                else -> error("a path is keys and indexes, not $key")
+            }
+        }
 
     private fun sectionsOf(response: JsonObject): JsonArray =
         response.navigatePath("contents", "singleColumnBrowseResultsRenderer", "tabs")!!.asArray()!!.first().asObject()!!

@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import android.util.Log
 import com.stash.data.ytmusic.model.MoodPage
 import com.stash.data.ytmusic.model.MoodPlaylist
 import com.stash.data.ytmusic.model.MoodShelf
@@ -19,14 +20,17 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 internal object MoodsResponseParser {
 
+    private const val TAG = "MoodsParser"
+
     /** The browse id every moods-and-genres tile opens, its params naming which. */
     const val CATEGORY_BROWSE_ID = "FEmusic_moods_and_genres_category"
 
     /**
-     * The "Moods & moments" tiles, in YouTube's order. The page holds two grids of identical tiles, moods and
-     * genres, told apart only by their headers, which come in English (Stash always asks with hl=en): the grid
-     * whose header names moods; failing that, of exactly two grids, the one whose header doesn't name genres.
-     * Empty when neither finds it (a reworded page hides the shelf rather than showing genres as moods).
+     * The "Moods & moments" tiles, in YouTube's order. The page holds grids of identical tiles, moods and genres
+     * (and, signed in, a "For you" grid above them), told apart only by their headers, which come in English (Stash
+     * always asks with hl=en): the grid whose header names moods; failing that, the only grid whose header names
+     * neither genres nor "for you". Empty when neither finds it (a reworded page hides the shelf rather than
+     * showing genres as moods), and the headers it saw are logged.
      */
     fun tiles(response: JsonObject): List<MoodTile> {
         val grids = sections(response)?.mapNotNull { section ->
@@ -40,7 +44,10 @@ internal object MoodsResponseParser {
             if (tiles.isEmpty()) null else title to tiles
         }.orEmpty()
         val moods = grids.firstOrNull { (title, _) -> title.contains("mood", ignoreCase = true) }
-            ?: grids.takeIf { it.size == 2 }?.singleOrNull { (title, _) -> !title.contains("genre", ignoreCase = true) }
+            ?: grids.singleOrNull { (title, _) ->
+                !title.contains("genre", ignoreCase = true) && !title.contains("for you", ignoreCase = true)
+            }
+        if (moods == null) Log.w(TAG, "no Moods & moments grid among ${grids.map { it.first }}")
         // One tile per page: Home keys the tiles by their params
         return moods?.second.orEmpty().distinctBy { it.params }
     }

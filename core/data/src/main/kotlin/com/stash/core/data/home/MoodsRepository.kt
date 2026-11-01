@@ -28,7 +28,8 @@ internal data class MoodsFile(val day: Long, val tiles: List<MoodTile>, val fail
  * mood's page is read when it's opened (one browse) and kept in memory for [PAGE_TTL_MS].
  *
  * Fail-soft: no answer keeps the saved tiles, and the next read waits [RETRY_MS] (Home's resume doesn't refire it on
- * every return); an answer without the grid (a reworded page) shows nothing until the next day's read.
+ * every return). An answer without the grid (a reworded page) keeps the saved tiles too, stamped for the day so it
+ * isn't asked again before tomorrow; with nothing saved, the shelf stays hidden until then.
  */
 @Singleton
 class MoodsRepository internal constructor(
@@ -74,9 +75,11 @@ class MoodsRepository internal constructor(
                 store.write(FILE, MoodsFile.serializer(), (saved ?: MoodsFile(-1, emptyList())).copy(failedAt = now()))
                 return@withContext saved?.tiles.orEmpty()
             }
-            if (fresh.isEmpty()) Log.w(TAG, "moods page answered without its Moods & moments grid")
-            store.write(FILE, MoodsFile.serializer(), MoodsFile(day, fresh))
-            fresh
+            // An answer without the grid never empties a shelf that has tiles: yesterday's moods still open their pages
+            val kept = if (fresh.isEmpty()) saved?.tiles.orEmpty() else fresh
+            if (fresh.isEmpty()) Log.w(TAG, "moods page answered without its Moods & moments grid; keeping ${kept.size} saved tiles")
+            store.write(FILE, MoodsFile.serializer(), MoodsFile(day, kept))
+            kept
         }
     }
 

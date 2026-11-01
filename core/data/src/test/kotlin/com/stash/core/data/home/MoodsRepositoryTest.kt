@@ -65,13 +65,28 @@ class MoodsRepositoryTest {
     }
 
     @Test
-    fun `an answer without the grid hides the shelf until tomorrow`() = runTest {
-        repo().tiles()
+    fun `an answer without the grid keeps yesterday's tiles, and isn't asked again today`() = runTest {
+        val first = repo().tiles()
         day++
+        // Signed in, or a reworded page: YouTube answered, but no grid was Moods & moments
+        tilesAnswer = emptyList()
+        assertEquals(first, repo().tiles())
+        assertEquals(first, repo().tiles())
+        assertEquals(first, repo().cached())
+        assertEquals(2, tileReads)
+        // Tomorrow it asks again, and an answer with the grid replaces them
+        day++
+        tilesAnswer = listOf(MoodTile("Sleep", "p3"))
+        assertEquals(listOf("Sleep"), repo().tiles().map { it.title })
+        assertEquals(3, tileReads)
+    }
+
+    @Test
+    fun `with nothing saved, an answer without the grid hides the shelf until tomorrow`() = runTest {
         tilesAnswer = emptyList()
         assertTrue(repo().tiles().isEmpty())
         assertTrue(repo().tiles().isEmpty())
-        assertEquals(2, tileReads)
+        assertEquals(1, tileReads)
     }
 
     @Test
