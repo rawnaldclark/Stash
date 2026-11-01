@@ -77,13 +77,9 @@
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
-    <string name="sync_switch_to_refresh_body">La fonction « Refresh » actualise les titres à chaque synchronisation : vos mix quotidiens générés automatiquement, vos découvertes hebdomadaires et vos autres playlists tournantes. Les titres qui ne font plus partie de la rotation sont retirés du mix et leurs fichiers téléchargés sont supprimés afin d’alléger votre bibliothèque. Le nettoyage s’effectue une fois que toutes les sources sont configurées sur « Refresh » ; tant qu’une source continue d’accumuler des titres, rien n’est supprimé. Les titres que vous avez ajoutés manuellement sont conservés.</string>
     <string name="sync_switch_to_refresh_confirm">Passer au mode « Actualiser »</string>
-    <string name="sync_mix_mode_title">Mode de synchronisation « Mix »</string>
     <string name="sync_mode_refresh">Actualiser</string>
     <string name="sync_mode_accumulate">Accumuler</string>
-    <string name="sync_mode_refresh_desc">Les mix sont mis à jour avec de nouveaux morceaux à chaque synchronisation</string>
-    <string name="sync_mode_accumulate_desc">Les nouveaux morceaux s\'ajoutent aux anciens</string>
     <!-- Last.fm Recommendations Toggle -->
     <string name="sync_recommended_tracks_title">Titres recommandés</string>
     <string name="sync_lastfm_recommended_enabled_desc">Une playlist renouvelée régulièrement, composée de recommandations de Last.fm, est mise à jour en permanence</string>
@@ -95,4 +91,11 @@
     </plurals>
     <string name="sync_studio_only_title">Uniquement des enregistrements en studio</string>
     <string name="sync_studio_only_desc">Les reprises, les enregistrements live et les vidéos mises en ligne par les utilisateurs ne sont pas pris en compte dans vos « Titres que vous avez aimés ». Les autres playlists YouTube ne sont pas concernées.</string>
+    <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
+    <!-- Sync tab overhaul: nothing connected / ready -->
+    <!-- Sync tab overhaul: synced -->
+    <!-- Sync tab overhaul: syncing -->
+    <!-- Sync tab overhaul: Download mode -->
+    <!-- Sync tab overhaul: History screen -->
+    <!-- Sync tab overhaul: an account's playlists -->
 </resources>

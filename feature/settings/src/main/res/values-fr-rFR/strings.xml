@@ -969,4 +969,6 @@
         <item quantity="one">Il y a %d jour</item>
         <item quantity="other">Il y a %d jours</item>
     </plurals>
+    <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
+    <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
 </resources>
