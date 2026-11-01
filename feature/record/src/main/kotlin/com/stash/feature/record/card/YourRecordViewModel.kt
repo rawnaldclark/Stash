@@ -4,6 +4,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.prefs.HomeSection
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.feature.record.art.ArtSong
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.imports.ImportInfo
@@ -30,7 +32,8 @@ import javax.inject.Inject
  * Home's Your record card ([YourRecordSection]): the record's own numbers ([RecordCardSource], read only when the history
  * changes) and the import's state ([RecordImports]) as [RecordCard]'s state, and the sleeve's and the row's covers, looked up
  * once per set of albums and artists and shown as each batch lands. "Press your record" hidden with its × stays hidden on this
- * phone until Settings brings it back (HomeCard.svelte's `dismissed`); Settings › Home layout hides the whole section.
+ * phone until Settings brings it back (HomeCard.svelte's `dismissed`); Settings › Home layout hides the whole section, and so
+ * does the record card's long press ([hideCard]), leaving the record's mixes on Home.
  */
 @HiltViewModel
 class YourRecordViewModel @Inject constructor(
@@ -38,6 +41,7 @@ class YourRecordViewModel @Inject constructor(
     private val art: RecordArt,
     private val imports: RecordImports,
     taste: com.stash.feature.record.taste.RecordTaste,
+    private val homeSections: HomeSectionsPreference,
 ) : ViewModel() {
     init {
         // Home opened: the taste again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
@@ -91,6 +95,33 @@ class YourRecordViewModel @Inject constructor(
     private var coversJob: Job? = null
 
     fun hideInvite() = imports.hideInvite()
+
+    /**
+     * Whether Home shows the record's mixes ("From your record", its own switch in Settings › Home layout): the card's menu
+     * says they stay only when they do.
+     */
+    val mixesOnHome: StateFlow<Boolean> = homeSections.hidden
+        .map { HomeSection.RECORD_MIXES !in it }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    /**
+     * The card's long press › Hide this card: Home's Your record section hidden, exactly as its switch in Settings › Home
+     * layout does (which brings it back). Its mixes are their own section and stay, in the card's place; nothing of the record
+     * itself is touched (that's Settings › Your record › Remove your record, never this).
+     */
+    fun hideCard() {
+        viewModelScope.launch {
+            try {
+                homeSections.setHidden(HomeSection.YOUR_RECORD, hide = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The card stays; Settings › Home layout can still hide it
+                Log.w(TAG, "hiding the card failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
 
     /** Get started, How it works, Open, Review: the import sheet. */
     fun openImport() = imports.openSheet()
