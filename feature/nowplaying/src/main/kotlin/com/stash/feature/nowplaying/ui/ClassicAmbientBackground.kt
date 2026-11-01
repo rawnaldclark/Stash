@@ -68,7 +68,7 @@ fun ClassicAmbientBackground(
     val orbit1: State<Float>
     val orbit2: State<Float>
     val orbit3: State<Float>
-    if (com.stash.core.ui.ambient.rememberReducedMotion()) {
+    if (com.stash.core.ui.ambient.rememberLoopsStill()) {
         orbit1 = remember { mutableFloatStateOf(0f) }
         orbit2 = remember { mutableFloatStateOf(120f) }
         orbit3 = remember { mutableFloatStateOf(240f) }

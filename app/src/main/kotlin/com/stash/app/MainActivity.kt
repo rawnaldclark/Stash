@@ -134,7 +134,7 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var likeCoordinator: LikeCoordinator
 
-    /** Android's Battery Saver: the whole UI's motion stands still while it is on (D19). */
+    /** Android's Battery Saver: the UI's continuous loops stand still while it is on (D19). */
     @Inject
     lateinit var batterySaver: com.stash.core.common.power.BatterySaver
 

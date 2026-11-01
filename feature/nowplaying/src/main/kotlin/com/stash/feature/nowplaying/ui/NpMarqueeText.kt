@@ -36,7 +36,7 @@ internal fun NpMarqueeText(
     color: Color,
     modifier: Modifier = Modifier,
 ) {
-    if (rememberNpReducedMotion()) {
+    if (rememberNpLoopsStill()) {
         Text(text = text, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
         return
     }
@@ -93,11 +93,20 @@ private class MarqueeWidths {
 }
 
 /**
- * The reduced-motion case: the system's "Remove animations", or Android's Battery Saver. One rule
- * for the whole app, so Now Playing reads the same answer as the ambient and the album colours.
+ * The reduced-motion case, for one-shot transitions (the flip, swipe-to-skip, full art growing
+ * out): the system's "Remove animations" only, the same answer as the rest of the app. They keep
+ * animating under Battery Saver.
  */
 @Composable
 internal fun rememberNpReducedMotion(): Boolean = com.stash.core.ui.ambient.rememberReducedMotion()
+
+/**
+ * Now Playing's continuous loops (the title marquee, the full-art cycle, lyric springs and breaks)
+ * stand still: "Remove animations", or Android's Battery Saver. See
+ * [com.stash.core.ui.ambient.rememberLoopsStill].
+ */
+@Composable
+internal fun rememberNpLoopsStill(): Boolean = com.stash.core.ui.ambient.rememberLoopsStill()
 
 /** A beat to read the start before it moves, and again before each repeat. */
 private const val MARQUEE_DELAY_MS = 3_800

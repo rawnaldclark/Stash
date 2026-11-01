@@ -347,7 +347,7 @@ internal fun rememberSmoothPositionMs(positionMs: Long, isPlaying: Boolean = tru
     // Parked under the mini player (LocalNowPlayingShown false) it holds at the tick: no frame loop.
     // So it does with motion still (Remove animations, or Battery Saver): the 250 ms ticks are
     // enough for words that light without motion.
-    val running = isPlaying && LocalNowPlayingShown.current && !rememberNpReducedMotion()
+    val running = isPlaying && LocalNowPlayingShown.current && !rememberNpLoopsStill()
     LaunchedEffect(positionMs, running, speed) {
         smooth.longValue = positionMs
         if (!running) return@LaunchedEffect

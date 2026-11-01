@@ -102,7 +102,9 @@ fun AmbientBackground(
         if (entranceAnimated) entrance.animateTo(1f, tween(ENTRANCE_MS, easing = FastOutSlowInEasing))
     }
 
-    val angles: List<State<Float>> = if (reduceMotion) {
+    // The orbits are a loop: they also stand still under Battery Saver (the entrance above is a
+    // one-shot and keeps its fade).
+    val angles: List<State<Float>> = if (com.stash.core.ui.ambient.rememberLoopsStill()) {
         Orbs.map { remember(it) { mutableStateOf(it.startDeg) } }
     } else {
         val orbit = rememberInfiniteTransition(label = "ambientOrbit")

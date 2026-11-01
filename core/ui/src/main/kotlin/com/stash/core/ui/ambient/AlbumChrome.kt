@@ -144,21 +144,18 @@ fun currentGround(): Ground = when {
 
 /**
  * The system "Remove animations" switch (animator duration scale 0): the Android analogue of
- * prefers-reduced-motion, as the Now Playing ambient reads it. Also true while Android's Battery
- * Saver is on ([LocalBatterySaverOn], D19): continuous loops are what cost battery with the screen
- * on, and every one of them already stands still here.
+ * prefers-reduced-motion, as the Now Playing ambient reads it.
  */
 @Composable
 fun rememberReducedMotion(): Boolean {
     val resolver = LocalContext.current.contentResolver
-    val removeAnimations = remember(resolver) {
+    return remember(resolver) {
         try {
             Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         } catch (_: Exception) {
             false
         }
     }
-    return motionStill(removeAnimations, LocalBatterySaverOn.current)
 }
 
 /**

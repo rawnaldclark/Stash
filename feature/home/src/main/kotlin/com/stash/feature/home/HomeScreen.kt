@@ -1234,7 +1234,7 @@ private fun SupporterTicker(
     // wall-clock it picks up mid-flow when the player closes. With motion still (Remove
     // animations, or Battery Saver) it holds too: the endless tape is a frame every refresh.
     val tapeActive = com.stash.core.ui.components.rememberPageActive() &&
-        !com.stash.core.ui.ambient.rememberReducedMotion()
+        !com.stash.core.ui.ambient.rememberLoopsStill()
     LaunchedEffect(tapeActive) {
         if (!tapeActive) return@LaunchedEffect
         while (true) {

@@ -209,7 +209,7 @@ private fun StatItem(label: String, value: String, subValue: String? = null) {
 private fun PulseDot(color: Color, modifier: Modifier = Modifier) {
     // Pulses only while the Sync page is in front (not under the open player), and never with motion
     // still (Remove animations, or Battery Saver): a steady dot then.
-    val alpha = if (com.stash.core.ui.components.rememberPageActive() && !com.stash.core.ui.ambient.rememberReducedMotion()) {
+    val alpha = if (com.stash.core.ui.components.rememberPageActive() && !com.stash.core.ui.ambient.rememberLoopsStill()) {
         val infiniteTransition = rememberInfiniteTransition(label = "pulse")
         infiniteTransition.animateFloat(
             initialValue = 1f,

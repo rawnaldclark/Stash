@@ -343,7 +343,7 @@ private fun SimpleSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle, 
     // Now Playing is parked under the mini player, and never with motion still (Remove animations,
     // or Battery Saver): the word then takes its still look once per phase.
     val shown = LocalNowPlayingShown.current
-    val still = rememberNpReducedMotion()
+    val still = rememberNpLoopsStill()
     LaunchedEffect(syl, phase, shown, still) {
         if (!shown) return@LaunchedEffect
         val ph = phase
@@ -380,7 +380,7 @@ private fun EmphasisSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle
         }
     }
     val shown = LocalNowPlayingShown.current
-    val still = rememberNpReducedMotion()
+    val still = rememberNpLoopsStill()
     LaunchedEffect(syl, phase, shown, still) {
         if (!shown) return@LaunchedEffect
         if (still) {
@@ -519,7 +519,7 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
         }
     }
     val shown = LocalNowPlayingShown.current
-    val still = rememberNpReducedMotion()
+    val still = rememberNpLoopsStill()
     LaunchedEffect(startMs, endMs, phase, shown, still) {
         if (!shown) return@LaunchedEffect
         val ph = phase

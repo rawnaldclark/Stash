@@ -1673,7 +1673,7 @@ private fun TitleLine(
             maxLines = 1,
             softWrap = false,
             // Still motion has no marquee to carry the rest of a long title: it ends in "…".
-            overflow = if (com.stash.feature.nowplaying.ui.rememberNpReducedMotion()) TextOverflow.Ellipsis else TextOverflow.Clip,
+            overflow = if (com.stash.feature.nowplaying.ui.rememberNpLoopsStill()) TextOverflow.Ellipsis else TextOverflow.Clip,
             textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -2404,7 +2404,7 @@ private fun SheetAmbient(sheet: PlayerSheetState?, content: @Composable (Modifie
 @Composable
 private fun Modifier.marqueeWhileShown(): Modifier =
     if (com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current &&
-        !com.stash.feature.nowplaying.ui.rememberNpReducedMotion()
+        !com.stash.feature.nowplaying.ui.rememberNpLoopsStill()
     ) basicMarquee(
         iterations = Int.MAX_VALUE,
         // Compose's default 1.2 s pause between loops plus 2 s (owner, 2026-10-22).

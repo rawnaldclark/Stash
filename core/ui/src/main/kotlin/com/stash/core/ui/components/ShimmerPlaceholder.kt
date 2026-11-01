@@ -20,8 +20,8 @@ fun ShimmerPlaceholder(
     highlightAlpha: Float = 0.12f,
 ) {
     // Shimmers only while its page is in front (not under the open player, see rememberPageActive),
-    // and never with motion still (Remove animations, or Battery Saver): a plain placeholder then.
-    val alpha = if (rememberPageActive() && !com.stash.core.ui.ambient.rememberReducedMotion()) {
+    // and never while loops stand still (Remove animations, or Battery Saver): a plain placeholder then.
+    val alpha = if (rememberPageActive() && !com.stash.core.ui.ambient.rememberLoopsStill()) {
         val transition = rememberInfiniteTransition(label = "shimmer")
         transition.animateFloat(
             initialValue = baseAlpha,

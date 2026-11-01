@@ -50,7 +50,7 @@ fun RadarSweep(
 
     // With motion still (Remove animations, or Battery Saver) the arc holds at the top: the ring and
     // the arc still say "tuning", without a frame per refresh for it. Read in draw, never composition.
-    val angle: State<Float> = if (com.stash.core.ui.ambient.rememberReducedMotion()) {
+    val angle: State<Float> = if (com.stash.core.ui.ambient.rememberLoopsStill()) {
         remember { mutableFloatStateOf(STILL_ARC_DEGREES) }
     } else {
         rememberInfiniteTransition(label = "radarSweep").animateFloat(
