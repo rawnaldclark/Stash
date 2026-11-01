@@ -125,7 +125,7 @@ test("message pages carry the site name, their own URL and twitter tags", async 
     assert.equal(meta(html, "og:title"), "Mix not found");
     assert.equal(meta(html, "twitter:card"), "summary");
     assert.equal(meta(html, "twitter:title"), "Mix not found");
-    assert.equal(meta(html, "twitter:description"), "This link doesn't point to a mix.".replace("'", "&#39;"));
+    assert.equal(meta(html, "twitter:description"), "This link doesn't point to a mix.".replaceAll("'", "&#39;"));
 });
 
 test("stashfm.app / is a placeholder landing page; workers.dev / is unchanged", async () => {
