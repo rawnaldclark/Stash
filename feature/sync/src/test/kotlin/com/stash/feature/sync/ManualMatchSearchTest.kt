@@ -159,6 +159,23 @@ class ManualMatchSearchTest {
         assertFalse(video.isSong)
     }
 
+    /** Without an account YouTube Music answers in its flat layout, which has no lengths. */
+    @Test fun `a YouTube Music row without a length is still offered`() {
+        val match = manualSearchMatches(listOf(songs(music("song1").copy(durationSeconds = 0.0))), emptyList(), null)
+            .single()
+
+        assertEquals(id("song1"), match.candidate.videoId)
+        assertEquals(0.0, match.candidate.durationSeconds, 0.0)
+        assertTrue(match.isSong)
+    }
+
+    /** A live stream's download never finishes and would hold an approve slot. */
+    @Test fun `an all-of-YouTube row without a length is left out`() {
+        val all = listOf(youTube("live1").copy(duration = 0.0), youTube("upload1"))
+
+        assertEquals(listOf(id("upload1")), manualSearchMatches(emptyList(), all, null).ids())
+    }
+
     @Test fun `a done search with no rows has found nothing, a running one hasn't yet`() {
         assertTrue(ManualSearch(trackId = 1L, query = "x").foundNothing)
         assertFalse(ManualSearch(trackId = 1L, query = "x", searchingYouTube = true).foundNothing)

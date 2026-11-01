@@ -92,6 +92,8 @@ class FailedMatchesManualSearchTest {
             DownloadResult.Error("test-stop")
         coEvery { ytMusicApi.searchAll(any()) } returns SearchAllResults(emptyList())
         coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns emptyList()
+        coEvery { searchExecutor.search(any(), any()) } returns emptyList()
+        coEvery { musicRepository.findByYoutubeIds(any()) } returns emptyList()
     }
 
     @After fun tearDown() {
@@ -297,5 +299,112 @@ class FailedMatchesManualSearchTest {
 
         verify { previewPlayer.stopIfCurrent(any()) }
         assertNull(vm.manualSearch.value)
+    }
+
+    /** Its row and stop button go with the old results; it would play to the end. */
+    @Test fun `searching again stops the preview of a result the new search replaces`() = runTest {
+        val previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
+        every { previewPlayer.previewState } returns previewState
+        coEvery { ytMusicApi.searchAll("Daft Punk Get Lucky") } returns answer(song)
+        coEvery { ytMusicApi.searchAll("get lucky live") } returns answer(live)
+        val vm = makeVm()
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        advanceUntilIdle()
+        previewState.value = PreviewState.Playing(song)
+
+        vm.searchManually("get lucky live")
+        advanceUntilIdle()
+
+        verify(exactly = 1) { previewPlayer.stopIfCurrent(any()) }
+        assertEquals(listOf(live), vm.shownIds())
+    }
+
+    @Test fun `searching an empty box stops the preview of a result too`() = runTest {
+        val previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
+        every { previewPlayer.previewState } returns previewState
+        coEvery { ytMusicApi.searchAll(any()) } returns answer(song)
+        val vm = makeVm()
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        advanceUntilIdle()
+        previewState.value = PreviewState.Playing(song)
+
+        vm.searchManually("  ")
+
+        verify(exactly = 1) { previewPlayer.stopIfCurrent(any()) }
+        assertTrue(vm.manualSearch.value!!.results.isEmpty())
+    }
+
+    /**
+     * The finder is its own thing: opening it and searching leave the songs'
+     * automatic matches as they were, and a preview of one (its row keeps its
+     * stop button) plays on when the finder's rows change.
+     */
+    @Test fun `the finder leaves the automatic matches and their previews alone`() = runTest {
+        val auto = "autoxxxxxxx"
+        coEvery { searchExecutor.search(any(), any()) } returns
+            listOf(YtDlpSearchResult(id = auto, title = "Get Lucky", duration = 369.0))
+        coEvery { ytMusicApi.searchAll(any()) } returns answer(auto, song)
+        val previewState = MutableStateFlow<PreviewState>(PreviewState.Idle)
+        every { previewPlayer.previewState } returns previewState
+        val vm = makeVm()
+        vm.resync()
+        advanceUntilIdle()
+        val automatic = vm.uiState.value.resyncCandidates
+        assertEquals(auto, automatic[1L]?.videoId)
+        previewState.value = PreviewState.Playing(auto)
+
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        advanceUntilIdle()
+        vm.searchManually("get lucky live")
+        advanceUntilIdle()
+        vm.closeManualSearch()
+
+        assertEquals(automatic, vm.uiState.value.resyncCandidates)
+        verify(exactly = 0) { previewPlayer.stopIfCurrent(any()) }
+    }
+
+    @Test fun `a song you find yourself is recorded as your pick`() = runTest {
+        coEvery { ytMusicApi.searchAll(any()) } returns answer(song)
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        advanceUntilIdle()
+
+        vm.pickManualMatch(vm.manualSearch.value!!.results.single().candidate)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { trackDao.markMatchPicked(1L, any()) }
+    }
+
+    @Test fun `an automatic match approved on its row is not recorded as a pick`() = runTest {
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+
+        vm.approveMatch(
+            1L, 11L,
+            ResyncCandidate(videoId = song, title = "Get Lucky", artist = "Daft Punk", thumbnailUrl = null, durationSeconds = 369.0),
+        )
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { trackDao.updateYoutubeId(1L, song) }
+        coVerify(exactly = 0) { trackDao.markMatchPicked(any(), any()) }
+    }
+
+    /** tracks.youtube_id is UNIQUE: picking one could only fail with "already linked" (#531). */
+    @Test fun `videos other songs already have are left out`() = runTest {
+        coEvery { ytMusicApi.searchAll(any()) } returns answer(song, live)
+        coEvery { searchExecutor.searchYtDlpDirect(any(), any()) } returns listOf(youTube(upload))
+        coEvery { musicRepository.findByYoutubeIds(any()) } returns listOf(
+            com.stash.core.model.Track(id = 99L, title = "Get Lucky (Live)", artist = "Daft Punk", youtubeId = live),
+            com.stash.core.model.Track(id = 98L, title = "Fan upload", artist = "Fan", youtubeId = upload),
+            // The song's own row having the video doesn't count.
+            com.stash.core.model.Track(id = 1L, title = "Get Lucky", artist = "Daft Punk", youtubeId = song),
+        )
+        val vm = makeVm()
+
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        advanceUntilIdle()
+
+        assertEquals(listOf(song), vm.shownIds())
     }
 }

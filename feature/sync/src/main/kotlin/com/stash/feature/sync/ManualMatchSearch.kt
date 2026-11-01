@@ -54,11 +54,12 @@ internal fun manualSearchQuery(artist: String, title: String): String =
 
 /**
  * The rows "find it yourself" shows, in order: YouTube Music's songs, then its
- * videos (both from the Search tab's own search), then what a search of all of
- * YouTube adds, its songs first. Each video is listed once, where it first
- * turned up. Left out: [excludeVideoId] (a flagged song's current video, the one
- * the listener said is wrong), rows without a YouTube video id or a title, and
- * podcast episodes.
+ * videos (both from the Search tab's own search, so at most five rows: its top
+ * result and up to four songs), then what a search of all of YouTube adds, its
+ * songs first. Each video is listed once, where it first turned up. Left out:
+ * [excludeVideoId] (a flagged song's current video, the one the listener said
+ * is wrong), rows without a YouTube video id or a title, podcast episodes, and
+ * all-of-YouTube rows without a length ([YtDlpSearchResult.toManualMatch]).
  *
  * All of YouTube only ever adds rows below: its answer comes seconds after
  * YouTube Music's, and the rows already on screen must not move under the
@@ -121,10 +122,13 @@ internal fun TrackSummary.toManualMatch(): ManualMatch? {
 /**
  * A yt-dlp search row as a candidate. yt-dlp says nothing about the kind of
  * video, but a Topic channel's uploads are a release's songs. Its flat search
- * rows carry no thumbnail, so the video's own is used.
+ * rows carry no thumbnail, so the video's own is used. A row without a length
+ * is a live stream (or a premiere): its download would never finish and would
+ * hold one of the few approve slots, so it is left out. (A YouTube Music row
+ * without a length is kept: its flat layout carries none.)
  */
 internal fun YtDlpSearchResult.toManualMatch(): ManualMatch? {
-    if (!YouTubeVideoId.isValid(id) || title.isBlank()) return null
+    if (!YouTubeVideoId.isValid(id) || title.isBlank() || duration <= 0.0) return null
     return ManualMatch(
         candidate = ResyncCandidate(
             videoId = id,

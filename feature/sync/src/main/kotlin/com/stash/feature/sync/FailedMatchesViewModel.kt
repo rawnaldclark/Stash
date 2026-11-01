@@ -632,8 +632,13 @@ class FailedMatchesViewModel @Inject constructor(
      * @param trackId      Primary key of the track in the tracks table.
      * @param queueEntryId Row ID of the download_queue entry to mark completed.
      * @param candidate    The [ResyncCandidate] the user approved.
+     * @param userPicked   The listener found this video themselves ("find it
+     *   yourself"): recorded as their pick, as an approved swap is, so the FLAC
+     *   sweep and a re-download keep it instead of redoing the artist/title
+     *   lookup (#531). An automatic match approved here isn't recorded so; a
+     *   swap records both.
      */
-    fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate) {
+    fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate, userPicked: Boolean = false) {
         viewModelScope.launch {
             // The candidate's id names the temp file and the yt-dlp URL below and
             // is written to the track. It came from a search answer, so one
@@ -664,6 +669,7 @@ class FailedMatchesViewModel @Inject constructor(
             try {
                 // Immediately mark as completed — row disappears from reactive Flow
                 trackDao.updateYoutubeId(trackId, candidate.videoId)
+                if (userPicked) trackDao.markMatchPicked(trackId, System.currentTimeMillis())
                 downloadQueueDao.updateStatus(
                     id = queueEntryId,
                     status = DownloadStatus.COMPLETED,
@@ -993,7 +999,7 @@ class FailedMatchesViewModel @Inject constructor(
         val unmatched = state.tracks.firstOrNull { it.trackId == trackId }
         when {
             flagged != null -> approveSwap(flagged, candidate)
-            unmatched != null -> approveMatch(unmatched.trackId, unmatched.id, candidate)
+            unmatched != null -> approveMatch(unmatched.trackId, unmatched.id, candidate, userPicked = true)
             else -> Log.w(TAG, "find it yourself: trackId=$trackId left the list before the pick")
         }
         closeManualSearch()
@@ -1006,9 +1012,22 @@ class FailedMatchesViewModel @Inject constructor(
         manualSearchJob = null
         ++manualSearchGeneration
         _manualSearch.value = null
-        // Its rows, stop buttons included, are gone: a preview of one would play on unstoppable.
-        val previewing = activePreviewVideoId ?: (previewState.value as? PreviewState.Playing)?.videoId
-        if (previewing != null && open.results.any { it.candidate.videoId == previewing }) stopPreview()
+        stopPreviewIfAmong(open.results)
+    }
+
+    /**
+     * Stops a preview of one of [results], whose rows (stop buttons included)
+     * are leaving the screen: the finder closing, or a new search replacing
+     * them. Left alone, it would play to the end with nothing to stop it. Not
+     * when the video is also a song's automatic match: that row's own stop
+     * button stays.
+     */
+    private fun stopPreviewIfAmong(results: List<ManualMatch>) {
+        val previewing = activePreviewVideoId
+            ?: (previewState.value as? PreviewState.Playing)?.videoId
+            ?: return
+        if (_resyncCandidates.value.values.any { it.videoId == previewing }) return
+        if (results.any { it.candidate.videoId == previewing }) stopPreview()
     }
 
     /**
@@ -1016,10 +1035,13 @@ class FailedMatchesViewModel @Inject constructor(
      * (yt-dlp) at once. YouTube Music answers in a fraction of a second and its
      * rows show then; a yt-dlp run takes seconds, so its rows are added under
      * them when they come. A flagged song is never offered its current video:
-     * that is the one the listener said is wrong.
+     * that is the one the listener said is wrong. Nor is any song offered a
+     * video another song already has (see [ownedByOtherTracks]).
      */
     private fun startManualSearch(trackId: Long, query: String) {
         manualSearchJob?.cancel()
+        // The rows on screen give way to this search's (none, for an empty box).
+        _manualSearch.value?.let { stopPreviewIfAmong(it.results) }
         val generation = ++manualSearchGeneration
         val words = query.trim()
         if (words.isEmpty()) {
@@ -1036,20 +1058,46 @@ class FailedMatchesViewModel @Inject constructor(
         manualSearchJob = viewModelScope.launch {
             val youTube = async { searchAllOfYouTube(words) }
             val music = searchYouTubeMusic(words)
+            val musicRows = manualSearchMatches(music.orEmpty(), emptyList(), exclude)
+            val musicOwned = ownedByOtherTracks(trackId, musicRows)
             updateManualSearch(generation) {
                 it.copy(
-                    results = manualSearchMatches(music.orEmpty(), emptyList(), exclude),
+                    results = musicRows.filterNot { row -> row.candidate.videoId in musicOwned },
                     searchingMusic = false,
                 )
             }
             val videos = youTube.await()
+            val allRows = manualSearchMatches(music.orEmpty(), videos, exclude)
+            // YouTube Music's rows were checked above; the same answer for them
+            // keeps the rows on screen where they are.
+            val owned = musicOwned + ownedByOtherTracks(trackId, allRows.drop(musicRows.size))
             updateManualSearch(generation) {
                 it.copy(
-                    results = manualSearchMatches(music.orEmpty(), videos, exclude),
+                    results = allRows.filterNot { row -> row.candidate.videoId in owned },
                     searchingYouTube = false,
                     failed = music == null && videos.isEmpty(),
                 )
             }
+        }
+    }
+
+    /**
+     * The videos in [rows] another song already has. tracks.youtube_id is
+     * UNIQUE, so picking one could only fail with "already linked" once the
+     * finder had closed, its words gone (#531; resync leaves them out too).
+     * A failed lookup leaves nothing out: approve still checks.
+     */
+    private suspend fun ownedByOtherTracks(trackId: Long, rows: List<ManualMatch>): Set<String> {
+        if (rows.isEmpty()) return emptySet()
+        return try {
+            musicRepository.findByYoutubeIds(rows.map { it.candidate.videoId })
+                .filter { it.id != trackId }
+                .mapNotNullTo(HashSet()) { it.youtubeId }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "find it yourself: couldn't check which videos other songs have: ${e.message}")
+            emptySet()
         }
     }
 
