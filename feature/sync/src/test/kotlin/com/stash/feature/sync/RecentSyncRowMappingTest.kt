@@ -9,27 +9,27 @@ import org.junit.Test
 class RecentSyncRowMappingTest {
 
     @Test
-    fun `stream-only sync shows surfaced count and Stream only label`() {
+    fun `an Online sync shows surfaced count and the Online label`() {
         val row = SyncHistoryInfo(
             id = 1, startedAt = 0, completedAt = 1000, status = "COMPLETED",
             tracksDownloaded = 0, tracksFailed = 0, newTracksFound = 1578,
             playlistsChecked = 50, streamingMode = true,
             displayStatus = SyncDisplayStatus.Success,
         ).toRecentSyncRow(relativeTime = "35m ago")
-        assertEquals("Stream only", row.modeLabel)
+        assertEquals("Online", row.modeLabel)
         assertEquals(1578, row.added)
         assertEquals("surfaced", row.addedNoun)
     }
 
     @Test
-    fun `download sync shows downloaded count and Download label`() {
+    fun `an Offline sync shows downloaded count and the Offline label`() {
         val row = SyncHistoryInfo(
             id = 2, startedAt = 0, completedAt = 1000, status = "COMPLETED",
             tracksDownloaded = 340, tracksFailed = 0, newTracksFound = 400,
             playlistsChecked = 12, streamingMode = false,
             displayStatus = SyncDisplayStatus.Success,
         ).toRecentSyncRow(relativeTime = "1h ago")
-        assertEquals("Download", row.modeLabel)
+        assertEquals("Offline", row.modeLabel)
         assertEquals(340, row.added)
         assertEquals("downloaded", row.addedNoun)
     }
