@@ -1,5 +1,9 @@
 package com.stash.feature.nowplaying.ui
 
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.sp
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -19,12 +23,12 @@ class NpSpacingTest {
     @Test
     fun `the defaults are the production values`() {
         val s = NpSpacing()
-        // The title and artist lines: explicit line height and tracking (no longer bodyLarge's 24 / 0.5).
+        // The title and artist lines: Inter's natural line height, now applied; tracking 0 (bodyLarge's 0.5 before).
         assertEquals(22f, s.titleSize)
-        assertEquals(28f, s.titleLineHeight)
+        assertEquals(26.6f, s.titleLineHeight)
         assertEquals(0f, s.titleLetterSpacing)
         assertEquals(15f, s.artistSize)
-        assertEquals(20f, s.artistLineHeight)
+        assertEquals(17.9f, s.artistLineHeight)
         assertEquals(0f, s.artistLetterSpacing)
         // Everything else as the layout had it (StackRhythm, GapTop/Art/Bottom, UpNextLine, insets).
         assertEquals(20f, s.gapTop)
@@ -45,10 +49,53 @@ class NpSpacingTest {
     }
 
     @Test
-    fun `the stack keeps its height with the explicit line heights`() {
-        // 28 + 20 = the inherited 24 + 24: the art and the gaps don't move because of the fix.
+    fun `title and artist apply their line height even as one line`() {
+        // Compose's default LineHeightStyle (Trim.Both) skips a lone line's line height altogether:
+        // the slider would do nothing. Trim.None applies it, split evenly above and below.
+        val applied = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
         val s = NpSpacing()
-        assertEquals(48f, s.titleLineHeight + s.artistLineHeight)
+        assertEquals(applied, s.titleStyle().lineHeightStyle)
+        assertEquals(applied, s.artistStyle().lineHeightStyle)
+        assertEquals(LineHeightStyle.Trim.None, s.titleStyle().lineHeightStyle?.trim)
+        assertEquals(22f.sp, s.titleStyle().fontSize)
+        assertEquals(26.6f.sp, s.titleStyle().lineHeight)
+        assertEquals(0f.sp, s.titleStyle().letterSpacing)
+        assertEquals(15f.sp, s.artistStyle().fontSize)
+        assertEquals(17.9f.sp, s.artistStyle().lineHeight)
+    }
+
+    @Test
+    fun `a tuned line height reaches the style`() {
+        val tuned = NpSpacingJson.parse("""{"titleLineHeight":40,"artistLineHeight":30,"titleLetterSpacing":0.5}""")
+        assertEquals(40f.sp, tuned.titleStyle().lineHeight)
+        assertEquals(30f.sp, tuned.artistStyle().lineHeight)
+        assertEquals(0.5f.sp, tuned.titleStyle().letterSpacing)
+    }
+
+    @Test
+    fun `the default line heights are today's pixels on the Pixel 5 and the Pixel 6`() {
+        // Today each line is Inter's natural height: its ascent and descent (1984 / 494 of 2048),
+        // each rounded to a pixel. An applied line height is rounded up (LineHeightStyleSpan).
+        fun naturalPx(sizeSp: Float, density: Float): Int {
+            val px = sizeSp * density
+            return (px * 1984f / 2048f).roundToInt() + (px * 494f / 2048f).roundToInt()
+        }
+        val s = NpSpacing()
+        for (density in listOf(2.75f, 2.625f)) {
+            assertEquals("title at $density", naturalPx(s.titleSize, density), ceil(s.titleLineHeight * density).toInt())
+            assertEquals("artist at $density", naturalPx(s.artistSize, density), ceil(s.artistLineHeight * density).toInt())
+        }
+    }
+
+    @Test
+    fun `stored overrides apply only against the production values they were made with`() {
+        val json = """{"titleSize":30}"""
+        assertEquals(json, NpSpacingJson.overridesFor(json, NpSpacingJson.productionBasis))
+        // New defaults baked since: the stale set is dropped, not laid out again.
+        val olderBasis = NpSpacingJson.write(NpSpacing(titleLineHeight = 28f))
+        assertNull(NpSpacingJson.overridesFor(json, olderBasis))
+        assertNull(NpSpacingJson.overridesFor(json, null))
+        assertNull(NpSpacingJson.overridesFor(null, NpSpacingJson.productionBasis))
     }
 
     @Test

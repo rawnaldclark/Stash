@@ -1706,11 +1706,9 @@ private fun TitleLine(
         val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
         Text(
             text = track?.title ?: "Not Playing",
-            // Size, line height and tracking all set here: left to the theme, the title took
-            // bodyLarge's 24 sp line and +0.5 sp tracking (NpSpacingDefaults).
-            fontSize = spacing.titleSize.sp,
-            lineHeight = spacing.titleLineHeight.sp,
-            letterSpacing = spacing.titleLetterSpacing.sp,
+            // Size, line height and tracking all set here (NpSpacingDefaults): the line height is
+            // applied even to this one line, which the theme's style never did.
+            style = androidx.compose.material3.LocalTextStyle.current.merge(spacing.titleStyle()),
             fontWeight = FontWeight.Bold,
             color = npInk(),
             maxLines = 1,
@@ -1765,10 +1763,8 @@ private fun ArtistLine(
                 }
             }
         },
-        // Its own line height and tracking, not bodyLarge's 24 sp line (NpSpacingDefaults).
-        fontSize = spacing.artistSize.sp,
-        lineHeight = spacing.artistLineHeight.sp,
-        letterSpacing = spacing.artistLetterSpacing.sp,
+        // Its own size, line height (applied to this one line) and tracking (NpSpacingDefaults).
+        style = androidx.compose.material3.LocalTextStyle.current.merge(spacing.artistStyle()),
         color = npInk().copy(alpha = 0.7f),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,

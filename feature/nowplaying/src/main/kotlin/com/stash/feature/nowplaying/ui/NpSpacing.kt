@@ -4,6 +4,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.Json
@@ -23,11 +26,12 @@ import kotlin.math.roundToInt
  * one (the comments inside are the tuner's groups, so nothing is lost). NpSpacingTest pins the
  * values, and NpTunerFieldsTest checks tools/np-tuner/fields.json against them.
  *
- * - Title and artist set their own line height and tracking. Left unset, both inherited
- *   bodyLarge's 24 sp line and +0.5 sp tracking: loose for a 22 sp title, and about 4.5 sp of
- *   invisible leading above and below the 15 sp artist line, which made the title-to-artist and
- *   artist-to-quality steps uneven. 28 / 0 is Material's own pair for a 22 sp title; 20 / 0 keeps
- *   the stack's height as it was (28 + 20 = 24 + 24).
+ * - Title and artist: size, line height and tracking. Both lines are one line, and Compose
+ *   ignores a single line's line height under the default LineHeightStyle (Trim.Both): bodyLarge's
+ *   24 sp never applied, each line was Inter's natural height (1.21 em). [npLineStyle] applies it
+ *   (Trim.None), so the tuner's sliders move them. 26.6 / 17.9 sp are that natural height, picked
+ *   to round to the same pixels on the Pixel 5 (2.75) and the Pixel 6 (2.625): nothing moves.
+ *   Tracking is 0: it was bodyLarge's +0.5 sp, the one visible change here.
  * - Around the art: the three flexible gaps (top bar to art, art to title, controls to the
  *   bottom), at their full size; they shrink to their floors on a short screen.
  * - Stack: the fixed steps from the title down to the Up next line.
@@ -41,12 +45,12 @@ import kotlin.math.roundToInt
 internal object NpSpacingDefaults {
     // Title
     const val TITLE_SIZE_SP = 22f
-    const val TITLE_LINE_HEIGHT_SP = 28f
+    const val TITLE_LINE_HEIGHT_SP = 26.6f
     const val TITLE_LETTER_SPACING_SP = 0f
 
     // Artist · album
     const val ARTIST_SIZE_SP = 15f
-    const val ARTIST_LINE_HEIGHT_SP = 20f
+    const val ARTIST_LINE_HEIGHT_SP = 17.9f
     const val ARTIST_LETTER_SPACING_SP = 0f
 
     // Around the art
@@ -135,6 +139,27 @@ internal data class NpSpacing(
     val sideButtonGap: Float = NpSpacingDefaults.SIDE_BUTTON_GAP_DP,
     val align: NpAlign = NpSpacingDefaults.ALIGN,
     val fullArtText: FullArtTextPosition = NpSpacingDefaults.FULL_ART_TEXT,
+) {
+    /** The title line's style: its size, line height (applied, [npLineStyle]) and tracking. */
+    fun titleStyle(): TextStyle = npLineStyle(titleSize, titleLineHeight, titleLetterSpacing)
+
+    /** The artist · album line's style. */
+    fun artistStyle(): TextStyle = npLineStyle(artistSize, artistLineHeight, artistLetterSpacing)
+}
+
+/**
+ * The line height as given, top and bottom, even on a single line. Compose's default
+ * (Proportional, Trim.Both) skips a lone line's line height entirely (LineHeightStyleSpan returns
+ * early for a first-and-last line), so without this the title and artist ignore it.
+ */
+internal val NpLineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+
+/** One of the text block's lines: [size], [lineHeight] and [letterSpacing] in sp, the line height applied. */
+internal fun npLineStyle(size: Float, lineHeight: Float, letterSpacing: Float): TextStyle = TextStyle(
+    fontSize = size.sp,
+    lineHeight = lineHeight.sp,
+    letterSpacing = letterSpacing.sp,
+    lineHeightStyle = NpLineHeightStyle,
 )
 
 /** The spacing Now Playing lays out with. Provided once, by the player sheet (production values elsewhere). */
@@ -213,6 +238,16 @@ internal object NpSpacingJson {
             ?.let(FullArtTextPosition::fromKey)?.let { out = out.copy(fullArtText = it) }
         return out
     }
+
+    /** The production values as the tuner's JSON: what a stored set of overrides was made against. */
+    val productionBasis: String by lazy { write(NpSpacing()) }
+
+    /**
+     * Stored overrides [json], only while the production values are still those they were made
+     * against ([basis], stored with them): once new defaults are baked into a build, a stale set
+     * isn't laid out again. Null for none.
+     */
+    fun overridesFor(json: String?, basis: String?): String? = json?.takeIf { basis == productionBasis }
 
     /** [spacing] as the tuner's JSON: every key, so storing it and parsing it back is lossless. */
     fun write(spacing: NpSpacing): String = buildJsonObject {
