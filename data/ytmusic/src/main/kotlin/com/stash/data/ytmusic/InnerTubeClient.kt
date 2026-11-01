@@ -505,22 +505,51 @@ class InnerTubeClient @Inject constructor(
     suspend fun removeLike(videoId: String): Boolean =
         sendLikeAction("$BASE_URL/like/removelike", videoId)
 
-    private suspend fun sendLikeAction(url: String, videoId: String): Boolean = runCatching {
+    /**
+     * [likeVideo] / [removeLike] with the answer kept: its HTTP status, or [RequestOutcome.STATUS_NETWORK_ERROR] when nothing
+     * came back, so like mirroring can tell a dropped connection or an expired sign-in from a refusal. Success is a 2xx with
+     * a body, as for the Boolean pair.
+     */
+    suspend fun setLiked(videoId: String, liked: Boolean): RequestOutcome =
+        likeActionOutcome(if (liked) "$BASE_URL/like/like" else "$BASE_URL/like/removelike", videoId)
+
+    /**
+     * The signed-in profile's own like on [videoId]: "LIKE", "INDIFFERENT" or "DISLIKE", read from the `next` answer the
+     * YouTube Music web client gets when a song opens (its like button). Null when it can't be told: signed out (a signed-out
+     * answer always says INDIFFERENT, which would read as "not liked"), the request failed, or the answer has no like button.
+     */
+    suspend fun likeStatusOf(videoId: String): String? = withContext(Dispatchers.IO) {
+        val variant = InnerTubeVariant.WEB_REMIX
+        val (cookie, sapiSid, authHeader) = resolveAuth(null, variant)
+        if (cookie == null || sapiSid == null || authHeader == null) return@withContext null
+        val body = buildJsonObject {
+            put("context", buildContext(variant))
+            put("videoId", videoId)
+        }
+        executeRequestWithStatus("$BASE_URL/next", body, null, variant).body?.let(::likeStatusIn)
+    }
+
+    private suspend fun sendLikeAction(url: String, videoId: String): Boolean {
+        val outcome = likeActionOutcome(url, videoId)
+        return outcome.body != null && outcome.statusCode in 200..299
+    }
+
+    private suspend fun likeActionOutcome(url: String, videoId: String): RequestOutcome = runCatching {
         val variant = InnerTubeVariant.WEB_REMIX
         val payload = buildJsonObject {
             put("context", buildContext(variant))
             put("target", buildJsonObject { put("videoId", videoId) })
         }
-        val outcome = executeRequestWithStatus(
+        executeRequestWithStatus(
             url = url,
             body = payload,
             cookie = null,
             variant = variant,
         )
-        outcome.body != null && outcome.statusCode in 200..299
     }.getOrElse { e ->
+        if (e is kotlinx.coroutines.CancellationException) throw e
         Log.w(TAG, "like action failed for $videoId at $url: ${e.message}")
-        false
+        RequestOutcome(body = null, statusCode = RequestOutcome.STATUS_NETWORK_ERROR)
     }
 
     /** Test-only seam mirroring [executeRequestWithStatusForTest] — lets a test
@@ -1077,4 +1106,19 @@ internal fun withOnBehalfOf(body: JsonObject, pageId: String): JsonObject {
     val context = body["context"] as? JsonObject ?: return body
     val user = (context["user"] as? JsonObject).orEmpty() + ("onBehalfOfUser" to kotlinx.serialization.json.JsonPrimitive(pageId))
     return JsonObject(body + ("context" to JsonObject(context + ("user" to JsonObject(user)))))
+}
+
+/**
+ * The like button's state in a `next` answer: `playerOverlays.playerOverlayRenderer.actions[].likeButtonRenderer.likeStatus`
+ * ("LIKE", "INDIFFERENT" or "DISLIKE"), or null when the answer has no like button.
+ */
+internal fun likeStatusIn(root: JsonObject): String? {
+    val actions = (root["playerOverlays"] as? JsonObject)
+        ?.let { it["playerOverlayRenderer"] as? JsonObject }
+        ?.let { it["actions"] as? JsonArray }
+        ?: return null
+    return actions.firstNotNullOfOrNull { action ->
+        val button = (action as? JsonObject)?.get("likeButtonRenderer") as? JsonObject
+        (button?.get("likeStatus") as? kotlinx.serialization.json.JsonPrimitive)?.content
+    }
 }

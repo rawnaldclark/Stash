@@ -3,4 +3,5 @@
     <string name="app_name">Stash</string>
     <string name="resume_playback_short">استئناف</string>
     <string name="resume_playback_long">استئناف التشغيل</string>
+    <string name="like_mirror_signed_out">لا يمكن أن تصل إعجاباتك إلى %1$s. سجّل الدخول إليه مجددًا من الإعدادات.</string>
 </resources>

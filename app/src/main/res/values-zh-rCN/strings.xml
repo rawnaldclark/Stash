@@ -3,4 +3,5 @@
     <string name="app_name">Stash</string>
     <string name="resume_playback_short">继续</string>
     <string name="resume_playback_long">继续播放</string>
+    <string name="like_mirror_signed_out">你的喜欢无法同步到 %1$s。请在设置中重新登录。</string>
 </resources>

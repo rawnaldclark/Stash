@@ -147,6 +147,15 @@
     <string name="settings_like_mirror_row_title">Aimer aussi sur %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Aimer aussi sur Last.fm</string>
     <string name="settings_like_mirror_row_subtitle">À partir de maintenant, les titres que vous aimez dans Stash sont synchronisés</string>
+    <string name="settings_like_status_up_to_date">À jour</string>
+    <string name="settings_like_status_waiting">%1$d en attente</string>
+    <string name="settings_like_status_offline">%1$d en attente de connexion</string>
+    <string name="settings_like_status_retrying">%1$d en attente · nouvel essai bientôt</string>
+    <string name="settings_like_status_needs_you">Dernière erreur : %1$s · touchez pour réessayer</string>
+    <string name="settings_like_error_signed_out">connexion expirée</string>
+    <string name="settings_like_error_rate_limited">trop de requêtes</string>
+    <string name="settings_like_error_refused">refusé</string>
+    <string name="settings_like_error_offline">pas de connexion</string>
     <string name="settings_listenbrainz_dialog_title">Connecter ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Envoyer maintenant</string>
     <plurals name="settings_scrobbles_waiting">
@@ -159,7 +168,7 @@
     <string name="settings_disconnect_account_body">Stash déconnecte votre compte %1$s sur ce téléphone et arrête sa synchronisation. Les titres de %1$s dont le téléchargement est encore en attente sont retirés de la file d’attente.\n\nLes titres déjà téléchargés restent dans votre bibliothèque et vous pouvez vous reconnecter à tout moment.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Synchroniser les J’aime avec %1$s ?</string>
-    <string name="settings_like_mirror_warning_body">Mettre un cœur à un titre dans Stash l’ajoute également à vos J’aime sur %1$s ; retirer le cœur supprime aussi le J’aime correspondant. Seuls les J’aime ajoutés à partir de maintenant seront synchronisés.\n\nCette fonction utilise le même point de terminaison privé que le lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte comme suspect. Envisagez de l’activer uniquement sur un compte secondaire ou de secours.</string>
+    <string name="settings_like_mirror_risk_body">Mettre un cœur à un titre dans Stash l’ajoute aussi à vos J’aime sur %1$s, et retirer le cœur retire ce J’aime, mais jamais un J’aime qui y était déjà. Seuls les J’aime ajoutés à partir de maintenant sont synchronisés.\n\nCette fonction utilise le point de terminaison privé du lecteur Web de %1$s, et non une API officielle. Elle peut cesser de fonctionner à tout moment et, dans de rares cas, un accès non officiel peut entraîner le signalement d’un compte.</string>
     <string name="settings_like_mirror_warning_confirm">J’ai compris</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->

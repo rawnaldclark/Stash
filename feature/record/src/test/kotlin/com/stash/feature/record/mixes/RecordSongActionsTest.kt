@@ -17,7 +17,7 @@ import org.junit.Test
 
 /**
  * A song row's Like and menu ([RecordSongActions]) on a song that is often only words: a blocked song refused before any row is
- * made, else the row found or made, then Stash's own action on it; Like goes to Stash's Liked Songs alone. And the hearts
+ * made, else the row found or made, then Stash's own action on it; Like is the app's heart (RecordSongActionsLikeMirrorTest). And the hearts
  * ([RowLikes], [Likes]): a tap shows at once, stays until the likes agree, goes back when it couldn't be written; a song's taps
  * one after another; liked by its words or by a Spotify id a liked row carries; an unlike takes every such row out.
  */

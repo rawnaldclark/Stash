@@ -168,6 +168,15 @@
     <string name="settings_like_mirror_row_title">Like on %1$s too</string>
     <string name="settings_like_mirror_lastfm_title">Love on Last.fm too</string>
     <string name="settings_like_mirror_row_subtitle">Songs you heart in Stash from now on</string>
+    <string name="settings_like_status_up_to_date">Up to date</string>
+    <string name="settings_like_status_waiting">%1$d waiting</string>
+    <string name="settings_like_status_offline">%1$d waiting for a connection</string>
+    <string name="settings_like_status_retrying">%1$d waiting · retrying</string>
+    <string name="settings_like_status_needs_you">Last error: %1$s · tap to retry</string>
+    <string name="settings_like_error_signed_out">sign-in expired</string>
+    <string name="settings_like_error_rate_limited">too many requests</string>
+    <string name="settings_like_error_refused">not accepted</string>
+    <string name="settings_like_error_offline">no connection</string>
     <string name="settings_listenbrainz_dialog_title">Connect ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Send now</string>
     <plurals name="settings_scrobbles_waiting">
@@ -182,7 +191,7 @@
 
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Mirror likes to %1$s?</string>
-    <string name="settings_like_mirror_warning_body">Hearting a track in Stash will also Like it on %1$s, and removing a heart will remove the Like there too. Only likes you add from now on are mirrored.\n\nThis uses the same private endpoint the %1$s web player uses — not an official API. It can stop working at any time and, rarely, unofficial access can get an account flagged. Consider enabling this only on a secondary or backup account.</string>
+    <string name="settings_like_mirror_risk_body">Hearting a song in Stash will also Like it on %1$s, and removing the heart takes that Like away again, but never a Like that was already there. Only likes you add from now on are mirrored.\n\nThis uses the private endpoint the %1$s web player uses, not an official API. It can stop working at any time, and in rare cases unofficial access can get an account flagged.</string>
     <string name="settings_like_mirror_warning_confirm">I understand</string>
 
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->

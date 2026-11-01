@@ -28,8 +28,17 @@ class LikeDestinationDispatcherUnlikeTest {
     private val lastFm = mockk<com.stash.core.data.lastfm.LastFmApiClient>(relaxed = true)
     private val lastFmSession =
         mockk<com.stash.core.data.lastfm.LastFmSessionPreference>(relaxed = true)
+    /** Nothing was liked there before Stash: the old behaviour, which these cases assert. */
+    private val likedThere = mockk<LikedThereCheck> {
+        coEvery { onSpotify(any()) } returns LikedThere.NO
+        coEvery { onYouTubeMusic(any()) } returns LikedThere.NO
+        coEvery { onLastFm(any(), any()) } returns LikedThere.NO
+    }
+    private val ownership = mockk<LikeOwnership>(relaxed = true) {
+        coEvery { isLikedByService(any(), any()) } returns false
+    }
     private val dispatcher =
-        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession)
+        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession, likedThere, ownership)
 
     private fun track(
         spotifySavedAt: Long? = null,

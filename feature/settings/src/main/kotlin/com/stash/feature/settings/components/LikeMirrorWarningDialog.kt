@@ -27,7 +27,7 @@ fun LikeMirrorWarningDialog(
         title = { Text(stringResource(R.string.settings_like_mirror_warning_title, serviceName)) },
         text = {
             Text(
-                stringResource(R.string.settings_like_mirror_warning_body, serviceName),
+                stringResource(R.string.settings_like_mirror_risk_body, serviceName),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },

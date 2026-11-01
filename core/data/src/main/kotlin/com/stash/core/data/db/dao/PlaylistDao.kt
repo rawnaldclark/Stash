@@ -552,6 +552,30 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET last_synced = :timestamp WHERE id = :playlistId")
     suspend fun updateLastSynced(playlistId: Long, timestamp: Long)
 
+    // ── Like mirroring: "is it liked on Spotify already?" ────────────────
+
+    /**
+     * When the synced Spotify Liked Songs was last read (epoch millis), or null when it never was. A Liked Songs snapshot
+     * carries no revision, so every sync re-diffs it and moves this ([com.stash.core.data.sync.workers.DiffWorker]).
+     */
+    @Query("SELECT MAX(last_synced) FROM playlists WHERE type = 'LIKED_SONGS' AND source = 'SPOTIFY'")
+    suspend fun spotifyLikedSongsLastSynced(): Long?
+
+    /** Whether the synced Spotify Liked Songs holds the song: its row, or any row with the same Spotify URI. */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlist_id
+            INNER JOIN tracks t ON t.id = pt.track_id
+            WHERE p.type = 'LIKED_SONGS' AND p.source = 'SPOTIFY'
+              AND pt.removed_at IS NULL
+              AND (pt.track_id = :trackId OR (:spotifyUri IS NOT NULL AND t.spotify_uri = :spotifyUri))
+        )
+        """
+    )
+    suspend fun isInSpotifyLikedSongs(trackId: Long, spotifyUri: String?): Boolean
+
     // ── Snapshot queries ─────────────────────────────────────────────────
 
     /** Retrieve the snapshot ID for a playlist, used for change detection. */

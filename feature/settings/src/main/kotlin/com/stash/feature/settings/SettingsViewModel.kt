@@ -149,6 +149,8 @@ class SettingsViewModel @Inject constructor(
      * source's flag (see [SyncStateManager.clearAuthExpiry]).
      */
     private val syncStateManager: com.stash.core.data.sync.SyncStateManager,
+    /** The line under each "Like on … too" switch, and its "tap to retry". */
+    private val likeCoordinator: com.stash.core.data.social.LikeCoordinator,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -216,6 +218,26 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = false,
         )
+
+    // ── Like mirroring status ──────────────────────────────────────────────
+    //
+    // Standalone flows, like ListenBrainz's: they belong to the account cards
+    // alone, and the outbox they read changes on its own schedule.
+
+    val likeStatusSpotify: StateFlow<com.stash.core.data.social.LikeMirrorStatus> = likeStatus(Destination.SPOTIFY)
+    val likeStatusYtMusic: StateFlow<com.stash.core.data.social.LikeMirrorStatus> = likeStatus(Destination.YT_MUSIC)
+    val likeStatusLastFm: StateFlow<com.stash.core.data.social.LikeMirrorStatus> = likeStatus(Destination.LAST_FM)
+
+    private fun likeStatus(destination: Destination) = likeCoordinator.status(destination).stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = com.stash.core.data.social.LikeMirrorStatus.UP_TO_DATE,
+    )
+
+    /** "Tap to retry" under a like switch: what's waiting for [destination] goes again now. */
+    fun onRetryLikeMirror(destination: Destination) {
+        viewModelScope.launch { likeCoordinator.retry(destination) }
+    }
 
     /**
      * Issue #112 — submit only the primary artist to Last.fm. Exposed as its

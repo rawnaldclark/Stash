@@ -231,10 +231,13 @@ fun SettingsAccountsScreen(
             onDisconnect = { confirmSpotifyDisconnect = true },
             extraContent = if (spotifyConnected) {
                 {
+                    val likeStatus by viewModel.likeStatusSpotify.collectAsStateWithLifecycle()
                     LikeMirrorToggleRow(
                         title = stringResource(R.string.settings_like_mirror_row_title, "Spotify"),
                         checked = uiState.mirrorLikesSpotify,
                         onToggle = { viewModel.onMirrorToggleRequested(Destination.SPOTIFY, it) },
+                        status = likeStatus,
+                        onRetry = { viewModel.onRetryLikeMirror(Destination.SPOTIFY) },
                     )
                 }
             } else {
@@ -259,10 +262,13 @@ fun SettingsAccountsScreen(
                         subtitle = stringResource(R.string.settings_youtube_profile_subtitle),
                         onClick = { showYouTubeProfiles = true },
                     )
+                    val likeStatus by viewModel.likeStatusYtMusic.collectAsStateWithLifecycle()
                     LikeMirrorToggleRow(
                         title = stringResource(R.string.settings_like_mirror_row_title, "YouTube Music"),
                         checked = uiState.mirrorLikesYtMusic,
                         onToggle = { viewModel.onMirrorToggleRequested(Destination.YT_MUSIC, it) },
+                        status = likeStatus,
+                        onRetry = { viewModel.onRetryLikeMirror(Destination.YT_MUSIC) },
                     )
                     com.stash.feature.settings.components.YouTubeHistorySyncSection(
                         enabled = uiState.ytHistoryEnabled,
@@ -337,6 +343,7 @@ fun SettingsAccountsScreen(
         // storage: same job, and users commonly run both.
         val scrobbleFirstArtistOnly by viewModel.scrobbleFirstArtistOnly.collectAsStateWithLifecycle()
         val mirrorLastFm by viewModel.mirrorLikesLastFm.collectAsStateWithLifecycle()
+        val lastFmLikeStatus by viewModel.likeStatusLastFm.collectAsStateWithLifecycle()
         val lastFmUriHandler = androidx.compose.ui.platform.LocalUriHandler.current
         val drainMessage = uiState.scrobbleDrainResult?.let { result ->
             androidx.compose.runtime.LaunchedEffect(result) {
@@ -365,6 +372,8 @@ fun SettingsAccountsScreen(
             onFirstArtistOnlyChange = viewModel::onScrobbleFirstArtistOnlyChanged,
             loveEnabled = mirrorLastFm,
             onLoveToggle = { viewModel.onMirrorToggleRequested(Destination.LAST_FM, it) },
+            loveStatus = lastFmLikeStatus,
+            onLoveRetry = { viewModel.onRetryLikeMirror(Destination.LAST_FM) },
         )
 
         val listenBrainzState by viewModel.listenBrainzState.collectAsStateWithLifecycle()

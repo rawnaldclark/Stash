@@ -8,7 +8,7 @@ import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.radio.RadioSeed
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.data.social.stash.StashLikedPlaylistRepository
+import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.listen.ListenTogetherController
 import com.stash.core.model.Playlist
@@ -68,11 +68,12 @@ sealed interface SongLine {
  * Stash's own action on that row.
  *
  * A blocked song (BlocklistGuard's rule, by its words and its Spotify id) is refused first, as Search refuses one ("Can't add a
- * blocked track"), and no row is made for it. Like puts the row in Stash's Liked Songs alone ([StashLikedPlaylistRepository],
- * what Now Playing's heart does without its mirroring): never written to Spotify or YouTube Music, and nothing downloads, unless
- * Liked Songs itself is set to download (as any heart then does). App-wide and on its own scope: a Like tapped just before
- * leaving still lands. Each line goes to the screen that is open ([lines]), else a toast; in a Listen Together session an add
- * says nothing (the session confirms it), and a song the player can't queue has the player's own line, not a second one.
+ * blocked track"), and no row is made for it. Like is Now Playing's heart ([LikeCoordinator.setLiked]): the row goes in Stash's
+ * Liked Songs, and on to Spotify, YouTube Music and Last.fm when their "Like on … too" switches are on (the switch says "Songs
+ * you heart in Stash", and these are hearts too). Nothing downloads, unless Liked Songs itself is set to download (as any heart
+ * then does). App-wide and on its own scope: a Like tapped just before leaving still lands. Each line goes to the screen that
+ * is open ([lines]), else a toast; in a Listen Together session an add says nothing (the session confirms it), and a song the
+ * player can't queue has the player's own line, not a second one.
  */
 @Singleton
 class RecordSongActions internal constructor(
@@ -98,7 +99,7 @@ class RecordSongActions internal constructor(
 ) {
     @Inject constructor(
         match: RecordMatch,
-        liked: StashLikedPlaylistRepository,
+        likes: LikeCoordinator,
         player: PlayerRepository,
         music: MusicRepository,
         playlistDao: PlaylistDao,
@@ -107,8 +108,8 @@ class RecordSongActions internal constructor(
         @ApplicationContext context: Context,
     ) : this(
         rows = match::rows,
-        like = liked::add,
-        unlike = liked::remove,
+        like = { likes.setLiked(it, liked = true) },
+        unlike = { likes.setLiked(it, liked = false) },
         addNext = player::addNext,
         addToQueue = player::addToQueue,
         startRadio = { seed -> player.startRadio(seed) },
