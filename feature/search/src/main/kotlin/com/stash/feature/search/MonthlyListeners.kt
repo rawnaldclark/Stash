@@ -21,9 +21,17 @@ internal fun monthlyListenersOf(profile: ArtistProfile): Long? =
         ?: profile.monthlyAudience?.takeIf { it > 0 }
 
 /**
- * [count] the way the services write it, in the app's language: "574K", "1.7M", "12K", "999"
- * (ICU's short compact style, its own rounding: two significant digits, whole numbers from 10 up,
- * so 574 321 is "574K", not "574.3K").
+ * [count] the way the services write it, in the app's language (ICU's short compact style):
+ * whole units, "574K", "12K", "999", and one decimal only when the whole number would be a single
+ * digit, "1.7M" rather than "2M". ICU's own rounding keeps two significant digits, which made
+ * 574 000 "570K" (caught by MonthlyListenersTest); one decimal everywhere made 574 321 "574.3K".
+ * Digits are counted with [Char.isDigit], so a locale's own numerals count too.
  */
-internal fun formatMonthlyListeners(count: Long, locale: Locale): String =
-    CompactDecimalFormat.getInstance(locale, CompactDecimalFormat.CompactStyle.SHORT).format(count)
+internal fun formatMonthlyListeners(count: Long, locale: Locale): String {
+    val format = CompactDecimalFormat.getInstance(locale, CompactDecimalFormat.CompactStyle.SHORT)
+    format.maximumFractionDigits = 0
+    val whole = format.format(count)
+    if (whole.count(Char::isDigit) > 1) return whole
+    format.maximumFractionDigits = 1
+    return format.format(count)
+}
