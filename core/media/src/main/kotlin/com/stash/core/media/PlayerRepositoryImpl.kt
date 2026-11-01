@@ -119,6 +119,8 @@ class PlayerRepositoryImpl @Inject constructor(
     private val listenTogether: com.stash.core.media.listen.ListenTogetherController? = null,
     // The diagnostics bundle's "Recent playback errors". A fresh, unshared one in hand-built tests.
     private val diagnosticsLog: PlaybackDiagnosticsLog = PlaybackDiagnosticsLog(),
+    // Data saver: the next-song look-ahead is skipped where it applies. Null in hand-built tests (never applies).
+    private val qualityPolicy: com.stash.core.media.streaming.StreamQualityPolicy? = null,
 ) : PlayerRepository {
 
     /**
@@ -1051,6 +1053,7 @@ class PlayerRepositoryImpl @Inject constructor(
      *  - The next track has a usable downloaded file (no resolve needed).
      *  - The cache already has a fresh entry (expires in >60s).
      *  - The next track isn't streamable.
+     *  - Data saver applies (the switch on, a metered network): no look-ahead on mobile data.
      *
      * Failures are logged and swallowed — the original (possibly stale)
      * MediaItem stays in place and [RefreshingDataSourceFactory] handles
@@ -1118,6 +1121,15 @@ class PlayerRepositoryImpl @Inject constructor(
         val nowMs = System.currentTimeMillis()
         if (cached != null && cached.expiresAtMs > nowMs + PREFETCH_FRESH_THRESHOLD_MS) {
             refreshControllerMediaItem(controller, nextTimelineIndex, next, cached)
+            return
+        }
+
+        // Data saver on mobile data: no speculative look-ahead. The slot stays a placeholder,
+        // which ExoPlayer's own buffering resolves ahead of the transition (LazyResolvingDataSource),
+        // so the song still starts on time; a song skipped before then costs nothing. After the
+        // fresh-cache upgrade above (no network) and the downloaded-file swap (none either).
+        if (qualityPolicy?.dataSaverApplies() == true) {
+            Log.d(TAG, "prefetch-next skipped id=${next.id}: Data saver on a metered network")
             return
         }
 

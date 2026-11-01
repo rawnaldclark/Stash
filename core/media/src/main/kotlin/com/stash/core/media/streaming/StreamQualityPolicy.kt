@@ -8,19 +8,25 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Single decision point for "what lossless tier should a streaming
- * resolve request right now?". Streaming resolvers call this instead of
- * reading the download tier; downloads never call it.
+ * Single decision point for "what quality should a streaming resolve ask for right now?".
+ * Streaming resolvers call this instead of reading the download tier; downloads never call it.
  *
- * Phase 1 returns just a tier. Phase 2 will widen the return to a
- * StreamDecision (Tier | ForceYouTube) for the cellular budget without
- * changing this class's callers' shape beyond the new branch.
+ * **Data saver** (the `streaming_save_data` preference, "Data saver" in Settings and Now Playing)
+ * applies on a METERED network only ([dataSaverApplies]): on unmetered Wi-Fi every answer here is
+ * what it would be with the switch off. Where it applies:
+ *  - Lossless on: no FLAC. The lossless relays and cloud copies leave the chain
+ *    ([StreamSourceRegistry]) and the song streams from JioSaavn at 160 kbps or YouTube's best
+ *    ([LossyQuality.DATA_SAVER]), about a sixth of CD FLAC. Not Tidal's AAC 320: every Tidal
+ *    answer, AAC included, counts toward the daily Tidal & Qobuz allowance (`BitchordClient.lookup`),
+ *    so routing every phone on mobile data to it would spend the allowance it is meant to save.
+ *    A user who opted into "Prefer Tidal AAC while streaming" still gets that rung first.
+ *  - Lossless off: the lowest each lossy source has ([LossyQuality.LOWEST]), as Save Data always did.
  *
  * Also the one place that notices the effective quality CHANGING between resolves
- * (Save Data, Prefer Tidal AAC or the Lossless switch flipped, a tier picked, Wi-Fi → cellular) and drops the
- * [StreamUrlCache], whose entries are keyed by track id alone with ~1 h TTLs —
- * otherwise the old tier's URLs kept being served for up to an hour after the
- * user asked for something else.
+ * (Data saver, Prefer Tidal AAC or the Lossless switch flipped, a tier picked, Wi-Fi → cellular,
+ * unmetered → metered) and drops the [StreamUrlCache], whose entries are keyed by track id alone
+ * with ~1 h TTLs — otherwise the old quality's URLs kept being served for up to an hour after the
+ * user (or the network) asked for something else.
  */
 @Singleton
 class StreamQualityPolicy @Inject constructor(
@@ -34,8 +40,10 @@ class StreamQualityPolicy @Inject constructor(
     /** Everything a resolve's quality depends on. A change between resolves means every cached URL is for the wrong quality. */
     private data class Decision(
         val lossless: Boolean,
-        val saveData: Boolean,
+        /** The Data saver switch is on AND the active network is metered. */
+        val dataSaver: Boolean,
         val tier: LosslessQualityTier,
+        val lossy: LossyQuality,
         val preferTidalAac: Boolean = false,
         val preferCloudCopies: Boolean = false,
         /** Debug-only "Test: skip Qobuz" — always false on a release build. */
@@ -45,22 +53,24 @@ class StreamQualityPolicy @Inject constructor(
     @Volatile private var lastDecision: Decision? = null
 
     /**
-     * Save Data never leaves lossless: it is the LOWEST lossless tier, CD (about 28 MB
-     * per four-minute track against 70 for Hi-Res and 140 for Max), on every network.
-     * A user who wants less than FLAC turns lossless off — and on that lossy path Save
-     * Data asks YouTube for its lowest audio quality instead (see [saveData]).
-     *
-     * It briefly (v0.9.101–102) requested Qobuz MP3 320 instead; no path ever served
-     * that, and it is not what the setting means: lossless stays lossless.
+     * The FLAC tier a lossless rung asks for: the per-network tier the user picked (cellular's on
+     * mobile data, Wi-Fi's otherwise). Where Data saver applies the lossless rungs don't run at all;
+     * CD is returned then only as the floor for anything that still asks (the debug force-qbdlx toggle).
      */
     suspend fun streamingTier(): LosslessQualityTier = snapshot().tier
 
     /**
-     * Save Data on the lossy path: the YouTube resolver asks for the lowest audio
-     * quality when this is true. Read here, not from the preference directly, so the
-     * cache-clearing below sees this flip too.
+     * Data saver is in effect for this resolve: the switch is on and the active network is metered.
+     * [StreamSourceRegistry] leaves the lossless rungs out then, and the next-song look-ahead
+     * ([com.stash.core.media.PlayerRepositoryImpl.prefetchNextTrack], [PrefetchOrchestrator]) is skipped.
      */
-    suspend fun saveData(): Boolean = snapshot().saveData
+    suspend fun dataSaverApplies(): Boolean = snapshot().dataSaver
+
+    /**
+     * What the lossy rungs (JioSaavn, YouTube) ask for. Read here, not from the preferences, so the
+     * cache-clearing below sees a flip of the switch, the Lossless switch or the network too.
+     */
+    suspend fun lossyQuality(): LossyQuality = snapshot().lossy
 
     /**
      * "Prefer Tidal AAC while streaming": [StreamSourceRegistry] asks Tidal for AAC before
@@ -79,18 +89,18 @@ class StreamQualityPolicy @Inject constructor(
     // track whose URL was prefetched just before can still play once at the old quality.
     // Stamping entries with their quality and checking at read time closes that; not yet earned.
     private suspend fun snapshot(): Decision {
-        val saveData = prefs.saveDataNow()
+        val lossless = losslessPrefs.enabledNow()
+        val dataSaver = prefs.saveDataNow() && connectivity.isMetered()
         val tier = when {
-            saveData -> LosslessQualityTier.CD
+            dataSaver -> LosslessQualityTier.CD
             connectivity.isCellular() -> prefs.cellularTierNow()
             else -> prefs.wifiTierNow()
         }
-        // The Lossless switch is read here too: with it off the lossless resolvers never ask
-        // for a tier, so the lossy path's [saveData] read is what notices the flip.
         val decision = Decision(
-            lossless = losslessPrefs.enabledNow(),
-            saveData = saveData,
+            lossless = lossless,
+            dataSaver = dataSaver,
             tier = tier,
+            lossy = lossyQualityFor(dataSaver = dataSaver, lossless = lossless),
             preferTidalAac = prefs.preferTidalAacNow(),
             preferCloudCopies = prefs.preferCloudCopiesNow(),
             skipQobuz = streamingPreference.isSkipQobuz(),
@@ -99,5 +109,14 @@ class StreamQualityPolicy @Inject constructor(
         lastDecision = decision
         if (previous != null && previous != decision) urlCache.clear()
         return decision
+    }
+
+    internal companion object {
+        /** The lossy quality for a resolve: see [LossyQuality]. */
+        fun lossyQualityFor(dataSaver: Boolean, lossless: Boolean): LossyQuality = when {
+            !dataSaver -> LossyQuality.FULL
+            lossless -> LossyQuality.DATA_SAVER
+            else -> LossyQuality.LOWEST
+        }
     }
 }

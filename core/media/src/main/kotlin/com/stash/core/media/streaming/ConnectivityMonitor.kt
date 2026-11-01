@@ -61,4 +61,12 @@ class ConnectivityMonitor @Inject constructor(
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
     }
+
+    /**
+     * True iff the active network is metered: mobile data, or a Wi-Fi hotspot marked metered.
+     * What Data saver keys on ([StreamQualityPolicy]); the transport ([isCellular]) would read a
+     * phone tethered to another phone's hotspot as Wi-Fi. False with no active network, like the
+     * two above (see [com.stash.core.common.isActiveNetworkMetered]).
+     */
+    fun isMetered(): Boolean = com.stash.core.common.isActiveNetworkMetered(context)
 }

@@ -34,6 +34,7 @@ import javax.inject.Singleton
  *  5. We have not already attempted a prefetch for this `nextTrackId` in
  *     the current play session — idempotency guard so a failing resolve
  *     doesn't spam Kennyy as the position-poll keeps firing.
+ *  6. Data saver does not apply (the switch off, or an unmetered network).
  *
  * The "attempted" set is cleared by [resetSession] which the service is
  * expected to invoke on every `onMediaItemTransition` — once playback
@@ -50,6 +51,8 @@ class PrefetchOrchestrator @Inject constructor(
     private val streamResolver: StreamSourceRegistry,
     private val streamUrlCache: StreamUrlCache,
     private val trackDao: TrackDao,
+    /** Data saver ([StreamQualityPolicy.dataSaverApplies]); null in hand-built tests (never applies). */
+    private val qualityPolicy: StreamQualityPolicy? = null,
 ) {
     /**
      * Track ids for which a prefetch resolve has been attempted in the
@@ -101,6 +104,9 @@ class PrefetchOrchestrator @Inject constructor(
                 // gating on the bare flag silently disabled next-track
                 // prefetch for the whole synced library.
                 if (!track.isStreamable && track.isStreamableCheckedAt != null) return@launch
+                // Data saver on mobile data: no look-ahead. The song is looked up when the player
+                // reaches it (its own buffering asks, ahead of the transition); a skip costs nothing.
+                if (qualityPolicy?.dataSaverApplies() == true) return@launch
 
                 // speculative: never makes the shared Tidal relay search for a look-ahead.
                 val resolved = streamResolver.resolve(track, speculative = true)

@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import android.util.Log
 import androidx.compose.foundation.lazy.LazyListState
+import com.stash.core.data.prefs.DataSaver
 import com.stash.data.download.preview.PreviewUrlCache
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.model.TrackSummary
@@ -41,6 +42,11 @@ class PreviewPrefetcher(
     private val previewUrlCache: MutableMap<String, String>,
     private val scope: CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    /**
+     * Data saver applies right now (the switch on, a metered network): nothing is warmed then,
+     * each preview is looked up when tapped. Never, in hand-built tests.
+     */
+    private val dataSaverApplies: () -> Boolean = { false },
 ) {
 
     /**
@@ -50,8 +56,8 @@ class PreviewPrefetcher(
      * that reads the cache.
      */
     @Inject
-    constructor(extractor: PreviewUrlExtractor, cache: PreviewUrlCache) :
-        this(extractor, cache.asMutableMap)
+    constructor(extractor: PreviewUrlExtractor, cache: PreviewUrlCache, dataSaver: DataSaver) :
+        this(extractor, cache.asMutableMap, dataSaverApplies = dataSaver::appliesNow)
 
     private val jobs = mutableListOf<Job>()
 
@@ -63,6 +69,9 @@ class PreviewPrefetcher(
      * structured-concurrency cancellation still propagates correctly.
      */
     fun prefetch(videoIds: List<String>) {
+        // Speculative: one InnerTube player response per row and look-ahead, most never played.
+        // On mobile data under Data saver the tap looks its own preview up (at the low tier).
+        if (dataSaverApplies()) return
         videoIds
             .filter { it !in previewUrlCache }
             .forEach { id ->

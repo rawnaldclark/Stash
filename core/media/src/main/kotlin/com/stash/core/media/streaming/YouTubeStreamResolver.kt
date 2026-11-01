@@ -119,8 +119,13 @@ class YouTubeStreamResolver @Inject constructor(
                 // Racing again is safe now that AudioUrlTailProbe rejects the
                 // PO-token-gated URLs that forced the 2026-06-08 bypass: a gated
                 // URL never reaches ExoPlayer, it just falls through to yt-dlp.
-                // Save Data on the lossy path: the lowest audio quality YouTube has (Opus 250/249).
-                urlExtractor.extractStreamUrl(videoId, allowYtDlp = allowYtDlp, lowestQuality = qualityPolicy.saveData())
+                // Data saver on mobile data with Lossless off: the lowest audio quality YouTube
+                // has (Opus 250/249); its best otherwise (LossyQuality).
+                urlExtractor.extractStreamUrl(
+                    videoId,
+                    allowYtDlp = allowYtDlp,
+                    lowestQuality = qualityPolicy.lossyQuality().youTubeLowest,
+                )
             }
                 .onFailure { t ->
                     // CancellationException MUST propagate — swallowing it would
