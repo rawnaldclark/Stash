@@ -238,6 +238,7 @@ class StreamQualityPolicyTest {
         every { prefs.saveData } returns flowOf(true)
         val seen = mutableListOf<Boolean>()
         val watch = launch(UnconfinedTestDispatcher(testScheduler)) { policy.dataSaverChanges().collect { seen += it } }
+        runCurrent() // the decision at the start of the watch, on the old network
         cache.put(7L, flacLink())
         assertThat(cache.get(7L)).isNotNull()
 
@@ -257,6 +258,7 @@ class StreamQualityPolicyTest {
         every { prefs.saveData } returns saveData
         val seen = mutableListOf<Boolean>()
         val watch = launch(UnconfinedTestDispatcher(testScheduler)) { policy.dataSaverChanges().collect { seen += it } }
+        runCurrent() // the decision at the start of the watch, on the old network
         cache.put(7L, flacLink())
 
         setup(cellular = true, saveData = true)
