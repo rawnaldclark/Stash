@@ -143,4 +143,75 @@ class SameSongRuleTest {
         row("Lift Me Up")
         assertNull(find("Lift Off"))
     }
+
+    // ── findLibraryCopy: the one "already on your phone" check every download path shares ──
+
+    /** A row with a length, for the copy checks (the rows above have none). */
+    private suspend fun copyRow(
+        title: String,
+        lengthMs: Long,
+        youtubeId: String? = null,
+        spotifyUri: String? = null,
+        file: String? = null,
+        soundCloudId: String? = null,
+    ): Long = dao.insert(
+        TrackEntity(
+            title = title, artist = "A & B", durationMs = lengthMs, youtubeId = youtubeId, spotifyUri = spotifyUri,
+            soundCloudId = soundCloudId, filePath = file, isDownloaded = file != null,
+            canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist("A & B"),
+        ),
+    )
+
+    private suspend fun copyOf(title: String, lengthMs: Long, youtubeId: String? = null, soundCloudId: String? = null, exclude: Long? = null) =
+        dao.findLibraryCopy(title, "B & A", lengthMs, youtubeId = youtubeId, soundCloudId = soundCloudId, excludeTrackId = exclude)?.id
+
+    @Test fun `a song downloaded under another video, or from Spotify, is the phone's copy: ids don't count`() = runTest {
+        val copy = copyRow("Song", 304_000L, youtubeId = "video000001", spotifyUri = "spotify:track:1", file = "/m/song.flac")
+        // Another upload of the song, from a YouTube playlist: its row could never take the copy's (ids disagree),
+        // but its audio is the same song, so it is not downloaded again.
+        assertEquals(copy, copyOf("Song", 305_000L, youtubeId = "video000002"))
+        // An id-less discovery stub of the song.
+        assertEquals(copy, copyOf("Song (Official Audio)", 304_000L))
+    }
+
+    @Test fun `the same video's row with a file is the copy, whatever its words`() = runTest {
+        val sameVideo = copyRow("Song - Remastered 2011 (Live at the BBC)", 1_000L, youtubeId = "video000001", file = "/m/x.opus")
+        assertEquals(sameVideo, copyOf("Song", 300_000L, youtubeId = "video000001"))
+    }
+
+    @Test fun `a row without a file is no copy`() = runTest {
+        copyRow("Song", 304_000L, youtubeId = "video000001")
+        assertNull(copyOf("Song", 304_000L))
+        assertNull(copyOf("Song", 304_000L, youtubeId = "video000001"))
+    }
+
+    @Test fun `another version or a clearly different length is another song`() = runTest {
+        copyRow("Song", 180_000L, file = "/m/song.flac")
+        assertNull("live is another version", copyOf("Song (Live)", 180_000L))
+        assertNull("8 minutes is not the 3-minute song", copyOf("Song", 480_000L))
+        assertEquals("within 10 s is the song", true, copyOf("Song", 189_000L) != null)
+    }
+
+    @Test fun `lengths agree within 10 s or 5 percent, or when either is unknown`() {
+        assertEquals(true, SameSongRule.lengthsAgree(304_000L, 314_000L))
+        assertEquals(false, SameSongRule.lengthsAgree(180_000L, 190_001L))
+        assertEquals(true, SameSongRule.lengthsAgree(600_000L, 629_000L)) // 5 % of 10 min = 30 s
+        assertEquals(true, SameSongRule.lengthsAgree(0L, 629_000L))
+        assertEquals(true, SameSongRule.lengthsAgree(300_000L, 0L))
+    }
+
+    @Test fun `a song is never its own copy`() = runTest {
+        val kept = copyRow("Song", 304_000L, file = "/m/song.flac")
+        assertNull(copyOf("Song", 304_000L, exclude = kept))
+    }
+
+    @Test fun `a SoundCloud upload is never matched by words`() = runTest {
+        copyRow("Song", 304_000L, file = "/m/song.flac")
+        assertNull(copyOf("Song", 304_000L, soundCloudId = "123"))
+    }
+
+    @Test fun `a downloaded SoundCloud upload is no copy of a song by words`() = runTest {
+        copyRow("Song", 304_000L, soundCloudId = "456", file = "/m/sc.mp3")
+        assertNull(copyOf("Song", 304_000L))
+    }
 }

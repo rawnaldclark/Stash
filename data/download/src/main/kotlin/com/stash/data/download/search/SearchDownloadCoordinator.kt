@@ -11,8 +11,8 @@ import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.findLibraryCopy
 import com.stash.core.data.library.findReusableByWords
-import com.stash.core.data.library.findSameSongByWords
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
@@ -997,11 +997,11 @@ class SearchDownloadCoordinator @Inject constructor(
     }
 
     /**
-     * The library's own copy of [track], when it has one: the same video's row with a file, or a
-     * row with a file that is this song by its words, in the same version ([SameSongRule]) and of
-     * about the same length ([lengthsAgree]). Then [download] fetches nothing
-     * ([SearchDownloadStatus.AlreadyInLibrary]). A failed lookup reads as no copy: the download
-     * goes ahead, and [upsertSearchTrack] never overwrites a file another row holds.
+     * The library's own copy of [track], when it has one ([findLibraryCopy], the one check every
+     * download path shares): the same video's row with a file, or a row with a file that is this
+     * song by its words, in the same version and of about the same length. Then [download] fetches
+     * nothing ([SearchDownloadStatus.AlreadyInLibrary]). A failed lookup reads as no copy: the
+     * download goes ahead, and [upsertSearchTrack] never overwrites a file another row holds.
      *
      * Unlike a row's identity ([findReusableRow]), the video id doesn't count here: another upload
      * of a song you have is still that song. With lossless on, the audio is fetched by title and
@@ -1009,30 +1009,17 @@ class SearchDownloadCoordinator @Inject constructor(
      * a second row (device-checked: two near-identical FLACs of one song).
      */
     private suspend fun libraryCopyOf(track: TrackItem): com.stash.core.data.db.entity.TrackEntity? = try {
-        val sameVideo = trackDao.findByYoutubeId(track.videoId)
-        sameVideo?.takeIf(SameSongRule::holdsFile)
-            ?: trackDao.findSameSongByWords(
-                title = track.title,
-                artist = track.artist,
-                youtubeId = null,
-                spotifyUri = null,
-            ).firstOrNull { SameSongRule.holdsFile(it) && lengthsAgree(it.durationMs, track.durationSeconds) }
+        trackDao.findLibraryCopy(
+            title = track.title,
+            artist = track.artist,
+            durationMs = (track.durationSeconds * 1000).toLong(),
+            youtubeId = track.videoId,
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Log.w(TAG, "library-copy lookup failed for ${track.videoId}: ${e.message}")
         null
-    }
-
-    /**
-     * Whether a row of [rowMs] and a search result of [itemSeconds] can be one recording: within
-     * 10 s or 5 %, or either length unknown. A same-titled track of clearly different length (two
-     * "Interlude"s by one artist, a music video with a long intro) is another track.
-     */
-    private fun lengthsAgree(rowMs: Long, itemSeconds: Double): Boolean {
-        if (rowMs <= 0L || itemSeconds <= 0.0) return true
-        val diffMs = kotlin.math.abs(rowMs - (itemSeconds * 1000).toLong())
-        return diffMs <= maxOf(10_000L, rowMs / 20)
     }
 
     /**

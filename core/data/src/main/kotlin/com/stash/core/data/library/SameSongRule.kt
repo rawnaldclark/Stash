@@ -70,9 +70,97 @@ object SameSongRule {
     /** Whether [row] has audio of its own on this phone. */
     fun holdsFile(row: TrackEntity): Boolean = row.isDownloaded || !row.filePath.isNullOrBlank()
 
+    /**
+     * Whether [row], found by its words, is a copy of the incoming song already on this phone, so
+     * the song is never downloaded a second time: it [holdsFile], it is the same version
+     * ([isSameSong], with the incoming ids left out on purpose), and the lengths agree
+     * ([lengthsAgree]).
+     *
+     * The ids don't count here, unlike for a row's identity ([mayReuseByWords]): another upload of
+     * a song you have is still that song. With lossless on, audio is fetched by title and artist,
+     * not by video, so a second upload of a song (or a Spotify row next to a YouTube one) downloaded
+     * the same recording again under a second row. A SoundCloud upload is never matched by words
+     * ([isSameSong]'s SoundCloud rule): pass its [soundCloudId].
+     *
+     * @param title the incoming song's raw title.
+     * @param durationMs the incoming song's length; 0 when unknown.
+     */
+    fun isLibraryCopy(
+        row: TrackEntity,
+        title: String,
+        durationMs: Long,
+        soundCloudId: String? = null,
+    ): Boolean = holdsFile(row) &&
+        isSameSong(row, title, youtubeId = null, spotifyUri = null, soundCloudId = soundCloudId) &&
+        lengthsAgree(row.durationMs, durationMs)
+
+    /**
+     * Whether a row of [rowMs] and an incoming song of [incomingMs] can be one recording: within
+     * 10 s or 5 % of the row's length, or either length unknown (0). A same-titled track of clearly
+     * different length (two "Interlude"s by one artist, a music video with a long intro) is another
+     * track.
+     */
+    fun lengthsAgree(rowMs: Long, incomingMs: Long): Boolean {
+        if (rowMs <= 0L || incomingMs <= 0L) return true
+        return kotlin.math.abs(rowMs - incomingMs) <= maxOf(LENGTH_SLACK_MS, rowMs / LENGTH_SLACK_DIVISOR)
+    }
+
+    /** The oldest of [rows] that [isLibraryCopy] calls a copy of the incoming song, other than [excludeTrackId]. */
+    fun libraryCopyAmong(
+        rows: List<TrackEntity>,
+        title: String,
+        durationMs: Long,
+        soundCloudId: String? = null,
+        excludeTrackId: Long? = null,
+    ): TrackEntity? = rows
+        .sortedBy { it.id }
+        .firstOrNull { it.id != excludeTrackId && isLibraryCopy(it, title, durationMs, soundCloudId) }
+
     /** Two ids disagree only when both are present and differ. */
     private fun idsAgree(stored: String?, incoming: String?): Boolean =
         stored.isNullOrBlank() || incoming.isNullOrBlank() || stored == incoming
+
+    /** [lengthsAgree]: at least 10 s apart… */
+    private const val LENGTH_SLACK_MS = 10_000L
+
+    /** …or 5 % of the row's length, whichever is more. */
+    private const val LENGTH_SLACK_DIVISOR = 20L
+}
+
+/**
+ * The library's own copy of an incoming song, when the phone already has one: the same video's row
+ * when it holds a file, else the oldest row with the same canonical words that
+ * [SameSongRule.isLibraryCopy] calls a copy. One check for every path that would otherwise download
+ * the song again: Search, a tap on Download, a playlist's Download switch and a sync's new songs.
+ * Null when there is none, or the title or artist has no canonical words.
+ *
+ * "Holds a file" is the row's own record ([SameSongRule.holdsFile]); the startup repair sweep clears
+ * that record when a file goes missing.
+ *
+ * @param excludeTrackId the incoming song's own row, when it has one: it is never its own copy.
+ */
+suspend fun TrackDao.findLibraryCopy(
+    title: String,
+    artist: String,
+    durationMs: Long,
+    youtubeId: String? = null,
+    soundCloudId: String? = null,
+    excludeTrackId: Long? = null,
+): TrackEntity? {
+    youtubeId?.takeIf { it.isNotBlank() }
+        ?.let { findByYoutubeId(it) }
+        ?.takeIf { it.id != excludeTrackId && SameSongRule.holdsFile(it) }
+        ?.let { return it }
+    val canonicalTitle = TrackCanonical.title(title)
+    val canonicalArtist = TrackCanonical.artist(artist)
+    if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) return null
+    return SameSongRule.libraryCopyAmong(
+        rows = findAllByCanonicalIdentity(canonicalTitle, canonicalArtist),
+        title = title,
+        durationMs = durationMs,
+        soundCloudId = soundCloudId,
+        excludeTrackId = excludeTrackId,
+    )
 }
 
 /**
