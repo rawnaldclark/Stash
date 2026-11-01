@@ -233,6 +233,7 @@ class DonationGoalRepositoryTest {
         val file = File(tmp.root, "donation_goal.preferences_pb")
         server.enqueue(goalJson(16800))
         repo(file).refreshIfDue()
+        server.takeRequest() // yesterday's, so the next take is today's slow one
         scopes.removeAt(0).coroutineContext[Job]!!.cancelAndJoin() // the "process" ends; one DataStore per file
 
         // The next day, Settings opens and the site is slow.
@@ -253,7 +254,7 @@ class DonationGoalRepositoryTest {
     }
 
     @Test fun `a cancelled ask stamps nothing, so the next one goes out`() = runBlocking {
-        server.enqueue(goalJson(16800).setHeadersDelay(5, TimeUnit.SECONDS))
+        server.enqueue(goalJson(16800).setHeadersDelay(3, TimeUnit.SECONDS))
         val repo = repo()
         val job = launch(Dispatchers.IO) { repo.refreshIfDue() }
         assertThat(server.takeRequest(5, TimeUnit.SECONDS)).isNotNull()
