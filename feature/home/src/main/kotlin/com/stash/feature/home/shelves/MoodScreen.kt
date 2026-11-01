@@ -66,6 +66,14 @@ fun MoodScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
+                // Every playlist here streams: Download mode keeps the page closed and says how to open it
+                state.offline -> Text(
+                    text = stringResource(R.string.mood_download_mode),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                )
                 state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.failed -> Column(
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
