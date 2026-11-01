@@ -24,7 +24,8 @@ class DataSaverArtCap(
     context: Context,
     private val inAppDataSaver: () -> Boolean = { false },
 ) : () -> Int {
-    private val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java)
+    private val appContext = context.applicationContext
+    private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
 
     @Volatile private var cached = ArtUrlSizer.NO_CAP
     @Volatile private var readAt = Long.MIN_VALUE
@@ -43,7 +44,9 @@ class DataSaverArtCap(
             ArtUrlSizer.maxVariantPx(
                 dataSaverRestricting =
                     cm.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED,
-                metered = cm.isActiveNetworkMetered,
+                // The same answer streaming uses (a dropout keeps the last one), not
+                // ConnectivityManager.isActiveNetworkMetered, which reads every dropout as metered.
+                metered = isActiveNetworkMetered(appContext),
                 inAppDataSaver = inAppDataSaver(),
             )
         }.getOrDefault(ArtUrlSizer.NO_CAP)
