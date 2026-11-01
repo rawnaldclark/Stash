@@ -96,6 +96,9 @@ class LosslessConfigFetcher @Inject constructor(
 
     /** Test seam. */
     internal var httpClient: OkHttpClient = sharedClient
+
+    /** Test seam: the network [refreshLoop] waits for while offline. */
+    internal var network: ConfigNetworkSignal = AndroidConfigNetworkSignal(context)
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonKey = stringPreferencesKey("config_json")
 
@@ -174,20 +177,48 @@ class LosslessConfigFetcher @Inject constructor(
         _updatedAt.value = cfg.updatedAt
     }
 
-    /** Load the cache, then refresh now and every [REFRESH_INTERVAL_MS] — [RETRY_INTERVAL_MS] after a failure. */
+    /** Load the cache, then keep the config fresh with [refreshLoop]. */
     fun start(scope: CoroutineScope) {
         if (!enabled) return // both BuildConfig values blank: nothing to fetch, don't spin a coroutine
         scope.launch {
             loadCached()
-            while (true) {
-                val ok = refresh()
-                delay(nextDelayMs(ok))
-            }
+            refreshLoop { refresh() }
         }
     }
 
-    /** 6 h after a good refresh; a failed one (offline at launch, captive portal) retries in 15 min. */
-    internal fun nextDelayMs(refreshed: Boolean): Long = if (refreshed) REFRESH_INTERVAL_MS else RETRY_INTERVAL_MS
+    /**
+     * Refresh now, then every [REFRESH_INTERVAL_MS]; after failures, back off ([nextDelayMs]). [refreshOnce] is passed
+     * in so tests drive the loop on virtual time. Never returns.
+     *
+     * Offline, nothing runs on a timer: before each attempt the loop waits for a validated network ([network]) and
+     * refreshes as soon as one is back. It used to retry every 15 min for as long as the process lived, each attempt a
+     * request that could only fail. The failure count starts over after such a wait, since the earlier failures were on
+     * another network.
+     *
+     * Every attempt is followed by a delay, so a network signal that says "online" while nothing works (or can't be
+     * watched at all) can never make this spin: failures back off 15 min, 30 min, then hourly.
+     */
+    internal suspend fun refreshLoop(refreshOnce: suspend () -> Boolean): Nothing {
+        var failures = 0
+        while (true) {
+            if (!network.isOnline()) {
+                network.awaitOnline()
+                failures = 0
+            }
+            failures = if (refreshOnce()) 0 else failures + 1
+            delay(nextDelayMs(failures))
+        }
+    }
+
+    /**
+     * The wait after an attempt, given the [failures] in a row so far: 6 h after a good refresh (0), and after a failure
+     * (a captive portal, the host down) 15 min, then 30 min, then hourly.
+     */
+    internal fun nextDelayMs(failures: Int): Long {
+        if (failures <= 0) return REFRESH_INTERVAL_MS
+        val doublings = (failures - 1).coerceAtMost(MAX_DOUBLINGS)
+        return (RETRY_INTERVAL_MS shl doublings).coerceAtMost(MAX_RETRY_INTERVAL_MS)
+    }
 
     internal fun verify(bytes: ByteArray, sigB64: String): Boolean = runCatching {
         val pub = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(publicKeyB64)))
@@ -248,7 +279,13 @@ class LosslessConfigFetcher @Inject constructor(
     private companion object {
         const val TAG = "LosslessConfig"
         const val REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L
+
+        /** The first retry after a failure; each further failure in a row doubles it, up to [MAX_RETRY_INTERVAL_MS]. */
         const val RETRY_INTERVAL_MS = 15 * 60 * 1000L
+        const val MAX_RETRY_INTERVAL_MS = 60 * 60 * 1000L
+
+        /** Bounds the shift in [nextDelayMs] (the cap is reached after two doublings anyway). */
+        const val MAX_DOUBLINGS = 8
 
         /** A hostile/misconfigured host must not OOM us — an `Error` would escape [ioCatching]. */
         const val MAX_CONFIG_BYTES = 64L * 1024
