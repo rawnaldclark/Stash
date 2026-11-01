@@ -374,7 +374,8 @@ class SearchViewModel @Inject constructor(
                     StreamRoutingResult.CellularRefused ->
                         _userMessages.emit("Streaming on cellular is off in Settings.")
                     StreamRoutingResult.NoConnectivity ->
-                        _userMessages.emit("You're offline — can't stream this track.")
+                        // "Offline" is the mode's name; the network is "no internet connection".
+                        _userMessages.emit("No internet connection, and this song isn't downloaded.")
                     StreamRoutingResult.DownloadMode ->
                         _userMessages.emit("Offline plays only your downloads. Switch to Online to play this.")
                 }

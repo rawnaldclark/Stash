@@ -171,7 +171,7 @@ class SearchViewModelTest {
         vm.onQueryChanged("abc")
         advanceUntilIdle()
         val error = vm.uiState.value.status as SearchStatus.Error
-        assertEquals("You're offline, or YouTube Music can't be reached.", error.message)
+        assertEquals("No internet connection, or YouTube Music can't be reached.", error.message)
 
         vm.retry()
         advanceUntilIdle()
@@ -282,8 +282,8 @@ class SearchViewModelTest {
 
         vm.userMessages.test {
             vm.onResultTap(sampleTrack())
-            val msg = awaitItem()
-            assertTrue(msg.contains("offline", ignoreCase = true))
+            // Says "no internet connection", never "offline" (that's the mode's name).
+            assertEquals("No internet connection, and this song isn't downloaded.", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }
