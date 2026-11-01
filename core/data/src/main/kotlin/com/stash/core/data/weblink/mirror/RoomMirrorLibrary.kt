@@ -110,34 +110,36 @@ class RoomMirrorLibrary internal constructor(
         }
     }
 
-    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long, sendOn: Set<WireSong>) = io {
-        // Track id → liked, for the songs a browser just changed: sent on once the library here holds the change.
-        val sends = LinkedHashMap<Long, Boolean>()
+    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long): LikeWrite = io {
+        val newLikes = ArrayList<Pair<WireSong, Long>>()
+        val cleared = ArrayList<Pair<WireSong, Long>>()
         if (on.isNotEmpty()) {
-            // A song already a Stash like here went on when it was hearted here: only a new like goes on.
-            val likedHere = if (on.any { it in sendOn }) dao.likes().filter { it.stash }.mapTo(HashSet()) { it.song.id } else emptySet()
+            // A song already a Stash like here isn't a new like (its heart went on when it was made here)
+            val likedHere = dao.likes().filter { it.stash }.mapTo(HashSet()) { it.song.id }
             val rows = matcher.matchAll(on, mirror = true, identities = identities)
             remember(on, rows)
             val ids = rows.mapNotNull { it?.id }
             for (chunk in ids.chunked(BATCH)) database.withTransaction { liked.addAllFrom(chunk.map { it to at }, recount = false) }
             liked.recount()
             on.forEachIndexed { i, s ->
-                val id = rows.getOrNull(i)?.id ?: return@forEachIndexed // not held here (settleUnheld): nothing to send
-                if (s in sendOn && id !in likedHere) sends[id] = true
+                val id = rows.getOrNull(i)?.id ?: return@forEachIndexed // not held here (settleUnheld)
+                if (likedHere.add(id)) newLikes += s to id
             }
         }
         if (off.isNotEmpty()) {
             // Only a Stash like can be cleared from a mirror: a song liked through Spotify / YouTube Music stays liked there.
             val stash = dao.likes().filter { it.stash }
             val index = SongIndex.of(stash.mapNotNull { r -> wire(r.song)?.let { it to r.song.id } })
-            val ids = off.mapNotNull { index.find(it) }.distinct()
-            database.withTransaction { ids.forEach { liked.remove(it) } }
-            // The services lose only a like Stash put there (LikeDestinationDispatcher's rule), never one they already had.
-            off.forEach { s -> if (s in sendOn) index.find(s)?.let { sends[it] = false } }
+            val seen = HashSet<Long>()
+            off.forEach { s -> index.find(s)?.let { if (seen.add(it)) cleared += s to it } }
+            database.withTransaction { cleared.forEach { (_, id) -> liked.remove(id) } }
         }
-        // After the writes, one at a time: the coordinator only queues (its outbox, its pacing), and a queue that fails is
-        // logged there, never undoing the like here.
-        for ((id, isLiked) in sends) onward.like(id, isLiked)
+        LikeWrite(newLikes, cleared)
+    }
+
+    /** One at a time: [PhoneOnward] only queues (the coordinator's outbox and pacing), and a queue that fails is logged there. */
+    override suspend fun sendOn(likes: List<Pair<Long, Boolean>>) = io {
+        for ((id, isLiked) in likes) onward.like(id, isLiked)
     }
 
     override suspend fun ownPlays(since: Long, limit: Int): List<PlayRec<WireSong>> = io {

@@ -18,6 +18,12 @@ data class LocalPlaylist(
 /** A mirrored playlist written here: its id, and per song of the list whether this phone holds it. */
 data class PutPlaylist(val id: Long, val held: List<Boolean>)
 
+/**
+ * What a like write did here, by row: the songs newly liked (a song already a Stash like isn't), and the Stash likes cleared.
+ * The mirror sends a browser's live changes on from this ([MirrorLibrary.sendOn]).
+ */
+data class LikeWrite(val liked: List<Pair<WireSong, Long>> = emptyList(), val unliked: List<Pair<WireSong, Long>> = emptyList())
+
 /** A local playlist's content now. */
 data class LocalVersion(val name: String, val items: List<WireSong>, val follow: Follow?, val ro: Boolean)
 
@@ -30,12 +36,14 @@ interface MirrorLibrary {
     /** Liked songs, newest like first; [LikedSong.external]: liked only through a Spotify / YouTube Music Liked Songs playlist. */
     suspend fun likes(): List<LikedSong<WireSong>>
 
+    /** Likes [on] as Stash likes (at [at]); unlikes [off] (only a Stash like can be cleared). Says what it changed. */
+    suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long): LikeWrite
+
     /**
-     * Likes [on] as Stash likes (at [at]); unlikes [off] (only a Stash like can be cleared). [sendOn]: the songs of [on] and [off]
-     * a browser just changed live, which also go on to Spotify, YouTube Music and Last.fm on this phone's switches (a like only
-     * when it is new here). Empty for a first merge, a snapshot, or anything else that isn't a browser's live change.
+     * Sends a browser's live like changes (track id → liked), already applied here, on to Spotify, YouTube Music and Last.fm on
+     * this phone's switches ([PhoneOnward]). The mirror calls it once a run, with what it chose to send.
      */
-    suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long, sendOn: Set<WireSong> = emptySet())
+    suspend fun sendOn(likes: List<Pair<Long, Boolean>>) {}
 
     /** This phone's own plays (no origin) that started at or after [since], newest first, at most [limit]. */
     suspend fun ownPlays(since: Long, limit: Int = 50_000): List<PlayRec<WireSong>>

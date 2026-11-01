@@ -124,27 +124,27 @@ class RoomMirrorLibraryTest {
 
     private suspend fun titleOf(id: Long) = db.trackDao().getById(id)!!.title
 
-    @Test fun `a browser's live like goes on only when new here, an unlike only for a Stash like, a merge never`() = runTest {
+    @Test fun `a like write says which rows were newly liked and which Stash likes it cleared, and only sendOn sends`() = runTest {
         val onward = Onward()
         val lib = sendingLib(onward)
         track("Already here", stashLiked = true)
         val spotifyLiked = db.playlistDao().insert(PlaylistEntity(name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "spotify_liked", type = PlaylistType.LIKED_SONGS))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = spotifyLiked, trackId = track("From Spotify"), position = 0))
 
-        // A first merge, a snapshot: nothing marked, nothing goes
-        lib.setLikes(on = listOf(song("Merged")), off = listOf(song("Already here")), at = 98)
-        assertThat(onward.likes).isEmpty()
-        track("Already here 2", stashLiked = true)
+        val liked = lib.setLikes(on = listOf(song("New one"), song("Already here")), off = emptyList(), at = 99)
+        // A Stash like already here isn't new: its heart went on when it was made here
+        assertThat(liked.liked.map { it.first.title to it.second }).containsExactly("New one" to idOf("New one"))
+        assertThat(liked.unliked).isEmpty()
 
-        val marked = setOf(song("New one"), song("Already here 2"))
-        lib.setLikes(on = listOf(song("New one"), song("Already here 2"), song("Not marked")), off = emptyList(), at = 99, sendOn = marked)
-        // A Stash like already here went on when it was hearted here
-        assertThat(onward.likes).containsExactly(idOf("New one") to true)
-
-        lib.setLikes(on = emptyList(), off = listOf(song("New one"), song("From Spotify")), at = 100, sendOn = setOf(song("New one"), song("From Spotify")))
+        val unliked = lib.setLikes(on = emptyList(), off = listOf(song("New one"), song("From Spotify")), at = 100)
         // The Spotify-only like stays liked here and there
+        assertThat(unliked.unliked.map { it.first.title to it.second }).containsExactly("New one" to idOf("New one"))
+        assertThat(lib.likes().map { it.s.title }).containsExactly("From Spotify", "Already here")
+
+        // Writing sends nothing; the mirror decides what goes, once a run
+        assertThat(onward.likes).isEmpty()
+        lib.sendOn(listOf(idOf("New one") to true, idOf("New one") to false))
         assertThat(onward.likes).containsExactly(idOf("New one") to true, idOf("New one") to false).inOrder()
-        assertThat(lib.likes().map { it.s.title }).containsExactly("From Spotify", "Already here 2", "Merged", "Not marked")
     }
 
     @Test fun `a browser's live play under an hour old is owed to YouTube history while that is on, and nothing else is`() = runTest {

@@ -28,8 +28,12 @@ class FakeMirrorLibrary : MirrorLibrary {
     /** Titles this library can't hold (no row could be made for them here). */
     val unholdable = mutableSetOf<String>()
 
-    /** Title → liked, for every like change the engine marked to go on to the services, in order. */
+    /** Title → liked, for every like change the engine sent on to the services, in order. */
     val sentOn = mutableListOf<Pair<String, Boolean>>()
+
+    /** A row id per title, as the library here would hold the song. */
+    private val ids = LinkedHashMap<String, Long>()
+    private fun idOf(title: String) = ids.getOrPut(title) { 1_000L + ids.size }
 
     /** Titles of the plays the engine marked live (a browser's, read from the log). */
     val livePlays = mutableListOf<String>()
@@ -52,15 +56,22 @@ class FakeMirrorLibrary : MirrorLibrary {
 
     override suspend fun likes() = liked.toList()
 
-    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long, sendOn: Set<WireSong>) {
-        for (s in on) if (s in sendOn) sentOn += s.title to true
-        for (s in off) if (s in sendOn) sentOn += s.title to false
+    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long): LikeWrite {
         val idx = SongIndex.of(liked.map { it.s to true })
+        val newLikes = mutableListOf<Pair<WireSong, Long>>()
         for (s in on) if (!idx.has(s) && s.title !in unholdable) {
             liked.add(0, LikedSong(s))
             idx.add(s, true)
+            newLikes += s to idOf(s.title)
         }
-        for (s in off) liked.removeAll { !it.external && SongKey.sameSong(it.s, s) }
+        val cleared = mutableListOf<Pair<WireSong, Long>>()
+        for (s in off) if (liked.removeAll { !it.external && SongKey.sameSong(it.s, s) }) cleared += s to idOf(s.title)
+        return LikeWrite(newLikes, cleared)
+    }
+
+    override suspend fun sendOn(likes: List<Pair<Long, Boolean>>) {
+        val titles = ids.entries.associate { (title, id) -> id to title }
+        for ((id, isLiked) in likes) sentOn += titles.getValue(id) to isLiked
     }
 
     override suspend fun ownPlays(since: Long, limit: Int) =
