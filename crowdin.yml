@@ -11,3 +11,5 @@ files:
     translation: /feature/sync/src/main/res/values-%android_code%/strings.xml
   - source: /feature/record/src/main/res/values/strings.xml
     translation: /feature/record/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/home/src/main/res/values/strings.xml
+    translation: /feature/home/src/main/res/values-%android_code%/strings.xml

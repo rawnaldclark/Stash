@@ -805,7 +805,19 @@ class YTMusicApiClient @Inject constructor(
      * @return A populated [ArtistProfile]; shelves that the real response
      *   lacks are empty lists.
      */
-    suspend fun getArtist(browseId: String): ArtistProfile {
+    suspend fun getArtist(browseId: String): ArtistProfile = artistPage(browseId, followViewAll = true)
+
+    /**
+     * The artist's page as one browse, never its "View all" grids: the Albums
+     * and Singles carousels as they come, about ten of each, newest first.
+     * Enough for anything that only wants an artist's newest releases (Home's
+     * "New from your artists"), at a third of [getArtist]'s requests. Same
+     * parsing and the same blank-name "no answer" profile as [getArtist].
+     */
+    suspend fun getArtistPage(browseId: String): ArtistProfile = artistPage(browseId, followViewAll = false)
+
+    /** [getArtist] and [getArtistPage]: [followViewAll] fetches the carousels' full grids too. */
+    private suspend fun artistPage(browseId: String, followViewAll: Boolean): ArtistProfile {
         val normalized = normalizeArtistBrowseId(browseId)
         val response = innerTubeClient.browse(normalized)
             ?: return emptyArtistProfile(normalized)
@@ -905,6 +917,10 @@ class YTMusicApiClient @Inject constructor(
         // each take their own browse call (~50KB each), so the cost is
         // ~2 extra HTTP requests per artist page load. Worth it: this is
         // the only way to surface artists with > 10 albums (Drake, etc).
+        if (!followViewAll) {
+            albumsMore = null
+            singlesMore = null
+        }
         albumsMore?.let { more ->
             runCatching {
                 innerTubeClient.browse(more.browseId, more.params)?.let { gridResponse ->

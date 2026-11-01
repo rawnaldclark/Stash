@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home's own shelves, built from your listening and YouTube Music (hidden in Offline mode) -->
+    <string name="home_new_from_artists">New from your artists</string>
+</resources>
