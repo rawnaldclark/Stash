@@ -112,10 +112,11 @@ class LikeOutbox internal constructor(private val storage: LikeOutboxStorage) {
 
     /**
      * [destination] just took a like, so whatever was parked or held back by a sign-in, a rate limit or the network is worth
-     * trying again ([REFUSED][LikeMirrorError.REFUSED] ones stay parked: a success elsewhere proves nothing about them).
+     * trying again, tries counted from zero. A [REFUSED][LikeMirrorError.REFUSED] op parked after its tries gets one more, last
+     * in line: the service works again, but a success elsewhere proves little about that one song.
      */
     suspend fun freeAfterSuccess(destination: Destination) {
-        if (current().none { it.destination == destination && it.attempts > 0 && it.lastError in FREED_BY_SUCCESS }) return
+        if (current().none { it.destination == destination && freedBySuccess(it) }) return
         storage.update { freeAfterSuccess(it, destination) }
     }
 
@@ -132,6 +133,9 @@ class LikeOutbox internal constructor(private val storage: LikeOutboxStorage) {
         const val MAX_OPS = 5_000
 
         private val FREED_BY_SUCCESS = setOf(LikeMirrorError.SIGNED_OUT, LikeMirrorError.RATE_LIMITED, LikeMirrorError.OFFLINE)
+
+        private fun freedBySuccess(op: LikeOutboxOp): Boolean =
+            (op.attempts > 0 && op.lastError in FREED_BY_SUCCESS) || (op.parked && op.lastError == LikeMirrorError.REFUSED)
 
         internal fun put(
             state: LikeOutboxState,
@@ -181,10 +185,12 @@ class LikeOutbox internal constructor(private val storage: LikeOutboxStorage) {
         internal fun freeAfterSuccess(state: LikeOutboxState, destination: Destination): LikeOutboxState =
             state.copy(
                 ops = state.ops.map {
-                    if (it.destination == destination && it.lastError in FREED_BY_SUCCESS) {
-                        it.copy(attempts = 0, lastError = null, lastAttemptAt = null)
-                    } else {
-                        it
+                    when {
+                        it.destination != destination -> it
+                        it.lastError in FREED_BY_SUCCESS -> it.copy(attempts = 0, lastError = null, lastAttemptAt = null)
+                        // Unparked for one more try; after the fresh ones (the sender takes fewest tries first)
+                        it.parked && it.lastError == LikeMirrorError.REFUSED -> it.copy(attempts = MAX_ATTEMPTS - 1)
+                        else -> it
                     }
                 },
             )

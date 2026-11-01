@@ -38,8 +38,10 @@ interface LikedThereCheck {
  *    own like button state ([InnerTubeClient.likeStatusOf]).
  *  - **Last.fm**: live, official: `track.getInfo` with the username answers `userloved`.
  *  - **Spotify**: there is no "is it saved?" call Stash can make without guessing a new private one, so it reads the synced
- *    Liked Songs in this phone's library. That copy is trusted only when it is fresh ([SPOTIFY_FRESH_MS]) and mirrors removals
- *    (the Refresh sync mode); otherwise the answer is [LikedThere.UNKNOWN], which never deletes anything.
+ *    Liked Songs in this phone's library. In it: liked there, when the copy is under [SPOTIFY_FRESH_MS] old and mirrors
+ *    removals (the Refresh sync mode). Not in it: not liked there only when the last fetch was complete
+ *    ([SpotifyLikedSongsFetch]) and under [SPOTIFY_COMPLETE_MS] old. Anything else is [LikedThere.UNKNOWN], which never
+ *    deletes anything.
  *
  * Every failure is [LikedThere.UNKNOWN]: never delete on uncertainty.
  */
@@ -50,11 +52,13 @@ class ServiceLikedThereCheck @Inject constructor(
     private val innerTubeClient: InnerTubeClient,
     private val lastFmApiClient: LastFmApiClient,
     private val lastFmSessionPreference: LastFmSessionPreference,
+    private val likedSongsFetch: SpotifyLikedSongsFetch,
 ) : LikedThereCheck {
 
     override suspend fun onSpotify(track: Track): LikedThere = guarded("Spotify", track.id) {
         spotifyAnswer(
             lastSyncedAt = playlistDao.spotifyLikedSongsLastSynced(),
+            completeAt = likedSongsFetch.completeAt(),
             inLikedSongs = playlistDao.isInSpotifyLikedSongs(track.id, track.spotifyUri),
             mirrorsRemovals = syncPreferencesManager.spotifySyncMode.first() == SyncMode.REFRESH,
             now = System.currentTimeMillis(),
@@ -98,14 +102,28 @@ class ServiceLikedThereCheck @Inject constructor(
         const val SPOTIFY_FRESH_MS = 7L * 24 * 60 * 60 * 1_000
 
         /**
-         * The Spotify answer from the synced copy. In the song: liked there (YES) when the sync mirrors removals, else it may be
-         * a song since unliked on Spotify that Accumulate kept (UNKNOWN: sent, never removed). Not in a fresh copy: NO.
+         * How old the last complete fetch may be for "not in it" to mean "not liked there". "No" is the answer that lets Stash
+         * take a like back later, so it needs a copy that holds every song and is recent: a song liked on Spotify since is
+         * missing from any copy, and only the last hour's are risked.
          */
-        internal fun spotifyAnswer(lastSyncedAt: Long?, inLikedSongs: Boolean, mirrorsRemovals: Boolean, now: Long): LikedThere =
-            when {
-                lastSyncedAt == null || now - lastSyncedAt > SPOTIFY_FRESH_MS -> LikedThere.UNKNOWN
-                inLikedSongs -> if (mirrorsRemovals) LikedThere.YES else LikedThere.UNKNOWN
-                else -> LikedThere.NO
-            }
+        const val SPOTIFY_COMPLETE_MS = 60L * 60 * 1_000
+
+        /**
+         * The Spotify answer from the synced copy. In the song: liked there (YES) when the copy is fresh and the sync mirrors
+         * removals, else it may be a song since unliked on Spotify that Accumulate kept (UNKNOWN: sent, never removed). Not in
+         * it: NO only from a complete fetch under [SPOTIFY_COMPLETE_MS] old ([completeAt]), else UNKNOWN.
+         */
+        internal fun spotifyAnswer(
+            lastSyncedAt: Long?,
+            completeAt: Long?,
+            inLikedSongs: Boolean,
+            mirrorsRemovals: Boolean,
+            now: Long,
+        ): LikedThere = when {
+            inLikedSongs ->
+                if (mirrorsRemovals && lastSyncedAt != null && now - lastSyncedAt in 0..SPOTIFY_FRESH_MS) LikedThere.YES else LikedThere.UNKNOWN
+            completeAt != null && now - completeAt in 0..SPOTIFY_COMPLETE_MS -> LikedThere.NO
+            else -> LikedThere.UNKNOWN
+        }
     }
 }

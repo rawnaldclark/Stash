@@ -34,8 +34,10 @@ class LikeDestinationDispatcherUnlikeTest {
         coEvery { onYouTubeMusic(any()) } returns LikedThere.NO
         coEvery { onLastFm(any(), any()) } returns LikedThere.NO
     }
+    /** Stash's own likes, stamped by this build: at or after its stamp epoch, and not the listener's own. */
     private val ownership = mockk<LikeOwnership>(relaxed = true) {
         coEvery { isLikedByService(any(), any()) } returns false
+        coEvery { epoch() } returns 100L
     }
     private val dispatcher =
         LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession, likedThere, ownership)

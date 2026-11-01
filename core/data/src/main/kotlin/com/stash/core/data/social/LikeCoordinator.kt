@@ -157,7 +157,7 @@ class LikeCoordinator internal constructor(
             val report = try {
                 // In-process: new hearts only (and ones that only ever waited for the network). Failed tries belong to the
                 // worker's back-off, so a run of hearts can't hammer a service that is saying no.
-                drain(onlyFresh = true, maxGroups = Int.MAX_VALUE)
+                drain(onlyFresh = true, maxGroups = IN_PROCESS_MAX_GROUPS)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -181,7 +181,8 @@ class LikeCoordinator internal constructor(
                 op.seq !in tried && !op.parked && op.destination !in heldBack && !resting(op.destination) &&
                     (!onlyFresh || op.attempts == 0)
             }
-            val head = eligible.minByOrNull { it.seq } ?: break
+            // Fewest tries first: a song a service keeps refusing goes after the new hearts, never in front of them
+            val head = eligible.minWithOrNull(compareBy<LikeOutboxOp>({ it.attempts }, { it.seq })) ?: break
             if (!scheduler.online()) {
                 outbox.markWaitingForNetwork(eligible, now())
                 break
@@ -220,6 +221,8 @@ class LikeCoordinator internal constructor(
                         heldBack += op.destination
                         rest(op.destination, error)
                     }
+                    // A service saying no is asked nothing more this drain: the next try is the worker's, on its back-off
+                    LikeMirrorError.REFUSED -> heldBack += op.destination
                     else -> Unit
                 }
             }
@@ -302,6 +305,12 @@ class LikeCoordinator internal constructor(
     companion object {
         private const val TAG = "LikeCoordinator"
         private const val MIN_GAP_MS_DEFAULT = 1_500L
+
+        /**
+         * Songs the in-process sender sends per wake. A backlog (hearts made offline for days, a phone back online) trickles:
+         * this many now, the rest through the worker's runs on its back-off, never one long burst.
+         */
+        internal const val IN_PROCESS_MAX_GROUPS = 20
 
         /** Ceiling on a Retry-After rest, no matter how large the service's answer is. */
         internal const val MAX_BACKOFF_MS = 5 * 60 * 1_000L

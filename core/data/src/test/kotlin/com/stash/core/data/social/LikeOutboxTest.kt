@@ -139,7 +139,7 @@ class LikeOutboxTest {
         assertThat(s.ops.single().attempts).isEqualTo(0)
     }
 
-    @Test fun `a success frees what a sign-in or a rate limit held back, never what the service refused`() {
+    @Test fun `a success frees what a sign-in held back, and gives a parked refusal one more try, last in line`() {
         var s = LikeOutbox.put(LikeOutboxState(), 1L, true, setOf(Destination.SPOTIFY), now)
         s = LikeOutbox.put(s, 2L, true, setOf(Destination.SPOTIFY), now)
         s = LikeOutbox.put(s, 3L, true, setOf(Destination.LAST_FM), now)
@@ -154,7 +154,10 @@ class LikeOutboxTest {
         s = LikeOutbox.freeAfterSuccess(s, Destination.SPOTIFY)
 
         assertThat(s.ops.first { it.seq == signedOut.seq }.attempts).isEqualTo(0)
-        assertThat(s.ops.first { it.seq == refused.seq }.parked).isTrue()
+        val again = s.ops.first { it.seq == refused.seq }
+        assertThat(again.parked).isFalse()
+        assertThat(again.attempts).isEqualTo(LikeOutbox.MAX_ATTEMPTS - 1) // one more refusal parks it again
+        assertThat(again.lastError).isEqualTo(LikeMirrorError.REFUSED)
         assertThat(s.ops.first { it.seq == lastFm.seq }.parked).isTrue() // another service's success says nothing about it
     }
 

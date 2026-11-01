@@ -391,6 +391,91 @@ class LikeCoordinatorTest {
         coVerify(exactly = LikeOutbox.MAX_ATTEMPTS + 1) { dispatcher.like(any(), any()) }
     }
 
+    @Test fun `a refusal holds that service back for the rest of the drain, and the others go on`() = runTest {
+        mirrorPrefs(spotify = true, yt = true)
+        coEvery { trackDao.getById(any()) } answers { entity(id = firstArg()) }
+        coEvery { dispatcher.like(any(), any()) } answers {
+            secondArg<Set<Destination>>().associateWith {
+                if (it == Destination.SPOTIFY) Result.failure<Unit>(RuntimeException("no")) else Result.success(Unit)
+            }
+        }
+        scheduler.isOnline = false
+        val c = coordinator(minGapMs = 0L)
+        (1L..3L).forEach { c.setLiked(it, liked = true) }
+        runCurrent()
+        scheduler.isOnline = true
+
+        c.drainAll(LikeMirrorWorker.MAX_GROUPS_PER_RUN)
+
+        // Spotify said no to the first song and was asked nothing more; YouTube Music took all three
+        coVerify(exactly = 1) { dispatcher.like(any(), match { Destination.SPOTIFY in it }) }
+        coVerify(exactly = 3) { dispatcher.like(any(), match { Destination.YT_MUSIC in it }) }
+        assertThat(storage.now.ops.map { it.trackId to it.destination }).containsExactly(
+            1L to Destination.SPOTIFY, 2L to Destination.SPOTIFY, 3L to Destination.SPOTIFY,
+        )
+    }
+
+    @Test fun `a song a service keeps refusing goes after the new hearts, never in front of them`() = runTest {
+        mirrorPrefs(spotify = true, yt = false)
+        coEvery { trackDao.getById(any()) } answers { entity(id = firstArg()) }
+        coEvery { dispatcher.like(match { it.id == 1L }, any()) } returns
+            mapOf(Destination.SPOTIFY to Result.failure(RuntimeException("no")))
+        coEvery { dispatcher.like(match { it.id == 2L }, any()) } returns ok(Destination.SPOTIFY)
+        scheduler.isOnline = false
+        val c = coordinator(minGapMs = 0L)
+        c.setLiked(1L, liked = true)
+        c.setLiked(2L, liked = true)
+        runCurrent()
+        storage.update { s -> s.copy(ops = s.ops.map { if (it.trackId == 1L) it.copy(attempts = 3, lastError = LikeMirrorError.REFUSED) else it }) }
+        scheduler.isOnline = true
+
+        c.drainAll(LikeMirrorWorker.MAX_GROUPS_PER_RUN)
+
+        // The new heart went first, so the refusal after it held nothing back
+        coVerify(exactly = 1) { dispatcher.like(match { it.id == 2L }, any()) }
+        coVerify(exactly = 1) { dispatcher.like(match { it.id == 1L }, any()) }
+        assertThat(storage.now.ops.single().attempts).isEqualTo(4)
+    }
+
+    @Test fun `a parked refusal gets one more try when the service takes a like again`() = runTest {
+        mirrorPrefs(spotify = true, yt = false)
+        coEvery { trackDao.getById(any()) } answers { entity(id = firstArg()) }
+        coEvery { dispatcher.like(match { it.id == 1L }, any()) } returns
+            mapOf(Destination.SPOTIFY to Result.failure(RuntimeException("no")))
+        coEvery { dispatcher.like(match { it.id == 2L }, any()) } returns ok(Destination.SPOTIFY)
+        val c = coordinator(minGapMs = 0L)
+        c.setLiked(1L, liked = true)
+        runCurrent()
+        repeat(LikeOutbox.MAX_ATTEMPTS - 1) { c.drainAll(LikeMirrorWorker.MAX_GROUPS_PER_RUN) }
+        assertThat(storage.now.ops.single().parked).isTrue()
+
+        c.setLiked(2L, liked = true) // Spotify takes this one
+        runCurrent()
+        assertThat(storage.now.ops.single().parked).isFalse()
+        assertThat(c.drainAll(LikeMirrorWorker.MAX_GROUPS_PER_RUN).retryable).isEqualTo(0) // refused once more: parked again
+
+        coVerify(exactly = LikeOutbox.MAX_ATTEMPTS + 1) { dispatcher.like(match { it.id == 1L }, any()) }
+        assertThat(c.status(Destination.SPOTIFY).first().state).isEqualTo(LikeMirrorStatus.State.NEEDS_YOU)
+    }
+
+    @Test fun `a backlog trickles - the in-process sender sends 20 a wake and leaves the rest to the worker`() = runTest {
+        mirrorPrefs(spotify = true, yt = false)
+        coEvery { trackDao.getById(any()) } answers { entity(id = firstArg()) }
+        coEvery { dispatcher.like(any(), any()) } returns ok(Destination.SPOTIFY)
+        scheduler.isOnline = false
+        val c = coordinator(minGapMs = 0L)
+        (1L..25L).forEach { c.setLiked(it, liked = true) }
+        runCurrent()
+        scheduler.scheduled.clear()
+
+        scheduler.backOnline()
+        runCurrent()
+
+        coVerify(exactly = LikeCoordinator.IN_PROCESS_MAX_GROUPS) { dispatcher.like(any(), any()) }
+        assertThat(storage.now.ops).hasSize(25 - LikeCoordinator.IN_PROCESS_MAX_GROUPS)
+        assertThat(scheduler.scheduled).contains(0L) // the worker takes the rest, on its back-off
+    }
+
     @Test fun `a song the service will never know is dropped, not retried`() = runTest {
         mirrorPrefs(spotify = false, yt = false, lastFm = true)
         coEvery { trackDao.getById(7L) } returns entity()

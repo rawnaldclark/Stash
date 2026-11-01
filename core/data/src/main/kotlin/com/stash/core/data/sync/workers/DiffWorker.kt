@@ -180,6 +180,8 @@ class DiffWorker @AssistedInject constructor(
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val canonicalRecompute: com.stash.core.data.library.CanonicalRecomputeRunner,
     private val soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager? = null,
+    /** Whether Spotify Liked Songs were fetched in full: like mirroring reads "not liked there" only from such a fetch. */
+    private val likedSongsFetch: com.stash.core.data.social.SpotifyLikedSongsFetch? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -1110,6 +1112,12 @@ class DiffWorker @AssistedInject constructor(
         syncMode: SyncMode,
     ) {
         playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
+        if (localPlaylist.type == PlaylistType.LIKED_SONGS && localPlaylist.source == MusicSource.SPOTIFY) {
+            val complete = !snapshotUnreliable(playlistSnapshot, trackSnapshots)
+            // Bookkeeping for like mirroring only: never the sync's failure
+            runCatching { likedSongsFetch?.fetched(complete, System.currentTimeMillis()) }
+                .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it else Log.w(TAG, "couldn't note the Liked Songs fetch", it) }
+        }
         if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
             // #343: an unreliable fetch was NOT mirrored (see processPlaylist).
             // Stamping it would make the next sync skip this playlist as

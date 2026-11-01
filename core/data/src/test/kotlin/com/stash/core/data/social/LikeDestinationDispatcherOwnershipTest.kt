@@ -19,8 +19,9 @@ import org.junit.Test
 
 /**
  * Never remove a like Stash didn't make. Hearting a song already in the listener's Spotify Liked Songs, YouTube Music likes or
- * Last.fm loves must not stamp it as Stash's, so un-hearting it later in Stash never deletes the listener's own like. When
- * Stash can't tell, the heart still goes out, but it is never taken back (never delete on uncertainty).
+ * Last.fm loves records it as theirs, so un-hearting it later in Stash never deletes it. When Stash can't tell, the heart still
+ * goes out, but it is never taken back (never delete on uncertainty). A like stamped by a build from before the stamp epoch, which
+ * never asked first, is never taken back either.
  */
 class LikeDestinationDispatcherOwnershipTest {
 
@@ -36,12 +37,15 @@ class LikeDestinationDispatcherOwnershipTest {
     }
     private val likedThere = mockk<LikedThereCheck>()
 
-    /** The ownership record, in memory. */
+    /** The ownership record and the stamp epoch, in memory. */
     private val owned = mutableSetOf<Pair<Destination, Long>>()
+    private var epoch: Long? = null
     private val ownership = mockk<LikeOwnership> {
         coEvery { markLikedByService(any(), any()) } answers { owned += firstArg<Destination>() to secondArg<Long>() }
         coEvery { clear(any(), any()) } answers { owned -= firstArg<Destination>() to secondArg<Long>() }
         coEvery { isLikedByService(any(), any()) } answers { (firstArg<Destination>() to secondArg<Long>()) in owned }
+        coEvery { stampEpoch(any()) } answers { epoch ?: firstArg<Long>().also { epoch = it } }
+        coEvery { epoch() } answers { epoch }
     }
 
     private val dispatcher = LikeDestinationDispatcher(
@@ -49,6 +53,9 @@ class LikeDestinationDispatcherOwnershipTest {
     )
 
     private val song = Track(id = 7L, title = "t", artist = "a", spotifyUri = "spotify:track:abc", youtubeId = "vid")
+
+    /** The row as this build's like left it: stamped at the epoch. */
+    private fun stampedNow() = epoch!!.let { song.copy(spotifySavedAt = it, ytMusicSavedAt = it, lastFmLovedAt = it) }
 
     private fun answer(spotify: LikedThere, yt: LikedThere, lastFm: LikedThere) {
         coEvery { likedThere.onSpotify(any()) } returns spotify
@@ -58,7 +65,13 @@ class LikeDestinationDispatcherOwnershipTest {
 
     private val all = setOf(Destination.SPOTIFY, Destination.YT_MUSIC, Destination.LAST_FM)
 
-    @Test fun `already liked there - nothing is sent, nothing stamped, the like is the listener's own`() = runBlocking<Unit> {
+    private fun verifyNothingUnliked() {
+        coVerify(exactly = 0) { spotify.removeTracks(any()) }
+        coVerify(exactly = 0) { ytMusic.removeLike(any()) }
+        coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), false) }
+    }
+
+    @Test fun `already liked there - nothing is sent, and the like is stamped as the listener's own`() = runBlocking<Unit> {
         answer(LikedThere.YES, LikedThere.YES, LikedThere.YES)
 
         val results = dispatcher.like(song, all)
@@ -67,22 +80,23 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 0) { spotify.saveTracks(any()) }
         coVerify(exactly = 0) { ytMusic.likeVideo(any()) }
         coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), true) }
-        coVerify(exactly = 0) { trackDao.markSpotifySaved(any(), any()) }
-        coVerify(exactly = 0) { trackDao.markYtMusicSaved(any(), any()) }
-        coVerify(exactly = 0) { trackDao.markLastFmLoved(any(), any()) }
+        // Stamped, so a second heart neither asks nor sends again
+        coVerify(exactly = 1) { trackDao.markSpotifySaved(7L, any()) }
+        coVerify(exactly = 1) { trackDao.markYtMusicSaved(7L, any()) }
+        coVerify(exactly = 1) { trackDao.markLastFmLoved(7L, any()) }
         assertThat(owned).containsExactly(Destination.SPOTIFY to 7L, Destination.YT_MUSIC to 7L, Destination.LAST_FM to 7L)
     }
 
-    @Test fun `and un-hearting it later never un-likes it`() = runBlocking<Unit> {
+    @Test fun `and un-hearting it later never un-likes it, and the next heart asks again`() = runBlocking<Unit> {
         answer(LikedThere.YES, LikedThere.YES, LikedThere.YES)
         dispatcher.like(song, all)
 
-        // The row as the like left it: no *_saved_at stamps
-        dispatcher.unlike(song, all)
+        dispatcher.unlike(stampedNow(), all)
 
-        coVerify(exactly = 0) { spotify.removeTracks(any()) }
-        coVerify(exactly = 0) { ytMusic.removeLike(any()) }
-        coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), false) }
+        verifyNothingUnliked()
+        coVerify(exactly = 1) { trackDao.clearSpotifySaved(7L) }
+        coVerify(exactly = 1) { trackDao.clearYtMusicSaved(7L) }
+        coVerify(exactly = 1) { trackDao.clearLastFmLoved(7L) }
     }
 
     @Test fun `when the check fails the heart still goes out, but it is never taken back`() = runBlocking<Unit> {
@@ -93,15 +107,23 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 1) { spotify.saveTracks(listOf("spotify:track:abc")) }
         coVerify(exactly = 1) { ytMusic.likeVideo("vid") }
         coVerify(exactly = 1) { lastFm.setLoved(any(), "a", "t", true) }
+        coVerify(exactly = 1) { trackDao.markSpotifySaved(7L, any()) }
+        assertThat(owned).hasSize(3)
+
+        dispatcher.unlike(stampedNow(), all)
+        verifyNothingUnliked()
+    }
+
+    @Test fun `an ownership record that can't be written leaves the row unstamped, never stamped as Stash's`() = runBlocking<Unit> {
+        answer(LikedThere.UNKNOWN, LikedThere.UNKNOWN, LikedThere.UNKNOWN)
+        coEvery { ownership.markLikedByService(any(), any()) } throws java.io.IOException("disk")
+
+        val results = dispatcher.like(song, all)
+
+        assertThat(results.values.all { it.isSuccess }).isTrue() // the like itself went out
         coVerify(exactly = 0) { trackDao.markSpotifySaved(any(), any()) }
         coVerify(exactly = 0) { trackDao.markYtMusicSaved(any(), any()) }
         coVerify(exactly = 0) { trackDao.markLastFmLoved(any(), any()) }
-        assertThat(owned).hasSize(3)
-
-        dispatcher.unlike(song, all)
-        coVerify(exactly = 0) { spotify.removeTracks(any()) }
-        coVerify(exactly = 0) { ytMusic.removeLike(any()) }
-        coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), false) }
     }
 
     @Test fun `not liked there - Stash's like is stamped, and an un-heart may take it back`() = runBlocking<Unit> {
@@ -116,14 +138,34 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 1) { trackDao.markLastFmLoved(7L, any()) }
         assertThat(owned).isEmpty() // now it is Stash's
 
-        val stamped = song.copy(spotifySavedAt = 1L, ytMusicSavedAt = 1L, lastFmLovedAt = 1L)
-        dispatcher.unlike(stamped, all)
+        dispatcher.unlike(stampedNow(), all)
         coVerify(exactly = 1) { spotify.removeTracks(listOf("spotify:track:abc")) }
         coVerify(exactly = 1) { ytMusic.removeLike("vid") }
         coVerify(exactly = 1) { lastFm.setLoved(any(), any(), any(), false) }
     }
 
+    @Test fun `a like stamped by an older build, which never asked first, is never un-liked`() = runBlocking<Unit> {
+        // Hearted on v0.9.121, a song in the listener's Spotify Liked Songs since 2019: stamped, no record of whose it is
+        val old = song.copy(spotifySavedAt = 1_000L, ytMusicSavedAt = 1_000L, lastFmLovedAt = 1_000L)
+
+        dispatcher.unlike(old, all) // nothing stamped by this build yet: no epoch
+        epoch = 2_000L // this build stamped something since
+        dispatcher.unlike(old, all)
+
+        verifyNothingUnliked()
+        coVerify(exactly = 2) { trackDao.clearSpotifySaved(7L) }
+    }
+
+    @Test fun `an epoch that can't be read never un-likes`() = runBlocking<Unit> {
+        coEvery { ownership.epoch() } throws java.io.IOException("disk")
+
+        dispatcher.unlike(song.copy(spotifySavedAt = 5_000L), setOf(Destination.SPOTIFY))
+
+        coVerify(exactly = 0) { spotify.removeTracks(any()) }
+    }
+
     @Test fun `a stamped row recorded as the listener's own is still never un-liked`() = runBlocking<Unit> {
+        epoch = 1L
         owned += Destination.SPOTIFY to 7L
 
         dispatcher.unlike(song.copy(spotifySavedAt = 1L), setOf(Destination.SPOTIFY))
@@ -132,6 +174,7 @@ class LikeDestinationDispatcherOwnershipTest {
     }
 
     @Test fun `an ownership record that can't be read counts as the listener's own`() = runBlocking<Unit> {
+        epoch = 1L
         coEvery { ownership.isLikedByService(any(), any()) } throws java.io.IOException("disk")
 
         dispatcher.unlike(song.copy(spotifySavedAt = 1L), setOf(Destination.SPOTIFY))

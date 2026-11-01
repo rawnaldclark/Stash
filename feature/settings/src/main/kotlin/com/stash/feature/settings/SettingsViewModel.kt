@@ -240,6 +240,20 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * A sign-in to [destination] just succeeded: what its old sign-in held back (and anything parked there) goes again now.
+     * Bookkeeping: a failure here never fails the sign-in.
+     */
+    private suspend fun retryLikesAfterSignIn(destination: Destination) {
+        try {
+            likeCoordinator.retry(destination)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SettingsVM", "couldn't retry likes for $destination after sign-in", e)
+        }
+    }
+
+    /**
      * Issue #112 — submit only the primary artist to Last.fm. Exposed as its
      * own flow rather than folded into the main `combine`, which is index-based
      * (`values[N]`) and would need every downstream index shifted.
@@ -1139,6 +1153,8 @@ class SettingsViewModel @Inject constructor(
             result.fold(
                 onSuccess = { (username, sessionKey) ->
                     lastFmSessionPreference.save(LastFmSession(username, sessionKey))
+                    // Loves held back by the old session go now, their tries counted from zero
+                    retryLikesAfterSignIn(com.stash.core.data.social.Destination.LAST_FM)
                     // Issue #255: the connection just became a SOURCE. Reconcile
                     // so "Recommended by Last.fm" activates now — the user sees
                     // it on the Sync tab without restarting.
@@ -1297,6 +1313,7 @@ class SettingsViewModel @Inject constructor(
             if (success == true) {
                 // A fresh sp_dc renews the session the last sync found expired.
                 syncStateManager.clearAuthExpiry(spotify = true)
+                retryLikesAfterSignIn(com.stash.core.data.social.Destination.SPOTIFY)
                 _localState.update {
                     it.copy(
                         showSpotifyCookieDialog = false,
@@ -1458,6 +1475,7 @@ class SettingsViewModel @Inject constructor(
 
             if (success == true) {
                 syncStateManager.clearAuthExpiry(youtube = true)
+                retryLikesAfterSignIn(com.stash.core.data.social.Destination.YT_MUSIC)
                 _localState.update {
                     it.copy(
                         showYouTubeCookieDialog = false,

@@ -82,22 +82,38 @@ class LikeMirrorStatusTest {
     private val now = 1_800_000_000_000L
     private val fresh = now - 60_000L
     private val stale = now - ServiceLikedThereCheck.SPOTIFY_FRESH_MS - 1
+    private val completeRecently = now - 10 * 60_000L
+    private val completeLongAgo = now - ServiceLikedThereCheck.SPOTIFY_COMPLETE_MS - 1
 
-    @Test fun `a fresh Refresh-mode copy answers yes and no`() {
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(fresh, inLikedSongs = true, mirrorsRemovals = true, now = now)).isEqualTo(LikedThere.YES)
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(fresh, inLikedSongs = false, mirrorsRemovals = true, now = now)).isEqualTo(LikedThere.NO)
+    private fun answer(lastSyncedAt: Long?, completeAt: Long?, inLikedSongs: Boolean, refresh: Boolean = true) =
+        ServiceLikedThereCheck.spotifyAnswer(lastSyncedAt, completeAt, inLikedSongs, mirrorsRemovals = refresh, now = now)
+
+    @Test fun `in a fresh Refresh-mode copy is a yes`() {
+        assertThat(answer(fresh, completeRecently, inLikedSongs = true)).isEqualTo(LikedThere.YES)
+        // A partial fetch can only miss songs, never add one: in it is still a yes
+        assertThat(answer(fresh, completeAt = null, inLikedSongs = true)).isEqualTo(LikedThere.YES)
     }
 
     @Test fun `an Accumulate copy can't tell a song since unliked on Spotify, so in it is unknown`() {
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(fresh, inLikedSongs = true, mirrorsRemovals = false, now = now)).isEqualTo(LikedThere.UNKNOWN)
-        // Not in it is still a no: Accumulate keeps every song that was ever liked there
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(fresh, inLikedSongs = false, mirrorsRemovals = false, now = now)).isEqualTo(LikedThere.NO)
+        assertThat(answer(fresh, completeRecently, inLikedSongs = true, refresh = false)).isEqualTo(LikedThere.UNKNOWN)
+        // Not in a complete, recent copy is still a no: Accumulate keeps every song that was ever liked there
+        assertThat(answer(fresh, completeRecently, inLikedSongs = false, refresh = false)).isEqualTo(LikedThere.NO)
     }
 
-    @Test fun `no copy, or a stale one, is unknown, never a no`() {
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(null, inLikedSongs = false, mirrorsRemovals = true, now = now)).isEqualTo(LikedThere.UNKNOWN)
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(stale, inLikedSongs = false, mirrorsRemovals = true, now = now)).isEqualTo(LikedThere.UNKNOWN)
-        assertThat(ServiceLikedThereCheck.spotifyAnswer(stale, inLikedSongs = true, mirrorsRemovals = true, now = now)).isEqualTo(LikedThere.UNKNOWN)
+    @Test fun `not in it is a no only when the last fetch was complete and under an hour old`() {
+        assertThat(answer(fresh, completeRecently, inLikedSongs = false)).isEqualTo(LikedThere.NO)
+        // The last fetch was partial (its last-synced time moved anyway): the song may be on a page that never came
+        assertThat(answer(fresh, completeAt = null, inLikedSongs = false)).isEqualTo(LikedThere.UNKNOWN)
+        // Complete, but long enough ago for the listener to have liked it on Spotify since
+        assertThat(answer(fresh, completeLongAgo, inLikedSongs = false)).isEqualTo(LikedThere.UNKNOWN)
+        // A clock set back: never a no on a time from the future
+        assertThat(answer(fresh, now + 60_000L, inLikedSongs = false)).isEqualTo(LikedThere.UNKNOWN)
+    }
+
+    @Test fun `no copy, or a stale one, is never a yes and never a no`() {
+        assertThat(answer(null, null, inLikedSongs = false)).isEqualTo(LikedThere.UNKNOWN)
+        assertThat(answer(stale, completeAt = null, inLikedSongs = false)).isEqualTo(LikedThere.UNKNOWN)
+        assertThat(answer(stale, completeAt = null, inLikedSongs = true)).isEqualTo(LikedThere.UNKNOWN)
     }
 
     @Test fun `the sync modes the answer depends on are the real ones`() {
