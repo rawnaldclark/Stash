@@ -45,8 +45,13 @@ class NpSpacingOverrides @Inject constructor(
 ) : NpSpacingSource {
     private val key = stringPreferencesKey("json")
 
+    /** The production values the overrides were made against ([NpSpacingJson.overridesFor]). */
+    private val basisKey = stringPreferencesKey("basis")
+
     override val overridesJson: Flow<String?> =
-        context.npSpacingDebugStore.data.map { it[key] }.distinctUntilChanged()
+        context.npSpacingDebugStore.data
+            .map { NpSpacingJson.overridesFor(it[key], it[basisKey]) }
+            .distinctUntilChanged()
 
     /**
      * Applies the tuner's [json] over what is already overridden (a slider can send just its own
@@ -55,16 +60,21 @@ class NpSpacingOverrides @Inject constructor(
     suspend fun apply(json: String): String {
         var written = ""
         context.npSpacingDebugStore.edit { prefs ->
-            val merged = NpSpacingJson.parse(json, base = NpSpacingJson.parse(prefs[key]))
+            val current = NpSpacingJson.overridesFor(prefs[key], prefs[basisKey])
+            val merged = NpSpacingJson.parse(json, base = NpSpacingJson.parse(current))
             written = NpSpacingJson.write(merged)
             prefs[key] = written
+            prefs[basisKey] = NpSpacingJson.productionBasis
         }
         return written
     }
 
     /** Back to the production values. */
     suspend fun reset() {
-        context.npSpacingDebugStore.edit { it.remove(key) }
+        context.npSpacingDebugStore.edit {
+            it.remove(key)
+            it.remove(basisKey)
+        }
     }
 
     /** The JSON in force now: the overrides over the production values (for the receiver's log). */

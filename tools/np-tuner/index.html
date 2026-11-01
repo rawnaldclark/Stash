@@ -66,7 +66,8 @@
 </dialog>
 <script type="module">
 const SHOT_EVERY_MS = 800;
-const STORE_KEY = 'np-tuner-values';
+// v2: each value is stored with the production default it was tuned against (v1 stored values only).
+const STORE_KEY = 'np-tuner-values-v2';
 
 const fields = await (await fetch('/fields.json')).json();
 const defaults = Object.fromEntries([
@@ -75,14 +76,23 @@ const defaults = Object.fromEntries([
 ]);
 let values = { ...defaults, ...loadStored() };
 
+/**
+ * The values kept from the last session, each only while its production default is still the one
+ * it was tuned against: once new defaults are baked (fields.json changed), a stale number is not
+ * sent to the phone again; that value starts from the new default instead.
+ */
 function loadStored() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-    return Object.fromEntries(Object.entries(stored).filter(([k]) => k in defaults));
+    const tunedFrom = stored.defaults || {};
+    return Object.fromEntries(Object.entries(stored.values || {})
+      .filter(([k]) => k in defaults && tunedFrom[k] === defaults[k]));
   } catch { return {}; }
 }
 function store() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(values)); } catch { /* private window: fine */ }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ defaults, values }));
+  } catch { /* private window: fine */ }
 }
 
 // ---- controls ------------------------------------------------------------------------------

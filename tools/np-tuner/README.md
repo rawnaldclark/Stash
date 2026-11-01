@@ -32,6 +32,8 @@ This works with **debug builds only**. Release builds have no receiver and alway
    adb -s 192.168.137.230:5555 shell wm density reset
    ```
 
+   The phone keeps these settings until they are reset, even across reboots. If the PC dies or the session ends early, run the two reset commands as soon as you can reconnect. Check with `adb -s 192.168.137.230:5555 shell wm size`: it should show only `Physical size`, with no `Override size` line.
+
 3. Start the tuner and open the page it prints (`http://localhost:5178`):
 
    ```
@@ -48,7 +50,7 @@ This works with **debug builds only**. Release builds have no receiver and alway
 6. When it looks right, click **Copy values**. You get the Kotlin `NpSpacingDefaults` block, already in your clipboard, and a list of what changed. Paste the block over `NpSpacingDefaults` in `feature/nowplaying/src/main/kotlin/com/stash/feature/nowplaying/ui/NpSpacing.kt`. Then change the pinned numbers in `NpSpacingTest`, and the matching `default` entries in `fields.json`, to the new values (`NpTunerFieldsTest` checks that `fields.json` matches the Kotlin defaults). Check the final values once on the Pixel 6, on a release build.
 7. Click **Reset** to send every value back to production, on the phone as well.
 
-The page remembers your values across reloads, and sends them to the phone when it opens. The phone keeps them too, across app restarts, until you reset.
+The page remembers your values across reloads, and sends them to the phone when it opens. The phone keeps them too, across app restarts, until you reset. Both forget a value once its production default changes, for example after new defaults are baked into a build, so old numbers are never applied again.
 
 ## Without the page
 
@@ -67,7 +69,7 @@ adb shell am broadcast -a com.stash.app.debug.NP_SPACING -p com.stash.app.debug
 
 ## Safety
 
-- The server listens on `127.0.0.1` only.
+- The server listens on `127.0.0.1` only, and refuses any request whose `Host` header isn't `localhost:<port>` or `127.0.0.1:<port>`. This stops a website whose domain is pointed at 127.0.0.1 (DNS rebinding) from reading the phone's screen or changing values.
 - It checks every value against `fields.json` before calling adb. Numbers are clamped, and choices must come from their list, so nothing typed on the page can run as a command on the phone.
 - The only key it sends is `KEYCODE_WAKEUP`, at most every 30 s while the page is taking screenshots. That key can wake the screen but never turns it off or locks the phone.
 - The receiver is declared only in the debug manifest, behind the DUMP permission. adb has that permission; ordinary apps can't get it.

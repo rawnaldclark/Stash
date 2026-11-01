@@ -6,7 +6,8 @@
  *
  *   node tools/np-tuner/serve.mjs --serial 192.168.137.230:5555 [--port 5178] [--adb adb]
  *
- * No dependencies beyond Node 18+. Listens on 127.0.0.1 only. Every value is checked against
+ * No dependencies beyond Node 18+. Listens on 127.0.0.1 only and answers only requests addressed to
+ * localhost or 127.0.0.1 on its port (a DNS-rebinding guard). Every value is checked against
  * fields.json before it reaches adb (numbers clamped, choices allow-listed), so nothing from the
  * page can become a shell command on the phone. It never sleeps or locks the phone: the only key
  * it sends is KEYCODE_WAKEUP, which can't turn a screen off.
@@ -47,6 +48,18 @@ if (!/^[\w.]+$/.test(pkg)) {
   process.exit(2);
 }
 const port = Number(opts.port ?? 5178);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  console.error(`Not a port: ${opts.port}`);
+  process.exit(2);
+}
+
+/**
+ * The only Host headers served. Binding to 127.0.0.1 keeps other machines out, but not a web page
+ * in your own browser: a site whose DNS name is "rebound" to 127.0.0.1 is same-origin with itself
+ * and could read /shot (the phone's screen) and POST /set. Its requests carry ITS name as Host,
+ * so anything but these is refused.
+ */
+const ALLOWED_HOSTS = new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
 
 // ---------------------------------------------------------------------------------------------
 // adb
@@ -171,6 +184,9 @@ function readBody(req) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (!ALLOWED_HOSTS.has((req.headers.host ?? '').toLowerCase())) {
+      return json(res, 403, { error: `open the tuner at http://localhost:${port}` });
+    }
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       return send(res, 200, 'text/html; charset=utf-8', await readFile(path.join(HERE, 'index.html')));
