@@ -9,9 +9,16 @@ import com.stash.data.download.prefs.StreamingQualityPreferences
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class StreamQualityPolicyTest {
 
     private val connectivity = mockk<ConnectivityMonitor>()
@@ -213,5 +220,66 @@ class StreamQualityPolicyTest {
         coEvery { prefs.preferCloudCopiesNow() } returns true
         assertThat(policy.preferCloudCopies()).isTrue()   // what the registry asks at each resolve
         assertThat(cache.get(1L)).isNull()
+    }
+
+    private fun flacLink() = StreamUrl(
+        url = "https://qobuz.example/7.flac", expiresAtMs = System.currentTimeMillis() + 3_600_000L,
+        codec = "flac", bitsPerSample = 16, origin = "qbdlx",
+    )
+
+    /**
+     * The review case: an album played on Wi-Fi left FLAC links in the cache. The moment the
+     * network callback reports mobile data (switch on), the cache is cleared, before any resolve.
+     */
+    @Test fun `a FLAC link saved on Wi-Fi is dropped the moment the network turns metered`() = runTest {
+        setup(cellular = false, saveData = true)
+        val metered = MutableStateFlow(false)
+        every { connectivity.meteredChanges() } returns metered
+        every { prefs.saveData } returns flowOf(true)
+        val seen = mutableListOf<Boolean>()
+        val watch = launch(UnconfinedTestDispatcher(testScheduler)) { policy.dataSaverChanges().collect { seen += it } }
+        cache.put(7L, flacLink())
+        assertThat(cache.get(7L)).isNotNull()
+
+        setup(cellular = true, saveData = true)
+        metered.value = true
+        runCurrent()
+
+        assertThat(seen).containsExactly(false, true).inOrder()
+        assertThat(cache.get(7L)).isNull()
+        watch.cancel()
+    }
+
+    @Test fun `turning the switch on while on mobile data drops the cache at once`() = runTest {
+        setup(cellular = true, saveData = false)
+        val saveData = MutableStateFlow(false)
+        every { connectivity.meteredChanges() } returns MutableStateFlow(true)
+        every { prefs.saveData } returns saveData
+        val seen = mutableListOf<Boolean>()
+        val watch = launch(UnconfinedTestDispatcher(testScheduler)) { policy.dataSaverChanges().collect { seen += it } }
+        cache.put(7L, flacLink())
+
+        setup(cellular = true, saveData = true)
+        saveData.value = true
+        runCurrent()
+
+        assertThat(seen).containsExactly(false, true).inOrder()
+        assertThat(cache.get(7L)).isNull()
+        watch.cancel()
+    }
+
+    /** Watching starts on the network the last resolve saw: nothing changed, so nothing is dropped. */
+    @Test fun `starting the watch on an unchanged network keeps the cache`() = runTest {
+        setup(cellular = false, saveData = true)
+        assertThat(policy.dataSaverApplies()).isFalse() // a resolve on Wi-Fi
+        cache.put(7L, flacLink())
+        every { connectivity.meteredChanges() } returns MutableStateFlow(false)
+        every { prefs.saveData } returns flowOf(true)
+
+        val watch = launch(UnconfinedTestDispatcher(testScheduler)) { policy.dataSaverChanges().collect {} }
+        runCurrent()
+
+        assertThat(cache.get(7L)).isNotNull()
+        watch.cancel()
     }
 }

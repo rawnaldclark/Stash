@@ -91,6 +91,10 @@ class PrefetchOrchestrator @Inject constructor(
 
         scope.launch {
             try {
+                // Data saver on mobile data: no look-ahead. The song is looked up when the player
+                // reaches it (its own buffering asks, ahead of the transition); a skip costs nothing.
+                // Asked first: the policy re-takes its decision before the cache below is read.
+                if (qualityPolicy?.dataSaverApplies() == true) return@launch
                 if (streamUrlCache.get(nextTrackId) != null) return@launch
 
                 val track = trackDao.getById(nextTrackId) ?: return@launch
@@ -104,9 +108,6 @@ class PrefetchOrchestrator @Inject constructor(
                 // gating on the bare flag silently disabled next-track
                 // prefetch for the whole synced library.
                 if (!track.isStreamable && track.isStreamableCheckedAt != null) return@launch
-                // Data saver on mobile data: no look-ahead. The song is looked up when the player
-                // reaches it (its own buffering asks, ahead of the transition); a skip costs nothing.
-                if (qualityPolicy?.dataSaverApplies() == true) return@launch
 
                 // speculative: never makes the shared Tidal relay search for a look-ahead.
                 val resolved = streamResolver.resolve(track, speculative = true)

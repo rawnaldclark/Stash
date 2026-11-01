@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.prefs.DataSaver
 import org.junit.Test
 
 class StreamUrlCacheTest {
@@ -166,5 +167,59 @@ class StreamUrlCacheTest {
 
         assertThat(cache.get(1L)).isNull()
         assertThat(cache.get(2L)).isNull()
+    }
+
+    /**
+     * Data saver: no lossless link off the cache while it applies, whoever saved it. A FLAC link
+     * saved on Wi-Fi is dropped (not hidden) on mobile data; a lossy one is served as before.
+     */
+    @Test
+    fun get_servesNoLosslessLinkWhileDataSaverApplies() {
+        var metered = false
+        val guarded = StreamUrlCache(DataSaver(switchOn = { true }, metered = { metered })).apply {
+            nowMsProvider = { wall }
+            elapsedMsProvider = { mono }
+        }
+        val flac = StreamUrl("https://cdn/a.flac?etsp=1", expiresAtMs = 1_000_000L, codec = "flac", origin = "qbdlx")
+        val aac = StreamUrl("https://cdn/b.m4a", expiresAtMs = 1_000_000L, codec = "aac", origin = "tidal")
+        guarded.put(1L, flac)
+        guarded.put(2L, aac)
+
+        assertThat(guarded.get(1L)).isEqualTo(flac) // Wi-Fi
+        metered = true // mobile data
+        assertThat(guarded.get(1L)).isNull()
+        assertThat(guarded.get(2L)).isEqualTo(aac)
+        metered = false // back on Wi-Fi: it was dropped, so it resolves again
+        assertThat(guarded.get(1L)).isNull()
+    }
+
+    @Test
+    fun get_servesLosslessLinksWhenDataSaverIsOff() {
+        val unguarded = StreamUrlCache(DataSaver(switchOn = { false }, metered = { true })).apply {
+            nowMsProvider = { wall }
+            elapsedMsProvider = { mono }
+        }
+        val flac = StreamUrl("https://cdn/a.flac?etsp=1", expiresAtMs = 1_000_000L, codec = "flac")
+        unguarded.put(1L, flac)
+
+        assertThat(unguarded.get(1L)).isEqualTo(flac)
+    }
+
+    @Test
+    fun isLosslessLink_isFlacAlacHiResOrACloudCopy() {
+        fun link(codec: String?, bits: Int? = null, origin: String? = null) =
+            StreamUrl("https://cdn/x", expiresAtMs = 1L, codec = codec, bitsPerSample = bits, origin = origin)
+
+        assertThat(link("flac").isLosslessLink()).isTrue()
+        assertThat(link("FLAC").isLosslessLink()).isTrue()
+        assertThat(link("alac").isLosslessLink()).isTrue()
+        assertThat(link(null, bits = 24, origin = "tidal").isLosslessLink()).isTrue()
+        assertThat(link(null, origin = CloudCopyFinder.ORIGIN).isLosslessLink()).isTrue()
+
+        assertThat(link("aac", origin = "tidal").isLosslessLink()).isFalse()
+        assertThat(link("mp3", origin = "squid").isLosslessLink()).isFalse()
+        assertThat(link("opus", origin = "youtube").isLosslessLink()).isFalse()
+        assertThat(link("aac", origin = "jiosaavn").isLosslessLink()).isFalse()
+        assertThat(link(null, origin = "soundcloud").isLosslessLink()).isFalse()
     }
 }

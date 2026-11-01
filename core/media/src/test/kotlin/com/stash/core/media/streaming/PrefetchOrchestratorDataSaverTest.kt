@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -42,6 +43,8 @@ class PrefetchOrchestratorDataSaverTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { streamResolver.resolve(any(), any(), any(), any()) }
+        // Asked before the cache: a link saved on Wi-Fi isn't even read.
+        verify(exactly = 0) { streamUrlCache.get(any()) }
     }
 
     @Test

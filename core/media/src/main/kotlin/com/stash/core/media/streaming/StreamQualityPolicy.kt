@@ -4,6 +4,9 @@ import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.prefs.StreamingQualityPreferences
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,11 +25,13 @@ import javax.inject.Singleton
  *    A user who opted into "Prefer Tidal AAC while streaming" still gets that rung first.
  *  - Lossless off: the lowest each lossy source has ([LossyQuality.LOWEST]), as Save Data always did.
  *
- * Also the one place that notices the effective quality CHANGING between resolves
- * (Data saver, Prefer Tidal AAC or the Lossless switch flipped, a tier picked, Wi-Fi → cellular,
- * unmetered → metered) and drops the [StreamUrlCache], whose entries are keyed by track id alone
- * with ~1 h TTLs — otherwise the old quality's URLs kept being served for up to an hour after the
- * user (or the network) asked for something else.
+ * Also the one place that notices the effective quality CHANGING (Data saver, Prefer Tidal AAC or
+ * the Lossless switch flipped, a tier picked, Wi-Fi → cellular, unmetered → metered) and drops the
+ * [StreamUrlCache], whose entries are keyed by track id alone with ~1 h TTLs — otherwise the old
+ * quality's URLs kept being served for up to an hour after the user (or the network) asked for
+ * something else. Checked at every resolve, before the tap and look-ahead paths read the cache, and
+ * the moment the network's meteredness or the Data saver switch changes ([dataSaverChanges]).
+ * The cache itself never serves a lossless link while Data saver applies ([StreamUrlCache.get]).
  */
 @Singleton
 class StreamQualityPolicy @Inject constructor(
@@ -63,6 +68,8 @@ class StreamQualityPolicy @Inject constructor(
      * Data saver is in effect for this resolve: the switch is on and the active network is metered.
      * [StreamSourceRegistry] leaves the lossless rungs out then, and the next-song look-ahead
      * ([com.stash.core.media.PlayerRepositoryImpl.prefetchNextTrack], [PrefetchOrchestrator]) is skipped.
+     * Asked before a path reads [StreamUrlCache] without resolving (a tap, the look-ahead): the
+     * decision is re-taken, so a link saved under the old one is dropped before it is read.
      */
     suspend fun dataSaverApplies(): Boolean = snapshot().dataSaver
 
@@ -85,12 +92,29 @@ class StreamQualityPolicy @Inject constructor(
      */
     suspend fun preferCloudCopies(): Boolean = snapshot().preferCloudCopies
 
-    // ponytail: cleared at the next RESOLVE after a change, not at the change itself — a
-    // track whose URL was prefetched just before can still play once at the old quality.
-    // Stamping entries with their quality and checking at read time closes that; not yet earned.
-    private suspend fun snapshot(): Decision {
+    /**
+     * Whether Data saver is in effect, each time the network's meteredness (a default-network
+     * callback, [ConnectivityMonitor.meteredChanges]) or the switch changes; the first value is the
+     * state now. Each value re-takes the decision, so the moment the phone moves from Wi-Fi to mobile
+     * data with the switch on, every cached link is dropped, not at the next resolve.
+     * [com.stash.core.media.PlayerRepositoryImpl] collects it for as long as the player lives and
+     * lines the next song up again on each change.
+     */
+    fun dataSaverChanges(): Flow<Boolean> =
+        combine(connectivity.meteredChanges(), prefs.saveData) { metered, _ -> snapshot(metered).dataSaver }
+            .distinctUntilChanged()
+
+    // ponytail: a change between two resolves (a Prefer Tidal AAC flip, a tier picked) drops the cache
+    // at the next resolve or cache read, not at the change itself; Data saver's own changes (the
+    // network, the switch) drop it at once (dataSaverChanges). Stamping entries with their quality and
+    // checking at read time would close the rest; not yet earned.
+    /**
+     * @param metered the network's meteredness: the callback's answer when it reports one, so the
+     *   decision doesn't race the system's view of the default network; else asked now.
+     */
+    private suspend fun snapshot(metered: Boolean = connectivity.isMetered()): Decision {
         val lossless = losslessPrefs.enabledNow()
-        val dataSaver = prefs.saveDataNow() && connectivity.isMetered()
+        val dataSaver = prefs.saveDataNow() && metered
         val tier = when {
             dataSaver -> LosslessQualityTier.CD
             connectivity.isCellular() -> prefs.cellularTierNow()

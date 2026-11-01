@@ -337,6 +337,61 @@ class PlayerRepositoryImpl @Inject constructor(
         }
 
         watchNextUpDownload()
+        watchDataSaver()
+    }
+
+    /**
+     * Data saver coming into effect or leaving it (the phone moved between Wi-Fi and mobile data,
+     * or the switch flipped) while music plays: the policy has already dropped every cached link
+     * ([com.stash.core.media.streaming.StreamQualityPolicy.dataSaverChanges]); the next song's
+     * slot is lined up again here ([relineNextStream]). The song playing keeps its link to the end.
+     */
+    private fun watchDataSaver() {
+        val policy = qualityPolicy ?: return
+        scope.launch {
+            policy.dataSaverChanges()
+                .flowOn(Dispatchers.IO)
+                .drop(1) // the state at start: nothing lined up under another decision yet
+                .catch { e -> Log.w(TAG, "Data saver watch stopped: ${e.message}") }
+                .collect { dataSaver ->
+                    Log.d(TAG, "Data saver ${if (dataSaver) "in effect" else "off"}: lining the next song up again")
+                    relineNextStream()
+                }
+        }
+    }
+
+    /**
+     * The next song may hold a link resolved under the old decision: a FLAC link the look-ahead
+     * swapped in on Wi-Fi, which ExoPlayer starts buffering well before the transition. Its slot
+     * goes back to a placeholder, resolved when the song is reached under the new decision, and the
+     * look-ahead runs again (it skips itself while Data saver applies, and on Wi-Fi it lines up FLAC
+     * again). A file, a placeholder or a cloud song is already right. PR #759's
+     * `reresolveNextStream` does the same for a quality picked in Now Playing; once both are in,
+     * this becomes a call to it.
+     */
+    internal suspend fun relineNextStream() {
+        if (listenTogetherOwnsQueue) return
+        val controller = controllerDeferred ?: return
+        val index = controller.nextMediaItemIndex
+        // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
+        if (index !in 0 until controller.mediaItemCount || index == controller.currentMediaItemIndex) return
+        val item = controller.getMediaItemAt(index)
+        val nextId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        streamUrlCache.invalidate(nextId)
+        val scheme = item.localConfiguration?.uri?.scheme
+        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
+        if ((scheme == "https" || scheme == "http") && queued != null) {
+            val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
+                listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
+                    .forEach(::remove)
+            }
+            val placeholder = item.buildUpon()
+                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
+                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+                .build()
+            replaceMediaItemKeepingShuffle(controller, index, placeholder)
+        }
+        prefetchNextTrack()
     }
 
     /**
@@ -1110,11 +1165,17 @@ class PlayerRepositoryImpl @Inject constructor(
         // own link at open(); the online resolver below must never see it.
         if (next.source == com.stash.core.model.MusicSource.CLOUD) return
 
+        // Asked BEFORE the cache is read: the policy re-takes its decision, so a link saved
+        // under another one (a FLAC link from Wi-Fi, now on mobile data) is dropped first.
+        val dataSaver = qualityPolicy?.dataSaverApplies() == true
+
         // Fresh-cache check — avoid redundant resolve work when the URL is
         // good. Still upgrade the timeline slot before returning: the URL may
         // have been cached by LazyResolvingDataSource (cold jump), which can't
         // touch item metadata, so the placeholder would keep its unstamped
-        // extras and Now Playing would read the "opus" fallback for it.
+        // extras and Now Playing would read the "opus" fallback for it. Under
+        // Data saver the cache serves no lossless link (StreamUrlCache.get), so
+        // only a link resolved under Data saver is swapped in: no new bytes.
         val cached = streamUrlCache.get(next.id)?.takeIf {
             (next.soundCloudId == null && next.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
         }
@@ -1128,7 +1189,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // which ExoPlayer's own buffering resolves ahead of the transition (LazyResolvingDataSource),
         // so the song still starts on time; a song skipped before then costs nothing. After the
         // fresh-cache upgrade above (no network) and the downloaded-file swap (none either).
-        if (qualityPolicy?.dataSaverApplies() == true) {
+        if (dataSaver) {
             Log.d(TAG, "prefetch-next skipped id=${next.id}: Data saver on a metered network")
             return
         }
@@ -2559,6 +2620,9 @@ class PlayerRepositoryImpl @Inject constructor(
             return StreamRoutingResult.Item(track.toDomain().toStreamPlaceholderMediaItem())
         }
 
+        // Asked BEFORE the cache is read: a changed decision (Data saver now in effect) drops the
+        // links saved under the old one, and the cache serves no lossless link under Data saver.
+        qualityPolicy?.dataSaverApplies()
         val cached = streamUrlCache.get(track.id)?.takeIf {
             (track.soundCloudId == null && track.source != com.stash.core.model.MusicSource.SOUNDCLOUD) || it.origin == "soundcloud"
         }
