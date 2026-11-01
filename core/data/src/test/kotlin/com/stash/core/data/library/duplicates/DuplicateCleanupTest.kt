@@ -127,10 +127,12 @@ class DuplicateCleanupTest {
         assertEquals(1, f.count("SELECT COUNT(*) FROM listening_events WHERE track_id = $playedAlone"))
     }
 
-    @Test fun `a liked stub, one in a playlist, and one in a mix's pool are kept`() = runBlocking {
+    @Test fun `a liked stub, one in a playlist or taken out of one, and one in a mix's pool are kept`() = runBlocking {
         val liked = f.song(title = "Liked Alone", likedAt = 5L)
         val inPlaylist = f.stub(title = "In A Playlist")
         f.member(f.playlist("Mine"), inPlaylist, position = 0)
+        val takenOut = f.stub(title = "Taken Out")
+        f.member(f.playlist("Stash Liked", type = PlaylistType.STASH_LIKED), takenOut, position = 0, removed = true)
         val inPool = f.stub(title = "In The Pool")
         f.discovered(inPool, DiscoveryQueueEntity.STATUS_DONE)
         val failedOnly = f.stub(title = "Failed Find")
@@ -139,6 +141,7 @@ class DuplicateCleanupTest {
         cleanup.run()
 
         assertNotNull(f.row(liked)); assertNotNull(f.row(inPlaylist)); assertNotNull(f.row(inPool))
+        assertNotNull("the user's removal stays with the song", f.row(takenOut))
         assertNull("a failed find is no mix's song", f.row(failedOnly))
     }
 

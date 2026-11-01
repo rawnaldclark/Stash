@@ -200,7 +200,8 @@ interface DuplicateDao {
     /**
      * Deletes the id-less stub [trackId] only if nothing uses it, checked in this one statement so a
      * sync or a mix that links it a moment earlier keeps it:
-     *  - no live playlist membership (a removal mark is not a use);
+     *  - in no playlist, not even as taken out of one (a removal is the user's say about that
+     *    song, and it goes with the row);
      *  - never played or skipped, no play count;
      *  - not liked anywhere (Stash, Spotify, YouTube Music, Last.fm);
      *  - no file, and no waiting or running download, no lossless upgrade;
@@ -225,7 +226,7 @@ interface DuplicateDao {
           AND play_count = 0
           AND stash_liked_at IS NULL AND spotify_saved_at IS NULL AND ytmusic_saved_at IS NULL
           AND lastfm_loved_at IS NULL AND lastfm_user_loved = 0
-          AND NOT EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = :trackId AND pt.removed_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = :trackId)
           AND NOT EXISTS (SELECT 1 FROM listening_events le WHERE le.track_id = :trackId)
           AND NOT EXISTS (SELECT 1 FROM track_skip_events se WHERE se.track_id = :trackId)
           AND NOT EXISTS (
