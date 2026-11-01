@@ -45,7 +45,9 @@ class PlayerRepositoryDataSaverPrefetchTest {
             url = "https://cdn.example/next.flac", expiresAtMs = Long.MAX_VALUE, codec = "flac",
         )
     }
-    private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true) { every { get(any()) } returns null }
+    private val streamUrlCache: StreamUrlCache = mockk<StreamUrlCache>(relaxUnitFun = true).also { cache ->
+        every { cache.get(any()) } returns null
+    }
     private val trackDao: TrackDao = mockk(relaxed = true) { coEvery { getById(any()) } returns null }
     private val controller: MediaController = mockk(relaxed = true)
     private val trackIdentityEvents: TrackIdentityEvents = mockk { every { changes } returns MutableSharedFlow() }

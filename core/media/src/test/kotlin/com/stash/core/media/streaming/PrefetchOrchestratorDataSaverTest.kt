@@ -21,8 +21,8 @@ class PrefetchOrchestratorDataSaverTest {
     private val streamResolver: StreamSourceRegistry = mockk {
         coEvery { resolve(any(), any(), any(), any()) } returns null
     }
-    private val streamUrlCache: StreamUrlCache = mockk(relaxUnitFun = true) {
-        every { get(any()) } returns null
+    private val streamUrlCache: StreamUrlCache = mockk<StreamUrlCache>(relaxUnitFun = true).also { cache ->
+        every { cache.get(any()) } returns null
     }
     private val track = TrackEntity(
         id = 5L, title = "Next Up", artist = "Artist", durationMs = 200_000L, youtubeId = "abc123", isStreamable = true,
