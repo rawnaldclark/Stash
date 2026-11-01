@@ -3,12 +3,20 @@ package com.stash.feature.home.shelves
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.home.BecauseRow
+import com.stash.core.data.home.BecauseYouLike
+import com.stash.core.data.home.BecauseYouLikeRepository
+import com.stash.core.data.home.HomeShownSongs
 import com.stash.core.data.home.MoodsRepository
 import com.stash.core.data.home.NewFromArtistsRepository
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaybackSource
+import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.MoodTile
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,24 +41,29 @@ data class HomeShelvesState(
     val newFromArtists: List<AlbumSummary> = emptyList(),
     /** "Moods & moments": YouTube Music's mood tiles, each opening its page of playlists. */
     val moods: List<MoodTile> = emptyList(),
+    /** "Because you like ‹song›": each row's songs, none another Home shelf shows ([HomeShownSongs]). */
+    val becauseYouLike: List<BecauseRow> = emptyList(),
 )
 
 /**
  * Home's own shelves, apart from [com.stash.feature.home.HomeViewModel] (which carries the Discover hero, the synced
- * mixes and the Qobuz rows): "New from your artists" and "Moods & moments". Each is built by its repository at most
- * once a day and saved to a file.
+ * mixes and the Qobuz rows): "New from your artists", "Moods & moments" and "Because you like". Each is built by its
+ * repository (at most once a day; "Because you like" also after enough listening) and saved to a file.
  *
  * A shelf loads only while it's wanted: Streaming on and its section shown in Settings > Home layout, the rule the
  * Qobuz rows follow (HomeViewModel's discovery flow): a hidden section costs no request. It loads when it becomes
  * wanted (Home first shown, the section turned back on, Offline mode switched off) and on each return to Home (a file
- * read until a rebuild is due); a shelf no longer wanted stops loading at once. Each shelf loads on its own, so none
- * waits on another. With no network the saved shelf is shown and no build is tried, so a failed attempt (and the
- * wait after it) only comes from a real network.
+ * read, and for "Because you like" two counts, until a rebuild is due); a shelf no longer wanted stops loading at
+ * once. Each shelf loads on its own, so none waits on another. With no network the saved shelf is shown and no
+ * build is tried, so a failed attempt (and the wait after it) only comes from a real network.
  */
 @HiltViewModel
 class HomeShelvesViewModel @Inject constructor(
     newFromArtistsRepository: NewFromArtistsRepository,
     moodsRepository: MoodsRepository,
+    becauseYouLikeRepository: BecauseYouLikeRepository,
+    shownSongs: HomeShownSongs,
+    private val playerRepository: PlayerRepository,
     streamingPreference: StreamingPreference,
     homeSectionsPreference: HomeSectionsPreference,
     private val connectivity: ConnectivityMonitor,
@@ -58,7 +71,8 @@ class HomeShelvesViewModel @Inject constructor(
 
     private val newFromArtists = Shelf(HomeSection.NEW_FROM_ARTISTS, newFromArtistsRepository::cached, newFromArtistsRepository::shelf)
     private val moods = Shelf(HomeSection.MOODS, moodsRepository::cached, moodsRepository::tiles)
-    private val shelves = listOf(newFromArtists, moods)
+    private val because = Shelf(HomeSection.BECAUSE_YOU_LIKE, becauseYouLikeRepository::cached, becauseYouLikeRepository::shelf)
+    private val shelves = listOf(newFromArtists, moods, because)
 
     /** The shelf sections Home shows now: none in Offline mode, else the visible ones. */
     private val wanted: StateFlow<Set<HomeSection>> =
@@ -66,10 +80,22 @@ class HomeShelvesViewModel @Inject constructor(
             if (online) shelves.mapTo(HashSet()) { it.section }.filterTo(HashSet()) { it in visible } else emptySet()
         }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    val state: StateFlow<HomeShelvesState> = combine(wanted, newFromArtists.items, moods.items) { shown, releases, tiles ->
+    val state: StateFlow<HomeShelvesState> = combine(
+        wanted,
+        newFromArtists.items,
+        moods.items,
+        because.items,
+        shownSongs.keys,
+    ) { shown, releases, tiles, rows, elsewhere ->
         HomeShelvesState(
             newFromArtists = if (HomeSection.NEW_FROM_ARTISTS in shown) releases else emptyList(),
             moods = if (HomeSection.MOODS in shown) tiles else emptyList(),
+            // The record's mixes are made apart from these rows: their songs leave the rows while they show
+            becauseYouLike = if (HomeSection.BECAUSE_YOU_LIKE in shown) {
+                BecauseYouLike.without(rows, elsewhere.values.flatten().toSet())
+            } else {
+                emptyList()
+            },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeShelvesState())
 
@@ -94,6 +120,30 @@ class HomeShelvesViewModel @Inject constructor(
     fun onResume() {
         val now = wanted.value
         shelves.filter { it.section in now }.forEach { it.refresh() }
+    }
+
+    /**
+     * Plays [row] from its song at [index], streamed (these are songs you mostly don't have), the row as the queue.
+     * [label] is the row as Now Playing names it ("Because you like ‹song›").
+     */
+    fun playRow(row: BecauseRow, index: Int, label: String) {
+        val tracks = row.songs.map { s ->
+            Track(
+                id = s.videoId.hashCode().toLong(),
+                title = s.title,
+                artist = s.artist,
+                album = s.album.orEmpty(),
+                durationMs = (s.durationSeconds * 1000.0).toLong(),
+                albumArtUrl = s.thumbnailUrl,
+                youtubeId = s.videoId,
+                source = MusicSource.YOUTUBE,
+                isStreamable = true,
+            )
+        }
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            playerRepository.setQueue(tracks, index.coerceIn(0, tracks.lastIndex), PlaybackSource.Listening(label))
+        }
     }
 
     /** One shelf: its saved list painted at once, then the repository's current one; one load at a time. */

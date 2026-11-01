@@ -22,6 +22,18 @@ interface TrackSkipEventDao {
     @Query("SELECT COUNT(*) FROM track_skip_events WHERE track_id = :trackId AND skipped_at >= :sinceMs")
     suspend fun countSkipsSince(trackId: Long, sinceMs: Long): Int
 
+    /** The songs skipped at least [minSkips] times since [sinceMs]: no "Because you like" row seeds from them. */
+    @Query("SELECT track_id FROM track_skip_events WHERE skipped_at >= :sinceMs GROUP BY track_id HAVING COUNT(*) >= :minSkips")
+    suspend fun trackIdsSkippedAtLeast(minSkips: Int, sinceMs: Long): List<Long>
+
+    /** The newest skip's id (0 with none): where Home's "Because you like" starts counting skips after a build. */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM track_skip_events")
+    suspend fun lastSkipId(): Long
+
+    /** Skips after [afterId]. */
+    @Query("SELECT COUNT(*) FROM track_skip_events WHERE id > :afterId")
+    suspend fun countSkipsAfter(afterId: Long): Int
+
     /**
      * Returns skip + play counts per track for the rolling window.
      * Used by [com.stash.core.data.mix.MixGenerator] to compute a

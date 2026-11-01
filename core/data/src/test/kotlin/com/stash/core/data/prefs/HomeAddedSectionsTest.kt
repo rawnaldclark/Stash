@@ -33,7 +33,10 @@ class HomeAddedSectionsTest {
         val resolved = resolveHomeSectionOrder(savedBy0_9_122)
         val savedSections = savedBy0_9_122.mapNotNull(HomeSection::fromKey)
         val at = savedSections.indexOf(HomeSection.NEW_RELEASES)
-        assertEquals(savedSections.take(at) + HomeSection.NEW_FROM_ARTISTS + HomeSection.MOODS + savedSections.drop(at), resolved)
+        assertEquals(
+            savedSections.take(at) + HomeSection.BECAUSE_YOU_LIKE + HomeSection.NEW_FROM_ARTISTS + HomeSection.MOODS + savedSections.drop(at),
+            resolved,
+        )
         // the same on a reordered Home and before the reorder (Your listening was already placed)
         assertEquals(resolved, effectiveHomeSectionOrder(savedBy0_9_122, promoted = true))
     }
@@ -51,7 +54,12 @@ class HomeAddedSectionsTest {
         val saved = savedBy0_9_122 + "new_from_artists"
         assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(saved).last())
         val first = listOf("new_from_artists") + savedBy0_9_122
-        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(first).first())
+        // Because you like, new to this order, goes above it; New from your artists keeps the place the user gave it
+        assertEquals(
+            listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS),
+            resolveHomeSectionOrder(first).take(2),
+        )
+        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(listOf("because_you_like") + first).take(2).last())
     }
 
     @Test
@@ -84,6 +92,30 @@ class HomeAddedSectionsTest {
         assertEquals(resolved.indexOf(HomeSection.NEW_RELEASES) - 1, resolved.indexOf(HomeSection.MOODS))
         assertEquals(HomeSection.MOODS, HomeSection.fromKey("moods"))
         assertFalse(HomeSection.MOODS in visibleHomeSections(resolved, setOf(HomeSection.MOODS), communityOn = false))
+    }
+
+    @Test
+    fun `because you like leads the new shelves on a fresh install, under the record's mixes`() {
+        val order = resolveHomeSectionOrder(emptyList())
+        assertEquals(order.indexOf(HomeSection.NEW_FROM_ARTISTS) - 1, order.indexOf(HomeSection.BECAUSE_YOU_LIKE))
+        assertEquals(order.indexOf(HomeSection.RECORD_MIXES) + 1, order.indexOf(HomeSection.BECAUSE_YOU_LIKE))
+        assertTrue(HomeSection.BECAUSE_YOU_LIKE in DEFAULT_HOME_SECTIONS)
+        assertEquals(HomeSection.BECAUSE_YOU_LIKE, HomeSection.fromKey("because_you_like"))
+    }
+
+    @Test
+    fun `an order saved with the other new shelves gets because you like above the first of them`() {
+        // Saved by a release with New from your artists and Moods & moments, the user having moved Moods up top
+        val saved = listOf("discover", "moods", "your_record", "your_listening", "your_playlists", "record_mixes", "new_from_artists") +
+            savedBy0_9_122.drop(5)
+        val resolved = resolveHomeSectionOrder(saved)
+        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.BECAUSE_YOU_LIKE, HomeSection.MOODS), resolved.take(3))
+        assertEquals(saved.mapNotNull(HomeSection::fromKey), resolved - HomeSection.BECAUSE_YOU_LIKE)
+        // with them where they were put by default: right above New from your artists
+        val asDefault = savedBy0_9_122.take(5) + listOf("new_from_artists", "moods") + savedBy0_9_122.drop(5)
+        val placed = resolveHomeSectionOrder(asDefault)
+        assertEquals(placed.indexOf(HomeSection.NEW_FROM_ARTISTS) - 1, placed.indexOf(HomeSection.BECAUSE_YOU_LIKE))
+        assertFalse(HomeSection.BECAUSE_YOU_LIKE in visibleHomeSections(placed, setOf(HomeSection.BECAUSE_YOU_LIKE), communityOn = false))
     }
 
     @Test

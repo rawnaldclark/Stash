@@ -1,15 +1,24 @@
 package com.stash.feature.home.shelves
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.home.BecauseRow
+import com.stash.core.data.home.BecauseSeed
+import com.stash.core.data.home.BecauseYouLikeRepository
+import com.stash.core.data.home.HomeShownSongs
 import com.stash.core.data.home.MoodsRepository
 import com.stash.core.data.home.NewFromArtistsRepository
 import com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaybackSource
+import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.MoodTile
+import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,8 +32,10 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doSuspendableAnswer
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -57,11 +68,19 @@ class HomeShelvesViewModelTest {
         onBlocking { cached() } doReturn emptyList()
         onBlocking { tiles() } doReturn tiles
     }
+    private fun song(n: Int) = TrackSummary("v$n", "Song $n", "Artist $n", "Album $n", 200.0, "https://art/$n", musicVideoType = "ATV")
+    private val row = BecauseRow(BecauseSeed("seed", "Africa", "Toto", null), (1..6).map(::song))
+    private val because = mock<BecauseYouLikeRepository> {
+        onBlocking { cached() } doReturn emptyList()
+        onBlocking { shelf() } doReturn listOf(row)
+    }
+    private val shown = HomeShownSongs()
+    private val player = mock<PlayerRepository>()
     private val streaming = mock<StreamingPreference> { on { enabled } doReturn online }
     private val sections = mock<HomeSectionsPreference> { on { visibleSections } doReturn visible }
     private val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
 
-    private fun viewModel() = HomeShelvesViewModel(newFromArtists, moods, streaming, sections, connectivity)
+    private fun viewModel() = HomeShelvesViewModel(newFromArtists, moods, because, shown, player, streaming, sections, connectivity)
 
     @Test
     fun `shown and online, the row is built and shown`() = runTest(dispatcher) {
@@ -158,5 +177,46 @@ class HomeShelvesViewModelTest {
         vm.onResume()
         runCurrent()
         assertThat(vm.state.value.newFromArtists).isEqualTo(releases)
+    }
+
+    // ── Because you like ───────────────────────────────────────────────────
+
+    @Test
+    fun `because you like shows its rows, less what the record's mixes on Home hold`() = runTest(dispatcher) {
+        val vm = viewModel()
+        backgroundScope.launch { vm.state.collect {} }
+        runCurrent()
+        assertThat(vm.state.value.becauseYouLike).containsExactly(row)
+        shown.publish(HomeShownSongs.RECORD_MIXES, listOf("Song 1" to "Artist 1"))
+        runCurrent()
+        assertThat(vm.state.value.becauseYouLike.single().songs).isEqualTo(row.songs.drop(1))
+        // Three more taken: the row is under four cards and goes
+        shown.publish(HomeShownSongs.RECORD_MIXES, (1..3).map { "Song $it" to "Artist $it" })
+        runCurrent()
+        assertThat(vm.state.value.becauseYouLike).isEmpty()
+    }
+
+    @Test
+    fun `because you like hidden costs no request`() = runTest(dispatcher) {
+        visible.value = DEFAULT_HOME_SECTIONS - HomeSection.BECAUSE_YOU_LIKE
+        val vm = viewModel()
+        backgroundScope.launch { vm.state.collect {} }
+        runCurrent()
+        vm.onResume()
+        runCurrent()
+        verifyBlocking(because, never()) { shelf() }
+        assertThat(vm.state.value.becauseYouLike).isEmpty()
+    }
+
+    @Test
+    fun `a card plays its row from that song, streamed, named for the seed`() = runTest(dispatcher) {
+        val vm = viewModel()
+        vm.playRow(row, 2, "Because you like Africa")
+        runCurrent()
+        val queue = argumentCaptor<List<Track>>()
+        verifyBlocking(player) { setQueue(queue.capture(), eq(2), eq(PlaybackSource.Listening("Because you like Africa"))) }
+        assertThat(queue.firstValue.map { it.youtubeId }).isEqualTo(row.songs.map { it.videoId })
+        assertThat(queue.firstValue.all { it.source == MusicSource.YOUTUBE && it.isStreamable }).isTrue()
+        assertThat(queue.firstValue[2].durationMs).isEqualTo(200_000L)
     }
 }

@@ -1108,6 +1108,22 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getById(trackId: Long): TrackEntity?
 
+    /**
+     * The [limit] songs liked most recently, newest first: liked in Stash, or saved on Spotify, YouTube Music or
+     * Last.fm (each like's own time). Home's "Because you like" seeds from them.
+     */
+    @Query(
+        """
+        SELECT id FROM tracks
+        WHERE stash_liked_at IS NOT NULL OR spotify_saved_at IS NOT NULL
+           OR ytmusic_saved_at IS NOT NULL OR lastfm_loved_at IS NOT NULL
+        ORDER BY MAX(COALESCE(stash_liked_at, 0), COALESCE(spotify_saved_at, 0),
+                     COALESCE(ytmusic_saved_at, 0), COALESCE(lastfm_loved_at, 0)) DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun recentlyLikedIds(limit: Int): List<Long>
+
     @Query("SELECT * FROM tracks WHERE id IN (:trackIds)")
     suspend fun getByIdsRaw(trackIds: List<Long>): List<TrackEntity>
 

@@ -73,7 +73,15 @@ enum class HomeSection(val key: String) {
      * ([com.stash.core.data.home.MoodsRepository]). Works signed out and with no history, so a brand-new Home has music
      * two taps away. Streaming content, hidden in Offline mode. Under New from your artists, above the catalogs.
      */
-    MOODS("moods");
+    MOODS("moods"),
+
+    /**
+     * "Because you like ‹song›": two or three rows, each YouTube Music's related songs for a song you play a lot
+     * lately or liked lately ([com.stash.core.data.home.BecauseYouLike]). Streaming content, hidden in Offline mode,
+     * and nothing until there's listening to seed from. Home's most personal discovery after Daily Discover, so it
+     * leads the new shelves: above New from your artists and Moods & moments, above the catalogs.
+     */
+    BECAUSE_YOU_LIKE("because_you_like");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
@@ -125,6 +133,11 @@ internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> =
     HomeSection.NEW_FROM_ARTISTS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
     // The way into music without any history, above the catalogs (so under New from your artists when both are new)
     HomeSection.MOODS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
+    // Above the other new shelves wherever they are (a saved order may hold them already), else above the catalogs
+    HomeSection.BECAUSE_YOU_LIKE to listOf(
+        HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+        HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
+    ),
 )
 
 /** [order] with each of [ADDED_SECTION_ANCHORS]' sections that the saved order was [missing] moved to its place. */
