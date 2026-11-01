@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home screen widget colours drawn from XML (picker previews, the placeholder cover). Mirrors of
+     core/ui Color.kt; the live widget reads StashLightColorScheme / StashDarkColorScheme in code. -->
+<resources>
+    <color name="widget_surface">#FFFFFFFF</color>              <!-- StashSurfaceLight -->
+    <color name="widget_on_surface">#FF1A0B2E</color>           <!-- StashTextPrimaryLight -->
+    <color name="widget_on_surface_variant">#FF5B4680</color>   <!-- StashTextSecondaryLight -->
+    <color name="widget_accent">#FF7C3AED</color>               <!-- StashPurpleDark: light primary -->
+    <color name="widget_placeholder_background">#FFEEE7FC</color> <!-- StashElevatedSurfaceLight -->
+</resources>

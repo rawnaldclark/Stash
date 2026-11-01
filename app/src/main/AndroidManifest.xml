@@ -197,6 +197,34 @@
         </receiver>
 
         <!--
+            Home screen widget (Glance): one widget, two entries in the picker (wide 4x1 and square 2x2),
+            each with its own preview. Exported for the system's APPWIDGET_UPDATE; no update period, the
+            playback service pushes every change.
+        -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_now_playing_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.NowPlayingSquareWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_now_playing_square_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_square_info" />
+        </receiver>
+
+        <!--
             Disable the default WorkManager Jetpack Startup initializer so that
             StashApplication.workManagerConfiguration (backed by HiltWorkerFactory)
             is used instead. Without this removal, WorkManager initializes itself

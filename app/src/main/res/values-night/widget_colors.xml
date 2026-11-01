@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#FF0D0D18</color>              <!-- StashSurface -->
+    <color name="widget_on_surface">#FFE8E8F0</color>           <!-- StashTextPrimary -->
+    <color name="widget_on_surface_variant">#FFA0A0B8</color>   <!-- StashTextSecondary -->
+    <color name="widget_accent">#FF8B5CF6</color>               <!-- StashPurple: dark primary -->
+    <color name="widget_placeholder_background">#FF1A1A2E</color> <!-- StashElevatedSurface -->
+</resources>
