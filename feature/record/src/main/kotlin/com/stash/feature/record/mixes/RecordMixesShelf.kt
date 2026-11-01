@@ -61,10 +61,11 @@ import java.time.ZoneId
 import javax.inject.Inject
 
 /**
- * Home's "From your record" (stash-player `src/lib/ui/spotify/HomeShelf.svelte`): three mixes only years of history make ("This
+ * Home's "From your record" (stash-player `src/lib/ui/spotify/HomeShelf.svelte`): six mixes only years of history make ("This
  * week, years ago" when there is one, then a different few each day: [HistoryMixes.homePicks]), each a card that opens it
- * ([onOpenMix]), with Show all into the record's Mixes tab ([onShowAll]). Passed into Home as a slot, like Your record's card;
- * Settings › Home layout moves and hides it. Nothing at all without picks (no import, or too little history for a mix).
+ * ([onOpenMix]), with Show all into the record's Mixes tab ([onShowAll]). Passed into Home as a slot, like Your record's card,
+ * and always directly under the card (Home's order puts it there); Settings › Home layout hides it, and it stays when the
+ * card is hidden. Nothing at all without picks (no import, or too little history for a mix).
  */
 @Composable
 fun RecordMixesSection(
