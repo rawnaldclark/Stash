@@ -5,8 +5,6 @@ import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -20,7 +18,7 @@ import java.io.IOException
 import kotlin.random.Random
 
 /**
- * [BecauseYouLikeRepository] with a fake history and the real Related page (`home/related_never_gonna.json`) for every
+ * [BecauseYouLikeRepository] with a fake history and the real Related page (data:ytmusic's `related_never_gonna.json`) for every
  * seed, the rows saved in a temporary folder: when it builds, when it keeps what it has, and what it seeds from.
  */
 class BecauseYouLikeRepositoryTest {
@@ -28,13 +26,11 @@ class BecauseYouLikeRepositoryTest {
     @get:Rule val folder = TemporaryFolder()
 
     private val day = 86_400_000L
-    private val now = 1_793_000_000_000L
+    private var now = 1_793_000_000_000L
     private var today = 20_000L
 
     private val related: List<TrackSummary> by lazy {
-        fun fixture(name: String) = Json.parseToJsonElement(
-            this::class.java.classLoader!!.getResourceAsStream("home/$name")!!.bufferedReader().use { it.readText() },
-        ).jsonObject
+        fun fixture(name: String) = YtFixtures.json(name)
         val inner = mock<InnerTubeClient>()
         runBlocking {
             whenever(inner.next(eq("lYBUbBu4W08"))).thenReturn(fixture("next_never_gonna.json"))
@@ -93,6 +89,10 @@ class BecauseYouLikeRepositoryTest {
 
     private val calls = mutableListOf<String>()
     private var answers = true
+    /** The seeds whose page doesn't answer, when [answers] is on. */
+    private val silent = mutableSetOf<String>()
+
+    private fun file() = HomeShelfStore(folder.root).read(BecauseYouLikeRepository.FILE, BecauseFile.serializer())
 
     private fun repo(store: HomeShelfStore = HomeShelfStore(folder.root)) = BecauseYouLikeRepository(
         store = store,
@@ -101,7 +101,7 @@ class BecauseYouLikeRepositoryTest {
         nowMs = { now },
         related = { videoId ->
             calls += videoId
-            if (!answers) null else related
+            if (!answers || videoId in silent) null else related
         },
         random = { Random(1) },
     )
@@ -190,28 +190,64 @@ class BecauseYouLikeRepositoryTest {
     }
 
     @Test
-    fun `no answer keeps the rows it had and tries again on the next look`() = runTest {
+    fun `no answer keeps the rows it had, and the next try waits an hour`() = runTest {
         val repo = repo()
         val rows = repo.shelf()
         today++
         answers = false
         assertEquals(rows, repo.shelf())
-        // Not stamped: the next look asks again, and a page that answers replaces them
+        assertTrue(file()!!.day != today)
+        // Home's resume a minute later: no request
         calls.clear()
+        now += 60_000
+        assertEquals(rows, repo.shelf())
+        assertEquals(emptyList<String>(), calls)
+        // An hour on it tries again, and pages that answer build the day's rows
+        now += BecauseYouLikeRepository.RETRY_MS
         answers = true
         repo.shelf()
         assertTrue(calls.isNotEmpty())
+        assertEquals(today, file()!!.day)
         // A page that throws is a page that didn't answer
         val throwing = BecauseYouLikeRepository(HomeShelfStore(folder.root), history, { today + 1 }, { now }, { throw IOException("offline") }, { Random(1) })
-        assertEquals(rows.size, throwing.shelf().size)
+        assertTrue(throwing.shelf().isNotEmpty())
     }
 
     @Test
-    fun `with nothing to seed from there are no rows, and no request`() = runTest {
+    fun `fewer than half the seeds answering doesn't stamp the day, and never empties the rows`() = runTest {
+        val first = repo().shelf()
+        today++
+        // Two of three seeds' pages don't answer: the one that did makes a row, but the day isn't stamped
+        silent += setOf("v2", "v3")
+        val short = repo().shelf()
+        assertTrue(short.isNotEmpty())
+        assertTrue(file()!!.day != today)
+        assertTrue(file()!!.failedAt > 0)
+        // None answering at all keeps the rows Home had
+        now += BecauseYouLikeRepository.RETRY_MS
+        silent += "v1"
+        assertEquals(short, repo().shelf())
+        // Two of three answering is enough: stamped
+        now += BecauseYouLikeRepository.RETRY_MS
+        silent.clear()
+        silent += "v3"
+        repo().shelf()
+        assertEquals(today, file()!!.day)
+        assertEquals(0L, file()!!.failedAt)
+        assertTrue(first.isNotEmpty())
+    }
+
+    @Test
+    fun `with nothing to seed from there are no rows, no file and no request`() = runTest {
+        repo().shelf()
+        assertTrue(file() != null)
+        // The history was cleared: the rows, built from it, go
         val empty = FakeHistory()
-        val rows = BecauseYouLikeRepository(HomeShelfStore(folder.root), empty, { today }, { now }, { calls += it; related }, { Random(1) }).shelf()
+        calls.clear()
+        val rows = BecauseYouLikeRepository(HomeShelfStore(folder.root), empty, { today + 1 }, { now }, { calls += it; related }, { Random(1) }).shelf()
         assertEquals(emptyList<BecauseRow>(), rows)
         assertEquals(emptyList<String>(), calls)
+        assertEquals(null, file())
     }
 
     @Test

@@ -4,9 +4,7 @@ import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,7 +17,7 @@ import kotlin.math.exp
 import kotlin.random.Random
 
 /**
- * [BecauseYouLike]'s rules, the rows made from a real Related page (`home/related_never_gonna.json`: "Never Gonna
+ * [BecauseYouLike]'s rules, the rows made from a real Related page (data:ytmusic's `related_never_gonna.json`: "Never Gonna
  * Give You Up", fetched signed out with hl=en gl=US on 2026-11-01, trimmed) read through the real [YTMusicApiClient].
  */
 class BecauseYouLikeTest {
@@ -27,9 +25,7 @@ class BecauseYouLikeTest {
     private val day = 86_400_000L
     private val now = 1_793_000_000_000L
 
-    private fun fixture(name: String): JsonObject = Json.parseToJsonElement(
-        this::class.java.classLoader!!.getResourceAsStream("home/$name")!!.bufferedReader().use { it.readText() },
-    ).jsonObject
+    private fun fixture(name: String): JsonObject = YtFixtures.json(name)
 
     /** The Related page's songs, as the app reads them. */
     private val related: List<TrackSummary> by lazy {

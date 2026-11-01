@@ -25,11 +25,18 @@ import javax.inject.Singleton
 import kotlin.random.Random
 
 /**
- * What "Because you like" saves ([HomeShelfStore]): the rows, the day they were built, and the newest listen and
- * skip they had seen, so the next look can tell whether you've listened enough since to build them again.
+ * What "Because you like" saves ([HomeShelfStore]): the rows, the day they were built (-1 before a build enough
+ * seeds answered), the newest listen and skip they had seen, so the next look can tell whether you've listened
+ * enough since to build them again, and when a build last fell short (the next waits [BecauseYouLikeRepository.RETRY_MS]).
  */
 @Serializable
-internal data class BecauseFile(val day: Long, val lastEventId: Long, val lastSkipId: Long, val rows: List<BecauseRow>)
+internal data class BecauseFile(
+    val day: Long,
+    val lastEventId: Long,
+    val lastSkipId: Long,
+    val rows: List<BecauseRow>,
+    val failedAt: Long = 0,
+)
 
 /** The reads "Because you like" makes of Stash's own history and library ([RoomBecauseHistory]; a fake in tests). */
 interface BecauseHistory {
@@ -64,7 +71,9 @@ interface BecauseHistory {
  * look of a new day, or once you've played [REBUILD_PLAYS] songs through or skipped [REBUILD_SKIPS] since the last
  * build: two counts against the newest ids the build saw, never a timer.
  *
- * Fail-soft: a build where no seed's page answered keeps the rows it had and tries again on the next look.
+ * Fail-soft: a build stamps the day (and the counts) only when at least half the seeds' pages answered; one that
+ * fell short never replaces rows with none, and the next build waits [RETRY_MS] (Home's resume doesn't refire the
+ * requests on every return). With nothing to seed from there are no rows, no file and no request.
  */
 @Singleton
 class BecauseYouLikeRepository internal constructor(
@@ -98,6 +107,7 @@ class BecauseYouLikeRepository internal constructor(
         withContext(Dispatchers.IO) {
             val day = today()
             val saved = store.read(FILE, BecauseFile.serializer())
+            if (saved != null && saved.failedAt > 0 && nowMs() - saved.failedAt in 0 until RETRY_MS) return@withContext saved.rows
             if (saved != null && saved.day == day && !listenedSince(saved)) return@withContext saved.rows
             build(day, saved)
         }
@@ -124,22 +134,31 @@ class BecauseYouLikeRepository internal constructor(
         val candidates = best.mapNotNull { (id, score) -> seedsById[id]?.let { SeedCandidate(id, it, score) } }
         val seeds = BecauseYouLike.pickSeeds(candidates, random()).map { it.seed }
         if (seeds.isEmpty()) {
-            // Nothing to seed from yet (a new install): no rows, and none until you've listened some
-            store.write(FILE, BecauseFile.serializer(), BecauseFile(day, lastEvent, lastSkip, emptyList()))
+            // Nothing to seed from (a new install, or the history was cleared): no rows, and nothing of it kept
+            store.delete(FILE)
             return emptyList()
         }
         val pages = coroutineScope {
             seeds.map { seed -> async { seed.videoId to relatedOf(seed) } }.awaitAll()
         }.filter { it.second != null }.associate { it.first to it.second!! }
-        if (pages.isEmpty()) {
-            Log.d(TAG, "no seed's Related page answered; keeping ${saved?.rows?.size ?: 0} saved rows")
-            return saved?.rows.orEmpty()
-        }
+        val enough = pages.size * 2 >= seeds.size
         val songs = pages.values.flatten()
         val known = if (songs.isEmpty()) emptySet() else history.known(songs)
-        val rows = BecauseYouLike.rows(seeds, pages, known = { it.videoId in known }, exclude = history.dailyDiscover())
-        Log.d(TAG, "built ${rows.size} rows from ${seeds.size} seeds (${pages.size} answered)")
-        store.write(FILE, BecauseFile.serializer(), BecauseFile(day, lastEvent, lastSkip, rows))
+        val built = if (pages.isEmpty()) {
+            emptyList()
+        } else {
+            BecauseYouLike.rows(seeds, pages, known = { it.videoId in known }, exclude = history.dailyDiscover())
+        }
+        // A build some seeds didn't answer never replaces rows with none
+        val rows = if (built.isEmpty() && pages.size < seeds.size && !saved?.rows.isNullOrEmpty()) saved!!.rows else built
+        Log.d(TAG, "built ${rows.size} rows from ${seeds.size} seeds (${pages.size} answered)${if (enough) "" else ", short: not stamped"}")
+        val file = if (enough) {
+            BecauseFile(day, lastEvent, lastSkip, rows)
+        } else {
+            // Not stamped: the day and the counts stay as they were, so the next try (after the wait) builds again
+            BecauseFile(saved?.day ?: -1, saved?.lastEventId ?: lastEvent, saved?.lastSkipId ?: lastSkip, rows, failedAt = nowMs())
+        }
+        store.write(FILE, BecauseFile.serializer(), file)
         return rows
     }
 
@@ -164,6 +183,9 @@ class BecauseYouLikeRepository internal constructor(
 
         /** Best scores read as seed candidates, per pool place: one per artist needs more than the pool. */
         const val SEED_READ_FACTOR = 3
+
+        /** After a build that fell short, the next one waits this long (Home's resume would otherwise refire it). */
+        const val RETRY_MS = 60 * 60 * 1000L
     }
 }
 
