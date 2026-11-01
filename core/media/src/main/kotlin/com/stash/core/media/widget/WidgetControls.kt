@@ -12,8 +12,9 @@ data class WidgetTransport(
     /**
      * True: PendingIntent.getForegroundService. Required whenever the tap may have to start a
      * stopped service (Android 8+ refuses a plain background service start), and allowed only when
-     * the tap ends in playback, which posts the foreground notification in time. False:
-     * PendingIntent.getService, for a service already running in the foreground (it plays).
+     * the tap ends in playback, which posts the foreground notification in time. False: relayed
+     * through the app's receiver ([WidgetKeyRelay]), which forwards it to the running service, or
+     * redraws the widget when the service is gone (a crash left it showing Pause).
      */
     val foreground: Boolean,
     /** Skip to the next song first (see [WidgetMediaIntents.EXTRA_SKIP_FIRST]). */
@@ -31,8 +32,9 @@ data class WidgetButtons(
 /**
  * Which media-button events the widget's buttons send. Pure; see [WidgetControlsTest].
  *
- * Mirrors the media notification (Media3's DefaultActionFactory): the event goes straight to
- * [StashPlaybackService][com.stash.core.media.service.StashPlaybackService], not through
+ * Mirrors the media notification (Media3's DefaultActionFactory): the event reaches
+ * [StashPlaybackService][com.stash.core.media.service.StashPlaybackService] (Play directly, Pause and
+ * Next through the app's receiver, [WidgetKeyRelay]), never through
  * androidx.media3.session.MediaButtonReceiver, which drops every key but Play on Android 8+.
  * Two deliberate differences:
  *  - Explicit PLAY and PAUSE keys instead of PLAY_PAUSE, so a widget that is out of date never does

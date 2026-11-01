@@ -223,6 +223,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/now_playing_widget_square_info" />
         </receiver>
+        <!-- The widget's Pause and Next while playing (WidgetKeyRelay). Only the app's own widget sends to it. -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetKeyReceiver"
+            android:exported="false" />
 
         <!--
             Disable the default WorkManager Jetpack Startup initializer so that
