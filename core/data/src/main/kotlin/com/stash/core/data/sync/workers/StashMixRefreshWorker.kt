@@ -103,6 +103,21 @@ class StashMixRefreshWorker @AssistedInject constructor(
     private val recordMixTaste: RecordMixTaste = RecordMixTaste.NONE,
 ) : CoroutineWorker(appContext, params) {
 
+    /**
+     * Whether the phone has a validated internet connection right now. A seam so tests run the worker offline. Read when
+     * a run starts and when it ends: see [networkPartWorked].
+     */
+    internal var networkAvailable: () -> Boolean = { hasValidatedNetwork(applicationContext) }
+
+    /**
+     * Whether this run's network part worked, for [StashMixRefreshStamp]: a full refresh that ran offline must not be
+     * recorded, or the next online cold start would skip it for a day (and an airplane-mode night would do that every
+     * night). Cleared by a persona fetch that didn't fully come back and by a discovery queueing that failed. With Last.fm
+     * set up, the run must also have been online when it began and when it ended: the discovery seed calls swallow their
+     * failures (an offline run just finds no candidates), so for someone with no Last.fm username nothing else would tell.
+     */
+    private var networkPartWorked = true
+
     companion object {
         private const val TAG = "StashMixRefresh"
         private const val WORK_NAME = "stash_mix_refresh"
@@ -274,10 +289,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
 
         /**
-         * Fire a one-shot refresh immediately — used on first app launch
-         * after seeding defaults so users see populated mixes without
-         * waiting 24 hours for the periodic schedule, and by the
-         * manual-refresh button on the Home Stash Mixes card.
+         * Fire a one-shot refresh immediately — used on app launch (at most
+         * about once a day, see [StashMixRefreshStamp]) so users see populated
+         * mixes without waiting 24 hours for the periodic schedule, by the
+         * Stash Mixes switch, and by the post-download chain.
          */
         fun enqueueOneTime(context: Context, materializeOnly: Boolean = false) {
             val builder = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
@@ -373,6 +388,9 @@ class StashMixRefreshWorker @AssistedInject constructor(
         val lastFmConfigured = lastFmCredentials.isConfigured
         val taste = readTaste()
 
+        // Last.fm set up means this run has a network part (personas, discovery seeds): it must start online to count.
+        networkPartWorked = !lastFmConfigured || networkAvailable()
+
         val username = sessionPreference.session.first()?.username
         val personas = if (lastFmConfigured && !username.isNullOrBlank()) {
             // v0.9.16: Bound the persona fetch — 5 periods × 2 endpoints =
@@ -385,7 +403,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 withTimeout(30_000L) { fetchPersonas(username) }
             }.getOrElse { e ->
                 Log.w(TAG, "persona fetch failed/timed-out, falling back to local seeds", e)
-                LastFmPersonas.EMPTY
+                null
+            }.let { fetched ->
+                if (fetched?.allCameBack != true) networkPartWorked = false
+                fetched?.personas ?: LastFmPersonas.EMPTY
             }
         } else LastFmPersonas.EMPTY
 
@@ -463,7 +484,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // queue MORE candidates (that's the loop's fuel).
             if (recipe.discoveryRatio > 0f && lastFmConfigured && !materializeOnly) {
                 runCatching { queueDiscoveryForRecipe(recipe, personas, taste) }
-                    .onFailure { Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it) }
+                    .onFailure {
+                        networkPartWorked = false
+                        Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it)
+                    }
             }
         }
 
@@ -476,6 +500,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // initialised in a unit-test JVM throws IllegalStateException).
         runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
             .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
+
+        // A full run (every mix, discovery queued) is what the cold-start one-shot repeats; stamp it so the next cold
+        // start within the day skips it (StashMixRefreshStamp). A single-mix or re-link run doesn't count, and neither
+        // does one whose network part didn't work (networkPartWorked): offline, the next online cold start runs it again.
+        // Never fails the refresh, which already worked.
+        if (targetId <= 0L && !materializeOnly) {
+            if (networkPartWorked && (!lastFmConfigured || networkAvailable())) {
+                runCatching { StashMixRefreshStamp(applicationContext).markFullRefresh() }
+                    .onFailure { Log.w(TAG, "couldn't stamp the full refresh; the next cold start runs one again", it) }
+            } else {
+                Log.i(TAG, "full refresh not recorded: its network part didn't work, so the next cold start runs one")
+            }
+        }
 
         // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe
         // above only enqueues PENDING candidate rows — it does not turn them
@@ -1047,9 +1084,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
      * without redundant network calls. Sequential with a small inter-call
      * delay to stay polite under Last.fm's rate ceiling. Wrapped by
      * [withTimeout] at the call site — failures here surface as the
-     * cancelled-coroutine path which the caller turns into [LastFmPersonas.EMPTY].
+     * cancelled-coroutine path which the caller turns into [LastFmPersonas.EMPTY]. Each call's own failure reads as an
+     * empty slice, as before; [PersonaFetch.allCameBack] says whether every call came back.
      */
-    private suspend fun fetchPersonas(username: String): LastFmPersonas {
+    private suspend fun fetchPersonas(username: String): PersonaFetch {
         val periods = listOf(
             LastFmPeriod.SEVEN_DAY,
             LastFmPeriod.ONE_MONTH,
@@ -1059,13 +1097,26 @@ class StashMixRefreshWorker @AssistedInject constructor(
         )
         val tracks = mutableMapOf<LastFmPeriod, List<LastFmTopTrack>>()
         val artists = mutableMapOf<LastFmPeriod, List<LastFmTopArtist>>()
+        var allCameBack = true
         for (period in periods) {
-            tracks[period] = lastFmApiClient.getUserTopTracks(username, period, limit = 100)
-                .getOrNull().orEmpty()
-            artists[period] = lastFmApiClient.getUserTopArtists(username, period, limit = 50)
-                .getOrNull().orEmpty()
+            val topTracks = lastFmApiClient.getUserTopTracks(username, period, limit = 100)
+            val topArtists = lastFmApiClient.getUserTopArtists(username, period, limit = 50)
+            if (topTracks.isFailure || topArtists.isFailure) allCameBack = false
+            tracks[period] = topTracks.getOrNull().orEmpty()
+            artists[period] = topArtists.getOrNull().orEmpty()
             delay(SIMILAR_REQUEST_INTERVAL_MS)
         }
-        return LastFmPersonas(tracks, artists)
+        return PersonaFetch(LastFmPersonas(tracks, artists), allCameBack)
     }
+
+    /** [fetchPersonas]' result, and whether every Last.fm call in it came back (offline, none does). */
+    private class PersonaFetch(val personas: LastFmPersonas, val allCameBack: Boolean)
+}
+
+/** Whether the default network has internet and Android has validated it; true when it can't tell (no manager). */
+private fun hasValidatedNetwork(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return true
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }

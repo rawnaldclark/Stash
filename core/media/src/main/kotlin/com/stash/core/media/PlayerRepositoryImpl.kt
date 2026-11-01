@@ -404,6 +404,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * Gating the poll on `isPlaying` inside the flow fixes every collector at
      * once, whatever their scope — measured at 56 mAh/5h49m of cached-state
      * drain before the fix.
+     *
+     * [ListeningRecorder] now collects only while repeat-one is on, so with
+     * the screen off and repeat off nobody collects and the ticker doesn't
+     * run at all. A collector that arrives after such a gap must not start
+     * from the position of minutes ago (the recorder would read the jump to
+     * the real one as a repeat-one loop): `replayExpirationMillis = 0` drops
+     * the last value when the last collector leaves, and the restarted ticker
+     * emits the live position at once.
      */
     override val currentPosition: Flow<Long> = positionTicker(
         playerState = _playerState,
@@ -411,7 +419,7 @@ class PlayerRepositoryImpl @Inject constructor(
         readPositionMs = { controllerDeferred?.currentPosition ?: 0L },
     )
         .flowOn(Dispatchers.Main)
-        .shareIn(scope, SharingStarted.WhileSubscribed(), replay = 1)
+        .shareAsPositionTicker(scope)
 
     /** Cached [MediaController] instance; null until [ensureController] succeeds.
      * Internal as a test seam: gate/queue tests inject a mock controller here. */
@@ -3845,6 +3853,15 @@ internal fun positionTicker(
         }
     }
     .distinctUntilChanged()
+
+/**
+ * Shares one [positionTicker] among all collectors, running only while someone collects. A new collector gets the last
+ * position at once while others are collecting; after a gap with no collector it gets the live position instead (the
+ * restarted ticker's first emission), never the one from before the gap: `replayExpirationMillis = 0`. See
+ * [PlayerRepositoryImpl.currentPosition]. Top-level + `internal` for [PositionTickerTest].
+ */
+internal fun Flow<Long>.shareAsPositionTicker(scope: CoroutineScope): SharedFlow<Long> =
+    shareIn(scope, SharingStarted.WhileSubscribed(replayExpirationMillis = 0), replay = 1)
 
 /** Inverse of the existing `Int.toRepeatMode()` mapper — used only to
  *  restore Media3's repeat mode from a persisted [RepeatMode] on resume. */
