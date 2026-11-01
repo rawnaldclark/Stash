@@ -10,6 +10,7 @@ import com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -60,13 +61,8 @@ class SupporterViewModel @Inject constructor(
     config: LosslessConfigFetcher,
 ) : ViewModel() {
 
-    val row: StateFlow<SupporterRow> = combine(
-        quota.state,
-        combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
-        supporter.token,
-    ) { allowance, relayConfigured, token ->
-        supporterRow(allowance, relayConfigured, token != null)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupporterRow.Hidden)
+    val row: StateFlow<SupporterRow> = supporterRows(quota, config, supporter)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupporterRow.Hidden)
 
     private val _claim = MutableStateFlow(SupporterClaimUi())
     val claim: StateFlow<SupporterClaimUi> = _claim.asStateFlow()
@@ -117,6 +113,22 @@ class SupporterViewModel @Inject constructor(
             _claim.value = step().copy(busy = false)
         }
     }
+}
+
+/**
+ * The supporter state as it changes: the relays' last allowance, whether this build has an owner relay at all, and
+ * whether a code is stored. Shared by the Lossless sources row and Settings' Support card, so both always agree.
+ */
+internal fun supporterRows(
+    quota: LosslessQuota,
+    config: LosslessConfigFetcher,
+    supporter: SupporterRepository,
+): Flow<SupporterRow> = combine(
+    quota.state,
+    combine(config.relays, config.tidalRelay) { relays, tidal -> relays.isNotEmpty() || tidal != null },
+    supporter.token,
+) { allowance, relayConfigured, token ->
+    supporterRow(allowance, relayConfigured, token != null)
 }
 
 /** The supporter row for what the relays last said ([allowance]: limit null = unlimited). */

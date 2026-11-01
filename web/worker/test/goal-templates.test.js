@@ -140,7 +140,7 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     const patterns = config.assets.run_worker_first;
     const glob = (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
     const runsWorker = (path) => patterns.some((p) => !p.startsWith("!") && glob(p).test(path)) && !patterns.some((p) => p.startsWith("!") && glob(p.slice(1)).test(path));
-    for (const path of ["/", "/access", "/access/verify", "/request", "/signout", "/admin", "/player", "/gate/front", "/404", "/a-page-added-later"]) assert.ok(runsWorker(path), path);
+    for (const path of ["/", "/access", "/access/verify", "/request", "/signout", "/admin", "/player", "/goal.json", "/gate/front", "/404", "/a-page-added-later"]) assert.ok(runsWorker(path), path);
     for (const path of ["/_astro/x.css", "/favicon.ico", "/robots.txt", "/sitemap-index.xml", "/privacy", "/social-preview.jpg"]) assert.ok(!runsWorker(path), path);
     assert.equal(config.main, "worker/index.js");
     assert.equal(config.assets.binding, "ASSETS");
