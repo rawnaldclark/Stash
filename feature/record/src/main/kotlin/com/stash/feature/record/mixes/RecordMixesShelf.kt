@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import java.time.Instant
 import java.time.ZoneId
@@ -148,6 +149,7 @@ class RecordMixesShelfViewModel @Inject constructor(
     private val mixes: RecordMixes,
     private val art: RecordArt,
     taste: RecordTaste,
+    private val shelfPicks: RecordShelfPicks,
 ) : ViewModel() {
     init {
         taste.daily()
@@ -205,6 +207,8 @@ class RecordMixesShelfViewModel @Inject constructor(
             }
         }
         .distinctUntilChanged()
+        // The record card's menu says "your mixes stay" only when there are some (none: no import, or too little history)
+        .onEach { shelfPicks.set(it.isNotEmpty()) }
         // Home's own: kept while Home is in the back stack (its last cards shown at once on a return), never another Home's
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

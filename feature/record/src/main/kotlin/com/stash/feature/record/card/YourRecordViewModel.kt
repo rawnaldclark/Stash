@@ -11,6 +11,7 @@ import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.imports.ImportInfo
 import com.stash.feature.record.imports.ImportState
 import com.stash.feature.record.imports.RecordImports
+import com.stash.feature.record.mixes.RecordShelfPicks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ class YourRecordViewModel @Inject constructor(
     private val imports: RecordImports,
     taste: com.stash.feature.record.taste.RecordTaste,
     private val homeSections: HomeSectionsPreference,
+    shelfPicks: RecordShelfPicks,
 ) : ViewModel() {
     init {
         // Home opened: the taste again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
@@ -97,13 +99,14 @@ class YourRecordViewModel @Inject constructor(
     fun hideInvite() = imports.hideInvite()
 
     /**
-     * Whether Home shows the record's mixes ("From your record", its own switch in Settings › Home layout): the card's menu
-     * says they stay only when they do.
+     * Whether Home shows mixes from the record under the card ([mixesStay]): the card's menu says they stay only when they do.
+     * False until known, so the menu never promises mixes there may not be.
      */
-    val mixesOnHome: StateFlow<Boolean> = homeSections.hidden
-        .map { HomeSection.RECORD_MIXES !in it }
+    val mixesOnHome: StateFlow<Boolean> = combine(homeSections.hidden, shelfPicks.hasPicks, imports.info) { hidden, picks, info ->
+        mixesStay(hidden, picks, imported = info.record != null)
+    }
         .distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
      * The card's long press › Hide this card: Home's Your record section hidden, exactly as its switch in Settings › Home
@@ -183,3 +186,11 @@ class YourRecordViewModel @Inject constructor(
         const val TAG = "YourRecord"
     }
 }
+
+/**
+ * Whether hiding the card leaves mixes from the record on Home: "From your record" isn't switched off, and its shelf has
+ * mixes ([shelfHasPicks], as it last made them). Until the shelf has made them once (null), an import stands in: the card
+ * also shows with no import, from this phone's own plays alone, and those make no mixes.
+ */
+internal fun mixesStay(hidden: Set<HomeSection>, shelfHasPicks: Boolean?, imported: Boolean): Boolean =
+    HomeSection.RECORD_MIXES !in hidden && (shelfHasPicks ?: imported)
