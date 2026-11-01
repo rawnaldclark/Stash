@@ -9,7 +9,8 @@ import kotlinx.serialization.Serializable
 data class SocialLink(val kind: String, val url: String)
 
 /** Spotify-style "About" data. All fields optional; the enricher returns `null`
- *  (not an empty instance) when nothing was found, so the UI gate is `about != null`. */
+ *  (not an empty instance) when nothing was found. The About section shows only
+ *  when [hasSection]: a listener count alone is the hero's, not a section's. */
 @Serializable
 data class ArtistAbout(
     val bio: String? = null,
@@ -19,4 +20,15 @@ data class ArtistAbout(
     val gallery: List<String> = emptyList(),
     /** A wide header photo (Spotify): the banner when YouTube's page has none. */
     val headerUrl: String? = null,
-)
+    /**
+     * Spotify's monthly listeners (unique listeners over the last 28 days), from the same
+     * `queryArtistOverview` answer as [gallery]. Shown in the hero, not in About; it wins over
+     * YouTube's [ArtistProfile.monthlyAudience]. Null when Spotify is not connected, has no single
+     * exact match, or the profile was cached before this field existed.
+     */
+    val monthlyListeners: Long? = null,
+) {
+    /** Whether the About section has anything of its own to show (everything but [monthlyListeners]). */
+    val hasSection: Boolean
+        get() = bio != null || socials.isNotEmpty() || photoUrl != null || gallery.isNotEmpty() || headerUrl != null
+}

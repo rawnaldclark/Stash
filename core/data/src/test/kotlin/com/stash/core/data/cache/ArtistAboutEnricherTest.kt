@@ -73,6 +73,16 @@ class ArtistAboutEnricherTest {
         assertThat(about.socials).isNotEmpty()
     }
 
+    @Test fun `Spotify's monthly listeners reach About, even when nothing else was found`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = null, mbid = null),
+            visuals = SpotifyArtistVisuals(gallery = emptyList(), headerUrl = null, monthlyListeners = 1_734_567L),
+        ).enrich("Sonic Youth")
+        assertThat(about!!.monthlyListeners).isEqualTo(1_734_567L)
+        // The hero shows the count; About itself has nothing, so the section stays hidden.
+        assertThat(about.hasSection).isFalse()
+    }
+
     @Test fun `nothing found returns null`() = runTest {
         val about = enricher(info = LastFmArtistInfo(bio = null, mbid = null)).enrich("A")
         assertThat(about).isNull()

@@ -68,4 +68,41 @@ class SpotifyArtistVisualsTest {
         val root = json("""{"data":{"artistUnion":{"visuals":{"gallery":{"items":[]},"headerImage":null}}}}""")
         assertNull(parseArtistVisuals(root))
     }
+
+    /**
+     * The overview answer, written from the field names the 2026-11-01 probe quoted
+     * (`data.artistUnion.stats.monthlyListeners`, beside `followers`): no saved capture existed.
+     */
+    private fun overviewFixture(): JsonObject = json(
+        javaClass.classLoader!!.getResourceAsStream("fixtures/query_artist_overview.json")!!
+            .bufferedReader().use { it.readText() },
+    )
+
+    @Test fun `the overview's monthly listeners come with its photos, not its followers`() {
+        val v = parseArtistVisuals(overviewFixture())!!
+        assertEquals(1_734_567L, v.monthlyListeners)
+        assertEquals(listOf("https://i.scdn.co/image/gallery1-big", "https://i.scdn.co/image/gallery2"), v.gallery)
+        assertEquals("https://i.scdn.co/image/header", v.headerUrl)
+    }
+
+    @Test fun `monthly listeners without photos still count`() {
+        val root = json("""{"data":{"artistUnion":{"stats":{"followers":10,"monthlyListeners":523}}}}""")
+        val v = parseArtistVisuals(root)!!
+        assertEquals(523L, v.monthlyListeners)
+        assertEquals(emptyList<String>(), v.gallery)
+        assertNull(v.headerUrl)
+    }
+
+    @Test fun `zero monthly listeners is no number`() {
+        val root = json("""{"data":{"artistUnion":{"stats":{"monthlyListeners":0},
+            "visuals":{"gallery":{"items":[{"sources":[{"url":"https://i/2","width":640}]}]}}}}}""")
+        assertNull(parseArtistVisuals(root)!!.monthlyListeners)
+        assertNull(parseArtistVisuals(json("""{"data":{"artistUnion":{"stats":{"monthlyListeners":0}}}}""")))
+    }
+
+    @Test fun `photos without stats have no monthly listeners`() {
+        val root = json("""{"data":{"artistUnion":{"visuals":{
+            "gallery":{"items":[{"sources":[{"url":"https://i/2","width":640}]}]}}}}}""")
+        assertNull(parseArtistVisuals(root)!!.monthlyListeners)
+    }
 }

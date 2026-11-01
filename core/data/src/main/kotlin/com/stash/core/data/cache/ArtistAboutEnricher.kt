@@ -35,9 +35,18 @@ class RealArtistAboutEnricher @Inject constructor(
         val photos = visuals.await()
         val gallery = photos?.gallery.orEmpty()
         val header = photos?.headerUrl
+        // Spotify's monthly listeners ride on the photos' answer; the hero shows them over YouTube's.
+        val monthlyListeners = photos?.monthlyListeners
         // photoUrl left null in v1 (Wikimedia upgrade deferred).
-        if (bio == null && socials.isEmpty() && gallery.isEmpty() && header == null) null
-        else ArtistAbout(bio = bio, socials = socials, photoUrl = null, gallery = gallery, headerUrl = header)
+        if (bio == null && socials.isEmpty() && gallery.isEmpty() && header == null && monthlyListeners == null) null
+        else ArtistAbout(
+            bio = bio,
+            socials = socials,
+            photoUrl = null,
+            gallery = gallery,
+            headerUrl = header,
+            monthlyListeners = monthlyListeners,
+        )
     }
 
     private companion object {

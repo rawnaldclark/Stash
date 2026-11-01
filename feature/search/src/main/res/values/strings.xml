@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Artist page (feature/search). -->
+    <!-- Under the artist's name. %1$s: the count, already short ("1.7M", "574K"). Monthly listeners
+         are the people who played the artist in the last 28 days; the source is not named. -->
+    <plurals name="artist_monthly_listeners">
+        <item quantity="one">%1$s monthly listener</item>
+        <item quantity="other">%1$s monthly listeners</item>
+    </plurals>
+</resources>

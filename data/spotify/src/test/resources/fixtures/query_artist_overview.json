@@ -1,0 +1,53 @@
+{
+  "data": {
+    "artistUnion": {
+      "__typename": "Artist",
+      "id": "5UqTO8smerMvxHYA5xsXb6",
+      "uri": "spotify:artist:5UqTO8smerMvxHYA5xsXb6",
+      "profile": {
+        "name": "Sonic Youth",
+        "verified": true
+      },
+      "stats": {
+        "followers": 1287654,
+        "monthlyListeners": 1734567,
+        "worldRank": 0,
+        "topCities": {
+          "items": [
+            { "city": "London", "country": "GB", "numberOfListeners": 48211, "region": "ENG" }
+          ]
+        }
+      },
+      "visuals": {
+        "avatarImage": {
+          "sources": [
+            { "url": "https://i.scdn.co/image/avatar-640", "width": 640, "height": 640 }
+          ]
+        },
+        "gallery": {
+          "items": [
+            {
+              "sources": [
+                { "url": "https://i.scdn.co/image/gallery1-small", "width": 160, "height": 160 },
+                { "url": "https://i.scdn.co/image/gallery1-big", "width": 1280, "height": 1280 }
+              ]
+            },
+            {
+              "sources": [
+                { "url": "https://i.scdn.co/image/gallery2", "width": 640, "height": 640 }
+              ]
+            }
+          ]
+        },
+        "headerImage": {
+          "data": {
+            "sources": [
+              { "url": "https://i.scdn.co/image/header", "width": 2660, "height": 1140 }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "extensions": {}
+}

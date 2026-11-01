@@ -253,6 +253,66 @@ class ArtistProfileViewModelTest {
     }
 
     @Test
+    fun `the listener count waits for Spotify on a first visit, then shows its number`() = runTest {
+        // Cold miss: YouTube's profile paints first (its 574K monthly audience), then the enriched
+        // profile with Spotify's 1.7M. The hero must never show 574K and swap it for 1.7M.
+        val yt = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+            monthlyAudience = 574_000L,
+        )
+        val enriched = yt.copy(about = com.stash.data.ytmusic.model.ArtistAbout(bio = "b", monthlyListeners = 1_734_567L))
+        val gate = CompletableDeferred<Unit>()
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(
+            flow {
+                emit(CachedProfile.Partial(yt))
+                gate.await()
+                emit(CachedProfile.Fresh(enriched))
+            },
+        )
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals("Sonic Youth", vm.uiState.value.hero.name)
+        assertEquals(null, vm.uiState.value.hero.monthlyListeners)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1_734_567L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
+    fun `without Spotify the enriched profile shows YouTube's monthly audience, never subscribers`() = runTest {
+        val yt = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+            monthlyAudience = 574_000L,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(
+            flowOf(CachedProfile.Partial(yt), CachedProfile.Fresh(yt.copy(about = null))),
+        )
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals(574_000L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
+    fun `a cached profile shows its count at once`() = runTest {
+        val cached = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+            about = com.stash.data.ytmusic.model.ArtistAbout(bio = "b", monthlyListeners = 1_734_567L),
+            monthlyAudience = 574_000L,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(cached)))
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals(1_734_567L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
     fun `startRadio starts an artist radio seeded with the browseId`() = runTest {
         val profile = ArtistProfile(
             id = "UC1", name = "LocalName", avatarUrl = null, subscribersText = null,

@@ -226,3 +226,48 @@ internal fun parseArtistsCarousel(carousel: JsonObject): List<ArtistSummary> {
         ArtistSummary(id = id, name = name, avatarUrl = avatarUrl)
     }
 }
+
+// ── Artist-page header ───────────────────────────────────────────────────────
+
+/**
+ * YouTube's monthly audience from an artist header (`musicImmersiveHeaderRenderer`), as a number:
+ * `monthlyListenerCount` = "574K monthly audience" → 574 000. Never the subscriber count
+ * (`subscriptionButton…subscriberCountText`, a bare "290K"), which measures something else.
+ *
+ * Reads `runs` (joined, in case YouTube splits the number from the words) or `simpleText`.
+ * Null when the header has no monthly audience or its text does not start with a number.
+ */
+internal fun parseMonthlyAudience(header: JsonObject): Long? {
+    val count = header["monthlyListenerCount"]?.asObject() ?: return null
+    val text = count["runs"]?.asArray()
+        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+        ?.joinToString("")
+        ?.takeIf { it.isNotBlank() }
+        ?: count["simpleText"]?.asString()
+        ?: return null
+    return parseCompactCount(text)
+}
+
+/** A leading number, its grouping commas, and an optional K / M / B scale: "1.2M", "574K", "1,234". */
+private val LEADING_COUNT = Regex("""^\s*(\d[\d,]*(?:\.\d+)?)\s*([KMB])?(?![A-Za-z])""", RegexOption.IGNORE_CASE)
+
+/**
+ * The number YouTube writes in English (the client always asks for `hl=en`): "574K monthly
+ * audience" → 574 000, "1.2M" → 1 200 000, "1,234 monthly audience" → 1 234. Exact decimal
+ * arithmetic, so "1.2M" is 1 200 000 and not 1 199 999. Null when the text doesn't start with
+ * a number (a word YouTube puts in front, another language).
+ */
+internal fun parseCompactCount(text: String): Long? {
+    val match = LEADING_COUNT.find(text) ?: return null
+    val number = match.groupValues[1].replace(",", "").toBigDecimalOrNull() ?: return null
+    val scale = when (match.groupValues[2].uppercase()) {
+        "K" -> 1_000L
+        "M" -> 1_000_000L
+        "B" -> 1_000_000_000L
+        else -> 1L
+    }
+    // Whole listeners only; an absurd value that overflows a Long is no number at all.
+    return runCatching {
+        number.multiply(scale.toBigDecimal()).setScale(0, java.math.RoundingMode.DOWN).longValueExact()
+    }.getOrNull()
+}

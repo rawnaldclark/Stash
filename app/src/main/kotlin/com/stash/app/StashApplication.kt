@@ -1105,10 +1105,13 @@ class StashApplication : Application(), Configuration.Provider {
 
         /**
          * Bump whenever a parser change makes existing cached rows produce
-         * a worse UX than a fresh fetch. Current bump (v1) invalidates rows
-         * written before the 2026-04-17 Popular-shelf title-matching fix.
+         * a worse UX than a fresh fetch. v1 invalidated rows written before
+         * the 2026-04-17 Popular-shelf title-matching fix; v2 (2026-11-01)
+         * drops rows without the monthly listeners (YouTube's monthly
+         * audience, Spotify's monthly listeners), which would otherwise show
+         * no count for up to the 6-hour TTL.
          */
-        private const val ARTIST_CACHE_VERSION = 1
+        private const val ARTIST_CACHE_VERSION = 2
 
         /**
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of

@@ -44,7 +44,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.data.ytmusic.model.SocialLink
+import java.util.Locale
 
 /**
  * Where the gold "♥ Support" chip sends people: the artist's Bandcamp when
@@ -81,6 +84,22 @@ private val HeaderSkippedLinks = setOf("soundcloud", "facebook", "youtube")
 internal fun headerLinks(socials: List<SocialLink>): List<SocialLink> =
     socials.filterNot { it.kind.lowercase() in HeaderSkippedLinks }
 
+/**
+ * "1.7M monthly listeners" in the app's language, or "" while there is no number (the line keeps
+ * its height either way). The count picks the plural; beyond an Int it is "other" in every language.
+ */
+@Composable
+private fun monthlyListenersLabel(count: Long?): String {
+    if (count == null) return ""
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    val formatted = remember(count, locale) { formatMonthlyListeners(count, locale) }
+    return pluralStringResource(
+        R.plurals.artist_monthly_listeners,
+        count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        formatted,
+    )
+}
+
 /** The photo's height below the status bar. */
 internal val ArtistHeroPhotoHeight = 340.dp
 
@@ -88,8 +107,8 @@ internal val ArtistHeroPhotoHeight = 340.dp
  * Artist Profile hero, Spotify-style: the artist's header photo full width and
  * edge to edge (under the status bar), and everything else set on it. Over the
  * photo's bottom edge, where it fades into the page: the name large and full
- * width; under it the plum play coin and the radio ring on the left, the
- * listener count and the gold "♥ Support" chip (Bandcamp → website, see
+ * width, and the monthly listeners under it; then the plum play coin and the radio
+ * ring on the left, the gold "♥ Support" chip (Bandcamp → website, see
  * [supportUrl]) on the right; then one row of the artist's links, a glass coin each.
  *
  * YouTube's header photos are wide (about 16:9), so [ArtUrlUpgrader.banner]
@@ -221,6 +240,18 @@ fun ArtistHero(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // "1.7M monthly listeners" under the name, full width, as on Spotify: beside Support
+            // it no longer fit once it said what it counts. The line is there from the first
+            // frame, empty until the number arrives (a beat after the page on a first visit), so
+            // its landing never moves the name; an artist with no number keeps the quiet gap.
+            Text(
+                text = monthlyListenersLabel(hero.monthlyListeners),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             // Play and radio on the left; on the right, listeners and Support with the
             // artist's links under them. The links arrive a beat after the page (MusicBrainz);
             // their line is held open from the start, so the row never grows and the name never
@@ -266,15 +297,6 @@ fun ArtistHero(
                     modifier = Modifier.weight(1f),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (hero.subscribersText != null) {
-                            Text(
-                                text = hero.subscribersText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                        if (hero.subscribersText != null && support != null) Spacer(Modifier.width(10.dp))
                         if (support != null) {
                             Surface(
                                 onClick = { runCatching { uriHandler.openUri(support) } },

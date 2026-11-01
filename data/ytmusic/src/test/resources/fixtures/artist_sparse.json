@@ -1,5 +1,5 @@
 {
-  "_comment": "Minimal artist browse response — only header + a popular shelf with one track. Exercises the missing-albums / missing-singles / missing-related code path.",
+  "_comment": "Minimal artist browse response — only header + a popular shelf with one track. Exercises the missing-albums / missing-singles / missing-related code path, and a header with subscribers but no monthly audience.",
   "header": {
     "musicImmersiveHeaderRenderer": {
       "title": {
@@ -20,7 +20,7 @@
         "subscribeButtonRenderer": {
           "subscriberCountText": {
             "runs": [
-              { "text": "42 subscribers" }
+              { "text": "42" }
             ]
           }
         }
