@@ -18,11 +18,11 @@ import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -30,14 +30,17 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 
 /**
  * This month's donation goal as stashfm.app's front page shows it ("$168 of $200 this month"), read from the
@@ -66,6 +69,9 @@ internal object DonationGoals {
     private val MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
     private const val DAY_MS = 86_400_000L
 
+    /** How long after an ask that got no usable goal (offline, an error, a bad body, last month's) to ask again. */
+    const val RETRY_AFTER_FAILURE_MS = 3_600_000L
+
     /** [raw] as a goal, or null when it isn't one: not JSON, a field missing, a negative total, no target, no month. */
     fun parse(raw: String): DonationGoal? {
         val j = try {
@@ -87,11 +93,18 @@ internal object DonationGoals {
     fun utcMonth(ms: Long): String = YearMonth.from(Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC)).toString()
 
     /**
-     * Whether to ask the site now: never asked, or the last ask ([lastAttemptMs], failed ones too) was on another UTC
-     * day. At most once a day, and a new month (a new day) is always asked for.
+     * Whether to ask the site now ([nowMs]):
+     *  - not when this UTC day already got this month's goal ([lastGoodMs]): at most one good answer a day;
+     *  - not within [RETRY_AFTER_FAILURE_MS] of an ask that got none ([lastFailedMs]), so an offline phone or a
+     *    site that's down is asked again an hour later, not the next day, and not on every Settings visit;
+     *  - otherwise yes. A clock set back before either stamp asks again rather than waiting it out.
      */
-    fun fetchDue(lastAttemptMs: Long, nowMs: Long): Boolean =
-        lastAttemptMs <= 0L || Math.floorDiv(lastAttemptMs, DAY_MS) != Math.floorDiv(nowMs, DAY_MS)
+    fun fetchDue(lastGoodMs: Long, lastFailedMs: Long, nowMs: Long): Boolean {
+        val goodToday = lastGoodMs in 1..nowMs && Math.floorDiv(lastGoodMs, DAY_MS) == Math.floorDiv(nowMs, DAY_MS)
+        if (goodToday) return false
+        val backingOff = lastFailedMs in 1..nowMs && nowMs - lastFailedMs < RETRY_AFTER_FAILURE_MS
+        return !backingOff
+    }
 
     /** [goal] when it counts this UTC month at [nowMs]; last month's total is no answer for "this month". */
     fun forMonth(goal: DonationGoal?, nowMs: Long): DonationGoal? = goal?.takeIf { it.month == utcMonth(nowMs) }
@@ -103,10 +116,14 @@ private val Context.donationGoalStore: DataStore<Preferences> by preferencesData
 )
 
 /**
- * The monthly donation goal for Settings' Support card: fetched from stashfm.app at most once a (UTC) day
- * ([refreshIfDue]), kept in its own small DataStore so the card has it straight away next time, and shown only
- * for the month it counts ([goal]). Best effort throughout: offline, a 503, or a reply that isn't a goal leaves the
- * last good one (or none), and the card simply goes without its goal line.
+ * The monthly donation goal for Settings' Support card: fetched from stashfm.app when [DonationGoals.fetchDue] says
+ * so ([refreshIfDue]: one good answer a UTC day, an hour's wait after an ask that got none), kept in its own small
+ * DataStore so the card has it straight away next time, and shown only for the month it counts ([goal]). Best
+ * effort throughout: offline, a 503, or a reply that isn't this month's goal leaves the last good one (or none),
+ * and the card simply goes without its goal line.
+ *
+ * [lock] guards only the quick work (reading the stored state, deciding, stamping), never the network: [goal]
+ * answers from the stored goal at once even while an ask is waiting on a slow site.
  */
 @Singleton
 class DonationGoalRepository(
@@ -114,7 +131,6 @@ class DonationGoalRepository(
     httpClient: OkHttpClient,
     private val url: String,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
@@ -125,12 +141,17 @@ class DonationGoalRepository(
     private val client: OkHttpClient = httpClient.newBuilder().callTimeout(TIMEOUT_S, TimeUnit.SECONDS).build()
 
     private val payloadKey = stringPreferencesKey("payload_json")
-    private val attemptKey = longPreferencesKey("attempted_at_ms")
+    private val goodAtKey = longPreferencesKey("good_at_ms")
+    private val failedAtKey = longPreferencesKey("failed_at_ms")
 
     private val lock = Mutex()
     private val latest = MutableStateFlow<DonationGoal?>(null)
-    private var lastAttemptMs = 0L
+    private var lastGoodMs = 0L
+    private var lastFailedMs = 0L
     private var loaded = false
+
+    /** One ask at a time: a second Settings opening while one is out doesn't send another. */
+    private val inFlight = AtomicBoolean(false)
 
     /** This month's goal, or null (never read, unreadable, or a month that has passed). The stored one first. */
     val goal: Flow<DonationGoal?> = flow {
@@ -139,27 +160,44 @@ class DonationGoalRepository(
     }.distinctUntilChanged()
 
     /**
-     * Asks stashfm.app for the goal if this UTC day hasn't asked yet ([DonationGoals.fetchDue]); a failed ask counts
-     * too, so a phone offline all day asks once. Never throws. True when it asked.
+     * Asks stashfm.app for the goal when it's due ([DonationGoals.fetchDue]). The day is stamped only by a usable
+     * answer for this month; anything else (offline, an error, a bad body, last month's goal) stamps a failure, asked
+     * again an hour later. A cancelled ask stamps nothing. Never throws except to cancel. True when it asked.
      */
-    suspend fun refreshIfDue(): Boolean = lock.withLock {
-        loadOnce()
-        val now = clock()
-        if (!DonationGoals.fetchDue(lastAttemptMs, now)) return@withLock false
-        lastAttemptMs = now
-        persist { it[attemptKey] = now }
-        val raw = fetch() ?: return@withLock true
-        val parsed = DonationGoals.parse(raw)
-        if (parsed == null) {
-            Log.w(TAG, "goal.json isn't a goal")
-            return@withLock true
+    suspend fun refreshIfDue(): Boolean {
+        val now = lock.withLock {
+            loadOnce()
+            val t = clock()
+            if (!DonationGoals.fetchDue(lastGoodMs, lastFailedMs, t)) return false
+            if (!inFlight.compareAndSet(false, true)) return false
+            t
         }
-        latest.value = parsed
-        persist { it[payloadKey] = raw }
-        true
+        try {
+            val raw = fetch()
+            val usable = raw?.let(DonationGoals::parse)?.let { DonationGoals.forMonth(it, now) }
+            lock.withLock {
+                if (usable != null && raw != null) {
+                    latest.value = usable
+                    lastGoodMs = now
+                    lastFailedMs = 0L
+                    persist {
+                        it[payloadKey] = raw
+                        it[goodAtKey] = now
+                        it.remove(failedAtKey)
+                    }
+                } else {
+                    if (raw != null) Log.w(TAG, "goal.json isn't this month's goal")
+                    lastFailedMs = now
+                    persist { it[failedAtKey] = now }
+                }
+            }
+        } finally {
+            inFlight.set(false)
+        }
+        return true
     }
 
-    /** The stored goal and last ask, once per process. Called under [lock]. */
+    /** The stored goal and stamps, once per process. Called under [lock]; a local read, never the network. */
     private suspend fun loadOnce() {
         if (loaded) return
         loaded = true
@@ -169,7 +207,8 @@ class DonationGoalRepository(
             Log.w(TAG, "goal cache unreadable: ${e.message}")
             null
         } ?: return
-        lastAttemptMs = prefs[attemptKey] ?: 0L
+        lastGoodMs = prefs[goodAtKey] ?: 0L
+        lastFailedMs = prefs[failedAtKey] ?: 0L
         latest.value = prefs[payloadKey]?.let(DonationGoals::parse)
     }
 
@@ -181,26 +220,39 @@ class DonationGoalRepository(
         }
     }
 
-    /** The body of a 2xx from [url], or null. */
-    private suspend fun fetch(): String? = withContext(io) {
-        try {
-            val request = Request.Builder().url(url).header("Accept", "application/json").build()
-            client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    Log.w(TAG, "goal.json HTTP ${resp.code}")
-                    null
-                } else {
-                    resp.body?.string()
-                }
+    /**
+     * The body of a 2xx from [url], or null. The call is cancelled with the coroutine (an enqueued call, not a
+     * blocked thread), so leaving Settings mid-ask ends it at once.
+     */
+    private suspend fun fetch(): String? {
+        val call = try {
+            client.newCall(Request.Builder().url(url).header("Accept", "application/json").build())
+        } catch (e: IllegalArgumentException) {
+            // A malformed or empty URL (a fork's build): nothing to ask.
+            Log.w(TAG, "goal.json bad url: ${e.message}")
+            return null
+        }
+        return try {
+            suspendCancellableCoroutine { cont ->
+                cont.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = try {
+                            response.use { r ->
+                                if (r.isSuccessful) r.body?.string() else null.also { Log.w(TAG, "goal.json HTTP ${r.code}") }
+                            }
+                        } catch (e: IOException) {
+                            cont.resumeWithException(e)
+                            return
+                        }
+                        cont.resume(body)
+                    }
+                })
             }
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: IOException) {
             Log.w(TAG, "goal.json unreachable: ${e.message}")
-            null
-        } catch (e: IllegalArgumentException) {
-            // A malformed URL (a fork's build): nothing to ask.
-            Log.w(TAG, "goal.json bad url: ${e.message}")
             null
         }
     }

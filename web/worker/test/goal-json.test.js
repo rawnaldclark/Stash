@@ -79,7 +79,7 @@ test("/goal.json is kept at the edge: the next ask within the cache is answered 
     const first = await handle(get("/goal.json"), e, undefined, { edgeCache: cache });
     assert.equal((await first.json()).raised_cents, 4000);
     assert.equal(cache.puts, 1);
-    assert.deepEqual([...cache.map.keys()], ["https://stashfm.app/goal.json"]);
+    assert.deepEqual([...cache.map.keys()], [`https://stashfm.app/goal.json/${month()}`]);
     // KV changes and goes away: the cached answer still comes back, for any spelling of the URL.
     e.ACCESS_KV.list = async () => {
         throw new Error("KV down");
@@ -89,6 +89,23 @@ test("/goal.json is kept at the edge: the next ask within the cache is answered 
     assert.equal(again.status, 200);
     assert.equal((await again.json()).raised_cents, 4000);
     assert.equal(cache.puts, 1);
+});
+
+test("a new UTC month misses the edge cache: last month's total is never served as this month's", async () => {
+    const clock = freezeClock(Date.UTC(2026, 9, 31, 23, 58, 0));
+    try {
+        const cache = fakeEdgeCache();
+        const e = goalEnv(goalEntry("2026-10", "kofi", "oct", 19000));
+        assert.equal((await (await handle(get("/goal.json"), e, undefined, { edgeCache: cache })).json()).month, "2026-10");
+        // Three minutes later, inside the 10-minute cache: November is its own key.
+        clock.advance(3 * 60_000);
+        forgetGoalCache();
+        const nov = await (await handle(get("/goal.json"), e, undefined, { edgeCache: cache })).json();
+        assert.deepEqual(nov, { raised_cents: 0, goal_cents: 20000, month: "2026-11" });
+        assert.deepEqual([...cache.map.keys()].sort(), ["https://stashfm.app/goal.json/2026-10", "https://stashfm.app/goal.json/2026-11"]);
+    } finally {
+        clock.restore();
+    }
 });
 
 test("/goal.json when KV can't be read: a 503 that nothing keeps", async () => {

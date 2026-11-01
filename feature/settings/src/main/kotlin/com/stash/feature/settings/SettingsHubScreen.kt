@@ -151,10 +151,8 @@ fun SettingsHubScreen(
     ) {
         // No "Settings" title: the tab bar already says where you are.
         val support by supportCard.state.collectAsStateWithLifecycle()
-        val playing by supportCard.playing.collectAsStateWithLifecycle()
         SupportBanner(
             state = support,
-            playing = playing,
             onOpenUrl = onOpenUrl,
             // The perk line opens the Ko-fi claim, which lives under Lossless sources.
             onOpenPerk = onOpenLosslessSources,

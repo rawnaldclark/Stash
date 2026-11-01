@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.supporter.SupporterRepository
 import com.stash.core.data.tipjar.DonationGoal
 import com.stash.core.data.tipjar.DonationGoalRepository
-import com.stash.core.media.PlayerRepository
 import com.stash.data.download.lossless.quota.LosslessAllowance
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
@@ -49,12 +48,11 @@ class SupportCardViewModelTest {
         every { this@mockk.goal } returns this@SupportCardViewModelTest.goal
         coEvery { refreshIfDue() } returns true
     }
-    private val player: PlayerRepository = mockk(relaxed = true)
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun vm() = SupportCardViewModel(goals, supporter, quota, config, player)
+    private fun vm() = SupportCardViewModel(goals, supporter, quota, config)
 
     @Test fun `opening Settings asks for the goal once`() {
         vm()

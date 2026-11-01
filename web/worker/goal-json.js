@@ -6,11 +6,14 @@
  *
  *   { "raised_cents": 16800, "goal_cents": 20000, "month": "2026-11" }
  *
- * Kept at the edge for 10 minutes (the Cache API, keyed on the bare path: the stashfm.app zone's Cache API ignores the
- * query string anyway), so however many phones ask, KV is listed at most once per 10 minutes per data centre. The app
- * asks at most once a day. When KV can't be read: a 503 that is never cached, and the app leaves the line out.
+ * Kept at the edge for 10 minutes (the Cache API), so however many phones ask, KV is listed at most once per 10
+ * minutes per data centre. The cache key is /goal.json/<YYYY-MM> (the UTC month in the PATH: the stashfm.app zone's
+ * Cache API ignores query strings), so at midnight UTC on the 1st the new month misses and is read fresh rather than
+ * last month's total being served for up to 10 more minutes. The app asks once a day (an hour after a failed ask).
+ * When KV can't be read: a 503 that is never cached, and the app leaves the line out.
  */
-import { currentGoal, goalTarget } from "./goal.js";
+import { clock } from "./crypto.js";
+import { currentGoal, goalTarget, monthKey } from "./goal.js";
 
 /** How long the edge and the browser keep an answer. */
 export const GOAL_JSON_MAX_AGE_S = 600;
@@ -30,6 +33,9 @@ export function goalJsonBody(goal, target) {
     return { raised_cents: raised, goal_cents: target, month: goal.month };
 }
 
+/** The edge cache's key for [month]'s answer: the month in the path, which the zone's Cache API does key on. */
+export const goalCacheKey = (requestUrl, month) => new Request(new URL(`/goal.json/${month}`, requestUrl).toString(), { method: "GET" });
+
 const json = (body, status, cacheControl) =>
     new Response(JSON.stringify(body), {
         status,
@@ -43,8 +49,8 @@ const json = (body, status, cacheControl) =>
 export async function goalJson(request, env, method, later, cache) {
     if (method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, OPTIONS", ...CORS } });
-    // One key for every spelling of the URL: no query, no cookies, always a GET.
-    const key = new Request(new URL("/goal.json", request.url).toString(), { method: "GET" });
+    // One key per UTC month for every spelling of the URL: no query, no cookies, always a GET.
+    const key = goalCacheKey(request.url, monthKey(new Date(clock.now())));
     if (cache) {
         try {
             const hit = await cache.match(key);

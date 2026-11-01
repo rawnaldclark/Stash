@@ -5,8 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.supporter.SupporterRepository
 import com.stash.core.data.tipjar.DonationGoalRepository
-import com.stash.core.media.PlayerRepository
-import com.stash.core.ui.ambient.tintedWhilePlaying
 import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.feature.settings.components.SupportCardState
@@ -23,7 +21,7 @@ import kotlinx.coroutines.launch
 /**
  * Feeds Settings' Support card ([com.stash.feature.settings.components.SupportBanner]): the supporter state (the
  * same flow as Lossless sources' row, [supporterRows]) with this month's goal ([DonationGoalRepository], asked of
- * stashfm.app at most once a day), and whether a song is playing, for the album colour.
+ * stashfm.app when due). Whether a song plays (the album colour) is the app-wide AlbumChrome.tint, read by the card.
  */
 @HiltViewModel
 class SupportCardViewModel @Inject constructor(
@@ -31,22 +29,13 @@ class SupportCardViewModel @Inject constructor(
     supporter: SupporterRepository,
     quota: LosslessQuota,
     config: LosslessConfigFetcher,
-    playerRepository: PlayerRepository,
 ) : ViewModel() {
 
     val state: StateFlow<SupportCardState> = combine(supporterRows(quota, config, supporter), goals.goal) { row, goal -> supportCardState(row, goal) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SupportCardState())
 
-    /**
-     * Whether a song is playing, by the rule the wordmark and the selected tab follow ([tintedWhilePlaying]): the card
-     * wears the album colour then, and is neutral otherwise.
-     */
-    val playing: StateFlow<Boolean> = playerRepository.playerState
-        .tintedWhilePlaying()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
     init {
-        // Settings opens: the goal is asked for if today hasn't asked yet (the repository keeps it to once a day).
+        // Settings opens: the goal is asked for when it's due (one good answer a day, an hour after a failed ask).
         viewModelScope.launch {
             try {
                 goals.refreshIfDue()

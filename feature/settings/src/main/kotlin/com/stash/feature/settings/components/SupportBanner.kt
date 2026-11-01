@@ -1,9 +1,6 @@
 package com.stash.feature.settings.components
 
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -56,18 +53,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import com.stash.core.ui.ambient.ALBUM_CROSSFADE_MS
-import com.stash.core.ui.ambient.ALBUM_CROSSFADE_REDUCED_MS
 import com.stash.core.ui.ambient.LocalAlbumChrome
-import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
 
 /**
  * Settings' Support card, at the top of the hub (owner 2026-11-01: "hasn't changed since MVP"). The Settings glass
- * (the group cards' fill, hairline and shape) with, while a song plays, a soft wash of the album colour from the top
- * and the album's accent on the bar and the button; neutral (the theme's ink) otherwise, crossfading as the rest of
- * the app's chrome does.
+ * (the group cards' fill, hairline and shape) with, while a song plays, the album's wash from the top and its accent
+ * on the bar and the button; neutral (the theme's ink) otherwise. How far is `AlbumChrome.tint`, the app-wide fade
+ * the wordmark and the tab bar follow, so the card is already in step when Settings opens and turns with them.
  *
  * Top to bottom: the two people who make Stash (their pictures, overlapping) beside "Support Stash" and one line;
  * this month's goal, "$168 of $200 this month" over a thin bar, when the site gave a number ([SupportCardState.goal]);
@@ -75,13 +69,11 @@ import com.stash.feature.settings.R
  * [DonateSheet]. A supporter ([SupportPerk.Supporter]) gets thanks and their status instead of the ask, and a quieter
  * "Donate again". "Star on GitHub" lives in Settings › About now.
  *
- * [playing]: a song is playing (the wordmark's rule), so the card wears its album colour. Every link the sheet
- * shows goes through [onOpenUrl]; [onOpenPerk] opens Lossless sources, where the claim is.
+ * Every link the sheet shows goes through [onOpenUrl]; [onOpenPerk] opens Lossless sources, where the claim is.
  */
 @Composable
 fun SupportBanner(
     state: SupportCardState,
-    playing: Boolean,
     onOpenUrl: (String) -> Unit,
     onOpenPerk: () -> Unit,
     modifier: Modifier = Modifier,
@@ -94,12 +86,7 @@ fun SupportBanner(
     val ext = StashTheme.extendedColors
     val scheme = MaterialTheme.colorScheme
     val chrome = LocalAlbumChrome.current
-    val fadeMs = if (rememberReducedMotion()) ALBUM_CROSSFADE_REDUCED_MS else ALBUM_CROSSFADE_MS
-    val tint by animateFloatAsState(
-        targetValue = if (playing) 1f else 0f,
-        animationSpec = tween(fadeMs, easing = FastOutSlowInEasing),
-        label = "supportCardTint",
-    )
+    val tint = chrome.tint
     // Neutral: the theme's own ink (white on dark, aubergine on light) with the page's colour on it.
     val accent = lerp(scheme.onSurface, chrome.accent, tint)
     val onAccent = lerp(scheme.surface, chrome.onAccent, tint)
@@ -112,10 +99,11 @@ fun SupportBanner(
             .fillMaxWidth()
             .clip(shape)
             .background(ext.glassBackground)
-            // The album's wash, read at draw time so its crossfade only redraws: nothing while no song plays.
+            // The album's wash (AlbumChrome.wash, its own strength) from the top, read at draw time so a song change
+            // only redraws it; none while no song plays.
             .drawBehind {
-                val wash = chrome.accent.copy(alpha = WASH_ALPHA * tint)
-                drawRect(Brush.verticalGradient(listOf(wash, Color.Transparent)))
+                val wash = chrome.wash
+                drawRect(Brush.verticalGradient(listOf(wash.copy(alpha = wash.alpha * chrome.tint), Color.Transparent)))
             }
             .border(BorderStroke(1.dp, ext.glassBorder), shape)
             .padding(16.dp),
@@ -240,6 +228,7 @@ private fun PerkLine(ink: Color, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(MaterialTheme.shapes.small)
             .clickable(onClickLabel = label, onClick = onClick)
             .padding(vertical = 4.dp),
@@ -265,6 +254,3 @@ private fun PerkLine(ink: Color, onClick: () -> Unit) {
 private val AvatarSize = 36.dp
 private val AvatarOverlap = 10.dp
 private val GoalBarHeight = 6.dp
-
-/** How strong the album's wash is at the top of the card while a song plays. */
-private const val WASH_ALPHA = 0.16f
