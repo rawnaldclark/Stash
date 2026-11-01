@@ -883,6 +883,44 @@ class NowPlayingViewModelTransientTrackTest {
         coVerify { musicRepository.setMatchFlagged(900L, true) }
     }
 
+    @Test fun `flag goes straight to the fix on the persisted row, no toast pointing to Sync`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        turbineScope {
+            val fixes = vm.matchFixEvents.testIn(backgroundScope)
+            val messages = vm.userMessages.testIn(backgroundScope)
+            vm.flagCurrentTrackAsWrongMatch()
+            advanceUntilIdle()
+
+            // The persisted id, not the stream's transient one: Failed Matches lists the row by it.
+            assertEquals(900L, fixes.awaitItem())
+            messages.expectNoEvents()
+            fixes.cancelAndIgnoreRemainingEvents()
+            messages.cancelAndIgnoreRemainingEvents()
+        }
+        coVerify { musicRepository.setMatchFlagged(900L, true) }
+    }
+
+    @Test fun `a flag that couldn't be saved opens nothing and says so`() = runTest(dispatcher) {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } throws IllegalStateException("db")
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        turbineScope {
+            val fixes = vm.matchFixEvents.testIn(backgroundScope)
+            val messages = vm.userMessages.testIn(backgroundScope)
+            vm.flagCurrentTrackAsWrongMatch()
+            advanceUntilIdle()
+
+            assertEquals("Couldn't flag this song.", messages.awaitItem())
+            fixes.expectNoEvents()
+            fixes.cancelAndIgnoreRemainingEvents()
+            messages.cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 0) { musicRepository.setMatchFlagged(any(), any()) }
+    }
+
     @Test fun `delete of a stream not in the library does nothing and says so`() = runTest(dispatcher) {
         val vm = newViewModel()
         advanceUntilIdle()

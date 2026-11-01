@@ -52,6 +52,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
@@ -180,6 +181,16 @@ class FailedMatchesViewModel @Inject constructor(
          * request either way; this keeps the list short enough to scan.
          */
         private const val MANUAL_YOUTUBE_RESULTS = 10
+
+        /**
+         * How long [openFinderFor] waits for the song to reach the lists. Now Playing saves the
+         * flag before it opens this screen, so Room's first answer already has it; this only
+         * bounds a song that never arrives, which then opens nothing.
+         */
+        internal const val FOCUS_WAIT_MS = 5_000L
+
+        /** Said when [openFinderFor]'s song never reached the lists. */
+        internal const val FOCUS_NOT_FOUND_MESSAGE = "Couldn't find that song in Failed matches"
 
         private val BRACKETED = Regex("""[\(\[][^)\]]*[\)\]]""")
         private val NOT_A_WORD = Regex("""[^\p{L}\p{N}]+""")
@@ -978,6 +989,43 @@ class FailedMatchesViewModel @Inject constructor(
         closeManualSearch()
         if (!wasOpenHere) startManualSearch(trackId, manualSearchQuery(artist, title))
     }
+
+    /**
+     * Opens "find it yourself" under [trackId]'s row, searched for its artist and title: the
+     * jump from Now Playing's "Find a better match" (the screen's `focusTrackId`). The song was
+     * flagged a moment before this screen opened, so this waits for it to reach one of the lists
+     * (the flagged one, usually), for at most [FOCUS_WAIT_MS]; a song that never arrives opens
+     * nothing and says so ([FOCUS_NOT_FOUND_MESSAGE]). Unlike [toggleManualSearch], it never closes or takes over an open finder: one
+     * open by then is the listener's own (this screen opened with none).
+     */
+    fun openFinderFor(trackId: Long) {
+        focusJob?.cancel()
+        focusJob = viewModelScope.launch {
+            val state = withTimeoutOrNull(FOCUS_WAIT_MS) {
+                uiState.first { s ->
+                    !s.isLoading &&
+                        (s.flaggedTracks.any { it.trackId == trackId } || s.tracks.any { it.trackId == trackId })
+                }
+            } ?: run {
+                Log.w(TAG, "find it yourself: trackId=$trackId never reached Failed Matches; nothing opened")
+                // Said, not just logged: the listener came here for this song.
+                _userMessages.trySend(FOCUS_NOT_FOUND_MESSAGE)
+                return@launch
+            }
+            if (_manualSearch.value != null) return@launch
+            // A song in both lists at once is the flagged one, as in pickManualMatch.
+            val flagged = state.flaggedTracks.firstOrNull { it.trackId == trackId }
+            val (artist, title) = if (flagged != null) {
+                flagged.artist to flagged.title
+            } else {
+                state.tracks.first { it.trackId == trackId }.let { it.artist to it.title }
+            }
+            startManualSearch(trackId, manualSearchQuery(artist, title))
+        }
+    }
+
+    /** The wait in [openFinderFor]; a newer jump replaces it. */
+    private var focusJob: Job? = null
 
     /** Searches for [query] in the open finder (the keyboard's Search key). Again for the same words retries. */
     fun searchManually(query: String) {
