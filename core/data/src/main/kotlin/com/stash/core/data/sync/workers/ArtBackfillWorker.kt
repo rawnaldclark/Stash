@@ -6,7 +6,6 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -19,6 +18,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmLookupRules
 import com.stash.core.data.lastfm.LastFmTrackInfo
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.model.YouTubeVideoId
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -123,12 +123,17 @@ class ArtBackfillWorker @AssistedInject constructor(
          */
         fun enqueueFromMixRefresh(context: Context) = enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
 
+        /**
+         * Any connection; only Wi-Fi while Data saver is on ([backgroundNetworkType]): a pass is up
+         * to [BATCH_SIZE] Last.fm look-ups nobody is waiting on.
+         */
+        internal fun constraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn))
+            .build()
+
         private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
             val work = OneTimeWorkRequestBuilder<ArtBackfillWorker>()
-                .setConstraints(constraints)
+                .setConstraints(constraints(DataSaverSnapshot.isOn(context)))
                 .build()
             val workManager = WorkManager.getInstance(context)
             workManager.cancelUniqueWork(RETIRED_MIX_REFRESH_WORK_NAME)

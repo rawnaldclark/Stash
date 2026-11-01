@@ -16,6 +16,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.lastfm.isTransientLastFmFailure
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -59,17 +60,26 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
         /** Transient failures in a row that end the batch early (Last.fm or the network is down). */
         private const val MAX_CONSECUTIVE_ERRORS = 5
 
+        /** The daily pass: battery not low, any connection; Wi-Fi while Data saver is on. */
+        internal fun periodicConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn))
+            .build()
+
+        /**
+         * The first-launch pass (queued by the app at start, so a fresh install doesn't wait a day):
+         * no constraint, as before, except Wi-Fi while Data saver is on.
+         */
+        fun firstRunConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn, otherwise = NetworkType.NOT_REQUIRED))
+            .build()
+
         suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<TrackInfoEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiresBatteryNotLow(true)
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
+                .setConstraints(periodicConstraints(DataSaverSnapshot.isOn(context)))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,

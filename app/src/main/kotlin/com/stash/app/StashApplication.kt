@@ -49,6 +49,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -155,6 +156,9 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var streamingQualityPreferences: com.stash.data.download.prefs.StreamingQualityPreferences
+
+    @Inject
+    lateinit var dataSaverBackgroundWork: com.stash.core.data.sync.workers.DataSaverBackgroundWork
 
     @Inject
     lateinit var connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor
@@ -552,7 +556,13 @@ class StashApplication : Application(), Configuration.Provider {
             WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                 "stash_track_info_enrichment_oneshot",
                 androidx.work.ExistingWorkPolicy.KEEP,
-                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
+                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>()
+                    .setConstraints(
+                        TrackInfoEnrichmentWorker.firstRunConstraints(
+                            com.stash.core.data.prefs.DataSaverSnapshot.isOn(this@StashApplication),
+                        ),
+                    )
+                    .build(),
             )
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
@@ -596,6 +606,14 @@ class StashApplication : Application(), Configuration.Provider {
         // quality inherits their download choice instead of silently changing.
         // migrateIfNeeded() is internally idempotent (no-op after first run).
         applicationScope.launch { streamingQualityPreferences.migrateIfNeeded() }
+        // Data saver: mirror the switch for the callers that can't suspend (worker constraints,
+        // picture sizes) and re-schedule the periodic art/metadata workers whenever it flips. For
+        // the app's lifetime; the first value also repairs a mirror a restore left stale.
+        applicationScope.launch {
+            streamingQualityPreferences.saveData
+                .distinctUntilChanged()
+                .collect { dataSaverBackgroundWork.onSwitch(it) }
+        }
         // Auto-enqueue the v0.9.35 metadata backfill once per version.
         // Idempotent (re-installing the same binary does not re-enqueue).
         applicationScope.launch {

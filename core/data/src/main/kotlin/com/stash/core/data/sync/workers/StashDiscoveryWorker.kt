@@ -17,6 +17,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DiscoveryQueueDao
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
@@ -121,6 +122,17 @@ class StashDiscoveryWorker @AssistedInject constructor(
         private const val PENDING_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
         /**
+         * The daily drain's constraints: [mode]'s, except that "Any network" waits for Wi-Fi while
+         * Data saver is on (the drain's catalog look-ups are background work). The two Wi-Fi modes
+         * are unchanged. The one-shot drains ([enqueueOneTime]) follow a mix the user made or asked
+         * for, and keep their constraints.
+         */
+        internal fun periodicConstraints(mode: DownloadNetworkMode, dataSaverOn: Boolean): Constraints =
+            constraintsFor(
+                if (dataSaverOn && mode == DownloadNetworkMode.ANY_NETWORK) DownloadNetworkMode.WIFI_ANY else mode,
+            )
+
+        /**
          * Schedule / re-schedule the periodic worker with [mode]'s
          * constraints. Uses `UPDATE` policy so a running schedule is
          * replaced in place when the user changes their download-network
@@ -132,7 +144,7 @@ class StashDiscoveryWorker @AssistedInject constructor(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(constraintsFor(mode))
+                .setConstraints(periodicConstraints(mode, DataSaverSnapshot.isOn(context)))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,
