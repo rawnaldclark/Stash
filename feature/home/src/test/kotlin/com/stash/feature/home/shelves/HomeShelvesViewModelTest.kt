@@ -1,6 +1,7 @@
 package com.stash.feature.home.shelves
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.home.MoodsRepository
 import com.stash.core.data.home.NewFromArtistsRepository
 import com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS
 import com.stash.core.data.prefs.HomeSection
@@ -8,6 +9,7 @@ import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.MoodTile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,11 +52,16 @@ class HomeShelvesViewModelTest {
         onBlocking { cached() } doReturn saved
         onBlocking { shelf() } doReturn releases
     }
+    private val tiles = listOf(MoodTile("Chill", "ggMPOg1uX1JOQWZFeDByc2Jm", 4288988671L))
+    private val moods = mock<MoodsRepository> {
+        onBlocking { cached() } doReturn emptyList()
+        onBlocking { tiles() } doReturn tiles
+    }
     private val streaming = mock<StreamingPreference> { on { enabled } doReturn online }
     private val sections = mock<HomeSectionsPreference> { on { visibleSections } doReturn visible }
     private val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
 
-    private fun viewModel() = HomeShelvesViewModel(newFromArtists, streaming, sections, connectivity)
+    private fun viewModel() = HomeShelvesViewModel(newFromArtists, moods, streaming, sections, connectivity)
 
     @Test
     fun `shown and online, the row is built and shown`() = runTest(dispatcher) {
@@ -118,6 +125,22 @@ class HomeShelvesViewModelTest {
         runCurrent()
         assertThat(cancelled).isTrue()
         assertThat(vm.state.value.newFromArtists).isEmpty()
+    }
+
+    @Test
+    fun `each shelf follows its own section - moods hidden costs nothing while your artists' row loads`() = runTest(dispatcher) {
+        visible.value = DEFAULT_HOME_SECTIONS - HomeSection.MOODS
+        val vm = viewModel()
+        backgroundScope.launch { vm.state.collect {} }
+        runCurrent()
+        assertThat(vm.state.value.newFromArtists).isEqualTo(releases)
+        assertThat(vm.state.value.moods).isEmpty()
+        verifyBlocking(moods, never()) { tiles() }
+        visible.value = DEFAULT_HOME_SECTIONS
+        runCurrent()
+        assertThat(vm.state.value.moods).isEqualTo(tiles)
+        // Only the shelf that was turned on loads again
+        verifyBlocking(newFromArtists, times(1)) { shelf() }
     }
 
     @Test

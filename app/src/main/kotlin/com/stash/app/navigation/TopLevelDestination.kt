@@ -133,6 +133,13 @@ data class SearchAlbumRoute(
 @Serializable
 data class PlaylistBrowseRoute(val genre: String = "All")
 
+/**
+ * A mood's page from Home's "Moods & moments": YouTube Music's playlists for the tile named [title], opened with its
+ * [params] (`MoodViewModel` reads both by these property names).
+ */
+@Serializable
+data class MoodRoute(val title: String, val params: String)
+
 /** "See all" browse of one Home mix rail; [rail] is a [MixRail] name. */
 @Serializable
 data class MixBrowseRoute(val rail: String)

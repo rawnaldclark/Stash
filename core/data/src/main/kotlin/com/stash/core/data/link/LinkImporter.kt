@@ -186,7 +186,7 @@ class LinkImporter @Inject constructor(
                 coverUrl = header?.thumbnailUrl,
                 service = YOUTUBE,
                 songs = tracks.tracks.map { it.wire() },
-                sourceId = "${PLAYLIST_PREFIX}yt_$id",
+                sourceId = youTubePlaylistSourceId(id),
                 partial = tracks.partial,
             ),
         )
@@ -224,6 +224,13 @@ class LinkImporter @Inject constructor(
 
         /** A playlist from a link: CUSTOM, shown by Library like every `custom_%` playlist. */
         const val PLAYLIST_PREFIX = "custom_link_"
+
+        /**
+         * The library playlist that keeps YouTube Music playlist [playlistId] (with or without its `VL` browse
+         * prefix): one key whether it came from a pasted link or the album page (Home's Moods & moments), so
+         * saving it twice files it once.
+         */
+        fun youTubePlaylistSourceId(playlistId: String): String = "${PLAYLIST_PREFIX}yt_${playlistId.removePrefix("VL")}"
 
         /** The playlist songs pasted one at a time go into. */
         const val SONGS_SOURCE_ID = "custom_link_songs"

@@ -66,7 +66,14 @@ enum class HomeSection(val key: String) {
      * nothing without listening history. Above the catalogs, your artists' releases before everyone's: a saved
      * order without it gets it there ([ADDED_SECTION_ANCHORS]).
      */
-    NEW_FROM_ARTISTS("new_from_artists");
+    NEW_FROM_ARTISTS("new_from_artists"),
+
+    /**
+     * "Moods & moments": YouTube Music's mood tiles, each opening a page of its playlists
+     * ([com.stash.core.data.home.MoodsRepository]). Works signed out and with no history, so a brand-new Home has music
+     * two taps away. Streaming content, hidden in Offline mode. Under New from your artists, above the catalogs.
+     */
+    MOODS("moods");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
@@ -116,6 +123,8 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
 internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> = listOf(
     // Your artists' new releases right above everyone's (Qobuz's New Releases, then the other catalogs)
     HomeSection.NEW_FROM_ARTISTS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
+    // The way into music without any history, above the catalogs (so under New from your artists when both are new)
+    HomeSection.MOODS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
 )
 
 /** [order] with each of [ADDED_SECTION_ANCHORS]' sections that the saved order was [missing] moved to its place. */
