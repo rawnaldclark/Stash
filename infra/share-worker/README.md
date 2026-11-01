@@ -11,6 +11,7 @@ Stores shared Stash mixes and songs and serves their links. See `docs/superpower
 - Song page previews (`src/art.js`): the og:image is the sharer's art, else Spotify oEmbed (moved to `i.scdn.co` at 640 px), else Deezer by ISRC, else YouTube's `hqdefault`, else none, with og:image:width/height when the size is known. Spotify and Deezer are asked at once (Spotify wins), each giving up after 2 s, and never fail the page. A short link's lookup result is written back (found art, or a miss that isn't retried for 6 h); a legacy `/t?…` link's is cached in the Cache API, a find for a day and a miss for 6 h (the Cache API does nothing on workers.dev, so there every view looks up again, within `ART_RL`). Cover URLs are stored and shown in their parsed form (`new URL(…).href`); ones with credentials or a port are dropped.
 - Listen Together rooms (spec `docs/superpowers/specs/2026-09-24-listen-together-design.md`): Durable Object `ListenRoom`, bound as `ROOMS`, one per room code (`idFromName(code)`). `src/room.js` is the pure logic; `src/listen-room.js` wraps it (storage key `room`, one alarm, WebSocket Hibernation). Routes: `POST /v1/rooms` (`ROOM_RL`, 5/min per IP), `GET /v1/rooms/{code}`, `GET /v1/rooms/{code}/ws` (`?r=1` = rejoining with a resume token), `GET /l/{code}`. Codes are 8 characters, and the three `{code}` routes share `JOIN_RL` (60/min per IP, checked before the Durable Object is reached) so live rooms can't be found by guessing codes. A room keeps display names, song descriptors and the host key's SHA-256; everything is deleted when it closes (5 min after the last member leaves, or 12 h after creation).
 - Stash Community (spec `docs/superpowers/specs/2026-09-26-stash-community-design.md`): D1 database `stash-community`, bound as `COMMUNITY_DB`, schema in `migrations/`. `src/community-post.js` is the pure part (cleaning a post, summarising a row); `src/community.js` holds the routes and all the Worker's SQL. Routes: `GET /v1/community/feed`, `GET /v1/community/mine`, `GET /v1/community/me`, `POST /v1/community/posts`, `GET|DELETE /v1/community/posts/{id}`, `PUT /v1/community/posts/{id}/vote`. A phone is identified by `X-Stash-Community-Key` (only its SHA-256 is stored); a network is a salted hash (`COMMUNITY_SALT` secret) of the IPv4 address or IPv6 /56. Limits: 2 posts a day and 5 live per phone, 10 a day per network, 2 counted votes per network per post each way; `COMMUNITY_WRITE_RL` 10/min, `COMMUNITY_VOTE_RL` 60/min, `COMMUNITY_READ_RL` 120/min, each per network. A daily cron (`17 4 * * *`) deletes expired and long-removed posts.
+- Proxy key (`SHARE_PROXY_KEY` secret, optional): the web player's Worker (play.stashfm.app) passes its listeners' calls on server to server, so they all arrive with the player's own `CF-Connecting-IP`. With the same secret on both Workers, the player adds `X-Stash-Proxy-Key` and the listener's `X-Stash-Client-IP`, and every per-IP limit above, the daily budgets and Community's per-network caps count that listener instead (`clientAddress` in `src/http.js`; IPv6 still by its /56). The forwarded address is used only when the key equals the secret (constant-time compare) and the address is a well-formed IPv4 or IPv6 address. A secret the player would refuse (under 32 characters, or outside `A-Za-z0-9_-.~+/=`) counts as unset. Unset, or for any other caller (a browser sending the headers itself, a wrong key): `CF-Connecting-IP`, as before.
 
 ## Deploy
 
@@ -31,6 +32,21 @@ npx wrangler d1 migrations apply stash-community --remote
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))" | npx wrangler secret put COMMUNITY_SALT
 npx wrangler deploy
 ```
+
+### Proxy key (web player)
+
+Generated, never typed or committed, and the same value on both Workers. This Worker goes first: until it has the key and the code that reads it, the headers would carry listeners' addresses to a service that ignores them. Either half alone changes nothing else. `wrangler secret put` makes the secret live on the Worker's current version at once.
+
+```bash
+KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")   # 43 characters, only in this shell
+printf %s "$KEY" | npx wrangler secret put SHARE_PROXY_KEY                               # 1. here, infra/share-worker
+npm test && npx wrangler deploy                                                          # 2. this Worker's code that reads it
+# 3. the player (its own account), then deploy the player
+(cd <stash-player checkout> && printf %s "$KEY" | CLOUDFLARE_ACCOUNT_ID=<player account> npx wrangler secret put SHARE_PROXY_KEY --env production)
+unset KEY
+```
+
+Rotating it: put a new value on both Workers, this one first. In between, the player's calls fall back to one shared connection (never an error). To turn it off, `npx wrangler secret delete SHARE_PROXY_KEY` on either side.
 
 ### stashfm.app (first deploy with the route)
 
