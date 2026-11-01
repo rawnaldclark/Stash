@@ -12,7 +12,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.DownloadMode
 import com.stash.core.model.QualityTier
 import com.stash.data.download.lossless.LosslessQualityTier
-import com.stash.feature.settings.components.BetaPill
 import com.stash.feature.settings.components.SettingsChoice
 import com.stash.feature.settings.components.SettingsChoiceSheet
 import com.stash.feature.settings.components.SettingsGroupCard
@@ -31,7 +30,7 @@ private enum class QualitySheet { WIFI, CELLULAR, DOWNLOAD_MODE, FLAC_TIER, YOUT
  * and where lossless comes from lives on its own page.
  *
  *  - Streaming: the Lossless switch, Lossless sources, per-network FLAC tier,
- *    Save Data, Prefer Tidal AAC.
+ *    Data saver, Prefer Tidal AAC.
  *  - Downloads: the format, and only the switches that format uses.
  *  - Output: Hi-Res output and the Equalizer.
  *
@@ -61,7 +60,7 @@ fun SettingsAudioQualityScreen(
 
     val lossless = uiState.losslessEnabled
     val mode = uiState.downloadMode
-    val saveData = uiState.streamingSaveData
+    val dataSaver = uiState.streamingSaveData
 
     SettingsScaffold(title = stringResource(R.string.settings_audio_quality_title), onBack = onBack, modifier = modifier) {
         // -- Streaming ---------------------------------------------------------
@@ -96,21 +95,24 @@ fun SettingsAudioQualityScreen(
             }
         }
         if (lossless) {
-            // Save Data is the master override: it forces CD on every network,
-            // so the per-network rows read CD and step aside while it is on.
+            // Data saver only acts on mobile data (a metered network): Wi-Fi keeps its tier, and
+            // the mobile row, which no FLAC follows while it is on, names it and steps aside.
             streaming += {
                 SettingsValueRow(
                     title = stringResource(R.string.settings_on_wifi),
-                    value = (if (saveData) LosslessQualityTier.CD else uiState.streamingWifiTier).shortLabel(),
-                    enabled = !saveData,
+                    value = uiState.streamingWifiTier.shortLabel(),
                     onClick = { sheet = QualitySheet.WIFI },
                 )
             }
             streaming += {
                 SettingsValueRow(
                     title = stringResource(R.string.settings_on_cellular),
-                    value = (if (saveData) LosslessQualityTier.CD else uiState.streamingCellularTier).shortLabel(),
-                    enabled = !saveData,
+                    value = if (dataSaver) {
+                        stringResource(R.string.settings_save_data_title)
+                    } else {
+                        uiState.streamingCellularTier.shortLabel()
+                    },
+                    enabled = !dataSaver,
                     onClick = { sheet = QualitySheet.CELLULAR },
                 )
             }
@@ -118,14 +120,12 @@ fun SettingsAudioQualityScreen(
         streaming += {
             SettingsToggleRow(
                 title = stringResource(R.string.settings_save_data_title),
-                // Lossless stays lossless: Save Data is the LOWEST lossless tier,
-                // not a drop to lossy. With lossless off it trims JioSaavn and YouTube.
-                subtitle = stringResource(
-                    if (lossless) R.string.settings_save_data_lossless_subtitle else R.string.settings_save_data_subtitle,
-                ),
-                checked = saveData,
+                // One sentence, whatever Lossless is: what it changes and where. The streaming
+                // details (no FLAC with Lossless on, the lowest lossy quality with it off) live in
+                // StreamQualityPolicy; the user needs "smaller on mobile data, downloads unaffected".
+                subtitle = stringResource(R.string.settings_data_saver_subtitle),
+                checked = dataSaver,
                 onCheckedChange = viewModel::onStreamingSaveDataChanged,
-                titleTrailing = { BetaPill() },
             )
         }
         if (lossless) {

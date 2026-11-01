@@ -211,7 +211,6 @@
     <string name="settings_youtube_quality_title">YouTube 음질</string>
     <string name="settings_download_quality_rates_desc">YouTube 다운로드 음질은 아래에 설정된 음질을 적용하며, JioSaavn 다운로드 음질은 낮음 및 보통에서 96kbps, 높음에서 160kbps, 최고 및 최대에서 320kbps로 설정됩니다</string>
     <string name="settings_save_data_title">데이터 절약</string>
-    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
     <string name="settings_lossless_title">무손실</string>
     <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
@@ -244,7 +243,6 @@
     <string name="settings_streaming_section">스트리밍</string>
     <string name="settings_on_wifi">Wi-Fi 사용 중</string>
     <string name="settings_on_cellular">모바일 데이터 사용 중</string>
-    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
     <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
     <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">스트리밍 시 Tidal AAC 선호</string>
