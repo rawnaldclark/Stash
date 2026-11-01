@@ -150,6 +150,9 @@ class MirrorEngine internal constructor(
         val auth: DeviceAuth get() = DeviceAuth(id.deviceId, id.token)
         var pendingLikes: SongIndex<Boolean>? = null
         var pushDigest: String? = null
+
+        /** A browser's live likes this run sent on to the services ([MAX_LIKES_ONWARD] at most). */
+        var likesOnward = 0
     }
 
     /** The service said no: [error] is its answer. */
@@ -668,14 +671,17 @@ class MirrorEngine internal constructor(
     private suspend fun applyToLibrary(c: Ctx, device: String, ops: List<MirrorOp>) {
         val r = c.r
         val cfg = c.cfg
+        // Read live from the log, from a browser: these go on through the phone's own switches (likes to the services, plays to
+        // YouTube Music history). Another phone's never do: it sends its own.
+        val live = c.roster[device] == TYPE_WEB
         if (joinedNow(c, Kind.LIKES) && cfg.likes.dir.phoneApplies) {
             val likes = ops.filterIsInstance<MirrorOp.Like>()
-            if (likes.isNotEmpty()) applyLikeOps(c, likes)
+            if (likes.isNotEmpty()) applyLikeOps(c, likes, live)
         }
         if (joinedNow(c, Kind.PLAYS) && cfg.plays.dir.phoneApplies) {
             val adds = mutableListOf<PlayRec<WireSong>>()
             suspend fun flush() {
-                if (adds.isNotEmpty()) lib.addPlays(adds.toList())
+                if (adds.isNotEmpty()) lib.addPlays(adds.toList(), live)
                 adds.clear()
             }
             for (o in ops) {
@@ -707,8 +713,12 @@ class MirrorEngine internal constructor(
         }
     }
 
-    /** Remote like ops: the base takes the newer stamp; the library follows, except songs changed here and not sent yet. */
-    private suspend fun applyLikeOps(c: Ctx, ops: List<MirrorOp.Like>) {
+    /**
+     * Remote like ops: the base takes the newer stamp; the library follows, except songs changed here and not sent yet. [live]:
+     * a browser's ops read from the log, which also go on to the services (see [onward]). A first merge, a snapshot or a
+     * release of held unlikes never does.
+     */
+    private suspend fun applyLikeOps(c: Ctx, ops: List<MirrorOp.Like>, live: Boolean = false) {
         val recs = c.r.baseLikes.toMutableList()
         val idx = SongIndex.of(recs.mapIndexed { i, x -> x.s to i })
         val touched = LinkedHashMap<Int, WireSong>()
@@ -728,8 +738,22 @@ class MirrorEngine internal constructor(
         c.r.baseLikes = recs
         val on = touched.filterKeys { recs[it].on }.values.toList()
         val off = touched.filterKeys { !recs[it].on }.values.toList()
-        if (on.isNotEmpty() || off.isNotEmpty()) lib.setLikes(on, off, wall(c))
+        val send = if (live) onward(c, touched.values.toList()) else emptySet()
+        if (on.isNotEmpty() || off.isNotEmpty()) lib.setLikes(on, off, wall(c), send)
         settleUnheld(c, on)
+    }
+
+    /**
+     * The first of a browser's live like changes this run, up to [MAX_LIKES_ONWARD] (owner's decision 3): a run that reads many
+     * at once (a phone back after days away, a bulk edit on the web) sends only those, the bulk write the services flag most.
+     * The rest stay Stash likes here; a heart made on this phone still goes as always.
+     */
+    private fun onward(c: Ctx, songs: List<WireSong>): Set<WireSong> {
+        val room = (MAX_LIKES_ONWARD - c.likesOnward).coerceAtLeast(0)
+        val picked = songs.take(room)
+        c.likesOnward += picked.size
+        if (picked.size < songs.size) Log.i(TAG, "${songs.size - picked.size} like change(s) from the web not sent on: $MAX_LIKES_ONWARD a run at most")
+        return picked.toSet()
     }
 
     /**
@@ -1212,6 +1236,9 @@ class MirrorEngine internal constructor(
 
         /** Plays a first merge sends at most (spec §7.2). */
         const val FIRST_PLAYS = 5_000
+
+        /** A browser's live likes and unlikes one run sends on to Spotify, YouTube Music and Last.fm at most (owner's decision 3). */
+        const val MAX_LIKES_ONWARD = 20
 
         /** How far behind now the plays base's floor stays (a play is recorded when it ends, with when it started). */
         const val FLOOR_LAG_MS = 2L * 86_400_000

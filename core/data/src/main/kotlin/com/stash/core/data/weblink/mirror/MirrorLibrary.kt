@@ -22,16 +22,20 @@ data class PutPlaylist(val id: Long, val held: List<Boolean>)
 data class LocalVersion(val name: String, val items: List<WireSong>, val follow: Follow?, val ro: Boolean)
 
 /**
- * The phone's library as the mirror reads and writes it (spec §7; sync-v1 §7). Writes never fan out: a mirrored like is a Stash
- * like (never sent to Spotify or YouTube Music), an unlike only clears a Stash like, and a play from another device goes into
- * History marked with its origin (never scrobbled, never fed to mixes).
+ * The phone's library as the mirror reads and writes it (spec §7; sync-v1 §7). A mirrored like is a Stash like, an unlike only
+ * clears a Stash like, and a play from another device goes into History marked with its origin (never scrobbled to Last.fm
+ * from here, never fed to mixes). Only a browser's live changes go further, on this phone's own switches ([PhoneOnward]).
  */
 interface MirrorLibrary {
     /** Liked songs, newest like first; [LikedSong.external]: liked only through a Spotify / YouTube Music Liked Songs playlist. */
     suspend fun likes(): List<LikedSong<WireSong>>
 
-    /** Likes [on] as Stash likes (at [at]); unlikes [off] (only a Stash like can be cleared). */
-    suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long)
+    /**
+     * Likes [on] as Stash likes (at [at]); unlikes [off] (only a Stash like can be cleared). [sendOn]: the songs of [on] and [off]
+     * a browser just changed live, which also go on to Spotify, YouTube Music and Last.fm on this phone's switches (a like only
+     * when it is new here). Empty for a first merge, a snapshot, or anything else that isn't a browser's live change.
+     */
+    suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long, sendOn: Set<WireSong> = emptySet())
 
     /** This phone's own plays (no origin) that started at or after [since], newest first, at most [limit]. */
     suspend fun ownPlays(since: Long, limit: Int = 50_000): List<PlayRec<WireSong>>
@@ -39,8 +43,12 @@ interface MirrorLibrary {
     /** When the [n]-th newest own play started (1-based), or 0 when there are fewer. */
     suspend fun ownPlayAt(n: Int): Long
 
-    /** Adds plays from another device ([PlayRec.origin] set); a play already here (same words and start) is skipped. */
-    suspend fun addPlays(plays: List<PlayRec<WireSong>>)
+    /**
+     * Adds plays from another device ([PlayRec.origin] set); a play already here (same words and start) is skipped. [live]: a
+     * browser's plays just read from the log, which go on to YouTube Music history when that switch is on here and they are
+     * under an hour old. False for a first merge or a snapshot.
+     */
+    suspend fun addPlays(plays: List<PlayRec<WireSong>>, live: Boolean = false)
 
     /** Drops the plays that came from [origin] and started before [before]. */
     suspend fun dropPlaysFrom(origin: String, before: Long)

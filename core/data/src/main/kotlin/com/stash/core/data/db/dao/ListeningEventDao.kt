@@ -113,11 +113,17 @@ interface ListeningEventDao {
      * ([com.stash.core.data.prefs.YouTubeHistoryPreference.sendPlaysSince]):
      * every play ever recorded has `yt_scrobbled = 0`, so without it turning
      * the feature on sent the whole listening history.
+     *
+     * A play from another device is owed only when the mirror wrote it so on
+     * purpose: `scrobbled = 1` (that device scrobbled it to Last.fm itself) with
+     * `yt_scrobbled = 0` (a browser's live play under an hour old, sent through
+     * this phone: RoomMirrorLibrary.addPlays). Every other writer of such rows
+     * sets both, and a row left at the defaults (both 0) is never sent.
      */
     @Query(
         """
         SELECT * FROM listening_events
-        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
+        WHERE yt_scrobbled = 0 AND (origin_device IS NULL OR scrobbled = 1) AND started_at >= :sinceMs
         ORDER BY started_at ASC
         LIMIT :limit
         """
@@ -141,12 +147,13 @@ interface ListeningEventDao {
 
     /**
      * Count of unscrobbled-to-YT events since the opt-in instant [sinceMs] (see
-     * [pendingYtScrobbles]). Drives the Settings health badge.
+     * [pendingYtScrobbles], whose rule for other devices' plays it shares).
+     * Drives the Settings health badge.
      */
     @Query(
         """
         SELECT COUNT(*) FROM listening_events
-        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
+        WHERE yt_scrobbled = 0 AND (origin_device IS NULL OR scrobbled = 1) AND started_at >= :sinceMs
         """
     )
     fun pendingYtScrobbleCount(sinceMs: Long): Flow<Int>

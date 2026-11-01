@@ -191,6 +191,61 @@ class MirrorEngineTest {
         assertThat(likeOps(me).filter { !it.on }.map { it.s.title }).isEmpty()
     }
 
+    // ------------------------------------------------------------------ a browser's likes and plays, sent on through the phone
+
+    @Test fun `a first merge sends nothing on to the services, a browser's live like and unlike do`() = runTest {
+        link()
+        likesMirroring() // Combine took the browser's B and C: never sent on
+        run()
+        assertThat(lib.likedTitles()).containsExactly("A", "B", "C")
+        assertThat(lib.sentOn).isEmpty()
+
+        web.post(MirrorOp.Like(song("D"), true, web.at()))
+        run()
+        assertThat(lib.sentOn).containsExactly("D" to true)
+        web.wall = server.serverNow + 60_000
+        web.post(MirrorOp.Like(song("D"), false, web.at()))
+        run()
+        assertThat(lib.sentOn).containsExactly("D" to true, "D" to false).inOrder()
+
+        // A heart made here goes out to the browser only: it already went on through LikeCoordinator when it was made
+        lib.like(song("E"))
+        run()
+        assertThat(lib.sentOn.map { it.first }).doesNotContain("E")
+    }
+
+    @Test fun `no more than 20 of a browser's like changes go on in one run, the rest stay likes here`() = runTest {
+        link()
+        likesMirroring()
+        val bulk = (1..25).map { "Bulk $it" }
+        // Two batches read in the same run: the cap counts the run, not the batch
+        web.post(*bulk.take(15).map { MirrorOp.Like(song(it), true, web.at()) }.toTypedArray())
+        web.post(*bulk.drop(15).map { MirrorOp.Like(song(it), true, web.at()) }.toTypedArray())
+        run()
+        assertThat(lib.likedTitles()).containsAtLeastElementsIn(bulk)
+        assertThat(lib.sentOn.map { it.first }).containsExactlyElementsIn(bulk.take(MirrorEngine.MAX_LIKES_ONWARD)).inOrder()
+
+        // The next run has room again
+        web.post(MirrorOp.Like(song("Next"), true, web.at()))
+        run()
+        assertThat(lib.sentOn).hasSize(MirrorEngine.MAX_LIKES_ONWARD + 1)
+        assertThat(lib.sentOn.last()).isEqualTo("Next" to true)
+    }
+
+    @Test fun `a browser's plays read live may go on to YouTube history, never the ones a first merge brings`() = runTest {
+        link()
+        web.configure(plays = Dir.BOTH)
+        val since = web.head
+        web.post(MirrorOp.Play(song("Before"), 2_000), MirrorOp.Joined(Kind.PLAYS, since))
+        run()
+        assertThat(lib.plays.map { it.s.title }).contains("Before")
+        assertThat(lib.livePlays).isEmpty()
+
+        web.post(MirrorOp.Play(song("Live"), 3_000))
+        run()
+        assertThat(lib.livePlays).containsExactly("Live")
+    }
+
     @Test fun `a playlist song the phone can't hold isn't sent back as removed`() = runTest {
         link()
         lib.unholdable += "Ghost"

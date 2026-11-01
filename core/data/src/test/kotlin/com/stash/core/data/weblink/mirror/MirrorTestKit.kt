@@ -28,6 +28,12 @@ class FakeMirrorLibrary : MirrorLibrary {
     /** Titles this library can't hold (no row could be made for them here). */
     val unholdable = mutableSetOf<String>()
 
+    /** Title → liked, for every like change the engine marked to go on to the services, in order. */
+    val sentOn = mutableListOf<Pair<String, Boolean>>()
+
+    /** Titles of the plays the engine marked live (a browser's, read from the log). */
+    val livePlays = mutableListOf<String>()
+
     fun like(s: WireSong, external: Boolean = false) {
         liked.add(0, LikedSong(s, external))
     }
@@ -46,7 +52,9 @@ class FakeMirrorLibrary : MirrorLibrary {
 
     override suspend fun likes() = liked.toList()
 
-    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long) {
+    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long, sendOn: Set<WireSong>) {
+        for (s in on) if (s in sendOn) sentOn += s.title to true
+        for (s in off) if (s in sendOn) sentOn += s.title to false
         val idx = SongIndex.of(liked.map { it.s to true })
         for (s in on) if (!idx.has(s) && s.title !in unholdable) {
             liked.add(0, LikedSong(s))
@@ -60,7 +68,8 @@ class FakeMirrorLibrary : MirrorLibrary {
 
     override suspend fun ownPlayAt(n: Int): Long = plays.filter { it.origin == null }.sortedByDescending { it.playedAt }.getOrNull(n - 1)?.playedAt ?: 0
 
-    override suspend fun addPlays(plays: List<PlayRec<WireSong>>) {
+    override suspend fun addPlays(plays: List<PlayRec<WireSong>>, live: Boolean) {
+        if (live) livePlays += plays.map { it.s.title }
         val here = this.plays.mapTo(HashSet()) { PlaysMerge.playId(it.s, it.playedAt) }
         for (p in plays) if (here.add(PlaysMerge.playId(p.s, p.playedAt))) this.plays += p
     }

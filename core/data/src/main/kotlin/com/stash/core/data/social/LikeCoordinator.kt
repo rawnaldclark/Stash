@@ -120,6 +120,14 @@ class LikeCoordinator internal constructor(
         queueMirror(trackId, liked)
     }
 
+    /**
+     * A like or unlike made on another device (Stash on the web, through the link) that is already in the library here: only
+     * its mirror goes, through the same outbox, switches and pacing as a heart made here, and with the same rules (a like
+     * the service already had is never taken away). The local like is not touched. Callers pass only live changes, never a
+     * first merge or a backlog, and cap how many go at once.
+     */
+    suspend fun mirrorOnly(trackId: Long, liked: Boolean) = queueMirror(trackId, liked)
+
     /** The line under [destination]'s switch, live. */
     fun status(destination: Destination): Flow<LikeMirrorStatus> =
         outbox.ops.map { LikeMirrorStatus.of(it, destination) }.distinctUntilChanged()

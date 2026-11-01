@@ -169,6 +169,42 @@ class LikeCoordinatorTest {
         coVerify { dispatcher.unlike(any(), setOf(Destination.SPOTIFY)) }
     }
 
+    // -- A browser's likes, through the link -------------------------------------------------------------------------------
+
+    @Test fun `a browser's like and unlike go on as a heart made here does, and the like here is left alone`() = runTest {
+        mirrorPrefs(spotify = true, yt = false, lastFm = true)
+        coEvery { trackDao.getById(7L) } returns entity()
+        coEvery { dispatcher.like(any(), any()) } returns ok(Destination.SPOTIFY, Destination.LAST_FM)
+        coEvery { dispatcher.unlike(any(), any()) } returns ok(Destination.SPOTIFY, Destination.LAST_FM)
+        val c = coordinator()
+
+        c.mirrorOnly(7L, liked = true)
+        advanceTimeBy(10_000L); runCurrent()
+        c.mirrorOnly(7L, liked = false)
+        advanceTimeBy(10_000L); runCurrent()
+
+        // "Love on Last.fm too" counts as for a heart made here
+        coVerify(exactly = 1) { dispatcher.like(match { it.id == 7L }, setOf(Destination.SPOTIFY, Destination.LAST_FM)) }
+        coVerify(exactly = 1) { dispatcher.unlike(match { it.id == 7L }, setOf(Destination.SPOTIFY, Destination.LAST_FM)) }
+        coVerify(exactly = 0) { stashLiked.add(any()) }
+        coVerify(exactly = 0) { stashLiked.remove(any()) }
+        assertThat(storage.now.ops).isEmpty()
+    }
+
+    @Test fun `with every switch off, a browser's like goes nowhere`() = runTest {
+        mirrorPrefs(spotify = false, yt = false, lastFm = false)
+        val c = coordinator()
+
+        c.mirrorOnly(7L, liked = true)
+        c.mirrorOnly(8L, liked = false)
+        advanceTimeBy(10_000L); runCurrent()
+
+        coVerify(exactly = 0) { dispatcher.like(any(), any()) }
+        coVerify(exactly = 0) { dispatcher.unlike(any(), any()) }
+        assertThat(storage.now.ops).isEmpty()
+        assertThat(scheduler.scheduled).isEmpty()
+    }
+
     @Test fun `ops are serialized with the min gap between external calls`() = runTest {
         mirrorPrefs(spotify = true, yt = false)
         coEvery { trackDao.getById(any()) } answers { entity(id = firstArg()) }
