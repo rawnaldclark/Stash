@@ -69,7 +69,7 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
         ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
 
 /**
- * A link coin, as on the original header. The links' line under listeners + Support is this tall
+ * A link coin, as on the original header. The links' line under the Support chip is this tall
  * before they arrive too, so their landing a beat late never moves the name.
  */
 private val LinkCoinSize = 32.dp
@@ -252,8 +252,8 @@ fun ArtistHero(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(bottom = 6.dp),
             )
-            // Play and radio on the left; on the right, listeners and Support with the
-            // artist's links under them. The links arrive a beat after the page (MusicBrainz);
+            // Play and radio on the left; on the right, Support with the artist's links
+            // under it. The links arrive a beat after the page (MusicBrainz);
             // their line is held open from the start, so the row never grows and the name never
             // moves. Not a fixed row height: with a large font, that squashed the coins flat.
             Row(verticalAlignment = Alignment.CenterVertically) {
