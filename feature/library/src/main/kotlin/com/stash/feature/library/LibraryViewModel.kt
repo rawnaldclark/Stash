@@ -125,6 +125,8 @@ class LibraryViewModel @Inject constructor(
     private val connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor? = null,
     /** Artists and Albums' "Show" choice in Stream only (null in tests = Everything). */
     private val libraryScopePreference: com.stash.core.data.prefs.LibraryScopePreference? = null,
+    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     /** The playlist mirrors with Stash on the web: deleting it asks Everywhere / Only here (spec §2.4). */
@@ -733,6 +735,12 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             playerRepository.addNext(track)
         }
+    }
+
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _userMessages.tryEmit(it) } }
     }
 
     /**

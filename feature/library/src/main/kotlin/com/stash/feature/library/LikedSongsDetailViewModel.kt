@@ -43,6 +43,8 @@ class LikedSongsDetailViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     private val sourceFilter: MusicSource? =
@@ -154,6 +156,12 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun playNext(track: Track) {
         viewModelScope.launch { playerRepository.addNext(track) }
+    }
+
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _userMessages.tryEmit(it) } }
     }
 
     fun addToQueue(track: Track) {

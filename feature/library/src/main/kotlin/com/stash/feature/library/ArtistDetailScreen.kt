@@ -153,6 +153,7 @@ fun ArtistDetailScreen(
                             if (firstTrack != null) viewModel.playTrack(firstTrack.id)
                         },
                         onShuffle = { viewModel.shuffleAll() },
+                        onStartRadio = viewModel::startArtistRadio,
                         onToggleSearch = { viewModel.toggleSearch() },
                     )
                 }
@@ -303,6 +304,10 @@ fun ArtistDetailScreen(
                     viewModel.addToQueue(it)
                     selectedTrack = null
                 },
+                onStartRadio = {
+                    viewModel.startRadio(it)
+                    selectedTrack = null
+                },
                 onSaveToPlaylist = {
                     trackToSave = it
                     selectedTrack = null
@@ -396,6 +401,7 @@ private fun ArtistDetailHeader(
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
+    onStartRadio: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -499,7 +505,7 @@ private fun ArtistDetailHeader(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Action buttons: Play All + Shuffle + Search ─────────────────
+        // ── Action buttons: Play All + Shuffle + Radio + Search ─────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -541,8 +547,29 @@ private fun ArtistDetailHeader(
                 }
             }
 
-            // Search toggle button — same glass-background style as PlaylistHeader
+            // Start radio: this artist's station, the one Search's artist page starts (Stash's Signal
+            // glyph, still). Same glass square as the search toggle beside it.
             Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = onStartRadio,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = extendedColors.glassBackground,
+                        shape = RoundedCornerShape(12.dp),
+                    ),
+            ) {
+                Icon(
+                    imageVector = com.stash.core.ui.icons.RadioSignal.Icon,
+                    contentDescription = androidx.compose.ui.res.stringResource(
+                        com.stash.core.media.R.string.radio_start_artist,
+                        state.artistName,
+                    ),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+
+            // Search toggle button — same glass-background style as PlaylistHeader
             IconButton(
                 onClick = onToggleSearch,
                 modifier = Modifier

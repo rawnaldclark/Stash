@@ -109,6 +109,8 @@ class HistoryViewModel @VisibleForTesting internal constructor(
     private val musicRepository: MusicRepository,
     private val connectivityMonitor: ConnectivityMonitor,
     private val zone: () -> ZoneId,
+    /** Start radio from a song's menu, and the artist page's radio (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     @Inject
@@ -119,9 +121,11 @@ class HistoryViewModel @VisibleForTesting internal constructor(
         playerRepository: PlayerRepository,
         musicRepository: MusicRepository,
         connectivityMonitor: ConnectivityMonitor,
+        radioStarter: com.stash.core.media.RadioStarter,
     ) : this(
         savedStateHandle, history, historyPreference, playerRepository, musicRepository, connectivityMonitor,
         { ZoneId.systemDefault() },
+        radioStarter,
     )
 
     private val _state = MutableStateFlow(
@@ -354,6 +358,12 @@ class HistoryViewModel @VisibleForTesting internal constructor(
 
     fun playNext(track: Track) {
         viewModelScope.launch { playerRepository.addNext(track) }
+    }
+
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _messages.tryEmit(it) } }
     }
 
     fun addToQueue(track: Track) {
