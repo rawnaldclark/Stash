@@ -77,11 +77,13 @@ class LibraryStartRadioTest {
     fun `a song's Start radio starts a radio from that song`() = runTest {
         val starter = FakeStarter()
         val vm = buildVm(starter)
+        // One instance: Track.dateAdded defaults to the clock, so two track(3L)s can differ.
+        val song = track(3L)
 
-        vm.startRadio(track(3L))
+        vm.startRadio(song)
         runCurrent()
 
-        assertEquals(listOf(track(3L)), starter.songs)
+        assertEquals(listOf(song), starter.songs)
     }
 
     @Test
