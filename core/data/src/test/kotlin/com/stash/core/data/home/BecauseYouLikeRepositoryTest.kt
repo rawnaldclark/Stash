@@ -15,6 +15,7 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.io.IOException
+import java.util.Collections
 import kotlin.random.Random
 
 /**
@@ -87,7 +88,8 @@ class BecauseYouLikeRepositoryTest {
         repeat(9) { play(4, now) }
     }
 
-    private val calls = mutableListOf<String>()
+    // A build reads the seeds' pages side by side (on Dispatchers.IO): record them thread-safely
+    private val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private var answers = true
     /** The seeds whose page doesn't answer, when [answers] is on. */
     private val silent = mutableSetOf<String>()
