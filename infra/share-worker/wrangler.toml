@@ -2,6 +2,12 @@ name = "stash-share"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
+# Secrets: set with `npx wrangler secret put <NAME>`, never written in this file (README "Deploy").
+#   COMMUNITY_SALT   required: salts every stored network hash (Community, the daily share budgets).
+#   SHARE_PROXY_KEY  optional: shared with the web player's Worker (same value there). With it, a call the player
+#                    proxies counts as the listener in its X-Stash-Client-IP header (src/http.js clientAddress).
+#                    Unset, those headers are ignored and every caller is its CF-Connecting-IP.
+
 # Two hosts, one Worker (stashfm.app contract 2026-10-03). Every link is built from the request's own origin:
 # stashfm.app requests get stashfm.app links, and stash-share.rawnaldclark.workers.dev keeps serving (and
 # answering with) workers.dev links forever, for links already shared and for older app versions.
