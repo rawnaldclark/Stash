@@ -18,8 +18,11 @@ internal interface ConfigNetworkSignal {
     /** True when the default network has internet and Android has validated it (not a captive portal). */
     fun isOnline(): Boolean
 
-    /** Returns once [isOnline] would be true; at once when it already is. */
-    suspend fun awaitOnline()
+    /**
+     * Waits until [isOnline] would be true and returns true; at once when it already is. Returns false at once when the
+     * network can't be watched: nothing was waited for, so the caller's failures still count.
+     */
+    suspend fun awaitOnline(): Boolean
 }
 
 /**
@@ -29,7 +32,8 @@ internal interface ConfigNetworkSignal {
  * [awaitOnline] registers a default-network callback only while waiting and unregisters when done. Android sends the
  * current default network's capabilities as soon as the callback is registered, so an already-online phone returns at
  * once, and a captive portal resolves when the user signs in (the network turns VALIDATED). If no callback can be
- * registered (the per-app callback limit), it returns at once: the fetcher's back-off then spaces the attempts out.
+ * registered (the per-app callback limit) or there is no [ConnectivityManager], it returns false at once: the fetcher
+ * then keeps its failure count, so its back-off (up to hourly) spaces the attempts out.
  */
 internal class AndroidConfigNetworkSignal(private val context: Context) : ConfigNetworkSignal {
 
@@ -42,12 +46,12 @@ internal class AndroidConfigNetworkSignal(private val context: Context) : Config
         return caps.reachesInternet()
     }
 
-    override suspend fun awaitOnline() {
-        val cm = cm ?: return
-        callbackFlow {
+    override suspend fun awaitOnline(): Boolean {
+        val cm = cm ?: return false
+        return callbackFlow {
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                    if (capabilities.reachesInternet()) trySend(Unit)
+                    if (capabilities.reachesInternet()) trySend(true)
                 }
             }
             try {
@@ -56,7 +60,7 @@ internal class AndroidConfigNetworkSignal(private val context: Context) : Config
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "can't watch the network; trying the config anyway (${e.javaClass.simpleName})")
-                trySend(Unit)
+                trySend(false)
             }
             awaitClose { runCatching { cm.unregisterNetworkCallback(callback) } }
         }.first()

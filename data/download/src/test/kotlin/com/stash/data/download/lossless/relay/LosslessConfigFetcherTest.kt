@@ -175,10 +175,14 @@ class LosslessConfigFetcherTest {
     // ── The refresh loop, on virtual time (the refresh itself is a stub that records when it ran) ──
 
     /** A network the test switches on and off. */
-    private class FakeNetwork(online: Boolean) : ConfigNetworkSignal {
+    private class FakeNetwork(online: Boolean, private val watchable: Boolean = true) : ConfigNetworkSignal {
         val online = MutableStateFlow(online)
         override fun isOnline() = online.value
-        override suspend fun awaitOnline() { online.first { it } }
+        override suspend fun awaitOnline(): Boolean {
+            if (!watchable) return false // no callback could be registered: returns at once
+            online.first { it }
+            return true
+        }
     }
 
     /** Starts [LosslessConfigFetcher.refreshLoop]; every attempt lands in the returned list as its virtual time. */
@@ -244,6 +248,19 @@ class LosslessConfigFetcherTest {
         advanceTimeBy(15 * MINUTE); runCurrent()
 
         assertThat(attempts).containsExactly(0L, 15 * MINUTE, 45 * MINUTE, 2 * HOUR, 2 * HOUR + 15 * MINUTE).inOrder()
+    }
+
+    /**
+     * No network callback could be registered (the per-app limit): awaitOnline returns at once without waiting. The
+     * failure count used to reset every time, so offline the loop retried every 15 min forever, as before this change.
+     */
+    @Test fun `when the network can't be watched, offline failures still back off to hourly`() = runTest {
+        val attempts = loop(FakeNetwork(online = false, watchable = false)) { false }
+        advanceTimeBy(4 * HOUR); runCurrent()
+
+        assertThat(attempts).containsExactly(
+            0L, 15 * MINUTE, 45 * MINUTE, 105 * MINUTE, 165 * MINUTE, 225 * MINUTE,
+        ).inOrder()
     }
 
     private companion object {

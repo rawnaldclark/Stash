@@ -10,11 +10,13 @@ import java.util.concurrent.TimeUnit
  * A full refresh (every active mix, Last.fm personas, a similar-track call per seed artist, then a discovery drain) used to
  * be enqueued on every cold start. Since idle-stop the process restarts several times a day, so the same network work ran
  * over and over, and it was a large share of the Last.fm proxy's traffic. Now a cold start enqueues it only when
- * [coldStartRefreshDue] says so: no full refresh in [COLD_START_MIN_GAP_MS], or a mix that needs building.
+ * [coldStartRefreshDue] says so: no full refresh in [COLD_START_MIN_GAP_MS] or yet this UTC day, or a mix that needs
+ * building.
  *
  * Only the cold-start call is gated. The daily periodic job, "Refresh this mix", the Stash Mixes switch and the
- * post-download chain run as before; every full run of the worker (not a single-mix or a re-link run) stamps the time
- * ([markFullRefresh]), so a periodic run in the night also covers the morning's cold start.
+ * post-download chain run as before. A full run of the worker (not a single-mix or a re-link run) stamps the time
+ * ([markFullRefresh]) only when its network part worked, so a periodic run in the night also covers the morning's cold
+ * start, but one that ran offline doesn't hold the next online cold start back.
  *
  * Backed by its own SharedPreferences file. [nowMs] is the wall clock; tests pass their own.
  */
@@ -42,6 +44,8 @@ class StashMixRefreshStamp internal constructor(
      *    were retuned this launch. Those are built now, never a day later.
      *  - no full refresh is on record (first launch after installing or updating to this version);
      *  - the last one finished at least [COLD_START_MIN_GAP_MS] ago;
+     *  - it finished on an earlier UTC day: the mixes' order rotates once per UTC day (the worker seeds it with
+     *    `now / DAY_MS`), so a new day is due a new order even when yesterday's refresh ran late in the evening;
      *  - the stamp is in the future (the clock was set back): a stamp that can't be trusted must not hold mixes back.
      */
     fun coldStartRefreshDue(mixNeedsBuilding: Boolean): Boolean {
@@ -49,7 +53,7 @@ class StashMixRefreshStamp internal constructor(
         val last = lastFullRefreshAt()
         if (last <= 0L) return true
         val now = nowMs()
-        return now < last || now - last >= COLD_START_MIN_GAP_MS
+        return now < last || now - last >= COLD_START_MIN_GAP_MS || now / DAY_MS != last / DAY_MS
     }
 
     companion object {
@@ -61,5 +65,8 @@ class StashMixRefreshStamp internal constructor(
          * still gets that day's refresh when yesterday's ran a little later.
          */
         val COLD_START_MIN_GAP_MS: Long = TimeUnit.HOURS.toMillis(20)
+
+        /** One UTC day, the period the worker's rotation seed (`now / DAY_MS`) changes on. */
+        private val DAY_MS: Long = TimeUnit.DAYS.toMillis(1)
     }
 }

@@ -192,8 +192,9 @@ class LosslessConfigFetcher @Inject constructor(
      *
      * Offline, nothing runs on a timer: before each attempt the loop waits for a validated network ([network]) and
      * refreshes as soon as one is back. It used to retry every 15 min for as long as the process lived, each attempt a
-     * request that could only fail. The failure count starts over after such a wait, since the earlier failures were on
-     * another network.
+     * request that could only fail. The failure count starts over only after a real wait (the earlier failures were on
+     * another network); when the network can't be watched, [ConfigNetworkSignal.awaitOnline] returns false at once and
+     * the count stands, so the back-off still grows.
      *
      * Every attempt is followed by a delay, so a network signal that says "online" while nothing works (or can't be
      * watched at all) can never make this spin: failures back off 15 min, 30 min, then hourly.
@@ -201,10 +202,7 @@ class LosslessConfigFetcher @Inject constructor(
     internal suspend fun refreshLoop(refreshOnce: suspend () -> Boolean): Nothing {
         var failures = 0
         while (true) {
-            if (!network.isOnline()) {
-                network.awaitOnline()
-                failures = 0
-            }
+            if (!network.isOnline() && network.awaitOnline()) failures = 0
             failures = if (refreshOnce()) 0 else failures + 1
             delay(nextDelayMs(failures))
         }

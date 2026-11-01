@@ -55,6 +55,15 @@ class StashMixRefreshStampTest {
         assertTrue(stamp().coldStartRefreshDue(mixNeedsBuilding = false))
     }
 
+    @Test fun `a new UTC day is due a refresh, since the mixes' order rotates per UTC day`() {
+        now = START + TimeUnit.HOURS.toMillis(23) // 23:00Z
+        stamp().markFullRefresh()
+        now = START + TimeUnit.HOURS.toMillis(23) + TimeUnit.MINUTES.toMillis(30) // 23:30Z, same day
+        assertFalse(stamp().coldStartRefreshDue(mixNeedsBuilding = false))
+        now = START + TimeUnit.HOURS.toMillis(25) // 01:00Z the next day, only 2 h later
+        assertTrue(stamp().coldStartRefreshDue(mixNeedsBuilding = false))
+    }
+
     @Test fun `a mix that needs building is built at once, even right after a refresh`() {
         stamp().markFullRefresh()
         now = START + 1
