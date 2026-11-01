@@ -10,6 +10,9 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,14 +24,18 @@ import javax.inject.Singleton
  * id, which Library doesn't have, the generator looks the artist up by name).
  *
  * Each call returns the line to show when the station didn't start, or null when it did (the music
- * starting is the feedback).
+ * starting is the feedback). One start at a time: while a station is being built ([tuning]) another
+ * start is ignored, so a double tap can't build two stations.
  */
 interface RadioStarter {
 
-    /** A song radio seeded from [track]. */
+    /** A Library start is in flight: the station is being built. Drives the tuning indicator. */
+    val tuning: StateFlow<Boolean>
+
+    /** A song radio seeded from [track]; nothing (null) while another start is [tuning]. */
     suspend fun fromSong(track: Track): String?
 
-    /** An artist radio seeded from [artistName]; nothing (null) for a blank name. */
+    /** An artist radio seeded from [artistName]; nothing (null) for a blank name or while [tuning]. */
     suspend fun fromArtist(artistName: String): String?
 
     companion object {
@@ -50,16 +57,26 @@ class PlayerRadioStarter @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : RadioStarter {
 
-    override suspend fun fromSong(track: Track): String? = messageFor(
-        playerRepository.startRadio(
-            RadioSeed.Song(title = track.title, artist = track.artist, ytVideoId = track.youtubeId),
-        ),
-    )
+    private val _tuning = MutableStateFlow(false)
+    override val tuning: StateFlow<Boolean> = _tuning.asStateFlow()
+
+    override suspend fun fromSong(track: Track): String? =
+        start(RadioSeed.Song(title = track.title, artist = track.artist, ytVideoId = track.youtubeId))
 
     override suspend fun fromArtist(artistName: String): String? {
         val name = artistName.trim()
         if (name.isEmpty()) return null
-        return messageFor(playerRepository.startRadio(RadioSeed.Artist(name)))
+        return start(RadioSeed.Artist(name))
+    }
+
+    /** Builds the station unless one is already being built (the double-tap guard: that tap is dropped). */
+    private suspend fun start(seed: RadioSeed): String? {
+        if (!_tuning.compareAndSet(expect = false, update = true)) return null
+        return try {
+            messageFor(playerRepository.startRadio(seed))
+        } finally {
+            _tuning.value = false
+        }
     }
 
     private fun messageFor(result: RadioStartResult): String? =

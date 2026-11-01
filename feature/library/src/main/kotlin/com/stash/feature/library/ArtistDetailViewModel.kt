@@ -86,6 +86,9 @@ class ArtistDetailViewModel @Inject constructor(
     private val _bulkPlayInFlight = MutableStateFlow<BulkPlayAction?>(null)
     val bulkPlayInFlight: StateFlow<BulkPlayAction?> = _bulkPlayInFlight.asStateFlow()
 
+    /** A Library radio is being built: the artist page's radio button shows it and takes no taps. */
+    val radioTuning: StateFlow<Boolean> = radioStarter?.tuning ?: MutableStateFlow(false).asStateFlow()
+
     /** Update the live search query; results filter immediately with debounce. */
     fun onSearchQueryChanged(query: String) { _searchQuery.value = query }
 

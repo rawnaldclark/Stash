@@ -41,6 +41,7 @@ class LibraryStartRadioTest {
 
     /** Records what was asked; answers [answer] (null = started). */
     private class FakeStarter(var answer: String? = null) : RadioStarter {
+        override val tuning = MutableStateFlow(false)
         val songs = mutableListOf<Track>()
         val artists = mutableListOf<String>()
         override suspend fun fromSong(track: Track): String? { songs += track; return answer }
@@ -84,6 +85,16 @@ class LibraryStartRadioTest {
         runCurrent()
 
         assertEquals(listOf(song), starter.songs)
+    }
+
+    @Test
+    fun `the artist page's radio button follows the station being built`() = runTest {
+        val starter = FakeStarter()
+        val vm = buildVm(starter)
+        assertEquals(false, vm.radioTuning.value)
+
+        starter.tuning.value = true
+        assertEquals(true, vm.radioTuning.value)
     }
 
     @Test

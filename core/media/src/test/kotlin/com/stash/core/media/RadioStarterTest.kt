@@ -9,6 +9,9 @@ import com.stash.core.model.Track
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +65,38 @@ class RadioStarterTest {
             assertThat(starter.fromSong(song)).isEqualTo(context.getString(message))
             assertThat(starter.fromArtist("Slowdive")).isEqualTo(context.getString(message))
         }
+    }
+
+    @Test
+    fun `one start at a time - a second tap while tuning is dropped`() = runTest {
+        val gate = CompletableDeferred<RadioStartResult>()
+        coEvery { player.startRadio(any(), any()) } coAnswers { gate.await() }
+        assertThat(starter.tuning.value).isFalse()
+
+        val first = async { starter.fromArtist("Slowdive") }
+        runCurrent()
+        assertThat(starter.tuning.value).isTrue()
+
+        // The double tap: ignored while the first station is being built.
+        assertThat(starter.fromSong(song)).isNull()
+        assertThat(starter.fromArtist("Slowdive")).isNull()
+        coVerify(exactly = 1) { player.startRadio(any(), any()) }
+
+        gate.complete(RadioStartResult.NoStation)
+        assertThat(first.await()).isEqualTo(context.getString(R.string.radio_failed_no_station))
+        assertThat(starter.tuning.value).isFalse()
+
+        // Done tuning: the next tap starts again.
+        coEvery { player.startRadio(any(), any()) } returns RadioStartResult.Started
+        assertThat(starter.fromSong(song)).isNull()
+        coVerify(exactly = 2) { player.startRadio(any(), any()) }
+    }
+
+    @Test
+    fun `a failed start still ends the tuning`() = runTest {
+        coEvery { player.startRadio(any(), any()) } throws IllegalStateException("boom")
+        runCatching { starter.fromSong(song) }
+        assertThat(starter.tuning.value).isFalse()
     }
 
     @Test
