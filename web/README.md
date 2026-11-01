@@ -322,8 +322,9 @@ not the access list's hash, so the player holds nothing that can be matched to e
 `SESSION_SECRET` changes everyone's `sub`, and signs everyone out of the site anyway). Signed out, `/player`
 goes to the sign-in page (`/access`), and signing in comes back to `/player` (the forms carry a hidden `next`
 that can only ever be `/player`). Signed in but taken off the list, it goes to `/`. A shared song or mix
-link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...` and is passed on as
-`PLAYER_URL/auth?next=...`; any other `next` is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
+link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...`, and a Community page as
+`/community...` (the list, or `/community/<id>`); each is passed on as `PLAYER_URL/auth?next=...`. Any other
+`next`, or one whose path the URL parser would rewrite (`..`, a backslash), is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
 503 that names neither (the log, `wrangler tail`, says which).
 
 **The ticket key.** In the player repo (`stash-web/player`), `npm run keys` prints a key pair (nothing is

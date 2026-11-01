@@ -104,7 +104,7 @@ async function route(request, env, later, fetchImpl) {
             return home(env, url, Boolean(await currentSession(request, env)));
         case "/access":
             if (method === "GET") {
-                // ?next= is where to go after signing in: only ever /player (with a shared song or mix), see player.js.
+                // ?next= is where to go after signing in: only ever /player (with a shared song, mix or Community page), see player.js.
                 const back = playerReturn(url.searchParams.get("next"));
                 return (await currentSession(request, env)) ? seeOther(back || "/") : front(env, url, back);
             }
