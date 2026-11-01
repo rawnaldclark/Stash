@@ -321,6 +321,38 @@ class ArtUrlSizerTest {
         assertEquals(ArtUrlSizer.NO_CAP, ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = false))
     }
 
+    /** Stash's own Data saver switch caps pictures the same way Android's does, on metered networks only. */
+    @Test
+    fun `the in-app data saver switch caps art on a metered network only`() {
+        assertEquals(
+            ArtUrlSizer.DATA_SAVER_MAX_PX,
+            ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = true, inAppDataSaver = true),
+        )
+        assertEquals(
+            ArtUrlSizer.NO_CAP,
+            ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = false, inAppDataSaver = true),
+        )
+        assertEquals(
+            ArtUrlSizer.NO_CAP,
+            ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = true, inAppDataSaver = false),
+        )
+        // Both on is still the one cap.
+        assertEquals(
+            ArtUrlSizer.DATA_SAVER_MAX_PX,
+            ArtUrlSizer.maxVariantPx(dataSaverRestricting = true, metered = true, inAppDataSaver = true),
+        )
+        // What that means for Now Playing's ~950px cover on mobile data: Qobuz stays _600, never _max.
+        val cap = ArtUrlSizer.maxVariantPx(dataSaverRestricting = false, metered = true, inAppDataSaver = true)
+        assertEquals(
+            "https://static.qobuz.com/images/covers/a/b/x_600.jpg",
+            ArtUrlSizer.forSize("https://static.qobuz.com/images/covers/a/b/x_600.jpg", 948, cap),
+        )
+        assertEquals(
+            "https://static.qobuz.com/images/covers/a/b/x_max.jpg",
+            ArtUrlSizer.forSize("https://static.qobuz.com/images/covers/a/b/x_600.jpg", 948, ArtUrlSizer.NO_CAP),
+        )
+    }
+
     @Test
     fun `under data saver the unbounded originals are never picked`() {
         val cap = ArtUrlSizer.DATA_SAVER_MAX_PX

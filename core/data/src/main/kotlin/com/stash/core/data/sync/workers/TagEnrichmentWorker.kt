@@ -3,6 +3,7 @@ package com.stash.core.data.sync.workers
 import android.content.Context
 import android.util.Log
 import androidx.hilt.work.HiltWorker
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -15,6 +16,7 @@ import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.isTransientLastFmFailure
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
 import dagger.assisted.Assisted
@@ -65,16 +67,22 @@ class TagEnrichmentWorker @AssistedInject constructor(
         private const val MAX_CONSECUTIVE_ERRORS = 5
 
         /**
-         * Schedule / re-schedule the periodic enrichment with [mode]'s
-         * constraints. `UPDATE` policy so a preference change replaces
-         * the running schedule in place.
+         * The daily pass's constraints: [mode]'s, except that "Any network" waits for Wi-Fi while
+         * Data saver is on ([backgroundConstraintsFor]), like the discovery drain.
+         */
+        internal fun periodicConstraints(mode: DownloadNetworkMode, dataSaverOn: Boolean): Constraints =
+            backgroundConstraintsFor(mode, dataSaverOn)
+
+        /**
+         * Schedule / re-schedule the periodic enrichment with [periodicConstraints]. `UPDATE` policy
+         * so a preference change (the network mode, Data saver) replaces the running schedule in place.
          */
         suspend fun schedulePeriodic(context: Context, mode: DownloadNetworkMode) {
             val work = PeriodicWorkRequestBuilder<TagEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(constraintsFor(mode))
+                .setConstraints(periodicConstraints(mode, DataSaverSnapshot.isOn(context)))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,

@@ -6,6 +6,8 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -16,6 +18,7 @@ import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.lastfm.isTransientLastFmFailure
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -59,17 +62,48 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
         /** Transient failures in a row that end the batch early (Last.fm or the network is down). */
         private const val MAX_CONSECUTIVE_ERRORS = 5
 
+        /** The daily pass: battery not low, any connection; Wi-Fi while Data saver is on. */
+        internal fun periodicConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn))
+            .build()
+
+        /** The first-launch pass's unique name ([enqueueFirstRun]). */
+        private const val FIRST_RUN_WORK_NAME = "stash_track_info_enrichment_oneshot"
+
+        /**
+         * The first-launch pass (queued by the app at start, so a fresh install doesn't wait a day):
+         * no constraint, as before, except Wi-Fi while Data saver is on.
+         */
+        internal fun firstRunConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn, otherwise = NetworkType.NOT_REQUIRED))
+            .build()
+
+        private fun firstRunRequest(dataSaverOn: Boolean) =
+            OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().setConstraints(firstRunConstraints(dataSaverOn)).build()
+
+        /** Queue the first-launch pass with [firstRunConstraints]. KEEP: a relaunch before it ran queues no other. */
+        fun enqueueFirstRun(context: Context) {
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                FIRST_RUN_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                firstRunRequest(DataSaverSnapshot.isOn(context)),
+            )
+        }
+
+        /**
+         * The Data saver switch flipped: the first-launch pass, if still waiting for its network, is
+         * queued again with the new constraint ([requeueIfWaiting]).
+         */
+        suspend fun requeueFirstRunIfWaiting(context: Context, dataSaverOn: Boolean): Boolean =
+            WorkManager.getInstance(context).requeueIfWaiting(FIRST_RUN_WORK_NAME, firstRunRequest(dataSaverOn))
+
         suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<TrackInfoEnrichmentWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiresBatteryNotLow(true)
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build()
-                )
+                .setConstraints(periodicConstraints(DataSaverSnapshot.isOn(context)))
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWorkReviving(
                 WORK_NAME,

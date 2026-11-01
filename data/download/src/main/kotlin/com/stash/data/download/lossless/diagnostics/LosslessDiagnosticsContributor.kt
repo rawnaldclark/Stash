@@ -33,7 +33,7 @@ import okhttp3.Request
  * Quality rows say or whether the relay is even reachable from their network:
  *
  *  - the mode and the quality settings (Download / Stream only, Lossless + tier,
- *    Save Data, stream on cellular)
+ *    Data saver, stream on cellular)
  *  - the routing rows exactly as Settings renders them ([LosslessAvailability]),
  *    minus the account email
  *  - the applied relay config (how many relays, `updated_at`) and, per relay,
@@ -89,7 +89,7 @@ class LosslessDiagnosticsContributor @Inject constructor(
                 com.stash.core.model.DownloadMode.AAC -> "AAC 320"
                 com.stash.core.model.DownloadMode.OPUS -> "Opus"
             } + " · lossy fallback " + onOff(losslessPrefs.youtubeFallbackEnabledNow()))
-            appendLine("Save Data:          " + onOff(streamingQuality.saveDataNow()))
+            appendLine("Data saver:         " + onOff(streamingQuality.saveDataNow()) + " (metered networks only)")
             append("Stream on cellular: " + onOff(streamingPreference.streamOnCellular.first()))
         }
     }

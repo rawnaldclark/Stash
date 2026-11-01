@@ -9,6 +9,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.prefs.DataSaver
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -19,6 +20,7 @@ import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -72,6 +74,8 @@ class ArtistProfileViewModel @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
+    /** Data saver: the photo gallery waits for Wi-Fi. Never applies in hand-built tests. */
+    private val dataSaver: DataSaver = DataSaver.Off,
 ) : ViewModel() {
 
     private val artistId: String = requireNotNull(savedStateHandle["artistId"]) {
@@ -403,7 +407,7 @@ class ArtistProfileViewModel @Inject constructor(
             singles = profile.singles,
             related = profile.related,
             status = status,
-            about = profile.about,
+            about = profile.about?.let(::withoutGalleryUnderDataSaver),
         )
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
@@ -418,6 +422,14 @@ class ArtistProfileViewModel @Inject constructor(
             "ArtistProfile paint after ${SystemClock.elapsedRealtime() - t0}ms (status=$status)"
         }
     }
+
+    /**
+     * Data saver on mobile data: About without its photo row (several full-size Spotify photos the
+     * user didn't ask for). It falls back to the single photo, as for an artist with no gallery, and
+     * the row is back the next time the page is opened on Wi-Fi.
+     */
+    private fun withoutGalleryUnderDataSaver(about: ArtistAbout): ArtistAbout =
+        if (about.gallery.isNotEmpty() && dataSaver.appliesNow()) about.copy(gallery = emptyList()) else about
 
     override fun onCleared() {
         super.onCleared()

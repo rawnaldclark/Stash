@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.prefs.DataSaver
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -12,6 +13,7 @@ import com.stash.core.media.preview.PreviewState
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
@@ -78,6 +80,7 @@ class ArtistProfileViewModelTest {
         albumCache: AlbumCache = mock(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
+        dataSaver: DataSaver = DataSaver.Off,
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -94,6 +97,7 @@ class ArtistProfileViewModelTest {
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
+        dataSaver = dataSaver,
     )
 
     /**
@@ -144,6 +148,34 @@ class ArtistProfileViewModelTest {
         vmWith(cache, pf)
         advanceUntilIdle()
         verify(pf).prefetch(eq(listOf("v1", "v2")))
+    }
+
+    /** Data saver on mobile data: About drops its photo row (the single photo stays); on Wi-Fi it shows. */
+    @Test
+    fun `the photo gallery waits for Wi-Fi under Data saver`() = runTest {
+        val about = ArtistAbout(bio = "Bio", gallery = listOf("https://img/1.jpg", "https://img/2.jpg"))
+        val profile = ArtistProfile(
+            id = "UC1",
+            name = "A",
+            avatarUrl = null,
+            subscribersText = null,
+            popular = emptyList(),
+            albums = emptyList(),
+            singles = emptyList(),
+            related = emptyList(),
+            about = about,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+
+        val onMobile = vmWith(cache, dataSaver = DataSaver(switchOn = { true }, metered = { true }))
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), onMobile.uiState.value.about?.gallery)
+        assertEquals("Bio", onMobile.uiState.value.about?.bio)
+
+        val onWifi = vmWith(cache, dataSaver = DataSaver(switchOn = { true }, metered = { false }))
+        advanceUntilIdle()
+        assertEquals(about.gallery, onWifi.uiState.value.about?.gallery)
     }
 
     @Test

@@ -67,7 +67,10 @@ class StreamSourceRegistryTest {
     private fun registryPreferringAac(tidal: TidalStreamResolver, prefer: Boolean) = StreamSourceRegistry(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal, null,
-        mockk<StreamQualityPolicy> { coEvery { preferTidalAac() } returns prefer },
+        mockk<StreamQualityPolicy> {
+            coEvery { preferTidalAac() } returns prefer
+            coEvery { dataSaverApplies() } returns false
+        },
     )
 
     private fun aacStream() = StreamUrl(
@@ -475,7 +478,7 @@ class StreamSourceRegistryTest {
     /**
      * The Lossless switch governs streaming too (2026-09-05): off means no FLAC anywhere,
      * so the chain skips the lossless sources and streams YouTube. Downloads read the same
-     * switch; a user who wants less than FLAC turns it off, and Save Data trims from there.
+     * switch; a user who wants less than FLAC turns it off, and Data saver trims from there on mobile data.
      */
     @Test
     fun lossless_off_skips_qbdlx_and_streams_youtube() = runTest {

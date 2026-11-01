@@ -13,9 +13,9 @@ class JioSaavnStreamResolverTest {
     private val jioSaavn: JioSaavnResolver = mockk { coEvery { resolve(any(), any(), any()) } returns null }
 
     @Test
-    fun `Save Data streams JioSaavn's 96 kbps variant, otherwise 320`() = runTest {
-        for ((saveData, kbps) in listOf(true to 96, false to 320)) {
-            val policy: StreamQualityPolicy = mockk { coEvery { saveData() } returns saveData }
+    fun `JioSaavn streams the policy's variant - 320, 160 under Data saver with Lossless on, 96 with it off`() = runTest {
+        for ((quality, kbps) in listOf(LossyQuality.FULL to 320, LossyQuality.DATA_SAVER to 160, LossyQuality.LOWEST to 96)) {
+            val policy: StreamQualityPolicy = mockk { coEvery { lossyQuality() } returns quality }
 
             JioSaavnStreamResolver(jioSaavn, policy).resolve(TrackEntity(title = "Kesariya", artist = "Arijit Singh"))
 

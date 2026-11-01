@@ -307,7 +307,6 @@
     <string name="settings_youtube_quality_title">Qualité YouTube</string>
     <string name="settings_download_quality_rates_desc">Définit les débits des téléchargements YouTube ci-dessous, et ceux de JioSaavn à 96 kbit/s en Basse et Normale, 160 en Élevée, 320 en Meilleure et Max.</string>
     <string name="settings_save_data_title">Économiser les données</string>
-    <string name="settings_save_data_subtitle">Qualité la plus basse sur JioSaavn et YouTube</string>
     <string name="settings_lossless_title">Sans perte</string>
     <string name="settings_lossless_subtitle_off">Désactivé : les titres sont lus depuis JioSaavn ou YouTube</string>
     <string name="settings_lossless_subtitle_no_source">Aucune source sans perte n\'a encore été configurée</string>
@@ -340,7 +339,6 @@
     <string name="settings_streaming_section">Streaming</string>
     <string name="settings_on_wifi">En Wi-Fi</string>
     <string name="settings_on_cellular">Sur réseau mobile</string>
-    <string name="settings_save_data_lossless_subtitle">Une qualité CD sur tous les réseaux</string>
     <string name="settings_prefer_cloud_copies_title">Lire d\'abord mes copies stockées dans le cloud</string>
     <string name="settings_prefer_cloud_copies_subtitle">Vos fichiers sans perte dans le stockage cloud, avant Qobuz ou Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Privilégier l’AAC de Tidal en streaming</string>

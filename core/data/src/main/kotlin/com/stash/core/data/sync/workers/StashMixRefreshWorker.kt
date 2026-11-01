@@ -35,6 +35,7 @@ import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.record.MixTaste
 import com.stash.core.data.record.RecordMixTaste
@@ -246,20 +247,33 @@ class StashMixRefreshWorker @AssistedInject constructor(
         const val KEY_SAME_DAY = "stash_mix_refresh_same_day"
 
         /**
-         * Schedule the periodic refresh. Default 24-hour cadence with no
-         * constraints — the library-only path works offline and fast
-         * enough to not care. Discovery is opportunistic and tolerates
-         * being skipped when the device is offline.
+         * The periodic refresh's constraints: battery not low and, while Data saver is on, Wi-Fi
+         * ([backgroundNetworkType]). Otherwise no network constraint: the library-only path works
+         * offline, and discovery is opportunistic and tolerates being skipped when offline.
          */
-        suspend fun schedulePeriodic(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiresBatteryNotLow(true)
+        internal fun periodicConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+            .setRequiresBatteryNotLow(true)
+            .setRequiredNetworkType(backgroundNetworkType(dataSaverOn, otherwise = NetworkType.NOT_REQUIRED))
+            .build()
+
+        /**
+         * The automatic full one-shot's constraints (cold start, after a discovery download, Stash
+         * Mixes switched on): any connection, Wi-Fi while Data saver is on. Its Last.fm look-ups and
+         * discovery queueing are background work. The materialize-only re-link is local and keeps
+         * any connection; a mix the user refreshes or makes ([enqueueOneTime] by recipe) is theirs.
+         */
+        internal fun oneShotConstraints(materializeOnly: Boolean, dataSaverOn: Boolean): Constraints =
+            Constraints.Builder()
+                .setRequiredNetworkType(if (materializeOnly) NetworkType.CONNECTED else backgroundNetworkType(dataSaverOn))
                 .build()
+
+        /** Schedule the periodic refresh: a 24-hour cadence with [periodicConstraints]. */
+        suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<StashMixRefreshWorker>(
                 repeatInterval = 1,
                 repeatIntervalTimeUnit = TimeUnit.DAYS,
             )
-                .setConstraints(constraints)
+                .setConstraints(periodicConstraints(DataSaverSnapshot.isOn(context)))
                 .build()
             // 2026-05-11: UPDATE (not KEEP) so existing installs reschedule against
             // the current worker spec on the next cold start. KEEP previously meant
@@ -281,11 +295,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
          */
         fun enqueueOneTime(context: Context, materializeOnly: Boolean = false) {
             val builder = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
+                .setConstraints(oneShotConstraints(materializeOnly, DataSaverSnapshot.isOn(context)))
             if (materializeOnly) {
                 builder.setInputData(androidx.work.workDataOf(KEY_MATERIALIZE_ONLY to true))
             }
@@ -299,6 +309,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 builder.build(),
             )
         }
+
+        /**
+         * The Data saver switch flipped: the automatic full one-shot ([enqueueOneTime], cold start or
+         * after a discovery download), if still waiting for its network, is queued again with the new
+         * constraint ([requeueIfWaiting]).
+         */
+        suspend fun requeueAutomaticIfWaiting(context: Context, dataSaverOn: Boolean): Boolean =
+            WorkManager.getInstance(context).requeueIfWaiting(
+                ONE_SHOT_WORK_NAME,
+                OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
+                    .setConstraints(oneShotConstraints(materializeOnly = false, dataSaverOn = dataSaverOn))
+                    .build(),
+            )
 
         /**
          * Fire a one-shot refresh for a single recipe. Used by the Home
@@ -474,7 +497,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // forget — backfill failure must never block a successful refresh,
         // so the enqueue itself is guarded (e.g. WorkManager not yet
         // initialised in a unit-test JVM throws IllegalStateException).
-        runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
+        // A mix the user made or refreshed (by recipe) gets its art on any connection.
+        runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext, userAsked = targetId > 0L) }
             .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
 
         // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe

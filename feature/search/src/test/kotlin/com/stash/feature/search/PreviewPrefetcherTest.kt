@@ -93,5 +93,29 @@ class PreviewPrefetcherTest {
         verify(ex).extractStreamUrl(eq("b"), eq(false), any())
         verify(ex, never()).extractStreamUrl(any(), eq(true), any())
     }
+
+    /** Data saver on mobile data: no speculative warm-up; each preview is looked up when tapped. */
+    @Test
+    fun `prefetch warms nothing while Data saver applies, and resumes when it doesn't`() = runTest {
+        val ex = mock<PreviewUrlExtractor> {
+            // All three args need matchers (see the first test).
+            onBlocking { extractStreamUrl(any(), any(), any()) }
+                .thenAnswer { inv -> "u/${inv.arguments[0]}" }
+        }
+        val cache = mutableMapOf<String, String>()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler))
+        var dataSaver = true
+        val pf = PreviewPrefetcher(ex, cache, scope, dataSaverApplies = { dataSaver })
+
+        pf.prefetch(listOf("a", "b"))
+        advanceUntilIdle()
+        verify(ex, never()).extractStreamUrl(any(), any(), any())
+        assertEquals(emptyMap<String, String>(), cache)
+
+        dataSaver = false // back on Wi-Fi
+        pf.prefetch(listOf("a", "b"))
+        advanceUntilIdle()
+        verify(ex, times(2)).extractStreamUrl(any(), any(), any())
+    }
 }
 

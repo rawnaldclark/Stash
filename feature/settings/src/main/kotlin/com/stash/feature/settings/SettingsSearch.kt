@@ -74,7 +74,7 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_lossless_title), SettingsPage.AUDIO, listOf("flac", "hifi", "hi res", "quality")),
         SettingsSearchEntry(s(R.string.settings_streaming_on_wifi_title), SettingsPage.AUDIO, listOf("quality", "bitrate")),
         SettingsSearchEntry(s(R.string.settings_streaming_on_cellular_title), SettingsPage.AUDIO, listOf("quality", "mobile data")),
-        SettingsSearchEntry(s(R.string.settings_save_data_title), SettingsPage.AUDIO, listOf("data saver", "mobile data", "low quality")),
+        SettingsSearchEntry(s(R.string.settings_save_data_title), SettingsPage.AUDIO, listOf("save data", "mobile data", "metered", "low quality", "cellular")),
         SettingsSearchEntry(s(R.string.settings_prefer_tidal_aac_streaming_title), SettingsPage.AUDIO),
         SettingsSearchEntry(s(R.string.settings_prefer_cloud_copies_title), SettingsPage.AUDIO, listOf("dropbox", "onedrive", "google drive", "allowance", "own files")),
         SettingsSearchEntry(s(R.string.settings_download_quality_title), SettingsPage.AUDIO, listOf("format", "flac", "aac", "opus", "mp3")),

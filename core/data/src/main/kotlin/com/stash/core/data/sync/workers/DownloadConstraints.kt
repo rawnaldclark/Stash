@@ -34,6 +34,14 @@ fun constraintsFor(mode: DownloadNetworkMode): Constraints = Constraints.Builder
 }.build()
 
 /**
+ * [constraintsFor] for a daily background pass ([StashDiscoveryWorker]'s drain, [TagEnrichmentWorker]'s
+ * tagging): "Any network" waits for Wi-Fi while Data saver is on, as their Last.fm and catalog
+ * look-ups are background work nobody is waiting on. The two Wi-Fi modes are unchanged.
+ */
+fun backgroundConstraintsFor(mode: DownloadNetworkMode, dataSaverOn: Boolean): Constraints =
+    constraintsFor(if (dataSaverOn && mode == DownloadNetworkMode.ANY_NETWORK) DownloadNetworkMode.WIFI_ANY else mode)
+
+/**
  * Constraints for **manual user-initiated triggers** — the user explicitly
  * tapped "Refresh this mix" or the app booted with orphan downloads to
  * drain. They're asking for content right now; the system honors that on

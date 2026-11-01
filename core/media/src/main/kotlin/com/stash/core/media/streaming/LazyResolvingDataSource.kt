@@ -185,6 +185,8 @@ class LazyResolvingDataSource(
         } else {
             // StreamUrlCache.get() checks expiry internally (evicts + returns null
             // when stale — see its monotonic-TTL KDoc), so no freshness re-check here.
+            // Nor a Data saver one: it serves no lossless link while Data saver applies,
+            // so a FLAC link saved on Wi-Fi resolves again here on mobile data.
             val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
                 ?: resolveBlocking(trackId, uri)
                 ?: throw IOException("stream resolve failed for track $trackId")

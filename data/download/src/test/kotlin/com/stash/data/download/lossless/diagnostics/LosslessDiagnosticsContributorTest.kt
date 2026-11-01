@@ -68,7 +68,7 @@ class LosslessDiagnosticsContributorTest {
         assertThat(s).contains("Mode:               Download (sync writes files)")
         assertThat(s).contains("Lossless streaming: on")
         assertThat(s).contains("Download quality:   Lossless · Hi-Res (24-bit/96 kHz) · lossy fallback off")
-        assertThat(s).contains("Save Data:          off")
+        assertThat(s).contains("Data saver:         off (metered networks only)")
         assertThat(s).contains("Stream on cellular: on")
     }
 

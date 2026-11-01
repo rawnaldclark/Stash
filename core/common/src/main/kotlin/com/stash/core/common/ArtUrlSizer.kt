@@ -26,7 +26,8 @@ package com.stash.core.common
  * draws the stored URL when the sized-up one fails for any other reason (offline, 5xx, timeout).
  *
  * **Data Saver.** [forSize]'s `maxVariantPx` caps the variants it may pick ([maxVariantPx]): with
- * Android's Data Saver on over a metered network, nothing above [DATA_SAVER_MAX_PX], so Qobuz stays
+ * Android's Data Saver or Stash's own Data saver switch on over a metered network, nothing above
+ * [DATA_SAVER_MAX_PX], so Qobuz stays
  * `_600`, Spotify 640 and Last.fm `770x0` (their next size up is an unbounded original, up to
  * 2.2 MB measured for a Qobuz `_max`).
  *
@@ -129,12 +130,13 @@ object ArtUrlSizer {
     private val DEEZER_TIERS = intArrayOf(250, 500, 1000)
 
     /**
-     * The cap [forSize] should use: [DATA_SAVER_MAX_PX] when Android's Data Saver applies to this
-     * app ([dataSaverRestricting]: `RESTRICT_BACKGROUND_STATUS_ENABLED`) on a metered network,
-     * else [NO_CAP]. Data Saver off, the app allow-listed, or unmetered Wi-Fi: no cap.
+     * The cap [forSize] should use: [DATA_SAVER_MAX_PX] on a metered network when Android's Data
+     * Saver applies to this app ([dataSaverRestricting]: `RESTRICT_BACKGROUND_STATUS_ENABLED`) or
+     * Stash's own Data saver switch is on ([inAppDataSaver]), else [NO_CAP]. Both off, the app
+     * allow-listed, or unmetered Wi-Fi: no cap.
      */
-    fun maxVariantPx(dataSaverRestricting: Boolean, metered: Boolean): Int =
-        if (dataSaverRestricting && metered) DATA_SAVER_MAX_PX else NO_CAP
+    fun maxVariantPx(dataSaverRestricting: Boolean, metered: Boolean, inAppDataSaver: Boolean = false): Int =
+        if ((dataSaverRestricting || inAppDataSaver) && metered) DATA_SAVER_MAX_PX else NO_CAP
 
     /**
      * [url] rewritten to the smallest variant its host serves that is at least [px] on its long

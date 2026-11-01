@@ -29,7 +29,7 @@ internal fun StreamUrl.isSameFileAs(other: StreamUrl): Boolean =
 /**
  * Whether two stream URLs agree on every file-identifying query param they BOTH
  * carry. googlevideo URLs name the encoding (`itag`: 251 Opus vs 140 AAC, or 249/250
- * under Save Data) and the exact byte length (`clen`), so two URLs that agree on both
+ * under Data saver) and the exact byte length (`clen`), so two URLs that agree on both
  * serve the same bytes even though every signature param differs. A param missing
  * from either URL is not compared: the other sources' URLs carry neither, and their
  * identity is decided by the [StreamUrl] fields in [isSameFileAs].

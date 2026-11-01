@@ -718,7 +718,9 @@ class StashPlaybackService : MediaLibraryService() {
                                 )
                                 .setMaximumOutputDimension(SizedArtBitmapLoader.TARGET_PX)
                                 .build(),
-                            maxVariantPx = com.stash.core.common.DataSaverArtCap(this),
+                            maxVariantPx = com.stash.core.common.DataSaverArtCap(this) {
+                                com.stash.core.data.prefs.DataSaverSnapshot.isOn(this)
+                            },
                         ),
                     ),
                 ),
