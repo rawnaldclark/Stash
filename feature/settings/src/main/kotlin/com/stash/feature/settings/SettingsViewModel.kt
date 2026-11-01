@@ -1901,7 +1901,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // -- Streaming quality (per-network tiers + Save Data) -------------------
+    // -- Streaming quality (per-network tiers + Data saver) ------------------
 
     /** Persist the lossless tier requested when streaming on Wi-Fi. */
     fun onStreamingWifiTierChanged(tier: LosslessQualityTier) =

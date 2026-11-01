@@ -21,7 +21,11 @@ enum class LosslessQualityTier(
     /** Approximate file size for a 4-minute track at this tier. */
     val sizeHint: String,
 ) {
-    /** Also what Save Data streams at, on every network — the lowest lossless tier, never lossy. */
+    /**
+     * The lowest lossless tier. Data saver doesn't stream it: where Data saver applies (a metered
+     * network) the lossless rungs step aside for lossy streams. It is only the floor
+     * `StreamQualityPolicy.streamingTier` reports then, for anything that still asks.
+     */
     CD(qobuzCode = 6, displayLabel = "CD (16-bit/44.1 kHz)", sizeHint = "~28 MB / 4 min"),
     HI_RES(qobuzCode = 7, displayLabel = "Hi-Res (24-bit/96 kHz)", sizeHint = "~70 MB / 4 min"),
     MAX(qobuzCode = 27, displayLabel = "Max (24-bit/192 kHz)", sizeHint = "~140 MB / 4 min");

@@ -158,8 +158,9 @@ class PreviewUrlExtractor @Inject constructor(
         private const val FAST_CLIENT_FORMAT_SELECTOR = "251/250/140/bestaudio/best"
 
         /**
-         * Save Data on the lossy path: the same "low" the download tier means
-         * (QualityTier.LOW → 250/249, Opus ~70 / ~50 kbps), per client shape.
+         * The lowest lossy stream, for Data saver with Lossless off and for search previews under
+         * Data saver: the same "low" the download tier means (QualityTier.LOW → 250/249, Opus
+         * ~70 / ~50 kbps), per client shape. With Lossless on, Data saver streams YouTube's best.
          */
         private const val LOW_FORMAT_SELECTOR = "250/249/bestaudio"
         private const val LOW_FAST_CLIENT_FORMAT_SELECTOR = "250/249/140/bestaudio/best"
@@ -300,8 +301,8 @@ class PreviewUrlExtractor @Inject constructor(
             }
             fun bitrate(f: JsonObject) = f["bitrate"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
             fun isOpus(f: JsonObject) = (f["mimeType"]?.jsonPrimitive?.content ?: "").contains("opus")
-            // Save Data on the lossy path asks for the LOWEST stream; Opus still wins its rank
-            // for quality per byte.
+            // Data saver with Lossless off (and a search preview under Data saver) asks for the
+            // LOWEST stream; Opus still wins its rank for quality per byte.
             fun pick(l: List<JsonObject>) = if (lowestQuality) l.minByOrNull(::bitrate) else l.maxByOrNull(::bitrate)
             val opusBest = pick(audio.filter(::isOpus))
             val best = opusBest ?: pick(audio)
