@@ -809,7 +809,7 @@ class YTMusicApiClient @Inject constructor(
 
     /**
      * The artist's page as one browse, never its "View all" grids: the Albums
-     * and Singles carousels as they come, about ten of each, newest first.
+     * and Singles carousels as they come, about ten of each, led by the newest.
      * Enough for anything that only wants an artist's newest releases (Home's
      * "New from your artists"), at a third of [getArtist]'s requests. Same
      * parsing and the same blank-name "no answer" profile as [getArtist].

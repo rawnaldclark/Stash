@@ -64,9 +64,12 @@ class ArtistPageTest {
             assertTrue(it.id, it.id.startsWith("MPREb_"))
             assertTrue(it.title, it.year?.matches(Regex("\\d{4}")) == true)
         }
+        // Each shelf leads with its newest, but isn't strictly by year: this page's Albums end with a 2020
+        // soundtrack after 2015. So "New from your artists" sorts by year itself (NewFromArtists.pick).
         for (shelf in listOf(profile.albums, profile.singles)) {
             val years = shelf.map { it.year!!.toInt() }
-            assertEquals(years.sortedDescending(), years)
+            assertEquals(years.max(), years.first())
         }
+        assertEquals(listOf("2015", "2020"), profile.albums.takeLast(2).map { it.year })
     }
 }

@@ -15,7 +15,7 @@ data class ArtistReleases(val artist: String, val albums: List<AlbumSummary>, va
 /**
  * Home's "New from your artists": this year's and last year's albums and singles from the artists you listen to
  * most, newest first. A Release Radar for people without Spotify, from calls Stash already makes (an artist's
- * page, whose Albums and Singles & EPs carousels each list the newest first). The idea is Mochy Music's
+ * page, whose Albums and Singles & EPs carousels each lead with the newest). The idea is Mochy Music's
  * `NewFromArtists` row (github.com/realidkroo/Mochy-Music, GPL-3.0); this is written against Stash's own history
  * and client, not ported.
  */
@@ -56,8 +56,9 @@ object NewFromArtists {
 
     /**
      * The row: each artist's releases from [thisYear] and the year before, newest first. YouTube dates a release by
-     * its year alone, so within a year each page's own order stands (its shelves list newest first), albums ahead
-     * of singles (an album usually follows its lead singles), and the artists take turns in [pages]' order (your
+     * its year alone and its shelves lead with the newest but aren't strictly by year (a soundtrack can sit last),
+     * so this sorts by year; within a year each page's own order stands, albums ahead of singles (an album usually
+     * follows its lead singles), and the artists take turns in [pages]' order (your
      * most played first): every artist's newest, then every artist's second newest, and so on. A release on two
      * artists' pages (a collaboration) shows once. Empty when fewer than [MIN] are left.
      */
