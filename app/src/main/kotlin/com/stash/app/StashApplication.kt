@@ -45,12 +45,17 @@ import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import com.stash.feature.settings.RestoredFolderHandoff
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -65,6 +70,10 @@ import javax.inject.Inject
  * WorkManager is removed in AndroidManifest.xml so that this manual
  * configuration takes effect.
  */
+/** Pause before re-reading the Data saver switch after an error: this times the try, up to [DATA_SAVER_RETRY_MAX_STEPS]. */
+private const val DATA_SAVER_RETRY_STEP_MS = 5_000L
+private const val DATA_SAVER_RETRY_MAX_STEPS = 12L
+
 @HiltAndroidApp
 class StashApplication : Application(), Configuration.Provider {
 
@@ -287,6 +296,28 @@ class StashApplication : Application(), Configuration.Provider {
             Log.e("StashStartup", "startup task failed; continuing without it", t)
         },
     )
+
+    /**
+     * The Data saver mirror ([com.stash.core.data.prefs.DataSaverSnapshot]) put in step with the
+     * stored switch, for the startup work that reads it for its network constraint. On the first
+     * start after an update (no mirror yet) or after a restore it is stale, and the collector that
+     * keeps it in step runs on its own schedule: work queued first got "any connection" with the
+     * switch on. Every startup enqueue that reads the mirror awaits this. A switch that won't read
+     * leaves the mirror as it is.
+     */
+    private val dataSaverMirrored: Deferred<Unit> by lazy {
+        applicationScope.async {
+            val on = try {
+                streamingQualityPreferences.saveDataNow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "Data saver switch unreadable at start; the mirror stays as it is", e)
+                return@async
+            }
+            dataSaverBackgroundWork.onSwitch(on)
+        }
+    }
 
     /**
      * Supply the custom [Configuration] that tells WorkManager to use the
@@ -512,6 +543,8 @@ class StashApplication : Application(), Configuration.Provider {
         // first toggle), the built-in recipes/playlists stay inactive,
         // and Home/Library don't surface them.
         applicationScope.launch {
+            // Before anything below reads the Data saver mirror for a constraint.
+            dataSaverMirrored.await()
             val stashMixesEnabled = stashMixPreference.current()
             if (!stashMixesEnabled) {
                 // Best-effort cancel of any periodic work left over from an
@@ -553,23 +586,17 @@ class StashApplication : Application(), Configuration.Provider {
             // First-launch one-shot so users with a fresh install don't
             // wait 24h for the first enrichment pass. KEEP policy means
             // a re-launch before the worker completes doesn't re-enqueue.
-            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                "stash_track_info_enrichment_oneshot",
-                androidx.work.ExistingWorkPolicy.KEEP,
-                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>()
-                    .setConstraints(
-                        TrackInfoEnrichmentWorker.firstRunConstraints(
-                            com.stash.core.data.prefs.DataSaverSnapshot.isOn(this@StashApplication),
-                        ),
-                    )
-                    .build(),
-            )
+            TrackInfoEnrichmentWorker.enqueueFirstRun(this@StashApplication)
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced
         // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
         // worker is a no-op on every subsequent launch once it completes.
-        ArtBackfillWorker.enqueueOneTime(this)
+        // After the Data saver mirror is in step: its constraint reads it.
+        applicationScope.launch {
+            dataSaverMirrored.await()
+            ArtBackfillWorker.enqueueOneTime(this@StashApplication)
+        }
         // First-launch artist-photo backfill: resolves the official avatar
         // for every artist on the Library Artists tab (see ArtistImageBackfillWorker
         // KDoc). KEEP policy means a re-launch before the worker completes
@@ -607,11 +634,17 @@ class StashApplication : Application(), Configuration.Provider {
         // migrateIfNeeded() is internally idempotent (no-op after first run).
         applicationScope.launch { streamingQualityPreferences.migrateIfNeeded() }
         // Data saver: mirror the switch for the callers that can't suspend (worker constraints,
-        // picture sizes) and re-schedule the periodic art/metadata workers whenever it flips. For
-        // the app's lifetime; the first value also repairs a mirror a restore left stale.
+        // picture sizes) and re-schedule the art/metadata workers whenever it flips. For the app's
+        // lifetime: a read error re-subscribes after a pause instead of ending the collection, so
+        // one DataStore hiccup can't leave the mirror stuck for the session (onSwitch never throws).
         applicationScope.launch {
             streamingQualityPreferences.saveData
                 .distinctUntilChanged()
+                .retryWhen { cause, attempt ->
+                    Log.w("StashStartup", "Data saver switch unreadable (try ${attempt + 1}); reading it again", cause)
+                    delay(DATA_SAVER_RETRY_STEP_MS * (attempt + 1).coerceAtMost(DATA_SAVER_RETRY_MAX_STEPS))
+                    true
+                }
                 .collect { dataSaverBackgroundWork.onSwitch(it) }
         }
         // Auto-enqueue the v0.9.35 metadata backfill once per version.

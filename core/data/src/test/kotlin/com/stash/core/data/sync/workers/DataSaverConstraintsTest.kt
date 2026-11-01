@@ -83,4 +83,20 @@ class DataSaverConstraintsTest {
         assertEquals(NetworkType.NOT_REQUIRED, TrackInfoEnrichmentWorker.firstRunConstraints(dataSaverOn = false).requiredNetworkType)
         assertEquals(NetworkType.UNMETERED, TrackInfoEnrichmentWorker.firstRunConstraints(dataSaverOn = true).requiredNetworkType)
     }
+
+    @Test
+    fun `tagging periodic - Any network waits for Wi-Fi under Data saver, like the discovery drain`() {
+        for (mode in DownloadNetworkMode.values()) {
+            assertEquals("mode=$mode", constraintsFor(mode), TagEnrichmentWorker.periodicConstraints(mode, dataSaverOn = false))
+            assertEquals(
+                "mode=$mode",
+                StashDiscoveryWorker.periodicConstraints(mode, dataSaverOn = true),
+                TagEnrichmentWorker.periodicConstraints(mode, dataSaverOn = true),
+            )
+        }
+        assertEquals(
+            NetworkType.UNMETERED,
+            TagEnrichmentWorker.periodicConstraints(DownloadNetworkMode.ANY_NETWORK, dataSaverOn = true).requiredNetworkType,
+        )
+    }
 }

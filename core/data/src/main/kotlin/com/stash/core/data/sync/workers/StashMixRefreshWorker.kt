@@ -311,6 +311,19 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
 
         /**
+         * The Data saver switch flipped: the automatic full one-shot ([enqueueOneTime], cold start or
+         * after a discovery download), if still waiting for its network, is queued again with the new
+         * constraint ([requeueIfWaiting]).
+         */
+        suspend fun requeueAutomaticIfWaiting(context: Context, dataSaverOn: Boolean): Boolean =
+            WorkManager.getInstance(context).requeueIfWaiting(
+                ONE_SHOT_WORK_NAME,
+                OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
+                    .setConstraints(oneShotConstraints(materializeOnly = false, dataSaverOn = dataSaverOn))
+                    .build(),
+            )
+
+        /**
          * Fire a one-shot refresh for a single recipe. Used by the Home
          * long-press "Refresh this mix" action. Distinct unique-work name
          * per recipe id so refreshing mix A doesn't clobber a still-pending
@@ -484,7 +497,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // forget — backfill failure must never block a successful refresh,
         // so the enqueue itself is guarded (e.g. WorkManager not yet
         // initialised in a unit-test JVM throws IllegalStateException).
-        runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
+        // A mix the user made or refreshed (by recipe) gets its art on any connection.
+        runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext, userAsked = targetId > 0L) }
             .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
 
         // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe

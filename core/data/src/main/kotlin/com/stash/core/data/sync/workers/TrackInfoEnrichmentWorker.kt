@@ -6,6 +6,8 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -66,13 +68,35 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
             .setRequiredNetworkType(backgroundNetworkType(dataSaverOn))
             .build()
 
+        /** The first-launch pass's unique name ([enqueueFirstRun]). */
+        private const val FIRST_RUN_WORK_NAME = "stash_track_info_enrichment_oneshot"
+
         /**
          * The first-launch pass (queued by the app at start, so a fresh install doesn't wait a day):
          * no constraint, as before, except Wi-Fi while Data saver is on.
          */
-        fun firstRunConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
+        internal fun firstRunConstraints(dataSaverOn: Boolean): Constraints = Constraints.Builder()
             .setRequiredNetworkType(backgroundNetworkType(dataSaverOn, otherwise = NetworkType.NOT_REQUIRED))
             .build()
+
+        private fun firstRunRequest(dataSaverOn: Boolean) =
+            OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().setConstraints(firstRunConstraints(dataSaverOn)).build()
+
+        /** Queue the first-launch pass with [firstRunConstraints]. KEEP: a relaunch before it ran queues no other. */
+        fun enqueueFirstRun(context: Context) {
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                FIRST_RUN_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                firstRunRequest(DataSaverSnapshot.isOn(context)),
+            )
+        }
+
+        /**
+         * The Data saver switch flipped: the first-launch pass, if still waiting for its network, is
+         * queued again with the new constraint ([requeueIfWaiting]).
+         */
+        suspend fun requeueFirstRunIfWaiting(context: Context, dataSaverOn: Boolean): Boolean =
+            WorkManager.getInstance(context).requeueIfWaiting(FIRST_RUN_WORK_NAME, firstRunRequest(dataSaverOn))
 
         suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<TrackInfoEnrichmentWorker>(

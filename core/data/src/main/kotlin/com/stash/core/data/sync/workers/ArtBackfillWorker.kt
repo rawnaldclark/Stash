@@ -7,6 +7,7 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.audio.AudioDurationExtractor
@@ -24,6 +25,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 /**
  * Backfill that repairs Discovery-pipeline metadata gaps. Three passes run
@@ -110,7 +112,8 @@ class ArtBackfillWorker @AssistedInject constructor(
          * anything to do ([ArtBackfillSchedule]); a cold start with nothing
          * new costs three small queries and no request.
          */
-        fun enqueueOneTime(context: Context) = enqueue(context, ExistingWorkPolicy.KEEP)
+        fun enqueueOneTime(context: Context) =
+            enqueue(context, ExistingWorkPolicy.KEEP, constraints(DataSaverSnapshot.isOn(context)))
 
         /**
          * After each [StashMixRefreshWorker] cycle, so freshly-created
@@ -120,8 +123,31 @@ class ArtBackfillWorker @AssistedInject constructor(
          * up the stubs the refresh just made (a run already under way may have
          * read its batch before they existed); the queued run does nothing if
          * there turns out to be nothing new.
+         *
+         * @param userAsked the refresh was of a mix the user made or refreshed by hand: its art comes
+         *   on any connection under Data saver too (their choice, like the refresh itself), and a run
+         *   waiting for Wi-Fi is replaced, not appended behind, or it would hold this one as well.
          */
-        fun enqueueFromMixRefresh(context: Context) = enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
+        suspend fun enqueueFromMixRefresh(context: Context, userAsked: Boolean = false) {
+            val dataSaverOn = DataSaverSnapshot.isOn(context)
+            if (!userAsked || !dataSaverOn) {
+                enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE, constraints(dataSaverOn))
+                return
+            }
+            val running = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(WORK_NAME).first()
+                .any { it.state == WorkInfo.State.RUNNING }
+            // A run under way keeps going and this one follows it; otherwise it takes the waiting one's place.
+            val policy = if (running) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.REPLACE
+            enqueue(context, policy, constraints(dataSaverOn = false))
+        }
+
+        /**
+         * The Data saver switch flipped: a run still waiting for its network is queued again with the
+         * new constraint ([requeueIfWaiting]), so turning Data saver off lets a run held for Wi-Fi go
+         * on mobile data. A run under way, or none waiting, is left alone.
+         */
+        suspend fun requeueIfWaiting(context: Context, dataSaverOn: Boolean): Boolean =
+            WorkManager.getInstance(context).requeueIfWaiting(WORK_NAME, request(constraints(dataSaverOn)))
 
         /**
          * Any connection; only Wi-Fi while Data saver is on ([backgroundNetworkType]): a pass is up
@@ -131,13 +157,13 @@ class ArtBackfillWorker @AssistedInject constructor(
             .setRequiredNetworkType(backgroundNetworkType(dataSaverOn))
             .build()
 
-        private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
-            val work = OneTimeWorkRequestBuilder<ArtBackfillWorker>()
-                .setConstraints(constraints(DataSaverSnapshot.isOn(context)))
-                .build()
+        private fun request(constraints: Constraints) =
+            OneTimeWorkRequestBuilder<ArtBackfillWorker>().setConstraints(constraints).build()
+
+        private fun enqueue(context: Context, policy: ExistingWorkPolicy, constraints: Constraints) {
             val workManager = WorkManager.getInstance(context)
             workManager.cancelUniqueWork(RETIRED_MIX_REFRESH_WORK_NAME)
-            workManager.enqueueUniqueWork(WORK_NAME, policy, work)
+            workManager.enqueueUniqueWork(WORK_NAME, policy, request(constraints))
         }
     }
 

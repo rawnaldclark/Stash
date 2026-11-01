@@ -128,9 +128,7 @@ class StashDiscoveryWorker @AssistedInject constructor(
          * for, and keep their constraints.
          */
         internal fun periodicConstraints(mode: DownloadNetworkMode, dataSaverOn: Boolean): Constraints =
-            constraintsFor(
-                if (dataSaverOn && mode == DownloadNetworkMode.ANY_NETWORK) DownloadNetworkMode.WIFI_ANY else mode,
-            )
+            backgroundConstraintsFor(mode, dataSaverOn)
 
         /**
          * Schedule / re-schedule the periodic worker with [mode]'s
