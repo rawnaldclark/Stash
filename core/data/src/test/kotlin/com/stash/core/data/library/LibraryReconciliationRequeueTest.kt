@@ -86,11 +86,55 @@ class LibraryReconciliationRequeueTest {
         )
     }
 
+    /**
+     * The sync leaves a song unqueued when its audio is already on the phone as another row, and
+     * links that copy instead (DiffWorker, a Download switch). The requeue used to file it again in
+     * the same pass, and the second download happened anyway.
+     */
+    @Test fun `a sync's requeue skips a song already on the phone as another row`() = runTest {
+        val alreadyHere = missingSong(title = "Starting Over")
+        db.trackDao().insert(
+            TrackEntity(
+                title = "Starting Over (Official Audio)", artist = "A", durationMs = 1000L, source = MusicSource.YOUTUBE,
+                youtubeId = "handVideo01", filePath = "/music/starting-over.flac", isDownloaded = true,
+                canonicalTitle = com.stash.core.common.TrackCanonical.title("Starting Over"), canonicalArtist = "a",
+            )
+        )
+        val notHere = missingSong(title = "Never Heard")
+        val run = db.syncHistoryDao().insert(SyncHistoryEntity())
+
+        val result = reconciler().reconcile(syncId = run)
+
+        assertEquals(1, result.unqueuedRequeued)
+        assertNull("one file of a song is enough", db.downloadQueueDao().getByTrackId(alreadyHere))
+        assertEquals(run, db.downloadQueueDao().getByTrackId(notHere)!!.syncId)
+    }
+
+    @Test fun `a copy whose file is gone doesn't count, so its song is requeued`() = runTest {
+        val song = missingSong(title = "Starting Over")
+        val gone = db.trackDao().insert(
+            TrackEntity(
+                title = "Starting Over", artist = "A", durationMs = 1000L, source = MusicSource.YOUTUBE,
+                youtubeId = "handVideo01", filePath = "/music/gone.flac", isDownloaded = true,
+                canonicalTitle = com.stash.core.common.TrackCanonical.title("Starting Over"), canonicalArtist = "a",
+            )
+        )
+        val run = db.syncHistoryDao().insert(SyncHistoryEntity())
+
+        reconciler().reconcile(
+            syncId = run,
+            checkFileExists = { _, _, _, _, _ -> FileExistenceResult(exists = false) },
+        )
+
+        assertEquals(false, db.trackDao().getById(gone)!!.isDownloaded)
+        assertEquals(run, db.downloadQueueDao().getByTrackId(song)!!.syncId)
+    }
+
     private fun reconciler() = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), tokens)
 
     /** An undownloaded song in a synced playlist with no download row: what the requeue looks for. */
-    private suspend fun missingSong(): Long {
-        val playlist = db.playlistDao().insert(
+    private suspend fun missingSong(title: String = "Missing"): Long {
+        val playlist = db.playlistDao().findBySourceId("custom_synced")?.id ?: db.playlistDao().insert(
             PlaylistEntity(
                 name = "Synced", source = MusicSource.BOTH, sourceId = "custom_synced",
                 type = PlaylistType.CUSTOM, syncEnabled = true,
@@ -98,8 +142,8 @@ class LibraryReconciliationRequeueTest {
         )
         val song = db.trackDao().insert(
             TrackEntity(
-                title = "Missing", artist = "A", durationMs = 1000L, source = MusicSource.BOTH,
-                canonicalTitle = "missing", canonicalArtist = "a",
+                title = title, artist = "A", durationMs = 1000L, source = MusicSource.BOTH,
+                canonicalTitle = com.stash.core.common.TrackCanonical.title(title), canonicalArtist = "a",
             )
         )
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = playlist, trackId = song, position = 0))

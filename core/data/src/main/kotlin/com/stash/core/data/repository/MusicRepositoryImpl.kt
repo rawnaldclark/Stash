@@ -18,6 +18,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.library.canonicalWordsForSave
 import com.stash.core.data.library.findLibraryCopy
+import com.stash.core.data.library.libraryCopiesOf
 import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.library.TrackSourceRule
 import com.stash.core.data.mapper.toDomain
@@ -964,16 +965,26 @@ class MusicRepositoryImpl @Inject constructor(
         // Where each song sits, and which songs the user took out, read once for the copies below.
         val memberships = playlistDao.getCrossRefsForPlaylist(playlistId).associateBy { it.trackId }
         val copyLinks = linkedMapOf<Long, com.stash.core.data.db.entity.PlaylistTrackCrossRef>()
+        // The phone's copies of these songs, read at once (libraryCopiesOf). A failed read reads as
+        // none: the songs download as before.
+        val copies = try {
+            trackDao.libraryCopiesOf(candidates)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "library-copy lookup failed for playlist $playlistId", e)
+            emptyMap()
+        }
         val entries = candidates.mapNotNull { entity ->
             if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
             // Already on the phone as another row (a hand download, a copy synced from the other
-            // service): link that copy here, where the song sits, instead of downloading the song
-            // a second time (a second file, a second row in Downloads). The link the sync makes for
-            // its own songs (DiffWorker). The song's own row stays as it is. A copy the user took
-            // out of this playlist doesn't stand in for the song: it downloads as before.
-            val copy = libraryCopyFor(entity)?.takeIf { memberships[it.id]?.removedAt == null }
+            // service): never downloaded a second time (a second file, a second row in Downloads).
+            // The copy is linked here, where the song sits, as the sync links its own (DiffWorker),
+            // unless it is a member already or one the user took out (never brought back). The
+            // song's own row stays as it is.
+            val copy = copies[entity.id]
             if (copy != null) {
-                if (copy.id !in memberships) copyLinks[copy.id] = copyLink(playlistId, copy.id, memberships[entity.id])
+                if (copy.id !in memberships) copyLinks.putIfAbsent(copy.id, copyLink(playlistId, copy.id, memberships[entity.id]))
                 return@mapNotNull null
             }
             com.stash.core.data.db.entity.DownloadQueueEntity(

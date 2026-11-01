@@ -133,7 +133,14 @@ class LibraryReconciliationUseCase @Inject constructor(
         // used to file had no sync id, so only the background drain took them, and
         // since #474 it downloaded them unasked at every app start, Stream-only
         // included (#532). They also hid their songs from the next sync's requeue.
-        val unqueuedTrackIds = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources) else emptyList()
+        val unqueued = if (syncId != null) downloadQueueDao.getUnqueuedTrackIds(connectedSources) else emptyList()
+        // A song already on the phone as another row is never downloaded a second time
+        // (SameSongRule.isLibraryCopy, the check a tap, a Download switch and the sync ask): the
+        // sync links that copy instead and leaves the song unqueued, and this requeue would
+        // otherwise file it again in the same pass. Read after the disk check and the adoption
+        // above, so a copy whose file is gone doesn't count and the song is queued as before.
+        val alreadyOnPhone = if (unqueued.isEmpty()) emptySet() else trackDao.libraryCopiesOf(trackDao.getByIds(unqueued)).keys
+        val unqueuedTrackIds = unqueued.filterNot { it in alreadyOnPhone }
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
                 com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)

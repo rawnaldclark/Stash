@@ -165,7 +165,7 @@ class SameSongRuleTest {
     private suspend fun copyOf(title: String, lengthMs: Long, youtubeId: String? = null, soundCloudId: String? = null, exclude: Long? = null) =
         dao.findLibraryCopy(title, "B & A", lengthMs, youtubeId = youtubeId, soundCloudId = soundCloudId, excludeTrackId = exclude)?.id
 
-    @Test fun `a song downloaded under another video, or from Spotify, is the phone's copy: ids don't count`() = runTest {
+    @Test fun `a song downloaded under another video, or from Spotify, is the phone's copy, ids don't count`() = runTest {
         val copy = copyRow("Song", 304_000L, youtubeId = "video000001", spotifyUri = "spotify:track:1", file = "/m/song.flac")
         // Another upload of the song, from a YouTube playlist: its row could never take the copy's (ids disagree),
         // but its audio is the same song, so it is not downloaded again.

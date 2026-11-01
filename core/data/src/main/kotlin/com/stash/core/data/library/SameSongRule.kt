@@ -164,6 +164,32 @@ suspend fun TrackDao.findLibraryCopy(
 }
 
 /**
+ * For each of [rows] (library rows, with their ids), the phone's own copy of its song in another
+ * row, when there is one ([SameSongRule.isLibraryCopy]): [findLibraryCopy] for a list, its
+ * candidates read once ([TrackDao.findHoldingFileByCanonicalIdentities]: index-backed, chunked for
+ * the bind cap). Keyed by row id; a row with no copy, or no canonical words, is absent.
+ *
+ * The same-video step of [findLibraryCopy] is left out: a row's video id is unique, so no other row
+ * holds it.
+ */
+suspend fun TrackDao.libraryCopiesOf(rows: List<TrackEntity>): Map<Long, TrackEntity> {
+    if (rows.isEmpty()) return emptyMap()
+    val candidates = findHoldingFileByCanonicalIdentities(rows.map { it.canonicalTitle to it.canonicalArtist })
+        .groupBy { it.canonicalTitle to it.canonicalArtist }
+    val copies = HashMap<Long, TrackEntity>()
+    for (row in rows) {
+        SameSongRule.libraryCopyAmong(
+            rows = candidates[row.canonicalTitle to row.canonicalArtist].orEmpty(),
+            title = row.title,
+            durationMs = row.durationMs,
+            soundCloudId = row.soundCloudId,
+            excludeTrackId = row.id,
+        )?.let { copies[row.id] = it }
+    }
+    return copies
+}
+
+/**
  * Every row with the incoming song's canonical words that [SameSongRule.isSameSong] calls that song,
  * oldest first. None when the title or artist has no canonical words (a title that is only a
  * bracket, a blank artist): a blank key would match every other blank row.

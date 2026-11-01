@@ -21,6 +21,7 @@ import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.libraryCopiesOf
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
@@ -950,31 +951,21 @@ class DiffWorker @AssistedInject constructor(
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
             // A new song already on the phone as another row (cause 4 of the duplicates: a Spotify
             // row downloaded under one video while this YouTube playlist holds another upload, so
-            // the ids keep them two rows) is linked here, where the song sits, instead of being
-            // downloaded again; the new row keeps its own ids for the next sync. The same shared
-            // check as a tap and a playlist's Download switch (SameSongRule.isLibraryCopy), its
-            // candidates read once per playlist (findHoldingFileByCanonicalIdentities).
-            val copyCandidates: Map<CanonicalKey, List<TrackEntity>> = trackDao
-                .findHoldingFileByCanonicalIdentities(
-                    newTracks.map { it.entity.canonicalTitle to it.entity.canonicalArtist },
-                )
-                .groupBy { CanonicalKey(it.canonicalTitle, it.canonicalArtist) }
+            // the ids keep them two rows) is not downloaded again: its copy is linked here, where
+            // the song sits, and the new row keeps its own ids for the next sync. A copy the user
+            // took out of this playlist is not linked back (addCrossRefIfNotSoftDeleted), and the
+            // song is still not downloaded twice. The shared check every download path asks
+            // (SameSongRule.isLibraryCopy), its candidates read once per playlist.
+            val copies = trackDao.libraryCopiesOf(
+                newTracks.filterNot { it.entity.soundCloudPreview }
+                    .map { it.entity.copy(id = checkNotNull(it.persistedId)) },
+            )
             val firstPositionOf = newOccurrences.groupBy({ it.first }, { it.second.position })
                 .mapValues { (_, positions) -> positions.min() }
             for (batchTrack in newTracks) {
                 if (batchTrack.entity.soundCloudPreview) continue // A preview is never queued for download.
                 val trackId = checkNotNull(batchTrack.persistedId)
-                // A copy the user took out of this playlist doesn't stand in for the song: it isn't
-                // linked back (addCrossRefIfNotSoftDeleted), so the song downloads as before.
-                val copy = SameSongRule.libraryCopyAmong(
-                    rows = copyCandidates[CanonicalKey(batchTrack.entity.canonicalTitle, batchTrack.entity.canonicalArtist)]
-                        .orEmpty()
-                        .filter { existingCrossRefs[it.id]?.removedAt == null },
-                    title = batchTrack.entity.title,
-                    durationMs = batchTrack.entity.durationMs,
-                    soundCloudId = batchTrack.entity.soundCloudId,
-                    excludeTrackId = trackId,
-                )
+                val copy = copies[trackId]
                 if (copy != null) {
                     val position = firstPositionOf[batchTrack] ?: 0
                     addCrossRefIfNotSoftDeleted(localPlaylist.id, copy.id, position, existingCrossRefs, crossRefsToInsert)

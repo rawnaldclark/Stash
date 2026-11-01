@@ -118,7 +118,7 @@ class DiffWorkerLibraryCopyTest {
         assertNull(db.playlistDao().getCrossRef(pid, copy))
     }
 
-    @Test fun `a copy the user took out of the playlist is not linked back, so the song downloads`() = runBlocking {
+    @Test fun `a copy the user took out of the playlist is not linked back, and the song is not downloaded twice`() = runBlocking {
         val copy = downloaded("Starting Over", youtubeId = "handVideo01", lengthMs = 304_000L)
         val pid = youtubePlaylist(snapshot("Starting Over", "otherVideo1", position = 0, lengthMs = 304_000L))
         db.playlistDao().insertCrossRef(
@@ -127,7 +127,7 @@ class DiffWorkerLibraryCopyTest {
 
         buildWorker().doWork()
 
-        assertEquals(1, db.downloadQueueDao().getPendingBySyncId(SYNC_ID).size)
+        assertEquals(0, db.downloadQueueDao().getPendingBySyncId(SYNC_ID).size)
         assertNotNull("still removed", db.playlistDao().getCrossRef(pid, copy)!!.removedAt)
     }
 

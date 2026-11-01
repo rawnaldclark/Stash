@@ -25,9 +25,9 @@ import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -96,7 +96,7 @@ class MusicRepositoryLibraryCopyTest {
         assertFalse("queueDownload reports nothing queued", repo.queueDownload(stub))
 
         assertNull(db.downloadQueueDao().getByTrackId(stub))
-        verify(exactly = 0) { enqueuer.enqueue(any()) }
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
         // Nothing changed on either row: the stub keeps no file, the copy keeps its own.
         assertFalse(db.trackDao().getById(stub)!!.isDownloaded)
         assertEquals("/music/starting-over.flac", db.trackDao().getById(handDownload)!!.filePath)
@@ -117,7 +117,7 @@ class MusicRepositoryLibraryCopyTest {
     @Test fun `with no copy on the phone a tap downloads as before`() = runTest {
         val stub = song("Starting Over")
         assertEquals(DownloadRequestResult.QUEUED, repo().requestDownload(stub))
-        verify(exactly = 1) { enqueuer.enqueue(any()) }
+        coVerify(exactly = 1) { enqueuer.enqueue(any()) }
     }
 
     // ── A playlist's Download switch ───────────────────────────────────────
@@ -144,7 +144,7 @@ class MusicRepositoryLibraryCopyTest {
         assertEquals(3, db.playlistDao().getCrossRefsForPlaylist(pid).size)
     }
 
-    @Test fun `a copy the user took out of the playlist does not stand in, so the song downloads`() = runTest {
+    @Test fun `a copy the user took out of the playlist is not linked back, and the song is not downloaded twice`() = runTest {
         val handDownload = song("Starting Over", file = "/music/starting-over.flac")
         val pid = playlist("Road Trip", PlaylistType.CUSTOM)
         val stub = member(pid, 0, song("Starting Over"))
@@ -152,9 +152,9 @@ class MusicRepositoryLibraryCopyTest {
             PlaylistTrackCrossRef(playlistId = pid, trackId = handDownload, position = 1, removedAt = java.time.Instant.now()),
         )
 
-        assertEquals(1, repo().queueDownloadsForPlaylist(pid, background = true))
+        assertEquals(0, repo().queueDownloadsForPlaylist(pid, background = true))
 
-        assertEquals(listOf(stub), db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId })
+        assertNull(db.downloadQueueDao().getByTrackId(stub))
         assertNotNull("still removed", db.playlistDao().getCrossRef(pid, handDownload)!!.removedAt)
     }
 
