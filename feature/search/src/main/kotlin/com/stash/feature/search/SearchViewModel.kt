@@ -376,7 +376,7 @@ class SearchViewModel @Inject constructor(
                     StreamRoutingResult.NoConnectivity ->
                         _userMessages.emit("You're offline — can't stream this track.")
                     StreamRoutingResult.DownloadMode ->
-                        _userMessages.emit("You're in Download mode. Switch to Stream only to play this.")
+                        _userMessages.emit("Offline plays only your downloads. Switch to Online to play this.")
                 }
             } finally {
                 _tappedTrackId.value = null

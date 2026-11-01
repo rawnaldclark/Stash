@@ -289,6 +289,28 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun `onResultTap refused by Offline names the mode and the way out`() = runTest {
+        // The mode is "Offline" / "Online" on screen (2026-11-01); the refusal must
+        // use those words, not the old "Download mode" / "Stream only".
+        val playerRepository = mock<PlayerRepository> {
+            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.DownloadMode
+        }
+        val streamingPreference = mock<StreamingPreference> {
+            onBlocking { current() } doReturn false
+        }
+        val vm = newVm(
+            playerRepository = playerRepository,
+            streamingPreference = streamingPreference,
+        )
+
+        vm.userMessages.test {
+            vm.onResultTap(sampleTrack())
+            assertEquals("Offline plays only your downloads. Switch to Online to play this.", awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `onResultTap streaming on but cellular refused emits snackbar`() = runTest {
         val playerRepository = mock<PlayerRepository> {
             onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.CellularRefused

@@ -3592,8 +3592,8 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
 
         /** Shown when an All Songs file can't be played because it isn't where the scan found it. */
-        /** Download mode refuses a song that isn't on the phone. */
-        internal const val DOWNLOAD_MODE_MESSAGE = "You're in Download mode. Switch to Stream only to play this."
+        /** Offline (Download mode in code) refuses a song that isn't on the phone. */
+        internal const val DOWNLOAD_MODE_MESSAGE = "Offline plays only your downloads. Switch to Online to play this."
 
         internal const val SCANNED_FILE_MISSING_MESSAGE =
             "That file isn't there anymore. Rescan your folders: Library, then the disk icon at the top."
