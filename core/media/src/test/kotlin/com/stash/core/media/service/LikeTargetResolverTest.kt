@@ -21,7 +21,10 @@ import org.junit.Test
  */
 class LikeTargetResolverTest {
 
-    private val trackDao = mockk<TrackDao>(relaxed = true)
+    private val trackDao = mockk<TrackDao>(relaxed = true).also {
+        // No merged duplicates here: a relaxed mock would answer every alias lookup with a row.
+        coEvery { it.findByAlias(any(), any()) } returns null
+    }
     private val blocklistGuard = mockk<BlocklistGuard>(relaxed = true)
     private val resolver = LikeTargetResolver(trackDao, blocklistGuard)
 

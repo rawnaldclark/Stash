@@ -211,24 +211,28 @@ class MusicRepositoryEnsureTrackPersistedTest {
     private fun buildRepo(
         trackDao: TrackDao,
         blocklistGuard: BlocklistGuard = mockk(relaxed = true),
-    ): MusicRepositoryImpl = MusicRepositoryImpl(
-        context = mockk(relaxed = true),
-        trackDao = trackDao,
-        playlistDao = mockk(relaxed = true),
-        syncHistoryDao = mockk(relaxed = true),
-        downloadQueueDao = mockk(relaxed = true),
-        discoveryQueueDao = mockk(relaxed = true),
-        blocklistGuard = blocklistGuard,
-        trackMatcher = mockk(relaxed = true),
-        stashMixRecipeDao = mockk(relaxed = true),
-        downloadNetworkPreference = mockk(relaxed = true),
-        streamingPreference = mockk(relaxed = true),
-        libraryScopePreference = mockk(relaxed = true),
-        localFileOps = mockk(relaxed = true),
-        syncPreferencesManager = mockk(relaxed = true),
-        singleTrackDownloadEnqueuer = mockk(relaxed = true),
-        lastFmRecommendationSource = mockk(relaxed = true),
-        sharedMixDao = mockk(relaxed = true),
-        downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
-    )
+    ): MusicRepositoryImpl = run {
+        // No merged duplicates here: a relaxed mock would answer every alias lookup with a row.
+        coEvery { trackDao.findByAlias(any(), any()) } returns null
+        MusicRepositoryImpl(
+            context = mockk(relaxed = true),
+            trackDao = trackDao,
+            playlistDao = mockk(relaxed = true),
+            syncHistoryDao = mockk(relaxed = true),
+            downloadQueueDao = mockk(relaxed = true),
+            discoveryQueueDao = mockk(relaxed = true),
+            blocklistGuard = blocklistGuard,
+            trackMatcher = mockk(relaxed = true),
+            stashMixRecipeDao = mockk(relaxed = true),
+            downloadNetworkPreference = mockk(relaxed = true),
+            streamingPreference = mockk(relaxed = true),
+            libraryScopePreference = mockk(relaxed = true),
+            localFileOps = mockk(relaxed = true),
+            syncPreferencesManager = mockk(relaxed = true),
+            singleTrackDownloadEnqueuer = mockk(relaxed = true),
+            lastFmRecommendationSource = mockk(relaxed = true),
+            sharedMixDao = mockk(relaxed = true),
+            downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
+        )
+    }
 }

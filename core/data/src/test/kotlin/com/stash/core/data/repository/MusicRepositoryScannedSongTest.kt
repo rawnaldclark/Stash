@@ -22,7 +22,10 @@ import org.junit.Test
  */
 class MusicRepositoryScannedSongTest {
 
-    private val trackDao = mockk<TrackDao>(relaxed = true)
+    private val trackDao = mockk<TrackDao>(relaxed = true).also {
+        // No merged duplicates here: a relaxed mock would answer every alias lookup with a row.
+        coEvery { it.findByAlias(any(), any()) } returns null
+    }
 
     private val scanned = Track(
         id = scannedTrackId(3L),

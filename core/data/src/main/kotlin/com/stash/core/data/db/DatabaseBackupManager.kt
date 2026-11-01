@@ -678,6 +678,7 @@ class DatabaseBackupManager @Inject constructor(
                     cleanupStaging(stagedDb, stagedDatastore)
                     // No restart follows a merge, so the re-key runs now.
                     rearmCanonicalRecompute(runNow = true)
+                    rearmDuplicateCleanup(runNow = true)
                     return@runCatching BackupImportResult(
                         restoredTreeUri = null,
                         requiresRestart = false,
@@ -725,7 +726,10 @@ class DatabaseBackupManager @Inject constructor(
             }
             // After the settings files: a restored canonical_recompute file must not
             // hide that the swapped-in library needs the re-key.
-            if (scope.swapsDatabaseFile) rearmCanonicalRecompute(runNow = false)
+            if (scope.swapsDatabaseFile) {
+                rearmCanonicalRecompute(runNow = false)
+                rearmDuplicateCleanup(runNow = false)
+            }
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
             //    when this scope actually restored settings files. We use a
@@ -762,6 +766,24 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the canonical re-key", e)
+        }
+    }
+
+    /**
+     * A restored or merged backup made before schema 76 brings back the id-less stubs the one-time
+     * duplicate cleanup tidied ([com.stash.core.data.library.duplicates.DuplicateCleanup]).
+     * Re-arming makes it run again (at the next start, or now after a merge, which restarts
+     * nothing); over rows it already tidied it changes nothing. Best-effort, like
+     * [rearmCanonicalRecompute]: a missed re-arm only leaves the restored stubs as they were.
+     */
+    private suspend fun rearmDuplicateCleanup(runNow: Boolean) {
+        try {
+            com.stash.core.data.library.duplicates.DuplicateCleanupState.forContext(context).rearm()
+            if (runNow) com.stash.core.data.sync.workers.DuplicateCleanupWorker.enqueueAfterRearm(context)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the duplicate cleanup", e)
         }
     }
 

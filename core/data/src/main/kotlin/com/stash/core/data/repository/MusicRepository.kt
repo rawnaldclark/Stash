@@ -32,6 +32,13 @@ interface MusicRepository {
      */
     val trackDeletions: SharedFlow<Long>
 
+    /**
+     * Emits [trackId] on [trackDeletions] for a row removed outside this repository's own delete
+     * paths, together with its file: the extra copy of a merged duplicate (Library Health →
+     * Possible duplicates). The player then drops it from the queue like any deleted song.
+     */
+    suspend fun announceTrackGone(trackId: Long) {}
+
     // ── Track queries ───────────────────────────────────────────────────
 
     /** All tracks ordered by most-recently-added first. */

@@ -41,6 +41,8 @@ class LikeCoordinatorTest {
         kotlinx.coroutines.runBlocking {
             coEvery { resolver.ensureSpotifyUri(any()) } returns null
             coEvery { resolver.ensureYoutubeId(any()) } returns null
+            // No merged duplicates here: a like on a missing row finds no row it was merged into.
+            coEvery { trackDao.findByAlias(any(), any()) } returns null
         }
     }
 
@@ -276,6 +278,22 @@ class LikeCoordinatorTest {
         advanceTimeBy(10_000L); runCurrent()
 
         coVerify(exactly = 0) { dispatcher.like(any(), any()) }
+    }
+
+    /** A like queued for a row that a duplicate merge then took away mirrors the row it went into. */
+    @Test fun `a like on a merged-away row mirrors the row it was merged into`() = runTest {
+        mirrorPrefs(spotify = true, yt = false)
+        coEvery { trackDao.getById(7L) } returns null
+        coEvery {
+            trackDao.findByAlias(com.stash.core.data.db.entity.TrackAliasEntity.KIND_TRACK_ID, "7")
+        } returns entity(id = 9L)
+        coEvery { dispatcher.like(any(), any()) } returns mapOf(Destination.SPOTIFY to Result.success(Unit))
+        val c = coordinator()
+
+        c.setLiked(7L, liked = true)
+        advanceTimeBy(10_000L); runCurrent()
+
+        coVerify(exactly = 1) { dispatcher.like(match { it.id == 9L }, setOf(Destination.SPOTIFY)) }
     }
     /**
      * Last.fm needs no platform id — it matches on artist + title — so it must fire

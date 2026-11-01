@@ -902,6 +902,20 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     suspend fun findByYoutubeId(youtubeId: String): TrackEntity?
 
+    /**
+     * The row a merge pointed the merged-away id [value] of [kind] at (`track_aliases`, schema 76),
+     * or null. Look the id up in its own column first: an alias only stands in for an id no row
+     * holds any more. See [findByYoutubeIdOrAlias] and its siblings.
+     */
+    @Query(
+        """
+        SELECT t.* FROM tracks t INNER JOIN track_aliases a ON a.track_id = t.id
+        WHERE a.kind = :kind AND a.value = :value
+        LIMIT 1
+        """,
+    )
+    suspend fun findByAlias(kind: String, value: String): TrackEntity?
+
     @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
     suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?
 
