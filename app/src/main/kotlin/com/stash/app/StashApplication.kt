@@ -591,6 +591,7 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
+        applicationScope.launch { relabelYouTubeRowsClaimingSpotify() }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming
         // quality inherits their download choice instead of silently changing.
@@ -1006,6 +1007,30 @@ class StashApplication : Application(), Configuration.Provider {
             val pinned = playlistDao.pinSyncedPlaylists(System.currentTimeMillis())
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
+        }
+    }
+
+    /**
+     * Data fix for the green-dot lie: a YouTube stream that a like or a listen saved as a Spotify
+     * song (Now Playing rebuilt every stream as one) becomes a YouTube song. Only rows that say
+     * Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist
+     * ([TrackDao.relabelYouTubeRowsClaimingSpotify]); liked rows included, since a YouTube song in
+     * Liked Songs downloads with any service connected. A row with a Spotify id is never touched,
+     * and nothing is deleted.
+     *
+     * At every launch, not once: the UPDATE is idempotent and cheap (one pass over `tracks`; new
+     * rows are saved right through TrackSourceRule, so after the first run it finds only a row that
+     * left the Spotify playlist that spared it), and a backup from before this fix, restored later,
+     * is fixed too. A failure is logged and left for the next launch.
+     */
+    private suspend fun relabelYouTubeRowsClaimingSpotify() {
+        try {
+            val relabelled = trackDao.relabelYouTubeRowsClaimingSpotify()
+            if (relabelled > 0) Log.i("StashMigration", "relabelYouTubeRowsClaimingSpotify: $relabelled YouTube row(s) no longer marked Spotify")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("StashMigration", "relabelYouTubeRowsClaimingSpotify failed; the next launch tries again", e)
         }
     }
 

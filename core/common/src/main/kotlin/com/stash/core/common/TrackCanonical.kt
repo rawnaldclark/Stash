@@ -113,8 +113,10 @@ object TrackCanonical {
      * The [Version] a title names.
      *
      * @param title Raw track title.
+     * @param words which words name a version: the library rule's [VersionWords.of] (the default), or the stricter
+     *   [VersionWords.forCatalogMatch] for [sameTake].
      */
-    fun version(title: String): Version {
+    fun version(title: String, words: (String) -> Set<String> = VersionWords::of): Version {
         val versionText = StringBuilder()
         val unbracketed = BRACKET_GROUP.replace(title) { group ->
             val bracketed = group.value.trim()
@@ -125,7 +127,7 @@ object TrackCanonical {
         val dash = VersionWords.DASH_SUFFIX.find(uncredited)
         if (dash != null) versionText.append(' ').append(dash.value)
         val base = if (dash != null) uncredited.substring(0, dash.range.first) else uncredited
-        return Version(base = strictCanonical(base), words = VersionWords.of(versionText.toString()))
+        return Version(base = strictCanonical(base), words = words(versionText.toString()))
     }
 
     /**
@@ -139,4 +141,14 @@ object TrackCanonical {
      * each; "Song (Live)" and "Song" are two.
      */
     fun sameVersion(a: String, b: String): Boolean = version(a) == version(b)
+
+    /**
+     * [sameVersion] by the lossless matcher's stricter words ([VersionWords.forCatalogMatch]): a performance, a concert,
+     * "A COLORS SHOW", a re-recording, an outtake, a rework or a version the title names in its own words ("(Australian
+     * Version)") is another take too. For "is this recording already on the phone", where taking another take for the
+     * song would keep the user from ever getting the one they asked for. The library's identity ([sameVersion]) stays as
+     * it is.
+     */
+    fun sameTake(a: String, b: String): Boolean =
+        version(a, VersionWords::forCatalogMatch) == version(b, VersionWords::forCatalogMatch)
 }

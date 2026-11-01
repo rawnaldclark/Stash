@@ -17,6 +17,7 @@ import androidx.media3.session.SessionToken
 import com.stash.core.common.constants.StashConstants
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.TrackSourceRule
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -2525,6 +2526,7 @@ class PlayerRepositoryImpl @Inject constructor(
                                 putLong(EXTRA_TRACK_ID, track.id)
                             putSoundCloudMetadata(track.toDomain())
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
+                                putTrackOrigin(track.source, track.spotifyUri)
                                 if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
                                 // This branch plays the local file, so it is never "stream-only",
                                 // whatever the row's is_streamable says: rows first seen via Search,
@@ -2623,6 +2625,7 @@ class PlayerRepositoryImpl @Inject constructor(
                             putLong(EXTRA_TRACK_ID, track.id)
                             putSoundCloudMetadata(track.toDomain())
                             track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
+                            putTrackOrigin(track.source, track.spotifyUri)
                             if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
                             putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
                             // Surface the actual format Qobuz served so Now Playing
@@ -3702,8 +3705,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 if (isScannedSong) putString(EXTRA_SCANNED_FILE_FORMAT, fileFormat)
                 // Now Playing rebuilds its Track from these extras: a cloud song must stay one, so
                 // its "find FLAC" / "wrong match" actions stay off and its format stays its own.
+                putTrackOrigin(source, spotifyUri)
                 if (source == com.stash.core.model.MusicSource.CLOUD) {
-                    putString(EXTRA_TRACK_SOURCE, source.name)
                     putString(EXTRA_CLOUD_FILE_FORMAT, fileFormat)
                 }
             })
@@ -3749,6 +3752,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val streamBitrate = extras?.getInt(EXTRA_STREAM_BITRATE, 0)?.takeIf { it > 0 }
         val streamOrigin = extras?.getString(EXTRA_STREAM_ORIGIN)
         val isCloud = extras?.getString(EXTRA_TRACK_SOURCE) == com.stash.core.model.MusicSource.CLOUD.name
+        val youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID) ?: if (trackId == 0L) mediaId else null
 
         return Track(
             id = trackId,
@@ -3767,14 +3771,9 @@ class PlayerRepositoryImpl @Inject constructor(
             soundCloudPermalink = extras?.getString(EXTRA_SOUNDCLOUD_PERMALINK),
             soundCloudPreview = extras?.getBoolean(EXTRA_SOUNDCLOUD_PREVIEW, false) == true,
             isDownloaded = extras?.getBoolean(EXTRA_SOUNDCLOUD_LOCAL, false) == true,
-            youtubeId = extras?.getString(EXTRA_TRACK_YOUTUBE_ID)
-                ?: if (trackId == 0L) mediaId else null,
-            source = when {
-                isCloud -> com.stash.core.model.MusicSource.CLOUD
-                extras?.getString(EXTRA_SOUNDCLOUD_ID) != null -> com.stash.core.model.MusicSource.SOUNDCLOUD
-                trackId == 0L -> com.stash.core.model.MusicSource.YOUTUBE
-                else -> com.stash.core.model.MusicSource.SPOTIFY
-            },
+            youtubeId = youtubeId,
+            spotifyUri = extras?.getString(EXTRA_TRACK_SPOTIFY_URI),
+            source = rebuiltTrackSource(extras, youtubeId),
             cloudUri = localConfiguration?.uri?.toString()?.takeIf { isCloud && it.startsWith(com.stash.core.model.STASH_CLOUD_SCHEME) },
             fileFormat = streamCodec ?: extras?.getString(EXTRA_CLOUD_FILE_FORMAT) ?: "opus",
             bitsPerSample = streamBitDepth,
@@ -3865,8 +3864,45 @@ internal fun trackIdentity(title: String, artist: String): String {
 /** MediaMetadata extra: an All Songs file's format (its file extension), see [toScannedTrack]. */
 internal const val EXTRA_SCANNED_FILE_FORMAT = "stash_scanned_file_format"
 
-/** Set (to "CLOUD") on a cloud song's MediaItem so the Track rebuilt from it stays a cloud song. */
+/**
+ * A song's stored [com.stash.core.model.MusicSource], on every MediaItem ([putTrackOrigin]), so the
+ * Track rebuilt from it keeps its origin: a cloud song stays one, a YouTube stream is never a
+ * Spotify song ([TrackSourceRule]).
+ */
 internal const val EXTRA_TRACK_SOURCE = "stash_track_source"
+
+/** A song's Spotify URI, when it has one: [TrackSourceRule] needs it to keep a Spotify song Spotify's. */
+internal const val EXTRA_TRACK_SPOTIFY_URI = "stash_track_spotify_uri"
+
+/**
+ * Puts a song's origin on its MediaItem extras: its stored [source] and, when it has one, its
+ * [spotifyUri]. [toTrack] reads them back through [TrackSourceRule].
+ */
+internal fun Bundle.putTrackOrigin(source: com.stash.core.model.MusicSource, spotifyUri: String?) {
+    putString(EXTRA_TRACK_SOURCE, source.name)
+    spotifyUri?.takeIf { it.isNotBlank() }?.let { putString(EXTRA_TRACK_SPOTIFY_URI, it) }
+}
+
+/**
+ * The source of the Track rebuilt from a MediaItem's [extras] ([putTrackOrigin]): a cloud song or a
+ * SoundCloud upload stays one, and anything else is the item's own source unless its ids contradict
+ * it ([TrackSourceRule]). Every stream used to come back as a Spotify song, and a like or a listen
+ * then saved a YouTube stream as a green Spotify row.
+ *
+ * @param youtubeId the rebuilt Track's video id (a Search preview's media id when it has no row).
+ */
+internal fun rebuiltTrackSource(extras: Bundle?, youtubeId: String?): com.stash.core.model.MusicSource {
+    val stored = extras?.getString(EXTRA_TRACK_SOURCE)
+    return when {
+        stored == com.stash.core.model.MusicSource.CLOUD.name -> com.stash.core.model.MusicSource.CLOUD
+        extras?.getString(EXTRA_SOUNDCLOUD_ID) != null -> com.stash.core.model.MusicSource.SOUNDCLOUD
+        else -> TrackSourceRule.honestSource(
+            claimed = stored?.let { name -> runCatching { com.stash.core.model.MusicSource.valueOf(name) }.getOrNull() },
+            spotifyUri = extras?.getString(EXTRA_TRACK_SPOTIFY_URI),
+            youtubeId = youtubeId,
+        )
+    }
+}
 
 /** A cloud song's file format, for Now Playing's quality line (its Room row's truth). */
 internal const val EXTRA_CLOUD_FILE_FORMAT = "stash_cloud_file_format"

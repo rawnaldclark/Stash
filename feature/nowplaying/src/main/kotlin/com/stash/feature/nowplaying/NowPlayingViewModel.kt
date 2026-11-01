@@ -10,6 +10,7 @@ import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.TtmlUpgradeResult
 import com.stash.data.lyrics.TtmlUpgradeSources
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.SleepTimerController
@@ -1299,11 +1300,19 @@ class NowPlayingViewModel @Inject constructor(
                     _userMessages.tryEmit("Couldn't queue download.")
                     return@launchUserAction
                 }
-                val queued = musicRepository.queueDownload(realId)
-                if (!queued) {
-                    _downloadingKeys.update { it - key }
-                    _userMessages.tryEmit("Couldn't queue download.")
-                    return@launchUserAction
+                when (musicRepository.requestDownload(realId)) {
+                    DownloadRequestResult.QUEUED -> Unit
+                    // Another row of this song already holds its audio: nothing downloads twice.
+                    DownloadRequestResult.ALREADY_ON_PHONE -> {
+                        _downloadingKeys.update { it - key }
+                        _userMessages.tryEmit("Already on your phone.")
+                        return@launchUserAction
+                    }
+                    DownloadRequestResult.NOT_QUEUED -> {
+                        _downloadingKeys.update { it - key }
+                        _userMessages.tryEmit("Couldn't queue download.")
+                        return@launchUserAction
+                    }
                 }
                 _userMessages.tryEmit("Downloading…")
                 // Watchdog: drop the spinner once the song lands on disk, or as

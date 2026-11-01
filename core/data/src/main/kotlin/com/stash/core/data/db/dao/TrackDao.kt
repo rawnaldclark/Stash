@@ -2879,6 +2879,58 @@ interface TrackDao {
     }
 
     /**
+     * Data fix for the green-dot lie ([com.stash.core.data.library.TrackSourceRule]): rows saved
+     * from a YouTube stream as Spotify songs become YouTube songs. Only a row that says SPOTIFY, has
+     * **no** Spotify id and **has** a YouTube video id; a row with a Spotify id is never touched.
+     *
+     * A row in a Spotify playlist is left alone too, even one with no Spotify id: the Spotify sync's
+     * download step picks its playlists' rows by source, so relabelling one would stop its download
+     * for someone with only Spotify connected. A row in Stash's own Liked Songs (or any switched-on
+     * Stash playlist, source BOTH) is relabelled: the download step takes a YouTube song there with
+     * any service connected ([DownloadQueueDao]'s connected-source rule), so it still downloads.
+     * Idempotent and cheap, so it runs at every launch: a backup from before the fix, restored later,
+     * is fixed too.
+     *
+     * @return the number of rows relabelled.
+     */
+    @Query("""
+        UPDATE tracks SET source = 'YOUTUBE'
+        WHERE source = 'SPOTIFY'
+          AND (spotify_uri IS NULL OR TRIM(spotify_uri) = '')
+          AND youtube_id IS NOT NULL AND TRIM(youtube_id) != ''
+          AND soundcloud_id IS NULL
+          AND id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE p.source = 'SPOTIFY'
+          )
+    """)
+    suspend fun relabelYouTubeRowsClaimingSpotify(): Int
+
+    /** Every row with one of [canonicalTitles] that records a file: raw half of [findHoldingFileByCanonicalIdentities]. */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE canonical_title IN (:canonicalTitles)
+          AND (is_downloaded = 1 OR file_path IS NOT NULL)
+    """)
+    suspend fun findHoldingFileByCanonicalTitlesRaw(canonicalTitles: List<String>): List<TrackEntity>
+
+    /**
+     * Every row that records a file (downloaded, or a kept file being replaced) whose
+     * (canonical_title, canonical_artist) is one of [canonicalIdentities]: the candidates
+     * [com.stash.core.data.library.SameSongRule.isLibraryCopy] picks a sync's new songs' copies on
+     * the phone from, looked up once per playlist (the [findDownloadedByCanonicalIdentities]
+     * pattern: index-backed, chunked for the bind cap, blank identities skipped, none for an empty
+     * input).
+     */
+    suspend fun findHoldingFileByCanonicalIdentities(canonicalIdentities: List<Pair<String, String>>): List<TrackEntity> {
+        val wanted = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }.toHashSet()
+        return wanted.map { it.first }.distinct()
+            .chunkedForBind { findHoldingFileByCanonicalTitlesRaw(it) }
+            .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
+    }
+
+    /**
      * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")
      * for every downloaded track. Used by [com.stash.core.data.sync.workers.StashMixRefreshWorker]'s
      * discovery pre-filter to drop Last.fm candidates that would dedup
