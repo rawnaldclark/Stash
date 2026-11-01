@@ -21,7 +21,7 @@
  * repo's `npm run keys` prints it under that name); the player holds only the public half. PLAYER_URL (var)
  * is the player's origin, https only. Without either, or with either malformed, /player is a 503 page.
  *
- * Shared links: the player sends a visitor without a session to `/player?next=<a song or mix path>`. A
+ * Shared links: the player sends a visitor without a session to `/player?next=<a song, mix or Community path>`. A
  * valid next is passed on as `${PLAYER_URL}/auth?next=...#t=...` and kept across signing in, as the
  * sign-in forms' hidden `next` field (playerReturn); the player checks it again before going there.
  */
@@ -69,14 +69,22 @@ export async function mintTicket(key, sub, nowSeconds) {
     return `${body}.${b64urlEncode(sig)}`;
 }
 
-/** A player path worth coming back to (a shared song or mix page: /t..., /m/..., /play...), or null. */
+/** The player pages worth coming back to: a shared song (/t...), mix (/m/...), /play..., or Community (/community, /community/<id>). */
+const NEXT_PAGE = /^\/(t|m|play|community)([/?]|$)/;
+
+/** A player path worth coming back to (NEXT_PAGE, on the player's own origin), or null. */
 export function playerNext(value) {
-    if (typeof value !== "string" || value.length > MAX_NEXT || !/^\/(t|m|play)([/?]|$)/.test(value)) return null;
+    if (typeof value !== "string" || value.length > MAX_NEXT || !NEXT_PAGE.test(value)) return null;
+    let u;
     try {
-        return new URL(value, "https://player.invalid").origin === "https://player.invalid" ? value : null;
+        u = new URL(value, "https://player.invalid");
     } catch {
         return null;
     }
+    // A path only, kept exactly as written: a dot segment (/m/../x, %2e%2e), a backslash, or anything else the URL
+    // parser would rewrite changes the pathname, so it's refused. The query may hold anything (/t?t=Hello...).
+    if (u.origin !== "https://player.invalid" || u.pathname !== value.split(/[?#]/, 1)[0]) return null;
+    return value;
 }
 
 /** Where /player sends a visitor to sign in first: the early-access page, told to come back here. */

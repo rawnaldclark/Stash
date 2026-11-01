@@ -353,6 +353,38 @@ test("next can't point anywhere else: other player paths are dropped, and the si
     assert.match(await front.text(), /name="next" value=""/);
 });
 
+test("a Community page comes along too: signed out on /community or a post, signing in lands back there", async () => {
+    const { e, cookie } = await signedIn();
+    // The forms the player sends (its share.test.ts): the list, the list with its order, and one post.
+    for (const page of ["/community", "/community?sort=new", "/community/Cm12ab34"]) {
+        assert.equal(playerNext(page), page);
+        const res = await open(e, cookie, `/player?next=${encodeURIComponent(page)}`);
+        assert.equal(parseRedirect(res).before, `${PLAYER}/auth?next=${encodeURIComponent(page)}`, page);
+    }
+    // Signed out, it survives the sign-in page and its form.
+    const out = await open(e, null, "/player?next=%2Fcommunity%2FCm12ab34");
+    assert.equal(out.headers.get("location"), `/access?next=${encodeURIComponent("/player?next=%2Fcommunity%2FCm12ab34")}`);
+    const front = await handle(get(out.headers.get("location")), e);
+    assert.match(await front.text(), /name="next" value="\/player\?next=%2Fcommunity%2FCm12ab34"/);
+    assert.equal(playerReturn("/player?next=/community/Cm12ab34"), "/player?next=%2Fcommunity%2FCm12ab34");
+    const back = await handle(get(out.headers.get("location"), { Cookie: cookie }), e);
+    assert.equal(back.headers.get("location"), "/player?next=%2Fcommunity%2FCm12ab34");
+});
+
+test("next is a path on the player kept as written: no other site, no dot segments, no backslashes", async () => {
+    const { e, cookie } = await signedIn();
+    for (const next of ["/communityx", "/community-admin", "//evil.example/community", "https://evil.example/community", "/community\\..\\admin",
+        "/community/../admin", "/community/./x", "/community/%2e%2e/admin", "/community/%2E%2E", "/m/../admin", "/t/..", "/play/../../x",
+        "/community/a b", "/community/é"]) {
+        assert.equal(playerNext(next), null, next);
+        assert.equal(playerReturn(`/player?next=${encodeURIComponent(next)}`), null, next);
+        const res = await open(e, cookie, `/player?next=${encodeURIComponent(next)}`);
+        assert.equal(parseRedirect(res).before, `${PLAYER}/auth`, next);
+    }
+    // Dots are fine where they aren't a path segment: in a query (a song titled "Hello...") or inside a name.
+    for (const ok of ["/t?t=Hello...&a=Band", "/community?x=../y", "/community/", "/m/a.b"]) assert.equal(playerNext(ok), ok);
+});
+
 test("only GET (and HEAD) mint a ticket", async () => {
     const { e, cookie } = await signedIn();
     for (const method of ["POST", "PUT", "DELETE"]) {
