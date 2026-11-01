@@ -248,6 +248,45 @@ class SpotifyApiClientPaginationTest {
         assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
     }
 
+    @Test fun `songs in a shape the parser no longer reads are an error, not an empty playlist`() = runBlocking {
+        // Spotify counts 3 and sends 3, but none is a local file or an episode: songs
+        // the parser couldn't read (renamed type, missing data, missing uri).
+        val renamedType = """{"__typename":"TrackV2","uri":"spotify:track:t1","name":"One"}"""
+        val noUri = """{"__typename":"Track","name":"Two"}"""
+        pages["fetchPlaylist" to 0] = 200 to
+            """{"data":{"playlistV2":{"content":{"totalCount":3,"items":[""" +
+            """{"itemV2":{"data":$renamedType}},{"itemV2":{"data":$noUri}},{"itemV3":{"data":{}}}]}}}}"""
+
+        assertTrue("must never mirror a playlist down to nothing", client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `an empty list beside errors is an error`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to
+            """{"data":{"playlistV2":{"content":{"totalCount":0,"items":[]}}},"errors":[{"message":"rate limited"}]}"""
+
+        assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
+    }
+
+    @Test fun `a later page answering with a count of 0 and no list leaves the walk partial`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 250)
+        pages["fetchPlaylist" to 100] = 200 to """{"data":{"playlistV2":{"content":{"totalCount":0}}}}"""
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertEquals(100, result.data.tracks.size)
+        assertTrue("never mirrored down to the first page", result.data.partial)
+        assertFalse(result.data.countVerified)
+    }
+
+    @Test fun `a later page's count of 0 can't vouch for a short walk`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 250)
+        pages["fetchPlaylist" to 100] = 200 to playlistPage(range = 0 until 0, totalCount = 0)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue("the first page's count of 250 stands", result.data.partial)
+    }
+
     @Test fun `only local files on the first page, then a failed page, is an error`() = runBlocking {
         pages["fetchPlaylist" to 0] = 200 to playlistPageOf(items = (0 until 100).map { trackData(it, local = true) }, totalCount = 150)
         // offset 100 is unlisted: HTTP 500, so the walk is partial with nothing read.

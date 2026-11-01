@@ -78,14 +78,25 @@ fun SyncHistoryEntity.toDisplayStatus(): SyncDisplayStatus {
 
 private val stepsJson = Json { ignoreUnknownKeys = true }
 
+/** The playlists a sync listed but couldn't read: how many, and the first ones by name. */
+data class UnreadPlaylists(val count: Int, val names: List<String>) {
+    companion object {
+        val NONE = UnreadPlaylists(0, emptyList())
+    }
+}
+
 /**
- * The playlists a sync listed but couldn't read, by name, from its recorded steps
+ * The playlists a sync listed but couldn't read, from its recorded steps
  * ([SyncHistoryEntity.diagnostics], [SyncStepResult.unreadPlaylists]): what the
- * Sync History row names. Empty for a run with none, and for steps that don't
- * decode, which the row then shows as it always did.
+ * Sync History row counts and names. [UnreadPlaylists.NONE] for a run with none,
+ * and for steps that don't decode, which the row then shows as it always did.
  */
-fun unreadPlaylistsIn(diagnostics: String?): List<String> {
-    if (diagnostics.isNullOrBlank()) return emptyList()
+fun unreadPlaylistsIn(diagnostics: String?): UnreadPlaylists {
+    if (diagnostics.isNullOrBlank()) return UnreadPlaylists.NONE
     val steps = runCatching { stepsJson.decodeFromString<List<SyncStepResult>>(diagnostics) }.getOrNull()
-    return steps.orEmpty().flatMap { it.unreadPlaylists }
+        ?: return UnreadPlaylists.NONE
+    return UnreadPlaylists(
+        count = steps.sumOf { maxOf(it.unreadPlaylistCount, it.unreadPlaylists.size) },
+        names = steps.flatMap { it.unreadPlaylists },
+    )
 }

@@ -21,6 +21,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncLog
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.TrackMatcher
+import com.stash.core.data.sync.UnreadPlaylists
 import com.stash.core.data.sync.auth.SpotifyAuthHealthProbe
 import com.stash.core.data.sync.unreadPlaylistsIn
 import com.stash.core.model.MusicSource
@@ -188,6 +189,7 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
         assertEquals(StepStatus.ERROR, step.status)
         assertEquals("couldn't read 1 playlist: Playlist pl2 (kept as it was)", step.errorMessage)
         assertEquals(listOf("Playlist pl2"), step.unreadPlaylists)
+        assertEquals(1, step.unreadPlaylistCount)
         assertEquals("the one that was read still counts", 1, step.itemCount)
         assertEquals(listOf("Playlist pl2 — couldn't read its songs (kept as it was)"), couldNotReadLines())
         assertEquals(2, db.remoteSnapshotDao().getTrackSnapshotsByPlaylistId(snapshotOf("pl1", syncId).id).size)
@@ -195,7 +197,7 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
         assertTrue("one unread playlist keeps Refresh from hiding anything", db.playlistDao().getById(gone)!!.isActive)
         assertEquals(
             "what the History row reads back",
-            listOf("Playlist pl2"),
+            UnreadPlaylists(1, listOf("Playlist pl2")),
             unreadPlaylistsIn(db.syncHistoryDao().getById(syncId)!!.diagnostics),
         )
     }
@@ -232,7 +234,70 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
         assertNull(step.errorMessage)
         assertTrue(step.unreadPlaylists.isEmpty())
         assertTrue(couldNotReadLines().isEmpty())
-        assertTrue(unreadPlaylistsIn(db.syncHistoryDao().getById(syncId)!!.diagnostics).isEmpty())
+        assertEquals(UnreadPlaylists.NONE, unreadPlaylistsIn(db.syncHistoryDao().getById(syncId)!!.diagnostics))
+    }
+
+    @Test fun `a whole library that can't be read stores twenty names and the true count`() = runBlocking {
+        listing(*(1..25).map { listed("p$it") }.toTypedArray())
+        coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Error("boom")
+
+        val syncId = runFetch()
+
+        val step = userPlaylistsStep(syncId)
+        assertEquals(20, step.unreadPlaylists.size)
+        assertEquals(25, step.unreadPlaylistCount)
+        assertEquals(
+            "couldn't read 25 playlists: Playlist p1, Playlist p2, Playlist p3, Playlist p4, Playlist p5 " +
+                "and 20 more (kept as they were)",
+            step.errorMessage,
+        )
+        assertEquals(25, unreadPlaylistsIn(db.syncHistoryDao().getById(syncId)!!.diagnostics).count)
+    }
+
+    // ── The safety nets behind an empty read ─────────────────────────────
+
+    @Test fun `an empty read the library listing contradicts keeps the songs through Refresh`() = runBlocking {
+        // The listing still counts 5 songs; the read says none. The diff trusts neither.
+        listing(listed("pl1", total = 5))
+        val playlistId = seedPlaylist()
+        val before = activeMemberships(playlistId)
+        coEvery { spotify.getPlaylistTracks("pl1") } returns SyncResult.Success(
+            SpotifyPlaylistTracks(tracks = emptyList(), countVerified = true, revisionId = revision),
+        )
+
+        val syncId = runFetch()
+        runDiff(syncId)
+
+        assertEquals(before, activeMemberships(playlistId))
+        assertEquals(2, db.playlistDao().getById(playlistId)!!.trackCount)
+        assertNull("not mirrored, so not stamped", db.playlistDao().getSnapshotId(playlistId))
+    }
+
+    @Test fun `a home-feed mix read empty is kept as it was`() = runBlocking {
+        // The home feed gives the mix no count, so nothing downstream could catch a wrong empty read.
+        every { syncPreferencesManager.discoverAutoMixes } returns flowOf(true)
+        val mix = SpotifyPlaylistItem(id = "mix1", name = "Daily Mix 1", owner = SpotifyOwner(id = "spotify"))
+        coEvery { spotify.getDailyMixes() } returns SyncResult.Success(listOf(mix))
+        coEvery { spotify.getYearlyMixes() } returns SyncResult.Empty("none")
+        coEvery { spotify.getPlaylistTracks("mix1") } returns SyncResult.Success(
+            SpotifyPlaylistTracks(tracks = emptyList(), countVerified = true),
+        )
+        val mixId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Daily Mix 1", source = MusicSource.SPOTIFY, sourceId = "mix1",
+                type = PlaylistType.DAILY_MIX, syncEnabled = true,
+            ),
+        )
+        val trackId = db.trackDao().insert(
+            TrackEntity(title = "M", artist = "Artist", canonicalTitle = "m", canonicalArtist = "artist", spotifyUri = "spotify:track:M"),
+        )
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = mixId, trackId = trackId, position = 0))
+
+        val syncId = runFetch()
+        runDiff(syncId)
+
+        assertTrue(snapshotOf("mix1", syncId).partial)
+        assertEquals(listOf(trackId to 0), activeMemberships(mixId))
     }
 
     // ── The step message ─────────────────────────────────────────────────
@@ -262,11 +327,11 @@ class PlaylistFetchWorkerUnreadPlaylistTest {
 
     // ── Fixtures ─────────────────────────────────────────────────────────
 
-    private fun listed(id: String) = SpotifyPlaylistItem(
+    private fun listed(id: String, total: Int = 0) = SpotifyPlaylistItem(
         id = id,
         name = "Playlist $id",
         owner = SpotifyOwner(id = "testuser"),
-        tracks = SpotifyTracksRef(total = 0),
+        tracks = SpotifyTracksRef(total = total),
         revisionId = revision,
     )
 

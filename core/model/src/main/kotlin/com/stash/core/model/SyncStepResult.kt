@@ -21,12 +21,20 @@ data class SyncStepResult(
      */
     val note: String? = null,
     /**
-     * The playlists this step listed but couldn't read the songs of, by name. Each
-     * was kept as it was and is read again next sync; the Sync History row counts
-     * and names them. Empty for most steps, and left out of the JSON then.
+     * The playlists this step listed but couldn't read the songs of, by name (the
+     * first [UNREAD_NAMES_STORED]). Each was kept as it was and is read again next
+     * sync; the Sync History row counts and names them. Empty for most steps, and
+     * left out of the JSON then.
      */
     val unreadPlaylists: List<String> = emptyList(),
-)
+    /** How many playlists [unreadPlaylists] stands for; it holds only the first names. */
+    val unreadPlaylistCount: Int = 0,
+) {
+    companion object {
+        /** Names kept per step: the row shows five, a whole failed library would bloat every row. */
+        const val UNREAD_NAMES_STORED = 20
+    }
+}
 
 /**
  * [SKIPPED] means the user switched that step off — it is NOT evidence of

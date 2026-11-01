@@ -69,7 +69,7 @@ data class SyncHistoryInfo(
      * record from [diagnostics], not on every recomposition of the History row
      * (its screen recomposes with each progress tick of a running sync).
      */
-    val unreadPlaylists: List<String> = unreadPlaylistsIn(diagnostics)
+    val unreadPlaylists: com.stash.core.data.sync.UnreadPlaylists = unreadPlaylistsIn(diagnostics)
 }
 
 /**

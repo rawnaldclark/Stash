@@ -73,9 +73,10 @@ class RecentSyncRowMappingTest {
             """[{"service":"SPOTIFY","step":"getDailyMixes","status":"SUCCESS","itemCount":2},""" +
                 """{"service":"SPOTIFY","step":"getUserPlaylists","status":"ERROR","itemCount":14,""" +
                 """"errorMessage":"couldn't read 1 playlist: My Playlist #11 (kept as it was)",""" +
-                """"unreadPlaylists":["My Playlist #11"]}]""",
+                """"unreadPlaylists":["My Playlist #11"],"unreadPlaylistCount":1}]""",
         )
-        assertEquals(listOf("My Playlist #11"), row.unreadPlaylists)
+        assertEquals(1, row.unreadCount)
+        assertEquals(listOf("My Playlist #11"), row.unreadNames)
         assertEquals("still a healthy receipt: nothing was lost", SyncRowStatus.HEALTHY, row.status)
     }
 
@@ -85,13 +86,25 @@ class RecentSyncRowMappingTest {
             """[{"service":"SPOTIFY","step":"getLikedSongs","status":"SUCCESS","itemCount":402},""" +
                 """{"service":"SPOTIFY","step":"getUserPlaylists","status":"SUCCESS","itemCount":15}]""",
         )
-        assertEquals(emptyList<String>(), row.unreadPlaylists)
+        assertEquals(0, row.unreadCount)
+        assertEquals(emptyList<String>(), row.unreadNames)
+    }
+
+    @Test
+    fun `a capped list of names still carries the true count`() {
+        val names = (1..20).joinToString(",") { "\"P$it\"" }
+        val row = completedRun(
+            """[{"service":"SPOTIFY","step":"getUserPlaylists","status":"ERROR",""" +
+                """"unreadPlaylists":[$names],"unreadPlaylistCount":25}]""",
+        )
+        assertEquals("the pill counts every one", 25, row.unreadCount)
+        assertEquals(20, row.unreadNames.size)
     }
 
     @Test
     fun `steps that don't decode show no pill, and the row keeps them as they were`() {
         val row = completedRun("not json")
-        assertEquals(emptyList<String>(), row.unreadPlaylists)
+        assertEquals(0, row.unreadCount)
         assertEquals("not json", row.diagnostics)
     }
 }

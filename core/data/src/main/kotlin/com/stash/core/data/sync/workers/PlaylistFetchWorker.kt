@@ -622,7 +622,17 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             // Track fetching uses client_credentials (Prong 1) -- reliable
                             var fetchFailed = false
                             val fetched = when (val tracksResult = spotifyApiClient.getPlaylistTracks(mix.id)) {
-                                is SyncResult.Success -> tracksResult.data
+                                // A mix with no songs isn't a real answer, and nothing here
+                                // could catch a wrong one: the home feed rarely gives a mix a
+                                // count, so the diff's listing check sees 0 and would mirror
+                                // the mix empty. Kept as it was instead.
+                                is SyncResult.Success -> if (tracksResult.data.tracks.isEmpty()) {
+                                    fetchFailed = true
+                                    Log.w(TAG, "fetchSpotifyPlaylists: no songs read for mix '${mix.name}', kept as it was")
+                                    null
+                                } else {
+                                    tracksResult.data
+                                }
                                 is SyncResult.Empty -> {
                                     Log.d(TAG, "fetchSpotifyPlaylists: no tracks for '${mix.name}': ${tracksResult.reason}")
                                     null
@@ -1113,7 +1123,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     errorMessage = spotifyInventoryProblem(listingComplete, unreadPlaylists.values.toList()),
                     // A shared diagnostics bundle shows how many weren't re-read.
                     note = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null,
-                    unreadPlaylists = unreadPlaylists.values.toList(),
+                    unreadPlaylists = unreadPlaylists.values.take(SyncStepResult.UNREAD_NAMES_STORED),
+                    unreadPlaylistCount = unreadPlaylists.size,
                 )
             )
         } catch (e: SpotifyApiException) {
@@ -1124,7 +1135,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             diagnostics.add(
                 SyncStepResult(
                     "SPOTIFY", "getUserPlaylists", StepStatus.ERROR, errorMessage = e.message,
-                    unreadPlaylists = unreadPlaylists.values.toList(),
+                    unreadPlaylists = unreadPlaylists.values.take(SyncStepResult.UNREAD_NAMES_STORED),
+                    unreadPlaylistCount = unreadPlaylists.size,
                 ),
             )
         }

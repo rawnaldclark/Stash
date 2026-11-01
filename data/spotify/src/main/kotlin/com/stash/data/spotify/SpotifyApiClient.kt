@@ -1154,6 +1154,9 @@ class SpotifyApiClient @Inject constructor(
         var currentOffset = 0
         val pageSize = 100
         var rawItemsWalked = 0
+        // Items dropped that weren't a local file or an episode: a shape the parser no longer reads.
+        var unreadableItems = 0
+        // The first page's, like the revision: a later page can't vouch for fewer items.
         var totalCount: Int? = null
         var partialReason: String? = null
         // The first page's: the version the walk started from.
@@ -1172,7 +1175,7 @@ class SpotifyApiClient @Inject constructor(
                 variables = variables,
                 seedHash = SpotifyAuthConfig.HASH_FETCH_PLAYLIST,
             )
-            val page = responseJson?.let { parsePlaylistTracksGraphQLResponse(it) }
+            val page = responseJson?.let { parsePlaylistTracksGraphQLResponse(it, firstPage = currentOffset == 0) }
             if (page == null) {
                 // First page: nothing was read, so this is a plain failure
                 // (the caller reports Error). Later page: what we have is a
@@ -1189,9 +1192,12 @@ class SpotifyApiClient @Inject constructor(
             )
 
             allTracks.addAll(page.tracks)
-            if (currentOffset == 0) revisionId = page.revisionId
+            if (currentOffset == 0) {
+                revisionId = page.revisionId
+                totalCount = page.totalCount
+            }
             rawItemsWalked += page.rawItemCount
-            page.totalCount?.let { totalCount = it }
+            unreadableItems += page.unreadableCount
 
             // Terminate on raw item count, NOT parsed count. A page with
             // any filtered item (local tracks, podcast episodes, region-
@@ -1213,9 +1219,10 @@ class SpotifyApiClient @Inject constructor(
         // (walked, then filtered out). Failing every empty walk made such a
         // playlist "fail" on every sync, so REFRESH never hid a playlist deleted on
         // Spotify and never emptied one emptied there (#747). An empty walk short
-        // of the count, or with no count at all, still fails: a bogus empty answer
-        // must never mirror a playlist down to nothing.
-        if (allTracks.isEmpty() && (partialReason != null || totalCount == null)) return null
+        // of the count, with no count at all, or that dropped items the parser
+        // didn't recognise (songs in a shape it no longer reads) still fails: a
+        // bogus empty answer must never mirror a playlist down to nothing.
+        if (allTracks.isEmpty() && (partialReason != null || totalCount == null || unreadableItems > 0)) return null
         // Every item Spotify counts was walked: the proof the sync needs before
         // it lets a later run skip this playlist (see SpotifyPlaylistTracks).
         val expected = totalCount
@@ -1642,10 +1649,11 @@ class SpotifyApiClient @Inject constructor(
      * Returns null when the response has no `items` list at all (an
      * errors-only body, a renamed node): that is a failed page, and the
      * walk must not read it as an empty last page. The one exception is a
-     * `totalCount` of 0 with no errors, Spotify's own word that the playlist
-     * is empty: that is an empty page.
+     * [firstPage] with a `totalCount` of 0 and no errors, Spotify's own word
+     * that the playlist is empty: that is an empty page. An empty list beside
+     * errors is a failed page too.
      */
-    private fun parsePlaylistTracksGraphQLResponse(responseJson: JsonObject): PlaylistTracksPage? {
+    private fun parsePlaylistTracksGraphQLResponse(responseJson: JsonObject, firstPage: Boolean): PlaylistTracksPage? {
         return try {
             val playlistV2 = responseJson["data"]
                 ?.jsonObject?.get("playlistV2") as? JsonObject
@@ -1655,14 +1663,15 @@ class SpotifyApiClient @Inject constructor(
                 ?.contentOrNull?.takeIf { it.isNotBlank() }
             val items = content?.get("items") as? JsonArray
             val totalCount = (content?.get("totalCount") as? JsonPrimitive)?.intOrNull
+            val errors = responseJson["errors"]
+            val errorFree = errors == null || errors is JsonNull || (errors as? JsonArray)?.isEmpty() == true
 
             if (items == null) {
                 // An empty playlist may come back with its count and no list at
-                // all. Only that, Spotify counting zero with no errors beside it,
-                // is an empty page (#747); any other answer without a list failed.
-                val errors = responseJson["errors"]
-                val errorFree = errors == null || errors is JsonNull || (errors as? JsonArray)?.isEmpty() == true
-                if (totalCount == 0 && errorFree) {
+                // all. Only that, on the first page, Spotify counting zero with no
+                // errors beside it, is an empty page (#747). On a later page it
+                // would end a long walk early and vouch for it with a count of 0.
+                if (firstPage && totalCount == 0 && errorFree) {
                     return PlaylistTracksPage(emptyList(), rawItemCount = 0, totalCount = 0, revisionId = revisionId)
                 }
                 Log.w(TAG, "parsePlaylistTracksGraphQLResponse: could not find data.playlistV2.content.items")
@@ -1670,8 +1679,20 @@ class SpotifyApiClient @Inject constructor(
                 Log.d(TAG, "parsePlaylistTracksGraphQLResponse: data keys: $dataKeys")
                 return null
             }
+            if (items.isEmpty() && !errorFree) {
+                Log.w(TAG, "parsePlaylistTracksGraphQLResponse: empty items beside errors, a failed page")
+                return null
+            }
 
             val rawItemCount = items.size
+            // Dropped on purpose: things Stash can't play. Any other dropped item
+            // is a song in a shape the parser no longer reads.
+            val localOrEpisode = items.count { element ->
+                val uri = ((element as? JsonObject)?.get("itemV2") as? JsonObject)
+                    ?.let { it["data"] as? JsonObject }
+                    ?.let { (it["uri"] as? JsonPrimitive)?.contentOrNull }
+                uri != null && (uri.startsWith("spotify:local:") || uri.startsWith("spotify:episode:"))
+            }
             Log.d(TAG, "parsePlaylistTracksGraphQLResponse: found $rawItemCount items")
 
             items.mapNotNull { element ->
@@ -1760,7 +1781,10 @@ class SpotifyApiClient @Inject constructor(
                     TAG,
                     "parsePlaylistTracksGraphQLResponse: parsed ${parsed.size}/$rawItemCount tracks",
                 )
-                PlaylistTracksPage(parsed, rawItemCount, totalCount, revisionId)
+                PlaylistTracksPage(
+                    parsed, rawItemCount, totalCount, revisionId,
+                    unreadableCount = (rawItemCount - parsed.size - localOrEpisode).coerceAtLeast(0),
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "parsePlaylistTracksGraphQLResponse: failed to parse response", e)
@@ -1777,12 +1801,15 @@ class SpotifyApiClient @Inject constructor(
      * [totalCount] is the playlist size Spotify reports alongside the page
      * (`playlistV2.content.totalCount`), null when absent; [revisionId] the
      * playlist's version (`playlistV2.revisionId`), null when absent.
+     * [unreadableCount]: items dropped that were neither a local file nor an
+     * episode, so an empty walk with any can't pass for an empty playlist.
      */
     private data class PlaylistTracksPage(
         val tracks: List<SpotifyTrackItem>,
         val rawItemCount: Int,
         val totalCount: Int? = null,
         val revisionId: String? = null,
+        val unreadableCount: Int = 0,
     )
 
 }

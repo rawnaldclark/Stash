@@ -178,6 +178,11 @@
         <item quantity="one">Couldn\'t read %1$d playlist: %2$s (kept as it was)</item>
         <item quantity="other">Couldn\'t read %1$d playlists: %2$s (kept as they were)</item>
     </plurals>
+    <!-- The names above when there are more than five: "A, B, C, D, E and 3 more". -->
+    <plurals name="sync_history_and_more">
+        <item quantity="one">%1$s and %2$d more</item>
+        <item quantity="other">%1$s and %2$d more</item>
+    </plurals>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>

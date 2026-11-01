@@ -57,10 +57,14 @@ data class RecentSyncRow(
     val status: SyncRowStatus,
     val errorMessage: String? = null,
     val diagnostics: String? = null,
-    val unreadPlaylists: List<String> = emptyList(), // listed but not read this run, each kept as it was
+    val unreadCount: Int = 0,   // playlists listed but not read this run, each kept as it was
+    val unreadNames: List<String> = emptyList(), // the first of them by name
 )
 
 enum class SyncRowStatus { HEALTHY, PARTIAL, FAILED, CANCELLED }
+
+/** Playlists the expanded row names before "and N more". */
+private const val UNREAD_NAMES_SHOWN = 5
 
 /**
  * Single [GlassCard] that lists recent sync results with internal dividers.
@@ -158,9 +162,8 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                     },
                 )
                 // Amber, not the red fail tint: nothing was lost, each one was kept as it was.
-                if (row.unreadPlaylists.isNotEmpty()) {
-                    val count = row.unreadPlaylists.size
-                    Pill(pluralStringResource(R.plurals.sync_history_not_read, count, count), warning)
+                if (row.unreadCount > 0) {
+                    Pill(pluralStringResource(R.plurals.sync_history_not_read, row.unreadCount, row.unreadCount), warning)
                     Spacer(Modifier.width(8.dp))
                 }
                 if (row.failed > 0) {
@@ -177,19 +180,19 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                 Text("Error: ${row.errorMessage}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(4.dp))
             }
-            if (row.unreadPlaylists.isNotEmpty()) {
-                // In place of the step dump: which playlists, and that they were kept.
-                val count = row.unreadPlaylists.size
+            if (row.unreadCount > 0) {
+                // Above the step list: which playlists, and that they were kept.
+                val shown = row.unreadNames.take(UNREAD_NAMES_SHOWN).joinToString(", ")
+                val more = row.unreadCount - minOf(row.unreadNames.size, UNREAD_NAMES_SHOWN)
+                val named = if (more > 0) pluralStringResource(R.plurals.sync_history_and_more, more, shown, more) else shown
                 Text(
-                    pluralStringResource(
-                        R.plurals.sync_history_not_read_detail, count, count, row.unreadPlaylists.joinToString(", "),
-                    ),
+                    pluralStringResource(R.plurals.sync_history_not_read_detail, row.unreadCount, row.unreadCount, named),
                     style = MaterialTheme.typography.bodySmall,
                     color = dim,
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis,
                 )
-            } else if (!row.diagnostics.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+            }
+            if (!row.diagnostics.isNullOrBlank()) {
                 Text("Diagnostics", style = MaterialTheme.typography.labelSmall, color = dim, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(2.dp))
                 Text(row.diagnostics, style = MaterialTheme.typography.bodySmall, color = dim, maxLines = 20)
