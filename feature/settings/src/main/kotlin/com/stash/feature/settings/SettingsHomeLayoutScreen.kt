@@ -3,6 +3,7 @@ package com.stash.feature.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -41,9 +42,38 @@ internal fun SettingsUiState.homeSectionsShown(): Int = homeSectionOrder.count {
 }
 
 /**
+ * One movable entry of the Home layout editor: [section] with its movers' state, and [under], the section that goes wherever
+ * it goes (Your record's mixes, always directly under the card: [com.stash.core.data.prefs.movedHomeSectionOrder]), shown
+ * indented beneath it with a switch and no movers.
+ */
+internal data class HomeLayoutEntry(
+    val section: HomeSection,
+    val canMoveUp: Boolean,
+    val canMoveDown: Boolean,
+    val under: HomeSection? = null,
+)
+
+/**
+ * [order] as the editor's entries. The movers count only the sections with a place of their own, so "Your record" just
+ * above its own mixes can still move down (past the next section, with them) and is never offered a move that does nothing.
+ */
+internal fun homeLayoutEntries(order: List<HomeSection>): List<HomeLayoutEntry> {
+    val movable = order.filter { it != HomeSection.RECORD_MIXES }
+    return movable.mapIndexed { i, section ->
+        HomeLayoutEntry(
+            section = section,
+            canMoveUp = i > 0,
+            canMoveDown = i < movable.lastIndex,
+            under = HomeSection.RECORD_MIXES.takeIf { section == HomeSection.YOUR_RECORD && it in order },
+        )
+    }
+}
+
+/**
  * Settings > Appearance > Home layout: Home's sections in order, each with
  * up/down movers and a show switch, then Show Liked Songs. Its own page so
- * Appearance stays one screen.
+ * Appearance stays one screen. Your record's mixes sit indented under
+ * Your record with a switch only: they go wherever the card goes.
  */
 @Composable
 fun SettingsHomeLayoutScreen(
@@ -64,31 +94,33 @@ fun SettingsHomeLayoutScreen(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
         )
         SettingsGroupCard(
-            rows = uiState.homeSectionOrder.mapIndexed { index, section ->
+            rows = homeLayoutEntries(uiState.homeSectionOrder).map { entry ->
                 {
+                    val section = entry.section
                     // Community's switch is its own, off by default (spec 2026-09-26 §3), not the hidden set.
                     val community = section == HomeSection.COMMUNITY
                     HomeSectionRow(
                         label = section.displayLabel(),
-                        subtitle = when {
-                            community -> stringResource(R.string.settings_home_section_community_desc)
-                            section == HomeSection.YOUR_LISTENING ->
-                                stringResource(R.string.settings_home_section_listening_desc)
-                            section == HomeSection.YOUR_RECORD ->
-                                stringResource(R.string.settings_home_section_record_desc)
-                            section == HomeSection.RECORD_MIXES ->
-                                stringResource(R.string.settings_home_section_record_mixes_desc)
-                            else -> null
-                        },
+                        subtitle = section.subtitle(),
                         shown = if (community) uiState.communityOn else section !in uiState.homeSectionsHidden,
-                        canMoveUp = index > 0,
-                        canMoveDown = index < uiState.homeSectionOrder.lastIndex,
+                        canMoveUp = entry.canMoveUp,
+                        canMoveDown = entry.canMoveDown,
                         onMoveUp = { viewModel.onHomeSectionMoved(section, up = true) },
                         onMoveDown = { viewModel.onHomeSectionMoved(section, up = false) },
                         onShownChange = { shown ->
                             if (community) viewModel.onCommunityOnChanged(shown) else viewModel.onHomeSectionHiddenChanged(section, hide = !shown)
                         },
                     )
+                    // Your record's mixes: in the same row group (no divider), indented, a switch only. They go where the
+                    // card goes, and stay on Home when the card is switched off.
+                    entry.under?.let { under ->
+                        HomeSectionUnderRow(
+                            label = under.displayLabel(),
+                            subtitle = under.subtitle(),
+                            shown = under !in uiState.homeSectionsHidden,
+                            onShownChange = { shown -> viewModel.onHomeSectionHiddenChanged(under, hide = !shown) },
+                        )
+                    }
                 }
             },
         )
@@ -164,6 +196,61 @@ private fun HomeSection.displayLabel(): String = when (this) {
     HomeSection.YOUR_RECORD -> stringResource(R.string.settings_home_section_your_record)
     HomeSection.RECORD_MIXES -> stringResource(R.string.settings_home_section_record_mixes)
 }
+
+/** The line under a section's name, for the sections that need one. */
+@Composable
+private fun HomeSection.subtitle(): String? = when (this) {
+    HomeSection.COMMUNITY -> stringResource(R.string.settings_home_section_community_desc)
+    HomeSection.YOUR_LISTENING -> stringResource(R.string.settings_home_section_listening_desc)
+    HomeSection.YOUR_RECORD -> stringResource(R.string.settings_home_section_record_desc)
+    HomeSection.RECORD_MIXES -> stringResource(R.string.settings_home_section_record_mixes_desc)
+    else -> null
+}
+
+/**
+ * A section that hangs off the row above it (Your record's mixes under the card): indented under its name, with the show
+ * switch and no movers, since it goes wherever the row above goes.
+ */
+@Composable
+private fun HomeSectionUnderRow(
+    label: String,
+    subtitle: String?,
+    shown: Boolean,
+    onShownChange: (Boolean) -> Unit,
+) {
+    val showDesc = stringResource(R.string.settings_home_section_show_desc, label)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            // One step in from the name above; the same end padding as HomeSectionRow, so both switches line up.
+            .padding(start = SettingsRowPadH + UnderRowIndent, end = 6.dp, top = 2.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (shown) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = shown,
+            onCheckedChange = onShownChange,
+            modifier = Modifier.semantics { contentDescription = showDesc },
+        )
+    }
+}
+
+/** How far the record's mixes sit in from the card's row in the Home layout editor. */
+private val UnderRowIndent = 20.dp
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */
 @Composable

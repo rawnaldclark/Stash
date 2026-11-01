@@ -33,11 +33,15 @@ class HomeSectionsCommunityTest {
         // Directly under Discover, which is pinned first.
         assertEquals(listOf(HomeSection.DISCOVER, HomeSection.COMMUNITY), pref.visibleSections.first().take(2))
 
+        // One tap down takes it past Your record and the record's mixes under it (they move as one)
         pref.move(HomeSection.COMMUNITY, up = false)
         pref.setCommunityOn(false)
         assertFalse(HomeSection.COMMUNITY in pref.visibleSections.first())
         pref.setCommunityOn(true)
-        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first()[2])
+        assertEquals(
+            listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.COMMUNITY),
+            pref.visibleSections.first().take(4),
+        )
     }
 
     @Test fun `placed by hand before it was ever on, it keeps that spot when turned on`() = runTest {
