@@ -20,7 +20,7 @@ internal sealed interface PlayPlan {
 }
 
 /** A tap on one song that needs a connection, made offline (the same words as Library). */
-internal const val SONG_NEEDS_CONNECTION = "This song isn't downloaded. Connect to play it."
+internal const val SONG_NEEDS_CONNECTION = "No internet connection, and this song isn't downloaded."
 
 /** "Play this day" offline when none of the day's songs is downloaded. */
 internal const val DAY_NEEDS_CONNECTION = "None of this day's songs are downloaded. Connect to play them."

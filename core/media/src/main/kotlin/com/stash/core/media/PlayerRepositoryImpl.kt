@@ -853,7 +853,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 when {
                     tracks[safeStart].isScannedSong -> SCANNED_FILE_MISSING_MESSAGE
                     !streamOk -> DOWNLOAD_MODE_MESSAGE
-                    else -> NOT_PLAYABLE_NOW_MESSAGE
+                    // Online, and the player refused it: confirmed to have nowhere to stream from.
+                    else -> "That song isn't available right now."
                 },
             )
             // Don't fall back to track 0 — bail rather than silently substitute.
@@ -1862,7 +1863,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
-                _userMessages.tryEmit(NOT_PLAYABLE_NOW_MESSAGE)
+                _userMessages.tryEmit(FILE_MISSING_CANT_STREAM_MESSAGE)
             }
             return false
         }
@@ -3211,7 +3212,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 "silent-skip: offline + stream-only '$failingTitle' — end of queue, pausing",
             )
             controller.pause()
-            _userMessages.tryEmit("No internet connection, and this song isn't downloaded.")
+            _userMessages.tryEmit("No internet connection, and the rest of this queue isn't downloaded.")
         }
     }
 
@@ -3596,8 +3597,8 @@ class PlayerRepositoryImpl @Inject constructor(
         /** Offline (Download mode in code) refuses a song that isn't on the phone. */
         internal const val DOWNLOAD_MODE_MESSAGE = "Offline plays only your downloads. Switch to Online to play this."
 
-        /** Online, but a song that isn't downloaded can't stream (no connection, or nowhere to stream it from). */
-        internal const val NOT_PLAYABLE_NOW_MESSAGE = "That song isn't downloaded and can't stream right now."
+        /** A downloaded song whose file is gone or broken, and it can't stream instead (no connection, or nowhere to stream from). */
+        internal const val FILE_MISSING_CANT_STREAM_MESSAGE = "That song's file is missing and it can't stream right now."
 
         internal const val SCANNED_FILE_MISSING_MESSAGE =
             "That file isn't there anymore. Rescan your folders: Library, then the disk icon at the top."
