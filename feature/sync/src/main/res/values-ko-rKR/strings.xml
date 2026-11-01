@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync Screen Header & General -->
+    <string name="sync_title">동기화</string>
+    <string name="sync_cancel">취소</string>
+    <string name="sync_ok">확인</string>
+    <!-- Sync Sections -->
+    <string name="sync_section_sources">소스</string>
+    <string name="sync_section_schedule">스케줄</string>
+    <string name="sync_section_library">라이브러리</string>
+    <string name="sync_section_recent_syncs">최근 동기화</string>
+    <!-- Downloads Card -->
+    <string name="sync_downloads_title">다운로드</string>
+    <string name="sync_downloads_subtitle">현재 다운로드, 대기열 및 기록 보기</string>
+    <string name="sync_downloads_cd">다운로드 열기</string>
+    <!-- Source Dashboard Stats & Empty Hints -->
+    <string name="sync_source_stat_mixes">믹스</string>
+    <string name="sync_source_stat_playlists">재생목록</string>
+    <string name="sync_source_stat_liked">좋아요</string>
+    <string name="sync_source_stat_recommended">추천</string>
+    <string name="sync_source_empty_spotify">첫 번째 동기화가 완료되면 Spotify의 재생목록과 데일리 믹스가 여기에 표시됩니다. \'지금 동기화\'를 탭하여 목록을 불러오세요. 다운로드는 다운로드 기능을 직접 활성화하기 전까지 진행되지 않습니다</string>
+    <string name="sync_source_empty_youtube">첫 번째 동기화가 완료되면 YouTube Music 라이브러리의 홈 믹스, 좋아요 표시한 노래, 재생목록이 여기에 표시됩니다. 원하는 항목을 직접 선택하기 전까지는 아무것도 다운로드되지 않으므로, 예상되지 않은 다운로드가 발생하지 않습니다</string>
+    <string name="sync_source_empty_lastfm">평소 듣는 노래를 바탕으로 Last.fm이 추천하는 노래들의 재생목록 다음 동기화 때 생성됩니다. 지금 동기화를 탭하여 시작하세요</string>
+    <!-- Library Maintenance Card -->
+    <string name="sync_blocked_songs_title">차단된 노래</string>
+    <string name="sync_blocked_songs_none">차단된 노래가 없습니다</string>
+    <plurals name="sync_blocked_songs_count">
+        <item quantity="other">%d 개의 노래는 다시 다운로드되지 않습니다</item>
+    </plurals>
+    <!-- Unmatched / Review Warning Card -->
+    <plurals name="sync_review_need_review">
+        <item quantity="other">%d 개의 노래는 검토가 필요합니다</item>
+    </plurals>
+    <plurals name="sync_review_flagged_wrong">
+        <item quantity="other">%d 개의 노래는 잘못된 일치로 표시되었습니다</item>
+    </plurals>
+    <plurals name="sync_review_unmatched">
+        <item quantity="other">%d 개의 노래는 일치시키지 못하였습니다</item>
+    </plurals>
+    <string name="sync_review_sub_both">%1$d개 불일치, %2$d개 플래그 지정됨 - 탭하여 수정</string>
+    <string name="sync_review_sub_flagged">탭하여 대체 항목을 선택</string>
+    <string name="sync_review_sub_unmatched">탭하여 검토</string>
+    <!-- Failed Downloads Warning Card -->
+    <string name="sync_failed_downloads_title">다운로드 실패</string>
+    <plurals name="sync_failed_downloads_count">
+        <item quantity="other">%d 개의 트랙에 주의가 필요합니다</item>
+    </plurals>
+    <!-- Sync Terminal -->
+    <string name="sync_log_title">동기화 로그</string>
+    <string name="sync_log_copy">복사</string>
+    <!-- Undo Last Sync -->
+    <string name="sync_undo_last_sync_title">마지막 동기화 실행 취소</string>
+    <string name="sync_undo_last_sync_subtitle">변경된 %1$s를 %2$s로 되돌립니다</string>
+    <string name="sync_undo">실행 취소</string>
+    <string name="sync_undoing">실행 취소하는 중…</string>
+    <string name="sync_auto_sync_paused_note">실행 취소 후 자동 동기화가 일시 중지되었습니다. 동기화를 탭하여 다시 시작하세요</string>
+    <string name="sync_undo_dialog_title">마지막 동기화를 실행 취소하시겠습니까?</string>
+    <string name="sync_undo_dialog_body">마지막 동기화 이전 상태로 라이브러리를 복원합니다. 숨겨졌던 재생목록은 다시 표시되고, 새로 추가된 재생목록은 숨겨지며, 비워졌던 재생목록은 원래 순서대로 항목이 복원됩니다%1$s\n\n직접 추가하거나 삭제한 트랙과 변경한 다운로드 설정은 그대로 유지됩니다. 이미 삭제된 다운로드 파일은 복구할 수 없습니다\n\n이후 자동 동기화가 일시 중지되며, 다시 동기화하려면 동기화를 직접 탭해야 합니다. 따라서 변경 사항이 자동으로 다시 적용되는 것을 방지할 수 있습니다</string>
+    <string name="sync_undo_sync_confirm">동기화 실행 취소</string>
+    <string name="sync_undone_title">동기화 실행 취소됨</string>
+    <plurals name="sync_playlists_count">
+        <item quantity="other">%d 개의 재생목록</item>
+    </plurals>
+    <!-- Relative Time Strings -->
+    <string name="sync_time_just_now">방금</string>
+    <string name="sync_time_mins_ago">%d 분 전</string>
+    <string name="sync_time_hours_ago">%d 시간 전</string>
+    <plurals name="sync_time_days_ago">
+        <item quantity="other">%d 일 전</item>
+    </plurals>
+    <!-- Refresh Mode Dialog & Chips -->
+    <string name="sync_switch_to_refresh_title">새로 고침으로 전환하시겠습니까?</string>
+    <string name="sync_switch_to_refresh_body">새로고침을 설정하면 동기화할 때마다 새로운 트랙을 가져옵니다 — 여기에는 매일 자동 생성되는 믹스, 주간 음악 추천 및 기타 주기적으로 바뀌는 재생목록이 포함됩니다. 재생목록에서 제외된 트랙은 믹스에서 제거되며, 라이브러리를 깔끔하게 유지하기 위해 해당 트랙의 다운로드 파일도 삭제됩니다. 모든 소스가 새로고침으로 설정된 경우에만 정리 작업이 실행됩니다 — 하나라도 계속 누적하는 소스가 있다면 트랙이 삭제되지 않습니다. 직접 추가한 트랙은 그대로 유지됩니다</string>
+    <string name="sync_switch_to_refresh_confirm">새로고침으로 전환</string>
+    <string name="sync_mix_mode_title">믹스 동기화 모드</string>
+    <string name="sync_mode_refresh">새로고침</string>
+    <string name="sync_mode_accumulate">누적</string>
+    <string name="sync_mode_refresh_desc">믹스는 동기화할 때마다 새로운 트랙으로 업데이트됩니다</string>
+    <string name="sync_mode_accumulate_desc">새 트랙이 이전 트랙 위에 쌓입니다</string>
+    <!-- Last.fm Recommendations Toggle -->
+    <string name="sync_recommended_tracks_title">추천 트랙</string>
+    <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생목록이 최신 상태로 유지됩니다</string>
+    <string name="sync_lastfm_recommended_disabled_desc">꺼짐 — 추천이 생성되지 않습니다</string>
+    <!-- Playlist / Tracks Counts & Studio Only -->
+    <plurals name="sync_tracks_count">
+        <item quantity="other">%d 개의 트랙</item>
+    </plurals>
+    <string name="sync_studio_only_title">스튜디오 녹음만</string>
+    <string name="sync_studio_only_desc">좋아요 표시한 노래에서 커버곡, 라이브 녹음 및 사용자 업로드 콘텐츠(UGC)를 제외합니다. 다른 YouTube 재생목록에는 영향을 주지 않습니다</string>
+</resources>

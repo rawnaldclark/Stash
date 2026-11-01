@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_action_like">좋아요 표시한 음악에 추가</string>
-    <string name="notification_action_unlike">좋아요 표시한 음악에서 제거</string>
+    <string name="notification_action_like">좋아요 표시한 노래에 추가</string>
+    <string name="notification_action_unlike">좋아요 표시한 노래에서 제거</string>
     <string name="notification_action_repeat_off">반복 끄기</string>
     <string name="notification_action_repeat_all">모두 반복</string>
     <string name="notification_action_repeat_one">한곡 반복</string>

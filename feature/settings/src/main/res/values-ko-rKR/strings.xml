@@ -1,44 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">웹 버전 Stash</string>
-    <string name="web_library_export_subtitle">Then in the web player: Settings › Your library › Import</string>
-    <string name="web_library_export_button">웹 버전 Stash용으로 내보내기</string>
+    <string name="web_library_export_title">Stash 웹 버전</string>
+    <string name="web_library_export_subtitle">그런 다음 웹 플레이어에서 이 경로로 이동하세요: Settings › Your library › Import</string>
+    <string name="web_library_export_button">Stash 웹 버전용으로 내보내기</string>
     <string name="web_library_export_working_title">라이브러리를 내보내는 중</string>
     <string name="web_library_export_done_title">웹에서 사용할 준비</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
     <string name="web_library_export_done_body">\'%1$s\', \'%2$s\' 및 \'%3$s\'가 저장되었습니다. 웹에서 Stash를 열고 \'Settings › Your library\'에서 이 파일을 가져오세요</string>
     <plurals name="web_library_export_likes">
-        <item quantity="other">%d 개의 좋아요</item>
+        <item quantity="other">%d 개의 좋아요 수</item>
     </plurals>
     <plurals name="web_library_export_playlists">
         <item quantity="other">%d 개의 재생목록</item>
     </plurals>
     <plurals name="web_library_export_plays">
-        <item quantity="other">%d 개의 재생</item>
+        <item quantity="other">%d 번의 재생횟수</item>
     </plurals>
     <string name="web_library_export_failed_title">내보낼 수 없음</string>
     <string name="web_library_export_failed_body">파일을 쓸 수 없습니다. 다시 시도하거나 다른 저장 위치를 ​​선택하세요</string>
     <string name="web_library_export_ok">확인</string>
-    <string name="web_library_import_button">웹에서 Stash에서 가져오기</string>
+    <string name="web_library_import_button">Stash 웹에서 가져오기</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">전송됨</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
     <string name="web_library_sent_body">%2$s, %3$s, %4$s를 %1$s로 전송하였습니다. 추가하기 전에 해당 위치에서 물어봅니다</string>
     <!-- Settings > About -->
-    <string name="settings_about_title">정보 및 도움말</string>
+    <string name="settings_about_title">정보 및 돕기</string>
     <string name="settings_diagnostics_section">진단</string>
     <string name="settings_share_latest_crash">최신 충돌 보고서 공유</string>
-    <string name="settings_attach_most_recent_crash">Attach the last crash to a bug report</string>
+    <string name="settings_attach_most_recent_crash">버그 보고서에 마지막 충돌 첨부</string>
     <string name="settings_no_recent_crashes">최근에 충돌이 없습니다</string>
     <string name="settings_no_crash_report_toast">공유할 충돌 보고서가 없습니다</string>
     <string name="settings_crash_report_subject">Stash 충돌 보고서</string>
     <string name="settings_share_crash_report_chooser">충돌 보고서 공유</string>
     <string name="settings_no_app_share_report_toast">보고서를 공유할 수 있는 앱이 없습니다</string>
     <string name="settings_share_diagnostics_bundle">진단 공유</string>
-    <string name="settings_bundle_recent_logs">Logs and connection status, no passwords</string>
+    <string name="settings_bundle_recent_logs">로그 및 연결 상태, 암호 없음</string>
     <string name="settings_share_diagnostics">진단 공유</string>
-    <string name="settings_help_section">Help</string>
+    <string name="settings_help_section">돕기</string>
     <string name="settings_about_section">정보</string>
     <string name="settings_update_on_latest">최신 버전을 사용 중입니다 (%1$s)</string>
     <string name="settings_update_available">업데이트 사용 가능: %1$s</string>
@@ -46,8 +46,8 @@
     <string name="settings_update_check_failed">업데이트를 확인할 수 없습니다 — 나중에 다시 시도하세요</string>
     <string name="settings_version_label">버전</string>
     <string name="settings_license_label">라이선스</string>
-    <string name="settings_album_art_credit">Album art</string>
-    <string name="settings_album_art_credit_detail">Back covers and inside pages come from the Cover Art Archive and Discogs. This app uses Discogs\' API but is not affiliated with, sponsored or endorsed by Discogs. \'Discogs\' is a trademark of Zink Media, LLC.</string>
+    <string name="settings_album_art_credit">앨범 아트</string>
+    <string name="settings_album_art_credit_detail">앨범 뒷면 이미지와 내지는 Cover Art Archive 및 Discogs에서 가져옵니다. 이 앱은 Discogs API를 사용하지만 Discogs와 제휴 관계가 없으며, Discogs의 후원이나 보증을 받지 않습니다. \'Discogs\'는 Zink Media, LLC의 상표입니다</string>
     <string name="settings_checking_updates_toast">업데이트를 확인하는 중…</string>
     <string name="settings_checking_updates">확인하는 중…</string>
     <string name="settings_check_updates">업데이트 확인</string>
@@ -60,19 +60,21 @@
     <string name="settings_search_no_results">\'%1$s\'에 대한 설정을 찾을 수 없습니다</string>
     <string name="settings_search_placeholder">설정 검색</string>
     <string name="settings_search_clear">검색 지우기</string>
+    <string name="settings_search_stream_or_download">스트리밍 또는 다운로드</string>
+    <string name="settings_search_sync_your_likes">내 좋아요 수 동기화</string>
     <!-- Settings > Support Banner -->
     <string name="settings_support_title">Stash 후원</string>
-    <string name="settings_support_subtitle">Stash는 무료이며 자원봉사자들이 만듭니다. 유용하다면 프로젝트 지원을 고려해 보세요</string>
+    <string name="settings_support_subtitle">Stash는 무료이며 자원기여자들이 만듭니다. 유용하다면 프로젝트 지원을 고려해 보세요</string>
     <string name="settings_support_donate">후원</string>
-    <string name="settings_donate_sheet_title">Support Stash</string>
-    <string name="settings_donate_sheet_thanks">Stash is free. Thank you for helping keep it going.</string>
-    <string name="settings_donate_role_owner">Stash creator, main dev</string>
-    <string name="settings_donate_role_codev">Co-develops Stash</string>
+    <string name="settings_donate_sheet_title">Stash 후원</string>
+    <string name="settings_donate_sheet_thanks">Stash는 무료입니다. 계속 운영할 수 있도록 도와주셔서 감사합니다</string>
+    <string name="settings_donate_role_owner">Stash 제작자, 메인 개발자</string>
+    <string name="settings_donate_role_codev">Stash 공동 개발자</string>
     <string name="settings_donate_kofi">Ko-fi</string>
     <string name="settings_donate_paypal">PayPal</string>
     <string name="settings_donate_sponsors">GitHub Sponsors</string>
-    <string name="settings_donate_upi">UPI (India)</string>
-    <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
+    <string name="settings_donate_upi">UPI (인도)</string>
+    <string name="settings_donate_upi_hint">UPI는 인도 후원자를 위한 것입니다</string>
     <string name="settings_support_star">별</string>
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">연결</string>
@@ -81,12 +83,56 @@
     <string name="settings_cancel">취소</string>
     <string name="settings_enable">활성화</string>
     <string name="settings_disable">비활성화</string>
-    <string name="settings_discord_risk_title">Discord에 연결하기 전에</string>
+    <string name="settings_discord_risk_title">Discord에 연결 전에 읽어보세요</string>
     <string name="settings_discord_risk_body">Discord는 휴대폰 앱에서 상태를 설정할 수 있는 공식적인 방법을 제공하지 않기 때문에, Stash는 사용자의 계정 세션을 이용해 직접 로그인합니다. Discord의 규정상 이를 셀프봇이라고 하며, 계정에 제재가 가해질 수 있습니다\n\n실제로는 상태 업데이트보다는 스팸 행위를 주로 단속하기 때문에 제재를 받을 가능성은 낮습니다. 하지만 본인의 계정이므로, 사용할지는 직접 판단해야 합니다\n\n연결을 해제하면 설정한 상태가 초기화되고, 이 휴대폰에 저장된 토큰도 삭제됩니다</string>
     <string name="settings_discord_risk_connect">그래도 연결</string>
     <string name="settings_discord_finish_connecting">연결 완료</string>
+    <!-- Settings > Accounts > Discord Login & Token -->
+    <string name="settings_discord_signin_title">Discord에 로그인</string>
+    <string name="settings_discord_paste_token_action">토큰 붙여넣기</string>
+    <string name="settings_login_successful_connecting">로그인 성공, 연결하는 중…</string>
+    <string name="settings_signin_blocked_question">로그인이 차단되었거나 작동하지 않습니까?</string>
+    <string name="settings_discord_paste_token_instead">토큰을 붙여넣으세요</string>
+    <string name="settings_discord_connect_dialog_title">Discord 연결</string>
+    <string name="settings_discord_token_instructions">Discord 계정 토큰을 붙여넣으세요 (개발자 도구 → 어플리케이션 → 로컬 스토리지 → discord.com → \'token\')</string>
+    <string name="settings_discord_token_label">토큰</string>
+    <!-- Settings > Accounts > Spotify Login & Cookie -->
+    <string name="settings_spotify_signin_title">Spotify에 로그인</string>
+    <string name="settings_spotify_paste_cookie_action">쿠키 붙여넣기</string>
+    <string name="settings_spotify_paste_cookie_instead">대신 쿠키 붙여넣기</string>
+    <string name="settings_spotify_connect_dialog_title">Spotify 연결</string>
+    <string name="settings_spotify_cookie_dialog_desc">일반 브라우저에서 Spotify에 로그인한 다음, sp_dc 쿠키를 복사하여 붙여넣으세요. Spotify의 봇 검사로 인해 앱 내 로그인이 차단된 경우에도 이 방법을 사용할 수 있습니다.</string>
+    <string name="settings_spotify_how_to_get_cookie">sp_dc 쿠키를 얻는 방법:</string>
+    <string name="settings_spotify_how_to_get_cookie_steps">컴퓨터에서 가장 쉬운 방법:\n1. open.spotify.com⁠에 접속하여 로그인합니다\n2. F12 키를 누른 다음 → \'애플리케이션\' → \'쿠키\'로 이동합니다\n3. sp_dc 항목의 값을 복사합니다\n\n휴대폰에서 하는 방법:
+쿠키를 확인할 수 있는 브라우저를 사용하세요. (예시: Firefox 확장 기능 또는 쿠키 뷰어 앱)</string>
+    <string name="settings_spotify_cookie_label">sp_dc 쿠키</string>
+    <string name="settings_spotify_cookie_placeholder">여기에 sp_dc 쿠키를 붙여넣으세요</string>
+    <string name="settings_spotify_username_label">Spotify 사용자 이름 (선택 사항)</string>
+    <string name="settings_spotify_username_placeholder">내 Spotify 사용자 이름</string>
+    <string name="settings_spotify_username_hint">spotify.com/account에서 \'Username\' 아래에서 찾으세요</string>
+    <!-- Settings > Accounts > YouTube Login & Fallbacks -->
+    <string name="settings_youtube_signin_title">YouTube Music에 로그인</string>
+    <string name="settings_youtube_paste_cookie_action">쿠키 붙여넣기</string>
+    <string name="settings_youtube_connect_dialog_title">YouTube Music 연결</string>
+    <string name="settings_youtube_cookie_dialog_desc">연결하려면 YouTube Music 쿠키를 붙여넣으세요</string>
+    <string name="settings_youtube_how_to_get_cookies">쿠키를 가져오는 방법:</string>
+    <string name="settings_youtube_how_to_get_cookies_steps">1. 시크릿 모드/비공개 창를 엽니다\n2. music.youtube.com에 접속하여 로그인합니다\n3. F12 키를 눌러 개발자 도구를 엽니다\n4. 네트워크 탭으로 이동한 다음, 아무 요청이나 클릭합니다\n5. 요청 헤더에서 쿠키 항목을 찾습니다\n6. 쿠키 값 전체를 복사합니다\n\n반드시 포함되어야 하는 항목: SAPISID, LOGIN_INFO, SID</string>
+    <string name="settings_youtube_cookie_label">쿠키</string>
+    <string name="settings_youtube_cookie_placeholder">여기에 쿠키를 붙여넣으세요</string>
+    <string name="settings_youtube_credentials_title">YouTube Music 자격 증명</string>
+    <string name="settings_youtube_credentials_desc">Google Cloud OAuth 인증 정보를 입력하세요. console.cloud.google.com에서 \'TVs and Limited Input devices\' 유형으로 인증 정보를 생성하고 YouTube Data API v3를 사용 설정하세요</string>
+    <string name="settings_youtube_client_id_label">클라이언트 ID</string>
+    <string name="settings_youtube_client_secret_label">클라이언트 시크릿</string>
+    <string name="settings_youtube_save_connect">저장 및 연결</string>
+    <string name="settings_youtube_device_code_instructions">아래 URL로 이동하여 이 코드를 입력하세요</string>
+    <string name="settings_youtube_copy_code">코드 복사</string>
+    <string name="settings_youtube_copy_code_cd">코드 복사</string>
+    <string name="settings_youtube_open_browser">브라우저 열기</string>
+    <string name="settings_youtube_open_browser_cd">브라우저 열기</string>
+    <string name="settings_youtube_waiting_authorization">인증을 기다리는 중...</string>
+    <string name="settings_youtube_device_code_clip_label">YouTube 코드</string>
     <string name="settings_lastfm_connect_first">먼저 Last.fm에 연결하세요</string>
-    <string name="settings_lastfm_reach_error">Last.fm에 연결할 수 없습니다. 재생 기록은 대기열에 저장되며, 나중에 전송됩니다</string>
+    <string name="settings_lastfm_reach_error">Last.fm에 연결할 수 없습니다. 재생횟수는 대기열에 저장되며, 나중에 전송됩니다</string>
     <string name="settings_lastfm_no_new_scrobbles">전송할 새 스크로블이 없습니다</string>
     <plurals name="settings_lastfm_scrobbles_sent">
         <item quantity="other">%d 개의 스크로블을 Last.fm에 전송하였습니다</item>
@@ -94,14 +140,14 @@
     <!-- Settings > Accounts > AccountConnectionCard -->
     <string name="settings_account_reconnect">다시 연결</string>
     <string name="settings_account_disconnect">연결 해제</string>
-    <string name="settings_account_not_connected">Not connected</string>
-    <string name="settings_like_mirror_row_title">Like on %1$s too</string>
-    <string name="settings_like_mirror_lastfm_title">Love on Last.fm too</string>
-    <string name="settings_like_mirror_row_subtitle">Songs you heart in Stash from now on</string>
-    <string name="settings_listenbrainz_dialog_title">Connect ListenBrainz</string>
-    <string name="settings_scrobbles_send_now">Send now</string>
+    <string name="settings_account_not_connected">연결되지 않음</string>
+    <string name="settings_like_mirror_row_title">%1$s에도 좋아요 누르기</string>
+    <string name="settings_like_mirror_lastfm_title">%1$s에도 좋아요 누르기</string>
+    <string name="settings_like_mirror_row_subtitle">이제부터 Stash에서 좋아하는 노래</string>
+    <string name="settings_listenbrainz_dialog_title">ListenBrainz 연결</string>
+    <string name="settings_scrobbles_send_now">지금 보내기</string>
     <plurals name="settings_scrobbles_waiting">
-        <item quantity="other">%d plays waiting to send</item>
+        <item quantity="other">%d 개의 재생 전송 대기 중</item>
     </plurals>
     <string name="settings_account_connect">연결</string>
     <!-- Settings > Accounts > DisconnectAccountDialog -->
@@ -109,10 +155,23 @@
     <string name="settings_disconnect_account_body">Stash가 이 휴대폰에서 %1$s 계정의 로그아웃을 진행하고 동기화를 중단합니다. 아직 다운로드 대기열에 있는 %1$s의 노래는 대기열에서 제거됩니다\n\n이미 다운로드한 노래는 라이브러리에 그대로 유지되며, 언제든지 다시 연결할 수 있습니다</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">%1$s에 미러링하시겠습니까?</string>
-    <string name="settings_like_mirror_warning_body">Stash에서 트랙에 좋아요를 누르면 %1$s에서도 해당 곡에 좋아요가 표시됩니다. 좋아요를 취소하면 %1$s의 좋아요도 함께 취소됩니다. 앞으로 새로 추가하는 좋아요만 동기화됩니다\n\n이 기능은 %1$s 웹 플레이어에서 사용하는 동일한 비공개 엔드포인트를 사용합니다 — 공식 API는 아닙니다. 언제든지 작동하지 않게 될 수 있으며, 드물게 비공식적인 접근으로 인해 계정에 제한이 가해질 수도 있습니다. 이 기능은 보조 계정이나 백업 계정에서만 활성화하는 것을 권장합니다</string>
+    <string name="settings_like_mirror_warning_body">Stash에서 트랙에 좋아요를 누르면 %1$s에서도 해당 노래에 좋아요가 표시됩니다. 좋아요를 취소하면 %1$s의 좋아요도 함께 취소됩니다. 앞으로 새로 추가하는 좋아요만 동기화됩니다\n\n이 기능은 %1$s 웹 플레이어에서 사용하는 동일한 비공개 엔드포인트를 사용합니다 — 공식 API는 아닙니다. 언제든지 작동하지 않게 될 수 있으며, 드물게 비공식적인 접근으로 인해 계정에 제한이 가해질 수도 있습니다. 이 기능은 보조 계정이나 백업 계정에서만 활성화하는 것을 권장합니다</string>
     <string name="settings_like_mirror_warning_confirm">이해했습니다</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
-    <string name="settings_yt_sync_title">Add plays to your YouTube Music history</string>
+    <!-- Settings > Accounts > YouTubeProfileSheet -->
+    <string name="settings_youtube_profile_title">프로필</string>
+    <string name="settings_youtube_profile_default">내 계정</string>
+    <string name="settings_youtube_profile_subtitle">Stash가 보관함을 동기화하는 프로필</string>
+    <string name="settings_youtube_profile_sheet_title">내 음악은 어떤 프로필에 있나요?</string>
+    <string name="settings_youtube_profile_sheet_desc">내 Google 계정의 YouTube 프로필입니다. Stash는 사용자가 선택한 프로필을 동기화합니다</string>
+    <string name="settings_youtube_profile_load_failed">프로필을 불러올 수 없습니다</string>
+    <string name="settings_youtube_profile_enter_id_button">프로필이 목록에 없나요? ID를 입력하세요</string>
+    <string name="settings_youtube_profile_enter_id_desc">\'myaccount.google.com/brandaccounts\'에서 프로필을 열고 주소에서 번호를 복사하세요.</string>
+    <string name="settings_youtube_profile_brand_id_label">브랜드 계정 ID</string>
+    <string name="settings_youtube_profile_brand_account">브랜드 계정</string>
+    <string name="settings_youtube_profile_in_use_desc">사용 중</string>
+    <string name="settings_youtube_profile_use_button">이 프로필 사용</string>
+    <string name="settings_yt_sync_title">YouTube Music 기록에 재생횟수 추가</string>
     <string name="settings_yt_sync_retry">YouTube 동기화 다시 시도</string>
     <string name="settings_yt_status_up_to_date">최신 상태</string>
     <string name="settings_yt_status_pending">%1$d 대기 중</string>
@@ -120,56 +179,93 @@
     <string name="settings_yt_status_auth_failed">YouTube Music 연결 끊김 — 다시 연결하세요</string>
     <string name="settings_yt_status_protocol_broken">오류로 인해 비활성화됨 — 다음 업데이트에서 다시 활성화됩니다</string>
     <string name="settings_yt_status_disabled">끄기</string>
-    <string name="settings_yt_sync_dialog_title">Add your plays to YouTube Music history?</string>
-    <string name="settings_yt_sync_dialog_body">Songs you finish in Stash show up in your YouTube Music history, so its recommendations learn from them.</string>
-    <string name="settings_yt_sync_dialog_risk_body">This uses an unofficial YouTube endpoint. It could stop working, and there\'s a small chance YouTube rate-limits your account. Stash pauses itself if it sees errors.</string>
+    <string name="settings_yt_sync_dialog_title">YouTube Music 기록에 재생횟수를 추가하시겠습니까?</string>
+    <string name="settings_yt_sync_dialog_body">Stash에서 끝까지 재생한 노래는 YouTube Music 재생 기록에 표시되므로, 해당 기록을 바탕으로 추천 음악이 맞춤 설정됩니다</string>
+    <string name="settings_yt_sync_dialog_risk_body">비공식 YouTube 엔드포인트를 사용합니다. 작동이 중단될 수 있으며, 드물게 YouTube에서 계정의 요청을 제한할 수 있습니다. Stash는 오류가 감지되면 자동으로 일시 중지됩니다</string>
     <!-- Settings > Accounts > LikeMirrorSection -->
     <!-- Settings > Accounts > LastFmSection -->
-    <string name="settings_lastfm_waiting_approval_body">Approve Stash on last.fm, then tap Finish.</string>
-    <string name="settings_lastfm_finish_connecting">Finish</string>
+    <string name="settings_lastfm_waiting_approval_body">Last.fm에서 Stash를 승인한 다음 완료를 탭하세요</string>
+    <string name="settings_lastfm_finish_connecting">완료</string>
     <string name="settings_lastfm_connected_as">%1$s에 연결됨</string>
     <string name="settings_lastfm_first_artist_only_title">첫 ​​번째 아티스트만 스크로블링합니다</string>
-    <string name="settings_lastfm_first_artist_only_desc">Collabs count toward the main artist.</string>
+    <string name="settings_lastfm_first_artist_only_desc">협업은 메인 아티스트에 포함됩니다</string>
     <string name="settings_lastfm_syncing">동기화하는 중…</string>
     <!-- Settings > Accounts > ListenBrainzSection -->
     <string name="settings_listenbrainz_title">ListenBrainz</string>
-    <string name="settings_listenbrainz_paste_token">Paste your user token from listenbrainz.org/profile. Plays are sent from now on.</string>
+    <string name="settings_listenbrainz_paste_token">listenbrainz.org/profile에서 사용자 토큰을 붙여넣으세요. 이제부터 재생횟수가 전송됩니다</string>
     <string name="settings_listenbrainz_user_token_label">토큰 사용</string>
     <string name="settings_listenbrainz_validating">토큰을 확인하는 중…</string>
-    <string name="settings_listenbrainz_connected">Connected</string>
-    <string name="settings_listenbrainz_now_playing_title">Show what you\'re playing now</string>
+    <string name="settings_listenbrainz_connected">연결됨</string>
+    <string name="settings_listenbrainz_now_playing_title">현재 재생 중인 콘텐츠 표시</string>
     <!-- Settings > Common / Reusable components -->
     <string name="settings_back">뒤로</string>
     <string name="settings_reset">초기화</string>
     <string name="settings_beta">베타</string>
     <string name="settings_dismiss">닫기</string>
+    <string name="settings_close">닫기</string>
+    <string name="settings_done">완료</string>
+    <string name="settings_save">저장</string>
+    <string name="settings_retry">다시 시도</string>
     <!-- Settings > Appearance -->
-    <string name="settings_theme_system">System</string>
-    <string name="settings_home_section">Home</string>
-    <string name="settings_home_mixes_section">Mixes</string>
-    <string name="settings_mix_rotation_title">Reshuffle mixes</string>
-    <string name="settings_mix_rotation_off">Off</string>
-    <string name="settings_mix_rotation_daily">Daily</string>
-    <string name="settings_mix_rotation_3_days">Every 3 days</string>
-    <string name="settings_mix_rotation_weekly">Weekly</string>
-    <string name="settings_mix_rotation_footer">Made for you and Mood &amp; decades bring different mixes to the front at midnight. Off: the newest first.</string>
-    <string name="settings_unplayed_mixes_first_title">Unplayed mixes first</string>
-    <string name="settings_unplayed_mixes_first_subtitle">Mixes you\'ve barely played lead</string>
-    <string name="settings_home_mixes_favorite_hint">Long-press a mix on Home to favorite it: favorites always come first.</string>
-    <string name="settings_home_layout_summary">%1$d of %2$d sections shown</string>
+    <string name="settings_theme_system">기기 테마</string>
+    <string name="settings_home_section">홈</string>
+    <string name="settings_home_mixes_section">믹스</string>
+    <string name="settings_mix_rotation_title">믹스 다시 셔플</string>
+    <string name="settings_mix_rotation_off">끄기</string>
+    <string name="settings_mix_rotation_daily">매일</string>
+    <string name="settings_mix_rotation_3_days">3 일마다</string>
+    <string name="settings_mix_rotation_weekly">매주</string>
+    <string name="settings_mix_rotation_footer">\'추천\'와 \'분위기 및 시대별\'은 자정마다 서로 다른 믹스를 우선적으로 표시합니다. 끄면 최신 항목부터 표시됩니다</string>
+    <string name="settings_unplayed_mixes_first_title">재생하지 않은 믹스 먼저 표시</string>
+    <string name="settings_unplayed_mixes_first_subtitle">거의 재생하지 않은 믹스를 먼저 표시합니다</string>
+    <string name="settings_home_mixes_favorite_hint">홈 화면에서 믹스를 길게 눌러 즐겨찾기에 추가하세요. 즐겨찾기는 항상 목록 맨 앞에 표시됩니다</string>
+    <string name="settings_home_layout_summary">%2$d 개의 섹션 중 %1$d 개를 표시합니다</string>
+    <string name="settings_language_section">언어</string>
+    <string name="settings_language_title">앱 언어</string>
+    <string name="settings_language_system_default">시스템 기본값</string>
     <string name="settings_theme_section">테마</string>
     <string name="settings_theme_dark">어두운 테마</string>
     <string name="settings_theme_light">밝은 테마</string>
     <string name="settings_display_size_section">화면 크기</string>
     <string name="settings_ui_scale_title">UI 배율</string>
-    <string name="settings_ui_scale_subtitle">Text and layout size across the app</string>
+    <string name="settings_ui_scale_subtitle">앱 전체의 텍스트 및 레이아웃 크기</string>
     <string name="settings_amoled_title">순수 검정 (AMOLED)</string>
-    <string name="settings_amoled_subtitle">Black backgrounds in dark theme</string>
-    <string name="settings_now_playing_section">현재 재생 중</string>
+    <string name="settings_amoled_subtitle">어두운 테마에 검정 배경을 적용합니다</string>
+    <string name="settings_now_playing_section">플레이어</string>
     <string name="settings_ambient_motion_title">앰비언트 모션</string>
-    <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>
-    <string name="settings_cycle_album_art_title">Cycle album art</string>
-    <string name="settings_cycle_album_art_subtitle">Slowly show the back and inside of the album, when it has them</string>
+    <string name="settings_ambient_motion_subtitle">지금 현재 중 뒤의 움직이는 색상</string>
+    <string name="settings_cycle_album_art_title">앨범 아트 순환</string>
+    <string name="settings_cycle_album_art_subtitle">앨범 뒷면과 내지 이미지가 있는 경우, 해당 이미지가 천천히 나타나도록 표시합니다</string>
+    <string name="settings_discogs_art_title">Discogs 아트</string>
+    <string name="settings_discogs_art_subtitle">Cover Art Archive에 없는 앨범 뒷면과 내지 이미지를 Discogs에서 가져와 채웁니다. Discogs의 이미지는 사용자가 직접 업로드하므로 화질이 낮은 이미지가 있을 수 있습니다</string>
+    <string name="settings_title_align_title">제목 정렬</string>
+    <string name="settings_title_align_center">중앙</string>
+    <string name="settings_title_align_left">왼쪽</string>
+    <string name="settings_title_button_title">제목 옆 버튼</string>
+    <string name="settings_title_button_subtitle">좋아요 버튼 반대편</string>
+    <string name="settings_title_button_sleep_timer">취침 타이머</string>
+    <string name="settings_title_button_none">없음</string>
+    <string name="settings_title_button_lyrics">가사</string>
+    <string name="settings_title_button_queue">대기열</string>
+    <string name="settings_title_button_radio">라디오</string>
+    <string name="settings_title_button_speed">재생 속도</string>
+    <string name="settings_title_button_save">재생목록에 저장</string>
+    <string name="settings_title_button_share">공유</string>
+    <string name="settings_title_button_download">다운로드</string>
+    <string name="settings_title_button_album">앨범 보기</string>
+    <string name="settings_full_art_section">전체 아트</string>
+    <string name="settings_full_art_blend_title">전체 아트 블렌드</string>
+    <string name="settings_full_art_blend_subtitle">컨트롤 아래에서 아트가 녹아드는 모습</string>
+    <string name="settings_full_art_blend_blurred">흐릿한 아트</string>
+    <string name="settings_full_art_blend_solid">단색</string>
+    <string name="settings_full_art_zoom_title">전체 아트 확대</string>
+    <string name="settings_full_art_zoom_subtitle">전체 앨범 아트의 확대 비율을 설정합니다. 1.0x는 화면 너비에 맞춰 앨범 커버 전체가 표시되는 크기입니다</string>
+    <string name="settings_full_art_pan_title">전체 아트 패닝</string>
+    <string name="settings_full_art_pan_subtitle">화면에 표시할 수 없는 부분을 각 페이지가 지나가는 속도</string>
+    <string name="settings_full_art_pan_off">끄기</string>
+    <string name="settings_full_art_pan_slow">느림</string>
+    <string name="settings_full_art_pan_normal">일반</string>
+    <string name="settings_full_art_pan_fast">빠름</string>
     <string name="settings_ambient_style_soft_glow">소프트 글로우</string>
     <string name="settings_ambient_style_classic">클래식</string>
     <string name="settings_open_stash_on_section">Stash 앱 시작 페이지</string>
@@ -178,11 +274,10 @@
     <string name="settings_start_tab_search">검색</string>
     <string name="settings_home_layout_section">홈 레이아웃</string>
     <string name="settings_home_layout_desc">홈 섹션을 정렬하거나 사용하지 않는 섹션을 숨길 수 있습니다. 디스커버 메인 페이지는 항상 맨 위에 있습니다</string>
-    <string name="settings_home_section_community_desc">다른 Stash 사용자들이 즐겨 듣는 플레이리스트와 노래를 확인할 수 있습니다. 게시물을 올리면 사용자 이름이 표시됩니다</string>
+    <string name="settings_home_section_community_desc">다른 Stash 사용자들이 즐겨 듣는 재생목록과 노래를 확인할 수 있습니다. 게시물을 올리면 사용자 이름이 표시됩니다</string>
     <string name="settings_home_section_listening_desc">최근 재생한 음악과 재생 기록을 확인할 수 있습니다. 음악을 처음으로 감상한 후 표시됩니다</string>
-    <string name="settings_home_section_record_desc">들어 온 모든 해를 한 장의 레코드에 담았습니다.</string>
     <string name="settings_home_show_liked_title">홈 화면에 좋아요 표시한 노래 표시</string>
-    <string name="settings_home_show_liked_subtitle">Stash, Spotify, YouTube의 좋아요 표시한 곡을 하나의 카드로 모아 내 플레이리스트에 표시합니다</string>
+    <string name="settings_home_show_liked_subtitle">Stash, Spotify, YouTube의 좋아요 표시한 노래을 하나의 카드로 모아 내 재생목록에 표시합니다</string>
     <string name="settings_home_section_discover">데일리 디스커버 및 믹스</string>
     <string name="settings_home_section_your_playlists">내 재생목록</string>
     <string name="settings_home_section_new_releases">신규 릴리스</string>
@@ -193,9 +288,6 @@
     <string name="settings_home_section_mood_decades">분위기 및 시대별</string>
     <string name="settings_home_section_community">커뮤니티</string>
     <string name="settings_home_section_your_listening">듣고 있는 음악</string>
-    <string name="settings_home_section_your_record">나의 레코드</string>
-    <string name="settings_home_section_record_mixes">나의 레코드에서</string>
-    <string name="settings_home_section_record_mixes_desc">오랜 세월 들어 온 음악만이 만들 수 있는 믹스. 기록을 가져오면 나타나요.</string>
     <string name="settings_home_section_move_up">%1$s 위로 이동</string>
     <string name="settings_home_section_move_down">%1$s 아래로 이동</string>
     <string name="settings_home_section_show_desc">홈에서 %1$s를 표시합니다</string>
@@ -204,18 +296,18 @@
     <string name="settings_download_mode_lossless">무손실 (FLAC)</string>
     <string name="settings_download_mode_lossless_desc">최고 음질 및 가장 큰 파일 크기입니다</string>
     <string name="settings_download_mode_aac">AAC 320</string>
-    <string name="settings_download_mode_aac_desc">Tidal\'s 320 kbps. Uses your daily allowance.</string>
+    <string name="settings_download_mode_aac_desc">Tidal의 320kbps. 일일 허용량을 사용합니다</string>
     <string name="settings_download_mode_opus">Opus (가장 작음)</string>
-    <string name="settings_download_mode_opus_desc">From YouTube.</string>
+    <string name="settings_download_mode_opus_desc">YouTube에서 음악 재생합니다</string>
     <string name="settings_flac_quality_title">FLAC 음질</string>
     <string name="settings_youtube_quality_title">YouTube 음질</string>
     <string name="settings_download_quality_rates_desc">YouTube 다운로드 음질은 아래에 설정된 음질을 적용하며, JioSaavn 다운로드 음질은 낮음 및 보통에서 96kbps, 높음에서 160kbps, 최고 및 최대에서 320kbps로 설정됩니다</string>
     <string name="settings_save_data_title">데이터 절약</string>
-    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="settings_save_data_subtitle">JioSaavn 및 YouTube 최저 음질</string>
     <string name="settings_lossless_title">무손실</string>
-    <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
-    <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
-    <string name="settings_lossless_subtitle_active">Streams in FLAC</string>
+    <string name="settings_lossless_subtitle_off">비활성화됨: JioSaavn 또는 YouTube에서 노래 재생합니다</string>
+    <string name="settings_lossless_subtitle_no_source">아직 무손실 소스가 설정되지 않았습니다</string>
+    <string name="settings_lossless_subtitle_active">FLAC으로 스트리밍</string>
     <string name="settings_qobuz_no_source_warning">무손실 소스가 설정되지 않음 — 아래에서 Qobuz 계정을 연결해야 합니다</string>
     <string name="settings_qobuz_account_title">사용자 Qobuz 계정</string>
     <string name="settings_connected_as">\'%1$s\'로 연결됨</string>
@@ -226,36 +318,36 @@
     <string name="settings_password_label">비밀번호</string>
     <string name="settings_connecting">연결하는 중…</string>
     <string name="settings_connect">연결</string>
-    <string name="settings_auto_flac_upgrade_title">Upgrade to FLAC after sync</string>
-    <string name="settings_auto_flac_upgrade_subtitle">Finds lossless versions of older downloads</string>
-    <string name="settings_tidal_aac_fallback_title">FLAC이 없을 때 Tidal AAC</string>
-    <string name="settings_tidal_aac_fallback_subtitle">Tidal\'s 320 kbps AAC when there\'s no FLAC</string>
-    <string name="settings_lossless_sources_title">Lossless sources</string>
-    <string name="settings_lossless_sources_needs_setup">Not set up yet</string>
-    <string name="settings_output_section">Output</string>
-    <string name="settings_hires_output_title">Hi-Res output</string>
-    <string name="settings_hires_value_match_rate">Match DAC</string>
-    <string name="settings_hires_value_bit_perfect">Bit-perfect</string>
-    <string name="settings_lossless_tier_max_short">Max</string>
+    <string name="settings_auto_flac_upgrade_title">동기화 후 FLAC으로 업그레이드</string>
+    <string name="settings_auto_flac_upgrade_subtitle">이전 다운로드의 무손실 버전을 찾습니다</string>
+    <string name="settings_tidal_aac_fallback_title">FLAC이 없을 경우 Tidal AAC 재생</string>
+    <string name="settings_tidal_aac_fallback_subtitle">FLAC이 없을 경우 Tidal의 320kbps AAC를 재생합니다</string>
+    <string name="settings_lossless_sources_title">무손실 소스</string>
+    <string name="settings_lossless_sources_needs_setup">아직 설정되지 않음</string>
+    <string name="settings_output_section">출력</string>
+    <string name="settings_hires_output_title">Hi-Res 출력</string>
+    <string name="settings_hires_value_match_rate">DAC 맞추기</string>
+    <string name="settings_hires_value_bit_perfect">비트 퍼펙트</string>
+    <string name="settings_lossless_tier_max_short">최대</string>
     <string name="settings_lossless_tier_hires_short">Hi-Res</string>
     <string name="settings_lossless_tier_cd_short">CD</string>
-    <string name="settings_streaming_on_wifi_title">Streaming on Wi-Fi</string>
-    <string name="settings_streaming_on_cellular_title">Streaming on cellular</string>
+    <string name="settings_streaming_on_wifi_title">Wi-Fi 스트리밍</string>
+    <string name="settings_streaming_on_cellular_title">모바일 데이터 스트리밍</string>
     <string name="settings_streaming_section">스트리밍</string>
-    <string name="settings_on_wifi">Wi-Fi 사용 중</string>
-    <string name="settings_on_cellular">모바일 데이터 사용 중</string>
-    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
-    <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
-    <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
+    <string name="settings_on_wifi">Wi-Fi 이용 시 음질</string>
+    <string name="settings_on_cellular">모바일 데이터 이용 시 음질</string>
+    <string name="settings_save_data_lossless_subtitle">모든 네트워크에서 CD 음질</string>
+    <string name="settings_prefer_cloud_copies_title">클라우드 사본 먼저 재생</string>
+    <string name="settings_prefer_cloud_copies_subtitle">Qobuz 또는 Tidal보다 클라우드 저장소의 무손실 파일을 먼저 재생합니다</string>
     <string name="settings_prefer_tidal_aac_streaming_title">스트리밍 시 Tidal AAC 선호</string>
-    <string name="settings_prefer_tidal_aac_streaming_subtitle">Smaller streams when Tidal has the song</string>
+    <string name="settings_prefer_tidal_aac_streaming_subtitle">Tidal에 노래가 있는 경우 더 작은 스트림</string>
     <string name="settings_state_expanded">펼쳐짐</string>
     <string name="settings_state_collapsed">접어짐</string>
     <string name="settings_lossy_fallback_title">손실 압축 대체</string>
     <string name="settings_state_on">켜기</string>
     <string name="settings_state_off">끄기</string>
-    <string name="settings_lossy_fallback_switch_label">JioSaavn, then YouTube, when there\'s no lossless match</string>
-    <string name="settings_lossy_fallback_switch_label_aac">JioSaavn, then YouTube, when Tidal has no AAC</string>
+    <string name="settings_lossy_fallback_switch_label">매칭되는 무손실 음원이 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
+    <string name="settings_lossy_fallback_switch_label_aac">Tidal에 ACC가 없을 경우, JioSaavn, 그다음 YouTube 순서로 재생 가능 여부를 확인한 후 재생합니다</string>
     <string name="settings_advanced">고급</string>
     <string name="settings_custom_relay_desc">Stash를 자체 무손실 릴레이로 지정하세요. Stash보다 우선순위가 높습니다</string>
     <string name="settings_custom_endpoint_label">사용자 정의 무손실 엔드포인트</string>
@@ -286,13 +378,13 @@
     <string name="settings_hires_verdict_now">현재: %1$s</string>
     <string name="settings_hires_verdict_now_with_device">현재: %1$s · %2$s</string>
     <string name="settings_hires_mode_standard">표준</string>
-    <string name="settings_hires_mode_standard_desc">Android\'s mixer, usually 48 kHz. What every app gets.</string>
+    <string name="settings_hires_mode_standard_desc">Android 믹서, 일반적으로 48kHz. 모든 앱이 사용하는 주파수입니다</string>
     <string name="settings_hires_mode_match_rate">USB DAC를 각 노래에 맞추기</string>
-    <string name="settings_hires_mode_match_rate_desc">Your DAC follows each song\'s sample rate, so nothing is resampled.</string>
+    <string name="settings_hires_mode_match_rate_desc">DAC는 각 노래의 샘플링 속도를 따르므로 재샘플링이 되지 않습니다</string>
     <string name="settings_hires_needs_android_14">Android 14 이상이 필요합니다</string>
     <string name="settings_hires_mode_bit_perfect">비트 퍼펙트 USB</string>
-    <string name="settings_hires_mode_bit_perfect_desc">Untouched audio. EQ, normalization and crossfade turn off; your DAC sets the volume.</string>
-    <string name="settings_hires_footer_note">For USB DACs and USB-C dongles. Bluetooth, the speaker and the headphone jack always go through Android\'s mixer.</string>
+    <string name="settings_hires_mode_bit_perfect_desc">원본 오디오. EQ, 정규화 및 크로스페이드가 비활성화되고 DAC가 볼륨을 설정합니다</string>
+    <string name="settings_hires_footer_note">USB DAC 및 USB-C 동글용입니다. 블루투스, 스피커 및 헤드폰 잭은 항상 Android 오디오 믹서를 통해 연결됩니다</string>
     <string name="settings_hires_bit_perfect_dialog_title">먼저 DAC 볼륨을 낮추세요</string>
     <string name="settings_hires_bit_perfect_dialog_body">비트 퍼펙트 모드에서는 Android가 음량을 조절하지 않으며, DAC에서 음량을 직접 조절합니다. DAC에 자체 음량 조절 기능이 없는 경우 휴대폰의 음량 버튼이 작동하지 않을 수 있으며, 음악이 최대 음량으로 재생될 수 있습니다\n\n재생 버튼을 누르기 전에 음량을 낮춰 주세요. 비트 퍼펙트 모드가 활성화되어 있는 동안 이퀄라이저, 음량 정규화 및 크로스페이드는 적용되지 않습니다</string>
     <string name="settings_hires_bit_perfect_confirm">비트 퍼펙트 사용</string>
@@ -314,7 +406,7 @@
     <!-- Settings > Audio & Quality > AudioQualityPicker -->
     <string name="settings_audio_quality_bitrate_size">%1$d kbps  ~%2$s MB/min</string>
     <string name="settings_quality_tier_max">최대</string>
-    <string name="settings_quality_tier_best">최상</string>
+    <string name="settings_quality_tier_best">최고</string>
     <string name="settings_quality_tier_high">높음</string>
     <string name="settings_quality_tier_normal">보통</string>
     <string name="settings_quality_tier_low">낮음</string>
@@ -325,30 +417,30 @@
     <string name="settings_mode_stream_only">스트리밍 전용</string>
     <string name="settings_mode_download">다운로드</string>
     <string name="settings_stream_on_cellular_title">모바일 데이터로 스트리밍</string>
-    <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
+    <string name="settings_stream_on_cellular_desc">모바일 데이터를 사용합니다</string>
     <string name="settings_stream_via_youtube_title">YouTube를 통해 스트리밍</string>
-    <string name="settings_stream_via_youtube_desc">Try this if songs won\'t play or cut off</string>
+    <string name="settings_stream_via_youtube_desc">노래가 재생되지 않거나 끊기면 시도해 보세요</string>
     <string name="settings_force_qobuz_debug_title">Qobuz만 강제 사용 (디버그)</string>
     <string name="settings_force_qobuz_debug_desc">디버그 빌드 전용입니다. YouTube 대체 없이 Qobuz를 통해 스트리밍 및 다운로드를 라우팅합니다</string>
     <string name="settings_streaming_unavailable">이 빌드에서는 스트리밍을 사용할 수 없습니다</string>
     <string name="settings_autoplay_radio_title">라디오 자동 재생</string>
-    <string name="settings_autoplay_radio_desc">A radio keeps playing when the queue ends</string>
+    <string name="settings_autoplay_radio_desc">대기열이 끝나도 라디오는 계속 재생됩니다</string>
     <string name="settings_crossfade_title">크로스페이드</string>
-    <string name="settings_crossfade_desc">Blend into the next song. Skips still cut.</string>
+    <string name="settings_crossfade_desc">다음 음악으로 자연스럽게 이어집니다. 건너뛰는 부분은 여전히 ​​잘립니다</string>
     <string name="settings_crossfade_duration_label">재생 시간</string>
     <plurals name="settings_crossfade_duration_seconds">
         <item quantity="other">%d 초</item>
     </plurals>
-    <string name="settings_playing_section">Playing</string>
+    <string name="settings_playing_section">재생 중</string>
     <string name="settings_lyrics_section">가사</string>
     <string name="settings_lyrics_apple_music">Apple Music</string>
     <string name="settings_lyrics_lrc_only">LRC 전용</string>
-    <string name="settings_lyrics_lrc_only_desc">Line-synced only. Stored word-synced lyrics are removed.</string>
-    <string name="settings_lyrics_apple_music_desc">Word-synced lyrics when Apple Music has them</string>
+    <string name="settings_lyrics_lrc_only_desc">줄 단위 동기화만 지원합니다. 저장된 단어 단위 동기화 가사는 제거됩니다</string>
+    <string name="settings_lyrics_apple_music_desc">Apple Music에서 제공하는 경우, 단어별로 동기화된 가사를 표시합니다</string>
     <string name="settings_lyrics_recheck_title">가사 동기화 라이브러리 다시 확인</string>
-    <string name="settings_lyrics_recheck_desc">아직 동기화된 가사가 없는 곡의 가사를 검색합니다. 백그라운드에서 천천히 실행됩니다</string>
+    <string name="settings_lyrics_recheck_desc">아직 동기화된 가사가 없는 노래의 가사를 검색합니다. 백그라운드에서 천천히 실행됩니다</string>
     <string name="settings_lyrics_recheck_dialog_title">라이브러리를 다시 확인하시겠습니까?</string>
-    <string name="settings_lyrics_recheck_dialog_body">Stash는 아직 단어 단위 동기화 가사가 없는 모든 곡에 대해 가사 서비스를 통해 가사를 검색합니다. 몇 초마다 한 곡씩 처리하므로, 음악 라이브러리가 크면 몇 시간까지 걸릴 수 있습니다. 이 기능은 Wi-Fi에 연결되어 있고 배터리가 부족하지 않을 때만 실행되며, 언제든지 취소할 수 있습니다. 검색 결과 가사를 찾지 못한 곡은 기존 가사가 그대로 유지됩니다</string>
+    <string name="settings_lyrics_recheck_dialog_body">Stash는 아직 단어 단위 동기화 가사가 없는 모든 노개에 대해 가사 서비스를 통해 가사를 검색합니다. 몇 초마다 한 곡씩 처리하므로, 음악 라이브러리가 크면 몇 시간까지 걸릴 수 있습니다. 이 기능은 Wi-Fi에 연결되어 있고 배터리가 부족하지 않을 때만 실행되며, 언제든지 취소할 수 있습니다. 검색 결과 가사를 찾지 못한 노래 기존 가사가 그대로 유지됩니다</string>
     <string name="settings_lyrics_recheck_dialog_confirm">다시 확인</string>
     <string name="settings_lyrics_recheck_progress">확인하는 중… %1$,d / %2$,d</string>
     <string name="settings_lyrics_recheck_starting">확인하는 중…</string>
@@ -360,21 +452,21 @@
     <string name="settings_storage_section">저장소</string>
     <string name="settings_downloads_section">다운로드</string>
     <string name="settings_library_section">라이브러리</string>
-    <string name="settings_discovery_section">Discovery</string>
-    <string name="settings_backup_section">Backup &amp; transfer</string>
-    <string name="settings_download_recommendations_title">Background refresh</string>
+    <string name="settings_discovery_section">디스커버리</string>
+    <string name="settings_backup_section">백업 &amp; 전송</string>
+    <string name="settings_download_recommendations_title">백그라운드 새로 고침</string>
     <string name="settings_download_mode_wifi_charging_label">Wi-Fi + 충전 중</string>
-    <string name="settings_download_mode_wifi_charging_desc">On Wi-Fi while charging. Easiest on battery and data.</string>
+    <string name="settings_download_mode_wifi_charging_desc">충전 중에는 Wi-Fi에 연결하세요. 배터리와 데이터를 가장 적게 사용하는 방법입니다</string>
     <string name="settings_download_mode_wifi_any_label">Wi-Fi 연결 시 언제든지</string>
-    <string name="settings_download_mode_wifi_any_desc">On Wi-Fi, charging or not.</string>
+    <string name="settings_download_mode_wifi_any_desc">Wi-Fi에 연결된 상태라면 충전 중이든 아니든 상관없습니다</string>
     <string name="settings_download_mode_any_network_label">모든 네트워크</string>
-    <string name="settings_download_mode_any_network_desc">Mobile data too.</string>
+    <string name="settings_download_mode_any_network_desc">모바일 데이터도 사용 가능합니다</string>
     <string name="settings_stash_mixes_title">Stash 믹스 (베타)</string>
-    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts and First Listen refresh on their own</string>
-    <string name="settings_stash_mixes_subtitle_disabled">Mixes hidden; no background discovery</string>
+    <string name="settings_stash_mixes_subtitle_enabled">Daily Discover, Deep Cuts 및 First Listen은 자동으로 새로고침됩니다</string>
+    <string name="settings_stash_mixes_subtitle_disabled">믹스를 숨깁니다. 백그라운드에서 새로운 믹스를 탐색하지 않습니다</string>
     <string name="settings_qobuz_discovery_title">홈 화면의 Qobuz 디스커버리</string>
-    <string name="settings_qobuz_discovery_subtitle_enabled">New Releases, Qobuz Playlists and Top Albums on Home</string>
-    <string name="settings_qobuz_discovery_subtitle_disabled">Home shows only your mixes and music</string>
+    <string name="settings_qobuz_discovery_subtitle_enabled">홈 화면에서 신곡, Qobuz 재생목록 및 인기 앨범을 확인할 수 있습니다</string>
+    <string name="settings_qobuz_discovery_subtitle_disabled">홈 화면에는 나만의 믹스와 음악만 표시됩니다</string>
     <string name="settings_library_health_title">라이브러리 상태</string>
     <string name="settings_listening_history_title">청취 기록</string>
     <string name="settings_listening_history_paused_subtitle">일시 중지됨: 새 듣기는 저장되지 않습니다</string>
@@ -390,7 +482,7 @@
     <string name="settings_backup_status_ok">확인</string>
     <string name="settings_backup_export_dialog_title">백업 내보내기</string>
     <string name="settings_backup_export_dialog_subtitle">이 백업에 포함할 항목을 선택하세요:</string>
-    <string name="settings_backup_export_scope_likes_only_label">졸아요 표시한 음악 전용</string>
+    <string name="settings_backup_export_scope_likes_only_label">졸아요 표시한 노래 전용</string>
     <string name="settings_backup_export_scope_likes_only_desc">좋아요 표시한 항목만 포함합니다. 파일 크기가 작습니다</string>
     <string name="settings_backup_export_scope_everything_label">모두</string>
     <string name="settings_backup_export_scope_everything_desc">라이브러리와 설정을 포함합니다. 어느 방식을 선택하더라도 로그인 정보는 복원할 수 없습니다</string>
@@ -415,29 +507,29 @@
     <string name="settings_backup_import_scope_replace_everything_confirm">모두 재정의</string>
     <string name="settings_backup_import_destructive_warning">이 작업은 되돌릴 수 없습니다</string>
     <string name="settings_storage_backup_title">백업</string>
-    <string name="settings_storage_backup_subtitle">Settings and library in one file</string>
-    <string name="settings_storage_export_backup_button">Export backup</string>
-    <string name="settings_storage_import_backup_button">Import backup</string>
+    <string name="settings_storage_backup_subtitle">설정과 라이브러리가 하나의 파일에 통합</string>
+    <string name="settings_storage_export_backup_button">백업 내보내기</string>
+    <string name="settings_storage_import_backup_button">백업 가져오기</string>
     <string name="settings_storage_total_tracks_label">총 트랙 수</string>
     <plurals name="settings_storage_tracks">
-        <item quantity="other">%d tracks</item>
+        <item quantity="other">%d 개의 트랙</item>
     </plurals>
     <string name="settings_storage_used_label">사용된 저장 공간</string>
     <string name="settings_storage_download_location_label">다운로드 위치</string>
-    <string name="settings_storage_location_internal">Internal</string>
+    <string name="settings_storage_location_internal">내부</string>
     <string name="settings_storage_location_external_unknown">외부 폴더 (SD 카드 / USB)</string>
-    <string name="settings_storage_location_external_desc">Survives uninstall. Visible over USB.</string>
+    <string name="settings_storage_location_external_desc">제거 후에도 유지됩니다. USB를 통해 볼 수 있습니다</string>
     <string name="settings_storage_change_folder_button">폴더 변경</string>
     <string name="settings_storage_pick_folder_button">SD / 폴더 선택</string>
-    <string name="settings_storage_use_internal_button">Use internal storage</string>
-    <string name="settings_storage_new_downloads_location_note">New downloads go here</string>
+    <string name="settings_storage_use_internal_button">내부 저장소 사용</string>
+    <string name="settings_storage_new_downloads_location_note">새 다운로드는 여기에 저장됩니다</string>
     <string name="settings_storage_folder_structure_label">폴더 구조</string>
     <string name="settings_storage_layout_artist_album_label">아티스트 / 앨범</string>
     <string name="settings_storage_layout_artist_album_desc">아티스트별로 폴더를 만들고, 각 아티스트 폴더 안에 앨범별 하위 폴더를 만듭니다</string>
     <string name="settings_storage_layout_single_folder_label">단일 폴더</string>
-    <string name="settings_storage_layout_single_folder_desc">모든 트랙을 하나의 폴더에 저장하고, 파일명은 \'아티스트명 - 곡 제목\' 형식으로 지정합니다</string>
+    <string name="settings_storage_layout_single_folder_desc">모든 트랙을 하나의 폴더에 저장하고, 파일명은 \'아티스트명 - 노래 제목\' 형식으로 지정합니다</string>
     <string name="settings_storage_layout_playlist_label">재생목록별</string>
-    <string name="settings_storage_layout_playlist_desc">재생목록마다 별도의 폴더를 사용합니다; 재생목록에 속하지 않은 곡은 아티스트 / 앨범을 사용합니다</string>
+    <string name="settings_storage_layout_playlist_desc">재생목록마다 별도의 폴더를 사용합니다; 재생목록에 속하지 않은 노래는 아티스트 / 앨범을 사용합니다</string>
     <!-- Settings > Library & Storage > Move Library -->
     <string name="settings_storage_move_library_title">기존 라이브러리</string>
     <plurals name="settings_storage_move_library_has_external_desc">
@@ -479,7 +571,7 @@
     <string name="settings_listening_history_sheet_subtitle_nonempty">이 휴대폰은 %1$s%2$s를 기억합니다</string>
     <string name="settings_listening_history_since_date">" %s 이후"</string>
     <plurals name="settings_listening_history_plays_count">
-        <item quantity="other">%,d 개의 트랙 재생</item>
+        <item quantity="other">%,d 번의 재생횟수</item>
     </plurals>
     <string name="settings_listening_history_pause_title">기록 일시 정지</string>
     <string name="settings_listening_history_pause_subtitle">일시 정지 중에는 재생한 항목이 저장되지 않으며, Last.fm 또는 ListenBrainz로 어떤 정보도 전송되지 않습니다</string>
@@ -499,6 +591,10 @@
     </plurals>
     <string name="settings_listening_history_confirm_no_listens">해당 날짜에는 재생 기록이 없습니다. %s</string>
     <string name="settings_listening_history_confirm_clear_button">지우기</string>
+    <string name="settings_listening_history_clear_failed">기록을 삭제할 수 없습니다. 다시 시도하세요</string>
+    <plurals name="settings_listening_history_cleared_plays">
+        <item quantity="other">%d 번의 재생횟수 지워짐</item>
+    </plurals>
     <!-- Settings > Web Library Sheets -->
     <string name="web_library_export_what_to_include">포함할 항목</string>
     <string name="web_library_export_save_as_file">파일로 저장</string>
@@ -507,19 +603,19 @@
     <string name="web_library_export_send_to_title">다음으로 보내기</string>
     <string name="web_library_export_plays_detail">최근 %,d 개</string>
     <!-- The export picker's tick for this phone's whole history (library-file v1 "Listens"), for Your record on the web. -->
-    <string name="web_library_export_history_label">Your whole listening history</string>
+    <string name="web_library_export_history_label">내 전체 청취 기록</string>
     <!-- %1$s the count ("12,480"), %2$s the month of the first play ("March 2025"). -->
     <plurals name="web_library_export_history_detail">
-        <item quantity="other">%1$s plays since %2$s</item>
+        <item quantity="other">%2$s 이후 %1$s 재생</item>
     </plurals>
-    <string name="web_library_export_history_none">No plays yet</string>
-    <string name="web_library_export_history_note">Every play on this phone, for Your record on the web: each year you listened, pressed into a record.</string>
+    <string name="web_library_export_history_none">아직 재생횟수가 없습니다</string>
+    <string name="web_library_export_history_note">이 휴대폰에서 재생한 모든 기록은 웹 기록에 저장됩니다. 청취한 연도가 기록으로 저장됩니다</string>
     <!-- The export picker's "Plays" row: the newest plays that go into the web's history (up to 5,000). -->
-    <string name="web_library_export_recent_plays">Recent plays</string>
+    <string name="web_library_export_recent_plays">최근 재생횟수</string>
     <!-- Under the Send buttons when the whole history is ticked: a send carries only the library. -->
-    <string name="web_library_export_history_file_only">Your whole listening history goes only in a saved file, not in a send.</string>
+    <string name="web_library_export_history_file_only">전체 청취 기록은 전송되지 않고 저장된 파일에만 보관됩니다</string>
     <!-- After "Saved 3 likes, 2 playlists and 40 plays.": %s is the history's plays ("12,480 plays"). -->
-    <string name="web_library_export_done_history">Your whole listening history went too: %s.</string>
+    <string name="web_library_export_done_history">전체 청취 기록도 함께 전송되었습니다: %s</string>
     <string name="web_library_import_what_to_import">가져올 항목</string>
     <string name="web_library_import_action_import">가져오기</string>
     <string name="web_library_import_reading_title">파일을 읽는 중</string>
@@ -579,7 +675,7 @@
     </plurals>
     <string name="settings_library_health_verified_summary">확인됨 — %1$s, %2$s</string>
     <plurals name="settings_library_health_adopted_songs">
-        <item quantity="other">디스크에 이미 저장되어 있던 %d 곡의 노래를 찾아 라이브러리에 추가하였습니다</item>
+        <item quantity="other">디스크에 이미 저장되어 있던 %d 개의 노래를 찾아 라이브러리에 추가하였습니다</item>
     </plurals>
     <plurals name="settings_library_health_scanned_tracks_none_matched">
         <item quantity="other">아직 다운로드되지 않은 %d 개의 트랙을 확인했지만, 디스크에 있는 파일과 일치하는 항목이 없습니다</item>
@@ -612,7 +708,7 @@
     <string name="settings_library_health_lyrics_bailed">일찍 중단됨: 가사 서비스가 응답하지 않습니다. 잠시 후 다시 시도하세요</string>
     <string name="settings_library_health_fetch_again_button">다시 가져오기</string>
     <!-- Settings > Equalizer -->
-    <string name="settings_equalizer_loudness_first_run_message">음량 정규화가 활성화되어 있습니다. 백그라운드에서 음악 라이브러리의 음량을 측정하므로, 곡마다 음량이 더 일정하게 재생됩니다</string>
+    <string name="settings_equalizer_loudness_first_run_message">음량 정규화가 활성화되어 있습니다. 백그라운드에서 음악 라이브러리의 음량을 측정하므로, 트랙마다 음량이 더 일정하게 재생됩니다</string>
     <string name="settings_equalizer_bit_perfect_bypassed">적용되지 않음: 비트 퍼펙트 출력이 활성화되어 있어 DAC로 음악이 원본 그대로 전달됩니다. EQ를 사용하려면 \'오디오 및 음질\' 설정에서 \'Hi-Res 출력\'을 \'USB DAC에 맞추기\'로 변경하세요</string>
     <string name="settings_equalizer_section_5band_eq">5-밴드 EQ</string>
     <string name="settings_equalizer_section_bass_boost">베이스 부스트</string>
@@ -635,24 +731,196 @@
     <string name="settings_equalizer_preset_classical">클래식</string>
     <string name="settings_equalizer_save_preset_dialog_title">프리셋 저장</string>
     <string name="settings_equalizer_preset_name_label">프리셋 이름</string>
-    <string name="settings_your_record_section">나의 레코드</string>
-    <string name="settings_your_record_open">나의 레코드</string>
-    <plurals name="settings_your_record_summary">
-        <item quantity="other">Spotify에서: %1$s회 재생.</item>
+    <!-- Settings > Link Stash on the Web -->
+    <string name="settings_web_link_remove_device_title">%s를 제거하시겠습니까?</string>
+    <string name="settings_web_link_remove_device_desc">휴대전화와의 연결이 즉시 해제됩니다. 라이브러리는 현재 상태로 유지됩니다</string>
+    <string name="settings_web_link_action_remove">제거</string>
+    <string name="settings_web_link_unlink_everything_title">모두 연결 해제하시겠습니까?</string>
+    <string name="settings_web_link_unlink_everything_desc">연결된 모든 브라우저의 연결이 한 번에 해제됩니다. 어떤 라이브러리에서도 항목이 삭제되지는 않습니다</string>
+    <string name="settings_web_link_action_unlink_everything">모두 연결 해제</string>
+    <string name="settings_web_link_section_link_browser">브라우저 연결</string>
+    <string name="settings_web_link_not_linked_instructions">play.stashfm.app › Settings › Your phone 열기</string>
+    <string name="settings_web_link_scan_code_button">코드 스캔</string>
+    <string name="settings_web_link_section_linked_devices">연결된 기기</string>
+    <string name="settings_web_link_link_another_browser">다른 브라우저 연결</string>
+    <string name="settings_web_link_up_to_four">최대 4 개</string>
+    <string name="settings_web_link_section_handoff">핸드오프</string>
+    <string name="settings_web_link_handoff_title">중단했던 부분부터 다시 시작</string>
+    <string name="settings_web_link_handoff_subtitle">연결된 기기와 재생 중인 콘텐츠를 공유하세요</string>
+    <string name="settings_web_link_section_your_library">내 라이브러리</string>
+    <string name="settings_web_link_send_library_title">내 라이브러리를 브라우저로 보내기</string>
+    <string name="settings_web_link_send_library_subtitle">좋아요 수, 재생횟수, 각 재생목록 중 무엇을 보낼지 선택하세요</string>
+    <string name="settings_web_link_section_waiting_for_you">기다리는 중</string>
+    <string name="settings_web_link_sent_you_summary">%1$s가 %2$s를 보냈습니다</string>
+    <string name="settings_web_link_sent_problem_discard">%s 삭제합니다</string>
+    <string name="settings_web_link_sent_actions_subtitle">추가하거나, 추가할 항목을 선택하거나, 삭제하세요</string>
+    <string name="settings_web_link_section_unlink">연결 해제</string>
+    <string name="settings_web_link_unlink_note">연결을 해제해도 라이브러리의 항목은 삭제되지 않습니다</string>
+    <string name="settings_web_link_device_this_phone">이 휴대폰</string>
+    <string name="settings_web_link_device_linked">연결됨</string>
+    <string name="settings_web_link_device_last_used_today">오늘 마지막 사용</string>
+    <string name="settings_web_link_device_last_used_yesterday">어제 마지막 사용</string>
+    <plurals name="settings_web_link_device_last_used_days">
+        <item quantity="other">마지막 사용 %d 일 전</item>
     </plurals>
-    <string name="settings_your_record_import">Spotify에서 가져오기</string>
-    <string name="settings_your_record_newer">최신 사본 가져오기</string>
-    <string name="settings_your_record_import_subtitle">Spotify 데이터 다운로드의 청취 기록입니다. Stash는 이 휴대폰에서 파일을 읽습니다. 아무것도 업로드되지 않습니다.</string>
-    <string name="settings_your_record_remove">가져온 기록 삭제</string>
-    <string name="settings_your_record_remove_subtitle">나의 레코드가 Stash의 재생 기록으로 돌아갑니다.</string>
-    <string name="settings_your_record_remove_title">가져온 기록을 삭제할까요?</string>
-    <string name="settings_your_record_remove_body">Spotify와 Last.fm에서 나의 레코드로 가져온 모든 항목이 이 휴대폰에서 삭제됩니다. Stash의 재생 기록은 그대로 유지됩니다. 가져온 플레이리스트와 좋아요 표시한 곡은 라이브러리에 그대로 남습니다.</string>
-    <string name="settings_your_record_remove_confirm">삭제</string>
-    <string name="settings_your_record_cancel">취소</string>
-    <string name="settings_your_record_removed">가져온 기록을 삭제했습니다.</string>
-    <string name="settings_your_record_remove_busy">가져오기가 진행 중입니다. 완료된 후 삭제하세요.</string>
-    <string name="settings_your_record_remove_failed">지금은 삭제할 수 없습니다. 다시 시도하세요.</string>
-    <string name="settings_your_record_show">홈에 표시</string>
-    <string name="settings_your_record_show_subtitle">‘나의 레코드 만들기’가 홈에서 숨겨져 있습니다.</string>
-    <string name="settings_your_record_shown">‘나의 레코드 만들기’가 홈에 다시 표시됩니다</string>
+    <string name="settings_web_link_reading_code">이 코드를 읽는 중…</string>
+    <string name="settings_web_link_confirm_title">%s을 연결하시겠습니까?</string>
+    <string name="settings_web_link_confirm_body_before_code">컴퓨터에서 확인 요청이 표시됩니다</string>
+    <string name="settings_web_link_confirm_body_after_code">. 여기에서 재생 중인 항목을 확인할 수 있으며, 라이브러리를 미러링할 지 선택할 수 있습니다</string>
+    <string name="settings_web_link_confirm_from_link_warning">직접 컴퓨터에서 ‘Link your phone’을 열었고, 현재 해당 컴퓨터가 눈앞에 있는 경우에만 계속 진행하세요</string>
+    <string name="settings_web_link_action_link">링크</string>
+    <string name="settings_web_link_waiting_computer">내 컴퓨터를 기다리는 중… · </string>
+    <string name="settings_web_link_waiting_desc">%s에 표시된 6자리 숫자가 동일한지 확인한 다음, 해당 기기에서 Link를 탭하세요</string>
+    <string name="settings_web_link_linked_to">%s에 연결됨</string>
+    <string name="settings_web_link_linked_desc">연결되었습니다. 아직 미러링된 항목이 없습니다</string>
+    <string name="settings_web_link_code_label">코드 </string>
+    <string name="settings_web_link_scan_again">다시 스캔</string>
+    <string name="settings_web_link_action_rename">이름 변경</string>
+    <string name="settings_web_link_rename_dialog_title">이름 변경</string>
+    <string name="settings_web_link_rename_me_hint">연결된 기기에서 이 이름을 볼 수 있습니다</string>
+    <string name="settings_web_link_rename_other_hint">이 이름은 이 휴대폰에 유지됩니다</string>
+    <!-- Settings > Link Stash on the Web > Mirror -->
+    <string name="settings_mirror_dir_off">끄기</string>
+    <string name="settings_mirror_dir_both">양방향</string>
+    <string name="settings_mirror_dir_to_web">폰 → 웹</string>
+    <string name="settings_mirror_dir_to_phone">웹 → 폰</string>
+    <string name="settings_mirror_section_title">기기 간 미러링</string>
+    <string name="settings_mirror_section_desc">끄면 각 기기에서 별도의 라이브러리가 유지됩니다. 미러링되는 데이터는 종단 간 암호화로 보호됩니다</string>
+    <string name="settings_mirror_likes_title">좋아요 수</string>
+    <string name="settings_mirror_likes_waiting_share"> · %s가 좋아요를 공유할 때까지 기다리는 중입니다</string>
+    <string name="settings_mirror_likes_choose_combine"> · 결합 방법을 선택하세요</string>
+    <string name="settings_mirror_playlists_title">재생목록</string>
+    <plurals name="settings_mirror_playlists_chosen">
+        <item quantity="other"> · %d 개 선택됨</item>
+    </plurals>
+    <string name="settings_mirror_choose_playlists_title">재생목록 선택</string>
+    <string name="settings_mirror_choose_playlists_subtitle">Spotify 및 YouTube Music 재생목록은 웹에서만 볼 수 있으며, 웹에서는 읽기 전용입니다</string>
+    <string name="settings_mirror_plays_title">재생횟수</string>
+    <string name="settings_mirror_plays_subtitle_note"> · 웹에서 재생한 내용은 기록에 표시되며, Stash 믹스에는 표시되지 않습니다</string>
+    <plurals name="settings_mirror_held_unlikes">
+        <item quantity="other">미러링이 이 휴대폰에서 %1$d 개의 싫어요를 저장하고 있습니다. %2$s로 보내시겠습니까, 아니면 유지하시겠습니까?</item>
+    </plurals>
+    <string name="settings_mirror_keep_likes">좋아요 수 유지</string>
+    <string name="settings_mirror_send_unlikes">싫어요 수 보내기</string>
+    <string name="settings_mirror_playlists_spotify_ytm_note">Spotify 또는 YouTube Music에서 동기화되는 재생목록은 이 설정과 관계없이 휴대폰 → 웹 방향으로만 동기화됩니다</string>
+    <string name="settings_mirror_new_playlists_too">새 재생목록도 미러링</string>
+    <plurals name="settings_mirror_playlist_songs">
+        <item quantity="other">%d 개의 노래</item>
+    </plurals>
+    <string name="settings_mirror_playlist_readonly_web"> · 휴대폰에서는 웹에서 읽기 전용</string>
+    <string name="settings_mirror_playlist_shared_mix"> · 공유된 믹스</string>
+    <string name="settings_mirror_switch_off_note">하나를 끄면 미러링이 중지되고 모든 복사본은 원래 위치에 그대로 있습니다</string>
+    <string name="settings_mirror_first_merge_title">내 좋아요 수: %2$s에서 %1$d 개, 여기서 %3$d 개</string>
+    <string name="settings_mirror_first_merge_changed">응답한 이후 내 좋아요 수가 변경되었습니다. 숫자를 다시 확인하세요</string>
+    <string name="settings_mirror_merge_add_theirs">휴대전화에 %s의 항목 추가</string>
+    <string name="settings_mirror_merge_likes_here">여기에 %d 개의 좋아요 수가 있습니다</string>
+    <string name="settings_mirror_merge_replace_with_theirs">이 휴대폰의 항목을 %s의 항목으로 교체합니다</string>
+    <plurals name="settings_mirror_merge_removes_here">
+        <item quantity="other">여기에서 %d 개의 좋아요 수를 제거합니다</item>
+    </plurals>
+    <string name="settings_mirror_merge_combine_title">결합</string>
+    <string name="settings_mirror_merge_combine_detail">양쪽 모두 유지하고, 모든 위치에 %d 개의 좋아요 수를 유지합니다</string>
+    <string name="settings_mirror_merge_use_theirs">%s의 항목 사용</string>
+    <string name="settings_mirror_merge_use_mine">이 휴대폰의 항목 사용</string>
+    <plurals name="settings_mirror_merge_removes_there">
+        <item quantity="other">%2$s에서 %1$d 개의 좋아요 수를 제거합니다</item>
+    </plurals>
+    <string name="settings_mirror_merge_external_likes_stay">Spotify 또는 YouTube Music의 좋아요 수는 이 휴대폰에 유지됩니다</string>
+    <string name="settings_mirror_merge_yes_remove">예, 삭제합니다</string>
+    <string name="settings_mirror_merge_turn_on">켜기</string>
+    <!-- Settings > Link Stash on the Web > LibraryPickerSheet -->
+    <string name="settings_picker_likes">졸아요 수</string>
+    <string name="settings_picker_plays">재생횟수</string>
+    <string name="settings_picker_playlists">재생목록</string>
+    <string name="settings_picker_playlists_none">없음</string>
+    <string name="settings_picker_playlists_ticked_of_total">%2$d 개 중 %1$d 개</string>
+    <string name="settings_picker_choose_playlists_desc">재생목록을 선택하세요</string>
+    <string name="settings_picker_all">모두</string>
+    <string name="settings_picker_none">없음</string>
+    <plurals name="settings_picker_songs_count">
+        <item quantity="other">%,d 개의 노래</item>
+    </plurals>
+    <string name="settings_picker_shared_mix"> · 공유된 믹스</string>
+    <!-- Settings > Link Stash on the Web > InboxPrompt -->
+    <string name="settings_inbox_sent_you">%s를 보냈습니다</string>
+    <string name="settings_inbox_adding_note">항목을 추가해도 라이브러리에서 기존 항목이 삭제되지는 않습니다</string>
+    <string name="settings_inbox_add_to_library">내 라이브러리에 추가</string>
+    <string name="settings_inbox_choose_what_to_add">추가할 내용 선택</string>
+    <string name="settings_inbox_not_now">나중에</string>
+    <string name="settings_inbox_discard">삭제</string>
+    <string name="settings_inbox_what_to_add">추가할 항목</string>
+    <string name="settings_inbox_who_sent">%s 전송됨</string>
+    <string name="settings_inbox_opening_what_sent">%s가 보낸 내용을 열어보는 중…</string>
+    <string name="settings_inbox_adding_to_library">내 라이브러리에 추가하는 중…</string>
+    <!-- Settings > Link Stash on the Web > QrScanner -->
+    <string name="settings_qr_point_at_code">컴퓨터의 코드를 가리키세요</string>
+    <string name="settings_qr_permission_desc">Stash는 코드를 스캔하기 위해 카메라가 필요합니다. 카메라 앱으로 스캔할 수도 있습니다</string>
+    <string name="settings_qr_allow_camera">카메라 허용</string>
+    <string name="settings_qr_close_scanner">스캐너 닫기</string>
+    <!-- Settings > Diagnostics Preview -->
+    <string name="diagnostics_title">진단</string>
+    <string name="diagnostics_failed_to_build">빌드 진단 실패</string>
+    <string name="diagnostics_review_description">공유될 내용을 검토하세요. 비밀번호나 토큰은 포함되어 있지 않습니다. 공유를 탭하면 이 보고서와 최근 전체 로그가 포함된 ZIP 파일이 전송됩니다. 해당 파일을 GitHub Issue에 첨부하세요</string>
+    <string name="diagnostics_share_subject">Stash 진단</string>
+    <string name="diagnostics_share_no_app">공유할 수 있는 앱이 없습니다</string>
+    <string name="diagnostics_share_button">공유</string>
+    <string name="diagnostics_copied_toast">복사됨</string>
+    <string name="diagnostics_copy_button">복사</string>
+    <string name="diagnostics_open_issue_button">GitHub Issue 열기</string>
+    <!-- Settings > Cloud Storage -->
+    <string name="settings_cloud_section_title">클라우드 저장소</string>
+    <string name="settings_cloud_gdrive_add_songs_title">Google 드라이브에서 노래 추가</string>
+    <string name="settings_cloud_gdrive_add_songs_subtitle">Stash는 사용자가 선택한 노래만 표시합니다</string>
+    <string name="settings_cloud_folder_add_title">음악 폴더 추가</string>
+    <string name="settings_cloud_folder_add_subtitle">읽기 전용입니다. 파일은 그대로 유지됩니다</string>
+    <string name="settings_cloud_disconnect_dialog_title">%1$s 연결을 해제하시겠습니까?</string>
+    <string name="settings_cloud_disconnect_dialog_body_intro">Stash가 이 휴대폰에서 로그인 정보를 기억하지 않습니다.</string>
+    <plurals name="settings_cloud_disconnect_dialog_removed">
+        <item quantity="other">%2$s에서 스트리밍으로만 재생되는 %1$d 개의 음악이 재생 기록과 함께 라이브러리에서 제거됩니다</item>
+    </plurals>
+    <plurals name="settings_cloud_disconnect_dialog_kept">
+        <item quantity="other">%d 개의 다운로드한 노래는 이 휴대폰에 그대로 유지됩니다</item>
+    </plurals>
+    <string name="settings_cloud_disconnect_dialog_gdrive_pending">저장 대기 중인 노래는 저장되지 않습니다</string>
+    <string name="settings_cloud_disconnect_dialog_untouched">%1$s에 있는 파일은 변경되지 않습니다</string>
+    <string name="settings_cloud_folders_section_title">클라우드 폴더</string>
+    <string name="settings_cloud_add_folder_from_provider">%1$s에서 폴더 추가</string>
+    <string name="settings_cloud_add_folder">폴더 추가</string>
+    <string name="settings_cloud_rescan_title">지금 다시 스캔</string>
+    <string name="settings_cloud_rescan_subtitle">클라우드에 추가, 변경 또는 삭제된 노래를 가져옵니다. Stash는 하루에 두 번 확인합니다</string>
+    <string name="settings_cloud_remove_folder_dialog_title">%1$s를 삭제하시겠습니까?</string>
+    <string name="settings_cloud_remove_folder_dialog_body">해당 노래들은 라이브러리에서 사라지지만, 다운로드한 노래는 이 휴대폰에 그대로 남아 있습니다. 클라우드에 저장된 항목은 삭제되지 않습니다</string>
+    <string name="settings_cloud_folder_fallback_name">이 폴더</string>
+    <string name="settings_cloud_remove_folder_content_desc">폴더 제거</string>
+    <plurals name="settings_cloud_scan_running_songs_so_far">
+        <item quantity="other">스캔 중… 현재까지 %d 개의 노래 확인</item>
+    </plurals>
+    <string name="settings_cloud_scan_didnt_finish">마지막 스캔이 완료되지 않았습니다</string>
+    <plurals name="settings_cloud_folder_songs_count">
+        <item quantity="other">%d 개의 노래</item>
+    </plurals>
+    <string name="settings_cloud_last_checked">%s 확인됨</string>
+    <string name="settings_cloud_gdrive_backup_title">내 다운로드 항목을 Google Drive에 백업</string>
+    <string name="settings_cloud_gdrive_backup_default_subtitle">새로 다운로드한 파일은 Google Drive의 Stash 폴더에 저장됩니다. 동기화 설정이 ‘Wi-Fi만 사용’으로 되어 있다면, 동기화와 마찬가지로 Wi-Fi에 연결될 때까지 기다립니다</string>
+    <string name="settings_cloud_backup_try_again_title">다시 시도</string>
+    <string name="settings_cloud_backup_no_space_subtitle">Google Drive에 저장 공간이 확보되면 진행됩니다</string>
+    <plurals name="settings_cloud_backup_existing_title">
+        <item quantity="other">%d 개의 기존 다운로드 항목</item>
+    </plurals>
+    <string name="settings_cloud_backup_backfill_subtitle">백업이 켜지기 전에 다운로드되었습니다</string>
+    <string name="settings_cloud_folder_picker_up_desc">위로</string>
+    <string name="settings_cloud_picker_default_title">내 음악 폴더 선택</string>
+    <string name="settings_cloud_folder_picker_empty_root">여기에 폴더가 없습니다</string>
+    <string name="settings_cloud_folder_picker_empty_subfolder">내부에 폴더가 없습니다. 이 폴더를 사용하시겠습니까?</string>
+    <string name="settings_cloud_use_this_folder">이 폴더 사용</string>
+    <string name="settings_cloud_time_just_now">방금</string>
+    <plurals name="settings_cloud_time_minutes_ago">
+        <item quantity="other">%d 분 전</item>
+    </plurals>
+    <plurals name="settings_cloud_time_hours_ago">
+        <item quantity="other">%d 시간 전</item>
+    </plurals>
+    <plurals name="settings_cloud_time_days_ago">
+        <item quantity="other">%d 일 전</item>
+    </plurals>
 </resources>

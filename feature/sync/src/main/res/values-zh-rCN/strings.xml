@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync Screen Header & General -->
+    <string name="sync_title">Sync</string>
+    <string name="sync_cancel">Cancel</string>
+    <string name="sync_ok">OK</string>
+    <!-- Sync Sections -->
+    <string name="sync_section_sources">Sources</string>
+    <string name="sync_section_schedule">Schedule</string>
+    <string name="sync_section_library">Library</string>
+    <string name="sync_section_recent_syncs">Recent syncs</string>
+    <!-- Downloads Card -->
+    <string name="sync_downloads_title">Downloads</string>
+    <string name="sync_downloads_subtitle">View current downloads, queue, and history</string>
+    <string name="sync_downloads_cd">Open downloads</string>
+    <!-- Source Dashboard Stats & Empty Hints -->
+    <string name="sync_source_stat_mixes">MIXES</string>
+    <string name="sync_source_stat_playlists">PLAYLISTS</string>
+    <string name="sync_source_stat_liked">LIKED</string>
+    <string name="sync_source_stat_recommended">RECOMMENDED</string>
+    <string name="sync_source_empty_spotify">Your Spotify playlists and daily mixes will appear here after the first sync. Tap Sync Now to load them — nothing downloads until you toggle it on.</string>
+    <string name="sync_source_empty_youtube">Your Home Mixes, Liked Songs, and playlists from your YouTube Music library will appear here after the first sync. Nothing downloads until you pick what you want — no surprise downloads.</string>
+    <string name="sync_source_empty_lastfm">A playlist of tracks Last.fm recommends — seeded from what you listen to — will be built on the next sync. Tap Sync Now to start it.</string>
+    <!-- Library Maintenance Card -->
+    <string name="sync_blocked_songs_title">Blocked Songs</string>
+    <string name="sync_blocked_songs_none">No blocked songs</string>
+    <plurals name="sync_blocked_songs_count">
+        <item quantity="other">%d songs will never re-download</item>
+    </plurals>
+    <!-- Unmatched / Review Warning Card -->
+    <plurals name="sync_review_need_review">
+        <item quantity="other">%d songs need review</item>
+    </plurals>
+    <plurals name="sync_review_flagged_wrong">
+        <item quantity="other">%d songs flagged as wrong match</item>
+    </plurals>
+    <plurals name="sync_review_unmatched">
+        <item quantity="other">%d songs couldn\'t be matched</item>
+    </plurals>
+    <string name="sync_review_sub_both">%1$d unmatched · %2$d flagged — tap to fix</string>
+    <string name="sync_review_sub_flagged">Tap to pick a replacement</string>
+    <string name="sync_review_sub_unmatched">Tap to review</string>
+    <!-- Failed Downloads Warning Card -->
+    <string name="sync_failed_downloads_title">Failed Downloads</string>
+    <plurals name="sync_failed_downloads_count">
+        <item quantity="other">%d tracks need attention</item>
+    </plurals>
+    <!-- Sync Terminal -->
+    <string name="sync_log_title">SYNC LOG</string>
+    <string name="sync_log_copy">Copy</string>
+    <!-- Undo Last Sync -->
+    <string name="sync_undo_last_sync_title">Undo last sync</string>
+    <string name="sync_undo_last_sync_subtitle">Puts back the %1$s it changed, as they were %2$s</string>
+    <string name="sync_undo">Undo</string>
+    <string name="sync_undoing">Undoing…</string>
+    <string name="sync_auto_sync_paused_note">Auto-sync paused after Undo. Tap Sync to resume.</string>
+    <string name="sync_undo_dialog_title">Undo last sync?</string>
+    <string name="sync_undo_dialog_body">Your library goes back to how it was before the last sync: playlists it hid come back, playlists it added are hidden, and playlists it emptied are refilled in their original order%1$s.\n\nTracks you added or removed yourself, and Download switches you changed, are kept. Downloaded files that were already deleted can\'t be brought back.\n\nAuto-sync then pauses until you tap Sync, so it doesn\'t redo it.</string>
+    <string name="sync_undo_sync_confirm">Undo sync</string>
+    <string name="sync_undone_title">Sync undone</string>
+    <plurals name="sync_playlists_count">
+        <item quantity="other">%d playlists</item>
+    </plurals>
+    <!-- Relative Time Strings -->
+    <string name="sync_time_just_now">just now</string>
+    <string name="sync_time_mins_ago">%d min ago</string>
+    <string name="sync_time_hours_ago">%d hr ago</string>
+    <plurals name="sync_time_days_ago">
+        <item quantity="other">%d days ago</item>
+    </plurals>
+    <!-- Refresh Mode Dialog & Chips -->
+    <string name="sync_switch_to_refresh_title">Switch to Refresh?</string>
+    <string name="sync_switch_to_refresh_body">Refresh pulls fresh tracks each sync — your auto-generated daily mixes, weekly discovery, and other rotating playlists. Tracks that rotate out are removed from the mix and their downloads deleted to keep your library lean. Cleanup runs once all sources are set to Refresh — while any source still accumulates, nothing is deleted. Tracks you added manually are kept.</string>
+    <string name="sync_switch_to_refresh_confirm">Switch to Refresh</string>
+    <string name="sync_mix_mode_title">Mix sync mode</string>
+    <string name="sync_mode_refresh">Refresh</string>
+    <string name="sync_mode_accumulate">Accumulate</string>
+    <string name="sync_mode_refresh_desc">Mixes update with fresh tracks each sync</string>
+    <string name="sync_mode_accumulate_desc">New tracks stack on top of old ones</string>
+    <!-- Last.fm Recommendations Toggle -->
+    <string name="sync_recommended_tracks_title">Recommended tracks</string>
+    <string name="sync_lastfm_recommended_enabled_desc">A rotating playlist of Last.fm recommendations is kept up to date</string>
+    <string name="sync_lastfm_recommended_disabled_desc">Off — no recommendations are generated</string>
+    <!-- Playlist / Tracks Counts & Studio Only -->
+    <plurals name="sync_tracks_count">
+        <item quantity="other">%d tracks</item>
+    </plurals>
+    <string name="sync_studio_only_title">Studio recordings only</string>
+    <string name="sync_studio_only_desc">Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.</string>
+</resources>
