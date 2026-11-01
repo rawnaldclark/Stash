@@ -22,10 +22,13 @@ class WidgetResumeSkipTest {
 
     @Test
     fun `resumes the next song from its start`() {
-        val skipped = plan(start = 0).skippedOne()
+        // One plan, compared against itself: TrackEntity.dateAdded defaults to Instant.now(), so two
+        // separately built queues are never equal.
+        val original = plan(start = 0)
+        val skipped = original.skippedOne()
         assertThat(skipped.startIndex).isEqualTo(1)
         assertThat(skipped.positionMs).isEqualTo(0L)
-        assertThat(skipped.tracks).isEqualTo(plan(start = 0).tracks)
+        assertThat(skipped.tracks).isSameInstanceAs(original.tracks)
     }
 
     @Test
