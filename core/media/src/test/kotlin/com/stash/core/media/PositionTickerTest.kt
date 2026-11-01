@@ -111,4 +111,34 @@ class PositionTickerTest {
 
         assertThat(polls).isAtLeast(4)
     }
+
+    @Test
+    fun `the shared ticker runs only while collected and never hands a late collector a stale position`() = runTest {
+        var polls = 0
+        var livePosition = 200_000L
+        val state = MutableStateFlow(PlayerState(isPlaying = true, positionMs = 0L))
+        val shared = positionTicker(state, pollIntervalMs = 250L) { polls++; livePosition }
+            .shareAsPositionTicker(backgroundScope)
+
+        // Someone watches (Now Playing open), then leaves: the ticker stops with them.
+        val watcher = backgroundScope.launch { shared.collect { } }
+        runCurrent()
+        advanceTimeBy(1_000L)
+        runCurrent()
+        watcher.cancel()
+        runCurrent()
+        val pollsWhileWatched = polls
+        advanceTimeBy(60_000L)
+        runCurrent()
+        assertThat(polls).isEqualTo(pollsWhileWatched) // song still playing, nobody collecting: no polls
+
+        // Minutes later the song has restarted (a loop, "previous"): a new collector (repeat-one just turned on) must
+        // start from where the song is now, not from the 200 s it last heard, or 200 s -> 3 s reads as a loop.
+        livePosition = 3_000L
+        val firstSeen = mutableListOf<Long>()
+        backgroundScope.launch { shared.collect { firstSeen += it } }
+        runCurrent()
+
+        assertThat(firstSeen.first()).isEqualTo(3_000L)
+    }
 }

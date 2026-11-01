@@ -22,13 +22,21 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.withIndex
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicBoolean
@@ -265,12 +273,39 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     }
 
     // ── Collector 2: repeat-one loop detection ────────────────────
+    /**
+     * A loop shows up only as the position jumping back to the start of the same track, so it is read from the 250 ms
+     * position ticker. That ticker runs on the main thread for as long as anyone collects it, and this collector lives
+     * as long as the process: collecting it always kept the ticker going through every song played with the screen off.
+     * Now it is collected only while repeat-one is on (every other moment it can't change anything below); off, the
+     * ticker runs only while a screen shows the position.
+     *
+     * Not the player's own transition event: a loop on Cast is a restart the Cast player makes itself (it queues nothing
+     * under repeat-one), and the position rule here sees every player alike, scrubs to 0 and "previous" included.
+     *
+     * Each time repeat-one comes on, tracking starts over: the first position is only the baseline (a jump while repeat
+     * was off was never a loop). The shared ticker drops its last value once nobody collects it
+     * ([com.stash.core.media.PlayerRepositoryImpl.currentPosition]), so that baseline is never a stale position from
+     * long before.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun startRepeatCollector() {
         scope.launch {
             var lastPositionMs = 0L
             var lastTrackId = -1L
-            playerRepository.currentPosition
-                .collect { positionMs ->
+            playerRepository.playerState
+                .map { it.repeatMode == RepeatMode.ONE }
+                .distinctUntilChanged()
+                .flatMapLatest { repeatOne ->
+                    if (repeatOne) playerRepository.currentPosition.withIndex() else emptyFlow()
+                }
+                // Rendezvous, as when this collected the ticker directly: the ticker waits while a loop's write runs,
+                // so no position queues up behind it to be read against a newer track. And the body below is never
+                // cancelled by repeat going off: a loop's final listening-time write always finishes.
+                .buffer(Channel.RENDEZVOUS)
+                .collect { (index, positionMs) ->
+                    // Repeat-one just came on: tracking starts over, and this position is only the baseline.
+                    if (index == 0) lastTrackId = -1L
                     val state = playerRepository.playerState.value
                     val track = state.currentTrack ?: run {
                         lastPositionMs = 0L
