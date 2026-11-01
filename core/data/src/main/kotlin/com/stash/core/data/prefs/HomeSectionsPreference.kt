@@ -58,7 +58,15 @@ enum class HomeSection(val key: String) {
      * above the catalogs: a saved order without it gets it before the first of New releases, Qobuz playlists and Top albums
      * ([resolveHomeSectionOrder]). Last in the enum so the enum's order stays the old default's.
      */
-    RECORD_MIXES("record_mixes");
+    RECORD_MIXES("record_mixes"),
+
+    /**
+     * "New from your artists": this year's and last year's releases from the artists you listen to most
+     * ([com.stash.core.data.home.NewFromArtists]). Streaming content, so Home hides it in Offline mode, and shows
+     * nothing without listening history. Above the catalogs, your artists' releases before everyone's: a saved
+     * order without it gets it there ([ADDED_SECTION_ANCHORS]).
+     */
+    NEW_FROM_ARTISTS("new_from_artists");
 
     companion object {
         fun fromKey(key: String): HomeSection? = entries.firstOrNull { it.key == key }
@@ -77,7 +85,8 @@ enum class HomeSection(val key: String) {
  * Discover, so it goes there when Discover is first, otherwise first.
  * RECORD_MIXES when it's missing: the web's "From your record" shelf sits
  * above the catalogs, so it goes right before the first of [CATALOG_SECTIONS]
- * (the end when there is none).
+ * (the end when there is none). The sections added since each have a place of
+ * their own too ([ADDED_SECTION_ANCHORS]).
  */
 fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
     val known = savedKeys.mapNotNull(HomeSection::fromKey).distinct()
@@ -89,9 +98,36 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
         order.firstOrNull() == HomeSection.DISCOVER -> listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD) + order.drop(1)
         else -> listOf(HomeSection.YOUR_RECORD) + order
     }
-    if (HomeSection.RECORD_MIXES !in missing) return withRecord
-    val catalog = withRecord.indexOfFirst { it in CATALOG_SECTIONS }
-    return if (catalog < 0) withRecord + HomeSection.RECORD_MIXES else withRecord.take(catalog) + HomeSection.RECORD_MIXES + withRecord.drop(catalog)
+    val withMixes = if (HomeSection.RECORD_MIXES !in missing) {
+        withRecord
+    } else {
+        val catalog = withRecord.indexOfFirst { it in CATALOG_SECTIONS }
+        if (catalog < 0) withRecord + HomeSection.RECORD_MIXES else withRecord.take(catalog) + HomeSection.RECORD_MIXES + withRecord.drop(catalog)
+    }
+    return withAddedSectionsPlaced(withMixes, missing)
+}
+
+/**
+ * The sections added after "From your record", each with where it goes in an order saved before it existed:
+ * directly above the first of its anchors there, or last when none of them is. Placed in this list's order, so one
+ * anchored like an earlier one lands under it. A fresh install's order comes out of the same rule, and a saved
+ * order is never rewritten: this is applied each time it's read, until the user's next reorder saves it whole.
+ */
+internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> = listOf(
+    // Your artists' new releases right above everyone's (Qobuz's New Releases, then the other catalogs)
+    HomeSection.NEW_FROM_ARTISTS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
+)
+
+/** [order] with each of [ADDED_SECTION_ANCHORS]' sections that the saved order was [missing] moved to its place. */
+internal fun withAddedSectionsPlaced(order: List<HomeSection>, missing: Collection<HomeSection>): List<HomeSection> {
+    var placed = order
+    for ((section, anchors) in ADDED_SECTION_ANCHORS) {
+        if (section !in missing) continue
+        val rest = placed - section
+        val at = rest.indexOfFirst { it in anchors }
+        placed = if (at < 0) rest + section else rest.take(at) + section + rest.drop(at)
+    }
+    return placed
 }
 
 /** Home's catalogs (Qobuz's): the web's shelf "From your record" sits above them. */

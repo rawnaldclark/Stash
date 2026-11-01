@@ -325,6 +325,8 @@
     <string name="settings_home_section_your_record">Your record</string>
     <string name="settings_home_section_record_mixes">From your record</string>
     <string name="settings_home_section_record_mixes_desc">Mixes only your years of listening can make. Shows once your history is in.</string>
+    <string name="settings_home_section_new_from_artists">New from your artists</string>
+    <string name="settings_home_section_new_from_artists_desc">The newest albums and singles from the artists you play most.</string>
     <string name="settings_home_section_move_up">Move %1$s up</string>
     <string name="settings_home_section_move_down">Move %1$s down</string>
     <string name="settings_home_section_show_desc">Show %1$s on Home</string>
