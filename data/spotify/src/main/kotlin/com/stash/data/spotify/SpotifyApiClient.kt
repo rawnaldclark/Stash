@@ -212,7 +212,9 @@ class SpotifyApiClient @Inject constructor(
          * from a `queryArtistOverview` answer, all under `data.artistUnion`: the photos in
          * `visuals` (the header under `headerImage.data.sources`, or `headerImage.sources`), the
          * listeners in `stats.monthlyListeners`. A 0 is no number: the page shows nothing rather
-         * than "0 monthly listeners". Null when none of the three is there.
+         * than "0 monthly listeners". Null when none of the three is there. The top tracks' titles
+         * (`discography.topTracks.items[].track.name`) come along, to check the listeners belong to
+         * the artist the page is about.
          */
         internal fun parseArtistVisuals(root: JsonObject): SpotifyArtistVisuals? {
             val artist = ((root["data"] as? JsonObject)?.get("artistUnion")) as? JsonObject ?: return null
@@ -228,7 +230,20 @@ class SpotifyApiClient @Inject constructor(
                 ?.longOrNull
                 ?.takeIf { it > 0 }
             if (gallery.isEmpty() && headerUrl == null && monthlyListeners == null) return null
-            return SpotifyArtistVisuals(gallery = gallery, headerUrl = headerUrl, monthlyListeners = monthlyListeners)
+            val topTrackTitles = ((((artist["discography"] as? JsonObject)?.get("topTracks") as? JsonObject)
+                ?.get("items")) as? JsonArray)
+                ?.mapNotNull { item ->
+                    val o = item as? JsonObject ?: return@mapNotNull null
+                    val track = (o["track"] as? JsonObject) ?: o
+                    (track["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                }
+                .orEmpty()
+            return SpotifyArtistVisuals(
+                gallery = gallery,
+                headerUrl = headerUrl,
+                monthlyListeners = monthlyListeners,
+                topTrackTitles = topTrackTitles,
+            )
         }
 
         /** The widest https image of a `sources` array (a missing width counts as 0). */
@@ -677,7 +692,7 @@ class SpotifyApiClient @Inject constructor(
                 Log.d(
                     TAG,
                     "getArtistVisuals: '$name' gallery=${it?.gallery?.size ?: 0} header=${it?.headerUrl != null} " +
-                        "monthlyListeners=${it?.monthlyListeners}",
+                        "monthlyListeners=${it?.monthlyListeners} topTracks=${it?.topTrackTitles?.size ?: 0}",
                 )
             }
         } catch (e: Exception) {

@@ -18,6 +18,15 @@
           ]
         }
       },
+      "discography": {
+        "topTracks": {
+          "items": [
+            { "uid": "a1", "track": { "id": "t1", "uri": "spotify:track:t1", "name": "Teen Age Riot", "playcount": "98765432" } },
+            { "uid": "a2", "track": { "id": "t2", "uri": "spotify:track:t2", "name": "Kool Thing", "playcount": "45678901" } },
+            { "uid": "a3", "track": { "id": "t3", "uri": "spotify:track:t3", "name": "Schizophrenia - Remastered", "playcount": "12345678" } }
+          ]
+        }
+      },
       "visuals": {
         "avatarImage": {
           "sources": [

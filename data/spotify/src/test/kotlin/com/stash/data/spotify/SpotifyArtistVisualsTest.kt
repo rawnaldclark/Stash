@@ -83,6 +83,13 @@ class SpotifyArtistVisualsTest {
         assertEquals(1_734_567L, v.monthlyListeners)
         assertEquals(listOf("https://i.scdn.co/image/gallery1-big", "https://i.scdn.co/image/gallery2"), v.gallery)
         assertEquals("https://i.scdn.co/image/header", v.headerUrl)
+        // The top tracks come along, to tell the artist from a namesake.
+        assertEquals(listOf("Teen Age Riot", "Kool Thing", "Schizophrenia - Remastered"), v.topTrackTitles)
+    }
+
+    @Test fun `no discography, no top tracks`() {
+        val root = json("""{"data":{"artistUnion":{"stats":{"monthlyListeners":523}}}}""")
+        assertEquals(emptyList<String>(), parseArtistVisuals(root)!!.topTrackTitles)
     }
 
     @Test fun `monthly listeners without photos still count`() {

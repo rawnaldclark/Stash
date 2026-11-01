@@ -86,17 +86,18 @@ internal fun headerLinks(socials: List<SocialLink>): List<SocialLink> =
 
 /**
  * "1.7M monthly listeners" in the app's language, or "" while there is no number (the line keeps
- * its height either way). The count picks the plural; beyond an Int it is "other" in every language.
+ * its height either way). The plural follows the number shown (1 700 000 for "1.7M"), see
+ * [ShortCount]; beyond an Int it is "other" in every language.
  */
 @Composable
 private fun monthlyListenersLabel(count: Long?): String {
     if (count == null) return ""
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
-    val formatted = remember(count, locale) { formatMonthlyListeners(count, locale) }
+    val short = remember(count, locale) { shortMonthlyListeners(count, locale) }
     return pluralStringResource(
         R.plurals.artist_monthly_listeners,
-        count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-        formatted,
+        short.shown.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        short.text,
     )
 }
 

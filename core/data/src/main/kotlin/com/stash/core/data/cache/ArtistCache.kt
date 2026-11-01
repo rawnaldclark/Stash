@@ -6,6 +6,7 @@ import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.MergedDiscography
 import com.stash.core.data.discography.NoopDiscographySupplement
 import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -165,7 +166,7 @@ class ArtistCache(
             // then try to refresh.
             emit(CachedProfile.Stale(cachedProfile))
             try {
-                val refreshed = fetchAndMerge(artistId)
+                val refreshed = fetchAndMerge(artistId).keepingSpotifyListenersOf(cachedProfile)
                 persist(refreshed)
                 emit(CachedProfile.Fresh(refreshed))
             } catch (t: Throwable) {
@@ -269,6 +270,19 @@ class ArtistCache(
             about = about,
             avatarUrl = yt.avatarUrl ?: about?.headerUrl,
         )
+    }
+
+    /**
+     * A refresh whose Spotify part gave no monthly listeners (it timed out, or failed) keeps the
+     * ones [previous] had, with the top tracks they were checked against, instead of swapping
+     * Spotify's 1.7M for YouTube's 574K for the next 6 hours. Signed out of Spotify, the kept
+     * number isn't shown: the artist page reads Spotify's number only while Spotify is connected.
+     */
+    private fun ArtistProfile.keepingSpotifyListenersOf(previous: ArtistProfile): ArtistProfile {
+        val kept = previous.about?.takeIf { it.monthlyListeners != null } ?: return this
+        if (about?.monthlyListeners != null) return this
+        val base = about ?: ArtistAbout()
+        return copy(about = base.copy(monthlyListeners = kept.monthlyListeners, topTrackTitles = kept.topTrackTitles))
     }
 
     /**

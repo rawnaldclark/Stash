@@ -10,4 +10,10 @@ data class SpotifyArtistVisuals(
     val headerUrl: String?,
     /** `data.artistUnion.stats.monthlyListeners`: unique listeners over the last 28 days. Null when absent or 0. */
     val monthlyListeners: Long? = null,
+    /**
+     * The titles of the artist's top tracks (`discography.topTracks`), in Spotify's order: the
+     * artist page checks them against YouTube's Popular shelf before trusting [monthlyListeners]
+     * (a namesake shares the name, not the songs).
+     */
+    val topTrackTitles: List<String> = emptyList(),
 )

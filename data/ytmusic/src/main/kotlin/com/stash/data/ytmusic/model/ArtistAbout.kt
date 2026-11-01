@@ -27,6 +27,12 @@ data class ArtistAbout(
      * exact match, or the profile was cached before this field existed.
      */
     val monthlyListeners: Long? = null,
+    /**
+     * The titles of the Spotify artist's top tracks, from the same answer: [monthlyListeners]
+     * counts only when one of them is on YouTube's Popular shelf (a namesake shares the name,
+     * not the songs). Empty in profiles cached before this field existed.
+     */
+    val topTrackTitles: List<String> = emptyList(),
 ) {
     /** Whether the About section has anything of its own to show (everything but [monthlyListeners]). */
     val hasSection: Boolean
