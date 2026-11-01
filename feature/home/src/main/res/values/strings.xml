@@ -8,5 +8,5 @@
     <string name="mood_load_failed">Couldn’t load this mood. Check your connection and try again.</string>
     <string name="mood_retry">Try again</string>
     <string name="mood_empty">No playlists for this mood right now.</string>
-    <string name="mood_download_mode">You’re in Download mode. Switch to Stream only to browse moods.</string>
+    <string name="mood_offline">Offline plays only your downloads. Switch to Online to browse moods.</string>
 </resources>

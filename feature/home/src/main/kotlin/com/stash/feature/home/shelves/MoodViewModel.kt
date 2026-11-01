@@ -19,8 +19,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * What a mood's page shows: its name, then a spinner, YouTube's rows of playlists, or a retry; in Download mode
- * ([offline]), only the way back to Stream only, since every playlist on it streams.
+ * What a mood's page shows: its name, then a spinner, YouTube's rows of playlists, or a retry; Offline
+ * ([offline]), only the way back to Online, since every playlist on it streams.
  */
 data class MoodUiState(
     val title: String,
@@ -33,8 +33,8 @@ data class MoodUiState(
 /**
  * A mood's page ([MoodScreen]): reads the page of the tile it was opened from ([ARG_PARAMS], named [ARG_TITLE]
  * until the page's own header names it) through [MoodsRepository.page], once, and again on [retry]. Follows the
- * Download switch like Home's shelves: in Download mode it reads nothing and says so (it's reachable from the back
- * stack after the switch), and turning Stream only back on loads it.
+ * Online/Offline switch like Home's shelves: Offline it reads nothing and says so (it's reachable from the back
+ * stack after the switch), and turning Online back on loads it.
  */
 @HiltViewModel
 class MoodViewModel @Inject constructor(
@@ -59,14 +59,14 @@ class MoodViewModel @Inject constructor(
                     _state.update { it.copy(offline = true, loading = false, failed = false) }
                 } else {
                     _state.update { it.copy(offline = false) }
-                    // Back from Download mode, or the first look: read the page unless it's on screen already
+                    // Back from Offline, or the first look: read the page unless it's on screen already
                     if (_state.value.shelves.isEmpty()) retry()
                 }
             }
         }
     }
 
-    /** The page didn't load: ask again. Nothing in Download mode, where the page stays closed. */
+    /** The page didn't load: ask again. Nothing while Offline, where the page stays closed. */
     fun retry() {
         if (loading?.isActive == true || _state.value.offline) return
         _state.update { it.copy(loading = true, failed = false) }

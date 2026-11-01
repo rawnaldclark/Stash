@@ -28,8 +28,8 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verifyBlocking
 
 /**
- * [MoodViewModel]: a mood's page reads YouTube only in Stream only. In Download mode (reachable from the back stack
- * after the switch) it reads nothing and says so, and Stream only opens it.
+ * [MoodViewModel]: a mood's page reads YouTube only while Online. Offline (reachable from the back stack after the
+ * switch) it reads nothing and says so, and Online opens it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MoodViewModelTest {
@@ -53,7 +53,7 @@ class MoodViewModelTest {
     )
 
     @Test
-    fun `in Stream only the page is read once and shown`() = runTest(dispatcher) {
+    fun `Online, the page is read once and shown`() = runTest(dispatcher) {
         val vm = viewModel()
         runCurrent()
         assertThat(vm.state.value.shelves).isEqualTo(page.shelves)
@@ -63,7 +63,7 @@ class MoodViewModelTest {
     }
 
     @Test
-    fun `in Download mode it reads nothing and says so, and Stream only opens it`() = runTest(dispatcher) {
+    fun `Offline, it reads nothing and says so, and Online opens it`() = runTest(dispatcher) {
         streaming.value = false
         val vm = viewModel()
         runCurrent()
@@ -82,7 +82,7 @@ class MoodViewModelTest {
     }
 
     @Test
-    fun `switching to Download mode mid-read stops it, and switching back reads again`() = runTest(dispatcher) {
+    fun `switching to Offline mid-read stops it, and switching back reads again`() = runTest(dispatcher) {
         val gate = CompletableDeferred<MoodPage>()
         val slow = mock<MoodsRepository> { onBlocking { page(any(), any()) } doSuspendableAnswer { gate.await() } }
         val vm = MoodViewModel(
