@@ -341,7 +341,7 @@
     <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
     <string name="settings_save_data_title">Data saver</string>
-    <string name="settings_data_saver_subtitle">On mobile data and other metered networks: lower quality streams from the next song, smaller pictures, no prefetch. Downloads unaffected.</string>
+    <string name="settings_data_saver_subtitle">On mobile data and metered Wi-Fi: lower quality streams, smaller pictures, no prefetch. Downloads unaffected.</string>
     <string name="settings_lossless_title">Lossless</string>
     <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
