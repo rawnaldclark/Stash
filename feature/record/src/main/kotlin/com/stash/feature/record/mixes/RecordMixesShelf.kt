@@ -55,16 +55,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import java.time.Instant
 import java.time.ZoneId
 import javax.inject.Inject
 
 /**
- * Home's "From your record" (stash-player `src/lib/ui/spotify/HomeShelf.svelte`): three mixes only years of history make ("This
+ * Home's "From your record" (stash-player `src/lib/ui/spotify/HomeShelf.svelte`): six mixes only years of history make ("This
  * week, years ago" when there is one, then a different few each day: [HistoryMixes.homePicks]), each a card that opens it
- * ([onOpenMix]), with Show all into the record's Mixes tab ([onShowAll]). Passed into Home as a slot, like Your record's card;
- * Settings › Home layout moves and hides it. Nothing at all without picks (no import, or too little history for a mix).
+ * ([onOpenMix]), with Show all into the record's Mixes tab ([onShowAll]). Passed into Home as a slot, like Your record's card,
+ * and always directly under the card (Home's order puts it there); Settings › Home layout hides it, and it stays when the
+ * card is hidden. Nothing at all without picks (no import, or too little history for a mix).
  */
 @Composable
 fun RecordMixesSection(
@@ -118,7 +120,11 @@ private fun ShelfCard(card: RecordMixesShelfViewModel.Card, onClick: () -> Unit)
                 sub,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                // An era's artists ("Paper Moons, Evergreen & Artist") and "The songs you've played most, since 2018" both cut
+                // at two lines at the default font in a 120 dp card. Always three lines' room, so the rail doesn't grow when a
+                // card with a three-line one scrolls in.
+                minLines = 3,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -147,6 +153,7 @@ class RecordMixesShelfViewModel @Inject constructor(
     private val mixes: RecordMixes,
     private val art: RecordArt,
     taste: RecordTaste,
+    private val shelfPicks: RecordShelfPicks,
 ) : ViewModel() {
     init {
         taste.daily()
@@ -204,6 +211,8 @@ class RecordMixesShelfViewModel @Inject constructor(
             }
         }
         .distinctUntilChanged()
+        // The record card's menu says "your mixes stay" only when there are some (none: no import, or too little history)
+        .onEach { shelfPicks.set(it.isNotEmpty()) }
         // Home's own: kept while Home is in the back stack (its last cards shown at once on a return), never another Home's
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

@@ -333,8 +333,36 @@ class HistoryMixesVectorsTest {
             assertWithMessage("$name: rotation").that(HistoryMixes.rotation(all).map { it.id }).isEqualTo(strings(c["rotation"]))
             for (d in c["picks"]!!.jsonArray.map { it.jsonObject } + c["far"]!!.jsonArray.map { it.jsonObject }) {
                 val day = d["day"]!!.jsonPrimitive.long
-                assertWithMessage("$name: day $day").that(HistoryMixes.homePicks(all, null, day).map { it.id }).isEqualTo(strings(d["ids"]))
-                d["withWeek"]?.let { assertWithMessage("$name: day $day, with this week").that(HistoryMixes.homePicks(all, week, day).map { it.id }).isEqualTo(strings(it)) }
+                assertWithMessage("$name: day $day").that(HistoryMixes.homePicks(all, null, day, HistoryMixes.WEB_HOME_MIXES).map { it.id }).isEqualTo(strings(d["ids"]))
+                d["withWeek"]?.let { assertWithMessage("$name: day $day, with this week").that(HistoryMixes.homePicks(all, week, day, HistoryMixes.WEB_HOME_MIXES).map { it.id }).isEqualTo(strings(it)) }
+            }
+        }
+    }
+
+    @Test fun `the app's Home shows six a day, the web's three first, none twice`() {
+        val history = read("history.json").jsonArray.map { it.jsonObject }.associateBy { it["name"]!!.jsonPrimitive.content }
+        val cases = read("rotation.json").jsonArray.map { it.jsonObject }
+        val week = HistoryMix("week", MixKind.WEEK, "This week, years ago", "", emptyList())
+        assertThat(HistoryMixes.HOME_MIXES).isEqualTo(6)
+        for (c in cases) {
+            val name = c["name"]!!.jsonPrimitive.content
+            val h = history.getValue(name)
+            val have = libs(h["have"])
+            val all = HistoryMixes.historyMixes(asRead(tasteIn(h), strings(h["keep"]), have), HistoryMixes.haveIndex(have), words)
+            for (d in c["picks"]!!.jsonArray.map { it.jsonObject } + c["far"]!!.jsonArray.map { it.jsonObject }) {
+                val day = d["day"]!!.jsonPrimitive.long
+                val picks = HistoryMixes.homePicks(all, null, day).map { it.id }
+                assertWithMessage("$name: day $day").that(picks.size).isEqualTo(minOf(HistoryMixes.HOME_MIXES, all.size))
+                assertWithMessage("$name: day $day").that(picks).containsNoDuplicates()
+                // The same daily turn as the web's: its three lead
+                assertWithMessage("$name: day $day").that(picks.take(HistoryMixes.WEB_HOME_MIXES)).isEqualTo(strings(d["ids"]))
+                d["withWeek"]?.let {
+                    val withWeek = HistoryMixes.homePicks(all, week, day).map { m -> m.id }
+                    assertWithMessage("$name: day $day, with this week").that(withWeek.first()).isEqualTo("week")
+                    assertWithMessage("$name: day $day, with this week").that(withWeek.size).isEqualTo(minOf(HistoryMixes.HOME_MIXES, all.size + 1))
+                    assertWithMessage("$name: day $day, with this week").that(withWeek).containsNoDuplicates()
+                    assertWithMessage("$name: day $day, with this week").that(withWeek.take(HistoryMixes.WEB_HOME_MIXES)).isEqualTo(strings(it))
+                }
             }
         }
     }

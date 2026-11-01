@@ -14,8 +14,18 @@
     </plurals>
     <!-- %1$d: the year of the earliest play; %2$s: the plays ("since 2024 · 1,234 plays"). -->
     <string name="record_since">since %1$d · %2$s</string>
+    <!-- Read out by TalkBack for the card; on screen the card shows record_most_played_label, then the name on its own line. -->
     <string name="record_most_played">Most played: %1$s</string>
+    <!-- A small label on its own line, over the name of the artist played most. -->
+    <string name="record_most_played_label">Most played</string>
     <string name="record_open">Open your record</string>
+    <!-- The card’s long press on Home: a small menu (Open your record, then hide). Hiding hides the card on Home only (Settings › Appearance › Home layout brings it back); the record and its history stay. Never "Remove": Settings › Your record › Remove your record deletes the history. record_card_more is TalkBack’s "Double-tap and hold to …". -->
+    <string name="record_card_more">Show options</string>
+    <string name="record_card_hide_keep_mixes">Hide this card — your mixes stay</string>
+    <string name="record_card_hide">Hide this card</string>
+    <!-- Shown after hiding the card from its long press. -->
+    <string name="record_card_hidden_keep_mixes">Card hidden. Your mixes stay on Home. Settings › Appearance › Home layout brings it back.</string>
+    <string name="record_card_hidden">Card hidden. Settings › Appearance › Home layout brings it back.</string>
     <!-- The invitation before there is a record: the sources that can come in (Spotify's export, Last.fm's scrobbles, Stash's own plays). -->
     <string name="record_invite_title">Press your record</string>
     <string name="record_invite_body">Every year you’ve listened, in one place: from Spotify, Last.fm or Stash.</string>
