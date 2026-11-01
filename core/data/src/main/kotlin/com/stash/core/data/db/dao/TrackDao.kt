@@ -1961,6 +1961,15 @@ interface TrackDao {
      * that gap the track looks orphaned. Folding it into this query keeps the
      * whole orphan check + delete atomic (see [deleteOrphanedDownloadedTracks]).
      *
+     * A song the user asked to download (a download_queue row with user_requested: Now
+     * Playing, library, album, artist, multi-select and radio downloads, Library & Storage's
+     * Re-download) is never swept either. Those downloads join no playlist (only Search's join
+     * Your Downloads), so to this query they look exactly like a song a mix rotated out, and
+     * Refresh deleted them (#273 made that reach every one-account library). Erring on the
+     * kept side: a Re-download of a mix song that later rotates out is kept too. The marker
+     * goes with Downloads › "Clear history"; linking these downloads to Your Downloads, as
+     * Search does, is the durable fix (#761).
+     *
      * Not public API on its own — call [deleteOrphanedDownloadedTracks], which
      * evaluates this predicate and deletes inside one transaction so a
      * concurrent re-link can't be raced.
@@ -1979,9 +1988,35 @@ interface TrackDao {
               SELECT dq.track_id FROM discovery_queue dq
               WHERE dq.track_id IS NOT NULL AND dq.status IN ('PENDING', 'DONE')
           )
+          AND t.id NOT IN (
+              SELECT q.track_id FROM download_queue q
+              WHERE q.track_id IS NOT NULL AND q.user_requested = 1
+          )
         """
     )
     suspend fun selectDeletableOrphans(): List<TrackEntity>
+
+    /**
+     * The downloaded songs [playlistId] is the last active playlist for, among those the
+     * orphan sweep could take ([selectDeletableOrphans]'s sources). Removing the playlist
+     * would leave them in none, and the sweep would delete them; see
+     * [com.stash.core.data.repository.MusicRepositoryImpl.removePlaylist].
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        JOIN playlist_tracks pt ON pt.track_id = t.id
+        WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL
+          AND t.is_downloaded = 1
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD', 'SOUNDCLOUD')
+          AND t.soundcloud_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM playlist_tracks o
+              WHERE o.track_id = t.id AND o.playlist_id != :playlistId AND o.removed_at IS NULL
+          )
+        """
+    )
+    suspend fun downloadedSongsOnlyIn(playlistId: Long): List<Long>
 
     /**
      * Atomically re-evaluates the orphan predicate and deletes the matching

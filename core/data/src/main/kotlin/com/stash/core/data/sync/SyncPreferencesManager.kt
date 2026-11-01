@@ -281,8 +281,10 @@ class SyncPreferencesManager @Inject constructor(
      * never deleted anything, Refresh confirmed or not (#273). SoundCloud has no
      * switch, and the sweep never takes its songs, so it never counts.
      *
-     * With no account counting, nobody chose Refresh, so nothing is deleted. And when
-     * the sign-ins or playlists can't be read, nothing is deleted either.
+     * With no account counting, nobody chose Refresh, so nothing is deleted. A sign-in that
+     * can't be decrypted reads as signed out (the token store returns null, as the sync sees
+     * it too), so that account still counts while its playlists are here. If a read fails
+     * outright (the playlists query, the token store's file), nothing is deleted.
      */
     suspend fun anyAccumulate(): Boolean {
         val counted = try {

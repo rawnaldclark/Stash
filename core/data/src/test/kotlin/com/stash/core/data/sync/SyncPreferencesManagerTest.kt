@@ -139,8 +139,12 @@ class SyncPreferencesManagerTest {
         assertTrue(mgr.anyAccumulate())
     }
 
-    @Test fun `when the sign-ins can't be read nothing is deleted`() = runTest {
-        coEvery { tokenManager.isAuthenticated(AuthService.SPOTIFY) } throws IllegalStateException("Keystore unavailable")
+    // A token that can't be decrypted reads as signed out (EncryptedTokenStore returns null), so
+    // that account counts only by its playlists: the disconnected cases above. What can throw is
+    // the read itself, here the playlists query (a database error).
+    @Test fun `when the playlists can't be read nothing is deleted`() = runTest {
+        signedIn(spotify = false, youtube = true)
+        coEvery { playlistDao.hasLibraryPlaylists(MusicSource.SPOTIFY) } throws android.database.sqlite.SQLiteException("disk I/O error")
         mgr.setSpotifySyncMode(SyncMode.REFRESH)
         mgr.setYoutubeSyncMode(SyncMode.REFRESH)
 
