@@ -27,6 +27,7 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.action.actionSendBroadcast
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.action.actionStartService
 import androidx.glance.appwidget.appWidgetBackground
@@ -53,8 +54,10 @@ import com.stash.app.R
 import com.stash.core.media.PlaybackSessionBus
 import com.stash.core.media.widget.WidgetButtons
 import com.stash.core.media.widget.WidgetControls
+import com.stash.core.media.widget.WidgetKeyRelay
 import com.stash.core.media.widget.WidgetMediaIntents
 import com.stash.core.media.widget.WidgetTransport
+import com.stash.core.media.widget.WidgetWideLayout
 import com.stash.core.ui.theme.StashDarkColorScheme
 import com.stash.core.ui.theme.StashLightColorScheme
 import dagger.hilt.EntryPoint
@@ -69,6 +72,7 @@ import kotlinx.coroutines.CancellationException
 interface NowPlayingWidgetEntryPoint {
     fun nowPlayingWidgetStore(): NowPlayingWidgetStore
     fun playbackSessionBus(): PlaybackSessionBus
+    fun widgetSink(): GlanceNowPlayingWidgetSink
 }
 
 /**
@@ -98,6 +102,8 @@ class NowPlayingWidget : GlanceAppWidget() {
         } catch (e: Exception) {
             WidgetModel.Empty
         }
+        // The song's text is drawn now; a cover that isn't on hand is fetched and redrawn after.
+        entryPoint.widgetSink().requestCover()
         provideContent {
             val model by store.models.collectAsState(initial = first)
             val serviceRunning by sessionBus.sessionAlive.collectAsState()
@@ -117,7 +123,7 @@ private val CardRadius = 16.dp
 /** The 4×1 cover's corners: the app's small shape, so it nests in the card's 16 dp at an 8 dp inset. */
 private val CoverRadius = 8.dp
 
-private val CardInset = 8.dp
+private val CardInset = WidgetWideLayout.INSET_DP.dp
 
 /** Taller than this, and not much wider than tall, and the widget draws its square shape. */
 private val SquareMinHeight = 100.dp
@@ -167,13 +173,16 @@ private fun WideCard(
     open: Action?,
     size: DpSize,
 ) {
-    val coverSize = (size.height - CardInset * 2).coerceIn(36.dp, 88.dp)
+    // As tall as the card allows, and never so wide that Next is pushed off it (at 2×1 the cover goes).
+    val coverDp = WidgetWideLayout.coverDp(size.width.value, size.height.value, hasButtons = buttons != null)
     Row(
         modifier = cardModifier(open).padding(CardInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cover(cover, GlanceModifier.size(coverSize).cornerRadius(CoverRadius))
-        Spacer(GlanceModifier.width(12.dp))
+        if (coverDp != null) {
+            Cover(cover, GlanceModifier.size(coverDp.dp).cornerRadius(CoverRadius))
+            Spacer(GlanceModifier.width(WidgetWideLayout.COVER_GAP_DP.dp))
+        }
         Column(modifier = GlanceModifier.defaultWeight(), verticalAlignment = Alignment.CenterVertically) {
             WidgetText(
                 text = title,
@@ -298,9 +307,18 @@ private fun NextButton(transport: WidgetTransport, diameter: Dp, tint: androidx.
     }
 }
 
-/** A media-button tap: the same event the media notification sends (see WidgetMediaIntents). */
+/**
+ * A media-button tap: the same event the media notification sends (see WidgetMediaIntents). Play
+ * (and Next while nothing plays) starts the service in the foreground; Pause and Next while playing
+ * go through the app's receiver ([WidgetKeyRelay]), which still answers when a crash left this
+ * widget showing Pause.
+ */
 private fun mediaAction(context: Context, transport: WidgetTransport): Action =
-    actionStartService(WidgetMediaIntents.mediaButton(context, transport), isForegroundService = transport.foreground)
+    if (transport.foreground) {
+        actionStartService(WidgetMediaIntents.mediaButton(context, transport), isForegroundService = true)
+    } else {
+        actionSendBroadcast(WidgetKeyRelay.intent(context, NowPlayingWidgetKeyReceiver::class.java, transport))
+    }
 
 /**
  * One line of text in the app's own fonts. Glance's Text can only name system font families, so
