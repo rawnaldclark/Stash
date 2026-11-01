@@ -320,6 +320,10 @@ fun LikedSongsDetailScreen(
                     viewModel.addToQueue(it)
                     selectedTrack = null
                 },
+                onStartRadio = {
+                    viewModel.startRadio(it)
+                    selectedTrack = null
+                },
                 onSaveToPlaylist = {
                     trackToSave = it
                     selectedTrack = null

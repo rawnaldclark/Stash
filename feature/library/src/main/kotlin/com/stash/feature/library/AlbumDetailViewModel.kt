@@ -61,6 +61,8 @@ class AlbumDetailViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val connectivityMonitor: ConnectivityMonitor,
+    /** Start radio from a song's menu (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     /** The album name extracted from the navigation route arguments. */
@@ -192,6 +194,12 @@ class AlbumDetailViewModel @Inject constructor(
         viewModelScope.launch {
             playerRepository.addNext(track)
         }
+    }
+
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _userMessages.tryEmit(it) } }
     }
 
     /** Appends [track] to the end of the current playback queue. */

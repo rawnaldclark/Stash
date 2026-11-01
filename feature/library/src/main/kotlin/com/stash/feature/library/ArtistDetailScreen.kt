@@ -100,6 +100,7 @@ fun ArtistDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
+    val radioTuning by viewModel.radioTuning.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the long-press track menu.
@@ -147,12 +148,14 @@ fun ArtistDetailScreen(
                     ArtistDetailHeader(
                         state = state,
                         bulkPlayInFlight = bulkPlayInFlight,
+                        radioTuning = radioTuning,
                         onBack = onBack,
                         onPlayAll = {
                             val firstTrack = state.tracks.firstOrNull { it.filePath != null }
                             if (firstTrack != null) viewModel.playTrack(firstTrack.id)
                         },
                         onShuffle = { viewModel.shuffleAll() },
+                        onStartRadio = viewModel::startArtistRadio,
                         onToggleSearch = { viewModel.toggleSearch() },
                     )
                 }
@@ -303,6 +306,10 @@ fun ArtistDetailScreen(
                     viewModel.addToQueue(it)
                     selectedTrack = null
                 },
+                onStartRadio = {
+                    viewModel.startRadio(it)
+                    selectedTrack = null
+                },
                 onSaveToPlaylist = {
                     trackToSave = it
                     selectedTrack = null
@@ -393,9 +400,11 @@ fun ArtistDetailScreen(
 private fun ArtistDetailHeader(
     state: ArtistDetailUiState,
     bulkPlayInFlight: BulkPlayAction?,
+    radioTuning: Boolean,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
+    onStartRadio: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -499,7 +508,7 @@ private fun ArtistDetailHeader(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Action buttons: Play All + Shuffle + Search ─────────────────
+        // ── Action buttons: Play All + Shuffle + Radio + Search ─────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -518,7 +527,7 @@ private fun ArtistDetailHeader(
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                OneLineButtonLabel("Play All")
             }
 
             BulkPlayButtonBox(
@@ -537,12 +546,37 @@ private fun ArtistDetailHeader(
                         modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                    OneLineButtonLabel("Shuffle")
+                }
+            }
+
+            // Start radio: this artist's station, the one Search's artist page starts (Stash's Signal
+            // glyph, still). Same glass square as the search toggle beside it. While the station is
+            // being built it shows Shuffle's in-flight bar and takes no taps.
+            Spacer(modifier = Modifier.width(8.dp))
+            BulkPlayButtonBox(showProgress = radioTuning) {
+                IconButton(
+                    onClick = onStartRadio,
+                    enabled = !radioTuning,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            color = extendedColors.glassBackground,
+                            shape = RoundedCornerShape(12.dp),
+                        ),
+                ) {
+                    Icon(
+                        imageVector = com.stash.core.ui.icons.RadioSignal.Icon,
+                        contentDescription = androidx.compose.ui.res.stringResource(
+                            com.stash.core.media.R.string.radio_start_artist,
+                            state.artistName,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (radioTuning) 0.5f else 1f),
+                    )
                 }
             }
 
             // Search toggle button — same glass-background style as PlaylistHeader
-            Spacer(modifier = Modifier.width(8.dp))
             IconButton(
                 onClick = onToggleSearch,
                 modifier = Modifier
@@ -572,5 +606,24 @@ private fun ArtistHeaderPlaceholder() {
         contentDescription = null,
         modifier = Modifier.size(48.dp),
         tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+    )
+}
+
+/**
+ * A header button's label, on one line: on a narrow phone at a large font size it steps down (to
+ * 11 sp at the least) instead of breaking mid-word ("Shuf-fle" at 1.3x on 360 dp).
+ */
+@Composable
+private fun OneLineButtonLabel(text: String) {
+    val style = MaterialTheme.typography.labelLarge
+    Text(
+        text = text,
+        style = style,
+        maxLines = 1,
+        softWrap = false,
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+            minFontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp),
+            maxFontSize = style.fontSize,
+        ),
     )
 }

@@ -575,7 +575,11 @@ fun NowPlayingScreen(
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
     val castingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connected)?.deviceName
-    val visualState = remember(radioLabel != null, radioTuning, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
+    // The Signal glyph breathes only while a station plays AND Now Playing is on screen: parked under
+    // the mini player (composed for KEEP_WARM_MS after it closes) it holds still and asks for no frames.
+    val radioPlaying = (uiState.playWhenReady || uiState.isPlaying) &&
+        com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -585,6 +589,7 @@ fun NowPlayingScreen(
             isDownloaded = isDownloaded,
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
+            radioPlaying = radioPlaying,
         )
     }
     // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
@@ -1744,12 +1749,23 @@ private fun TitleActionButton(
     val visual = actionVisual(action, visualState, pinned = true)
     WithAlbumChrome { chrome ->
         IconButton(onClick = { onAction(action) }, modifier = modifier.size(26.dp)) {
-            Icon(
-                imageVector = visual.icon,
-                contentDescription = visual.label,
-                tint = if (visual.active) chrome.accent else npInk().copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp),
-            )
+            val tint = if (visual.active) chrome.accent else npInk().copy(alpha = 0.7f)
+            if (action == NowPlayingAction.RADIO) {
+                // The live Signal glyph: it breathes here too while the station plays.
+                com.stash.core.ui.icons.RadioSignalGlyph(
+                    state = visualState.radioGlyph,
+                    tint = tint,
+                    size = 20.dp,
+                    contentDescription = visual.label,
+                )
+            } else {
+                Icon(
+                    imageVector = visual.icon,
+                    contentDescription = visual.label,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

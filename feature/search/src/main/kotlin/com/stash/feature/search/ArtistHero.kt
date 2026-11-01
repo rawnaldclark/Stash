@@ -31,7 +31,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -251,11 +250,12 @@ fun ArtistHero(
                     modifier = Modifier.size(44.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        // Stash's Signal glyph, still: this button starts this artist's station.
                         Icon(
-                            imageVector = Icons.Default.Radio,
+                            imageVector = com.stash.core.ui.icons.RadioSignal.Icon,
                             contentDescription = "Start ${hero.name} radio",
                             tint = ink,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(22.dp),
                         )
                     }
                 }
