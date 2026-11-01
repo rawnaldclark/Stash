@@ -374,7 +374,6 @@ private fun StashNavGraph(
                     navController.navigate(SettingsAudioQualityRoute)
                     navController.navigate(EqualizerRoute)
                 },
-                onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }
 

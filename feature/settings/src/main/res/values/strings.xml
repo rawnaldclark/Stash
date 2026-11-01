@@ -96,6 +96,21 @@
     <string name="settings_donate_upi">UPI (India)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
     <string name="settings_support_star">Star</string>
+    <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
+    <string name="settings_support_tagline">Free, no ads. Made by two people.</string>
+    <!-- The month's goal, as stashfm.app shows it: "$168 of $200 this month". -->
+    <string name="settings_support_goal">%1$s of %2$s this month</string>
+    <!-- The supporter perk, one line; tapping it opens the Ko-fi claim (Lossless sources). -->
+    <string name="settings_support_perk">Supporters get unlimited Tidal &amp; Qobuz lossless</string>
+    <!-- TalkBack: what tapping the perk line does. -->
+    <string name="settings_support_perk_open">Unlock it with your Ko-fi email</string>
+    <!-- A supporter's card: thanks and their status instead of the ask. -->
+    <string name="settings_support_thanks_title">Thank you for supporting Stash</string>
+    <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal &amp; Qobuz is on.</string>
+    <string name="settings_support_donate_again">Donate again</string>
+    <!-- Settings › About: the GitHub star moved here from the Support card. -->
+    <string name="settings_about_star">Star Stash on GitHub</string>
+    <string name="settings_about_star_detail">github.com/rawnaldclark/Stash</string>
 
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Connections</string>

@@ -41,8 +41,8 @@ import com.stash.core.ui.components.bottomChromePadding
  * leading icon and a trailing chevron, and navigates to one of the six category
  * "spoke" screens (built in later tasks) via the `onOpen*` callbacks.
  *
- * Pure host: it owns no navigation itself — the caller wires every `onOpen*`,
- * [onOpenUrl] and [onStar]. It shares the existing [SettingsViewModel] so the
+ * Pure host: it owns no navigation itself — the caller wires every `onOpen*`
+ * and [onOpenUrl]. It shares the existing [SettingsViewModel] so the
  * subtitles reflect live playback/quality/account/library/appearance/version
  * state.
  */
@@ -58,9 +58,9 @@ fun SettingsHubScreen(
     onOpenLosslessSources: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onOpenHomeLayout: () -> Unit,
-    onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
+    supportCard: SupportCardViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val streamingEnabled by viewModel.streamingEnabled.collectAsStateWithLifecycle()
@@ -150,7 +150,15 @@ fun SettingsHubScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // No "Settings" title: the tab bar already says where you are.
-        SupportBanner(onOpenUrl = onOpenUrl, onStar = onStar)
+        val support by supportCard.state.collectAsStateWithLifecycle()
+        val playing by supportCard.playing.collectAsStateWithLifecycle()
+        SupportBanner(
+            state = support,
+            playing = playing,
+            onOpenUrl = onOpenUrl,
+            // The perk line opens the Ko-fi claim, which lives under Lossless sources.
+            onOpenPerk = onOpenLosslessSources,
+        )
         SettingsSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
