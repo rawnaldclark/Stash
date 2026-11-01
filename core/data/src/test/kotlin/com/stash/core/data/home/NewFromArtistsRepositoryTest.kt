@@ -233,7 +233,7 @@ class NewFromArtistsRepositoryTest {
     }
 
     @Test
-    fun `a search with no answer is never taken for "not on YouTube Music", and doesn't stamp the day`() = runTest {
+    fun `a search with no answer is never taken for not on YouTube Music, and doesn't stamp the day`() = runTest {
         lookups["A"] = ArtistLookup.NoAnswer
         assertTrue(fake("A").shelf().isEmpty())
         val saved = file()!!
