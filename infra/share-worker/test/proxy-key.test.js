@@ -3,7 +3,7 @@
  * with the proxy's CF-Connecting-IP. With the secret on both Workers it vouches for the listener's own address
  * (X-Stash-Proxy-Key + X-Stash-Client-IP); without the exact key, those headers change nothing.
  */
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { handle } from "../src/index.js";
 import { clientAddress, ip, validIp, CLIENT_IP_HEADER, PROXY_KEY_HEADER } from "../src/http.js";
@@ -15,6 +15,8 @@ const SECRET = "proxy-key-for-tests-only-0123456789abcdefgh"; // 43 characters, 
 const PROXY = "198.51.100.200"; // the player Worker, as CF-Connecting-IP shows it here
 const LISTENER = "203.0.113.77";
 const keyN = (n) => `${n}`.padStart(43, "k");
+/** Every refused key warns (count only): silenced here, and counted by the warning test. */
+const warn = mock.method(console, "warn", () => {});
 
 /** A request as the proxy (or anyone) would send it: CF-Connecting-IP plus whichever of the two headers are given. */
 function request(path, { method = "GET", from = PROXY, key, client, communityKey, body } = {}) {
@@ -37,12 +39,14 @@ const vote = (e, id, value, opts) =>
 
 test("validIp takes IPv4 and IPv6 as Cloudflare writes them, and nothing else", () => {
     for (const ok of ["203.0.113.9", "0.0.0.0", "255.255.255.255", "2001:db8::1", "2001:db8:aa:bb01::1", "::1", "::",
-        "2001:0db8:0000:0000:0000:0000:0000:0001", "1:2:3:4:5:6:7::", "::ffff:203.0.113.9", "1:2:3:4:5:6:1.2.3.4", "FE80::A"]) {
+        "2001:0db8:0000:0000:0000:0000:0000:0001", "1:2:3:4:5:6:7::", "FE80::A"]) {
         assert.equal(validIp(ok), true, ok);
     }
     for (const bad of ["", "?", "256.1.1.1", "1.2.3", "1.2.3.4.5", "01.2.3.4", " 1.2.3.4", "1.2.3.4/32", "2001:db8::/56",
         "[::1]", "fe80::1%eth0", "1::2::3", ":1::", "1:::2", "1:2:3:4:5:6:7", "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7:8::",
-        "12345::1", "g::1", "1.2.3.4::", "::1.2.3.4:5", "::256.0.0.1", "localhost", "203.0.113.9, 198.51.100.1", "a".repeat(46)]) {
+        "12345::1", "g::1", "1.2.3.4::", "::1.2.3.4:5", "::256.0.0.1", "localhost", "203.0.113.9, 198.51.100.1", "a".repeat(40),
+        // IPv4-in-IPv6 text: networkOf would key it whole, not by its /56.
+        "::ffff:203.0.113.9", "::203.0.113.9", "1:2:3:4:5:6:1.2.3.4", "64:ff9b::203.0.113.9"]) {
         assert.equal(validIp(bad), false, bad);
     }
 });
@@ -64,7 +68,7 @@ test("a wrong key is ignored: off by one character, shorter, longer, or empty", 
 test("the right key with a missing or malformed address falls back to the caller's own", () => {
     const e = env({ SHARE_PROXY_KEY: SECRET });
     assert.equal(clientAddress(request("/", { key: SECRET }), e), PROXY);
-    for (const client of ["", "not-an-ip", "203.0.113.77, 10.0.0.1", "999.0.0.1", "2001:db8::/56"]) {
+    for (const client of ["", "not-an-ip", "203.0.113.77, 10.0.0.1", "999.0.0.1", "2001:db8::/56", "::ffff:203.0.113.77", "1:2:3:4:5:6:203.0.113.77"]) {
         assert.equal(clientAddress(request("/", { key: SECRET, client }), e), PROXY, client);
     }
 });
@@ -82,6 +86,24 @@ test("a secret the player would refuse (under 32 characters, or outside its alph
         const e = env({ SHARE_PROXY_KEY: weak });
         assert.equal(clientAddress(request("/", { key: weak, client: LISTENER }), e), PROXY, weak);
     }
+});
+
+test("a refused key warns with a count only, never the key; the right key or no key stays quiet", () => {
+    warn.mock.resetCalls();
+    const wrong = `${SECRET.slice(0, -1)}X`;
+    clientAddress(request("/", { key: wrong, client: LISTENER }), env({ SHARE_PROXY_KEY: SECRET }));
+    clientAddress(request("/", { key: SECRET, client: LISTENER }), env()); // a key while this Worker has none: a half-done setup
+    assert.equal(warn.mock.callCount(), 2);
+    for (const { arguments: args } of warn.mock.calls) {
+        const line = args.join(" ");
+        assert.match(line, /X-Stash-Proxy-Key doesn't match SHARE_PROXY_KEY here; counted by CF-Connecting-IP \(\d+ in this isolate\)$/);
+        assert.ok(!line.includes(wrong) && !line.includes(SECRET) && !line.includes(LISTENER), line);
+    }
+    warn.mock.resetCalls();
+    clientAddress(request("/", { key: SECRET, client: LISTENER }), env({ SHARE_PROXY_KEY: SECRET }));
+    clientAddress(request("/", { client: LISTENER }), env({ SHARE_PROXY_KEY: SECRET }));
+    clientAddress(request("/"), env());
+    assert.equal(warn.mock.callCount(), 0);
 });
 
 test("a browser can't vouch for itself: the client header without the key is ignored, on the same paths", async () => {
