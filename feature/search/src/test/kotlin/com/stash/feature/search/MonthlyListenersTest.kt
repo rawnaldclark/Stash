@@ -57,6 +57,8 @@ class MonthlyListenersTest {
         assertThat(formatMonthlyListeners(7L, en)).isEqualTo("7")
         assertThat(formatMonthlyListeners(1_000L, en)).isEqualTo("1K")
         assertThat(formatMonthlyListeners(17_400_000L, en)).isEqualTo("17M")
+        assertThat(formatMonthlyListeners(9_999L, en)).isEqualTo("10K")
+        assertThat(formatMonthlyListeners(999_999L, en)).isEqualTo("1M")
         assertThat(formatMonthlyListeners(2_100_000_000L, en)).isEqualTo("2.1B")
     }
 
