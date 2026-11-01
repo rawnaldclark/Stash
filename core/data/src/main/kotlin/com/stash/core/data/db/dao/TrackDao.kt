@@ -2883,11 +2883,13 @@ interface TrackDao {
      * from a YouTube stream as Spotify songs become YouTube songs. Only a row that says SPOTIFY, has
      * **no** Spotify id and **has** a YouTube video id; a row with a Spotify id is never touched.
      *
-     * A row in a Spotify playlist, or in any switched-on playlist that isn't YouTube's (Stash's own
-     * Liked Songs is BOTH and switched on), is left alone too, even one with no Spotify id: the
-     * sync's download step picks rows by their source, so relabelling one could stop its download
-     * for someone with only Spotify connected. Idempotent and cheap, so it runs at every launch: a
-     * backup from before the fix, restored later, is fixed too.
+     * A row in a Spotify playlist is left alone too, even one with no Spotify id: the Spotify sync's
+     * download step picks its playlists' rows by source, so relabelling one would stop its download
+     * for someone with only Spotify connected. A row in Stash's own Liked Songs (or any switched-on
+     * Stash playlist, source BOTH) is relabelled: the download step takes a YouTube song there with
+     * any service connected ([DownloadQueueDao]'s connected-source rule), so it still downloads.
+     * Idempotent and cheap, so it runs at every launch: a backup from before the fix, restored later,
+     * is fixed too.
      *
      * @return the number of rows relabelled.
      */
@@ -2901,7 +2903,6 @@ interface TrackDao {
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE p.source = 'SPOTIFY'
-                 OR (p.sync_enabled = 1 AND p.source != 'YOUTUBE')
           )
     """)
     suspend fun relabelYouTubeRowsClaimingSpotify(): Int

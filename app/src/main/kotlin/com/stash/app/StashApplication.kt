@@ -1013,14 +1013,15 @@ class StashApplication : Application(), Configuration.Provider {
     /**
      * Data fix for the green-dot lie: a YouTube stream that a like or a listen saved as a Spotify
      * song (Now Playing rebuilt every stream as one) becomes a YouTube song. Only rows that say
-     * Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist and every
-     * switched-on playlist that isn't YouTube's ([TrackDao.relabelYouTubeRowsClaimingSpotify]); a
-     * row with a Spotify id is never touched, and nothing is deleted.
+     * Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist
+     * ([TrackDao.relabelYouTubeRowsClaimingSpotify]); liked rows included, since a YouTube song in
+     * Liked Songs downloads with any service connected. A row with a Spotify id is never touched,
+     * and nothing is deleted.
      *
      * At every launch, not once: the UPDATE is idempotent and cheap (one pass over `tracks`; new
      * rows are saved right through TrackSourceRule, so after the first run it finds only a row that
-     * left the playlist that spared it), and a backup from before this fix, restored later, is
-     * fixed too. A failure is logged and left for the next launch.
+     * left the Spotify playlist that spared it), and a backup from before this fix, restored later,
+     * is fixed too. A failure is logged and left for the next launch.
      */
     private suspend fun relabelYouTubeRowsClaimingSpotify() {
         try {

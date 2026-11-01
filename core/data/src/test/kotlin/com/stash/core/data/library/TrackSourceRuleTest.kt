@@ -103,11 +103,11 @@ class TrackSourceRuleTest {
     }
 
     /**
-     * Stash's own Liked Songs is BOTH and switched on, and the sync downloads its songs by source:
-     * a liked row keeps its label, so the download it was queued for still runs for someone with
-     * only Spotify connected. A switched-off playlist downloads nothing, so its rows are relabelled.
+     * Only a Spotify playlist spares a row: the Spotify sync picks its rows by source. A liked row is
+     * relabelled (its dot turns red); the download step takes a YouTube song in Liked Songs with any
+     * service connected (LibraryReconciliationRequeueTest), so it still downloads.
      */
-    @Test fun `the data fix spares rows in a switched-on Stash playlist, Liked Songs included`() = runTest {
+    @Test fun `the data fix relabels liked rows too, only a Spotify playlist spares a row`() = runTest {
         val liked = row("Liked Stream", MusicSource.SPOTIFY, youtubeId = "video000011")
         val inSwitchedOff = row("Off Playlist", MusicSource.SPOTIFY, youtubeId = "video000012")
         val inYouTubePlaylist = row("YouTube Playlist", MusicSource.SPOTIFY, youtubeId = "video000013")
@@ -127,9 +127,9 @@ class TrackSourceRuleTest {
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = switchedOff, trackId = inSwitchedOff, position = 0))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = youtubePlaylist, trackId = inYouTubePlaylist, position = 0))
 
-        assertEquals(2, db.trackDao().relabelYouTubeRowsClaimingSpotify())
+        assertEquals(3, db.trackDao().relabelYouTubeRowsClaimingSpotify())
 
-        assertEquals("Liked Songs downloads it by source", MusicSource.SPOTIFY, source(liked))
+        assertEquals("a liked YouTube stream is a YouTube song", MusicSource.YOUTUBE, source(liked))
         assertEquals(MusicSource.YOUTUBE, source(inSwitchedOff))
         assertEquals("a YouTube playlist downloads YouTube songs", MusicSource.YOUTUBE, source(inYouTubePlaylist))
     }

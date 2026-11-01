@@ -146,12 +146,13 @@ class LibraryReconciliationRequeueTest {
     }
 
     /**
-     * Someone with only Spotify connected, in Download mode, likes a YouTube stream: Stash's Liked
-     * Songs (BOTH, switched on) holds it as a YouTube song. The sync's requeue and its download step
-     * pick rows by connected source, and YouTube wasn't one, so the like was never downloaded. A
+     * Someone with only Spotify connected, in Download mode, liked a YouTube stream before this fix:
+     * Liked Songs (BOTH, switched on) holds it as a Spotify row with no Spotify id. The launch's data
+     * fix relabels it YouTube. The sync's requeue and its download step pick rows by connected
+     * source, and YouTube isn't one, so without the BOTH arm the like would stop downloading. A
      * YouTube download needs no login.
      */
-    @Test fun `Spotify only, Download mode, a liked YouTube stream is requeued and the download step takes it`() = runTest {
+    @Test fun `Spotify only, Download mode, a liked YouTube stream is relabelled and still requeued and downloaded`() = runTest {
         val spotifyOnly = mockk<TokenManager> {
             coEvery { isAuthenticated(any()) } returns false
             coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
@@ -163,9 +164,10 @@ class LibraryReconciliationRequeueTest {
                 type = PlaylistType.STASH_LIKED, syncEnabled = true,
             )
         )
+        // Saved by the old Now Playing as a Spotify song: no Spotify id, a video id.
         val liked = db.trackDao().insert(
             TrackEntity(
-                title = "Liked Stream", artist = "A", durationMs = 1000L, source = MusicSource.YOUTUBE,
+                title = "Liked Stream", artist = "A", durationMs = 1000L, source = MusicSource.SPOTIFY,
                 youtubeId = "likedVid001",
                 canonicalTitle = com.stash.core.common.TrackCanonical.title("Liked Stream"), canonicalArtist = "a",
             )
@@ -173,6 +175,9 @@ class LibraryReconciliationRequeueTest {
         db.playlistDao().insertCrossRef(
             PlaylistTrackCrossRef(playlistId = likedSongs, trackId = liked, position = 0, locallyAdded = true),
         )
+        // The launch's data fix: the liked row's dot turns red.
+        assertEquals(1, db.trackDao().relabelYouTubeRowsClaimingSpotify())
+        assertEquals(MusicSource.YOUTUBE, db.trackDao().getById(liked)!!.source)
         val run = db.syncHistoryDao().insert(SyncHistoryEntity())
 
         val result = LibraryReconciliationUseCase(db.downloadQueueDao(), db.trackDao(), spotifyOnly, db.playlistDao())
