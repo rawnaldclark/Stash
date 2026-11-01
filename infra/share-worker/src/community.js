@@ -130,17 +130,27 @@ async function createPost(request, env, now) {
 /** The columns a list needs. Never `body`: a Home open must not load song lists (spec §2). */
 const LIST_COLUMNS = "p.id, p.kind, p.title, p.poster_name, p.poster, p.summary, p.track_count, p.created_at, p.up, p.down";
 const NO_STORE = { "cache-control": "no-store" };
+/**
+ * The feed's orders, each walked by its own index (posts_hot, posts_new) so neither sorts every live post. `?sort=new`
+ * (the web player's "New") is newest first; anything else is the votes-plus-freshness order the app shows.
+ */
+const FEED_ORDER = {
+    top: `(p.up - p.down) + p.created_at / ${MS_PER_VOTE}.0 DESC, p.created_at DESC`,
+    new: "p.created_at DESC",
+};
 
 async function feed(request, env, now) {
     const who = await identity(request);
     if (who.bad) return json({ error: "bad_key" }, 401);
-    const asked = Number.parseInt(new URL(request.url).searchParams.get("limit"), 10);
+    const query = new URL(request.url).searchParams;
+    const asked = Number.parseInt(query.get("limit"), 10);
     const limit = Math.min(Math.max(Number.isNaN(asked) ? 5 : asked, 1), 100);
+    const order = query.get("sort") === "new" ? FEED_ORDER.new : FEED_ORDER.top; // a fixed string: nothing from the query reaches the SQL
     const { results } = await env.COMMUNITY_DB.prepare(
         `SELECT ${LIST_COLUMNS}, v.value AS my_vote FROM posts p
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?1
          WHERE p.removed_at IS NULL AND p.expires_at > ?2 AND ((p.up - p.down) > ${HIDE_AT} OR p.vouched = 1)
-         ORDER BY (p.up - p.down) + p.created_at / ${MS_PER_VOTE}.0 DESC, p.created_at DESC
+         ORDER BY ${order}
          LIMIT ?3`,
     ).bind(who.id ?? "", now, limit).all();
     return json({ posts: results.map((r) => summaryOf(r, who.id ?? null)) }, 200, NO_STORE);

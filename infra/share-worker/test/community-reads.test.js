@@ -98,6 +98,36 @@ test("the list walks the hot index: no sort over every live post", async () => {
     assert.doesNotMatch(plan, /TEMP B-TREE/);
 });
 
+test("?sort=new is newest first, hides the same posts, keeps the limit caps and is never cached", async () => {
+    const now = Date.now();
+    const e = env();
+    await seed(e, { id: "OLDVOTED", created: now - 3 * HOUR, up: 10 });
+    await seed(e, { id: "MIDDLE00", created: now - 2 * HOUR });
+    await seed(e, { id: "NEWEST00", created: now - HOUR });
+    await seed(e, { id: "HIDDEN00", created: now, down: 3 });
+    await seed(e, { id: "REMOVED0", created: now, removed: now });
+    assert.deepEqual((await feed(e, {}, "?sort=new")).map((p) => p.id), ["NEWEST00", "MIDDLE00", "OLDVOTED"]);
+    // Anything else is the usual order.
+    for (const q of ["", "?sort=top", "?sort=NEW", "?sort=new;DROP TABLE posts"]) assert.equal((await feed(e, {}, q))[0].id, "OLDVOTED", q);
+    assert.deepEqual((await feed(e, {}, "?sort=new&limit=1")).map((p) => p.id), ["NEWEST00"]);
+    for (let i = 0; i < 101; i++) await seed(e, { id: `P${String(i).padStart(7, "0")}`, created: now - DAY });
+    assert.equal((await feed(e, {}, "?sort=new")).length, 5);
+    assert.equal((await feed(e, {}, "?sort=new&limit=500")).length, 100);
+    const r = await call(e, "GET", "/v1/community/feed?sort=new", { key: KEY_B });
+    assert.equal(r.headers.get("cache-control"), "no-store");
+});
+
+test("?sort=new walks posts_new: no sort over every live post", async () => {
+    const e = env();
+    const sqls = [];
+    const prepare = e.COMMUNITY_DB.prepare;
+    e.COMMUNITY_DB.prepare = (sql) => (sqls.push(sql), prepare(sql));
+    await feed(e, {}, "?sort=new");
+    const plan = e.COMMUNITY_DB.db.prepare(`EXPLAIN QUERY PLAN ${sqls[0]}`).all("", 0, 5).map((r) => r.detail).join(" | ");
+    assert.match(plan, /USING INDEX posts_new/);
+    assert.doesNotMatch(plan, /TEMP B-TREE/);
+});
+
 test("me says how many posts are left today and how many spots are free", async () => {
     const e = env();
     await seed(e, { id: "TODAY000", key: KEY_A });
