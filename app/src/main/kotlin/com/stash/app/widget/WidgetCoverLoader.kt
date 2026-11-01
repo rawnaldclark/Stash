@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.ui.graphics.toArgb
 import coil3.SingletonImageLoader
+import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -15,6 +16,7 @@ import com.stash.core.ui.ambient.AccentRoles
 import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.ambientPaletteFromBitmap
 import com.stash.core.ui.ambient.brandRoles
+import com.stash.core.media.widget.WidgetCoverPolicy
 import com.stash.core.ui.ambient.roles
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -52,6 +54,14 @@ data class WidgetAccents(
 /** A cover ready for the widget: a square software bitmap no bigger than [WidgetCoverLoader.COVER_PX]. */
 class WidgetCover(val bitmap: Bitmap, val accents: WidgetAccents)
 
+/** One cover fetch: the cover, or a failure and whether it lasts ([WidgetCoverPolicy.isLastingFailure]). */
+sealed interface WidgetCoverResult {
+    class Loaded(val cover: WidgetCover) : WidgetCoverResult
+
+    /** [lasting]: the URL isn't tried again until the song changes. A timeout or a lost connection isn't. */
+    class Failed(val lasting: Boolean) : WidgetCoverResult
+}
+
 /**
  * Loads a song's cover for the widget through the app's Coil pipeline (its memory and disk cache,
  * the shared OkHttp client, the art-size interceptor), so a cover the app already showed costs no
@@ -65,27 +75,41 @@ class WidgetCover(val bitmap: Bitmap, val accents: WidgetAccents)
 class WidgetCoverLoader @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    /** The cover at [url], or null when it can't be loaded within [TIMEOUT_MS]. Never throws but for cancellation. */
-    suspend fun load(url: String): WidgetCover? = try {
-        withTimeoutOrNull(TIMEOUT_MS) {
-            val request = ImageRequest.Builder(context)
-                .data(url)
-                .size(COVER_PX)
-                .scale(Scale.FILL)
-                .precision(Precision.INEXACT)
-                .allowHardware(false)
-                .build()
-            val result = SingletonImageLoader.get(context).execute(request) as? SuccessResult
-                ?: return@withTimeoutOrNull null
-            val square = squareCrop(result.image.toBitmap(), COVER_PX)
-            val palette = ambientPaletteFromBitmap(square, key = url)
-            WidgetCover(square, WidgetAccents.of(light = palette.roles(Ground.LIGHT), dark = palette.roles(Ground.DARK)))
-        }
+    /**
+     * The cover at [url], or why not: a fetch that takes longer than [TIMEOUT_MS] is a passing
+     * failure, tried again on the next update. Never throws but for cancellation.
+     */
+    suspend fun load(url: String): WidgetCoverResult = try {
+        withTimeoutOrNull(TIMEOUT_MS) { fetch(url) }
+            ?: WidgetCoverResult.Failed(lasting = WidgetCoverPolicy.isLastingFailure(error = null, timedOut = true))
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Log.w(TAG, "cover load failed: ${e.javaClass.simpleName}")
-        null
+        WidgetCoverResult.Failed(lasting = WidgetCoverPolicy.isLastingFailure(e, timedOut = false))
+    }
+
+    private suspend fun fetch(url: String): WidgetCoverResult {
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .size(COVER_PX)
+            .scale(Scale.FILL)
+            .precision(Precision.INEXACT)
+            .allowHardware(false)
+            .build()
+        return when (val result = SingletonImageLoader.get(context).execute(request)) {
+            is SuccessResult -> {
+                val square = squareCrop(result.image.toBitmap(), COVER_PX)
+                val palette = ambientPaletteFromBitmap(square, key = url)
+                WidgetCoverResult.Loaded(
+                    WidgetCover(square, WidgetAccents.of(light = palette.roles(Ground.LIGHT), dark = palette.roles(Ground.DARK))),
+                )
+            }
+            is ErrorResult -> {
+                Log.w(TAG, "cover not loaded: ${result.throwable.javaClass.simpleName}")
+                WidgetCoverResult.Failed(lasting = WidgetCoverPolicy.isLastingFailure(result.throwable, timedOut = false))
+            }
+        }
     }
 
     companion object {

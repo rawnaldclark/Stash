@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.util.AtomicFile
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.widget.NowPlayingWidgetState
+import com.stash.core.media.widget.WidgetCoverPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,21 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** What [NowPlayingWidgetStore.refreshCover] did. */
+enum class CoverRefresh {
+    /** Nothing to fetch: the cover on hand is the song's, it has none, or its URL failed for good. */
+    UP_TO_DATE,
+
+    /** The song's cover arrived: redraw. */
+    LOADED,
+
+    /** The song changed during the fetch: try again for the new one. */
+    STALE,
+
+    /** The fetch failed (a timeout or a lost connection is tried again on the next update). */
+    UNAVAILABLE,
+}
 
 /** What the widget draws: the song (null = nothing playing), its cover and its colours. */
 data class WidgetModel(
@@ -44,6 +60,9 @@ data class WidgetModel(
  * The first read in a process with no file yet (the update that adds the widget) seeds it from the
  * saved queue, the song the widget's Play resumes, so a newly placed widget shows the last song
  * instead of "Nothing playing".
+ *
+ * The song's text is stored and shown at once ([publish]); its cover follows ([refreshCover]), fetched
+ * outside the lock, so a slow or failing fetch never holds the title back.
  *
  * All access is serialized by one mutex and runs on [Dispatchers.IO].
  */
@@ -73,30 +92,44 @@ class NowPlayingWidgetStore @Inject constructor(
     private var stored: Stored? = null
     private var coverBitmap: Bitmap? = null
 
-    /** A cover URL that failed in this process: not retried on every redraw (it is on the next song). */
+    /**
+     * A cover URL that failed for good in this process (a 404, not a picture): not retried on every
+     * update. A timeout or a lost connection is never recorded here, so the next update tries again.
+     */
     private var failedCoverKey: String? = null
 
     /** Every model after the first [current]; the running widget composition collects it. */
     val models: Flow<WidgetModel> = model.filterNotNull()
 
-    /** The model to draw now, loading it (and the cover, if missing) on first use. */
-    suspend fun current(): WidgetModel = locked {
-        ensureCover()
-        emit()
-    }
+    /** The model to draw now (loaded from disk on first use). Never fetches: see [refreshCover]. */
+    suspend fun current(): WidgetModel = locked { emit() }
 
     /**
-     * Stores [state]. The cover is fetched now when [fetchCover] (a widget is on the home screen),
-     * else on the next [current]. Returns whether anything the widget draws changed.
+     * Stores [state] and shows it at once, before any cover fetch: a new song's title replaces the
+     * old one now, over the placeholder until its cover lands ([refreshCover]). Returns whether
+     * anything the widget draws changed.
      */
-    suspend fun publish(state: NowPlayingWidgetState, fetchCover: Boolean): Boolean = locked {
+    suspend fun publish(state: NowPlayingWidgetState): Boolean = locked {
         val before = stored!!
         if (before.state == state) return@locked false
         stored = before.copy(state = state)
-        if (fetchCover) ensureCover()
         save()
         emit()
         true
+    }
+
+    /**
+     * Fetches the stored song's cover if it isn't on hand ([WidgetCoverPolicy.wanted]). The fetch
+     * runs outside the lock, so publishes go on meanwhile; its result is kept only if the song is
+     * still the same.
+     */
+    suspend fun refreshCover(): CoverRefresh {
+        val url = locked {
+            val s = stored!!
+            WidgetCoverPolicy.wanted(s.state?.artUrl, s.coverKey, haveCover = coverBitmap != null, failedKey = failedCoverKey)
+        } ?: return CoverRefresh.UP_TO_DATE
+        val result = coverLoader.load(url)
+        return locked { applyCover(url, result) }
     }
 
     /** The service stopped: the stored song is paused. Returns whether that changed anything. */
@@ -137,23 +170,25 @@ class NowPlayingWidgetStore @Inject constructor(
         coverBitmap = if (s.coverKey != null && s.coverKey == s.state?.artUrl) decode() else null
     }
 
-    /** Makes sure the cover on hand is the stored song's (loading it once if not). */
-    private suspend fun ensureCover() {
+    /** Keeps a fetched cover if [url] is still the stored song's. Under the lock. */
+    private fun applyCover(url: String, result: WidgetCoverResult): CoverRefresh {
         val s = stored!!
-        val url = s.state?.artUrl
-        if (url == null || (url == s.coverKey && coverBitmap != null) || url == failedCoverKey) return
-        val cover = coverLoader.load(url)
-        if (cover == null) {
-            failedCoverKey = url
-            coverBitmap = null
-            stored = s.copy(coverKey = null, accents = null)
-            coverFile.delete()
-        } else {
-            coverBitmap = cover.bitmap
-            stored = s.copy(coverKey = url, accents = cover.accents)
-            writeCover(cover.bitmap)
+        if (s.state?.artUrl != url) return CoverRefresh.STALE
+        return when (result) {
+            is WidgetCoverResult.Loaded -> {
+                coverBitmap = result.cover.bitmap
+                stored = s.copy(coverKey = url, accents = result.cover.accents)
+                writeCover(result.cover.bitmap)
+                save()
+                emit()
+                CoverRefresh.LOADED
+            }
+            is WidgetCoverResult.Failed -> {
+                // The widget keeps the placeholder either way; only a lasting failure stops the retries.
+                if (result.lasting) failedCoverKey = url
+                CoverRefresh.UNAVAILABLE
+            }
         }
-        save()
     }
 
     private fun emit(): WidgetModel {
