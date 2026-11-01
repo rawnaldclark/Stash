@@ -17,6 +17,7 @@ import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.library.canonicalWordsForSave
+import com.stash.core.data.library.findLibraryCopy
 import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
@@ -690,10 +691,23 @@ class MusicRepositoryImpl @Inject constructor(
             ?.takeIf { it.status == com.stash.core.model.DownloadStatus.WAITING_FOR_LOSSLESS }
             ?.let { com.stash.core.model.DownloadWaitReason.fromCode(it.errorMessage) }
 
-    override suspend fun queueDownload(trackId: Long): Boolean {
-        val entity = trackDao.getById(trackId) ?: return false
-        if (entity.soundCloudPreview) return false
-        if (entity.isDownloaded) return false
+    override suspend fun queueDownload(trackId: Long): Boolean =
+        requestDownload(trackId) == DownloadRequestResult.QUEUED
+
+    override suspend fun requestDownload(trackId: Long): DownloadRequestResult {
+        val entity = trackDao.getById(trackId) ?: return DownloadRequestResult.NOT_QUEUED
+        if (entity.soundCloudPreview) return DownloadRequestResult.NOT_QUEUED
+        if (entity.isDownloaded) return DownloadRequestResult.NOT_QUEUED
+
+        // The song is already on the phone as another row (a hand download, or a copy synced from
+        // the other service): a second download would only add a second file and a second row in
+        // Downloads. A tap has no playlist to link that copy into, so nothing changes but the
+        // answer; a playlist's Download switch and a sync link it (insertDownloadsForPlaylist,
+        // DiffWorker).
+        libraryCopyFor(entity)?.let { copy ->
+            android.util.Log.i("MusicRepository", "download of track $trackId skipped: already on the phone as track ${copy.id}")
+            return DownloadRequestResult.ALREADY_ON_PHONE
+        }
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
         // manual (discovery-partition) row. A manual tap is an explicit
@@ -708,7 +722,7 @@ class MusicRepositoryImpl @Inject constructor(
         // A song downloading right now is left to finish (see requeueTappedRow).
         val existingId = downloadQueueDao.getByTrackId(trackId)?.id
         val reuse = existingId?.let { requeueTappedRow(it) }
-        if (reuse == TapRequeue.DOWNLOADING) return true
+        if (reuse == TapRequeue.DOWNLOADING) return DownloadRequestResult.QUEUED
         val queueId = existingId?.takeIf { reuse == TapRequeue.REQUEUED }
             ?: downloadQueueDao.insert(
                 com.stash.core.data.db.entity.DownloadQueueEntity(
@@ -725,8 +739,29 @@ class MusicRepositoryImpl @Inject constructor(
         // partition — unlike the chain/discovery drains, which skip in streaming
         // mode (the reason the stuck sync rows never drained).
         singleTrackDownloadEnqueuer.enqueue(queueId)
-        return true
+        return DownloadRequestResult.QUEUED
     }
+
+    /**
+     * The phone's own copy of [entity]'s song in another row ([findLibraryCopy]), or null. A failed
+     * lookup reads as none: the download goes ahead as before.
+     */
+    private suspend fun libraryCopyFor(entity: com.stash.core.data.db.entity.TrackEntity): com.stash.core.data.db.entity.TrackEntity? =
+        try {
+            trackDao.findLibraryCopy(
+                title = entity.title,
+                artist = entity.artist,
+                durationMs = entity.durationMs,
+                youtubeId = entity.youtubeId,
+                soundCloudId = entity.soundCloudId,
+                excludeTrackId = entity.id,
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MusicRepository", "library-copy lookup failed for track ${entity.id}", e)
+            null
+        }
 
     /** What a tap did with the song's existing queue row. */
     private enum class TapRequeue { DOWNLOADING, REQUEUED, GONE }
@@ -922,8 +957,21 @@ class MusicRepositoryImpl @Inject constructor(
         val candidates = tracks.filter { !it.isDownloaded && !it.matchDismissed && !it.soundCloudPreview }
         if (candidates.isEmpty()) return moved
 
+        // Where each song sits, and which songs the user took out, read once for the copies below.
+        val memberships = playlistDao.getCrossRefsForPlaylist(playlistId).associateBy { it.trackId }
+        val copyLinks = linkedMapOf<Long, com.stash.core.data.db.entity.PlaylistTrackCrossRef>()
         val entries = candidates.mapNotNull { entity ->
             if (downloadQueueDao.hasRowToLeaveAlone(entity.id)) return@mapNotNull null
+            // Already on the phone as another row (a hand download, a copy synced from the other
+            // service): link that copy here, where the song sits, instead of downloading the song
+            // a second time (a second file, a second row in Downloads). The link the sync makes for
+            // its own songs (DiffWorker). The song's own row stays as it is. A copy the user took
+            // out of this playlist doesn't stand in for the song: it downloads as before.
+            val copy = libraryCopyFor(entity)?.takeIf { memberships[it.id]?.removedAt == null }
+            if (copy != null) {
+                if (copy.id !in memberships) copyLinks[copy.id] = copyLink(playlistId, copy.id, memberships[entity.id])
+                return@mapNotNull null
+            }
             com.stash.core.data.db.entity.DownloadQueueEntity(
                 trackId = entity.id,
                 syncId = null,
@@ -932,9 +980,30 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
         if (!stillWanted()) return 0
+        if (copyLinks.isNotEmpty()) {
+            playlistDao.insertAllCrossRefs(copyLinks.values.toList())
+            playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
+            android.util.Log.i("MusicRepository", "playlist $playlistId: ${copyLinks.size} song(s) already on the phone, linked instead of downloaded")
+        }
         if (entries.isNotEmpty()) downloadQueueDao.insertAll(entries)
         return moved + entries.size
     }
+
+    /**
+     * The membership that puts [copyId] in [playlistId] where the song it stands for sits
+     * ([song], that song's own membership), added the way the song was (by a sync or by the
+     * user), so a Refresh sync treats both alike.
+     */
+    private fun copyLink(
+        playlistId: Long,
+        copyId: Long,
+        song: com.stash.core.data.db.entity.PlaylistTrackCrossRef?,
+    ): com.stash.core.data.db.entity.PlaylistTrackCrossRef = com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+        playlistId = playlistId,
+        trackId = copyId,
+        position = song?.position ?: 0,
+        locallyAdded = song?.locallyAdded ?: false,
+    )
 
     /**
      * A kept playlist's missing songs (#474), queued with [KEEP_OFFLINE_LOCK]

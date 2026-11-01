@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -454,9 +455,12 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun queueDownload(trackId: Long) {
         viewModelScope.launch {
-            val queued = musicRepository.queueDownload(trackId)
             _userMessages.tryEmit(
-                if (queued) "Queued for download." else "Couldn't queue download.",
+                when (musicRepository.requestDownload(trackId)) {
+                    DownloadRequestResult.QUEUED -> "Queued for download."
+                    DownloadRequestResult.ALREADY_ON_PHONE -> "Already on your phone."
+                    DownloadRequestResult.NOT_QUEUED -> "Couldn't queue download."
+                },
             )
         }
     }

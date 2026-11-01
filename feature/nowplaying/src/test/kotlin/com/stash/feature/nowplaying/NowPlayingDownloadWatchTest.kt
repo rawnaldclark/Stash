@@ -2,6 +2,7 @@ package com.stash.feature.nowplaying
 
 import android.content.Context
 import com.stash.core.data.lossless.LosslessUpgrader
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
@@ -92,7 +93,7 @@ class NowPlayingDownloadRingTest {
         every { observeDownloadStatus(42L) } returns status
         every { getUserCreatedPlaylists() } returns flowOf(emptyList())
         coEvery { ensureTrackPersisted(any()) } returns 42L
-        coEvery { queueDownload(42L) } returns true
+        coEvery { requestDownload(42L) } returns DownloadRequestResult.QUEUED
     }
     private val likeCoordinator: LikeCoordinator = mockk(relaxed = true) {
         every { mirrorFailures } returns MutableSharedFlow()
