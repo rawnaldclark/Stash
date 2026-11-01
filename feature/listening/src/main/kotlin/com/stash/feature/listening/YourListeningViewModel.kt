@@ -15,7 +15,6 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
-import com.stash.core.ui.ambient.tintedWhilePlaying
 import com.stash.feature.listening.stats.ListeningInsights
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -211,16 +210,6 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
             )
         }
     }.flowOn(computeDispatcher).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    /**
-     * Whether a song is playing, by the rule the wordmark and the selected tab follow
-     * ([tintedWhilePlaying]: playing tints, a pause turns neutral after a short grace so a skip
-     * doesn't flash). The week card's bars wear the album colour while it's true and are neutral
-     * otherwise. Its own flow, so a play/pause never recomputes the section's numbers.
-     */
-    val playing: StateFlow<Boolean> = playerRepository.playerState
-        .tintedWhilePlaying()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Plays [track] from the "Recently played" rail, with the rail's other songs around it. */
     fun playRecent(track: Track) {

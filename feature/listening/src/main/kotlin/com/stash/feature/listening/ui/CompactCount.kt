@@ -11,8 +11,11 @@ import java.util.Locale
  * then in thousands, millions or billions to [SIGNIFICANT] significant digits ("12.3K", "330K",
  * "1.23M"), so a tile's number is never more than five characters and never has to be cut.
  *
- * The same significant-digits rule as the artist page's listener count (#770), but local and pure:
- * that formatter lives in feature:search and uses Android's ICU, which a JVM unit test can't load.
+ * Not the artist page's listener-count rule (#770, `shortMonthlyListeners`), which compacts from
+ * 1,000 and keeps whole units ("1K", "12K", "574K"): a stats tile has room for a count in full to
+ * 9,999, and three significant digits after it ("12.3K") say more than "12K". This one is local and
+ * pure (#770's lives in feature:search and needs Android's ICU, which a JVM test can't load).
+ * TODO: one shared count formatter once #770 is merged, with both rules as its options.
  * The unit letters are English, as everything in this module is today; the digits, the grouping and
  * the decimal separator follow [Locale].
  */

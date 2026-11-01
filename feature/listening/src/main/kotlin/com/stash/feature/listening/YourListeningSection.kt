@@ -1,9 +1,6 @@
 package com.stash.feature.listening
 
 import android.widget.Toast
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,7 +41,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -73,10 +69,7 @@ import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.listening.ListeningRange
 import com.stash.core.model.Track
-import com.stash.core.ui.ambient.ALBUM_CROSSFADE_MS
-import com.stash.core.ui.ambient.ALBUM_CROSSFADE_REDUCED_MS
 import com.stash.core.ui.ambient.LocalAlbumChrome
-import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.motion.pressScale
@@ -89,6 +82,7 @@ import com.stash.feature.listening.ui.ListeningLayout
 import com.stash.feature.listening.ui.NumberOverLabel
 import com.stash.feature.listening.ui.SquareArt
 import com.stash.feature.listening.ui.charts.ListeningBars
+import com.stash.feature.listening.ui.weekBarColor
 import com.stash.feature.listening.ui.weekBarDays
 
 /**
@@ -117,7 +111,6 @@ fun YourListeningSection(
     viewModel: YourListeningViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val playing by viewModel.playing.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -141,7 +134,6 @@ fun YourListeningSection(
         Spacer(Modifier.height(14.dp))
         WeekCard(
             week = s.week,
-            playing = playing,
             onClick = { onOpenStats(ListeningRange.Days7.key) },
             modifier = Modifier.padding(horizontal = SidePadding),
         )
@@ -155,7 +147,7 @@ fun YourListeningSection(
         }
         Spacer(Modifier.height(12.dp))
         val top = s.topSong
-        val history = historySubtitle(s)
+        val history = historySubtitle(historyLine(s))
         val last = s.recent.firstOrNull()
         ListeningDoors(
             doors = listOf(
@@ -252,7 +244,7 @@ private fun weekStats(week: WeekSummary): List<WeekStat> {
  * days. TalkBack reads it as one sentence; nothing inside is read on its own.
  */
 @Composable
-private fun WeekCard(week: WeekSummary, playing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = StashTheme.extendedColors
     val time = ListeningLabels.listenTime(week.listenedMs)
     val about = week.estimated && week.listenedMs > 0
@@ -300,7 +292,7 @@ private fun WeekCard(week: WeekSummary, playing: Boolean, onClick: () -> Unit, m
                 }
             }
             Spacer(Modifier.height(16.dp))
-            WeekChart(week = week, playing = playing)
+            WeekChart(week = week)
         }
     }
 }
@@ -309,21 +301,17 @@ private fun WeekCard(week: WeekSummary, playing: Boolean, onClick: () -> Unit, m
  * The week's bars across the whole card (56 dp), today's in the full colour and the other days a
  * step softer, each day's initial under its bar (today's in the strong ink). The colour is the
  * album's ([LocalAlbumChrome]'s accent, the one the mini player wears) while a song plays, and
- * the neutral ink otherwise, crossfading with the rest of the app's chrome. A time axis reads
- * oldest to newest left to right in every language, so the chart stays left-to-right.
+ * the neutral ink otherwise ([weekBarColor] by `AlbumChrome.tint`: the app-wide fade the wordmark
+ * and the tab bar follow, so the bars turn with them on every visit). The colour is read where
+ * the bars are drawn, so a fade or a song change only redraws them. A time axis reads oldest to
+ * newest left to right in every language, so the chart stays left-to-right.
  */
 @Composable
-private fun WeekChart(week: WeekSummary, playing: Boolean) {
+private fun WeekChart(week: WeekSummary) {
     val locale = LocalConfiguration.current.locales[0]
     val days = remember(week.bars, week.today, locale) { weekBarDays(week.bars, week.today, locale) }
     val chrome = LocalAlbumChrome.current
-    val fadeMs = if (rememberReducedMotion()) ALBUM_CROSSFADE_REDUCED_MS else ALBUM_CROSSFADE_MS
-    val tint by animateFloatAsState(
-        targetValue = if (playing) 1f else 0f,
-        animationSpec = tween(fadeMs, easing = FastOutSlowInEasing),
-        label = "weekBarsTint",
-    )
-    val barColor = lerp(MaterialTheme.colorScheme.onSurface, chrome.accent, tint)
+    val neutral = MaterialTheme.colorScheme.onSurface
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Column(Modifier.fillMaxWidth()) {
             ListeningBars(
@@ -331,7 +319,7 @@ private fun WeekChart(week: WeekSummary, playing: Boolean) {
                 summary = "",
                 highlight = days.indexOfFirst { it.isToday }.takeIf { it >= 0 },
                 height = WeekBarsHeight,
-                barColor = barColor,
+                barColorAt = { weekBarColor(neutral, chrome.accent, chrome.tint) },
                 gapFraction = 0.32f,
                 maxBarWidth = 28.dp,
                 minBarHeight = 10.dp,
@@ -356,11 +344,31 @@ private fun WeekChart(week: WeekSummary, playing: Boolean) {
     }
 }
 
-/** The History door's second line: paused, today's count, or when the last song was heard. */
-internal fun historySubtitle(s: YourListeningState): String = when {
-    s.paused -> "Paused"
-    s.todayPlays > 0 -> "${ListeningLabels.plays(s.todayPlays)} today"
-    else -> "Last played ${ListeningLabels.ago(s.lastPlayedAt, s.nowMs)}"
+/** What the History door's second line says ([historySubtitle] words it). */
+internal sealed interface HistoryLine {
+    /** History is paused in Settings. */
+    data object Paused : HistoryLine
+
+    /** [plays] listens today ("22 plays today"). */
+    data class Today(val plays: Int) : HistoryLine
+
+    /** Nothing today: when the last song was heard ([ago]: "3 days ago", [ListeningLabels.ago]). */
+    data class LastPlayed(val ago: String) : HistoryLine
+}
+
+/** The History door's second line for [s]: paused, today's count, or when the last song was heard. */
+internal fun historyLine(s: YourListeningState): HistoryLine = when {
+    s.paused -> HistoryLine.Paused
+    s.todayPlays > 0 -> HistoryLine.Today(s.todayPlays)
+    else -> HistoryLine.LastPlayed(ListeningLabels.ago(s.lastPlayedAt, s.nowMs))
+}
+
+/** [line] in words, from the module's strings. */
+@Composable
+private fun historySubtitle(line: HistoryLine): String = when (line) {
+    HistoryLine.Paused -> stringResource(R.string.listening_history_paused)
+    is HistoryLine.Today -> pluralStringResource(R.plurals.listening_history_today, line.plays, line.plays)
+    is HistoryLine.LastPlayed -> stringResource(R.string.listening_history_last_played, line.ago)
 }
 
 /** One door under the week card: a label ("Top songs"), its range ("30 days"), a line, a cover. */
@@ -459,7 +467,7 @@ private fun DoorLabel(door: ListeningDoor) {
         append(door.label.keepTogether())
         door.range?.let { range ->
             withStyle(SpanStyle(color = tertiary)) {
-                append(" · ")
+                append("\u00A0· ")
                 append(range.keepTogether())
             }
         }
@@ -487,7 +495,7 @@ private fun DoorCover(door: ListeningDoor, size: Dp) {
 }
 
 /** [this] with its spaces made non-breaking, so a line never breaks inside it. */
-private fun String.keepTogether(): String = replace(' ', ' ')
+private fun String.keepTogether(): String = replace(' ', '\u00A0')
 
 /** A song on the "Recently played" rail: the Home rail card (its cover, title, artist). */
 @Composable

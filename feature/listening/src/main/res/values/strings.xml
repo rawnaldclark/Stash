@@ -41,6 +41,15 @@
     <string name="listening_door_top_spoken">Top songs, last 30 days. Number 1: %1$s.</string>
     <string name="listening_door_top_none_spoken">Top songs, last 30 days. Nothing yet.</string>
     <string name="listening_door_history">History</string>
+    <!-- The History door's line: history paused in Settings. -->
+    <string name="listening_history_paused">Paused</string>
+    <!-- The History door's line: listens today. -->
+    <plurals name="listening_history_today">
+        <item quantity="one">%d play today</item>
+        <item quantity="other">%d plays today</item>
+    </plurals>
+    <!-- The History door's line with nothing today: "Last played 3 days ago", "Last played yesterday". -->
+    <string name="listening_history_last_played">Last played %1$s</string>
     <!-- TalkBack: "History, 22 plays today." -->
     <string name="listening_door_history_spoken">History, %1$s.</string>
 </resources>

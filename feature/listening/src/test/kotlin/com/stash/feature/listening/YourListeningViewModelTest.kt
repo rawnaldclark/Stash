@@ -89,7 +89,7 @@ class YourListeningViewModelTest {
         val s = vm.state.value!!
         assertThat(s.recent.map { it.id }).containsExactly(1L, 2L).inOrder()
         assertThat(s.todayPlays).isEqualTo(2)
-        assertThat(historySubtitle(s)).isEqualTo("2 plays today")
+        assertThat(historyLine(s)).isEqualTo(HistoryLine.Today(2))
     }
 
     @Test fun `nothing today, the door says when the last song was heard`() = runTest {
@@ -97,7 +97,7 @@ class YourListeningViewModelTest {
         fake.add(fake.track(1), TODAY - 1, 600)
         val vm = viewModel(fake)
         advanceUntilIdle()
-        assertThat(historySubtitle(vm.state.value!!)).isEqualTo("Last played yesterday")
+        assertThat(historyLine(vm.state.value!!)).isEqualTo(HistoryLine.LastPlayed("yesterday"))
     }
 
     @Test fun `paused, the door says so`() = runTest {
@@ -106,7 +106,7 @@ class YourListeningViewModelTest {
         paused.value = true
         val vm = viewModel(fake)
         advanceUntilIdle()
-        assertThat(historySubtitle(vm.state.value!!)).isEqualTo("Paused")
+        assertThat(historyLine(vm.state.value!!)).isEqualTo(HistoryLine.Paused)
     }
 
     @Test fun `the week card sums the last 7 days with a bar per day and the streak`() = runTest {

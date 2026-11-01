@@ -1,11 +1,12 @@
 package com.stash.feature.listening.ui
 
+import androidx.compose.ui.graphics.Color
 import com.google.common.truth.Truth.assertThat
 import java.time.LocalDate
 import java.util.Locale
 import org.junit.Test
 
-/** The week chart's days ([weekBarDays]) and a listening time's number/unit pairs ([listenTimeParts]). */
+/** The week chart's days ([weekBarDays]) and colour ([weekBarColor]), and a time's number/unit pairs ([listenTimeParts]). */
 class ListeningNumbersTest {
     /** Sunday 1 November 2026. */
     private val sunday = LocalDate.of(2026, 11, 1).toEpochDay()
@@ -35,12 +36,6 @@ class ListeningNumbersTest {
         assertThat(days.last().isToday).isTrue()
     }
 
-    @Test fun `TalkBack names each day in full with its time`() {
-        val days = weekBarDays(week, sunday, Locale.US)
-        assertThat(days.last().spoken).isEqualTo("Sunday, 2 min")
-        assertThat(days.first().spoken).isEqualTo("Monday, 0 min")
-    }
-
     @Test fun `the initials are in the app's language`() {
         val days = weekBarDays(week, sunday, Locale.FRANCE)
         assertThat(days.map { it.initial }).containsExactly("L", "M", "M", "J", "V", "S", "D").inOrder()
@@ -54,6 +49,29 @@ class ListeningNumbersTest {
 
     @Test fun `no bars, no days`() {
         assertThat(weekBarDays(emptyList(), sunday, Locale.US)).isEmpty()
+    }
+
+    @Test fun `the bars are neutral with nothing playing and exactly the album colour while a song plays`() {
+        val neutral = Color(0xFFE8E8F0)
+        val accent = Color(0xFF3FA7D6)
+        assertThat(weekBarColor(neutral, accent, tint = 0f)).isEqualTo(neutral)
+        assertThat(weekBarColor(neutral, accent, tint = 1f)).isEqualTo(accent)
+        // Outside 0..1 (an overshooting fade) counts as the nearer end.
+        assertThat(weekBarColor(neutral, accent, tint = -0.2f)).isEqualTo(neutral)
+        assertThat(weekBarColor(neutral, accent, tint = 1.3f)).isEqualTo(accent)
+    }
+
+    @Test fun `while the album colour fades in, the bars are in between`() {
+        val neutral = Color(0xFFFFFFFF)
+        val accent = Color(0xFF0000FF)
+        val half = weekBarColor(neutral, accent, tint = 0.5f)
+        assertThat(half).isNotEqualTo(neutral)
+        assertThat(half).isNotEqualTo(accent)
+        // Toward blue: the red falls, the blue stays full.
+        assertThat(half.red).isLessThan(neutral.red)
+        assertThat(half.red).isGreaterThan(accent.red)
+        val later = weekBarColor(neutral, accent, tint = 0.8f)
+        assertThat(later.red).isLessThan(half.red)
     }
 
     @Test fun `a time splits into numbers and their units`() {

@@ -1,13 +1,14 @@
 package com.stash.feature.listening.ui
 
-import com.stash.feature.listening.ListeningLabels
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
 /**
- * One day of Home's week chart: its listening, the initial under its bar ("M"), whether it is
- * today (drawn in the full colour) and its name for TalkBack ("Monday, 47 min").
+ * One day of Home's week chart: its listening, the initial under its bar ("M") and whether it is
+ * today (drawn in the full colour). TalkBack reads the week card as one sentence, not per day.
  */
 internal data class WeekBarDay(
     /** The day (epoch day, local). */
@@ -16,7 +17,6 @@ internal data class WeekBarDay(
     val listenedMs: Long,
     val initial: String,
     val isToday: Boolean,
-    val spoken: String,
 )
 
 /**
@@ -35,12 +35,23 @@ internal fun weekBarDays(bars: List<Long>, today: Long, locale: Locale = Locale.
             listenedMs = listened,
             initial = weekday.getDisplayName(TextStyle.NARROW, locale),
             isToday = i == bars.lastIndex,
-            spoken = "${weekday.getDisplayName(TextStyle.FULL, locale)}, ${ListeningLabels.listenTime(listened)}",
         )
     }
 
 /**
- * A listening time ("1,234 h 5 min", [ListeningLabels.listenTime]'s one format) as its number and
+ * The week bars' colour: the theme's [neutral] ink with nothing playing ([tint] 0), the album's
+ * [accent] while a song plays ([tint] 1, `AlbumChrome.tint`), blended in between while it fades.
+ * Exactly [neutral] and exactly [accent] at the ends (no colour-space round trip there); a [tint]
+ * outside 0..1 counts as the nearer end.
+ */
+internal fun weekBarColor(neutral: Color, accent: Color, tint: Float): Color = when {
+    tint <= 0f -> neutral
+    tint >= 1f -> accent
+    else -> lerp(neutral, accent, tint)
+}
+
+/**
+ * A listening time ("1,234 h 5 min", [com.stash.feature.listening.ListeningLabels.listenTime]'s one format) as its number and
  * unit pairs, [("1,234", "h"), ("5", "min")], so the number can be set big and its unit small,
  * the way Home's Your record card sets its hours. Each pair is kept together when the line wraps
  * (a non-breaking space between them), so a large font breaks "1,234 h / 5 min", never "1,234 / h".

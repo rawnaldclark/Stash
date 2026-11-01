@@ -17,7 +17,7 @@ import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.feature.listening.R
 
 /** Keeps a number and its unit on one line ("4 h", never "4 / h"). */
-private const val NBSP = ' '
+private const val NBSP = '\u00A0'
 
 /**
  * A listening time the way Home's Your record card sets its hours: each number in Space Grotesk
