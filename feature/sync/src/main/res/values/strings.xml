@@ -193,4 +193,24 @@
     <string name="sync_in_library">In your library</string>
     <string name="sync_in_library_on">In your library</string>
     <string name="sync_in_library_off">Not in your library</string>
+
+    <!-- Failed Matches: find it yourself (#19) -->
+    <string name="failed_matches_find_hint">Tap a song to find it yourself.</string>
+    <string name="failed_matches_find_label">Find it yourself</string>
+    <string name="failed_matches_find_label_or">Or find it yourself</string>
+    <string name="failed_matches_find_placeholder">Artist and song</string>
+    <string name="failed_matches_find_clear">Clear search</string>
+    <string name="failed_matches_find_searching">Searching…</string>
+    <string name="failed_matches_find_searching_youtube">Searching all of YouTube…</string>
+    <string name="failed_matches_find_nothing">Nothing found. Try other words.</string>
+    <string name="failed_matches_find_failed">Couldn\'t search right now. Check your connection, then try again.</string>
+    <string name="failed_matches_find_song">Song</string>
+    <string name="failed_matches_find_video">Video</string>
+    <!-- Song or Video · its length, e.g. "Video · 4:12" -->
+    <string name="failed_matches_find_detail">%1$s · %2$s</string>
+    <string name="failed_matches_find_preview">Preview this version</string>
+    <string name="failed_matches_find_stop_preview">Stop preview</string>
+    <string name="failed_matches_find_use">Use this version</string>
+    <!-- Dismiss dialog: artist, title -->
+    <string name="failed_matches_dismiss_body">\'%1$s — %2$s\' won\'t be downloaded during future syncs. To pick the right version instead, tap the song and find it yourself.</string>
 </resources>

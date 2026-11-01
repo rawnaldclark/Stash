@@ -583,6 +583,15 @@ interface TrackDao {
     suspend fun clearMatchPick(trackId: Long)
 
     /**
+     * Records that the user picked this track's video themselves in Failed
+     * Matches ("find it yourself", #19), as [completeSwap] does for a swap:
+     * the FLAC sweep then leaves it out and a re-download gets exactly that
+     * video (#531).
+     */
+    @Query("UPDATE tracks SET match_picked_at = :pickedAt WHERE id = :trackId")
+    suspend fun markMatchPicked(trackId: Long, pickedAt: Long)
+
+    /**
      * How many tracks the library had downloaded and no longer has on disk.
      * On a restored backup this is the whole download collection: the rows
      * survive in the database, the audio does not.
