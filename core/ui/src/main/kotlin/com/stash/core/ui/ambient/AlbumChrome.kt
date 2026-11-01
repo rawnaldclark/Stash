@@ -1,9 +1,5 @@
 package com.stash.core.ui.ambient
 
-import android.content.ContentResolver
-import android.database.ContentObserver
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
@@ -14,17 +10,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -157,44 +149,13 @@ fun currentGround(): Ground = when {
 @Composable
 fun rememberReducedMotion(): Boolean {
     val resolver = LocalContext.current.contentResolver
-    return remember(resolver) { readReducedMotion(resolver) }
-}
-
-/**
- * [rememberReducedMotion], kept live: the switch is re-read whenever the system setting changes, so
- * an endless animation (the radio Signal glyph's breath) stops, or starts, the moment it is flipped,
- * not when the screen is next opened. Watches the setting only while the caller is composed.
- */
-@Composable
-fun rememberLiveReducedMotion(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    var reduced by remember(resolver) { mutableStateOf(readReducedMotion(resolver)) }
-    DisposableEffect(resolver) {
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                reduced = readReducedMotion(resolver)
-            }
-        }
-        val registered = try {
-            resolver.registerContentObserver(
-                Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer,
-            )
-            true
+    return remember(resolver) {
+        try {
+            Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         } catch (_: Exception) {
             false
         }
-        // A flip between the first read and the registration would otherwise be missed.
-        reduced = readReducedMotion(resolver)
-        onDispose { if (registered) resolver.unregisterContentObserver(observer) }
     }
-    return reduced
-}
-
-/** The system "Remove animations" switch right now (animator duration scale 0). */
-private fun readReducedMotion(resolver: ContentResolver): Boolean = try {
-    Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-} catch (_: Exception) {
-    false
 }
 
 /**

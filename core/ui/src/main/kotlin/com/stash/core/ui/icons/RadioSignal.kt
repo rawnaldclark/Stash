@@ -145,7 +145,8 @@ fun RadioSignalGlyph(
     }
     // Branch BEFORE creating the infinite transition (the RadarSweep lesson): a still glyph must not
     // keep the frame clock ticking for as long as its screen is open. "Remove animations" is read
-    // live, so flipping it stops (or restarts) the breath at once.
+    // live, so flipping it stops (or restarts) the breath at once. Battery Saver joins this one gate
+    // with #783 (TODO(#783) in rememberLiveReducedMotion), covering every live glyph on Now Playing.
     if (state == RadioGlyphState.PULSING && !rememberLiveReducedMotion()) {
         PulsingSignal(tint, described.size(size))
     } else {
