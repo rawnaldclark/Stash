@@ -347,4 +347,74 @@ class PlaylistFileParserTest {
         assertThat(file.songs[0]).isEqualTo(WireSong("Teardrop", "Massive Attack"))
         assertThat(file.songs[1].title).hasLength(300)
     }
+
+    // ------------------------------------------------------------------------------------------- review of #757
+
+    @Test fun `a stray Windows-1252 byte in a UTF-8 list is that one character, and the UTF-8 around it stays UTF-8`() {
+        // A hand-edited list: "Björk" written as UTF-8, then "Beyoncé" typed in a code page (0xE9 alone is no UTF-8).
+        val bytes = "Björk - Jóga\nBeyonc".toByteArray(Charsets.UTF_8) + byteArrayOf(0xE9.toByte()) +
+            " - Halo\n".toByteArray(Charsets.UTF_8)
+        assertThat(PlaylistFileParser.parse(bytes, "mix.txt").songs.map { it.artist }).containsExactly("Björk", "Beyoncé").inOrder()
+        assertThat(PlaylistFileParser.parse(bytes, "mix.m3u8").songs.map { it.title }).containsExactly("Jóga", "Halo").inOrder()
+    }
+
+    @Test fun `UTF-16 without a byte-order mark, and big-endian with or without one, read as UTF-16`() {
+        val tsv = "Name\tArtist\tTime\nJóga\tBjörk\t305\n"
+        val expected = listOf(WireSong("Jóga", "Björk", durationMs = 305_000L))
+        assertThat(PlaylistFileParser.parse(tsv.toByteArray(Charsets.UTF_16LE), "a.txt").songs).isEqualTo(expected)
+        assertThat(PlaylistFileParser.parse(tsv.toByteArray(Charsets.UTF_16BE), "a.txt").songs).isEqualTo(expected)
+        val marked = byteArrayOf(0xFE.toByte(), 0xFF.toByte()) + tsv.toByteArray(Charsets.UTF_16BE)
+        assertThat(PlaylistFileParser.parse(marked, "a.txt").songs).isEqualTo(expected)
+    }
+
+    @Test fun `a csv without a header row is artist then title, split by the separator its rows share`() {
+        val commas = parse("Daft Punk,One More Time\n\"Earth, Wind & Fire\",September\n", "mine.csv")
+        assertThat(commas.format).isEqualTo(PlaylistFileFormat.CSV)
+        assertThat(commas.songs)
+            .containsExactly(WireSong("One More Time", "Daft Punk"), WireSong("September", "Earth, Wind & Fire")).inOrder()
+        // Every row has a semicolon, one has a comma: semicolons.
+        val semicolons = parse("Earth, Wind & Fire;September\nDaft Punk;One More Time\n", "mine.csv")
+        assertThat(semicolons.songs.map { it.artist }).containsExactly("Earth, Wind & Fire", "Daft Punk").inOrder()
+        assertThat(parse("Tyler, The Creator\tEARFQUAKE\n", "mine.tsv").songs).containsExactly(WireSong("EARFQUAKE", "Tyler, The Creator"))
+    }
+
+    @Test fun `a unit-less Duration column in milliseconds is milliseconds for a short song too`() {
+        val ms = parse("Title,Artist,Duration\nIntro,The xx,30000\nCrystalised,The xx,201000\n", "xx.csv")
+        assertThat(ms.songs.map { it.durationMs }).containsExactly(30_000L, 201_000L).inOrder()
+        val seconds = parse("Title,Artist,Duration\nIntro,The xx,128\nCrystalised,The xx,201\n", "xx.csv")
+        assertThat(seconds.songs.map { it.durationMs }).containsExactly(128_000L, 201_000L).inOrder()
+    }
+
+    @Test fun `a list of shared links names no songs but keeps its links, each once`() {
+        val one = parse(
+            "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc\nhttps://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=def\n",
+            "links.txt",
+        )
+        assertThat(one.songs).isEmpty()
+        assertThat(one.links).containsExactly("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc")
+        val several = parse("https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC\nhttps://music.youtube.com/watch?v=dQw4w9WgXcQ\n", "s.m3u")
+        assertThat(several.songs).isEmpty()
+        assertThat(several.links).hasSize(2)
+        // A file that names songs is read for its songs alone.
+        assertThat(parse("Daft Punk - One More Time\nhttps://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC\n", "x.txt").links).isEmpty()
+    }
+
+    @Test fun `a song, a video, a picture, an archive or a PDF is told from its first bytes`() {
+        fun bytes(vararg b: Int) = ByteArray(b.size) { b[it].toByte() }
+        fun ascii(s: String) = s.toByteArray(Charsets.ISO_8859_1)
+        for (media in listOf(
+            ascii("ID3\u0004\u0000"), bytes(0, 0, 0, 0x20) + ascii("ftypisom"), ascii("RIFF$\u0000\u0000\u0000WAVE"),
+            ascii("OggS\u0000"), ascii("fLaC\u0000"), ascii("%PDF-1.7"), bytes(0x50, 0x4B, 0x03, 0x04),
+            bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A), bytes(0xFF, 0xD8, 0xFF, 0xE0),
+        )) {
+            assertThat(PlaylistFileText.isMedia(media)).isTrue()
+        }
+        for (text in listOf(
+            ascii("#EXTM3U\n"), bytes(0xFF, 0xFE, 0x23, 0x00), bytes(0xEF, 0xBB, 0xBF, 0x54), ascii("Track Name,Artist"), ByteArray(0),
+        )) {
+            assertThat(PlaylistFileText.isMedia(text)).isFalse()
+        }
+        // Only the bytes read so far count.
+        assertThat(PlaylistFileText.isMedia(ascii("ID3\u0004"), length = 2)).isFalse()
+    }
 }

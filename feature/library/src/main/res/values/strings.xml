@@ -9,6 +9,10 @@
     <string name="playlist_file_from">From a file</string>
     <!-- The file was read, and no line or row in it names a song (a title and its artist). -->
     <string name="playlist_file_nothing">Nothing in this file we could read</string>
+    <!-- The file holds several Spotify / YouTube links and no song names. "Add from a link" is the Library "+" menu item that takes one link. -->
+    <string name="playlist_file_links">This file is a list of links. Add them one at a time with + › Add from a link.</string>
     <!-- The file couldn't be opened (it was moved or deleted, or the app holding it failed); a Retry button follows. -->
     <string name="playlist_file_cant_open">Couldn’t open this file.</string>
+    <!-- The button under a link's or a file's error: load it again. -->
+    <string name="link_import_retry">Retry</string>
 </resources>

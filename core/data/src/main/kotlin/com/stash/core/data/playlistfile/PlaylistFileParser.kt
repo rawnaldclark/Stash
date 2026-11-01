@@ -1,5 +1,6 @@
 package com.stash.core.data.playlistfile
 
+import com.stash.core.data.link.MusicLinks
 import com.stash.core.data.weblink.handoff.HandoffWire
 import com.stash.core.data.weblink.handoff.WireSong
 import com.stash.core.model.weblink.SongKey
@@ -12,12 +13,14 @@ enum class PlaylistFileFormat { M3U, PLS, XSPF, CSV, TEXT }
 /**
  * A playlist file, read: the name it gives itself (M3U `#PLAYLIST:`, XSPF's `<title>`, a CSV's one "Playlist name"), else null;
  * its songs in order, at most [PlaylistFileParser.MAX_SONGS]; and [cut] when it held more than that, or more than was read.
+ * [links]: when it names no songs, the Spotify / YouTube / SoundCloud links it holds instead (a list of shared links).
  */
 data class PlaylistFileContent(
     val title: String?,
     val format: PlaylistFileFormat,
     val songs: List<WireSong>,
     val cut: Boolean,
+    val links: List<String> = emptyList(),
 )
 
 /** What one format's reader found: the name the file gives itself, and its songs. */
@@ -39,7 +42,8 @@ object PlaylistFileParser {
      * saved as .txt.
      */
     fun parse(bytes: ByteArray, fileName: String?, truncated: Boolean = false): PlaylistFileContent {
-        val decoded = PlaylistFileText.decode(bytes, truncated)
+        // An .m3u8 is UTF-8 by definition: a stray byte in one is a typo, never a sign of a code page.
+        val decoded = PlaylistFileText.decode(bytes, truncated, utf8 = fileName?.endsWith(".m3u8", ignoreCase = true) == true)
         val format = formatOf(decoded, fileName)
         // The line a cut file stops in is half a line: never a song. XSPF's whole tracks are found as they are.
         val text = if (truncated && format != PlaylistFileFormat.XSPF) decoded.substringBeforeLast('\n', "") else decoded
@@ -56,8 +60,16 @@ object PlaylistFileParser {
             format = format,
             songs = read.songs.take(MAX_SONGS),
             cut = truncated || read.songs.size > MAX_SONGS,
+            links = if (read.songs.isEmpty()) linksIn(text) else emptyList(),
         )
     }
+
+    /**
+     * The music links in [text], a line's first, each once: a list of songs shared from Spotify or YouTube ("Copy song link",
+     * or songs dragged out of the desktop app) is links, not words, and is opened as links are.
+     */
+    private fun linksIn(text: String): List<String> =
+        text.lineSequence().mapNotNull(MusicLinks::findUrl).distinctBy(MusicLinks::parse).take(MAX_SONGS).toList()
 
     internal fun formatOf(text: String, fileName: String?): PlaylistFileFormat {
         val head = text.trimStart().take(SNIFF_CHARS)
@@ -181,7 +193,7 @@ object PlaylistFileParser {
     private const val MAX_DURATION_MS = 24L * 3600 * 1000
 
     /** A length with no unit this big is milliseconds: no song runs ten hours. */
-    private const val SECONDS_LIMIT = 36_000
+    internal const val SECONDS_LIMIT = 36_000
 
     /** How far into a file its format is looked for. */
     private const val SNIFF_CHARS = 64 * 1024

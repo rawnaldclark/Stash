@@ -60,7 +60,7 @@ class LinkImportViewModel @Inject constructor(
     private var link: MusicLink? = MusicLinks.find(savedStateHandle.get<String>("link"))
 
     /** "+" › Import a playlist file: the document picked (the file route's `file`), read in place of a link. */
-    private val file: String? = savedStateHandle.get<String>("file")
+    private var file: String? = savedStateHandle.get<String>("file")
 
     private val _state = MutableStateFlow<LinkImportUiState>(LinkImportUiState.Loading)
     val state: StateFlow<LinkImportUiState> = _state
@@ -87,12 +87,19 @@ class LinkImportViewModel @Inject constructor(
     private fun loadFile(uri: String) {
         _state.value = LinkImportUiState.Loading
         viewModelScope.launch {
-            _state.value = when (val r = files.load(uri)) {
-                is PlaylistFileLoad.Ok -> LinkImportUiState.Ready(r.preview, importer.existing(r.preview))
+            when (val r = files.load(uri)) {
+                is PlaylistFileLoad.Ok -> _state.value = LinkImportUiState.Ready(r.preview, importer.existing(r.preview))
+                // A file holding one Spotify / YouTube link and nothing else: that link, as if it were pasted (a retry too).
+                is PlaylistFileLoad.Link -> {
+                    file = null
+                    link = MusicLinks.find(r.url)
+                    load()
+                }
                 // Opening may work a second time (a cloud file's app); a file with nothing to read won't change.
-                is PlaylistFileLoad.Failed -> when (r.problem) {
+                is PlaylistFileLoad.Failed -> _state.value = when (r.problem) {
                     PlaylistFileProblem.CANT_OPEN -> LinkImportUiState.Failed(retryable = true, messageRes = R.string.playlist_file_cant_open)
                     PlaylistFileProblem.NOTHING_TO_READ -> LinkImportUiState.Failed(retryable = false, messageRes = R.string.playlist_file_nothing)
+                    PlaylistFileProblem.LINKS -> LinkImportUiState.Failed(retryable = false, messageRes = R.string.playlist_file_links)
                 }
             }
         }

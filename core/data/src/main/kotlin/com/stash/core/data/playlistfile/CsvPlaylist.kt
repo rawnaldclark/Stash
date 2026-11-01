@@ -8,15 +8,18 @@ import com.stash.core.data.weblink.handoff.WireSong
  * "ISRC"), Apple Music's exported text (tab-separated "Name", "Artist", "Album", "Time" in seconds), and a plain
  * "Title,Artist[,Album]". Commas, tabs or semicolons between fields; a quoted field may hold any of them, line breaks and
  * doubled quotes (RFC 4180). A song needs a title and an artist; an ISRC or Spotify track, when the file has one, is its identity.
+ * A .csv without a header row ("Daft Punk,One More Time") is read as a hand-made list is written: artist, then title.
  */
 internal object CsvPlaylist {
     /** The file starts with a header row this reads. */
     fun recognises(text: String): Boolean = layout(text) != null
 
     fun read(text: String, limit: Int): ReadPlaylist {
-        val layout = layout(text) ?: return ReadPlaylist(null, emptyList())
+        val layout = layout(text) ?: headerless(text) ?: return ReadPlaylist(null, emptyList())
         val c = layout.columns
         val songs = ArrayList<WireSong>()
+        // A unit-less length column's cells, by song: read once the whole column is seen (see below).
+        val lengths = ArrayList<String?>()
         val playlists = LinkedHashSet<String>()
         var at = layout.bodyStart
         while (at < text.length && songs.size < limit) {
@@ -30,16 +33,22 @@ internal object CsvPlaylist {
                 title = title,
                 artist = artist,
                 album = cell(c.album),
-                durationMs = PlaylistFileParser.durationOf(cell(c.durationMs), ms = true)
-                    ?: PlaylistFileParser.durationOf(cell(c.duration), ms = false),
+                durationMs = PlaylistFileParser.durationOf(cell(c.durationMs), ms = true),
                 isrc = PlaylistFileParser.isrcOf(cell(c.isrc)),
                 spotifyId = PlaylistFileParser.spotifyIdOf(cell(c.spotify), bare = c.spotifyIsBare),
             ) ?: continue
             songs += song
+            lengths += cell(c.duration)
             if (playlists.size < 2) cell(c.playlist)?.let(playlists::add)
         }
+        // A "Duration" column without a unit is in seconds or in milliseconds all the way down: one cell too big for seconds
+        // says milliseconds, for a 30-second intro's "30000" too (read alone, that is eight hours).
+        val ms = lengths.any { (it?.toDoubleOrNull() ?: 0.0) >= PlaylistFileParser.SECONDS_LIMIT }
+        val timed = songs.mapIndexed { i, s ->
+            if (s.durationMs != null || lengths[i] == null) s else s.copy(durationMs = PlaylistFileParser.durationOf(lengths[i], ms))
+        }
         // One playlist's export names it on every row; a file of several is one list, named by the file.
-        return ReadPlaylist(playlists.singleOrNull(), songs)
+        return ReadPlaylist(playlists.singleOrNull(), timed)
     }
 
     /**
@@ -68,18 +77,56 @@ internal object CsvPlaylist {
     private class Record(val fields: List<String>, val next: Int)
 
     private fun layout(text: String): Layout? {
-        var start = 0
-        while (start < text.length && text[start] == '\n') start++
-        val lineEnd = text.indexOf('\n', start).let { if (it < 0) text.length else it }
-        // Excel's hint line, "sep=;", names the separator.
-        val hinted = SEPARATOR_HINT.matchEntire(text.substring(start, lineEnd).trim())?.groupValues?.get(1)?.single()
-        if (hinted != null) start = lineEnd + 1
+        val (start, hinted) = firstRow(text)
         for (separator in if (hinted != null) charArrayOf(hinted) else SEPARATORS) {
             val header = record(text, start, separator)
             val columns = columnsOf(header.fields) ?: continue
             return Layout(separator, columns, header.next)
         }
         return null
+    }
+
+    /**
+     * A sheet without a header row: artist, then title (the way a list is written by hand, and how a song is said). Its separator
+     * is the one that splits the most of its first rows in two or more ("Earth, Wind & Fire;September" is split by the
+     * semicolon every row has, not the comma one row has); a tab first on a tie, as no name holds one.
+     */
+    private fun headerless(text: String): Layout? {
+        val (start, hinted) = firstRow(text)
+        var best: Char? = null
+        var bestSplit = 0
+        for (separator in if (hinted != null) charArrayOf(hinted) else HEADERLESS_SEPARATORS) {
+            var at = start
+            var rows = 0
+            var split = 0
+            while (at < text.length && rows < SAMPLE_ROWS) {
+                val row = record(text, at, separator)
+                at = row.next
+                val filled = row.fields.count { it.isNotBlank() }
+                if (filled == 0) continue
+                rows++
+                if (filled >= 2) split++
+            }
+            if (split > bestSplit) {
+                best = separator
+                bestSplit = split
+            }
+        }
+        val separator = best ?: return null
+        val columns = Columns(
+            title = 1, artist = 0, album = null, isrc = null, durationMs = null, duration = null,
+            spotify = null, spotifyIsBare = false, playlist = null,
+        )
+        return Layout(separator, columns, start)
+    }
+
+    /** Where the first row starts, past blank lines and Excel's hint line ("sep=;"), and the separator that line names. */
+    private fun firstRow(text: String): Pair<Int, Char?> {
+        var start = 0
+        while (start < text.length && text[start] == '\n') start++
+        val lineEnd = text.indexOf('\n', start).let { if (it < 0) text.length else it }
+        val hinted = SEPARATOR_HINT.matchEntire(text.substring(start, lineEnd).trim())?.groupValues?.get(1)?.single()
+        return if (hinted != null) minOf(lineEnd + 1, text.length) to hinted else start to null
     }
 
     private fun columnsOf(header: List<String>): Columns? {
@@ -140,6 +187,10 @@ internal object CsvPlaylist {
 
     /** Tried in this order; a header that names a title and an artist with one of them settles it. */
     private val SEPARATORS = charArrayOf(',', '\t', ';')
+    private val HEADERLESS_SEPARATORS = charArrayOf('\t', ',', ';')
+
+    /** How many rows of a sheet without a header tell its separator. */
+    private const val SAMPLE_ROWS = 20
     private val SEPARATOR_HINT = Regex("^\"?sep=(.)\"?$", RegexOption.IGNORE_CASE)
     private val SPACES = Regex("\\s+")
     private val JOINED_ARTISTS = Regex("[,;](?=\\p{L})")

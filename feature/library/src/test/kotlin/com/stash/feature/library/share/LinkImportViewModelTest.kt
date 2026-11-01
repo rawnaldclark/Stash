@@ -5,7 +5,9 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.link.LinkAdded
 import com.stash.core.data.link.LinkImporter
 import com.stash.core.data.link.LinkKind
+import com.stash.core.data.link.LinkLoad
 import com.stash.core.data.link.LinkPreview
+import com.stash.core.data.link.MusicLinks
 import com.stash.core.data.playlistfile.PlaylistFileImport
 import com.stash.core.data.playlistfile.PlaylistFileLoad
 import com.stash.core.data.playlistfile.PlaylistFileProblem
@@ -87,6 +89,25 @@ class LinkImportViewModelTest {
             LinkImportUiState.Ready(preview, existingId = 7L, download = false, added = LinkAdded(7L, 2)),
         )
         coVerify(exactly = 1) { importer.add(preview, false, any()) }
+    }
+
+    @Test fun `a file of one music link opens that link, as if it were pasted, and a retry opens the link again`() = runTest(dispatcher) {
+        val url = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+        val linked = preview.copy(service = "Spotify", fromFile = false, sourceId = "custom_link_spotify_37i9dQZF1DXcBWIGoYBM5M")
+        coEvery { files.load(document) } returns PlaylistFileLoad.Link(url)
+        coEvery { importer.load(MusicLinks.find(url)!!) } returns LinkLoad.Ok(linked)
+        coEvery { importer.existing(linked) } returns null
+        val vm = vm(); advanceUntilIdle()
+        assertThat(vm.state.value).isEqualTo(LinkImportUiState.Ready(linked, existingId = null))
+        vm.load(); advanceUntilIdle()
+        coVerify(exactly = 1) { files.load(document) }
+        coVerify(exactly = 2) { importer.load(any()) }
+    }
+
+    @Test fun `a file of several links says to add them one at a time`() = runTest(dispatcher) {
+        coEvery { files.load(document) } returns PlaylistFileLoad.Failed(PlaylistFileProblem.LINKS)
+        val vm = vm(); advanceUntilIdle()
+        assertThat(vm.state.value).isEqualTo(LinkImportUiState.Failed(retryable = false, messageRes = R.string.playlist_file_links))
     }
 
     @Test fun `a link's route never reads a file`() = runTest(dispatcher) {

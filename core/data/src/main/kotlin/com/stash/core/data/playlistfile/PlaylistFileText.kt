@@ -1,9 +1,6 @@
 package com.stash.core.data.playlistfile
 
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
-import java.nio.charset.CodingErrorAction
 
 /**
  * A playlist file's bytes as text. Exporters disagree on encodings: Apple Music writes UTF-16 with a byte-order mark (and old
@@ -14,23 +11,97 @@ internal object PlaylistFileText {
     private val WINDOWS_1252: Charset = charsetOr("windows-1252")
     private val WINDOWS_1251: Charset = charsetOr("windows-1251")
 
+    /** Windows-1252's characters for the bytes 0x80–0xFF: what a stray byte in UTF-8 text most likely meant. */
+    private val WINDOWS_1252_HIGH: String = String(ByteArray(128) { (it + 0x80).toByte() }, WINDOWS_1252)
+
+    /** How many bytes [isMedia] looks at. */
+    const val SNIFF_BYTES = 4 * 1024
+
     /**
      * [bytes] decoded, without its byte-order mark, every line ending a `\n`. [truncated]: [bytes] is only the start of the file,
-     * so a UTF-8 character the cut split in two is dropped rather than taken as a sign of another encoding.
+     * so a UTF-8 character the cut split in two is dropped rather than taken as a sign of another encoding. [utf8]: the file is
+     * UTF-8 by its kind (an .m3u8), whatever stray bytes it holds.
      */
-    fun decode(bytes: ByteArray, truncated: Boolean = false): String =
-        decodeRaw(bytes, truncated).replace("\r\n", "\n").replace('\r', '\n')
+    fun decode(bytes: ByteArray, truncated: Boolean = false, utf8: Boolean = false): String {
+        val text = decodeRaw(bytes, truncated, utf8)
+        return if ('\r' in text) text.replace("\r\n", "\n").replace('\r', '\n') else text
+    }
 
-    private fun decodeRaw(bytes: ByteArray, truncated: Boolean): String {
+    /**
+     * An audio, video, image, archive or PDF file picked by mistake, known from its first bytes: never read as a playlist (an
+     * MP3 or a video can be large, and its bytes as text are never songs).
+     */
+    fun isMedia(bytes: ByteArray, length: Int = bytes.size): Boolean {
+        val n = minOf(length, bytes.size, SNIFF_BYTES)
+        fun at(offset: Int, vararg signature: Int) =
+            n >= offset + signature.size && signature.indices.all { (bytes[offset + it].toInt() and 0xFF) == signature[it] }
+        fun at(offset: Int, ascii: String) = at(offset, *IntArray(ascii.length) { ascii[it].code })
+        return at(0, "ID3") || at(4, "ftyp") || at(0, "RIFF") || at(0, "OggS") || at(0, "fLaC") || at(0, "%PDF") ||
+            at(0, 0x50, 0x4B, 0x03, 0x04) || at(0, 0x89, 0x50, 0x4E, 0x47) || at(0, 0xFF, 0xD8, 0xFF)
+    }
+
+    private fun decodeRaw(bytes: ByteArray, truncated: Boolean, utf8: Boolean): String {
         val n = bytes.size
         if (n >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) return utf16(bytes, 2, Charsets.UTF_16LE)
         if (n >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) return utf16(bytes, 2, Charsets.UTF_16BE)
         utf16WithoutMark(bytes)?.let { return utf16(bytes, 0, it) }
         val start = if (n >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) 3 else 0
         val end = maxOf(start, if (truncated) wholeUtf8End(bytes) else n)
-        strictUtf8(bytes, start, end)?.let { return it }
-        // Not UTF-8: a code page. Which one can't be read from the file, only guessed from its letters.
-        return String(bytes, start, n - start, if (looksCyrillic(bytes)) WINDOWS_1251 else WINDOWS_1252)
+        var valid = 0
+        var invalid = 0
+        var i = start
+        while (i < end) {
+            val length = utf8Length(bytes, i, end)
+            if (length == 0) invalid++ else if (length > 1) valid++
+            i += maxOf(length, 1)
+        }
+        if (invalid == 0) return String(bytes, start, end - start, Charsets.UTF_8)
+        // A Russian PC's code page: Cyrillic letters throughout, hardly any of them forming UTF-8 by chance.
+        if (!utf8 && valid < invalid && looksCyrillic(bytes)) return String(bytes, start, n - start, WINDOWS_1251)
+        // UTF-8 where it is well formed, any other byte as Windows-1252 has it: a stray "é" in a hand-edited UTF-8 list can't
+        // turn every "Björk" into "BjÃ¶rk", and a Windows-1252 file (no well-formed UTF-8 in it) reads exactly as before.
+        return mixed(bytes, start, end)
+    }
+
+    /**
+     * The length of the well-formed UTF-8 character at [i] (1 for ASCII), or 0 when the byte there starts none: a stray
+     * continuation, an overlong form, a surrogate, past U+10FFFF, or cut short before [end].
+     */
+    private fun utf8Length(b: ByteArray, i: Int, end: Int): Int {
+        val c = b[i].toInt() and 0xFF
+        val length = when (c) {
+            in 0x00..0x7F -> return 1
+            in 0xC2..0xDF -> 2
+            in 0xE0..0xEF -> 3
+            in 0xF0..0xF4 -> 4
+            else -> return 0
+        }
+        if (i + length > end) return 0
+        for (k in 1 until length) if ((b[i + k].toInt() and 0xC0) != 0x80) return 0
+        val c1 = b[i + 1].toInt() and 0xFF
+        if ((c == 0xE0 && c1 < 0xA0) || (c == 0xED && c1 > 0x9F) || (c == 0xF0 && c1 < 0x90) || (c == 0xF4 && c1 > 0x8F)) return 0
+        return length
+    }
+
+    /** UTF-8 where it is well formed; each byte where it isn't, as Windows-1252 has it. */
+    private fun mixed(b: ByteArray, from: Int, to: Int): String {
+        val out = StringBuilder(to - from)
+        var i = from
+        while (i < to) {
+            val c = b[i].toInt() and 0xFF
+            val length = utf8Length(b, i, to)
+            when (length) {
+                0 -> out.append(WINDOWS_1252_HIGH[c - 0x80])
+                1 -> out.append(c.toChar())
+                else -> {
+                    var cp = c and (0xFF shr (length + 1))
+                    for (k in 1 until length) cp = (cp shl 6) or (b[i + k].toInt() and 0x3F)
+                    out.appendCodePoint(cp)
+                }
+            }
+            i += maxOf(length, 1)
+        }
+        return out.toString()
     }
 
     /** UTF-16 from [from], an odd last byte (a cut file) left out. */
@@ -39,7 +110,7 @@ internal object PlaylistFileText {
 
     /** UTF-16 without a byte-order mark: text that is mostly ASCII has a zero in every other byte. */
     private fun utf16WithoutMark(bytes: ByteArray): Charset? {
-        val n = minOf(bytes.size, SNIFF_BYTES) and 1.inv()
+        val n = minOf(bytes.size, UTF16_SNIFF_BYTES) and 1.inv()
         if (n < 4) return null
         var evenZeros = 0
         var oddZeros = 0
@@ -53,16 +124,6 @@ internal object PlaylistFileText {
             evenZeros * 10 >= pairs * 7 && oddZeros * 10 < pairs -> Charsets.UTF_16BE
             else -> null
         }
-    }
-
-    private fun strictUtf8(bytes: ByteArray, from: Int, to: Int): String? = try {
-        Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-            .decode(ByteBuffer.wrap(bytes, from, to - from))
-            .toString()
-    } catch (e: CharacterCodingException) {
-        null
     }
 
     /** Where [bytes] ends without a UTF-8 character cut in two. */
@@ -107,5 +168,5 @@ internal object PlaylistFileText {
     }
 
     private const val ZERO: Byte = 0
-    private const val SNIFF_BYTES = 512
+    private const val UTF16_SNIFF_BYTES = 512
 }

@@ -72,7 +72,7 @@ fun LinkImportScreen(
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center,
                 )
-                if (st.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text("Retry") } }
+                if (st.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text(stringResource(R.string.link_import_retry)) } }
             }
             return
         }
