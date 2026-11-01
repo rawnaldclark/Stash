@@ -33,8 +33,9 @@ import kotlinx.coroutines.withContext
  * [MirrorLibrary] over the app's Room library. Incoming songs are matched as a handoff matches them ([HandoffSongMatcher]: ISRC,
  * YouTube and Spotify ids, the same words, else a stream-only row); a `phoneOnly` song is found by its words only.
  *
- * What a browser does live also goes on through [onward], on this phone's switches: a like newly applied here (or a Stash like
- * cleared) to Spotify, YouTube Music and Last.fm, and a play under [HISTORY_WINDOW_MS] old to YouTube Music history.
+ * What a browser does live also goes on through [onward], on this phone's switches: the like changes the mirror picks ([sendOn],
+ * from what [setLikes] says it changed) to Spotify, YouTube Music and Last.fm, and a play under [HISTORY_WINDOW_MS] old to
+ * YouTube Music history.
  */
 @Singleton
 class RoomMirrorLibrary internal constructor(
