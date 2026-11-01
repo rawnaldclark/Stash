@@ -839,6 +839,14 @@ interface PlaylistDao {
     """)
     fun getYouTubePlaylistsForPreferences(): Flow<List<PlaylistEntity>>
 
+    /**
+     * Whether any of [source]'s playlists are still in the library: the rows the
+     * Sync screens list for it (the two queries above). Keeps a disconnected
+     * account's Refresh/Accumulate counting while its songs are here (#273).
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM playlists WHERE source = :source AND (is_active = 1 OR user_hidden = 1))")
+    suspend fun hasLibraryPlaylists(source: MusicSource): Boolean
+
     /** The followed mix's "Download this mix" switch (spec §6): sync_enabled only, no Home pin. */
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")
     suspend fun setSyncEnabled(playlistId: Long, enabled: Boolean)
