@@ -496,9 +496,14 @@ fun StashScaffold(
         },
         // "Find a better match": the song is flagged; the player collapses and Failed Matches
         // opens on it, its finder searching. Back returns to where you were before the player.
+        // Flagged again with Failed Matches already open: that one is replaced, not stacked
+        // under a second (its view model clears, which stops a preview it was playing). Not
+        // launchSingleTop: the kept screen has already used its focus and would open nothing.
         onFixMatch = { trackId ->
             playerSheet.collapse()
-            navController.navigate(FailedMatchesRoute(focusTrackId = trackId))
+            navController.navigate(FailedMatchesRoute(focusTrackId = trackId)) {
+                popUpTo<FailedMatchesRoute> { inclusive = true }
+            }
         },
     )
 

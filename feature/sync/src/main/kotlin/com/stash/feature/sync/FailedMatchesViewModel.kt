@@ -189,6 +189,9 @@ class FailedMatchesViewModel @Inject constructor(
          */
         internal const val FOCUS_WAIT_MS = 5_000L
 
+        /** Said when [openFinderFor]'s song never reached the lists. */
+        internal const val FOCUS_NOT_FOUND_MESSAGE = "Couldn't find that song in Failed matches"
+
         private val BRACKETED = Regex("""[\(\[][^)\]]*[\)\]]""")
         private val NOT_A_WORD = Regex("""[^\p{L}\p{N}]+""")
         private val SPACES = Regex("""\s+""")
@@ -992,7 +995,7 @@ class FailedMatchesViewModel @Inject constructor(
      * jump from Now Playing's "Find a better match" (the screen's `focusTrackId`). The song was
      * flagged a moment before this screen opened, so this waits for it to reach one of the lists
      * (the flagged one, usually), for at most [FOCUS_WAIT_MS]; a song that never arrives opens
-     * nothing. Unlike [toggleManualSearch], it never closes or takes over an open finder: one
+     * nothing and says so ([FOCUS_NOT_FOUND_MESSAGE]). Unlike [toggleManualSearch], it never closes or takes over an open finder: one
      * open by then is the listener's own (this screen opened with none).
      */
     fun openFinderFor(trackId: Long) {
@@ -1005,6 +1008,8 @@ class FailedMatchesViewModel @Inject constructor(
                 }
             } ?: run {
                 Log.w(TAG, "find it yourself: trackId=$trackId never reached Failed Matches; nothing opened")
+                // Said, not just logged: the listener came here for this song.
+                _userMessages.trySend(FOCUS_NOT_FOUND_MESSAGE)
                 return@launch
             }
             if (_manualSearch.value != null) return@launch

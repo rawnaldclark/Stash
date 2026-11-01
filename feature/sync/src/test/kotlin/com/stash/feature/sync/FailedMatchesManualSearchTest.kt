@@ -228,9 +228,13 @@ class FailedMatchesManualSearchTest {
     @Test fun `Now Playing's jump opens the flagged song's finder, searched for it`() = runTest {
         coEvery { ytMusicApi.searchAll("Evanescence Lacrymosa") } returns answer(wrong, song)
         val vm = makeVm(tracks = listOf(unmatched()), flaggedTracks = listOf(flagged()))
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
 
         vm.openFinderFor(7L)
         advanceUntilIdle()
+
+        assertEquals(emptyList<String>(), messages)
 
         val open = vm.manualSearch.value!!
         assertEquals(7L, open.trackId)
@@ -252,15 +256,22 @@ class FailedMatchesManualSearchTest {
         assertEquals(7L, vm.manualSearch.value?.trackId)
     }
 
-    @Test fun `a song that never reaches the list opens nothing`() = runTest {
+    @Test fun `a song that never reaches the list opens nothing and says so`() = runTest {
         val vm = makeVm(tracks = listOf(unmatched()))
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
 
         vm.openFinderFor(99L)
-        advanceTimeBy(FailedMatchesViewModel.FOCUS_WAIT_MS + 1)
+        advanceTimeBy(FailedMatchesViewModel.FOCUS_WAIT_MS - 1)
+        runCurrent()
+        assertEquals(emptyList<String>(), messages)
+
+        advanceTimeBy(2)
         runCurrent()
 
         assertNull(vm.manualSearch.value)
         coVerify(exactly = 0) { ytMusicApi.searchAll(any()) }
+        assertEquals(listOf(FailedMatchesViewModel.FOCUS_NOT_FOUND_MESSAGE), messages)
     }
 
     @Test fun `the jump never closes a finder already open on the song`() = runTest {
