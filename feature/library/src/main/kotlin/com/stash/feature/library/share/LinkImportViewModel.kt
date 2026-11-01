@@ -1,6 +1,7 @@
 package com.stash.feature.library.share
 
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,10 @@ import com.stash.core.data.link.LinkLoad
 import com.stash.core.data.link.LinkPreview
 import com.stash.core.data.link.MusicLink
 import com.stash.core.data.link.MusicLinks
+import com.stash.core.data.playlistfile.PlaylistFileImport
+import com.stash.core.data.playlistfile.PlaylistFileLoad
+import com.stash.core.data.playlistfile.PlaylistFileProblem
+import com.stash.feature.library.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.coroutines.cancellation.CancellationException
@@ -22,7 +27,14 @@ import kotlinx.coroutines.withContext
 
 sealed interface LinkImportUiState {
     data object Loading : LinkImportUiState
-    data class Failed(val message: String, val retryable: Boolean) : LinkImportUiState
+
+    /** [messageRes]: the message from this module's strings (a playlist file's), shown instead of [message] (a link's). */
+    data class Failed(
+        val message: String = "",
+        val retryable: Boolean,
+        @StringRes val messageRes: Int? = null,
+    ) : LinkImportUiState
+
     data class Ready(
         val preview: LinkPreview,
         /** The playlist this link made before, when it is still here. */
@@ -35,13 +47,21 @@ sealed interface LinkImportUiState {
     ) : LinkImportUiState
 }
 
-/** The screen a pasted or shared Spotify / YouTube link opens: what it is, then Add to library (and Download). */
+/**
+ * The screen a pasted or shared Spotify / YouTube link opens: what it is, then Add to library (and Download). A playlist file
+ * picked from the Library's "+" opens it too: read instead of a link, then added the same way.
+ */
 @HiltViewModel
 class LinkImportViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val importer: LinkImporter,
+    private val files: PlaylistFileImport,
 ) : ViewModel() {
     private var link: MusicLink? = MusicLinks.find(savedStateHandle.get<String>("link"))
+
+    /** "+" › Import a playlist file: the document picked (the file route's `file`), read in place of a link. */
+    private var file: String? = savedStateHandle.get<String>("file")
+
     private val _state = MutableStateFlow<LinkImportUiState>(LinkImportUiState.Loading)
     val state: StateFlow<LinkImportUiState> = _state
 
@@ -50,6 +70,7 @@ class LinkImportViewModel @Inject constructor(
     }
 
     fun load() {
+        file?.let { return loadFile(it) }
         val link = link ?: run {
             _state.value = LinkImportUiState.Failed(LinkImporter.NOT_MUSIC, retryable = false)
             return
@@ -59,6 +80,27 @@ class LinkImportViewModel @Inject constructor(
             _state.value = when (val r = importer.load(link)) {
                 is LinkLoad.Ok -> LinkImportUiState.Ready(r.preview, importer.existing(r.preview), download = r.preview.soundCloudSongs?.any { !it.preview } ?: true)
                 is LinkLoad.Failed -> LinkImportUiState.Failed(r.message, retryable = r.message == LinkImporter.CANT_OPEN)
+            }
+        }
+    }
+
+    private fun loadFile(uri: String) {
+        _state.value = LinkImportUiState.Loading
+        viewModelScope.launch {
+            when (val r = files.load(uri)) {
+                is PlaylistFileLoad.Ok -> _state.value = LinkImportUiState.Ready(r.preview, importer.existing(r.preview))
+                // A file holding one Spotify / YouTube link and nothing else: that link, as if it were pasted (a retry too).
+                is PlaylistFileLoad.Link -> {
+                    file = null
+                    link = MusicLinks.find(r.url)
+                    load()
+                }
+                // Opening may work a second time (a cloud file's app); a file with nothing to read won't change.
+                is PlaylistFileLoad.Failed -> _state.value = when (r.problem) {
+                    PlaylistFileProblem.CANT_OPEN -> LinkImportUiState.Failed(retryable = true, messageRes = R.string.playlist_file_cant_open)
+                    PlaylistFileProblem.NOTHING_TO_READ -> LinkImportUiState.Failed(retryable = false, messageRes = R.string.playlist_file_nothing)
+                    PlaylistFileProblem.LINKS -> LinkImportUiState.Failed(retryable = false, messageRes = R.string.playlist_file_links)
+                }
             }
         }
     }

@@ -275,6 +275,7 @@ private fun StashNavGraph(
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
                 onOpenLink = { navController.navigate(LinkImportRoute(it)) },
+                onOpenPlaylistFile = { navController.navigate(PlaylistFileRoute(it)) },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -561,6 +562,16 @@ private fun StashNavGraph(
                     onBack = { navController.popBackStack() },
                     // Back from the playlist skips the link's screen.
                     onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<LinkImportRoute> { inclusive = true } } },
+                )
+            }
+        }
+
+        // A playlist file from Library's "+": the link's screen, reading the file instead.
+        composable<PlaylistFileRoute> {
+            AboveChrome {
+                com.stash.feature.library.share.LinkImportScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<PlaylistFileRoute> { inclusive = true } } },
                 )
             }
         }

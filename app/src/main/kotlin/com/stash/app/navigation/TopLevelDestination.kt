@@ -45,6 +45,8 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class SharedTrackRoute(val link: String)
 /** A pasted or shared Spotify / YouTube link ([com.stash.core.data.link.MusicLinks]): its preview and Add to library. */
 @Serializable data class LinkImportRoute(val link: String)
+/** Library "+" › Import a playlist file: the picked document's content address, read into the same preview a link opens. */
+@Serializable data class PlaylistFileRoute(val file: String)
 @Serializable data class ListenJoinRoute(val code: String)
 /** Settings › Library & Storage › Link Stash on the web; [link] is a pairing link opened from outside (spec 2026-10-10 link-sync §2.2). */
 @Serializable data class WebLinkRoute(val link: String? = null)
