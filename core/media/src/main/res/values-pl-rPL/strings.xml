@@ -10,5 +10,4 @@
     <string name="shuffle_play">Odtwarzaj losowo</string>
     <string name="resuming_channel_name">Odtwarzanie</string>
     <string name="resuming_notification_title">Wznawianie…</string>
-    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>

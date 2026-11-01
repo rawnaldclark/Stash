@@ -921,4 +921,6 @@
     <plurals name="settings_cloud_time_days_ago">
         <item quantity="other">%d 일 전</item>
     </plurals>
+    <!-- Library & Storage › Your record (stash-player settings/Spotify.svelte): the imported history, a newer copy, removing it, and the Home card's invitation. -->
+    <!-- %1$s: the record's plays from Spotify, formatted with separators. -->
 </resources>

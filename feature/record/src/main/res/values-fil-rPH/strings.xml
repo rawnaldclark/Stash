@@ -1,351 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="record_eyebrow">Ang record mo</string>
-    <plurals name="record_hours">
-        <item quantity="one">oras</item>
-        <item quantity="other">oras</item>
-    </plurals>
-    <plurals name="record_plays">
-        <item quantity="one">%1$s play</item>
-        <item quantity="other">%1$s na play</item>
-    </plurals>
-    <string name="record_since">mula %1$d · %2$s</string>
-    <string name="record_most_played">Pinakamadalas pakinggan: %1$s</string>
-    <string name="record_open">Buksan ang record mo</string>
-    <string name="record_invite_title">I-press ang record mo</string>
-    <string name="record_invite_body">Bawat taon ng pakikinig mo, nasa iisang lugar: mula sa Spotify, Last.fm o Stash.</string>
-    <string name="record_invite_start">Magsimula</string>
-    <string name="record_invite_hide">Itago ang I-press ang record mo</string>
-    <string name="record_close">Isara</string>
-    <string name="record_webview_old_title">Kailangan nito ng mas bagong Android System WebView</string>
-    <string name="record_webview_old_body">I-update ang Android System WebView mula sa Google Play, pagkatapos ay buksan ulit ang record mo.</string>
-    <string name="record_stopped_title">Huminto ang record mo</string>
-    <string name="record_stopped_body">Naubusan ng memory o nag-crash ang page. Ligtas ang mga play mo.</string>
-    <string name="record_open_again">Buksan ulit</string>
-    <string name="record_note_archive_failed">Hindi nabasa ang ilan sa mga play mo.</string>
-    <string name="record_note_play_failed">Hindi ito ma-play dito.</string>
-    <string name="record_note_playing">Pinapatugtog ang %1$s</string>
-    <plurals name="record_note_playing_songs">
-        <item quantity="one">Pinapatugtog ang %1$d kanta</item>
-        <item quantity="other">Pinapatugtog ang %1$d kanta</item>
-    </plurals>
-    <string name="record_note_none_found">Hindi mahanap ang mga kantang ito.</string>
-    <string name="record_note_none_downloaded">Wala sa mga kantang ito ang naka-download. Kumonekta para i-play ang mga ito.</string>
-    <string name="record_note_saved">Na-save sa Downloads</string>
-    <string name="record_note_save_failed">Hindi ma-save.</string>
-    <string name="record_note_too_many_saves">Masyadong maraming file para sa isang pagbisita. Isara at buksan ulit ang record para mag-save pa.</string>
-    <string name="record_note_share_dropped">Hindi bumukas ang share: naisara na ang record.</string>
-    <string name="record_share">Ibahagi</string>
-    <string name="record_waiting_title">Hinihintay ang Spotify</string>
-    <string name="record_waiting_body">Hiniling noong %1$s. Puwede nang idagdag ang Last.fm habang naghihintay.</string>
-    <string name="record_waiting_bring">Idagdag ang zip</string>
-    <string name="record_waiting_how">Iba pang paraan</string>
-    <string name="record_pressing_title">Pini-press ang record mo</string>
-    <string name="record_pressing_open">Buksan</string>
-    <string name="record_ready_title">Handa nang i-press</string>
-    <string name="record_ready_body">Walang mase-save hangga’t hindi ka nag-i-import.</string>
-    <string name="record_ready_review">Suriin</string>
-    <string name="record_import_intro">Bawat taon ng pakikinig mo, nasa iisang lugar. Nandito na ang mga play mo sa Stash: magsimula sa Spotify o Last.fm, at idagdag ang isa pa kahit kailan mo gusto.</string>
-    <string name="record_import_ask_title">Hingin sa Spotify ang data mo</string>
-    <string name="record_import_ask_body">Sa privacy page ng Spotify, i-tick ang dalawa: %1$s (mga 5 araw: mga playlist, like at ang huling taon mo) at %2$s (hanggang 30 araw: lahat, mula sa una mong kanta).</string>
-    <string name="record_import_account_data">Account data</string>
-    <string name="record_import_extended_history">Extended streaming history</string>
-    <string name="record_import_ask_button">Buksan ang privacy page ng Spotify</string>
-    <string name="record_import_asked">Hiniling noong %1$s</string>
-    <string name="record_import_email_title">Magpapadala ang Spotify ng zip sa email mo</string>
-    <string name="record_import_email_body">Isa para sa bawat isa. I-download ito pagdating; hindi na kailangang buksan.</string>
-    <string name="record_import_open_title">Buksan ang zip gamit ang Stash</string>
-    <string name="record_import_open_body">Mula sa email o sa mga file mo, gamitin ang “Buksan gamit ang” o “Ibahagi” at piliin ang Stash. O piliin ito rito.</string>
-    <string name="record_import_choose">Pumili ng mga file</string>
-    <string name="record_import_each">Idagdag ang bawat isa pagdating nito.</string>
-    <string name="record_import_private">Binabasa ng Stash ang file sa phone na ito. Walang ina-upload.</string>
-    <string name="record_import_private_lastfm">Galing sa Last.fm ang mga scrobble mo. Hinahanap ang haba ng mga kanta gamit ang pangalan ng kanta.</string>
-    <string name="record_import_working_title">Idinadagdag ang pakikinig mo</string>
-    <string name="record_import_opening">Binubuksan ang mga file mo…</string>
-    <string name="record_import_reading_one">Binabasa ang file mo…</string>
-    <string name="record_import_reading">Binabasa ang mga file mo: %1$d sa %2$d</string>
-    <string name="record_import_saving">Sine-save ang mga play mo: %1$s sa %2$s</string>
-    <string name="record_import_saving_start">Sine-save…</string>
-    <string name="record_import_library">Idinaragdag ang mga playlist at like mo: %1$s sa %2$s kanta</string>
-    <string name="record_import_library_start">Idinaragdag ang mga playlist at like mo…</string>
-    <string name="record_import_year">Binabasa ang %1$d</string>
-    <string name="record_import_channel">Ang record mo</string>
-    <string name="record_preview_title">Ito ang Spotify mo</string>
-    <string name="record_preview_span">%1$s hanggang %2$s</string>
-    <plurals name="record_preview_hours">
-        <item quantity="one">oras</item>
-        <item quantity="other">oras</item>
-    </plurals>
-    <plurals name="record_preview_years">
-        <item quantity="one">taon</item>
-        <item quantity="other">taon</item>
-    </plurals>
-    <plurals name="record_preview_plays">
-        <item quantity="one">play</item>
-        <item quantity="other">play</item>
-    </plurals>
-    <plurals name="record_preview_here">
-        <item quantity="one">%1$s play ang nandito na at isang beses lang mabibilang.</item>
-        <item quantity="other">%1$s na play ang nandito na at isang beses lang mabibilang.</item>
-    </plurals>
-    <string name="record_preview_account_title">Ang huling taon mo lang ang nandito</string>
-    <string name="record_preview_account_body">Darating ang buong history mo sa isa pang email, Extended streaming history. Idagdag dito ang zip na iyon pagdating nito.</string>
-    <plurals name="record_preview_songs">
-        <item quantity="one">%1$d kanta</item>
-        <item quantity="other">%1$d kanta</item>
-    </plurals>
-    <string name="record_preview_liked">Mga nagustuhang kanta</string>
-    <plurals name="record_preview_all_here_file">
-        <item quantity="one">Nandito na ang %1$s play sa file na ito.</item>
-        <item quantity="other">Nandito na ang lahat ng %1$s na play sa file na ito.</item>
-    </plurals>
-    <plurals name="record_preview_all_here_files">
-        <item quantity="one">Nandito na ang %1$s play sa mga file na ito.</item>
-        <item quantity="other">Nandito na ang lahat ng %1$s na play sa mga file na ito.</item>
-    </plurals>
-    <string name="record_preview_no_plays">Walang play sa file na ito.</string>
-    <string name="record_preview_still">Puwede pa ring pumasok ang mga playlist at like mo.</string>
-    <string name="record_preview_playlists">Mga playlist</string>
-    <string name="record_preview_picked">%1$d sa %2$d</string>
-    <string name="record_preview_already">Nasa library mo na</string>
-    <plurals name="record_preview_liked_added">
-        <item quantity="one">%1$s kanta, idaragdag sa mga like mo</item>
-        <item quantity="other">%1$s na kanta, idaragdag sa mga like mo</item>
-    </plurals>
-    <string name="record_preview_liked_download_title">Nada-download sa phone na ito ang mga nagustuhang kanta</string>
-    <plurals name="record_preview_liked_download">
-        <item quantity="one">Mada-download din ang %1$s kantang ito.</item>
-        <item quantity="other">Mada-download din ang %1$s na kantang ito.</item>
-    </plurals>
-    <string name="record_preview_import">I-import</string>
-    <string name="record_preview_cancel">Kanselahin</string>
-    <string name="record_preview_add">Magdagdag ng isa pang file</string>
-    <string name="record_preview_private">Walang mase-save hangga’t hindi ka nag-i-import. Binabasa ng Stash ang file sa phone na ito. Walang ina-upload.</string>
-    <string name="record_error_nothing_new_title">Naidagdag mo na ito</string>
-    <string name="record_error_nothing_new_body">Walang bago rito. Kapag may mas bagong kopya ka, iyon ang idagdag.</string>
-    <string name="record_error_not_export_title">Hindi iyan Spotify export</string>
-    <string name="record_error_not_export_body">Idagdag ang zip mula sa email ng Spotify nang hindi binabago (nagsisimula ang pangalan nito sa “my_spotify_data”).</string>
-    <string name="record_preview_nothing_title">Walang bagong mapapakinggan ulit</string>
-    <string name="record_error_unreadable_title">Hindi nabuksan ang zip na iyan</string>
-    <string name="record_error_unreadable_body">Baka hindi pa ito tapos mag-download. I-download ulit mula sa email ng Spotify at idagdag ang bagong kopya.</string>
-    <string name="record_error_storage_title">Puno na ang phone na ito</string>
-    <string name="record_error_storage_body">Magbakante ng espasyo, pagkatapos ay subukan ulit. Walang naidagdag na bago.</string>
-    <string name="record_error_storage_saving_body">Magbakante ng espasyo, pagkatapos ay subukan ulit: walang mabibilang nang dalawang beses.</string>
-    <string name="record_error_other_title">May nangyaring mali</string>
-    <string name="record_error_other_body">Walang naidagdag na bago. Subukan ulit, o idagdag ulit ang zip.</string>
-    <string name="record_error_saving_title">May nangyaring mali habang nagse-save</string>
-    <string name="record_error_saving_body">Subukan ulit: walang mabibilang nang dalawang beses.</string>
-    <string name="record_error_too_big_title">Masyadong malaki iyan para maging Spotify export</string>
-    <string name="record_error_too_big_body">Mas maliit ang mga Spotify export, kaya hindi ito binasa. Walang naidagdag.</string>
-    <string name="record_unfinished_title">Hindi natapos ang pag-import mo</string>
-    <string name="record_unfinished_notice">Buksan ang Stash para subukan ulit: walang mabibilang nang dalawang beses.</string>
-    <string name="record_unfinished_dismiss">Isara</string>
-    <string name="record_error_choose_another">Pumili ng ibang file</string>
-    <string name="record_error_try_again">Subukan ulit</string>
-    <string name="record_error_back">Bumalik</string>
-    <string name="record_done_brought">Naidagdag: %1$s</string>
-    <string name="record_done_two">%1$s at %2$s</string>
-    <string name="record_done_three">%1$s, %2$s at %3$s</string>
-    <plurals name="record_done_plays">
-        <item quantity="one">%1$s play</item>
-        <item quantity="other">%1$s na play</item>
-    </plurals>
-    <plurals name="record_done_playlists">
-        <item quantity="one">%1$s playlist</item>
-        <item quantity="other">%1$s na playlist</item>
-    </plurals>
-    <plurals name="record_done_likes">
-        <item quantity="one">%1$s nagustuhang kanta</item>
-        <item quantity="other">%1$s na nagustuhang kanta</item>
-    </plurals>
-    <string name="record_done_nothing">Updated na ang record mo</string>
-    <string name="record_way_spotify_what">Ang buong history mo, mga playlist at like. Walang sign-in.</string>
-    <string name="record_way_spotify_time">Ipapadala ito ng Spotify sa email sa loob ng ilang araw</string>
-    <string name="record_way_spotify_waiting">Hinihintay ang Spotify · hiniling noong %1$s</string>
-    <string name="record_way_lastfm_what">Lahat ng na-scrobble mo.</string>
-    <string name="record_way_lastfm_time">Ilang minuto lang, kapag nakakonekta ka na</string>
-    <string name="record_lastfm_heading">Idagdag ang mga Last.fm scrobble mo</string>
-    <plurals name="record_lastfm_scrobbles">
-        <item quantity="one">%1$s scrobble</item>
-        <item quantity="other">%1$s na scrobble</item>
-    </plurals>
-    <string name="record_lastfm_asking">Tinatanong ang Last.fm…</string>
-    <string name="record_lastfm_progress">Page %1$s sa %2$s · %3$s</string>
-    <string name="record_lastfm_done">Naidagdag ang %1$s. Isang beses lang binilang ang mga play na nasa Spotify o Stash na.</string>
-    <string name="record_lastfm_done_none">Walang bago sa Last.fm mula noong huli. Updated ka na.</string>
-    <string name="record_lastfm_done_part">Naidagdag ang %1$s, %2$s dito ngayong beses. Isang beses lang binilang ang mga play na nasa Spotify o Stash na.</string>
-    <string name="record_lastfm_done_none_yet">Wala pang scrobble sa Last.fm. Lahat ng i-scrobble mo mula ngayon ay idadagdag sa susunod.</string>
-    <string name="record_lastfm_done_missing">Hindi ipinadala ng Last.fm ang bahagi ng history mo; hihingin ulit ito ng Stash sa susunod.</string>
-    <string name="record_lastfm_idle_connect">Lahat ng na-scrobble mo, nakapatong sa record mo kasama ang Spotify at Stash.</string>
-    <string name="record_lastfm_idle_had">Naidagdag ang %1$s mula sa %2$s. Ikonekta ang Last.fm bilang %2$s para idagdag ang mas bago.</string>
-    <string name="record_lastfm_idle_bring">Idagdag ang lahat ng na-scrobble mo bilang %1$s.</string>
-    <string name="record_lastfm_idle_bring_beside">Idagdag ang lahat ng na-scrobble mo bilang %1$s. Mananatili ang mga scrobble na nasa record mo na.</string>
-    <string name="record_lastfm_idle_stopped">Huminto sa page %1$s sa %2$s. Itutuloy ito mula roon.</string>
-    <string name="record_lastfm_idle_done">Naidagdag ang %1$s mula sa %2$s, huling idinagdag noong %3$s.</string>
-    <string name="record_lastfm_connect">Ikonekta ang Last.fm</string>
-    <string name="record_lastfm_bring">Idagdag ang mga ito</string>
-    <string name="record_lastfm_carry_on">Ituloy</string>
-    <string name="record_lastfm_newer">Idagdag ang mas bago</string>
-    <string name="record_lastfm_stop">Ihinto</string>
-    <string name="record_lastfm_see">Tingnan ang record mo</string>
-    <string name="record_lastfm_after_spotify">Pagkatapos ng Spotify import na tumatakbo ngayon</string>
-    <string name="record_lastfm_hours_note">Hindi sinasabi ng Last.fm kung gaano ka katagal nakinig, kaya binibilang ng Stash ang haba ng bawat kanta, mula sa Spotify, sa library mo o sa Last.fm mismo.</string>
-    <string name="record_lastfm_reconnect_title">Na-sign out ng Last.fm ang Stash</string>
-    <string name="record_lastfm_reconnect_body">Ikonekta ulit ang parehong account at itutuloy ito mula sa kung saan ito huminto. Magsisimula ulit ang ibang account, at mananatili ang mga scrobble na naidagdag na.</string>
-    <string name="record_lastfm_reconnect">Kumonekta ulit</string>
-    <string name="record_lastfm_busy_title">Busy ang Last.fm</string>
-    <string name="record_lastfm_busy_body">Ituloy mamaya: magpapatuloy ito mula sa kung saan ito huminto.</string>
-    <string name="record_lastfm_unavailable_title">Hindi sumasagot ang Last.fm</string>
-    <string name="record_lastfm_unavailable_body">Subukan ulit mamaya. Mananatili ang mga nakapasok na.</string>
-    <string name="record_lastfm_other_title">May nangyaring mali</string>
-    <string name="record_lastfm_other_body">Mananatili ang mga nakapasok na. Subukan ulit.</string>
-    <string name="record_lastfm_working_title">Idinadagdag ang mga Last.fm scrobble mo</string>
-    <string name="record_lastfm_settings_title">I-import mula sa Last.fm</string>
-    <string name="record_lastfm_remove">Alisin ang mga Last.fm scrobble mo</string>
-    <string name="record_lastfm_remove_subtitle">Mananatili ang Spotify history mo at ang mga play mo sa Stash.</string>
-    <string name="record_lastfm_remove_title">Alisin ang mga Last.fm scrobble mo?</string>
-    <string name="record_lastfm_remove_body">Aalis ang mga ito sa record mo sa phone na ito. Mananatili ang Spotify history mo at ang Last.fm profile mo.</string>
-    <string name="record_lastfm_remove_confirm">Alisin</string>
-    <string name="record_lastfm_removing">Inaalis…</string>
-    <string name="record_lastfm_cancel">Kanselahin</string>
-    <string name="record_lastfm_removed">Inalis ang mga Last.fm scrobble mo. Mananatili ang Spotify history mo.</string>
-    <string name="record_lastfm_remove_failed">Hindi maalis ang mga ito ngayon. Subukan ulit.</string>
-    <string name="record_lastfm_remove_busy">May import na tumatakbo. Alisin ang mga ito kapag tapos na iyon.</string>
-    <string name="record_sources_label">Mga source sa record mo</string>
-    <string name="record_source_described">%1$s, %2$s</string>
-    <string name="record_source_one_stays">May isang source na laging naka-on</string>
-    <string name="record_intake_not_export">Hindi iyan Spotify export</string>
-    <string name="record_intake_busy">May import na tumatakbo. Idagdag ito kapag tapos na iyon.</string>
-    <string name="record_import_taste">Inaalam ang panlasa mo…</string>
-    <string name="record_in_mixes_title">Gamitin ang record mo sa mga mix</string>
-    <string name="record_in_mixes_subtitle">Nakasandal ang mga mix mo, ang Daily Discover at ang mga Stash Mix mo, sa mga artist na matagal mo nang mahal, at iniiwan ang mga kantang nilalaktawan mo. Kapag naka-off, sinusundan nila ang pinapatugtog mo rito.</string>
-    <string name="record_kept_out_title">Hindi isinasama sa mga mix mo (%1$s)</string>
-    <string name="record_kept_out_on">Hindi isinasama sa mga mix mo ang mga kantang itinago mo sa Spotify o lagi mong nilalaktawan. Ibalik ang isa at puwede itong tumugtog sa mga susunod mong mix.</string>
-    <string name="record_kept_out_off">Hindi ito isinasama sa mga mix ng record mo. Ibalik ang isa at puwede ulit itong tumugtog doon.</string>
-    <string name="record_kept_out_empty">Wala sa ngayon: puwedeng tumugtog sa mga mix mo ang bawat kanta sa record mo.</string>
-    <string name="record_kept_out_show">Ipakita ang mga kanta</string>
-    <string name="record_kept_out_hide">Itago ang mga kanta</string>
-    <string name="record_kept_out_more">Magpakita pa</string>
-    <string name="record_kept_out_row">%1$s · %2$s</string>
-    <string name="record_kept_out_hidden">Itinago sa Spotify</string>
-    <plurals name="record_kept_out_skipped">
-        <item quantity="one">Nilaktawan nang %1$s sa %2$s beses</item>
-        <item quantity="other">Nilaktawan nang %1$s sa %2$s beses</item>
-    </plurals>
-    <string name="record_kept_out_interlude">Isang interlude na nilalaktawan mo</string>
-    <string name="record_kept_out_put_back">Ibalik</string>
-    <string name="record_kept_out_putting_back">Ibinabalik…</string>
-    <string name="record_kept_out_put_back_label">Ibalik ang %1$s ni %2$s</string>
-    <string name="record_kept_out_put_back_done">Puwede nang tumugtog ang %1$s sa mga susunod mong mix</string>
-    <string name="record_kept_out_put_back_failed">Hindi ito maibalik ngayon. Subukan ulit.</string>
-    <!-- Your record's history mixes (phase 5c). -->
-    <string name="record_mix_locale">fil-PH</string>
-    <string name="record_mix_span">%1$s – %2$s</string>
-    <string name="record_mix_early">Simula ng %1$d</string>
-    <string name="record_mix_mid">Kalagitnaan ng %1$d</string>
-    <string name="record_mix_late">Huling bahagi ng %1$d</string>
-    <string name="record_mix_dot">%1$s · %2$s</string>
-    <string name="record_mix_and">%1$s &amp; %2$s</string>
-    <string name="record_mix_comma">", "</string>
-    <string name="record_mix_constants">Ang mga nanatili</string>
-    <string name="record_mix_constants_sub">Mga kantang binabalikan mo, taon-taon</string>
-    <string name="record_mix_lost">Tuklasin muli</string>
-    <string name="record_mix_lost_sub">Mga paboritong matagal mo nang hindi napapakinggan</string>
-    <string name="record_mix_repeat">Paulit-ulit, noon</string>
-    <string name="record_mix_repeat_sub">Ang mga kantang hindi mo matigilang patugtugin</string>
-    <string name="record_mix_started">Paano ito nagsimula</string>
-    <string name="record_mix_started_sub">Ang unang kantang pinatugtog mo mula sa bawat paborito mong artist</string>
-    <string name="record_mix_year">Ang %1$d mo</string>
-    <string name="record_mix_year_so_far">Ang %1$d mo hanggang ngayon</string>
-    <string name="record_mix_artist">Ang %1$s mo</string>
-    <string name="record_mix_artist_sub">Ang mga kantang pinakamadalas mong patugtugin, mula %1$d</string>
-    <string name="record_mix_week">Ngayong linggo, mga taon na ang nakalipas</string>
-    <string name="record_mix_week_one_year">Bandang %1$s, %2$d</string>
-    <plurals name="record_mix_week_years">
-        <item quantity="one">Bandang %1$s, sa %2$d nakaraang taon</item>
-        <item quantity="other">Bandang %1$s, sa %2$d nakaraang taon</item>
-    </plurals>
-    <string name="record_mix_about_min">mga %1$d min</string>
-    <string name="record_mix_about_hr">mga %1$d oras</string>
-    <string name="record_mix_about_hr_min">mga %1$d oras %2$d min</string>
-    <plurals name="record_mix_songs">
-        <item quantity="one">%1$d kanta</item>
-        <item quantity="other">%1$d na kanta</item>
-    </plurals>
-    <string name="record_mix_card_with">kasama ang %1$s</string>
-    <string name="record_mix_card_share">%1$d%% ng mga pinatugtog mo</string>
-    <string name="record_mix_card_constants">Taon-taon</string>
-    <plurals name="record_mix_card_up_to_years">
-        <item quantity="one">%1$s, hanggang %2$d taon</item>
-        <item quantity="other">%1$s, hanggang %2$d taon</item>
-    </plurals>
-    <string name="record_mix_card_repeat">Mga kinahumalingan</string>
-    <plurals name="record_mix_card_obsession">
-        <item quantity="one">%1$s: %2$d play sa loob ng dalawang linggo, %3$s</item>
-        <item quantity="other">%1$s: %2$d na play sa loob ng dalawang linggo, %3$s</item>
-    </plurals>
-    <string name="record_mix_card_week">Ngayong araw sa mga taon mo</string>
-    <string name="record_mix_card_year_now">Ngayong taon hanggang ngayon</string>
-    <string name="record_mix_card_year">Ang taon mo</string>
-    <plurals name="record_mix_card_hours">
-        <item quantity="one">%1$s oras ng pakikinig</item>
-        <item quantity="other">%1$s na oras ng pakikinig</item>
-    </plurals>
-    <string name="record_mix_card_started">Kung saan nagsimula</string>
-    <string name="record_mix_card_from_to">Mula %1$s noong %2$d hanggang %3$s noong %4$d</string>
-    <string name="record_mix_card_lost">Mga nawalang paborito</string>
-    <string name="record_mixes_shelf">Mula sa record mo</string>
-    <string name="record_mixes_show_all">Ipakita lahat</string>
-    <string name="record_mixes_open">Buksan ang %1$s</string>
-    <string name="record_mix_play_label">I-play ang %1$s</string>
-    <string name="record_mix_shuffle_label">I-shuffle ang %1$s</string>
-    <string name="record_tab_record">Ang record</string>
-    <string name="record_tab_mixes">Mga mix</string>
-    <string name="record_mixes_from_years">Mga mix mula sa mga taon mo</string>
-    <string name="record_mixes_your_years">Ang mga taon mo</string>
-    <string name="record_mixes_none">Gawa ang mga ito mula sa mga taon ng pakikinig. Dalhin ang history mo sa Spotify o ang mga scrobble mo sa Last.fm, at lalabas sila rito.</string>
-    <string name="record_mixes_none_action">Dalhin ang pakikinig mo</string>
-    <string name="record_mix_eyebrow">Mix mula sa record mo</string>
-    <string name="record_mix_play">I-play</string>
-    <string name="record_mix_shuffle">I-shuffle</string>
-    <string name="record_mix_save">I-save bilang playlist</string>
-    <string name="record_mix_saving">Sine-save…</string>
-    <string name="record_mix_open_saved">Buksan ang “%1$s”</string>
-    <string name="record_mix_saved">Na-save ang “%1$s” sa mga playlist mo</string>
-    <string name="record_mix_save_failed">Hindi ma-save ngayon. Subukan ulit.</string>
-    <string name="record_mix_gone">Wala na sa record mo ang mix na iyan: nagbabago ang mga mix kasabay ng pakikinig mo.</string>
-    <string name="record_mix_gone_back">Bumalik sa record mo</string>
-    <string name="record_mix_failed">Hindi mabasa ang record mo ngayon.</string>
-    <string name="record_mix_back">Bumalik</string>
-    <string name="record_mixes_top_artists">Mga nangungunang artist</string>
-    <plurals name="record_mixes_artist_hours">
-        <item quantity="one">%1$s oras</item>
-        <item quantity="other">%1$s na oras</item>
-    </plurals>
-    <plurals name="record_mixes_artist_plays">
-        <item quantity="one">%1$s pagtugtog</item>
-        <item quantity="other">%1$s na pagtugtog</item>
-    </plurals>
-    <string name="record_mixes_artist_open">Buksan ang mga kanta ni %1$s na pinakamadalas mong pinatugtog</string>
-    <string name="record_mixes_artist_play">I-play ang mga kanta ni %1$s na pinakamadalas mong pinatugtog</string>
-    <string name="record_mixes_top_songs">Mga nangungunang kanta</string>
-    <string name="record_mixes_lost">Wala pa sa Stash mo</string>
-    <plurals name="record_mixes_lost_line">
-        <item quantity="one">%1$d kantang minahal mo at isang taon mo nang hindi pinapatugtog. I-like ito para itago.</item>
-        <item quantity="other">%1$d na kantang minahal mo at isang taon mo nang hindi pinapatugtog. Mag-like ng isa para itago ito.</item>
-    </plurals>
-    <string name="record_mixes_lost_play">I-play ang “Wala pa sa Stash mo” (%1$s)</string>
-    <string name="record_mixes_show_more">Ipakita pa</string>
-    <string name="record_song_more">Higit pa para sa %1$s</string>
-    <string name="record_song_like">I-like</string>
-    <string name="record_song_unlike">I-unlike</string>
-    <string name="record_like_failed">Hindi maidagdag sa mga ni-like mong kanta</string>
-    <string name="record_unlike_failed">Hindi maalis sa mga ni-like mong kanta</string>
-    <string name="record_song_playing_next">Susunod na tutugtog</string>
-    <string name="record_song_added_to_queue">Idinagdag sa queue</string>
-    <string name="record_song_queue_failed">Hindi maidagdag sa queue</string>
-    <string name="record_song_added_to_playlist">Idinagdag sa %1$s</string>
-    <string name="record_song_playlist_failed">Hindi maidagdag sa playlist</string>
-    <string name="record_song_radio_failed">Hindi makapagsimula ng radio mula rito. Subukan ulit maya-maya.</string>
-    <string name="record_song_blocked">Hindi maidagdag ang naka-block na kanta</string>
+    <!-- Home's Your record card and the record's screen (feature/record). -->
+    <!-- The word after the card's big number of hours ("412 hours"); the number is set apart, larger. -->
+    <!-- %1$s: the record's plays, already formatted with separators ("1,234"). -->
+    <!-- %1$d: the year of the earliest play; %2$s: the plays ("since 2024 · 1,234 plays"). -->
+    <!-- The invitation before there is a record: the sources that can come in (Spotify's export, Last.fm's scrobbles, Stash's own plays). -->
+    <!-- The record needs Android System WebView 74 or newer (the bridge). -->
+    <!-- Snackbars over the record. -->
+    <!-- %1$s: the song a tap in the record started. -->
+    <!-- The share sheet's title for a poster or a video from the record. -->
+    <!-- Bring your Spotify (stash-player ImportFlow.svelte, HomeCard.svelte): the Home card's import states. -->
+    <!-- The record's sources, as chips on the invitation: brand names, never translated. -->
+    <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
+    <!-- Opens the import sheet, which has the Spotify steps and Last.fm's. -->
+    <!-- The import sheet: how it works (three steps). -->
+    <!-- %1$s and %2$s: Spotify's own names for its two downloads (record_import_account_data, record_import_extended_history), set in bold. Use the names Spotify's privacy page shows in this language. -->
+    <!-- %1$s: the day ("Oct 21"). -->
+    <!-- Under the import sheet with Last.fm open, where there is no file: where the scrobbles come from, and that song lengths are looked up by the songs' names. -->
+    <!-- The import sheet: reading and saving, with the year of the plays read so far counting up beneath. -->
+    <!-- %1$d of %2$d files read. -->
+    <!-- %1$s of %2$s plays saved, each already formatted with separators ("12,000 of 48,210"). -->
+    <!-- Bringing the playlists and liked songs into the library: %1$s of %2$s songs matched, each formatted with separators. -->
+    <!-- Read out for the year counting up: %1$d is the year of the plays read so far. -->
+    <!-- The notification channel for the import while it runs. -->
+    <!-- The import sheet: what the files hold, before anything is written. -->
+    <!-- %1$s to %2$s: the first and last month of the new plays ("January 2021 to January 2025"). -->
+    <!-- The words under the preview's three big figures (the number itself is set apart). -->
+    <!-- %1$s: plays kept from an earlier import, formatted with separators. -->
+    <!-- One playlist's songs ("Road trip · 9 songs"). -->
+    <!-- No new plays in the files: every one is here already (%1$s, formatted with separators), in one file or in several. -->
+    <!-- After the line above, when the files hold playlists or liked songs. -->
+    <!-- The playlists the files hold, each with a tick: their heading, and how many are ticked of all ("3 of 12"). -->
+    <!-- Under a playlist the library holds already (same name, most of its songs): it starts unticked; a tap brings it in anyway. -->
+    <!-- Under "Liked songs", beside its switch: %1$s songs, formatted with separators. -->
+    <!-- When Stash's Liked Songs playlist is kept on the phone (its Download switch): the liked songs brought in download too. -->
+    <!-- The import sheet: when the files can't be used. -->
+    <!-- After an import (a toast): what it brought, in parts joined as a list ("Brought in 6,086 plays, 2 playlists and 9 liked songs"); each %1$s a number formatted with separators. -->
+    <!-- The import sheet's ways in (ImportFlow.svelte `ways`): two equal choices, each opening its own steps. -->
+    <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
+    <!-- Last.fm in Your record (stash-player LastfmPart.svelte and lastfm.ts): in the import sheet and as a row in Settings. A "scrobble" is Last.fm's word for one play it recorded. Translators: use the word the app already uses for it in this language (Settings' and Accounts & Sync's Last.fm strings); where it has none, the word Last.fm's own site uses in this language; where Last.fm has no site in this language, keep the English "scrobble" in Latin letters, as Last.fm's own apps do. -->
+    <!-- %1$s: how many, formatted with separators ("48,210"). -->
+    <!-- Before Last.fm has said how many pages there are. -->
+    <!-- Progress: %1$s is the page just read, %2$s the pages in all (each formatted with separators), %3$s the scrobbles so far (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <!-- After a run: %1$s is the scrobbles it brought (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <!-- After a run that read the whole history, part of it carried on from before: %1$s is every scrobble the import holds (record_lastfm_scrobbles: "30,060 scrobbles"), %2$s how many came this time ("7,660", formatted with separators). -->
+    <!-- After a whole read that found nothing on Last.fm. -->
+    <!-- Said after the done line while pages Last.fm didn't send are left out (they are asked again on the next top-up). -->
+    <!-- Not connected to Last.fm, nothing brought in yet. -->
+    <!-- Not connected any more: %1$s is the scrobbles brought in before (record_lastfm_scrobbles), %2$s the Last.fm name they came from. -->
+    <!-- Connected: %1$s is the Last.fm name. -->
+    <!-- Connected as another Last.fm account than the one the scrobbles came from: %1$s is its name. It starts over for this account; the scrobbles brought in before stay. -->
+    <!-- A run that stopped part way: %1$s is the last page read, %2$s the pages in all. -->
+    <!-- All of it in: %1$s the scrobbles (record_lastfm_scrobbles), %2$s the Last.fm name, %3$s the day it last ran ("Oct 21"). -->
+    <!-- Why the button waits: the Spotify import is writing. -->
+    <!-- Each way a run can stop short: a title, a line, and (for the session) the button. -->
+    <!-- The notification while the scrobbles come in. -->
+    <!-- Settings › Library & Storage › Your record: Last.fm's row, and removing the scrobbles again. -->
+    <!-- The row's title, beside "Import from Spotify" in the same group. -->
+    <!-- Under the remove row's title, as "Remove imported history" has its own line. -->
+    <!-- The switches over the record (stash-player record.ts): one per source with plays, shown with two or more; one always stays on. -->
+    <!-- Read out for a switch: %1$s is the source (Spotify, Stash, Last.fm), %2$s its plays (record_plays: "12,345 plays"). -->
+    <!-- A file shared or opened with Stash that holds no Spotify export (a toast). -->
+    <!-- Your record’s taste (phase 5b): the import sheet’s step, and Settings › Your record’s "Use your record in mixes" (owner decision D2) and "Kept out of your mixes" (D1), in the web’s words (RecordInMixes.svelte, years.ts whyLine). -->
+    <!-- The app’s own words (the web’s say "Daily Discover leans on…": only Daily Discover takes the record there; here every Stash Mix does). -->
+    <!-- %1$s: how many songs ("1,204"). -->
+    <!-- A kept-out song’s line: %1$s its artist, %2$s why (record_kept_out_hidden, record_kept_out_skipped, record_kept_out_interlude). -->
+    <!-- %1$s skips of %2$s starts; the quantity is the starts (always 6 or more). -->
+    <!-- Read out for Put back: %1$s the song, %2$s its artist. -->
+    <!-- A toast after Put back: %1$s the song. -->
+    <!-- Your record's history mixes (phase 5c): the web's words (stash-player src/lib/spotify/mixes.ts, src/lib/ui/spotify/mix.ts,
+         MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte), character for character in English (’ · –). -->
+    <!-- An era across two years: %1$s and %2$s are each a month and year ("June 2022 – March 2023"). -->
+    <!-- The language these strings are in (a BCP 47 tag): the mixes' dates and numbers are written in it, never in a device
+         language the app has no strings for. Each translation names its own language. -->
+    <!-- An era within one year, by its middle month: %1$d the year ("Early 2018", "Mid 2018", "Late 2018"). -->
+    <!-- Two parts of a line: an era's lead and its time ("Radiohead · Late 2016"), its time and its artists, a mix's songs and length. -->
+    <!-- A list of artists: "A & B"; with more, the others joined by record_mix_comma first ("A, B & C"). -->
+    <!-- %1$d: a year ("Your 2019"); the year still going: "Your 2026 so far". -->
+    <!-- %1$s: an artist ("Your Radiohead"); %1$d: the year their first song was played. -->
+    <!-- %1$s: today's day of the year as the language writes it ("October 28", "28. Oktober", "10月28日"), %2$d the one past year
+         it comes from ("Around October 28, 2019"). -->
+    <!-- %1$s: today's day of the year (as above), %2$d how many past years (always 2 or more; the web says "years" for any number). -->
+    <!-- About how long a mix plays, to five minutes. -->
+    <!-- The Mixes tab's cards (mix.ts card): the small line above, the line under the big words, the foot. -->
+    <!-- %1$s: an era's other artists ("with Slayer & Deftones"). -->
+    <!-- %1$d: the lead artist's share of the era, in percent ("34% of what you played"). -->
+    <!-- %1$s: the mix's line (record_mix_constants_sub), %2$d the most years one of its songs was played in (3 or more from a real
+         taste; the web says "years" for any number). -->
+    <!-- %1$s: a song, %2$d its plays inside two weeks (12 or more; the web says "plays" for any number), %3$s the month and year
+         ("Ivy: 31 plays in two weeks, June 2022"). -->
+    <!-- %1$s: whole hours, already formatted ("412 hours of listening"). -->
+    <!-- %1$s and %3$s: the first and the latest favourite artist found, %2$d and %4$d the years ("From Radiohead in 2009 to Mitski in 2021"). -->
+    <!-- Home's shelf ("From your record") and the record's Mixes tab. -->
+    <!-- Read out for a mix's card: %1$s its title. -->
+    <!-- The record screen's two tabs. -->
+    <!-- The Mixes tab with no import (the app's own words: the web's also offer the phone's history from the Stash app). -->
+    <!-- A mix's page. -->
+    <!-- %1$s: the playlist just saved. -->
+    <!-- The rest of the Mixes tab (phase 5d): Top artists, Top songs and "Not in your Stash yet" (stash-player
+         routes/spotify/+page.svelte, TrackRow.svelte, LikeButton.svelte), character for character in English (’ ·). -->
+    <!-- A Top artists row's line ("412 hours · 9,021 plays"): whole hours listened, already formatted... -->
+    <!-- ...and plays, already formatted (the web says "plays" for any number). -->
+    <!-- Read out for a Top artists row: %1$s the artist. The row opens their mix; with too few songs for one, it plays them. -->
+    <!-- Under "Not in your Stash yet": %1$d how many songs it lists. -->
+    <!-- Read out for the list's Play: %1$s how many songs ("12 songs"). -->
+    <!-- A song row: read out for its long press (the song menu), %1$s the song; its heart. -->
+    <!-- What a row's Like and its menu came to (the app's own words, as Now Playing and Search say them). -->
+    <!-- %1$s: the playlist (the web's song menu says "Added to {name}"). -->
+    <!-- A blocked song refused (Search's own words, "Can't add a blocked track"). -->
 </resources>

@@ -1,352 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="record_eyebrow">Tu disco</string>
-    <plurals name="record_hours">
-        <item quantity="one">hora</item>
-        <item quantity="other">horas</item>
-    </plurals>
-    <plurals name="record_plays">
-        <item quantity="one">%1$s reproducción</item>
-        <item quantity="other">%1$s reproducciones</item>
-    </plurals>
-    <string name="record_since">desde %1$d · %2$s</string>
-    <string name="record_most_played">Lo más escuchado: %1$s</string>
-    <string name="record_open">Abrir tu disco</string>
-    <string name="record_invite_title">Graba tu disco</string>
-    <string name="record_invite_body">Cada año que has escuchado, en un solo lugar: desde Spotify, Last.fm o Stash.</string>
-    <string name="record_invite_start">Empezar</string>
-    <string name="record_invite_hide">Ocultar Graba tu disco</string>
-    <string name="record_close">Cerrar</string>
-    <string name="record_webview_old_title">Necesitas una versión más reciente de Android System WebView</string>
-    <string name="record_webview_old_body">Actualiza Android System WebView desde Google Play y vuelve a abrir tu disco.</string>
-    <string name="record_stopped_title">Tu disco se ha detenido</string>
-    <string name="record_stopped_body">La página se quedó sin memoria o falló. Tus reproducciones están a salvo.</string>
-    <string name="record_open_again">Volver a abrir</string>
-    <string name="record_note_archive_failed">No se pudieron leer algunas de tus reproducciones.</string>
-    <string name="record_note_play_failed">No se puede reproducir aquí.</string>
-    <string name="record_note_playing">Reproduciendo %1$s</string>
-    <plurals name="record_note_playing_songs">
-        <item quantity="one">Reproduciendo %1$d canción</item>
-        <item quantity="other">Reproduciendo %1$d canciones</item>
-    </plurals>
-    <string name="record_note_none_found">No se encontraron estas canciones.</string>
-    <string name="record_note_none_downloaded">Ninguna de estas canciones está descargada. Conéctate para reproducirlas.</string>
-    <string name="record_note_saved">Guardado en Descargas</string>
-    <string name="record_note_save_failed">No se pudo guardar.</string>
-    <string name="record_note_too_many_saves">Son muchos archivos para una visita. Cierra el disco y vuelve a abrirlo para guardar más.</string>
-    <string name="record_note_share_dropped">No se abrió el menú para compartir: el disco se cerró antes.</string>
-    <string name="record_share">Compartir</string>
-    <string name="record_waiting_title">Esperando a Spotify</string>
-    <string name="record_waiting_body">Solicitado el %1$s. Mientras tanto, ya puedes traer Last.fm.</string>
-    <string name="record_waiting_bring">Añadir el zip</string>
-    <string name="record_waiting_how">Otras formas</string>
-    <string name="record_pressing_title">Grabando tu disco</string>
-    <string name="record_pressing_open">Abrir</string>
-    <string name="record_ready_title">Listo para grabar</string>
-    <string name="record_ready_body">No se guarda nada hasta que importes.</string>
-    <string name="record_ready_review">Revisar</string>
-    <string name="record_import_intro">Cada año que has escuchado, en un solo lugar. Tus reproducciones en Stash ya están aquí: empieza con Spotify o Last.fm, y añade el otro cuando quieras.</string>
-    <string name="record_import_ask_title">Pide tus datos a Spotify</string>
-    <string name="record_import_ask_body">En la página de privacidad de Spotify, marca las dos: %1$s (unos 5 días: listas, Me gusta y tu último año) y %2$s (hasta 30 días: todo, desde tu primera canción).</string>
-    <string name="record_import_account_data">Datos de la cuenta</string>
-    <string name="record_import_extended_history">Historial de reproducción ampliado</string>
-    <string name="record_import_ask_button">Abrir la página de privacidad de Spotify</string>
-    <string name="record_import_asked">Solicitado el %1$s</string>
-    <string name="record_import_email_title">Spotify te envía un zip por correo</string>
-    <string name="record_import_email_body">Uno por cada solicitud. Descárgalo cuando llegue; no hace falta abrirlo.</string>
-    <string name="record_import_open_title">Abre el zip con Stash</string>
-    <string name="record_import_open_body">Desde el correo o tus archivos, usa Abrir con o Compartir y elige Stash. O elígelo aquí.</string>
-    <string name="record_import_choose">Elegir archivos</string>
-    <string name="record_import_each">Añade cada uno cuando llegue.</string>
-    <string name="record_import_private">Stash lee el archivo en este móvil. No se sube nada.</string>
-    <string name="record_import_private_lastfm">Tus scrobbles vienen de Last.fm. La duración de las canciones se busca por su nombre.</string>
-    <string name="record_import_working_title">Trayendo tu historial</string>
-    <string name="record_import_opening">Abriendo tus archivos…</string>
-    <string name="record_import_reading_one">Leyendo tu archivo…</string>
-    <string name="record_import_reading">Leyendo tus archivos: %1$d de %2$d</string>
-    <string name="record_import_saving">Guardando tus reproducciones: %1$s de %2$s</string>
-    <string name="record_import_saving_start">Guardando…</string>
-    <string name="record_import_library">Añadiendo tus listas y Me gusta: %1$s de %2$s canciones</string>
-    <string name="record_import_library_start">Añadiendo tus listas y Me gusta…</string>
-    <string name="record_import_year">Leyendo %1$d</string>
-    <string name="record_import_channel">Tu disco</string>
-    <string name="record_preview_title">Aquí está tu Spotify</string>
-    <string name="record_preview_span">%1$s a %2$s</string>
-    <plurals name="record_preview_hours">
-        <item quantity="one">hora</item>
-        <item quantity="other">horas</item>
-    </plurals>
-    <plurals name="record_preview_years">
-        <item quantity="one">año</item>
-        <item quantity="other">años</item>
-    </plurals>
-    <plurals name="record_preview_plays">
-        <item quantity="one">reproducción</item>
-        <item quantity="other">reproducciones</item>
-    </plurals>
-    <plurals name="record_preview_here">
-        <item quantity="one">%1$s reproducción ya está aquí y se cuenta una sola vez.</item>
-        <item quantity="other">%1$s reproducciones ya están aquí y se cuentan una sola vez.</item>
-    </plurals>
-    <string name="record_preview_account_title">Solo está tu último año</string>
-    <string name="record_preview_account_body">Tu historial completo llega en el otro correo, Historial de reproducción ampliado. Añade ese zip aquí cuando llegue.</string>
-    <plurals name="record_preview_songs">
-        <item quantity="one">%1$d canción</item>
-        <item quantity="other">%1$d canciones</item>
-    </plurals>
-    <string name="record_preview_liked">Canciones que te gustan</string>
-    <plurals name="record_preview_all_here_file">
-        <item quantity="one">La %1$s reproducción de este archivo ya está aquí.</item>
-        <item quantity="other">Las %1$s reproducciones de este archivo ya están aquí.</item>
-    </plurals>
-    <plurals name="record_preview_all_here_files">
-        <item quantity="one">La %1$s reproducción de estos archivos ya está aquí.</item>
-        <item quantity="other">Las %1$s reproducciones de estos archivos ya están aquí.</item>
-    </plurals>
-    <string name="record_preview_no_plays">No hay reproducciones en este archivo.</string>
-    <string name="record_preview_still">Tus listas y Me gusta pueden llegar igualmente.</string>
-    <string name="record_preview_playlists">Listas</string>
-    <string name="record_preview_picked">%1$d de %2$d</string>
-    <string name="record_preview_already">Ya está en tu biblioteca</string>
-    <plurals name="record_preview_liked_added">
-        <item quantity="one">%1$s canción, añadida a tus Me gusta</item>
-        <item quantity="other">%1$s canciones, añadidas a tus Me gusta</item>
-    </plurals>
-    <string name="record_preview_liked_download_title">Tus canciones que te gustan se descargan en este teléfono</string>
-    <plurals name="record_preview_liked_download">
-        <item quantity="one">Esta canción también se descargará.</item>
-        <item quantity="other">Estas %1$s canciones también se descargarán.</item>
-    </plurals>
-    <string name="record_preview_import">Importar</string>
-    <string name="record_preview_cancel">Cancelar</string>
-    <string name="record_preview_add">Añadir otro archivo</string>
-    <string name="record_preview_private">No se guarda nada hasta que importes. Stash lee el archivo en este móvil. No se sube nada.</string>
-    <string name="record_error_nothing_new_title">Ya has añadido este</string>
-    <string name="record_error_nothing_new_body">No tiene nada nuevo. Cuando tengas una copia más reciente, añade esa.</string>
-    <string name="record_error_not_export_title">Eso no es una exportación de Spotify</string>
-    <string name="record_error_not_export_body">Añade el zip del correo de Spotify tal como llegó (su nombre empieza por «my_spotify_data»).</string>
-    <string name="record_preview_nothing_title">Nada nuevo que volver a escuchar</string>
-    <string name="record_error_unreadable_title">Ese zip no se abrió</string>
-    <string name="record_error_unreadable_body">Puede que no terminara de descargarse. Vuelve a descargarlo desde el correo de Spotify y añade la copia nueva.</string>
-    <string name="record_error_storage_title">Este móvil no tiene espacio</string>
-    <string name="record_error_storage_body">Libera algo de espacio y vuelve a intentarlo. No se ha añadido nada nuevo.</string>
-    <string name="record_error_storage_saving_body">Libera algo de espacio y vuelve a intentarlo: nada se contará dos veces.</string>
-    <string name="record_error_other_title">Algo ha salido mal</string>
-    <string name="record_error_other_body">No se ha añadido nada nuevo. Vuelve a intentarlo o añade el zip de nuevo.</string>
-    <string name="record_error_saving_title">Algo ha salido mal al guardar</string>
-    <string name="record_error_saving_body">Vuelve a intentarlo: nada se contará dos veces.</string>
-    <string name="record_error_too_big_title">Es demasiado grande para ser una exportación de Spotify</string>
-    <string name="record_error_too_big_body">Las exportaciones de Spotify son mucho más pequeñas, así que no se ha leído. No se ha añadido nada.</string>
-    <string name="record_unfinished_title">Tu importación no ha terminado</string>
-    <string name="record_unfinished_notice">Abre Stash para volver a intentarlo: nada se contará dos veces.</string>
-    <string name="record_unfinished_dismiss">Descartar</string>
-    <string name="record_error_choose_another">Elegir otro archivo</string>
-    <string name="record_error_try_again">Reintentar</string>
-    <string name="record_error_back">Atrás</string>
-    <string name="record_done_brought">Importado: %1$s</string>
-    <string name="record_done_two">%1$s y %2$s</string>
-    <string name="record_done_three">%1$s, %2$s y %3$s</string>
-    <plurals name="record_done_plays">
-        <item quantity="one">%1$s reproducción</item>
-        <item quantity="other">%1$s reproducciones</item>
-    </plurals>
-    <plurals name="record_done_playlists">
-        <item quantity="one">%1$s lista</item>
-        <item quantity="other">%1$s listas</item>
-    </plurals>
-    <plurals name="record_done_likes">
-        <item quantity="one">%1$s canción que te gusta</item>
-        <item quantity="other">%1$s canciones que te gustan</item>
-    </plurals>
-    <string name="record_done_nothing">Tu disco está al día</string>
-    <string name="record_way_spotify_what">Todo tu historial, listas y Me gusta. Sin iniciar sesión.</string>
-    <string name="record_way_spotify_time">Spotify te lo envía por correo en unos días</string>
-    <string name="record_way_spotify_waiting">Esperando a Spotify · solicitado el %1$s</string>
-    <string name="record_way_lastfm_what">Todos tus scrobbles.</string>
-    <string name="record_way_lastfm_time">Unos minutos, cuando te conectes</string>
-    <string name="record_lastfm_heading">Añade tus scrobbles de Last.fm</string>
-    <plurals name="record_lastfm_scrobbles">
-        <item quantity="one">%1$s scrobble</item>
-        <item quantity="other">%1$s scrobbles</item>
-    </plurals>
-    <string name="record_lastfm_asking">Consultando a Last.fm…</string>
-    <string name="record_lastfm_progress">Página %1$s de %2$s · %3$s</string>
-    <string name="record_lastfm_done">Listo: %1$s. Las reproducciones que Spotify o Stash ya tenían se contaron una sola vez.</string>
-    <string name="record_lastfm_done_none">Nada nuevo en Last.fm desde la última vez. Estás al día.</string>
-    <string name="record_lastfm_done_part">Listo: %1$s, %2$s de ellos esta vez. Las reproducciones que Spotify o Stash ya tenían se contaron una sola vez.</string>
-    <string name="record_lastfm_done_none_yet">Aún no hay scrobbles en Last.fm. Todo lo que scrobblees a partir de ahora llegará la próxima vez.</string>
-    <string name="record_lastfm_done_missing">Last.fm no envió parte de tu historial; Stash lo volverá a pedir la próxima vez.</string>
-    <string name="record_lastfm_idle_connect">Todos tus scrobbles, sumados a tu disco con Spotify y Stash.</string>
-    <string name="record_lastfm_idle_had">Ya tienes %1$s de %2$s. Conecta Last.fm como %2$s para traer los más nuevos.</string>
-    <string name="record_lastfm_idle_bring">Trae todos tus scrobbles como %1$s.</string>
-    <string name="record_lastfm_idle_bring_beside">Trae todos tus scrobbles como %1$s. Los scrobbles que ya están en tu disco se quedan.</string>
-    <string name="record_lastfm_idle_stopped">Se detuvo en la página %1$s de %2$s. Seguirá desde ahí.</string>
-    <string name="record_lastfm_idle_done">Ya tienes %1$s de %2$s; la última vez fue el %3$s.</string>
-    <string name="record_lastfm_connect">Conectar Last.fm</string>
-    <string name="record_lastfm_bring">Traerlos</string>
-    <string name="record_lastfm_carry_on">Continuar</string>
-    <string name="record_lastfm_newer">Traer los más nuevos</string>
-    <string name="record_lastfm_stop">Detener</string>
-    <string name="record_lastfm_see">Ver tu disco</string>
-    <string name="record_lastfm_after_spotify">Después de la importación de Spotify en curso</string>
-    <string name="record_lastfm_hours_note">Last.fm no dice cuánto tiempo has escuchado, así que Stash cuenta la duración de cada canción, según Spotify, tu biblioteca o el propio Last.fm.</string>
-    <string name="record_lastfm_reconnect_title">Last.fm ha cerrado la sesión de Stash</string>
-    <string name="record_lastfm_reconnect_body">Vuelve a conectar la misma cuenta y seguirá desde donde se detuvo. Otra cuenta empieza de cero, y los scrobbles que ya están se quedan.</string>
-    <string name="record_lastfm_reconnect">Volver a conectar</string>
-    <string name="record_lastfm_busy_title">Last.fm está saturado</string>
-    <string name="record_lastfm_busy_body">Continúa más tarde: seguirá desde donde se detuvo.</string>
-    <string name="record_lastfm_unavailable_title">Last.fm no responde</string>
-    <string name="record_lastfm_unavailable_body">Vuelve a intentarlo dentro de un rato. Lo que ya ha llegado se queda.</string>
-    <string name="record_lastfm_other_title">Algo ha salido mal</string>
-    <string name="record_lastfm_other_body">Lo que ya ha llegado se queda. Vuelve a intentarlo.</string>
-    <string name="record_lastfm_working_title">Trayendo tus scrobbles de Last.fm</string>
-    <string name="record_lastfm_settings_title">Importar desde Last.fm</string>
-    <string name="record_lastfm_remove">Eliminar tus scrobbles de Last.fm</string>
-    <string name="record_lastfm_remove_subtitle">Tu historial de Spotify y tus reproducciones en Stash se quedan.</string>
-    <string name="record_lastfm_remove_title">¿Eliminar tus scrobbles de Last.fm?</string>
-    <string name="record_lastfm_remove_body">Salen de tu disco en este móvil. Tu historial de Spotify y tu perfil de Last.fm se quedan como están.</string>
-    <string name="record_lastfm_remove_confirm">Eliminar</string>
-    <string name="record_lastfm_removing">Eliminando…</string>
-    <string name="record_lastfm_cancel">Cancelar</string>
-    <string name="record_lastfm_removed">Se han eliminado tus scrobbles de Last.fm. Tu historial de Spotify se queda.</string>
-    <string name="record_lastfm_remove_failed">No se han podido eliminar ahora. Vuelve a intentarlo.</string>
-    <string name="record_lastfm_remove_busy">Hay una importación en curso. Elimínalos cuando termine.</string>
-    <string name="record_sources_label">Fuentes de tu disco</string>
-    <string name="record_source_described">%1$s, %2$s</string>
-    <string name="record_source_one_stays">Una fuente siempre queda activada</string>
-    <string name="record_intake_not_export">Eso no es una exportación de Spotify</string>
-    <string name="record_intake_busy">Hay una importación en curso. Añádelo cuando termine.</string>
-    <string name="record_import_taste">Calculando tu gusto…</string>
-    <string name="record_in_mixes_title">Usar tu disco en los mixes</string>
-    <string name="record_in_mixes_subtitle">Tus mixes, Daily Discover y tus Stash Mixes, se apoyan en los artistas que te encantan desde hace años y dejan fuera las canciones que saltas. Desactivado, se guían por lo que escuchas aquí.</string>
-    <string name="record_kept_out_title">Fuera de tus mixes (%1$s)</string>
-    <string name="record_kept_out_on">Las canciones que ocultaste en Spotify o que sigues saltando se quedan fuera de tus mixes. Recupera una y podrá sonar en tus próximos mixes.</string>
-    <string name="record_kept_out_off">Estas se quedan fuera de los mixes de tu disco. Recupera una y podrá volver a sonar en ellos.</string>
-    <string name="record_kept_out_empty">Nada por ahora: cualquier canción de tu disco puede sonar en tus mixes.</string>
-    <string name="record_kept_out_show">Ver las canciones</string>
-    <string name="record_kept_out_hide">Ocultar las canciones</string>
-    <string name="record_kept_out_more">Ver más</string>
-    <string name="record_kept_out_row">%1$s · %2$s</string>
-    <string name="record_kept_out_hidden">Oculta en Spotify</string>
-    <plurals name="record_kept_out_skipped">
-        <item quantity="one">Saltada %1$s de %2$s vez</item>
-        <item quantity="many">Saltada %1$s de %2$s veces</item>
-        <item quantity="other">Saltada %1$s de %2$s veces</item>
-    </plurals>
-    <string name="record_kept_out_interlude">Un interludio que saltas</string>
-    <string name="record_kept_out_put_back">Recuperar</string>
-    <string name="record_kept_out_putting_back">Recuperando…</string>
-    <string name="record_kept_out_put_back_label">Recuperar %1$s de %2$s</string>
-    <string name="record_kept_out_put_back_done">%1$s puede sonar en tus próximos mixes</string>
-    <string name="record_kept_out_put_back_failed">No se ha podido recuperar ahora. Vuelve a intentarlo.</string>
-    <!-- Your record's history mixes (phase 5c). -->
-    <string name="record_mix_locale">es-ES</string>
-    <string name="record_mix_span">%1$s – %2$s</string>
-    <string name="record_mix_early">Principios de %1$d</string>
-    <string name="record_mix_mid">Mediados de %1$d</string>
-    <string name="record_mix_late">Finales de %1$d</string>
-    <string name="record_mix_dot">%1$s · %2$s</string>
-    <string name="record_mix_and">%1$s &amp; %2$s</string>
-    <string name="record_mix_comma">", "</string>
-    <string name="record_mix_constants">Las que se quedaron</string>
-    <string name="record_mix_constants_sub">Canciones a las que vuelves año tras año</string>
-    <string name="record_mix_lost">Redescubre</string>
-    <string name="record_mix_lost_sub">Favoritas que hace tiempo que no escuchas</string>
-    <string name="record_mix_repeat">En bucle, por aquel entonces</string>
-    <string name="record_mix_repeat_sub">Las canciones que no podías dejar de poner</string>
-    <string name="record_mix_started">Cómo empezó todo</string>
-    <string name="record_mix_started_sub">La primera canción que pusiste de cada uno de tus artistas favoritos</string>
-    <string name="record_mix_year">Tu %1$d</string>
-    <string name="record_mix_year_so_far">Tu %1$d hasta ahora</string>
-    <string name="record_mix_artist">Tu %1$s</string>
-    <string name="record_mix_artist_sub">Las canciones que más has puesto, desde %1$d</string>
-    <string name="record_mix_week">Esta semana, hace años</string>
-    <string name="record_mix_week_one_year">Alrededor del %1$s de %2$d</string>
-    <plurals name="record_mix_week_years">
-        <item quantity="one">Alrededor del %1$s, en %2$d año anterior</item>
-        <item quantity="other">Alrededor del %1$s, en %2$d años anteriores</item>
-    </plurals>
-    <string name="record_mix_about_min">unos %1$d min</string>
-    <string name="record_mix_about_hr">unas %1$d h</string>
-    <string name="record_mix_about_hr_min">unas %1$d h %2$d min</string>
-    <plurals name="record_mix_songs">
-        <item quantity="one">%1$d canción</item>
-        <item quantity="other">%1$d canciones</item>
-    </plurals>
-    <string name="record_mix_card_with">con %1$s</string>
-    <string name="record_mix_card_share">el %1$d %% de lo que escuchaste</string>
-    <string name="record_mix_card_constants">Año tras año</string>
-    <plurals name="record_mix_card_up_to_years">
-        <item quantity="one">%1$s, hasta %2$d año</item>
-        <item quantity="other">%1$s, hasta %2$d años</item>
-    </plurals>
-    <string name="record_mix_card_repeat">Obsesiones</string>
-    <plurals name="record_mix_card_obsession">
-        <item quantity="one">%1$s: %2$d reproducción en dos semanas, %3$s</item>
-        <item quantity="other">%1$s: %2$d reproducciones en dos semanas, %3$s</item>
-    </plurals>
-    <string name="record_mix_card_week">Hoy en tus años</string>
-    <string name="record_mix_card_year_now">Este año hasta ahora</string>
-    <string name="record_mix_card_year">Tu año</string>
-    <plurals name="record_mix_card_hours">
-        <item quantity="one">%1$s hora de escucha</item>
-        <item quantity="other">%1$s horas de escucha</item>
-    </plurals>
-    <string name="record_mix_card_started">Donde empezó todo</string>
-    <string name="record_mix_card_from_to">De %1$s en %2$d a %3$s en %4$d</string>
-    <string name="record_mix_card_lost">Favoritas perdidas</string>
-    <string name="record_mixes_shelf">De tu disco</string>
-    <string name="record_mixes_show_all">Mostrar todo</string>
-    <string name="record_mixes_open">Abrir %1$s</string>
-    <string name="record_mix_play_label">Reproducir %1$s</string>
-    <string name="record_mix_shuffle_label">Reproducir %1$s en aleatorio</string>
-    <string name="record_tab_record">El disco</string>
-    <string name="record_tab_mixes">Mixes</string>
-    <string name="record_mixes_from_years">Mixes de tus años</string>
-    <string name="record_mixes_your_years">Tus años</string>
-    <string name="record_mixes_none">Se hacen con años de escucha. Trae tu historial de Spotify o tus scrobbles de Last.fm y aparecerán aquí.</string>
-    <string name="record_mixes_none_action">Traer lo que has escuchado</string>
-    <string name="record_mix_eyebrow">Mix de tu disco</string>
-    <string name="record_mix_play">Reproducir</string>
-    <string name="record_mix_shuffle">Aleatorio</string>
-    <string name="record_mix_save">Guardar como lista</string>
-    <string name="record_mix_saving">Guardando…</string>
-    <string name="record_mix_open_saved">Abrir «%1$s»</string>
-    <string name="record_mix_saved">«%1$s» guardada en tus listas</string>
-    <string name="record_mix_save_failed">No se ha podido guardar ahora. Inténtalo de nuevo.</string>
-    <string name="record_mix_gone">Ese mix ya no está en tu disco: los mixes cambian según lo que escuchas.</string>
-    <string name="record_mix_gone_back">Volver a tu disco</string>
-    <string name="record_mix_failed">No se ha podido leer tu disco ahora.</string>
-    <string name="record_mix_back">Atrás</string>
-    <string name="record_mixes_top_artists">Artistas más escuchados</string>
-    <plurals name="record_mixes_artist_hours">
-        <item quantity="one">%1$s hora</item>
-        <item quantity="other">%1$s horas</item>
-    </plurals>
-    <plurals name="record_mixes_artist_plays">
-        <item quantity="one">%1$s reproducción</item>
-        <item quantity="other">%1$s reproducciones</item>
-    </plurals>
-    <string name="record_mixes_artist_open">Abrir tus canciones más escuchadas de %1$s</string>
-    <string name="record_mixes_artist_play">Reproducir tus canciones más escuchadas de %1$s</string>
-    <string name="record_mixes_top_songs">Canciones más escuchadas</string>
-    <string name="record_mixes_lost">Aún no en tu Stash</string>
-    <plurals name="record_mixes_lost_line">
-        <item quantity="one">%1$d canción que te encantaba y que no has escuchado en un año. Dale me gusta para guardarla.</item>
-        <item quantity="other">%1$d canciones que te encantaban y que no has escuchado en un año. Dale me gusta a una para guardarla.</item>
-    </plurals>
-    <string name="record_mixes_lost_play">Reproducir «Aún no en tu Stash» (%1$s)</string>
-    <string name="record_mixes_show_more">Mostrar más</string>
-    <string name="record_song_more">Más opciones para %1$s</string>
-    <string name="record_song_like">Me gusta</string>
-    <string name="record_song_unlike">Ya no me gusta</string>
-    <string name="record_like_failed">No se pudo añadir a tus canciones que te gustan</string>
-    <string name="record_unlike_failed">No se pudo quitar de tus canciones que te gustan</string>
-    <string name="record_song_playing_next">Sonará a continuación</string>
-    <string name="record_song_added_to_queue">Añadida a la cola</string>
-    <string name="record_song_queue_failed">No se pudo añadir a la cola</string>
-    <string name="record_song_added_to_playlist">Añadida a %1$s</string>
-    <string name="record_song_playlist_failed">No se pudo añadir a la playlist</string>
-    <string name="record_song_radio_failed">No se pudo iniciar una radio con esta canción. Inténtalo de nuevo en un momento.</string>
-    <string name="record_song_blocked">No se puede añadir una canción bloqueada</string>
+    <!-- Home's Your record card and the record's screen (feature/record). -->
+    <!-- The word after the card's big number of hours ("412 hours"); the number is set apart, larger. -->
+    <!-- %1$s: the record's plays, already formatted with separators ("1,234"). -->
+    <!-- %1$d: the year of the earliest play; %2$s: the plays ("since 2024 · 1,234 plays"). -->
+    <!-- The invitation before there is a record: the sources that can come in (Spotify's export, Last.fm's scrobbles, Stash's own plays). -->
+    <!-- The record needs Android System WebView 74 or newer (the bridge). -->
+    <!-- Snackbars over the record. -->
+    <!-- %1$s: the song a tap in the record started. -->
+    <!-- The share sheet's title for a poster or a video from the record. -->
+    <!-- Bring your Spotify (stash-player ImportFlow.svelte, HomeCard.svelte): the Home card's import states. -->
+    <!-- The record's sources, as chips on the invitation: brand names, never translated. -->
+    <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
+    <!-- Opens the import sheet, which has the Spotify steps and Last.fm's. -->
+    <!-- The import sheet: how it works (three steps). -->
+    <!-- %1$s and %2$s: Spotify's own names for its two downloads (record_import_account_data, record_import_extended_history), set in bold. Use the names Spotify's privacy page shows in this language. -->
+    <!-- %1$s: the day ("Oct 21"). -->
+    <!-- Under the import sheet with Last.fm open, where there is no file: where the scrobbles come from, and that song lengths are looked up by the songs' names. -->
+    <!-- The import sheet: reading and saving, with the year of the plays read so far counting up beneath. -->
+    <!-- %1$d of %2$d files read. -->
+    <!-- %1$s of %2$s plays saved, each already formatted with separators ("12,000 of 48,210"). -->
+    <!-- Bringing the playlists and liked songs into the library: %1$s of %2$s songs matched, each formatted with separators. -->
+    <!-- Read out for the year counting up: %1$d is the year of the plays read so far. -->
+    <!-- The notification channel for the import while it runs. -->
+    <!-- The import sheet: what the files hold, before anything is written. -->
+    <!-- %1$s to %2$s: the first and last month of the new plays ("January 2021 to January 2025"). -->
+    <!-- The words under the preview's three big figures (the number itself is set apart). -->
+    <!-- %1$s: plays kept from an earlier import, formatted with separators. -->
+    <!-- One playlist's songs ("Road trip · 9 songs"). -->
+    <!-- No new plays in the files: every one is here already (%1$s, formatted with separators), in one file or in several. -->
+    <!-- After the line above, when the files hold playlists or liked songs. -->
+    <!-- The playlists the files hold, each with a tick: their heading, and how many are ticked of all ("3 of 12"). -->
+    <!-- Under a playlist the library holds already (same name, most of its songs): it starts unticked; a tap brings it in anyway. -->
+    <!-- Under "Liked songs", beside its switch: %1$s songs, formatted with separators. -->
+    <!-- When Stash's Liked Songs playlist is kept on the phone (its Download switch): the liked songs brought in download too. -->
+    <!-- The import sheet: when the files can't be used. -->
+    <!-- After an import (a toast): what it brought, in parts joined as a list ("Brought in 6,086 plays, 2 playlists and 9 liked songs"); each %1$s a number formatted with separators. -->
+    <!-- The import sheet's ways in (ImportFlow.svelte `ways`): two equal choices, each opening its own steps. -->
+    <!-- %1$s: the day they asked Spotify for their data ("Oct 21"). -->
+    <!-- Last.fm in Your record (stash-player LastfmPart.svelte and lastfm.ts): in the import sheet and as a row in Settings. A "scrobble" is Last.fm's word for one play it recorded. Translators: use the word the app already uses for it in this language (Settings' and Accounts & Sync's Last.fm strings); where it has none, the word Last.fm's own site uses in this language; where Last.fm has no site in this language, keep the English "scrobble" in Latin letters, as Last.fm's own apps do. -->
+    <!-- %1$s: how many, formatted with separators ("48,210"). -->
+    <!-- Before Last.fm has said how many pages there are. -->
+    <!-- Progress: %1$s is the page just read, %2$s the pages in all (each formatted with separators), %3$s the scrobbles so far (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <!-- After a run: %1$s is the scrobbles it brought (record_lastfm_scrobbles: "600 scrobbles"). -->
+    <!-- After a run that read the whole history, part of it carried on from before: %1$s is every scrobble the import holds (record_lastfm_scrobbles: "30,060 scrobbles"), %2$s how many came this time ("7,660", formatted with separators). -->
+    <!-- After a whole read that found nothing on Last.fm. -->
+    <!-- Said after the done line while pages Last.fm didn't send are left out (they are asked again on the next top-up). -->
+    <!-- Not connected to Last.fm, nothing brought in yet. -->
+    <!-- Not connected any more: %1$s is the scrobbles brought in before (record_lastfm_scrobbles), %2$s the Last.fm name they came from. -->
+    <!-- Connected: %1$s is the Last.fm name. -->
+    <!-- Connected as another Last.fm account than the one the scrobbles came from: %1$s is its name. It starts over for this account; the scrobbles brought in before stay. -->
+    <!-- A run that stopped part way: %1$s is the last page read, %2$s the pages in all. -->
+    <!-- All of it in: %1$s the scrobbles (record_lastfm_scrobbles), %2$s the Last.fm name, %3$s the day it last ran ("Oct 21"). -->
+    <!-- Why the button waits: the Spotify import is writing. -->
+    <!-- Each way a run can stop short: a title, a line, and (for the session) the button. -->
+    <!-- The notification while the scrobbles come in. -->
+    <!-- Settings › Library & Storage › Your record: Last.fm's row, and removing the scrobbles again. -->
+    <!-- The row's title, beside "Import from Spotify" in the same group. -->
+    <!-- Under the remove row's title, as "Remove imported history" has its own line. -->
+    <!-- The switches over the record (stash-player record.ts): one per source with plays, shown with two or more; one always stays on. -->
+    <!-- Read out for a switch: %1$s is the source (Spotify, Stash, Last.fm), %2$s its plays (record_plays: "12,345 plays"). -->
+    <!-- A file shared or opened with Stash that holds no Spotify export (a toast). -->
+    <!-- Your record’s taste (phase 5b): the import sheet’s step, and Settings › Your record’s "Use your record in mixes" (owner decision D2) and "Kept out of your mixes" (D1), in the web’s words (RecordInMixes.svelte, years.ts whyLine). -->
+    <!-- The app’s own words (the web’s say "Daily Discover leans on…": only Daily Discover takes the record there; here every Stash Mix does). -->
+    <!-- %1$s: how many songs ("1,204"). -->
+    <!-- A kept-out song’s line: %1$s its artist, %2$s why (record_kept_out_hidden, record_kept_out_skipped, record_kept_out_interlude). -->
+    <!-- %1$s skips of %2$s starts; the quantity is the starts (always 6 or more). -->
+    <!-- Read out for Put back: %1$s the song, %2$s its artist. -->
+    <!-- A toast after Put back: %1$s the song. -->
+    <!-- Your record's history mixes (phase 5c): the web's words (stash-player src/lib/spotify/mixes.ts, src/lib/ui/spotify/mix.ts,
+         MixView.svelte, HomeShelf.svelte, routes/spotify/+page.svelte), character for character in English (’ · –). -->
+    <!-- An era across two years: %1$s and %2$s are each a month and year ("June 2022 – March 2023"). -->
+    <!-- The language these strings are in (a BCP 47 tag): the mixes' dates and numbers are written in it, never in a device
+         language the app has no strings for. Each translation names its own language. -->
+    <!-- An era within one year, by its middle month: %1$d the year ("Early 2018", "Mid 2018", "Late 2018"). -->
+    <!-- Two parts of a line: an era's lead and its time ("Radiohead · Late 2016"), its time and its artists, a mix's songs and length. -->
+    <!-- A list of artists: "A & B"; with more, the others joined by record_mix_comma first ("A, B & C"). -->
+    <!-- %1$d: a year ("Your 2019"); the year still going: "Your 2026 so far". -->
+    <!-- %1$s: an artist ("Your Radiohead"); %1$d: the year their first song was played. -->
+    <!-- %1$s: today's day of the year as the language writes it ("October 28", "28. Oktober", "10月28日"), %2$d the one past year
+         it comes from ("Around October 28, 2019"). -->
+    <!-- %1$s: today's day of the year (as above), %2$d how many past years (always 2 or more; the web says "years" for any number). -->
+    <!-- About how long a mix plays, to five minutes. -->
+    <!-- The Mixes tab's cards (mix.ts card): the small line above, the line under the big words, the foot. -->
+    <!-- %1$s: an era's other artists ("with Slayer & Deftones"). -->
+    <!-- %1$d: the lead artist's share of the era, in percent ("34% of what you played"). -->
+    <!-- %1$s: the mix's line (record_mix_constants_sub), %2$d the most years one of its songs was played in (3 or more from a real
+         taste; the web says "years" for any number). -->
+    <!-- %1$s: a song, %2$d its plays inside two weeks (12 or more; the web says "plays" for any number), %3$s the month and year
+         ("Ivy: 31 plays in two weeks, June 2022"). -->
+    <!-- %1$s: whole hours, already formatted ("412 hours of listening"). -->
+    <!-- %1$s and %3$s: the first and the latest favourite artist found, %2$d and %4$d the years ("From Radiohead in 2009 to Mitski in 2021"). -->
+    <!-- Home's shelf ("From your record") and the record's Mixes tab. -->
+    <!-- Read out for a mix's card: %1$s its title. -->
+    <!-- The record screen's two tabs. -->
+    <!-- The Mixes tab with no import (the app's own words: the web's also offer the phone's history from the Stash app). -->
+    <!-- A mix's page. -->
+    <!-- %1$s: the playlist just saved. -->
+    <!-- The rest of the Mixes tab (phase 5d): Top artists, Top songs and "Not in your Stash yet" (stash-player
+         routes/spotify/+page.svelte, TrackRow.svelte, LikeButton.svelte), character for character in English (’ ·). -->
+    <!-- A Top artists row's line ("412 hours · 9,021 plays"): whole hours listened, already formatted... -->
+    <!-- ...and plays, already formatted (the web says "plays" for any number). -->
+    <!-- Read out for a Top artists row: %1$s the artist. The row opens their mix; with too few songs for one, it plays them. -->
+    <!-- Under "Not in your Stash yet": %1$d how many songs it lists. -->
+    <!-- Read out for the list's Play: %1$s how many songs ("12 songs"). -->
+    <!-- A song row: read out for its long press (the song menu), %1$s the song; its heart. -->
+    <!-- What a row's Like and its menu came to (the app's own words, as Now Playing and Search say them). -->
+    <!-- %1$s: the playlist (the web's song menu says "Added to {name}"). -->
+    <!-- A blocked song refused (Search's own words, "Can't add a blocked track"). -->
 </resources>
