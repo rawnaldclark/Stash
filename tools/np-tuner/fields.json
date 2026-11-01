@@ -1,0 +1,51 @@
+{
+  "receiver": {
+    "action": "com.stash.app.debug.NP_SPACING",
+    "package": "com.stash.app.debug"
+  },
+  "kotlinObject": "NpSpacingDefaults",
+  "numbers": [
+    { "key": "titleSize", "const": "TITLE_SIZE_SP", "unit": "sp", "default": 22, "min": 14, "max": 36, "step": 0.5, "group": "Title", "label": "Size" },
+    { "key": "titleLineHeight", "const": "TITLE_LINE_HEIGHT_SP", "unit": "sp", "default": 28, "min": 14, "max": 48, "step": 0.5, "group": "Title", "label": "Line height" },
+    { "key": "titleLetterSpacing", "const": "TITLE_LETTER_SPACING_SP", "unit": "sp", "default": 0, "min": -1, "max": 2, "step": 0.05, "group": "Title", "label": "Letter spacing" },
+
+    { "key": "artistSize", "const": "ARTIST_SIZE_SP", "unit": "sp", "default": 15, "min": 10, "max": 24, "step": 0.5, "group": "Artist · album", "label": "Size" },
+    { "key": "artistLineHeight", "const": "ARTIST_LINE_HEIGHT_SP", "unit": "sp", "default": 20, "min": 10, "max": 36, "step": 0.5, "group": "Artist · album", "label": "Line height" },
+    { "key": "artistLetterSpacing", "const": "ARTIST_LETTER_SPACING_SP", "unit": "sp", "default": 0, "min": -1, "max": 2, "step": 0.05, "group": "Artist · album", "label": "Letter spacing" },
+
+    { "key": "gapTop", "const": "GAP_TOP_DP", "unit": "dp", "default": 20, "min": 0, "max": 80, "step": 1, "group": "Around the art", "label": "Top bar → art" },
+    { "key": "gapArt", "const": "GAP_ART_DP", "unit": "dp", "default": 36, "min": 0, "max": 96, "step": 1, "group": "Around the art", "label": "Art → title" },
+    { "key": "gapBottom", "const": "GAP_BOTTOM_DP", "unit": "dp", "default": 28, "min": 0, "max": 96, "step": 1, "group": "Around the art", "label": "Controls → bottom" },
+
+    { "key": "titleToArtist", "const": "TITLE_TO_ARTIST_DP", "unit": "dp", "default": 4, "min": 0, "max": 32, "step": 1, "group": "Stack", "label": "Title → artist" },
+    { "key": "artistToQuality", "const": "ARTIST_TO_QUALITY_DP", "unit": "dp", "default": 6, "min": 0, "max": 32, "step": 1, "group": "Stack", "label": "Artist → quality" },
+    { "key": "infoToProgress", "const": "INFO_TO_PROGRESS_DP", "unit": "dp", "default": 16, "min": 0, "max": 48, "step": 1, "group": "Stack", "label": "Quality → progress bar" },
+    { "key": "progressToControls", "const": "PROGRESS_TO_CONTROLS_DP", "unit": "dp", "default": 12, "min": 0, "max": 48, "step": 1, "group": "Stack", "label": "Progress bar → controls" },
+    { "key": "controlsToUpNext", "const": "CONTROLS_TO_UP_NEXT_DP", "unit": "dp", "default": 2, "min": 0, "max": 32, "step": 1, "group": "Stack", "label": "Controls → Up next" },
+
+    { "key": "upNextHeight", "const": "UP_NEXT_HEIGHT_DP", "unit": "dp", "default": 40, "min": 24, "max": 64, "step": 1, "group": "Up next", "label": "Height" },
+    { "key": "upNextSidePadding", "const": "UP_NEXT_SIDE_PADDING_DP", "unit": "dp", "default": 12, "min": 0, "max": 32, "step": 1, "group": "Up next", "label": "Side padding" },
+
+    { "key": "sidePadding", "const": "SIDE_PADDING_DP", "unit": "dp", "default": 24, "min": 0, "max": 48, "step": 1, "group": "Sides", "label": "Page side padding" },
+    { "key": "centeredTitleInset", "const": "CENTERED_TITLE_INSET_DP", "unit": "dp", "default": 40, "min": 0, "max": 80, "step": 1, "group": "Sides", "label": "Centred title inset" },
+    { "key": "sideButtonGap", "const": "SIDE_BUTTON_GAP_DP", "unit": "dp", "default": 12, "min": 0, "max": 32, "step": 1, "group": "Sides", "label": "Gap before side button / heart" }
+  ],
+  "choices": [
+    {
+      "key": "align", "const": "ALIGN", "enum": "NpAlign", "default": "setting", "group": "Layout", "label": "Alignment",
+      "options": [
+        { "value": "setting", "const": "SETTING", "label": "Follow Settings" },
+        { "value": "start", "const": "START", "label": "Start" },
+        { "value": "center", "const": "CENTER", "label": "Centre" }
+      ]
+    },
+    {
+      "key": "fullArtText", "const": "FULL_ART_TEXT", "enum": "FullArtTextPosition", "default": "layout", "group": "Layout", "label": "Text in full art",
+      "options": [
+        { "value": "layout", "const": "LAYOUT", "label": "Where the layout puts it" },
+        { "value": "under_art", "const": "UNDER_ART", "label": "Under the art" },
+        { "value": "bottom", "const": "BOTTOM", "label": "At the bottom" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now Playing tuner</title>
+<style>
+  :root {
+    --bg: #0e0e10; --panel: #18181b; --line: #2a2a2e; --ink: #ececf0; --dim: #9a9aa3;
+    --accent: #7dd3fc; --changed: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header .info { color: var(--dim); font-size: 12px; }
+  header .spacer { flex: 1; }
+  button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #0c4a6e; border-color: #0369a1; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #controls { width: 420px; max-width: 50vw; overflow-y: auto; padding: 8px 16px 24px; border-right: 1px solid var(--line); }
+  #controls h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 18px 0 6px; }
+  .row { display: grid; grid-template-columns: 1fr 76px; gap: 2px 10px; padding: 6px 0; }
+  .row label { cursor: pointer; }
+  .row label small { color: var(--dim); }
+  .row .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .row.changed label, .row.changed .val { color: var(--changed); }
+  .track { grid-column: 1 / -1; position: relative; }
+  .track input { width: 100%; margin: 0; accent-color: var(--accent); }
+  .track .tick { position: absolute; top: -3px; width: 2px; height: 8px; background: var(--dim); pointer-events: none; transform: translateX(-1px); }
+  .choices { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .choices button.on { border-color: var(--accent); color: var(--accent); }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 12px; min-width: 0; position: relative; }
+  #shot { max-height: 100%; max-width: 100%; border-radius: 18px; border: 1px solid var(--line); background: #000; }
+  #status { position: absolute; bottom: 10px; right: 16px; font-size: 12px; color: var(--dim); }
+  #status.bad { color: var(--bad); }
+  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; width: min(760px, 92vw); }
+  dialog pre, dialog textarea { width: 100%; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font: 12px/1.45 ui-monospace, Consolas, monospace; }
+  dialog textarea { height: 360px; }
+  dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Now Playing tuner</h1>
+  <span class="info" id="device">connecting…</span>
+  <span class="spacer"></span>
+  <button id="pause" title="Stop taking screenshots">Pause</button>
+  <button id="reset" title="Every value back to production, on the phone too">Reset</button>
+  <button id="copyJson">Copy JSON</button>
+  <button id="copyKotlin" class="primary" title="The Kotlin block to paste over NpSpacingDefaults">Copy values</button>
+</header>
+<main>
+  <section id="controls"></section>
+  <section id="stage">
+    <img id="shot" alt="The phone's screen">
+    <div id="status">waiting for the first frame…</div>
+  </section>
+</main>
+<dialog id="out">
+  <p id="outTitle"></p>
+  <textarea id="outText" readonly></textarea>
+  <pre id="outDiff"></pre>
+  <menu><button id="outCopy" class="primary">Copy</button><button id="outClose">Close</button></menu>
+</dialog>
+<script type="module">
+const SHOT_EVERY_MS = 800;
+const STORE_KEY = 'np-tuner-values';
+
+const fields = await (await fetch('/fields.json')).json();
+const defaults = Object.fromEntries([
+  ...fields.numbers.map((f) => [f.key, f.default]),
+  ...fields.choices.map((c) => [c.key, c.default]),
+]);
+let values = { ...defaults, ...loadStored() };
+
+function loadStored() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    return Object.fromEntries(Object.entries(stored).filter(([k]) => k in defaults));
+  } catch { return {}; }
+}
+function store() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(values)); } catch { /* private window: fine */ }
+}
+
+// ---- controls ------------------------------------------------------------------------------
+
+const controls = document.getElementById('controls');
+const rows = new Map();
+let group = null;
+function heading(name) {
+  if (name === group) return;
+  group = name;
+  const h = document.createElement('h2');
+  h.textContent = name;
+  controls.append(h);
+}
+
+for (const f of fields.numbers) {
+  heading(f.group);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label title="Click to reset to ${f.default} ${f.unit}">${f.label} <small>${f.unit} · ${f.key}</small></label>
+    <span class="val"></span>
+    <div class="track"><input type="range" min="${f.min}" max="${f.max}" step="${f.step}"><span class="tick"></span></div>`;
+  const input = row.querySelector('input');
+  row.querySelector('.tick').style.left = `${((f.default - f.min) / (f.max - f.min)) * 100}%`;
+  input.addEventListener('input', () => setValue(f.key, Number(input.value)));
+  row.querySelector('label').addEventListener('click', () => setValue(f.key, f.default));
+  controls.append(row);
+  rows.set(f.key, () => {
+    input.value = values[f.key];
+    row.querySelector('.val').textContent = `${values[f.key]} ${f.unit}`;
+    row.classList.toggle('changed', values[f.key] !== f.default);
+  });
+}
+for (const c of fields.choices) {
+  heading(c.group);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label>${c.label} <small>${c.key}</small></label><span class="val"></span><div class="choices"></div>`;
+  const box = row.querySelector('.choices');
+  const buttons = c.options.map((o) => {
+    const b = document.createElement('button');
+    b.textContent = o.label;
+    b.addEventListener('click', () => setValue(c.key, o.value));
+    box.append(b);
+    return [o.value, b];
+  });
+  controls.append(row);
+  rows.set(c.key, () => {
+    buttons.forEach(([v, b]) => b.classList.toggle('on', v === values[c.key]));
+    row.classList.toggle('changed', values[c.key] !== c.default);
+  });
+}
+const render = () => rows.forEach((update) => update());
+
+// ---- sending: one request in flight, the newest values win ----------------------------------
+
+let sending = false;
+let dirty = false;
+function setValue(key, v) {
+  values = { ...values, [key]: v };
+  store();
+  render();
+  push();
+}
+async function push() {
+  if (sending) { dirty = true; return; }
+  sending = true;
+  dirty = false;
+  try {
+    const r = await post('/set', values);
+    if (!r.ok) status(`couldn't send: ${(await r.json()).error}`, true);
+  } catch (e) {
+    status(`couldn't send: ${e.message}`, true);
+  } finally {
+    sending = false;
+    if (dirty) push();
+  }
+}
+const post = (path, body) => fetch(path, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-NP-Tuner': '1' },
+  body: body === undefined ? '{}' : JSON.stringify(body),
+});
+
+document.getElementById('reset').addEventListener('click', async () => {
+  values = { ...defaults };
+  store();
+  render();
+  const r = await post('/reset');
+  if (!r.ok) status(`couldn't reset: ${(await r.json()).error}`, true);
+});
+
+// ---- the live screenshot --------------------------------------------------------------------
+
+const img = document.getElementById('shot');
+const statusEl = document.getElementById('status');
+let paused = false;
+let lastFrameAt = 0;
+let lastUrl = null;
+function status(text, bad = false) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('bad', bad);
+}
+async function frameLoop() {
+  while (true) {
+    const started = Date.now();
+    if (!paused) {
+      try {
+        const r = await fetch('/shot', { cache: 'no-store' });
+        if (r.ok) {
+          const url = URL.createObjectURL(await r.blob());
+          img.src = url;
+          if (lastUrl) URL.revokeObjectURL(lastUrl);
+          lastUrl = url;
+          lastFrameAt = Date.now();
+          status(`live · frame took ${lastFrameAt - started} ms`);
+        } else {
+          status((await r.json()).error, true);
+        }
+      } catch (e) {
+        status(`no frame: ${e.message}`, true);
+      }
+    }
+    await new Promise((res) => setTimeout(res, Math.max(0, SHOT_EVERY_MS - (Date.now() - started))));
+  }
+}
+document.getElementById('pause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Resume' : 'Pause';
+  if (paused) status('paused');
+});
+
+// ---- copying the values out -----------------------------------------------------------------
+
+const kotlinNumber = (v) => `${Number(Number(v).toFixed(3))}f`;
+function kotlinBlock() {
+  const lines = [`internal object ${fields.kotlinObject} {`];
+  let current = null;
+  for (const f of fields.numbers) {
+    if (f.group !== current) {
+      if (current !== null) lines.push('');
+      lines.push(`    // ${f.group}`);
+      current = f.group;
+    }
+    lines.push(`    const val ${f.const} = ${kotlinNumber(values[f.key])}`);
+  }
+  for (const c of fields.choices) {
+    if (c.group !== current) {
+      lines.push('', `    // ${c.group}`);
+      current = c.group;
+    }
+    const option = c.options.find((o) => o.value === values[c.key]);
+    lines.push(`    val ${c.const} = ${c.enum}.${option.const}`);
+  }
+  lines.push('}');
+  return lines.join('\n');
+}
+function changes() {
+  const all = [...fields.numbers, ...fields.choices];
+  const changed = all.filter((f) => values[f.key] !== f.default)
+    .map((f) => `${f.key}: ${f.default} -> ${values[f.key]}${f.unit ? ' ' + f.unit : ''}`);
+  return changed.length ? `Changed from production:\n${changed.join('\n')}` : 'Nothing changed from production.';
+}
+
+const dlg = document.getElementById('out');
+const outText = document.getElementById('outText');
+function show(title, text) {
+  document.getElementById('outTitle').textContent = title;
+  outText.value = text;
+  document.getElementById('outDiff').textContent = changes();
+  dlg.showModal();
+  copy(text);
+}
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); status('copied'); } catch { outText.select(); }
+}
+document.getElementById('copyKotlin').addEventListener('click', () =>
+  show('Paste over NpSpacingDefaults in feature/nowplaying/.../ui/NpSpacing.kt (copied):', kotlinBlock()));
+document.getElementById('copyJson').addEventListener('click', () =>
+  show('The values as the receiver takes them (copied):', JSON.stringify(values, null, 2)));
+document.getElementById('outCopy').addEventListener('click', () => copy(outText.value));
+document.getElementById('outClose').addEventListener('click', () => dlg.close());
+
+// ---- start ----------------------------------------------------------------------------------
+
+render();
+fetch('/device').then((r) => r.json()).then((d) => {
+  document.getElementById('device').textContent =
+    `${d.serial} · ${d.size.replace(/\n/g, ' · ')} · ${d.density.replace(/\n/g, ' · ')}` +
+    (d.installed ? '' : ` · ${d.package} NOT INSTALLED`);
+}).catch(() => { document.getElementById('device').textContent = 'device info unavailable'; });
+push(); // the phone takes the page's values (kept across reloads) from the start
+frameLoop();
+</script>
+</body>
+</html>

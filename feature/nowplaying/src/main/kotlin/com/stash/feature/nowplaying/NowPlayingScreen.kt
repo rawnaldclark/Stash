@@ -129,6 +129,7 @@ import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.toSize
 
@@ -192,11 +193,25 @@ fun NowPlayingScreen(
     val fullArtBlend by viewModel.fullArtBlend.collectAsStateWithLifecycle()
     val titleAlign by viewModel.titleAlign.collectAsStateWithLifecycle()
     val titleButton by viewModel.titleButton.collectAsStateWithLifecycle()
+    // The text block's numbers (production values; a debug build's tuner overrides them live) and
+    // its one alignment: title, artist, quality and Up next lines all follow it.
+    val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
+    val alignStart = spacing.align.alignStart(settingStart = titleAlign == com.stash.core.data.prefs.NpTitleAlign.START)
     val fullArt = com.stash.feature.nowplaying.ui.rememberFullArtState()
     var artBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     // Read as thresholds, so the grow's frames don't recompose the screen.
     val fullArtDark by remember { androidx.compose.runtime.derivedStateOf { fullArt.grow.value > 0.5f } }
     val fullArtCovers by remember { androidx.compose.runtime.derivedStateOf { fullArt.grow.value >= 1f } }
+    // Full art's box as the text block sees it, for a block placed under the art or at the bottom
+    // while the art is out (NpSpacing.fullArtText). Read during layout only, and only then.
+    var npRoot by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val fullArtTextAnchor = remember(fullArt) {
+        com.stash.feature.nowplaying.ui.FullArtTextAnchor(
+            root = { npRoot },
+            zoom = { fullArtZoom },
+            grow = { fullArt.grow.value },
+        )
+    }
     // Now Playing settled at the top of the sheet (not mid-drag, not under the queue).
     val npAtTop by remember(sheet) {
         androidx.compose.runtime.derivedStateOf {
@@ -920,6 +935,8 @@ fun NowPlayingScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Full art fills this box: the text block measures the art's bottom against it.
+                .onPlaced { npRoot = it }
                 // In the sheet the card draws the ground (it fades in as the card grows).
                 .then(if (sheet == null) Modifier.background(MaterialTheme.colorScheme.background) else Modifier),
         ) {
@@ -999,7 +1016,7 @@ fun NowPlayingScreen(
                         },
                     )
 
-                    Spacer(modifier = Modifier.height(StackRhythm.ProgressToControls))
+                    Spacer(modifier = Modifier.height(spacing.progressToControls.dp))
 
                     // -- Playback controls -- the same row for host and listener, so a role change
                     // doesn't move anything; a listener's skip slots are simply empty.
@@ -1030,7 +1047,7 @@ fun NowPlayingScreen(
                         .fillMaxWidth()
                         .then(controlsLayer)
                         .statusBarsPadding()
-                        .padding(horizontal = 24.dp),
+                        .padding(horizontal = spacing.sidePadding.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     WithAlbumChrome { topChrome ->
@@ -1108,8 +1125,9 @@ fun NowPlayingScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .weight(1f)
-                                        .padding(horizontal = 24.dp),
+                                        .padding(horizontal = spacing.sidePadding.dp),
                                     stackModifier = controlsLayer,
+                                    fullArtText = if (fullArtOn) fullArtTextAnchor else null,
                                     art = {
                                     // -- Album art: NowPlayingBody sizes this slot (a square) --
                                     Box(
@@ -1219,7 +1237,7 @@ fun NowPlayingScreen(
                                         onTrackInfoTapped = viewModel::onTrackInfoTapped,
                                         isLiked = uiState.currentTrack?.stashLikedAt != null,
                                         onLikeTap = viewModel::onLikeTap,
-                                        alignStart = titleAlign == com.stash.core.data.prefs.NpTitleAlign.START,
+                                        alignStart = alignStart,
                                         // The sleep timer's time left hangs under the moon, beside the
                                         // artist line: the line keeps clear of it while one runs.
                                         sideCaption = titleButton == com.stash.core.data.prefs.TitleButton.SLEEP_TIMER &&
@@ -1256,7 +1274,7 @@ fun NowPlayingScreen(
                                     if (track != null) {
                                         val qualityText = trackQualityText(track)
                                         if (qualityText != null) {
-                                            Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
+                                            Spacer(modifier = Modifier.height(spacing.artistToQuality.dp))
                                             // The live verdict ("Bit-perfect", "Hi-Res") rides on the end;
                                             // tapping opens the full signal path, the only place that
                                             // says when Android resampled the song.
@@ -1265,20 +1283,21 @@ fun NowPlayingScreen(
                                                 qualityText = if (badge != null) "$qualityText \u00B7 $badge" else qualityText,
                                                 isStreaming = uiState.isStreaming,
                                                 onClick = { showSignalPath = true },
+                                                alignStart = alignStart,
                                             )
                                         }
                                     }
 
                                     if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
 
-                                    Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
+                                    Spacer(modifier = Modifier.height(spacing.infoToProgress.dp))
 
                                     foot(footShared)
 
                                     // "Up next · Title — Artist": a tap opens the queue, or the session
                                     // in a room (whose Up next is the room's). Art view only: lyrics
                                     // mode keeps the bottom for the lyrics.
-                                    Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
+                                    Spacer(modifier = Modifier.height(spacing.controlsToUpNext.dp))
                                     UpNextLine(
                                         peek = if (room != null) {
                                             roomUpNextPeek(room.queue)
@@ -1287,6 +1306,7 @@ fun NowPlayingScreen(
                                         },
                                         inRoom = room != null,
                                         onOpen = { if (room != null) showSession = true else showQueue = true },
+                                        alignStart = alignStart,
                                     )
                                     },
                                 )
@@ -1407,7 +1427,7 @@ fun NowPlayingScreen(
                                         .then(paneEnter)
                                         .then(controlsLayer),
                                 )
-                                foot(Modifier.then(controlsLayer).padding(horizontal = 24.dp).then(footShared))
+                                foot(Modifier.then(controlsLayer).padding(horizontal = spacing.sidePadding.dp).then(footShared))
                                 Spacer(modifier = Modifier.height(LyricsFootBottom))
                             }
                         }
@@ -1443,31 +1463,23 @@ fun NowPlayingScreen(
 // Layout
 // ---------------------------------------------------------------------------
 
-/** The fixed steps inside the title-to-controls stack. */
-private object StackRhythm {
-    val TitleToArtist = 4.dp
-    val ArtistToQuality = 6.dp
-    val InfoToProgress = 16.dp
-    val ProgressToControls = 12.dp
-    val ControlsToUpNext = 2.dp
-}
-
 /** The art's design ceiling. */
 private val ArtMax = 375.dp
 
 /*
- * The three flexible gaps around the art, at their full size and at their floor:
- * top bar -> art, art -> title, controls -> the bottom (the lyrics bar or the edge).
- * They shrink together towards the floor only when keeping them would make the
- * art smaller than ART_COMFORT of its full size (a short phone, a large font).
+ * The floors of the three flexible gaps around the art: top bar -> art, art -> title,
+ * controls -> the bottom (the lyrics bar or the edge). Their full sizes are NpSpacing's gapTop,
+ * gapArt and gapBottom. They shrink together towards the floor only when keeping them would make
+ * the art smaller than ART_COMFORT of its full size (a short phone, a large font). A gap tuned
+ * below its floor is its own floor.
  */
-private val GapTop = 20.dp
 private val GapTopMin = 8.dp
-private val GapArt = 36.dp
 private val GapArtMin = 16.dp
-private val GapBottom = 28.dp
 private val GapBottomMin = 12.dp
 private const val ART_COMFORT = 0.75f
+
+/** The side button and the heart beside the title: 26 dp each (a caption under one needs the room). */
+private val SideButtonSize = 26.dp
 
 /**
  * Now Playing's vertical rhythm under the top row: a square [art] slot and the
@@ -1483,9 +1495,14 @@ private const val ART_COMFORT = 0.75f
 private fun NowPlayingBody(
     modifier: Modifier = Modifier,
     stackModifier: Modifier = Modifier,
+    fullArtText: com.stash.feature.nowplaying.ui.FullArtTextAnchor? = null,
     art: @Composable () -> Unit,
     stack: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
+    val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
+    val gapTop = spacing.gapTop.dp
+    val gapArt = spacing.gapArt.dp
+    val gapBottom = spacing.gapBottom.dp
     androidx.compose.ui.layout.Layout(
         contents = listOf(
             art,
@@ -1500,15 +1517,18 @@ private fun NowPlayingBody(
         val avail = (h - stackP.height).coerceAtLeast(0)
 
         val full = minOf(w, ArtMax.roundToPx())
-        val nominal = GapTop.roundToPx() + GapArt.roundToPx() + GapBottom.roundToPx()
-        val floor = GapTopMin.roundToPx() + GapArtMin.roundToPx() + GapBottomMin.roundToPx()
+        val nominal = gapTop.roundToPx() + gapArt.roundToPx() + gapBottom.roundToPx()
+        val floor = GapTopMin.coerceAtMost(gapTop).roundToPx() + GapArtMin.coerceAtMost(gapArt).roundToPx() +
+            GapBottomMin.coerceAtMost(gapBottom).roundToPx()
         val shortfall = (full * ART_COMFORT - (avail - nominal)).coerceIn(0f, (nominal - floor).toFloat())
         val k = if (nominal > floor) 1f - shortfall / (nominal - floor) else 1f
-        fun gap(max: androidx.compose.ui.unit.Dp, min: androidx.compose.ui.unit.Dp): Int =
-            (min.roundToPx() + (max.roundToPx() - min.roundToPx()) * k).toInt()
-        val gTop = gap(GapTop, GapTopMin)
-        val gArt = gap(GapArt, GapArtMin)
-        val gBottom = gap(GapBottom, GapBottomMin)
+        fun gap(max: androidx.compose.ui.unit.Dp, min: androidx.compose.ui.unit.Dp): Int {
+            val floorPx = min.coerceAtMost(max).roundToPx()
+            return (floorPx + (max.roundToPx() - floorPx) * k).toInt()
+        }
+        val gTop = gap(gapTop, GapTopMin)
+        val gArt = gap(gapArt, GapArtMin)
+        val gBottom = gap(gapBottom, GapBottomMin)
         val artSide = (avail - gTop - gArt - gBottom).coerceIn(0, full)
         val slack = (avail - gTop - gArt - gBottom - artSide).coerceAtLeast(0)
 
@@ -1516,7 +1536,22 @@ private fun NowPlayingBody(
         layout(w, h) {
             val artY = gTop + slack / 2
             artP.place((w - artSide) / 2, artY)
-            stackP.place(0, artY + artSide + gArt)
+            val layoutTop = artY + artSide + gArt
+            // Full art out, and the text asked to sit under it or at the bottom (the tuner's
+            // full-art text position): it glides there as the art grows. Otherwise, the layout's.
+            val position = spacing.fullArtText
+            val textTop = if (fullArtText == null || position == com.stash.feature.nowplaying.ui.FullArtTextPosition.LAYOUT) {
+                layoutTop
+            } else {
+                com.stash.feature.nowplaying.ui.npTextTop(
+                    position = position,
+                    layoutTop = layoutTop,
+                    bottomTop = h - gBottom - stackP.height,
+                    underArtTop = fullArtText.artBottomIn(coordinates)?.let { it + gArt },
+                    grow = fullArtText.grow(),
+                )
+            }
+            stackP.place(0, textTop)
         }
     }
 }
@@ -1606,12 +1641,15 @@ private fun TrackInfoBlock(
         null
     }
     val showsSide = track != null && sideButton != null
+    val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
+    val sideGap = spacing.sideButtonGap.dp
+    val centeredInset = spacing.centeredTitleInset.dp
     Column(modifier = Modifier.fillMaxWidth()) {
         if (alignStart) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TitleLine(track, resolvingArtist, alignStart = true, modifier = Modifier.weight(1f).then(tapToArtist))
-                if (showsSide) sideButton?.invoke(Modifier.padding(start = 12.dp))
-                heart?.invoke(Modifier.padding(start = 12.dp))
+                if (showsSide) sideButton?.invoke(Modifier.padding(start = sideGap))
+                heart?.invoke(Modifier.padding(start = sideGap))
             }
         } else {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1619,7 +1657,7 @@ private fun TrackInfoBlock(
                     track,
                     resolvingArtist,
                     alignStart = false,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp).then(tapToArtist),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = centeredInset).then(tapToArtist),
                 )
                 // The side button at the leading edge, mirroring the heart at the trailing one
                 // (the sleep timer accented while armed, its time left under the moon).
@@ -1627,14 +1665,14 @@ private fun TrackInfoBlock(
                 heart?.invoke(Modifier.align(Alignment.CenterEnd))
             }
         }
-        Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
-        // Clear of a caption under the side button: centered, the 40dp the title keeps on both sides
-        // (so the line stays centered under it); at the leading edge, up to where the side button
-        // starts (it and the heart after it, 26dp each and 12dp before each).
+        Spacer(modifier = Modifier.height(spacing.titleToArtist.dp))
+        // Clear of a caption under the side button: centered, the inset the title keeps on both
+        // sides (so the line stays centered under it); at the leading edge, up to where the side
+        // button starts (it and the heart after it, 26dp each and the side gap before each).
         val captionRoom = when {
             !showsSide || !sideCaption -> 0.dp
-            alignStart -> if (heart != null) 76.dp else 38.dp
-            else -> 40.dp
+            alignStart -> (SideButtonSize + sideGap) * (if (heart != null) 2 else 1)
+            else -> centeredInset
         }
         ArtistLine(
             track,
@@ -1665,9 +1703,14 @@ private fun TitleLine(
         // width the format badge used to take beside it now
         // belongs to the title — QualityLine below already says
         // FLAC and the bit depth, so the badge said it twice.
+        val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
         Text(
             text = track?.title ?: "Not Playing",
-            fontSize = 22.sp,
+            // Size, line height and tracking all set here: left to the theme, the title took
+            // bodyLarge's 24 sp line and +0.5 sp tracking (NpSpacingDefaults).
+            fontSize = spacing.titleSize.sp,
+            lineHeight = spacing.titleLineHeight.sp,
+            letterSpacing = spacing.titleLetterSpacing.sp,
             fontWeight = FontWeight.Bold,
             color = npInk(),
             maxLines = 1,
@@ -1711,6 +1754,7 @@ private fun ArtistLine(
     // remember the split — this Text recomposes with every
     // player-state change.
     val displayArtist = remember(track) { track?.artist?.primaryArtist() }
+    val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
     Text(
         text = buildString {
             if (track != null && displayArtist != null) {
@@ -1721,7 +1765,10 @@ private fun ArtistLine(
                 }
             }
         },
-        fontSize = 15.sp,
+        // Its own line height and tracking, not bodyLarge's 24 sp line (NpSpacingDefaults).
+        fontSize = spacing.artistSize.sp,
+        lineHeight = spacing.artistLineHeight.sp,
+        letterSpacing = spacing.artistLetterSpacing.sp,
         color = npInk().copy(alpha = 0.7f),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -2040,15 +2087,15 @@ private fun PlaybackControls(
  * white-on-ambient quality text without clashing with the album-art
  * palette.
  *
- * Centered as a Row so the prefix-icon variant stays visually balanced
- * with the icon-less variant — the original `Text(textAlign = Center)`
- * call is preserved when there is nothing to prefix.
+ * Aligned as the title is ([alignStart]): a start-aligned title with a centred line under it
+ * left the two edges apart. A Row, so the prefix-icon variant lines up with the icon-less one.
  */
 @Composable
 private fun QualityLine(
     qualityText: String,
     isStreaming: Boolean,
     onClick: (() -> Unit)? = null,
+    alignStart: Boolean = false,
 ) {
     val tap = if (onClick != null) {
         Modifier.clickable(onClickLabel = "Show signal path", onClick = onClick)
@@ -2058,7 +2105,7 @@ private fun QualityLine(
     if (isStreaming) {
         Row(
             modifier = Modifier.fillMaxWidth().then(tap),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = if (alignStart) Arrangement.Start else Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -2083,7 +2130,7 @@ private fun QualityLine(
             color = npInk().copy(alpha = 0.5f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
             modifier = Modifier.fillMaxWidth().then(tap),
         )
     }

@@ -54,5 +54,19 @@
                 <action android:name="com.stash.debug.LASTFM_RECAP_USER" />
             </intent-filter>
         </receiver>
+        <!--
+            Debug only: Now Playing's text-block spacing, set live by the browser tuner (tools/np-tuner)
+            through com.stash.app.debug.DebugNpSpacing. Same DUMP guard as above; release builds have no
+            such receiver and bind the production spacing (NpSpacingModule).
+        -->
+        <receiver
+            android:name="com.stash.app.debug.DebugNpSpacing"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.stash.app.debug.NP_SPACING" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
