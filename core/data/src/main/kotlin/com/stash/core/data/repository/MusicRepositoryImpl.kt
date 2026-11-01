@@ -760,6 +760,7 @@ class MusicRepositoryImpl @Inject constructor(
                 youtubeId = entity.youtubeId,
                 soundCloudId = entity.soundCloudId,
                 excludeTrackId = entity.id,
+                explicit = entity.explicit,
             )
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -996,7 +997,7 @@ class MusicRepositoryImpl @Inject constructor(
         }
         if (!stillWanted()) return 0
         if (copyLinks.isNotEmpty()) {
-            playlistDao.insertAllCrossRefs(copyLinks.values.toList())
+            playlistDao.insertCrossRefsIfAbsent(copyLinks.values.toList())
             playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
             android.util.Log.i("MusicRepository", "playlist $playlistId: ${copyLinks.size} song(s) already on the phone, linked instead of downloaded")
         }

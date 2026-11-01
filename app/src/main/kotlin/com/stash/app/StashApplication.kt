@@ -591,7 +591,7 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
-        applicationScope.launch { maybeRelabelYouTubeRowsClaimingSpotify() }
+        applicationScope.launch { relabelYouTubeRowsClaimingSpotify() }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming
         // quality inherits their download choice instead of silently changing.
@@ -1011,25 +1011,25 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * One-time data fix for the green-dot lie: a YouTube stream that a like or a listen saved as a
-     * Spotify song (Now Playing rebuilt every stream as one) becomes a YouTube song. Only rows that
-     * say Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist
-     * ([TrackDao.relabelYouTubeRowsClaimingSpotify]); a row with a Spotify id is never touched, and
-     * nothing is deleted. New rows are saved right from now on (TrackSourceRule), so this runs once
-     * (the flag is set only after the update succeeds); the update itself is idempotent.
+     * Data fix for the green-dot lie: a YouTube stream that a like or a listen saved as a Spotify
+     * song (Now Playing rebuilt every stream as one) becomes a YouTube song. Only rows that say
+     * Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist and every
+     * switched-on playlist that isn't YouTube's ([TrackDao.relabelYouTubeRowsClaimingSpotify]); a
+     * row with a Spotify id is never touched, and nothing is deleted.
+     *
+     * At every launch, not once: the UPDATE is idempotent and cheap (one pass over `tracks`; new
+     * rows are saved right through TrackSourceRule, so after the first run it finds only a row that
+     * left the playlist that spared it), and a backup from before this fix, restored later, is
+     * fixed too. A failure is logged and left for the next launch.
      */
-    private suspend fun maybeRelabelYouTubeRowsClaimingSpotify() {
-        val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
-        if (prefs.getInt("youtube_rows_claiming_spotify_version", 0) >= YOUTUBE_ROWS_CLAIMING_SPOTIFY_VERSION) return
+    private suspend fun relabelYouTubeRowsClaimingSpotify() {
         try {
             val relabelled = trackDao.relabelYouTubeRowsClaimingSpotify()
-            Log.i("StashMigration", "maybeRelabelYouTubeRowsClaimingSpotify: $relabelled YouTube row(s) no longer marked Spotify")
-            prefs.edit().putInt("youtube_rows_claiming_spotify_version", YOUTUBE_ROWS_CLAIMING_SPOTIFY_VERSION).apply()
+            if (relabelled > 0) Log.i("StashMigration", "relabelYouTubeRowsClaimingSpotify: $relabelled YouTube row(s) no longer marked Spotify")
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Left for the next launch: the flag is still unset.
-            Log.w("StashMigration", "maybeRelabelYouTubeRowsClaimingSpotify failed", e)
+            Log.w("StashMigration", "relabelYouTubeRowsClaimingSpotify failed; the next launch tries again", e)
         }
     }
 
@@ -1144,9 +1144,6 @@ class StashApplication : Application(), Configuration.Provider {
 
         /** v0.9.104: pin every already-synced playlist to Home, once. */
         private const val SYNCED_PLAYLISTS_PIN_VERSION = 1
-
-        /** 2026-11: YouTube rows saved as Spotify songs become YouTube songs, once. */
-        private const val YOUTUBE_ROWS_CLAIMING_SPOTIFY_VERSION = 1
 
         /**
          * Bump when [maybeHideEmptyYouTubePlaylists] needs to run again.

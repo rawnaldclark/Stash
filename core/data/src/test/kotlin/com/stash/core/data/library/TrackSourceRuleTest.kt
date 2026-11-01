@@ -66,7 +66,7 @@ class TrackSourceRuleTest {
         assertEquals(MusicSource.YOUTUBE, TrackSourceRule.honestSource(null, null, null))
     }
 
-    // ── The one-time data fix ──────────────────────────────────────────────
+    // ── The data fix (every launch) ────────────────────────────────────────
 
     @Test fun `the data fix relabels only YouTube rows saved as Spotify songs`() = runTest {
         val lie = row("Starting Over", MusicSource.SPOTIFY, youtubeId = "Ikn6Z2fxMs4", file = "/music/a.flac")
@@ -100,6 +100,38 @@ class TrackSourceRuleTest {
 
         assertEquals("idempotent: a second run finds nothing", 0, db.trackDao().relabelYouTubeRowsClaimingSpotify())
         assertEquals("nothing deleted", 8, db.trackDao().getAllForIntegrityScan().size)
+    }
+
+    /**
+     * Stash's own Liked Songs is BOTH and switched on, and the sync downloads its songs by source:
+     * a liked row keeps its label, so the download it was queued for still runs for someone with
+     * only Spotify connected. A switched-off playlist downloads nothing, so its rows are relabelled.
+     */
+    @Test fun `the data fix spares rows in a switched-on Stash playlist, Liked Songs included`() = runTest {
+        val liked = row("Liked Stream", MusicSource.SPOTIFY, youtubeId = "video000011")
+        val inSwitchedOff = row("Off Playlist", MusicSource.SPOTIFY, youtubeId = "video000012")
+        val inYouTubePlaylist = row("YouTube Playlist", MusicSource.SPOTIFY, youtubeId = "video000013")
+        val likedSongs = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Liked Songs", source = MusicSource.BOTH, sourceId = "stash_liked_songs",
+                type = PlaylistType.STASH_LIKED, syncEnabled = true,
+            ),
+        )
+        val switchedOff = db.playlistDao().insert(
+            PlaylistEntity(name = "Mine", source = MusicSource.BOTH, sourceId = "custom_off", type = PlaylistType.CUSTOM, syncEnabled = false),
+        )
+        val youtubePlaylist = db.playlistDao().insert(
+            PlaylistEntity(name = "Yt", source = MusicSource.YOUTUBE, sourceId = "PLyt", type = PlaylistType.CUSTOM, syncEnabled = true),
+        )
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = likedSongs, trackId = liked, position = 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = switchedOff, trackId = inSwitchedOff, position = 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = youtubePlaylist, trackId = inYouTubePlaylist, position = 0))
+
+        assertEquals(2, db.trackDao().relabelYouTubeRowsClaimingSpotify())
+
+        assertEquals("Liked Songs downloads it by source", MusicSource.SPOTIFY, source(liked))
+        assertEquals(MusicSource.YOUTUBE, source(inSwitchedOff))
+        assertEquals("a YouTube playlist downloads YouTube songs", MusicSource.YOUTUBE, source(inYouTubePlaylist))
     }
 
     private suspend fun row(

@@ -948,14 +948,18 @@ class DiffWorker @AssistedInject constructor(
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
         var linkedCopies = 0
+        // Copies of new songs already on the phone, by copy id: written after [crossRefsToInsert]
+        // and insert-if-absent, so they never move or revive a link that is already there.
+        val copyLinks = linkedMapOf<Long, PlaylistTrackCrossRef>()
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
             // A new song already on the phone as another row (cause 4 of the duplicates: a Spotify
             // row downloaded under one video while this YouTube playlist holds another upload, so
             // the ids keep them two rows) is not downloaded again: its copy is linked here, where
-            // the song sits, and the new row keeps its own ids for the next sync. A copy the user
-            // took out of this playlist is not linked back (addCrossRefIfNotSoftDeleted), and the
-            // song is still not downloaded twice. The shared check every download path asks
-            // (SameSongRule.isLibraryCopy), its candidates read once per playlist.
+            // the song sits, and the new row keeps its own ids for the next sync. The link is
+            // insert-if-absent ([copyLinks]): a copy already in this playlist keeps its place, and
+            // one the user took out (a removal mark written while this sync ran included) is not
+            // linked back; the song is still not downloaded twice. The shared check every download
+            // path asks (SameSongRule.isLibraryCopy), its candidates read once per playlist.
             val copies = trackDao.libraryCopiesOf(
                 newTracks.filterNot { it.entity.soundCloudPreview }
                     .map { it.entity.copy(id = checkNotNull(it.persistedId)) },
@@ -967,8 +971,14 @@ class DiffWorker @AssistedInject constructor(
                 val trackId = checkNotNull(batchTrack.persistedId)
                 val copy = copies[trackId]
                 if (copy != null) {
-                    val position = firstPositionOf[batchTrack] ?: 0
-                    addCrossRefIfNotSoftDeleted(localPlaylist.id, copy.id, position, existingCrossRefs, crossRefsToInsert)
+                    copyLinks.putIfAbsent(
+                        copy.id,
+                        PlaylistTrackCrossRef(
+                            playlistId = localPlaylist.id,
+                            trackId = copy.id,
+                            position = firstPositionOf[batchTrack] ?: 0,
+                        ),
+                    )
                     linkedCopies++
                     continue
                 }
@@ -1060,6 +1070,9 @@ class DiffWorker @AssistedInject constructor(
         // ── Flush batched writes ─────────────────────────────────────────
         if (crossRefsToInsert.isNotEmpty()) {
             playlistDao.insertAllCrossRefs(crossRefsToInsert.values.toList())
+        }
+        if (copyLinks.isNotEmpty()) {
+            playlistDao.insertCrossRefsIfAbsent(copyLinks.values.toList())
         }
         if (downloadEntries.isNotEmpty()) {
             downloadQueueDao.insertAll(downloadEntries)

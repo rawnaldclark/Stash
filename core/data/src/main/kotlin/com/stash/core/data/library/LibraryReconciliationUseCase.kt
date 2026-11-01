@@ -1,7 +1,10 @@
 package com.stash.core.data.library
 
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.auth.TokenManager
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,6 +49,7 @@ class LibraryReconciliationUseCase @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val trackDao: TrackDao,
     private val tokenManager: TokenManager,
+    private val playlistDao: PlaylistDao,
 ) {
     companion object {
         const val TOTAL_STEPS = 5
@@ -139,8 +143,9 @@ class LibraryReconciliationUseCase @Inject constructor(
         // sync links that copy instead and leaves the song unqueued, and this requeue would
         // otherwise file it again in the same pass. Read after the disk check and the adoption
         // above, so a copy whose file is gone doesn't count and the song is queued as before.
-        val alreadyOnPhone = if (unqueued.isEmpty()) emptySet() else trackDao.libraryCopiesOf(trackDao.getByIds(unqueued)).keys
-        val unqueuedTrackIds = unqueued.filterNot { it in alreadyOnPhone }
+        val copies = if (unqueued.isEmpty()) emptyMap() else trackDao.libraryCopiesOf(trackDao.getByIds(unqueued))
+        if (copies.isNotEmpty()) linkCopies(copies)
+        val unqueuedTrackIds = unqueued.filterNot { it in copies }
         if (unqueuedTrackIds.isNotEmpty()) {
             val newEntries = unqueuedTrackIds.map { trackId ->
                 com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId, syncId = syncId)
@@ -156,5 +161,29 @@ class LibraryReconciliationUseCase @Inject constructor(
             unqueuedRequeued = unqueuedTrackIds.size,
             filesAdopted = adopted,
         )
+    }
+
+    /**
+     * Links each skipped song's copy ([copies]: song id to its copy) where the song sits in a
+     * switched-on playlist, as the sync (DiffWorker) and a Download switch
+     * (`insertDownloadsForPlaylist`) link theirs. Without it a liked stub whose copy came from
+     * Search was neither downloaded nor shown: Liked Songs, offline, lost the song. A copy already
+     * in the playlist, or one the user took out, is left as it is (insert-if-absent).
+     */
+    private suspend fun linkCopies(copies: Map<Long, TrackEntity>) {
+        val links = playlistDao.getSyncedMemberships(copies.keys.toList()).mapNotNull { song ->
+            val copy = copies[song.trackId] ?: return@mapNotNull null
+            PlaylistTrackCrossRef(
+                playlistId = song.playlistId,
+                trackId = copy.id,
+                position = song.position,
+                locallyAdded = song.locallyAdded,
+            )
+        }.distinctBy { it.playlistId to it.trackId }
+        if (links.isEmpty()) return
+        playlistDao.insertCrossRefsIfAbsent(links)
+        for (playlistId in links.map { it.playlistId }.distinct()) {
+            playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
+        }
     }
 }

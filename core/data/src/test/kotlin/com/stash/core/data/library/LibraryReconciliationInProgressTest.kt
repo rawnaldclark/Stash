@@ -52,7 +52,7 @@ class LibraryReconciliationInProgressTest {
             coEvery { hasSoundCloudConnection() } returns false
         }
 
-        LibraryReconciliationUseCase(queue, db.trackDao(), tokens).reconcile(syncId = syncId)
+        LibraryReconciliationUseCase(queue, db.trackDao(), tokens, db.playlistDao()).reconcile(syncId = syncId)
 
         assertEquals(DownloadStatus.IN_PROGRESS, queue.getByTrackId(downloading)!!.status)
         assertEquals(DownloadStatus.PENDING, queue.getByTrackId(leftBySync)!!.status)

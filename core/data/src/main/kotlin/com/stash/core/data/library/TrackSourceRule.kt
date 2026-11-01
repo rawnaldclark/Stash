@@ -15,8 +15,10 @@ import com.stash.core.model.MusicSource
  * Every other claim stands. A local file, a cloud song or a SoundCloud upload is its own origin, and
  * a Spotify row with neither id (a local file in a Spotify playlist) has nothing that contradicts
  * it. With no claim at all, a song is Spotify's only with a Spotify id. There is no "no source"
- * value to fall back to: [MusicSource] is stored by name, and a new value would crash an older
- * build reading the same database after a downgrade.
+ * value to fall back to, and none is added: [MusicSource] is stored by name, and an older build
+ * reading a name it doesn't know (after a downgrade or a backup restore) takes it for LOCAL
+ * (`Converters.stringToMusicSource`), a song that only plays its own file, so a stream would stop
+ * playing there.
  */
 object TrackSourceRule {
 

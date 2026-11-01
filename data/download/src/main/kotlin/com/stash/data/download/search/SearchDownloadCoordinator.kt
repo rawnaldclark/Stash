@@ -1014,6 +1014,7 @@ class SearchDownloadCoordinator @Inject constructor(
             artist = track.artist,
             durationMs = (track.durationSeconds * 1000).toLong(),
             youtubeId = track.videoId,
+            explicit = track.explicit,
         )
     } catch (e: CancellationException) {
         throw e

@@ -3772,6 +3772,7 @@ class PlayerRepositoryImpl @Inject constructor(
             soundCloudPreview = extras?.getBoolean(EXTRA_SOUNDCLOUD_PREVIEW, false) == true,
             isDownloaded = extras?.getBoolean(EXTRA_SOUNDCLOUD_LOCAL, false) == true,
             youtubeId = youtubeId,
+            spotifyUri = extras?.getString(EXTRA_TRACK_SPOTIFY_URI),
             source = rebuiltTrackSource(extras, youtubeId),
             cloudUri = localConfiguration?.uri?.toString()?.takeIf { isCloud && it.startsWith(com.stash.core.model.STASH_CLOUD_SCHEME) },
             fileFormat = streamCodec ?: extras?.getString(EXTRA_CLOUD_FILE_FORMAT) ?: "opus",

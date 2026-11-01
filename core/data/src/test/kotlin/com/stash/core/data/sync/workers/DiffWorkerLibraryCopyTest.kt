@@ -131,13 +131,40 @@ class DiffWorkerLibraryCopyTest {
         assertNotNull("still removed", db.playlistDao().getCrossRef(pid, copy)!!.removedAt)
     }
 
+    @Test fun `a copy flagged as a wrong match is not linked, and the song is downloaded`() = runBlocking {
+        val wrong = downloaded("Starting Over", youtubeId = "handVideo01", lengthMs = 304_000L, flagged = true)
+        val pid = youtubePlaylist(snapshot("Starting Over", "otherVideo1", position = 0, lengthMs = 304_000L))
+
+        buildWorker().doWork()
+
+        assertNull("its file plays another song", db.playlistDao().getCrossRef(pid, wrong))
+        val queued = db.downloadQueueDao().getPendingBySyncId(SYNC_ID).map { db.trackDao().getById(it.trackId)!!.youtubeId }
+        assertEquals(listOf("otherVideo1"), queued)
+    }
+
+    @Test fun `a copy already in the playlist keeps its place`() = runBlocking {
+        val copy = downloaded("Starting Over", youtubeId = "handVideo01", lengthMs = 304_000L)
+        val pid = youtubePlaylist(snapshot("Starting Over", "otherVideo1", position = 0, lengthMs = 304_000L))
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(playlistId = pid, trackId = copy, position = 7, locallyAdded = true),
+        )
+
+        buildWorker().doWork()
+
+        assertEquals(0, db.downloadQueueDao().getPendingBySyncId(SYNC_ID).size)
+        val link = db.playlistDao().getCrossRef(pid, copy)!!
+        assertEquals("not moved to the new song's place", 7, link.position)
+        assertEquals("still the user's own", true, link.locallyAdded)
+    }
+
     // ── Fixtures ───────────────────────────────────────────────────────────
 
-    private suspend fun downloaded(title: String, youtubeId: String, lengthMs: Long): Long = db.trackDao().insert(
+    private suspend fun downloaded(title: String, youtubeId: String, lengthMs: Long, flagged: Boolean = false): Long = db.trackDao().insert(
         TrackEntity(
             title = title, artist = ARTIST, durationMs = lengthMs, youtubeId = youtubeId,
             source = MusicSource.YOUTUBE, filePath = "/music/starting-over.flac", isDownloaded = true,
             canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist(ARTIST),
+            matchFlagged = flagged,
         ),
     )
 
