@@ -6,11 +6,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.discography.QobuzAlbumUnavailableException
+import com.stash.core.data.link.LinkImporter
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.model.Playlist
+import com.stash.core.model.SCANNED_UNKNOWN_ARTIST
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.TrackSummary
@@ -253,8 +255,14 @@ class AlbumDiscoveryViewModel @Inject constructor(
     /** Whether download affordances should show — false for Qobuz albums (no videoId). */
     val downloadSupported: Boolean get() = albumSource == AlbumSource.YOUTUBE || isPlaylist
 
-    /** A YouTube Music playlist (Home's Moods & moments): videoId rows like an album, each song with its own album. */
-    private val isPlaylist: Boolean get() = albumSource == AlbumSource.YOUTUBE_PLAYLIST
+    /**
+     * A YouTube Music playlist (Home's Moods & moments): videoId rows like an album, each song with its own artist
+     * and album. The screen words its errors for a playlist on it.
+     */
+    val isPlaylist: Boolean get() = albumSource == AlbumSource.YOUTUBE_PLAYLIST
+
+    /** What the screen's messages call the page: a playlist, or an album. */
+    private val pageNoun: String get() = if (isPlaylist) "playlist" else "album"
 
     /**
      * True for a native Qobuz album OR a Qobuz playlist. Their tracks carry no
@@ -291,7 +299,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
         return TrackItem(
             videoId = track.videoId,
             title = track.title,
-            artist = track.artist,
+            artist = if (isPlaylist) playlistSongArtist(track) else track.artist,
             durationSeconds = track.durationSeconds,
             thumbnailUrl = track.thumbnailUrl,
             album = if (isPlaylist) track.album else hero.title,
@@ -382,9 +390,9 @@ class AlbumDiscoveryViewModel @Inject constructor(
             if (added && delegate.inListenTogether) return@launch // the session confirms it
             _userMessages.emit(
                 if (added) {
-                    "Added album to queue"
+                    "Added $pageNoun to queue"
                 } else {
-                    "Couldn't add album to queue"
+                    "Couldn't add $pageNoun to queue"
                 },
             )
         }
@@ -435,7 +443,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
                 id = if (qobuz) 0L else t.videoId.hashCode().toLong(),
                 title = t.title,
                 // A playlist's "artist" is its maker ("YouTube Music"), never a song's
-                artist = if (playlist) t.artist else t.artist.ifBlank { albumArtist },
+                artist = if (playlist) playlistSongArtist(t) else t.artist.ifBlank { albumArtist },
                 album = if (playlist) t.album.orEmpty() else albumTitle,
                 durationMs = (t.durationSeconds * 1000L).toLong(),
                 albumArtUrl = t.thumbnailUrl ?: albumArt,
@@ -527,7 +535,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
             Log.e(TAG, "album fetch failed for $browseId", t)
             // Plain words: the exception's text can be Qobuz's raw JSON reply (#481).
             _uiState.update { it.copy(status = AlbumDiscoveryStatus.Error(LOAD_FAILED)) }
-            _userMessages.emit("Couldn't load album — tap Retry.")
+            _userMessages.emit("Couldn't load $pageNoun — tap Retry.")
         }
     }
 
@@ -574,12 +582,24 @@ class AlbumDiscoveryViewModel @Inject constructor(
 
     /** Which album the screen shows: a catalog id and the catalog it belongs to. */
     private data class AlbumRef(val id: String, val source: AlbumSource) {
-        /** The library playlist that stands for this album: one per source + browse id. */
-        val savedSourceId: String get() = "album:${source.name.lowercase()}:$id"
+        /**
+         * The library playlist that stands for this album: one per source + browse id. A YouTube Music playlist
+         * is filed under the key a pasted link of it uses, so the two never make two copies.
+         */
+        val savedSourceId: String get() = when (source) {
+            AlbumSource.YOUTUBE_PLAYLIST -> LinkImporter.youTubePlaylistSourceId(id)
+            else -> "album:${source.name.lowercase()}:$id"
+        }
     }
 
     companion object {
         private const val TAG = "AlbumDiscoveryVM"
+
+        /**
+         * A playlist song's artist, as it goes to the queue, the history and a download: its own, or the app's
+         * "Unknown Artist" for a song YouTube names no artist for. Never the playlist's maker, never blank.
+         */
+        internal fun playlistSongArtist(track: TrackSummary): String = track.artist.ifBlank { SCANNED_UNKNOWN_ARTIST }
 
         /** A failure Retry can fix. Plain words, whatever the exception said. */
         internal const val LOAD_FAILED = "Check your connection and try again."

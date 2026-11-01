@@ -141,7 +141,11 @@ fun AlbumDiscoveryScreen(
                 }
                 is AlbumDiscoveryStatus.Error -> item {
                     DiscoveryErrorCard(
-                        title = if (status.canRetry) "Couldn't load album" else "Album unavailable",
+                        title = when {
+                            !status.canRetry -> "Album unavailable"
+                            vm.isPlaylist -> "Couldn't load playlist"
+                            else -> "Couldn't load album"
+                        },
                         message = status.message,
                         // #481: Retry can't make an album appear in a country it isn't sold in.
                         onRetry = if (status.canRetry) vm::retry else null,
