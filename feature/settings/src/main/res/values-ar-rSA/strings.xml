@@ -347,8 +347,6 @@
     <string name="settings_lossless_routing_header">ROUTING</string>
     <string name="settings_lossless_routing_footer">Lossless comes from the sources above. Misses try JioSaavn before falling back to YouTube, shown as \"via YT\" while it plays.</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Stream only</string>
-    <string name="settings_mode_download">Download</string>
     <string name="settings_stream_on_cellular_title">Stream on cellular</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Stream via YouTube</string>

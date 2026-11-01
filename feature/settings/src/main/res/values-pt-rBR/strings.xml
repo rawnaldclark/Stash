@@ -327,8 +327,6 @@
     <string name="settings_lossless_routing_header">ROTEAMENTO</string>
     <string name="settings_lossless_routing_footer">O áudio sem perdas vem das fontes acima. Se uma faixa não for encontrada, o app tenta o JioSaavn antes de recorrer ao YouTube; durante a reprodução, essa origem aparece como \"via YT\".</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Somente transmissão</string>
-    <string name="settings_mode_download">Download</string>
     <string name="settings_stream_on_cellular_title">Transmitir usando dados móveis</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Transmitir pelo YouTube</string>

@@ -76,8 +76,8 @@ fun SettingsPlaybackScreen(
                         Box(modifier = Modifier.padding(10.dp)) {
                             SettingsSegmented(
                                 options = listOf(
-                                    stringResource(R.string.settings_mode_stream_only),
-                                    stringResource(R.string.settings_mode_download),
+                                    stringResource(R.string.settings_mode_online),
+                                    stringResource(R.string.settings_mode_offline),
                                 ),
                                 selectedIndex = if (streamingEnabled) 0 else 1,
                                 onSelect = { viewModel.onStreamingToggle(it == 0) },
