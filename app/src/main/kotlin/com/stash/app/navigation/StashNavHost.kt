@@ -40,6 +40,7 @@ import com.stash.feature.record.mixes.RecordMixesSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
+import com.stash.feature.home.shelves.MoodScreen
 import com.stash.feature.library.AlbumDetailScreen
 import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
@@ -177,6 +178,10 @@ private fun StashNavGraph(
                 onSeeAllPlaylists = { genre ->
                     navController.navigate(PlaylistBrowseRoute(genre))
                 },
+                // Only from Home itself: two quick taps on two tiles open one page
+                onOpenMood = { tile ->
+                    if (navController.currentBackStackEntry === homeEntry) navController.navigate(MoodRoute(tile.title, tile.params))
+                },
                 onNavigateToMixBuilder = { recipeId ->
                     navController.navigate(MixBuilderRoute(recipeId))
                 },
@@ -229,6 +234,24 @@ private fun StashNavGraph(
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
                             source = album.source,
+                        ),
+                    )
+                },
+            )
+        }
+        composable<MoodRoute> {
+            MoodScreen(
+                onBack = { navController.popBackStack() },
+                // A YouTube Music playlist on the album page, which plays and downloads it like an album
+                onOpenPlaylist = { playlist ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = playlist.id,
+                            title = playlist.title,
+                            artist = playlist.artist,
+                            thumbnailUrl = playlist.thumbnailUrl,
+                            year = null,
+                            source = playlist.source,
                         ),
                     )
                 },

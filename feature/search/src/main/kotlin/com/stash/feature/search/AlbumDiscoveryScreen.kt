@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.preview.LosslessUrlPrefetcher
-import com.stash.core.model.TrackItem
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.SectionHeader
@@ -176,15 +175,7 @@ fun AlbumDiscoveryScreen(
                             val currentPreviewState = previewState
                             val isPreviewPlaying = currentPreviewState is PreviewState.Playing &&
                                 currentPreviewState.videoId == track.videoId
-                            val trackItem = TrackItem(
-                                videoId = track.videoId,
-                                title = track.title,
-                                artist = track.artist,
-                                durationSeconds = track.durationSeconds,
-                                thumbnailUrl = track.thumbnailUrl,
-                                album = state.hero.title,
-                                albumArtist = state.hero.artist,
-                            )
+                            val trackItem = vm.trackItemFor(track)
                             // Warm the lossless URL cache as each YT album track row
                             // enters composition (blank-videoId Qobuz rows dedupe to
                             // a no-op). Idempotent.

@@ -2,4 +2,10 @@
 <resources>
     <!-- Home's own shelves, built from your listening and YouTube Music (hidden in Offline mode) -->
     <string name="home_new_from_artists">New from your artists</string>
+    <string name="home_moods">Moods &amp; moments</string>
+    <!-- A mood's page (a tile of Moods & moments opened): YouTube Music's playlists for it -->
+    <string name="mood_back">Back</string>
+    <string name="mood_load_failed">Couldn’t load this mood. Check your connection and try again.</string>
+    <string name="mood_retry">Try again</string>
+    <string name="mood_empty">No playlists for this mood right now.</string>
 </resources>

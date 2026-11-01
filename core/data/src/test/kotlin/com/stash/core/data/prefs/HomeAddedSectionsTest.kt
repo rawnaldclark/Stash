@@ -18,9 +18,11 @@ class HomeAddedSectionsTest {
     )
 
     @Test
-    fun `a fresh install has new from your artists right above new releases`() {
+    fun `a fresh install has new from your artists, then moods and moments, right above new releases`() {
         val order = resolveHomeSectionOrder(emptyList())
-        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 1, order.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 2, order.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 1, order.indexOf(HomeSection.MOODS))
+        assertTrue(HomeSection.MOODS in DEFAULT_HOME_SECTIONS)
         assertTrue(order.indexOf(HomeSection.YOUR_PLAYLISTS) < order.indexOf(HomeSection.NEW_FROM_ARTISTS))
         assertTrue(HomeSection.NEW_FROM_ARTISTS in DEFAULT_HOME_SECTIONS)
         assertEquals(HomeSection.entries.size, order.toSet().size)
@@ -31,7 +33,7 @@ class HomeAddedSectionsTest {
         val resolved = resolveHomeSectionOrder(savedBy0_9_122)
         val savedSections = savedBy0_9_122.mapNotNull(HomeSection::fromKey)
         val at = savedSections.indexOf(HomeSection.NEW_RELEASES)
-        assertEquals(savedSections.take(at) + HomeSection.NEW_FROM_ARTISTS + savedSections.drop(at), resolved)
+        assertEquals(savedSections.take(at) + HomeSection.NEW_FROM_ARTISTS + HomeSection.MOODS + savedSections.drop(at), resolved)
         // the same on a reordered Home and before the reorder (Your listening was already placed)
         assertEquals(resolved, effectiveHomeSectionOrder(savedBy0_9_122, promoted = true))
     }
@@ -40,7 +42,8 @@ class HomeAddedSectionsTest {
     fun `with the catalogs moved, it goes above the first of them`() {
         val saved = listOf("discover", "made_for_you", "top_albums", "radios", "new_releases", "qobuz_playlists")
         val resolved = resolveHomeSectionOrder(saved)
-        assertEquals(resolved.indexOf(HomeSection.TOP_ALBUMS) - 1, resolved.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(resolved.indexOf(HomeSection.TOP_ALBUMS) - 2, resolved.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(resolved.indexOf(HomeSection.TOP_ALBUMS) - 1, resolved.indexOf(HomeSection.MOODS))
     }
 
     @Test
@@ -63,10 +66,24 @@ class HomeAddedSectionsTest {
     fun `with new releases hidden, it still sits where new releases would be and shows`() {
         // Hidden sections keep their place in the order: the anchor is still there, only not shown
         val order = effectiveHomeSectionOrder(savedBy0_9_122, promoted = true)
-        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 1, order.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 2, order.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(order.indexOf(HomeSection.NEW_RELEASES) - 1, order.indexOf(HomeSection.MOODS))
         val shown = visibleHomeSections(order, setOf(HomeSection.NEW_RELEASES), communityOn = false)
         assertFalse(HomeSection.NEW_RELEASES in shown)
-        assertEquals(shown.indexOf(HomeSection.QOBUZ_PLAYLISTS) - 1, shown.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(shown.indexOf(HomeSection.QOBUZ_PLAYLISTS) - 2, shown.indexOf(HomeSection.NEW_FROM_ARTISTS))
+        assertEquals(shown.indexOf(HomeSection.QOBUZ_PLAYLISTS) - 1, shown.indexOf(HomeSection.MOODS))
+    }
+
+    @Test
+    fun `an order saved with new from your artists gets moods and moments under it, wherever the user put it`() {
+        // Saved by the release that added New from your artists, after the user moved it to the end
+        val saved = savedBy0_9_122 + "new_from_artists"
+        val resolved = resolveHomeSectionOrder(saved)
+        // Moods & moments doesn't follow it there: it takes its own place, above the catalogs
+        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolved.last())
+        assertEquals(resolved.indexOf(HomeSection.NEW_RELEASES) - 1, resolved.indexOf(HomeSection.MOODS))
+        assertEquals(HomeSection.MOODS, HomeSection.fromKey("moods"))
+        assertFalse(HomeSection.MOODS in visibleHomeSections(resolved, setOf(HomeSection.MOODS), communityOn = false))
     }
 
     @Test

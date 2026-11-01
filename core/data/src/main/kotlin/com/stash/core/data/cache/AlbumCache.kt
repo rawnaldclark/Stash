@@ -19,7 +19,8 @@ import javax.inject.Singleton
  *
  * Routes by [AlbumSource]: [AlbumSource.YOUTUBE] albums load from
  * [YTMusicApiClient.getAlbum] (browseId), [AlbumSource.QOBUZ] albums from
- * [QobuzAlbumFetcher] (Qobuz album id). Entries are keyed by `"$source:$id"`
+ * [QobuzAlbumFetcher] (Qobuz album id), [AlbumSource.YOUTUBE_PLAYLIST]
+ * playlists from [YTMusicApiClient.getPlaylistAlbum] (`VL…`). Entries are keyed by `"$source:$id"`
  * so a numeric Qobuz album id can never collide with a YT browseId.
  */
 @Singleton
@@ -70,6 +71,10 @@ open class AlbumCache @Inject constructor(
             val fresh = when (source) {
                 AlbumSource.QOBUZ -> qobuzFetcher.getAlbum(id)
                 AlbumSource.QOBUZ_PLAYLIST -> qobuzFetcher.getPlaylist(id)
+                // A playlist that didn't answer, or answered without songs, is a failed load like an album's below
+                AlbumSource.YOUTUBE_PLAYLIST -> api.getPlaylistAlbum(id).also {
+                    if (it.tracks.isEmpty()) throw IOException("YouTube Music didn't return playlist $id")
+                }
                 AlbumSource.YOUTUBE -> api.getAlbum(id).also {
                     // getAlbum answers a browse that didn't come back with a blank,
                     // track-less album. Kept, that was an empty page with no Retry

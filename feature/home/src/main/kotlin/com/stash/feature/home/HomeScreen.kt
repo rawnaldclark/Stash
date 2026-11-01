@@ -182,6 +182,8 @@ fun HomeScreen(
     yourRecordSection: @Composable () -> Unit = {},
     /** "From your record", from feature/record: three mixes only the record's years make; nothing without an import. */
     recordMixesSection: @Composable () -> Unit = {},
+    /** A tile of "Moods & moments": the app opens its page of playlists. */
+    onOpenMood: (com.stash.data.ytmusic.model.MoodTile) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
     shelvesViewModel: HomeShelvesViewModel = hiltViewModel(),
 ) {
@@ -199,7 +201,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
-    // Home's own streaming shelves (New from your artists): built once a day, empty in Offline mode.
+    // Home's own streaming shelves (New from your artists, Moods & moments): built once a day, empty in Offline mode.
     val shelves by shelvesViewModel.state.collectAsStateWithLifecycle()
     LifecycleResumeEffect(shelvesViewModel) {
         shelvesViewModel.onResume()
@@ -726,6 +728,15 @@ fun HomeScreen(
                             albums = shelves.newFromArtists,
                             onOpen = onNavigateToAlbum,
                             lossless = false,
+                        )
+                    }
+                }
+                HomeSection.MOODS -> if (shelves.moods.isNotEmpty()) {
+                    item(key = "section_moods") {
+                        com.stash.feature.home.shelves.MoodTilesShelf(
+                            title = stringResource(R.string.home_moods),
+                            tiles = shelves.moods,
+                            onOpen = onOpenMood,
                         )
                     }
                 }
