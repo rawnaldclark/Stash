@@ -148,6 +148,8 @@ import androidx.compose.ui.unit.toSize
  * one) reads it in a graphicsLayer, so a drag never recomposes this screen.
  *
  * @param onDismiss Callback invoked when the user taps the dismiss (down arrow) button.
+ * @param onFixMatch "Find a better match" in the wrong-match dialog, once the song is flagged:
+ *   the host opens Failed Matches on that song id with its finder searching.
  * @param viewModel The [NowPlayingViewModel] provided by Hilt (the activity's: the mini player's).
  * @param sheet The player sheet hosting this screen; null draws it as a plain full screen.
  */
@@ -157,6 +159,7 @@ fun NowPlayingScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
+    onFixMatch: (trackId: Long) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     sheet: PlayerSheetState? = null,
 ) {
@@ -357,6 +360,13 @@ fun NowPlayingScreen(
                 onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
             }
         }
+    }
+
+    // "Find a better match": once the flag is saved, straight to the fix. Not dropped when the
+    // player has started closing, unlike a lookup above: the listener asked for this page, and the
+    // flag lands in milliseconds.
+    LaunchedEffect(Unit) {
+        viewModel.matchFixEvents.collect { trackId -> onFixMatch(trackId) }
     }
 
     // TalkBack: when the player settles open, focus moves to its Dismiss button, so the reader

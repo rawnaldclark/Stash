@@ -1201,10 +1201,18 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Flag the currently-playing track as the wrong song. Surfaces it in
-     * the Failed Matches screen so the user can pick a replacement. No-op
-     * when nothing is playing. Emits a snackbar message so the user knows
-     * where to go next.
+     * One-shot: open Failed Matches on this song id, "find it yourself" searching for it. Emitted
+     * by [flagCurrentTrackAsWrongMatch] once the flag is saved (the id of a stream only exists after
+     * its persist). `extraBufferCapacity = 1` as for [artistNavEvents].
+     */
+    private val _matchFixEvents = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val matchFixEvents: SharedFlow<Long> = _matchFixEvents.asSharedFlow()
+
+    /**
+     * Flag the currently-playing track as the wrong song, then go straight to the fix: Failed
+     * Matches opens on it with "find it yourself" searching ([matchFixEvents]). It used to stop at
+     * a toast pointing to Sync → Failed Matches, where the song then had to be found by hand. No-op
+     * when nothing is playing, and for a cloud or SoundCloud song (the user's own file, no match).
      */
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
@@ -1217,7 +1225,7 @@ class NowPlayingViewModel @Inject constructor(
                 return@launchUserAction
             }
             musicRepository.setMatchFlagged(trackId, true)
-            _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
+            _matchFixEvents.emit(trackId)
         }
     }
 

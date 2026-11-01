@@ -494,6 +494,12 @@ fun StashScaffold(
                 ),
             )
         },
+        // "Find a better match": the song is flagged; the player collapses and Failed Matches
+        // opens on it, its finder searching. Back returns to where you were before the player.
+        onFixMatch = { trackId ->
+            playerSheet.collapse()
+            navController.navigate(FailedMatchesRoute(focusTrackId = trackId))
+        },
     )
 
     // Above the player too: a heads-up shows over Now Playing, above the system bar there, and
