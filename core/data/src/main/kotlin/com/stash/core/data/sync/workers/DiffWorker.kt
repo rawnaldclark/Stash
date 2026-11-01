@@ -946,10 +946,41 @@ class DiffWorker @AssistedInject constructor(
         // track of every rotating mix was queued (#368: "it downloads 6000+ from
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
+        var linkedCopies = 0
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
+            // A new song already on the phone as another row (cause 4 of the duplicates: a Spotify
+            // row downloaded under one video while this YouTube playlist holds another upload, so
+            // the ids keep them two rows) is linked here, where the song sits, instead of being
+            // downloaded again; the new row keeps its own ids for the next sync. The same shared
+            // check as a tap and a playlist's Download switch (SameSongRule.isLibraryCopy), its
+            // candidates read once per playlist (findHoldingFileByCanonicalIdentities).
+            val copyCandidates: Map<CanonicalKey, List<TrackEntity>> = trackDao
+                .findHoldingFileByCanonicalIdentities(
+                    newTracks.map { it.entity.canonicalTitle to it.entity.canonicalArtist },
+                )
+                .groupBy { CanonicalKey(it.canonicalTitle, it.canonicalArtist) }
+            val firstPositionOf = newOccurrences.groupBy({ it.first }, { it.second.position })
+                .mapValues { (_, positions) -> positions.min() }
             for (batchTrack in newTracks) {
                 if (batchTrack.entity.soundCloudPreview) continue // A preview is never queued for download.
                 val trackId = checkNotNull(batchTrack.persistedId)
+                // A copy the user took out of this playlist doesn't stand in for the song: it isn't
+                // linked back (addCrossRefIfNotSoftDeleted), so the song downloads as before.
+                val copy = SameSongRule.libraryCopyAmong(
+                    rows = copyCandidates[CanonicalKey(batchTrack.entity.canonicalTitle, batchTrack.entity.canonicalArtist)]
+                        .orEmpty()
+                        .filter { existingCrossRefs[it.id]?.removedAt == null },
+                    title = batchTrack.entity.title,
+                    durationMs = batchTrack.entity.durationMs,
+                    soundCloudId = batchTrack.entity.soundCloudId,
+                    excludeTrackId = trackId,
+                )
+                if (copy != null) {
+                    val position = firstPositionOf[batchTrack] ?: 0
+                    addCrossRefIfNotSoftDeleted(localPlaylist.id, copy.id, position, existingCrossRefs, crossRefsToInsert)
+                    linkedCopies++
+                    continue
+                }
                 downloadEntries.add(
                     DownloadQueueEntity(
                         trackId = trackId,
@@ -1050,7 +1081,7 @@ class DiffWorker @AssistedInject constructor(
                 TAG,
                 "Playlist '${playlistSnapshot.playlistName}' (id=${localPlaylist.id}): " +
                     "$newTrackCount new track(s), streamingMode=$streamingMode, " +
-                    "downloadsQueued=${downloadEntries.size}",
+                    "downloadsQueued=${downloadEntries.size}, alreadyOnPhone=$linkedCopies",
             )
         }
 
