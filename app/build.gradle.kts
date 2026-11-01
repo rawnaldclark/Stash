@@ -320,4 +320,7 @@ dependencies {
     // Google Cast: casting to Chromecast / Cast speakers (spec 2026-10-06).
     implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.mediarouter)
+    // The home screen widget: Glance for the RemoteViews, its Material 3 bridge for the app's colour schemes.
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
 }

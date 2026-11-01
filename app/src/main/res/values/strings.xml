@@ -4,4 +4,18 @@
     <string name="resume_playback_short">Resume</string>
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Couldn\'t connect to %1$s</string>
+
+    <!-- Home screen widget -->
+    <string name="widget_now_playing_label">Now playing</string>
+    <string name="widget_now_playing_square_label">Now playing (cover)</string>
+    <string name="widget_now_playing_description">The song that\'s playing, with play/pause and next</string>
+    <string name="widget_now_playing_square_description">The cover of the song that\'s playing, with play/pause and next</string>
+    <string name="widget_nothing_playing">Nothing playing</string>
+    <string name="widget_open_stash">Open Stash</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_next">Next song</string>
+    <!-- Sample song in the widget picker's preview -->
+    <string name="widget_preview_title">Song title</string>
+    <string name="widget_preview_artist">Artist</string>
 </resources>

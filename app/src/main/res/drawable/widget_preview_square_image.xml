@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The square widget in the picker before Android 12: cover, dark strip, title, artist, buttons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="110dp"
+    android:height="110dp"
+    android:viewportWidth="110"
+    android:viewportHeight="110">
+    <path android:fillColor="@color/widget_placeholder_background"
+        android:pathData="M16,0H94A16,16 0 0 1 110,16V94A16,16 0 0 1 94,110H16A16,16 0 0 1 0,94V16A16,16 0 0 1 16,0Z" />
+    <path android:fillColor="#B8000000"
+        android:pathData="M0,62H110V94A16,16 0 0 1 94,110H16A16,16 0 0 1 0,94Z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M15,70H71A3,3 0 0 1 71,76H15A3,3 0 0 1 15,70Z" />
+    <path android:fillColor="#C7FFFFFF"
+        android:pathData="M15,90H43A2.5,2.5 0 0 1 43,95H15A2.5,2.5 0 0 1 15,90Z" />
+    <path android:fillColor="@color/widget_accent"
+        android:pathData="M78,92m-13,0a13,13 0 1 1 26,0a13,13 0 1 1 -26,0" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M74,86V98L83,92Z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M95,97L101,92L95,87ZM102,87V97H104V87Z" />
+</vector>
