@@ -21,6 +21,9 @@ class NowPlayingWidgetFeed(
     private val debouncer = WidgetUpdateDebouncer(scope = scope, clock = clock, publish = sink::publish)
     private var followed: Player? = null
 
+    /** The last song this feed showed, in this process. */
+    private var lastShown: NowPlayingWidgetState? = null
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             if (events.containsAny(*WIDGET_EVENTS)) push(player)
@@ -50,7 +53,21 @@ class NowPlayingWidgetFeed(
     }
 
     private fun push(player: Player) {
-        NowPlayingWidgetMapper.map(player.widgetSnapshot())?.let(debouncer::submit)
+        val state = NowPlayingWidgetMapper.map(player.widgetSnapshot())
+        val shown = lastShown
+        when {
+            state != null -> {
+                lastShown = state
+                debouncer.submit(state)
+            }
+            // Nothing loaded, so nothing plays, whatever the widget shows. After a song in this process
+            // (the queue cleared, a cast or crossfade swap empty for a moment): that song, paused,
+            // debounced like any change, so a swap that fills at once never flickers.
+            shown != null -> debouncer.submit(shown.copy(isPlaying = false))
+            // A fresh service with nothing loaded: Android restarting it after a crash, while the
+            // widget still shows the old process's Pause. The stored song is paused, now.
+            else -> sink.serviceStopped()
+        }
     }
 
     private companion object {

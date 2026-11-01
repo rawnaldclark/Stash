@@ -101,7 +101,7 @@ class NowPlayingWidgetFeedTest {
     }
 
     @Test
-    fun `an emptied player leaves the widget's song alone`() {
+    fun `an emptied player keeps the widget's song, paused`() {
         val player = SongPlayer("One")
         feed.follow(player)
         settle()
@@ -109,7 +109,33 @@ class NowPlayingWidgetFeedTest {
         player.change { empty = true }
         settle()
 
+        assertThat(sink.published).containsExactly(state("One", true), state("One", false)).inOrder()
+        assertThat(sink.stops).isEqualTo(0)
+    }
+
+    @Test
+    fun `a player empty for a moment (a swap) never flickers the widget`() {
+        val player = SongPlayer("One")
+        feed.follow(player)
+        settle()
+
+        player.change { empty = true }
+        shadowOf(Looper.getMainLooper()).idle()
+        player.change { empty = false }
+        settle()
+
         assertThat(sink.published).containsExactly(state("One", true))
+    }
+
+    @Test
+    fun `a service restarted with nothing loaded (after a crash) shows the stored song paused`() {
+        // Android restarts a sticky service after its process dies; the player comes back empty while
+        // the widget still shows the old process's Pause.
+        feed.follow(SongPlayer("unused").apply { change { empty = true } })
+        settle()
+
+        assertThat(sink.stops).isEqualTo(1)
+        assertThat(sink.published).isEmpty()
     }
 
     @Test
