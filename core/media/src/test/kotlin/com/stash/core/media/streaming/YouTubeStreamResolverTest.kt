@@ -152,19 +152,33 @@ class YouTubeStreamResolverTest {
         coVerify(exactly = 0) { extractor.extractStreamUrlViaYtDlp(any()) }
     }
 
-    /** Save Data on the lossy path: the resolver asks the extractor for the lowest audio quality. */
+    /** Data saver on mobile data with Lossless off: the resolver asks the extractor for the lowest audio quality. */
     @Test
-    fun resolve_saveDataOn_asksForTheLowestQuality() = runTest {
+    fun resolve_lowestLossyQuality_asksForTheLowestQuality() = runTest {
         val extractor: PreviewUrlExtractor = mockk()
         val ytMusic: YTMusicApiClient = mockk()
         coEvery { extractor.extractStreamUrl("abc123def45", true, true) } returns "https://low/abc123def45"
         every { extractor.observedCodec("abc123def45") } returns "opus"
-        val resolver = YouTubeStreamResolver(extractor, ytMusic, policy(saveData = true))
+        val resolver = YouTubeStreamResolver(extractor, ytMusic, policy(LossyQuality.LOWEST))
 
         val result = resolver.resolve(trackWithYoutubeId("abc123def45"), allowYtDlp = true)
 
         assertThat(result?.url).isEqualTo("https://low/abc123def45")
         coVerify(exactly = 1) { extractor.extractStreamUrl("abc123def45", true, true) }
+    }
+
+    /** Data saver on mobile data with Lossless on: YouTube's best stands in for FLAC, not its lowest. */
+    @Test
+    fun resolve_dataSaverWithLossless_asksForTheBestQuality() = runTest {
+        val extractor: PreviewUrlExtractor = mockk()
+        val ytMusic: YTMusicApiClient = mockk()
+        coEvery { extractor.extractStreamUrl("abc123def45", true, false) } returns "https://best/abc123def45"
+        every { extractor.observedCodec("abc123def45") } returns "opus"
+        val resolver = YouTubeStreamResolver(extractor, ytMusic, policy(LossyQuality.DATA_SAVER))
+
+        assertThat(resolver.resolve(trackWithYoutubeId("abc123def45"), allowYtDlp = true)?.url)
+            .isEqualTo("https://best/abc123def45")
+        coVerify(exactly = 0) { extractor.extractStreamUrl(any(), any(), true) }
     }
 
     /**
@@ -244,8 +258,8 @@ class YouTubeStreamResolverTest {
         }
     }
 
-    private fun policy(saveData: Boolean = false): StreamQualityPolicy =
-        mockk { coEvery { saveData() } returns saveData }
+    private fun policy(quality: LossyQuality = LossyQuality.FULL): StreamQualityPolicy =
+        mockk { coEvery { lossyQuality() } returns quality }
 
     private fun trackWithYoutubeId(id: String): TrackEntity = TrackEntity(
         id = 1L,

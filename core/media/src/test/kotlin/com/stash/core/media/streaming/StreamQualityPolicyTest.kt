@@ -1,6 +1,7 @@
 package com.stash.core.media.streaming
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.data.download.lossless.LosslessQualityTier
 import com.stash.data.download.lossless.LosslessSourcePreferences
@@ -22,20 +23,24 @@ class StreamQualityPolicyTest {
     }
     private val policy = StreamQualityPolicy(connectivity, prefs, cache, losslessPrefs, streamingPreference)
 
+    /** [metered] defaults to [cellular]: mobile data is metered, home Wi-Fi isn't. */
     private fun setup(
         cellular: Boolean,
         wifi: LosslessQualityTier = LosslessQualityTier.MAX,
         cell: LosslessQualityTier = LosslessQualityTier.CD,
         saveData: Boolean = false,
         preferTidalAac: Boolean = false,
+        metered: Boolean = cellular,
+        lossless: Boolean = true,
     ) {
         every { connectivity.isCellular() } returns cellular
+        every { connectivity.isMetered() } returns metered
         coEvery { prefs.wifiTierNow() } returns wifi
         coEvery { prefs.cellularTierNow() } returns cell
         coEvery { prefs.saveDataNow() } returns saveData
         coEvery { prefs.preferTidalAacNow() } returns preferTidalAac
         coEvery { prefs.preferCloudCopiesNow() } returns false
-        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.enabledNow() } returns lossless
     }
 
     @Test fun `wifi uses wifi tier`() = runTest {
@@ -49,32 +54,85 @@ class StreamQualityPolicyTest {
     }
 
     /**
-     * Save Data never leaves lossless: it is the LOWEST lossless tier (CD, ~28 MB / 4 min
-     * against 70 for Hi-Res and 140 for Max) on every network. A user who wants less than
-     * FLAC turns lossless off; on that lossy path Save Data asks YouTube for its lowest
-     * audio quality instead ([saveData] is what the YouTube resolver reads).
+     * The Data saver matrix: metered x Lossless x the switch. It applies only where the switch is
+     * on AND the network is metered; there, Lossless on streams lossy at [LossyQuality.DATA_SAVER]
+     * (no FLAC, so the lossless rungs step aside) and Lossless off the lowest lossy quality. Every
+     * other cell is exactly what the switch being off gives.
      */
-    @Test fun `save data streams CD on wifi`() = runTest {
-        setup(cellular = false, wifi = LosslessQualityTier.MAX, saveData = true)
-        assertThat(policy.streamingTier()).isEqualTo(LosslessQualityTier.CD)
+    @Test fun `data saver matrix - metered x lossless x switch`() = runTest {
+        data class Cell(val metered: Boolean, val lossless: Boolean, val saver: Boolean, val applies: Boolean, val lossy: LossyQuality)
+        val cells = listOf(
+            Cell(metered = false, lossless = true, saver = false, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = false, lossless = true, saver = true, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = false, lossless = false, saver = false, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = false, lossless = false, saver = true, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = true, lossless = true, saver = false, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = true, lossless = true, saver = true, applies = true, lossy = LossyQuality.DATA_SAVER),
+            Cell(metered = true, lossless = false, saver = false, applies = false, lossy = LossyQuality.FULL),
+            Cell(metered = true, lossless = false, saver = true, applies = true, lossy = LossyQuality.LOWEST),
+        )
+        for (c in cells) {
+            setup(cellular = c.metered, metered = c.metered, lossless = c.lossless, saveData = c.saver)
+            assertWithMessage("$c applies").that(policy.dataSaverApplies()).isEqualTo(c.applies)
+            assertWithMessage("$c lossy").that(policy.lossyQuality()).isEqualTo(c.lossy)
+        }
     }
 
-    @Test fun `save data streams CD on cellular even when the cellular tier is higher`() = runTest {
+    @Test fun `the lossy qualities ask JioSaavn and YouTube for the right files`() {
+        assertThat(LossyQuality.FULL.jioSaavnKbps).isEqualTo(320)
+        assertThat(LossyQuality.FULL.youTubeLowest).isFalse()
+        // Lossless on, mobile data: YouTube's best and JioSaavn's same-size 160, not FLAC or Tidal AAC.
+        assertThat(LossyQuality.DATA_SAVER.jioSaavnKbps).isEqualTo(160)
+        assertThat(LossyQuality.DATA_SAVER.youTubeLowest).isFalse()
+        assertThat(LossyQuality.LOWEST.jioSaavnKbps).isEqualTo(96)
+        assertThat(LossyQuality.LOWEST.youTubeLowest).isTrue()
+    }
+
+    /** On Wi-Fi Data saver changes nothing: the Wi-Fi tier stands (it used to force CD here). */
+    @Test fun `data saver keeps the wifi tier on unmetered wifi`() = runTest {
+        setup(cellular = false, wifi = LosslessQualityTier.MAX, saveData = true)
+        assertThat(policy.streamingTier()).isEqualTo(LosslessQualityTier.MAX)
+        assertThat(policy.dataSaverApplies()).isFalse()
+    }
+
+    /** A Wi-Fi hotspot marked metered spends a data plan: Data saver applies on it. */
+    @Test fun `data saver applies on a metered wifi hotspot`() = runTest {
+        setup(cellular = false, metered = true, saveData = true)
+        assertThat(policy.dataSaverApplies()).isTrue()
+    }
+
+    /** Where it applies no lossless rung runs; anything that still asks (a debug toggle) gets the floor. */
+    @Test fun `data saver on mobile data floors the tier at CD`() = runTest {
         setup(cellular = true, cell = LosslessQualityTier.HI_RES, saveData = true)
         assertThat(policy.streamingTier()).isEqualTo(LosslessQualityTier.CD)
     }
 
-    @Test fun `save data is exposed for the lossy path`() = runTest {
-        setup(cellular = false, saveData = true)
-        assertThat(policy.saveData()).isTrue()
+    /** Walking out of the house with Data saver on: the FLAC URLs cached on Wi-Fi must not play on mobile data. */
+    @Test fun `leaving wifi with data saver on drops the cached URLs`() = runTest {
+        setup(cellular = false, wifi = LosslessQualityTier.CD, saveData = true)
+        policy.streamingTier()
+        cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
+
+        setup(cellular = true, cell = LosslessQualityTier.CD, saveData = true)
+        assertThat(policy.dataSaverApplies()).isTrue()
+        assertThat(cache.get(1L)).isNull()
+    }
+
+    /** Flipping the switch on Wi-Fi changes nothing a resolve asks for, so the cache stays. */
+    @Test fun `flipping data saver on wifi keeps the cached URLs`() = runTest {
         setup(cellular = false, saveData = false)
-        assertThat(policy.saveData()).isFalse()
+        policy.streamingTier()
+        cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
+
+        setup(cellular = false, saveData = true)
+        policy.streamingTier()
+        assertThat(cache.get(1L)).isNotNull()
     }
 
     /**
      * The Lossless switch governs streaming (2026-09-05). Off, the chain skips the lossless
      * sources — but a FLAC link cached in the last hour would still play. The lossy path
-     * reads [StreamQualityPolicy.saveData], so that read must notice the switch and clear.
+     * reads [StreamQualityPolicy.lossyQuality], so that read must notice the switch and clear.
      */
     @Test fun `flipping the lossless switch drops the cached URLs`() = runTest {
         setup(cellular = false, wifi = LosslessQualityTier.HI_RES)
@@ -82,24 +140,24 @@ class StreamQualityPolicyTest {
         cache.put(1L, StreamUrl(url = "https://cdn/1.flac?etsp=1", expiresAtMs = Long.MAX_VALUE))
 
         coEvery { losslessPrefs.enabledNow() } returns false
-        policy.saveData()                            // what the YouTube resolver asks
+        policy.lossyQuality()                        // what the YouTube resolver asks
         assertThat(cache.get(1L)).isNull()
     }
 
-    /** With a CD tier already chosen, flipping Save Data changes only the lossy path — the cache must still go. */
-    @Test fun `flipping save data with a CD tier still drops the cached URLs`() = runTest {
-        setup(cellular = false, wifi = LosslessQualityTier.CD, saveData = false)
+    /** With a CD tier already chosen on mobile data, flipping Data saver still changes the chain: the cache must go. */
+    @Test fun `flipping data saver on mobile data with a CD tier still drops the cached URLs`() = runTest {
+        setup(cellular = true, cell = LosslessQualityTier.CD, saveData = false)
         policy.streamingTier()
         cache.put(1L, StreamUrl(url = "https://cdn/1?etsp=1", expiresAtMs = Long.MAX_VALUE))
 
-        setup(cellular = false, wifi = LosslessQualityTier.CD, saveData = true)
+        setup(cellular = true, cell = LosslessQualityTier.CD, saveData = true)
         assertThat(policy.streamingTier()).isEqualTo(LosslessQualityTier.CD)
         assertThat(cache.get(1L)).isNull()
     }
 
     /**
-     * A cached stream URL is only right for the tier it was minted under. Flipping Save
-     * Data, changing a tier, or walking from Wi-Fi onto cellular changes what the next
+     * A cached stream URL is only right for the tier it was minted under. Flipping Data
+     * saver, changing a tier, or walking from Wi-Fi onto cellular changes what the next
      * resolve asks for — and must also stop the hour-old URLs from the OLD tier being served.
      */
     @Test fun `a tier change between resolves drops every cached stream URL`() = runTest {
@@ -111,6 +169,7 @@ class StreamQualityPolicyTest {
         assertThat(cache.get(1L)).isNotNull()
 
         every { connectivity.isCellular() } returns true   // Wi-Fi → cellular: CD now
+        every { connectivity.isMetered() } returns true
         assertThat(policy.streamingTier()).isEqualTo(LosslessQualityTier.CD)
         assertThat(cache.get(1L)).isNull()
     }
