@@ -274,10 +274,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
 
         /**
-         * Fire a one-shot refresh immediately — used on first app launch
-         * after seeding defaults so users see populated mixes without
-         * waiting 24 hours for the periodic schedule, and by the
-         * manual-refresh button on the Home Stash Mixes card.
+         * Fire a one-shot refresh immediately — used on app launch (at most
+         * about once a day, see [StashMixRefreshStamp]) so users see populated
+         * mixes without waiting 24 hours for the periodic schedule, by the
+         * Stash Mixes switch, and by the post-download chain.
          */
         fun enqueueOneTime(context: Context, materializeOnly: Boolean = false) {
             val builder = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
@@ -476,6 +476,14 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // initialised in a unit-test JVM throws IllegalStateException).
         runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
             .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
+
+        // A full run (every mix, discovery queued) is what the cold-start one-shot repeats; stamp it so the next cold
+        // start within the day skips it (StashMixRefreshStamp). A single-mix or re-link run doesn't count. Never fails
+        // the refresh, which already worked.
+        if (targetId <= 0L && !materializeOnly) {
+            runCatching { StashMixRefreshStamp(applicationContext).markFullRefresh() }
+                .onFailure { Log.w(TAG, "couldn't stamp the full refresh; the next cold start runs one again", it) }
+        }
 
         // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe
         // above only enqueues PENDING candidate rows — it does not turn them
