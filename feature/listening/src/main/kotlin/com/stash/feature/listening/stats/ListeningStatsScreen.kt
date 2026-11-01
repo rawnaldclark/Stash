@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,7 +44,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.TopAlbumRow
@@ -66,18 +71,23 @@ import com.stash.core.data.listening.ListeningStatsCalculator.Granularity
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
+import com.stash.feature.listening.R
 import com.stash.feature.listening.recap.PastRecap
 import com.stash.feature.listening.recap.lastfm.LastFmPastRecapsViewModel
 import com.stash.feature.listening.recap.RecapDoorCard
 import com.stash.feature.listening.recap.RecapPeriod
 import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.ArtistGlyph
+import com.stash.feature.listening.ui.CompactCount
 import com.stash.feature.listening.ui.CircleArt
 import com.stash.feature.listening.ui.EstimatedFootnote
 import com.stash.feature.listening.ui.genreCredit
 import com.stash.feature.listening.ui.GenreBar
 import com.stash.feature.listening.ui.genreFractions
 import com.stash.feature.listening.ui.Gutter
+import com.stash.feature.listening.ui.ListenTimeText
+import com.stash.feature.listening.ui.ListeningLayout
+import com.stash.feature.listening.ui.NumberOverLabel
 import com.stash.feature.listening.ui.ListeningTopBar
 import com.stash.feature.listening.ui.RangeChips
 import com.stash.feature.listening.ui.RankedRow
@@ -243,20 +253,14 @@ private fun HeroCard(s: ListeningStatsState, onOpenDay: (Long) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(2.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            if (s.estimated) {
-                Text(
-                    text = "about ",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            }
-            Text(
-                text = if (s.loading) " " else ListeningLabels.listenTime(s.totals.listenedMs),
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
+        if (s.loading) {
+            Text(text = " ", style = MaterialTheme.typography.displaySmall)
+        } else {
+            // Set like Home's week card: the numbers big, their units small; wraps rather than clips.
+            ListenTimeText(
+                time = ListeningLabels.listenTime(s.totals.listenedMs),
+                about = s.estimated,
+                numberSize = MaterialTheme.typography.displaySmall.fontSize,
             )
         }
         if (!s.loading && s.deltaPercent != null && !s.coldStart) {
@@ -377,29 +381,49 @@ private fun bucketLabel(b: Bucket, g: Granularity, today: Long): String = when (
 
 // ── Tiles ───────────────────────────────────────────────────────────────────
 
+/** One number tile: what shows ("12.3K" over "plays") and what TalkBack says ("12,345 plays"). */
+private data class StatTile(val value: String, val label: String, val spoken: String)
+
 /**
- * Plays · Songs · Artists · streak as one glass strip of four columns with hairlines between
- * them: each column gets the full quarter (a row of four separate cards left too little room
- * for "days streak"). Artists counts main acts, the same as the Top artists list.
+ * Plays · Songs · Artists · streak as a 2×2 grid of big-number tiles in one glass card, hairlines
+ * between them (owner 2026-11-01: the four-column strip clipped a five-digit play count). Each
+ * number is 28 sp Space Grotesk, compacted past 9,999 ("12.3K", [CompactCount]) so it never needs
+ * cutting, with its word under it, free to wrap. At a font so large that two tiles a row would
+ * squeeze the numbers, the tiles go one per row ([ListeningLayout.statTileColumns]). Artists counts
+ * main acts, the same as the Top artists list.
  */
 @Composable
 private fun Tiles(s: ListeningStatsState) {
-    StatsCard(Modifier.padding(start = Gutter, end = Gutter, top = 12.dp), contentPadding = 0.dp) {
-        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            Tile("%,d".format(s.totals.plays), if (s.totals.plays == 1) "play" else "plays", Modifier.weight(1f))
-            TileDivider()
-            Tile("%,d".format(s.totals.songs), if (s.totals.songs == 1) "song" else "songs", Modifier.weight(1f))
-            TileDivider()
-            Tile("%,d".format(s.artistCount), if (s.artistCount == 1) "artist" else "artists", Modifier.weight(1f))
-            TileDivider()
-            Tile(
-                "${s.currentStreak}", ListeningLabels.streakUnit(s.currentStreak), Modifier.weight(1f),
-                spoken = ListeningLabels.streak(s.currentStreak),
-            )
+    val locale = LocalConfiguration.current.locales[0]
+    fun tile(count: Int, label: String, spoken: String = "${CompactCount.full(count.toLong(), locale)} $label") =
+        StatTile(CompactCount.format(count.toLong(), locale), label, spoken)
+    val tiles = listOf(
+        tile(s.totals.plays, pluralStringResource(R.plurals.listening_stat_plays, s.totals.plays)),
+        tile(s.totals.songs, pluralStringResource(R.plurals.listening_stat_songs, s.totals.songs)),
+        tile(s.artistCount, pluralStringResource(R.plurals.listening_stat_artists, s.artistCount)),
+        tile(
+            s.currentStreak,
+            pluralStringResource(R.plurals.listening_stat_streak, s.currentStreak),
+            spoken = ListeningLabels.streak(s.currentStreak),
+        ),
+    )
+    BoxWithConstraints(Modifier.padding(start = Gutter, end = Gutter, top = 12.dp).fillMaxWidth()) {
+        val columns = ListeningLayout.statTileColumns(maxWidth, LocalDensity.current.fontScale)
+        StatsCard(contentPadding = 0.dp) {
+            tiles.chunked(columns).forEachIndexed { r, row ->
+                if (r > 0) TileRule()
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    row.forEachIndexed { c, t ->
+                        if (c > 0) TileDivider()
+                        Tile(t, Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }
 
+/** The hairline between two tiles side by side. */
 @Composable
 private fun TileDivider() {
     Box(
@@ -411,23 +435,34 @@ private fun TileDivider() {
     )
 }
 
+/** The hairline between two rows of tiles. */
 @Composable
-private fun Tile(value: String, label: String, modifier: Modifier = Modifier, spoken: String = "$value $label") {
-    Column(
-        modifier = modifier
-            .clearAndSetSemantics { contentDescription = spoken }
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-    ) {
-        Text(value, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+private fun TileRule() {
+    Box(
+        Modifier
+            .padding(horizontal = 14.dp)
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(StashTheme.extendedColors.glassBorder),
+    )
 }
+
+@Composable
+private fun Tile(tile: StatTile, modifier: Modifier = Modifier) {
+    NumberOverLabel(
+        value = tile.value,
+        label = tile.label,
+        numberStyle = MaterialTheme.typography.displaySmall.copy(fontSize = TileNumberSize, lineHeight = TileNumberLineHeight),
+        labelStyle = MaterialTheme.typography.labelMedium,
+        modifier = modifier
+            .clearAndSetSemantics { contentDescription = tile.spoken }
+            .padding(ListeningLayout.TilePadding),
+    )
+}
+
+/** A tile's number: Space Grotesk Bold (displaySmall's face) a size down, at 28 sp. */
+private val TileNumberSize = 28.sp
+private val TileNumberLineHeight = 34.sp
 
 // ── Top artists, songs, albums ──────────────────────────────────────────────
 

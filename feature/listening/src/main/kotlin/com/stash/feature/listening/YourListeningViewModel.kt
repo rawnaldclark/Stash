@@ -15,6 +15,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import com.stash.core.ui.ambient.tintedWhilePlaying
 import com.stash.feature.listening.stats.ListeningInsights
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
@@ -62,8 +63,8 @@ data class YourListeningState(
     val nowMs: Long,
     /** The last 7 days, for the summary card. */
     val week: WeekSummary = WeekSummary.EMPTY,
-    /** The #1 song of the last 30 days, for the Top songs door; null when there's none. */
-    val topSongTitle: String? = null,
+    /** The #1 song of the last 30 days, for the Top songs door (its title and cover); null when there's none. */
+    val topSong: Track? = null,
     /** The recap on the Recap card ("Your October so far"); null when no period has enough listens. */
     val recap: RecapOffer? = null,
 )
@@ -78,6 +79,10 @@ data class WeekSummary(
     val bars: List<Long>,
     /** Consecutive listening days ending today (or yesterday). */
     val streak: Int,
+    /** Different songs heard in the 7 days. */
+    val songs: Int = 0,
+    /** The last of the 7 days (today, epoch day): names the bars' days ("M T W …"). */
+    val today: Long = 0,
 ) {
     companion object {
         val EMPTY = WeekSummary(0, 0, false, List(7) { 0L }, 0)
@@ -151,16 +156,18 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 estimated = totals.estimatedPlays > 0,
                 bars = (week.fromDay..week.toDay).map { byDay[it]?.listenedMs ?: 0L },
                 streak = ListeningStatsCalculator.currentStreak(counts, t)?.days ?: 0,
+                songs = totals.songs,
+                today = t,
             )
             (byDay[t]?.plays ?: 0) to summary
             })
         }
     }.distinctUntilChanged()
 
-    /** The last 30 days' #1 song, counted the way Top songs counts (one row per song). */
-    private val topSong: Flow<String?> = today.flatMapLatest { t ->
+    /** The last 30 days' #1 song, counted the way Top songs counts (one row per song), with its cover. */
+    private val topSong: Flow<Track?> = today.flatMapLatest { t ->
         history.observeTopTracks(ListeningRange.Days30.toDayRange(t), ListeningInsights.SCAN_LIMIT)
-    }.map { ListeningInsights.mergeSameSongs(it).firstOrNull()?.track?.title }.distinctUntilChanged()
+    }.map { ListeningInsights.mergeSameSongs(it).firstOrNull()?.track?.toDomain() }.distinctUntilChanged()
 
     /**
      * The Recap card's recap (PHASE3-STORY-SPEC: Dec 1 – Jan 15 the year, a month's first week last
@@ -199,11 +206,21 @@ class YourListeningViewModel @VisibleForTesting internal constructor(
                 paused = paused,
                 nowMs = now,
                 week = week,
-                topSongTitle = top,
+                topSong = top,
                 recap = recapOffer,
             )
         }
     }.flowOn(computeDispatcher).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Whether a song is playing, by the rule the wordmark and the selected tab follow
+     * ([tintedWhilePlaying]: playing tints, a pause turns neutral after a short grace so a skip
+     * doesn't flash). The week card's bars wear the album colour while it's true and are neutral
+     * otherwise. Its own flow, so a play/pause never recomputes the section's numbers.
+     */
+    val playing: StateFlow<Boolean> = playerRepository.playerState
+        .tintedWhilePlaying()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Plays [track] from the "Recently played" rail, with the rail's other songs around it. */
     fun playRecent(track: Track) {
