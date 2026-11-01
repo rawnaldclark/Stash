@@ -2878,6 +2878,30 @@ interface TrackDao {
             .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
     }
 
+    /**
+     * One-time data fix for the green-dot lie ([com.stash.core.data.library.TrackSourceRule]):
+     * rows saved from a YouTube stream as Spotify songs become YouTube songs. Only a row that says
+     * SPOTIFY, has **no** Spotify id and **has** a YouTube video id; a row with a Spotify id is never
+     * touched. A row in any Spotify playlist is left alone too, even one with no Spotify id: the
+     * Spotify sync's download step picks rows by their source, so relabelling it would stop its
+     * download for someone with only Spotify connected. Idempotent: a second run finds nothing.
+     *
+     * @return the number of rows relabelled.
+     */
+    @Query("""
+        UPDATE tracks SET source = 'YOUTUBE'
+        WHERE source = 'SPOTIFY'
+          AND (spotify_uri IS NULL OR TRIM(spotify_uri) = '')
+          AND youtube_id IS NOT NULL AND TRIM(youtube_id) != ''
+          AND soundcloud_id IS NULL
+          AND id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE p.source = 'SPOTIFY'
+          )
+    """)
+    suspend fun relabelYouTubeRowsClaimingSpotify(): Int
+
     /** Every row with one of [canonicalTitles] that records a file: raw half of [findHoldingFileByCanonicalIdentities]. */
     @Query("""
         SELECT * FROM tracks

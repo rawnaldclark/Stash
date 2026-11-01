@@ -19,6 +19,7 @@ import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.library.canonicalWordsForSave
 import com.stash.core.data.library.findLibraryCopy
 import com.stash.core.data.library.findReusableByWords
+import com.stash.core.data.library.TrackSourceRule
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
@@ -602,6 +603,9 @@ class MusicRepositoryImpl @Inject constructor(
                 canonicalTitle = cTitle,
                 canonicalArtist = cArtist,
                 isStreamable = true,
+                // A YouTube stream is never saved as a Spotify song: Now Playing rebuilt every
+                // stream as one (the default), and a like or a listen made it a green Spotify row.
+                source = TrackSourceRule.honestSource(track.source, track.spotifyUri, track.youtubeId),
             )
         )
     }
