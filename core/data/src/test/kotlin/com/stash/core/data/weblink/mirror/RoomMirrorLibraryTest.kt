@@ -103,6 +103,68 @@ class RoomMirrorLibraryTest {
         TrackEntity(title = title, artist = "Artist", stashLikedAt = if (stashLiked) 5L else null, source = MusicSource.SPOTIFY, isStreamable = true, canonicalTitle = canonTitle(title), canonicalArtist = "artist"),
     )
 
+    // -- A browser's live changes, sent on through the phone's switches ------------------------------------------------------
+
+    /** Stands for the phone's switches: records the likes handed on, and says whether YouTube history is on. */
+    private class Onward(var historySince: Long? = 0L) : PhoneOnward {
+        val likes = mutableListOf<Pair<Long, Boolean>>()
+        override suspend fun like(trackId: Long, liked: Boolean) {
+            likes += trackId to liked
+        }
+        override suspend fun youTubeHistorySince(): Long? = historySince
+    }
+
+    private fun sendingLib(onward: PhoneOnward) = RoomMirrorLibrary(
+        db, HandoffSongMatcher(db.trackDao(), music, db), StashLikedPlaylistRepository(db.playlistDao(), db.trackDao(), music),
+        MemoryAliasStore(), onward,
+    ) { NOW }
+
+    private fun idOf(title: String): Long =
+        db.query("SELECT id FROM tracks WHERE title = ?", arrayOf(title)).use { it.moveToFirst(); it.getLong(0) }
+
+    private suspend fun titleOf(id: Long) = db.trackDao().getById(id)!!.title
+
+    @Test fun `a like write says which rows were newly liked and which Stash likes it cleared, and only sendOn sends`() = runTest {
+        val onward = Onward()
+        val lib = sendingLib(onward)
+        track("Already here", stashLiked = true)
+        val spotifyLiked = db.playlistDao().insert(PlaylistEntity(name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "spotify_liked", type = PlaylistType.LIKED_SONGS))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = spotifyLiked, trackId = track("From Spotify"), position = 0))
+
+        val liked = lib.setLikes(on = listOf(song("New one"), song("Already here")), off = emptyList(), at = 99)
+        // A Stash like already here isn't new: its heart went on when it was made here
+        assertThat(liked.liked.map { it.first.title to it.second }).containsExactly("New one" to idOf("New one"))
+        assertThat(liked.unliked).isEmpty()
+
+        val unliked = lib.setLikes(on = emptyList(), off = listOf(song("New one"), song("From Spotify")), at = 100)
+        // The Spotify-only like stays liked here and there
+        assertThat(unliked.unliked.map { it.first.title to it.second }).containsExactly("New one" to idOf("New one"))
+        assertThat(lib.likes().map { it.s.title }).containsExactly("From Spotify", "Already here")
+
+        // Writing sends nothing; the mirror decides what goes, once a run
+        assertThat(onward.likes).isEmpty()
+        lib.sendOn(listOf(idOf("New one") to true, idOf("New one") to false))
+        assertThat(onward.likes).containsExactly(idOf("New one") to true, idOf("New one") to false).inOrder()
+    }
+
+    @Test fun `a browser's live play under an hour old is owed to YouTube history while that is on, and nothing else is`() = runTest {
+        val onward = Onward(historySince = NOW - 10 * HOUR)
+        val lib = sendingLib(onward)
+        val web = "d_web000000000001"
+        lib.addPlays(listOf(PlayRec(song("Fresh"), NOW - 30 * MINUTE, web), PlayRec(song("Too old"), NOW - 2 * HOUR, web)), live = true)
+        lib.addPlays(listOf(PlayRec(song("Merged"), NOW - 20 * MINUTE, web))) // a first merge or a snapshot
+        onward.historySince = null // the switch turned off
+        lib.addPlays(listOf(PlayRec(song("Switch off"), NOW - 10 * MINUTE, web)), live = true)
+        onward.historySince = NOW - 5 * MINUTE // turned on again since
+        lib.addPlays(listOf(PlayRec(song("Before the switch"), NOW - 10 * MINUTE, web)), live = true)
+
+        val events = db.listeningEventDao()
+        assertThat(events.pendingYtScrobbles(sinceMs = 0).map { titleOf(it.trackId) }).containsExactly("Fresh")
+        assertThat(db.query("SELECT COUNT(*) FROM listening_events", null).use { it.moveToFirst(); it.getInt(0) }).isEqualTo(5)
+        // Never to Last.fm from here: the web scrobbles its own plays
+        assertThat(events.pendingScrobbles()).isEmpty()
+    }
+
     @Test fun `a mirrored like is a Stash like, and an unlike leaves a Spotify like alone`() = runTest {
         val spotifyLiked = db.playlistDao().insert(PlaylistEntity(name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "spotify_liked", type = PlaylistType.LIKED_SONGS))
         val s = track("From Spotify")
@@ -296,6 +358,10 @@ class RoomMirrorLibraryTest {
     }
 
     private companion object {
+        const val NOW = 1_800_000_000_000L
+        const val MINUTE = 60_000L
+        const val HOUR = 60 * MINUTE
+
         /** The library's canonical_title / canonical_artist: the one loose rule every writer uses. */
         fun canonTitle(s: String) = com.stash.core.common.TrackCanonical.title(s)
         fun canonArtist(s: String) = com.stash.core.common.TrackCanonical.artist(s)

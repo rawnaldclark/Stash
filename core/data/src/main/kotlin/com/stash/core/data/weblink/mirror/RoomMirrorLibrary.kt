@@ -32,6 +32,10 @@ import kotlinx.coroutines.withContext
 /**
  * [MirrorLibrary] over the app's Room library. Incoming songs are matched as a handoff matches them ([HandoffSongMatcher]: ISRC,
  * YouTube and Spotify ids, the same words, else a stream-only row); a `phoneOnly` song is found by its words only.
+ *
+ * What a browser does live also goes on through [onward], on this phone's switches: the like changes the mirror picks ([sendOn],
+ * from what [setLikes] says it changed) to Spotify, YouTube Music and Last.fm, and a play under [HISTORY_WINDOW_MS] old to
+ * YouTube Music history.
  */
 @Singleton
 class RoomMirrorLibrary internal constructor(
@@ -39,13 +43,20 @@ class RoomMirrorLibrary internal constructor(
     private val matcher: HandoffSongMatcher,
     private val liked: StashLikedPlaylistRepository,
     private val aliases: AliasStore,
+    private val onward: PhoneOnward = PhoneOnward.None,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : MirrorLibrary {
     @Inject constructor(
         database: StashDatabase,
         matcher: HandoffSongMatcher,
         liked: StashLikedPlaylistRepository,
         @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
-    ) : this(database, matcher, liked, PrefsAliasStore(context.getSharedPreferences(FileMirrorStore.MAP_PREFS, android.content.Context.MODE_PRIVATE)))
+        onward: PhoneSwitchesOnward,
+    ) : this(
+        database, matcher, liked,
+        PrefsAliasStore(context.getSharedPreferences(FileMirrorStore.MAP_PREFS, android.content.Context.MODE_PRIVATE)),
+        onward,
+    )
 
     /** Tests: the aliases in memory. */
     internal constructor(database: StashDatabase, matcher: HandoffSongMatcher, liked: StashLikedPlaylistRepository) :
@@ -100,21 +111,36 @@ class RoomMirrorLibrary internal constructor(
         }
     }
 
-    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long) = io {
+    override suspend fun setLikes(on: List<WireSong>, off: List<WireSong>, at: Long): LikeWrite = io {
+        val newLikes = ArrayList<Pair<WireSong, Long>>()
+        val cleared = ArrayList<Pair<WireSong, Long>>()
         if (on.isNotEmpty()) {
+            // A song already a Stash like here isn't a new like (its heart went on when it was made here)
+            val likedHere = dao.likes().filter { it.stash }.mapTo(HashSet()) { it.song.id }
             val rows = matcher.matchAll(on, mirror = true, identities = identities)
             remember(on, rows)
             val ids = rows.mapNotNull { it?.id }
             for (chunk in ids.chunked(BATCH)) database.withTransaction { liked.addAllFrom(chunk.map { it to at }, recount = false) }
             liked.recount()
+            on.forEachIndexed { i, s ->
+                val id = rows.getOrNull(i)?.id ?: return@forEachIndexed // not held here (settleUnheld)
+                if (likedHere.add(id)) newLikes += s to id
+            }
         }
         if (off.isNotEmpty()) {
             // Only a Stash like can be cleared from a mirror: a song liked through Spotify / YouTube Music stays liked there.
             val stash = dao.likes().filter { it.stash }
             val index = SongIndex.of(stash.mapNotNull { r -> wire(r.song)?.let { it to r.song.id } })
-            val ids = off.mapNotNull { index.find(it) }.distinct()
-            database.withTransaction { ids.forEach { liked.remove(it) } }
+            val seen = HashSet<Long>()
+            off.forEach { s -> index.find(s)?.let { if (seen.add(it)) cleared += s to it } }
+            database.withTransaction { cleared.forEach { (_, id) -> liked.remove(id) } }
         }
+        LikeWrite(newLikes, cleared)
+    }
+
+    /** One at a time: [PhoneOnward] only queues (the coordinator's outbox and pacing), and a queue that fails is logged there. */
+    override suspend fun sendOn(likes: List<Pair<Long, Boolean>>) = io {
+        for ((id, isLiked) in likes) onward.like(id, isLiked)
     }
 
     override suspend fun ownPlays(since: Long, limit: Int): List<PlayRec<WireSong>> = io {
@@ -123,24 +149,29 @@ class RoomMirrorLibrary internal constructor(
 
     override suspend fun ownPlayAt(n: Int): Long = io { if (n < 1) 0 else dao.ownPlayAt(n - 1) ?: 0 }
 
-    override suspend fun addPlays(plays: List<PlayRec<WireSong>>) = io {
+    override suspend fun addPlays(plays: List<PlayRec<WireSong>>, live: Boolean) = io {
         if (plays.isEmpty()) return@io
         val here = dao.playKeysBetween(plays.minOf { it.playedAt }, plays.maxOf { it.playedAt })
             .mapTo(HashSet()) { PlaysMerge.playId(SongRef(it.title, it.artist, it.isrc), it.startedAt) }
         val fresh = plays.filter { here.add(PlaysMerge.playId(it.s, it.playedAt)) }
         if (fresh.isEmpty()) return@io
+        // A browser's live play goes on to YouTube Music history when that switch is on here and the play is under an hour
+        // old (the ping is stamped "now", so an older one would land at the wrong time). Never one from before the switch.
+        val historyFrom = if (live) onward.youTubeHistorySince()?.let { maxOf(it, now() - HISTORY_WINDOW_MS) } else null
         val rows = matcher.matchAll(fresh.map { it.s }, mirror = true, identities = identities)
         remember(fresh.map { it.s }, rows)
         val events = database.listeningEventDao()
         database.withTransaction {
             fresh.forEachIndexed { i, p ->
                 val t = rows[i] ?: return@forEachIndexed
-                // Already "scrobbled" everywhere and marked with its device: never submitted from here, never fed to mixes.
+                // Already scrobbled to Last.fm (the web does that itself) and marked with its device: never fed to mixes. Sent
+                // to YouTube history only when owed (`yt_scrobbled = 0` with `scrobbled = 1`: ListeningEventDao.pendingYtScrobbles).
                 // Its day is read in this phone's zone: the mirror doesn't carry the other device's zone.
+                val owed = historyFrom != null && p.playedAt >= historyFrom
                 val stamp = ListeningDay.localStamp(p.playedAt)
                 events.insert(
                     ListeningEventEntity(
-                        trackId = t.id, startedAt = p.playedAt, scrobbled = true, ytScrobbled = true, originDevice = p.origin,
+                        trackId = t.id, startedAt = p.playedAt, scrobbled = true, ytScrobbled = !owed, originDevice = p.origin,
                         localDay = stamp.day, localMinute = stamp.minute,
                     ),
                 )
@@ -218,6 +249,9 @@ class RoomMirrorLibrary internal constructor(
     companion object {
         private const val TAG = "WebLinkMirror"
         private const val BATCH = 500
+
+        /** How old a browser's play may be and still go to YouTube Music history (owner's decision 3, 2026-11-01). */
+        const val HISTORY_WINDOW_MS = 60 * 60 * 1_000L
 
         /** A playlist made from the mirror (spec §4.3); Library shows every `custom_%` playlist. */
         const val SOURCE_PREFIX = "custom_sync_"

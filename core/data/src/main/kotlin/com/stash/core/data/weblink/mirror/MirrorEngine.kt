@@ -36,6 +36,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -150,7 +151,17 @@ class MirrorEngine internal constructor(
         val auth: DeviceAuth get() = DeviceAuth(id.deviceId, id.token)
         var pendingLikes: SongIndex<Boolean>? = null
         var pushDigest: String? = null
+
+        /** A browser's live like changes this run, combined per row: sent on when the run ends ([sendLive]). */
+        val liveLikes = LinkedHashMap<Long, LiveLike>()
+
+        /** How many like ops each browser push stamp carried this run, and the stamps of batches too big to be hearts. */
+        val pushSizes = HashMap<Hlc, Int>()
+        val bulkStamps = HashSet<Hlc>()
     }
+
+    /** A row whose like a browser changed live this run: liked here before the first change, liked now, the latest stamp. */
+    private data class LiveLike(val trackId: Long, val wasLiked: Boolean, val liked: Boolean, val at: Hlc)
 
     /** The service said no: [error] is its answer. */
     private class ApiError(val error: SyncResult.Error) : Exception(error.code)
@@ -429,6 +440,16 @@ class MirrorEngine internal constructor(
         r.configJson?.let { runCatching { MirrorWire.readConfig(it) }.getOrNull() } ?: MirrorConfig.off(Hlc(0, 0, "d_00000000"))
 
     private suspend fun once(c: Ctx, op: (suspend (Ctx) -> Unit)?) {
+        try {
+            onceInner(c, op)
+        } finally {
+            // What the library here took from a browser goes on even when the run stops later (offline, a failed push): it
+            // is applied, and the next run won't see it as new. Short, and never cut by a cancellation.
+            withContext(NonCancellable) { sendLive(c) }
+        }
+    }
+
+    private suspend fun onceInner(c: Ctx, op: (suspend (Ctx) -> Unit)?) {
         val r = c.r
         readConfig(c)
         settleLetGo(c)
@@ -613,8 +634,14 @@ class MirrorEngine internal constructor(
             }
             for (op in ops) op.stamp?.let { r.last = Hlc.recv(r.last, it, w, c.me) }
             val fromPhone = e.device == c.me
+            // A browser's changes are live (sent on through this phone's switches) only after its own first merge of that kind:
+            // its `joined` mark already in the view before this batch. What a first merge sends (its likes from before the link,
+            // perhaps split over several batches with the mark in the last) arrives as ordinary ops and never goes on.
+            val joinedBefore = { k: Kind -> MirrorView.joinMark(k, c.cfg.of(k).since, e.device) in r.view.joined }
+            val likesLive = joinedBefore(Kind.LIKES)
+            val playsLive = joinedBefore(Kind.PLAYS)
             r.view = MirrorView.applyBatch(r.view, e.device, e.seq, ops, fromPhone)
-            if (e.device != c.me) applyToLibrary(c, e.device, ops)
+            if (e.device != c.me) applyToLibrary(c, e.device, ops, likesLive, playsLive)
         }
         r.seen = e.seq
     }
@@ -665,17 +692,23 @@ class MirrorEngine internal constructor(
         r.gaps = r.gaps.filter { it > st.uptoSeq }
     }
 
-    private suspend fun applyToLibrary(c: Ctx, device: String, ops: List<MirrorOp>) {
+    /**
+     * [likesLive], [playsLive]: [device] had joined that kind before this batch ([applyEntry]). Only a browser's live changes go
+     * on through the phone's own switches (likes to the services, plays to YouTube Music history); another phone's never do: it
+     * sends its own.
+     */
+    private suspend fun applyToLibrary(c: Ctx, device: String, ops: List<MirrorOp>, likesLive: Boolean, playsLive: Boolean) {
         val r = c.r
         val cfg = c.cfg
+        val browser = c.roster[device] == TYPE_WEB
         if (joinedNow(c, Kind.LIKES) && cfg.likes.dir.phoneApplies) {
             val likes = ops.filterIsInstance<MirrorOp.Like>()
-            if (likes.isNotEmpty()) applyLikeOps(c, likes)
+            if (likes.isNotEmpty()) applyLikeOps(c, likes, live = browser && likesLive)
         }
         if (joinedNow(c, Kind.PLAYS) && cfg.plays.dir.phoneApplies) {
             val adds = mutableListOf<PlayRec<WireSong>>()
             suspend fun flush() {
-                if (adds.isNotEmpty()) lib.addPlays(adds.toList())
+                if (adds.isNotEmpty()) lib.addPlays(adds.toList(), live = browser && playsLive)
                 adds.clear()
             }
             for (o in ops) {
@@ -707,8 +740,12 @@ class MirrorEngine internal constructor(
         }
     }
 
-    /** Remote like ops: the base takes the newer stamp; the library follows, except songs changed here and not sent yet. */
-    private suspend fun applyLikeOps(c: Ctx, ops: List<MirrorOp.Like>) {
+    /**
+     * Remote like ops: the base takes the newer stamp; the library follows, except songs changed here and not sent yet. [live]:
+     * a browser's ops read from the log after its own first merge: what the library took from them is noted for [sendLive]. A
+     * first merge, a snapshot or a release of held unlikes never is.
+     */
+    private suspend fun applyLikeOps(c: Ctx, ops: List<MirrorOp.Like>, live: Boolean = false) {
         val recs = c.r.baseLikes.toMutableList()
         val idx = SongIndex.of(recs.mapIndexed { i, x -> x.s to i })
         val touched = LinkedHashMap<Int, WireSong>()
@@ -728,8 +765,48 @@ class MirrorEngine internal constructor(
         c.r.baseLikes = recs
         val on = touched.filterKeys { recs[it].on }.values.toList()
         val off = touched.filterKeys { !recs[it].on }.values.toList()
-        if (on.isNotEmpty() || off.isNotEmpty()) lib.setLikes(on, off, wall(c))
+        val wrote = if (on.isNotEmpty() || off.isNotEmpty()) lib.setLikes(on, off, wall(c)) else LikeWrite()
+        if (live) noteLive(c, ops, wrote, touched.entries.associate { (i, s) -> s to recs[i].at })
         settleUnheld(c, on)
+    }
+
+    /** Notes a live batch: its push's size, and per row what the library here took from it (a new like, a Stash like cleared). */
+    private fun noteLive(c: Ctx, ops: List<MirrorOp.Like>, wrote: LikeWrite, stampOf: Map<WireSong, Hlc>) {
+        if (ops.size > MAX_LIKES_PER_PUSH) c.bulkStamps += ops.map { it.at }
+        for (op in ops) c.pushSizes.merge(op.at, 1) { a, b -> a + b }
+        fun note(s: WireSong, id: Long, liked: Boolean) {
+            val at = stampOf[s] ?: return
+            val was = c.liveLikes[id]
+            c.liveLikes[id] = was?.copy(liked = liked, at = maxOf(was.at, at)) ?: LiveLike(id, wasLiked = !liked, liked = liked, at = at)
+        }
+        for ((s, id) in wrote.liked) note(s, id, liked = true)
+        for ((s, id) in wrote.unliked) note(s, id, liked = false)
+    }
+
+    /**
+     * Sends on what a browser changed live this run, on the run's final state (owner's decision 3): per row only a real change
+     * (liked then unliked again is nothing), never from a push that changed more than [MAX_LIKES_PER_PUSH] likes at once (a
+     * Spotify-export import on the web, likes made there offline for a while: not hearts, and the bulk write the services flag
+     * most), and only the newest [MAX_LIKES_ONWARD]. Everything else stays a Stash like here; a heart made on this phone still
+     * goes as always.
+     */
+    private suspend fun sendLive(c: Ctx) {
+        val changes = c.liveLikes.values.filter { it.liked != it.wasLiked }
+        c.liveLikes.clear()
+        if (changes.isEmpty()) return
+        val hearts = changes.filter { it.at !in c.bulkStamps && (c.pushSizes[it.at] ?: 0) <= MAX_LIKES_PER_PUSH }
+        val newest = hearts.sortedByDescending { it.at }.take(MAX_LIKES_ONWARD).sortedBy { it.at }
+        if (newest.size < changes.size) {
+            Log.i(TAG, "${changes.size - newest.size} like change(s) from the web not sent on (bulk, or over $MAX_LIKES_ONWARD a run)")
+        }
+        if (newest.isEmpty()) return
+        try {
+            lib.sendOn(newest.map { it.trackId to it.liked })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't send web likes on: ${e.javaClass.simpleName}")
+        }
     }
 
     /**
@@ -1212,6 +1289,15 @@ class MirrorEngine internal constructor(
 
         /** Plays a first merge sends at most (spec §7.2). */
         const val FIRST_PLAYS = 5_000
+
+        /** A browser's live likes and unlikes one run sends on to Spotify, YouTube Music and Last.fm at most (owner's decision 3). */
+        const val MAX_LIKES_ONWARD = 20
+
+        /**
+         * More like changes than this in one browser push is a bulk change, not hearts: none of it goes on. The web pushes 5 s
+         * after a change, every op of a push under one stamp (also across the parts of a split push).
+         */
+        const val MAX_LIKES_PER_PUSH = 5
 
         /** How far behind now the plays base's floor stays (a play is recorded when it ends, with when it started). */
         const val FLOOR_LAG_MS = 2L * 86_400_000

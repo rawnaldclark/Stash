@@ -23,6 +23,10 @@ import org.robolectric.annotation.Config
  * **The checklist.** A query added later that ranks taste, counts plays for a mix, or submits listens belongs in this test.
  * Queries that only show or export history (`WebLibraryExportDao.recentPlays`, History) include remote plays on purpose; the
  * whole-history export (`WebLibraryExportDao.ownPlaysBefore`, the file's `listens`) must not, as they go in from where they were made.
+ *
+ * **The one exception.** YouTube history takes a browser's play the mirror wrote as owed on purpose (`scrobbled = 1` with
+ * `yt_scrobbled = 0`: a live play under an hour old, with "Add plays to your YouTube Music history" on); a row left at the
+ * defaults never goes.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -77,6 +81,19 @@ class RemotePlaysDaoTest {
         val submissions = db.listenSubmissionDao()
         assertEquals(listOf(1L), submissions.pendingFor("listenbrainz", 0).map { it.trackId })
         assertEquals(1, submissions.pendingCountFor("listenbrainz", 0).first())
+    }
+
+    @Test fun `only a browser play the mirror wrote as owed goes to YouTube history, and to no other destination`() = runTest {
+        fill()
+        // As RoomMirrorLibrary writes a browser's live play under an hour old while YouTube history is on
+        events.insert(ListeningEventEntity(trackId = 2, startedAt = T + 80_000, scrobbled = true, ytScrobbled = false, originDevice = "d_web00000000000"))
+        // As every other writer of another device's plays does
+        events.insert(ListeningEventEntity(trackId = 2, startedAt = T + 85_000, scrobbled = true, ytScrobbled = true, originDevice = "d_web00000000000"))
+
+        assertEquals(listOf(T, T + 80_000), events.pendingYtScrobbles(sinceMs = 0).map { it.startedAt })
+        assertEquals(2, events.pendingYtScrobbleCount(sinceMs = 0).first())
+        assertEquals(listOf(1L), events.pendingScrobbles().map { it.trackId })
+        assertEquals(listOf(1L), db.listenSubmissionDao().pendingFor("listenbrainz", 0).map { it.trackId })
     }
 
     @Test fun `play counts rebuilt from history count only this phone's plays`() = runTest {
