@@ -209,6 +209,14 @@ fun SettingsPlaybackScreen(
                 }
             },
         )
+
+        // Stash follows Android's Battery Saver by itself (D19): no switch, one line saying so.
+        Text(
+            text = stringResource(R.string.settings_battery_saver_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
+        )
     }
 }
 

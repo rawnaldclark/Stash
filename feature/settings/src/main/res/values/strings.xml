@@ -473,6 +473,10 @@
     <string name="settings_autoplay_radio_desc">A radio keeps playing when the queue ends</string>
     <string name="settings_crossfade_title">Crossfade</string>
     <string name="settings_crossfade_desc">Blend into the next song. Skips still cut.</string>
+    <!-- Settings > Playback, last line. Stash follows Android's Battery Saver on its own; there is no Stash switch for it. -->
+    <string name="settings_battery_saver_note">When Battery Saver is on, Stash pauses its animations and background prefetching.</string>
+    <!-- Settings search: the name the Battery Saver note is found by. -->
+    <string name="settings_search_battery_saver">Battery Saver</string>
     <string name="settings_crossfade_duration_label">Duration</string>
     <plurals name="settings_crossfade_duration_seconds">
         <item quantity="one">%d sec</item>
