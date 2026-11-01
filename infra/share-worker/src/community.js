@@ -131,7 +131,7 @@ async function createPost(request, env, now) {
 const LIST_COLUMNS = "p.id, p.kind, p.title, p.poster_name, p.poster, p.summary, p.track_count, p.created_at, p.up, p.down";
 const NO_STORE = { "cache-control": "no-store" };
 /**
- * The feed's orders, each walked by its own index (posts_hot, posts_new) so neither sorts every live post. `?sort=new`
+ * The feed's orders, each walked by its own index (posts_hot, posts_recent) so neither sorts every live post. `?sort=new`
  * (the web player's "New") is newest first; anything else is the votes-plus-freshness order the app shows.
  */
 const FEED_ORDER = {

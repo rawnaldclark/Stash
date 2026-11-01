@@ -117,14 +117,14 @@ test("?sort=new is newest first, hides the same posts, keeps the limit caps and 
     assert.equal(r.headers.get("cache-control"), "no-store");
 });
 
-test("?sort=new walks posts_new: no sort over every live post", async () => {
+test("?sort=new walks posts_recent: no sort over every live post", async () => {
     const e = env();
     const sqls = [];
     const prepare = e.COMMUNITY_DB.prepare;
     e.COMMUNITY_DB.prepare = (sql) => (sqls.push(sql), prepare(sql));
     await feed(e, {}, "?sort=new");
     const plan = e.COMMUNITY_DB.db.prepare(`EXPLAIN QUERY PLAN ${sqls[0]}`).all("", 0, 5).map((r) => r.detail).join(" | ");
-    assert.match(plan, /USING INDEX posts_new/);
+    assert.match(plan, /USING INDEX posts_recent/);
     assert.doesNotMatch(plan, /TEMP B-TREE/);
 });
 

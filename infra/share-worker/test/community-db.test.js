@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fakeD1 } from "./fake-d1.js";
 
 const migration = (name) => readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8");
@@ -57,6 +57,14 @@ test("two batches at once both land, as on D1", async () => {
     const d = fakeD1();
     await Promise.all(["a", "b"].map((p) => d.batch([d.prepare("INSERT INTO blocked (poster, at) VALUES (?1, 1)").bind(p)])));
     assert.equal(await d.prepare("SELECT COUNT(*) AS n FROM blocked").first("n"), 2);
+});
+
+test("no migration names an index after a table any migration creates (SQLite gives both one namespace)", () => {
+    const all = readdirSync(new URL("../migrations/", import.meta.url)).filter((f) => f.endsWith(".sql")).map(migration).join("\n");
+    const names = (re) => new Set([...all.matchAll(re)].map((m) => m[1]));
+    const tables = names(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)/gi);
+    const clashes = [...names(/CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?(\w+)/gi)].filter((n) => tables.has(n));
+    assert.deepEqual(clashes, []); // e.g. 0002's rebuild table posts_new
 });
 
 test("0002 keeps every row 0001 held, adds vouched = 0 just before body, and rebuilds 0001's indexes exactly", () => {
