@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.first
  *
  * Bound once for the app (`app/.../di/BatterySaverModule`). Read [isOn]`.value` for a decision
  * made now (a cold start, a prefetch); collect it where the answer must follow the switch (the
- * UI's reduced motion, a refresh that waits for Saver to turn off).
+ * UI's still loops, a refresh that waits for Saver to turn off).
  */
 interface BatterySaver {
     /** True while Android's Battery Saver is on. Starts from the system's current state. */

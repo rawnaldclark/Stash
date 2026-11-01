@@ -11,7 +11,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import coil3.SingletonImageLoader
 import android.util.Log
-import com.stash.core.common.power.awaitOff
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -372,7 +371,7 @@ class StashApplication : Application(), Configuration.Provider {
         // update check) are skipped, and the lossless config is read from its cache (see below).
         val saverAtStart = batterySaver.isOn.value
         if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
-        startLosslessConfig(saverAtStart)
+        startLosslessConfig()
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
@@ -672,33 +671,37 @@ class StashApplication : Application(), Configuration.Provider {
     /**
      * The signed lossless config: the cached copy at once, then a fetch now and every 6 h.
      *
-     * Under Battery Saver the cached copy is used and the fetch waits for Saver to turn off, unless
-     * the last fetch began [LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS] ago or more (or never): the relay
-     * key rotates through this config, so a phone that keeps Saver on all the time must still pick
-     * a new one up. See [com.stash.core.common.power.SaverDeferral].
+     * Under Battery Saver the fetch waits for Saver to turn off while the last SUCCESSFUL fetch is
+     * under [LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS] old and a cached copy is there to use; it runs
+     * at once with no cache (a first launch whose fetch failed), and at the latest when that success
+     * turns a day old, Saver or not: the relay key rotates through this config, so a phone that
+     * keeps Saver on all the time must still pick a new one up. See
+     * [com.stash.core.common.power.SaverDeferral.startWhenDue].
+     *
+     * All on [applicationScope] (IO): the first SharedPreferences read loads the file from disk.
      */
-    private fun startLosslessConfig(saverOn: Boolean) {
-        val prefs = getSharedPreferences(BATTERY_SAVER_PREFS, MODE_PRIVATE)
-        val lastStart = prefs.getLong(KEY_LOSSLESS_CONFIG_STARTED_AT, -1L).takeIf { it >= 0L }
-        val fetchNow = {
-            prefs.edit().putLong(KEY_LOSSLESS_CONFIG_STARTED_AT, System.currentTimeMillis()).apply()
-            losslessConfigFetcher.start(applicationScope)
-        }
-        val dueNow = com.stash.core.common.power.SaverDeferral.due(
-            saverOn = saverOn,
-            lastRunMs = lastStart,
-            nowMs = System.currentTimeMillis(),
-            maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
-        )
-        if (dueNow) {
-            fetchNow()
-            return
-        }
-        Log.i("StashStartup", "Battery Saver on: lossless config from the cache until it turns off")
+    private fun startLosslessConfig() {
         applicationScope.launch {
-            losslessConfigFetcher.loadCached()
-            batterySaver.awaitOff()
-            fetchNow()
+            val prefs = getSharedPreferences(BATTERY_SAVER_PREFS, MODE_PRIVATE)
+            // Stamped only by a refresh that applied a fresh, verified config: a failed attempt
+            // (offline, a captive portal) must never count as a recent fetch.
+            launch {
+                losslessConfigFetcher.refreshedAt.collect { at ->
+                    if (at > 0L) prefs.edit().putLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, at).apply()
+                }
+            }
+            val start = com.stash.core.common.power.SaverDeferral.startWhenDue(
+                saver = batterySaver,
+                lastSuccessMs = prefs.getLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, -1L).takeIf { it >= 0L },
+                nowMs = System::currentTimeMillis,
+                maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
+                loadCached = { losslessConfigFetcher.loadCached() },
+                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                startRefreshing = { losslessConfigFetcher.start(applicationScope) },
+            )
+            if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {
+                Log.i("StashStartup", "Battery Saver on: lossless config fetch started ($start)")
+            }
         }
     }
 
@@ -1255,11 +1258,11 @@ class StashApplication : Application(), Configuration.Provider {
          */
         private const val ALBUM_BACKFILL_VERSION = 2
 
-        /** What a cold start under Battery Saver remembers: when the lossless config fetch last began. */
+        /** What a cold start under Battery Saver remembers: when the lossless config last refreshed. */
         private const val BATTERY_SAVER_PREFS = "stash_battery_saver"
-        private const val KEY_LOSSLESS_CONFIG_STARTED_AT = "lossless_config_started_at"
+        private const val KEY_LOSSLESS_CONFIG_REFRESHED_AT = "lossless_config_refreshed_at"
 
-        /** Under Battery Saver the lossless config is fetched anyway once its last fetch is this old. */
+        /** Under Battery Saver the lossless config is fetched anyway once its last success is this old. */
         private const val LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS = 24L * 60 * 60 * 1000
 
         /** Recognized audio file extensions that the codec-backfill writes back. */
