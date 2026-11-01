@@ -54,7 +54,12 @@ class HomeAddedSectionsTest {
         val saved = savedBy0_9_122 + "new_from_artists"
         assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(saved).last())
         val first = listOf("new_from_artists") + savedBy0_9_122
-        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(first).first())
+        // Because you like, new to this order, goes above it; New from your artists keeps the place the user gave it
+        assertEquals(
+            listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS),
+            resolveHomeSectionOrder(first).take(2),
+        )
+        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(listOf("because_you_like") + first).take(2).last())
     }
 
     @Test
