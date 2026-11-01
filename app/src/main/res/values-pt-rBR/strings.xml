@@ -4,4 +4,5 @@
     <string name="resume_playback_short">Resumo</string>
     <string name="resume_playback_long">Retomar Reprodução</string>
     <string name="cast_connect_failed">Não foi possível conectar ao %1$s</string>
+    <string name="like_mirror_signed_out">Suas curtidas não estão chegando ao %1$s. Entre de novo em Configurações.</string>
 </resources>

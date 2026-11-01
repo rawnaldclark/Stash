@@ -51,6 +51,7 @@ import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
+import com.stash.core.data.social.serviceName
 import com.stash.core.media.PlayerRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -274,7 +275,9 @@ class MainActivity : AppCompatActivity() {
                         playerRepository.userMessages,
                         halts.drop(halts.replayCache.size)
                             .map { "Streaming is failing — try a downloaded track or check your connection" },
-                        likeCoordinator.mirrorFailures,
+                        // A service stopped taking this phone's sign-in: the likes wait, and Settings says so under
+                        // the switch; this says it once, now, so a background heart's failure doesn't go unseen.
+                        likeCoordinator.mirrorFailures.map { context.getString(R.string.like_mirror_signed_out, it.serviceName) },
                     ).collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }

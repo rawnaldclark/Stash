@@ -4,4 +4,5 @@
     <string name="resume_playback_short">재개</string>
     <string name="resume_playback_long">재생 재개</string>
     <string name="cast_connect_failed">%1$s에 연결할 수 없습니다</string>
+    <string name="like_mirror_signed_out">좋아요가 %1$s에 전달되지 않습니다. 설정에서 다시 로그인하세요.</string>
 </resources>

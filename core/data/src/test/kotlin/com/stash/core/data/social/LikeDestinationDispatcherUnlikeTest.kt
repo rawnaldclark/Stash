@@ -28,8 +28,19 @@ class LikeDestinationDispatcherUnlikeTest {
     private val lastFm = mockk<com.stash.core.data.lastfm.LastFmApiClient>(relaxed = true)
     private val lastFmSession =
         mockk<com.stash.core.data.lastfm.LastFmSessionPreference>(relaxed = true)
+    /** Nothing was liked there before Stash: the old behaviour, which these cases assert. */
+    private val likedThere = mockk<LikedThereCheck> {
+        coEvery { onSpotify(any()) } returns LikedThere.NO
+        coEvery { onYouTubeMusic(any()) } returns LikedThere.NO
+        coEvery { onLastFm(any(), any()) } returns LikedThere.NO
+    }
+    /** Stash's own likes, stamped by this build: at or after its stamp epoch, and not the listener's own. */
+    private val ownership = mockk<LikeOwnership>(relaxed = true) {
+        coEvery { isLikedByService(any(), any()) } returns false
+        coEvery { epoch() } returns 100L
+    }
     private val dispatcher =
-        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession)
+        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession, likedThere, ownership)
 
     private fun track(
         spotifySavedAt: Long? = null,
@@ -46,7 +57,7 @@ class LikeDestinationDispatcherUnlikeTest {
         ytMusicSavedAt = ytMusicSavedAt,
     )
 
-    @Test fun `skips destination Stash never saved`() = runBlocking {
+    @Test fun `skips destination Stash never saved`() = runBlocking<Unit> {
         val result = dispatcher.unlike(track(spotifySavedAt = null), setOf(Destination.SPOTIFY))
 
         assertTrue(result[Destination.SPOTIFY]!!.isSuccess)
@@ -54,7 +65,7 @@ class LikeDestinationDispatcherUnlikeTest {
         coVerify(exactly = 0) { trackDao.clearSpotifySaved(any()) }
     }
 
-    @Test fun `removes on Spotify and clears dedup column when saved`() = runBlocking {
+    @Test fun `removes on Spotify and clears dedup column when saved`() = runBlocking<Unit> {
         val result = dispatcher.unlike(track(spotifySavedAt = 111L), setOf(Destination.SPOTIFY))
 
         assertTrue(result[Destination.SPOTIFY]!!.isSuccess)
@@ -62,7 +73,7 @@ class LikeDestinationDispatcherUnlikeTest {
         coVerify { trackDao.clearSpotifySaved(7L) }
     }
 
-    @Test fun `removes on YT Music and clears dedup column when saved`() = runBlocking {
+    @Test fun `removes on YT Music and clears dedup column when saved`() = runBlocking<Unit> {
         val result = dispatcher.unlike(track(ytMusicSavedAt = 222L), setOf(Destination.YT_MUSIC))
 
         assertTrue(result[Destination.YT_MUSIC]!!.isSuccess)
@@ -70,7 +81,7 @@ class LikeDestinationDispatcherUnlikeTest {
         coVerify { trackDao.clearYtMusicSaved(7L) }
     }
 
-    @Test fun `API failure leaves dedup column untouched for organic retry`() = runBlocking {
+    @Test fun `API failure leaves dedup column untouched for organic retry`() = runBlocking<Unit> {
         coEvery { spotify.removeTracks(any()) } throws RuntimeException("boom")
 
         val result = dispatcher.unlike(track(spotifySavedAt = 111L), setOf(Destination.SPOTIFY))
@@ -79,7 +90,7 @@ class LikeDestinationDispatcherUnlikeTest {
         coVerify(exactly = 0) { trackDao.clearSpotifySaved(any()) }
     }
 
-    @Test fun `unlike routes STASH to local repository remove`() = runBlocking {
+    @Test fun `unlike routes STASH to local repository remove`() = runBlocking<Unit> {
         val t = track().copy(stashLikedAt = 333L)
 
         val result = dispatcher.unlike(t, setOf(Destination.STASH))
@@ -88,7 +99,7 @@ class LikeDestinationDispatcherUnlikeTest {
         coVerify { stashLiked.remove(7L) }
     }
 
-    @Test fun `empty destination set is a no-op`() = runBlocking {
+    @Test fun `empty destination set is a no-op`() = runBlocking<Unit> {
         assertTrue(dispatcher.unlike(track(), emptySet()).isEmpty())
     }
     /**
@@ -99,7 +110,7 @@ class LikeDestinationDispatcherUnlikeTest {
      * loves "Calvin Harris, Dua Lipa" — two different Last.fm catalog entries for one
      * track, which is exactly the mismatch the toggle exists to prevent.
      */
-    @Test fun `love uses the primary artist when the toggle is on`() = runBlocking {
+    @Test fun `love uses the primary artist when the toggle is on`() = runBlocking<Unit> {
         every { lastFmSession.session } returns kotlinx.coroutines.flow.flowOf(
             com.stash.core.data.lastfm.LastFmSession(username = "u", sessionKey = "k"),
         )
@@ -115,7 +126,7 @@ class LikeDestinationDispatcherUnlikeTest {
     }
 
     /** Toggle off: the full credit is preserved, unchanged behaviour. */
-    @Test fun `love keeps the full artist when the toggle is off`() = runBlocking {
+    @Test fun `love keeps the full artist when the toggle is off`() = runBlocking<Unit> {
         every { lastFmSession.session } returns kotlinx.coroutines.flow.flowOf(
             com.stash.core.data.lastfm.LastFmSession(username = "u", sessionKey = "k"),
         )

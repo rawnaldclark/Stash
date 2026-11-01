@@ -29,18 +29,55 @@ class NoLastFmSessionException : Exception("Last.fm is not connected")
  * spurious second call would be safe — but the dedup avoids
  * unnecessary network round-trips.
  *
+ * **Never remove a like Stash didn't make.** Before a like goes out, the
+ * service is asked whether the song is liked there already ([LikedThereCheck]):
+ *  - yes: nothing is sent, and the song is recorded as the service's own
+ *    ([LikeOwnership]);
+ *  - no: the like is sent, and it is Stash's, so an un-heart may take it back;
+ *  - can't tell: the like is sent (the heart asked for it) and recorded as the
+ *    service's own, so an un-heart never removes it.
+ * Every case stamps the row's `*_saved_at` (a second heart neither asks nor
+ * sends again), the ownership record always written first. An unlike fires only
+ * on a row stamped at or after [LikeOwnership.stampEpoch] that isn't recorded as
+ * the service's own; anything else is left on the service, its stamp cleared so
+ * a later heart asks again. Builds before the epoch stamped every like they sent,
+ * also songs already in the listener's Spotify Liked Songs, and un-hearting one
+ * deleted their own years-old like.
+ *
  * Parallelism: three destinations fire concurrently. Total time =
  * slowest single-destination time, not sum.
  */
 @Singleton
-class LikeDestinationDispatcher @Inject constructor(
+class LikeDestinationDispatcher internal constructor(
     private val spotifyLibraryClient: SpotifyLibraryApiClient,
     private val ytMusicLibraryClient: YtMusicLibraryApiClient,
     private val stashLikedRepository: StashLikedPlaylistRepository,
     private val trackDao: TrackDao,
     private val lastFmApiClient: com.stash.core.data.lastfm.LastFmApiClient,
     private val lastFmSessionPreference: com.stash.core.data.lastfm.LastFmSessionPreference,
+    private val likedThere: LikedThereCheck,
+    private val ownership: LikeOwnership,
 ) {
+    @Inject constructor(
+        spotifyLibraryClient: SpotifyLibraryApiClient,
+        ytMusicLibraryClient: YtMusicLibraryApiClient,
+        stashLikedRepository: StashLikedPlaylistRepository,
+        trackDao: TrackDao,
+        lastFmApiClient: com.stash.core.data.lastfm.LastFmApiClient,
+        lastFmSessionPreference: com.stash.core.data.lastfm.LastFmSessionPreference,
+        likedThere: ServiceLikedThereCheck,
+        ownership: LikeOwnership,
+    ) : this(
+        spotifyLibraryClient,
+        ytMusicLibraryClient,
+        stashLikedRepository,
+        trackDao,
+        lastFmApiClient,
+        lastFmSessionPreference,
+        likedThere as LikedThereCheck,
+        ownership,
+    )
+
     suspend fun like(
         track: Track,
         destinations: Set<Destination>,
@@ -64,29 +101,38 @@ class LikeDestinationDispatcher @Inject constructor(
                 }
                 Destination.SPOTIFY -> {
                     val uri = track.spotifyUri ?: throw NoSpotifyUriException()
-                    spotifyLibraryClient.saveTracks(listOf(uri))
-                    runCatching { trackDao.markSpotifySaved(track.id, System.currentTimeMillis()) }
-                        .onFailure { Log.w(TAG, "markSpotifySaved failed for ${track.id}", it) }
+                    likeUnlessThere(
+                        track, dest, likedThere.onSpotify(track),
+                        send = { spotifyLibraryClient.saveTracks(listOf(uri)) },
+                        stamp = { trackDao.markSpotifySaved(track.id, it) },
+                    )
                 }
                 Destination.YT_MUSIC -> {
                     val videoId = track.youtubeId ?: throw NoYouTubeIdException()
-                    ytMusicLibraryClient.likeVideo(videoId)
-                    runCatching { trackDao.markYtMusicSaved(track.id, System.currentTimeMillis()) }
-                        .onFailure { Log.w(TAG, "markYtMusicSaved failed for ${track.id}", it) }
+                    likeUnlessThere(
+                        track, dest, likedThere.onYouTubeMusic(videoId),
+                        send = { ytMusicLibraryClient.likeVideo(videoId) },
+                        stamp = { trackDao.markYtMusicSaved(track.id, it) },
+                    )
                 }
                 Destination.LAST_FM -> {
                     // No platform id needed: Last.fm matches on artist + title, so
                     // there is nothing to resolve first.
                     val session = lastFmSessionPreference.session.first()
                         ?: throw NoLastFmSessionException()
-                    lastFmApiClient.setLoved(
-                        sessionKey = session.sessionKey,
-                        artist = scrobbleArtist(track.artist),
-                        track = track.title,
-                        loved = true,
-                    ).getOrThrow()
-                    runCatching { trackDao.markLastFmLoved(track.id, System.currentTimeMillis()) }
-                        .onFailure { Log.w(TAG, "markLastFmLoved failed for ${track.id}", it) }
+                    val artist = scrobbleArtist(track.artist)
+                    likeUnlessThere(
+                        track, dest, likedThere.onLastFm(artist, track.title),
+                        send = {
+                            lastFmApiClient.setLoved(
+                                sessionKey = session.sessionKey,
+                                artist = artist,
+                                track = track.title,
+                                loved = true,
+                            ).getOrThrow()
+                        },
+                        stamp = { trackDao.markLastFmLoved(track.id, it) },
+                    )
                 }
             }
             Result.success(Unit)
@@ -119,6 +165,14 @@ class LikeDestinationDispatcher @Inject constructor(
             Log.d(TAG, "skip unlike $dest for track ${track.id} — never saved by Stash")
             return Result.success(Unit)
         }
+        if (dest != Destination.STASH) {
+            keptReason(track, dest)?.let { why ->
+                Log.d(TAG, "skip unlike $dest for track ${track.id} — $why")
+                // Stash no longer holds it as liked there: a later heart asks the service again instead of skipping as saved
+                bookkeep("clear $dest stamp") { clearStamp(track.id, dest) }
+                return Result.success(Unit)
+            }
+        }
 
         return try {
             when (dest) {
@@ -138,9 +192,10 @@ class LikeDestinationDispatcher @Inject constructor(
                         .onFailure { Log.w(TAG, "clearYtMusicSaved failed for ${track.id}", it) }
                 }
                 Destination.LAST_FM -> {
-                    // Only reached when lastFmLovedAt is set, i.e. only for a love
-                    // Stash itself created — a love the user made years ago is not
-                    // ours to delete.
+                    // Only reached when lastFmLovedAt is set and the love isn't
+                    // recorded as the listener's own: a love Stash itself created. A
+                    // love the listener made years ago is never stamped
+                    // (likeUnlessThere), so it is not ours to delete.
                     val session = lastFmSessionPreference.session.first()
                         ?: throw NoLastFmSessionException()
                     lastFmApiClient.setLoved(
@@ -180,6 +235,86 @@ class LikeDestinationDispatcher @Inject constructor(
         } else {
             artist
         }
+
+    /**
+     * Sends a like unless [there] says the service has it already, then stamps the row ([stamp] takes the time). See the class
+     * KDoc for the three cases. Bookkeeping failures are logged, never the like's failure, and always fall on the safe side: the
+     * stamp is written only after the epoch and, for the service's own like, after its ownership record, so an unwritten record
+     * means no stamp (a later heart asks again), never a stamp an un-heart could take away.
+     */
+    private suspend fun likeUnlessThere(
+        track: Track,
+        dest: Destination,
+        there: LikedThere,
+        send: suspend () -> Unit,
+        stamp: suspend (Long) -> Unit,
+    ) {
+        if (there == LikedThere.YES) {
+            Log.d(TAG, "skip $dest for track ${track.id} — already liked there; it stays the listener's own")
+        } else {
+            send()
+        }
+        val now = System.currentTimeMillis()
+        if (there == LikedThere.NO) {
+            bookkeep("stamp $dest like") {
+                ownership.stampEpoch(now)
+                stamp(now)
+            }
+            bookkeep("clear $dest ownership") { ownership.clear(dest, track.id) }
+        } else {
+            bookkeep("record $dest like as the listener's own") {
+                ownership.markLikedByService(dest, track.id)
+                ownership.stampEpoch(now)
+                stamp(now)
+            }
+        }
+    }
+
+    private suspend fun bookkeep(what: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Log.w(TAG, "$what failed", t)
+        }
+    }
+
+    /**
+     * Why the like on [dest] stays on the service, or null when it is Stash's to take back: stamped at or after the epoch and
+     * not recorded as the listener's own. Anything that can't be read keeps it (never delete on doubt).
+     */
+    private suspend fun keptReason(track: Track, dest: Destination): String? = try {
+        val stamp = stampOf(track, dest)
+        val epoch = ownership.epoch()
+        when {
+            stamp == null -> "never saved by Stash"
+            epoch == null || stamp < epoch -> "stamped by a build that never asked the service first"
+            ownership.isLikedByService(dest, track.id) -> "the like there is the listener's own"
+            else -> null
+        }
+    } catch (ce: CancellationException) {
+        throw ce
+    } catch (t: Throwable) {
+        Log.w(TAG, "couldn't read whose $dest like track ${track.id} is; leaving it alone", t)
+        "whose it is couldn't be read"
+    }
+
+    private fun stampOf(track: Track, dest: Destination): Long? = when (dest) {
+        Destination.STASH -> track.stashLikedAt
+        Destination.SPOTIFY -> track.spotifySavedAt
+        Destination.YT_MUSIC -> track.ytMusicSavedAt
+        Destination.LAST_FM -> track.lastFmLovedAt
+    }
+
+    private suspend fun clearStamp(trackId: Long, dest: Destination) {
+        when (dest) {
+            Destination.SPOTIFY -> trackDao.clearSpotifySaved(trackId)
+            Destination.YT_MUSIC -> trackDao.clearYtMusicSaved(trackId)
+            Destination.LAST_FM -> trackDao.clearLastFmLoved(trackId)
+            Destination.STASH -> Unit
+        }
+    }
 
     private fun alreadySaved(track: Track, dest: Destination): Boolean = when (dest) {
         Destination.STASH -> track.stashLikedAt != null

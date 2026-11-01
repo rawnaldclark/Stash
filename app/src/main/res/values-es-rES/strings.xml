@@ -4,4 +4,5 @@
     <string name="resume_playback_short">Reanudar</string>
     <string name="resume_playback_long">Reanudar la reproducción</string>
     <string name="cast_connect_failed">No se pudo conectar a %1$s</string>
+    <string name="like_mirror_signed_out">Tus Me gusta no llegan a %1$s. Vuelve a iniciar sesión en Ajustes.</string>
 </resources>
