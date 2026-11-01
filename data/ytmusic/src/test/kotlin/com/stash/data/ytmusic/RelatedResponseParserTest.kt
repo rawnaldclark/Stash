@@ -65,7 +65,7 @@ class RelatedResponseParserTest {
     }
 
     @Test
-    fun `wherever the related tab moves, it is found; without it there is none`() {
+    fun `wherever the related tab moves, it is found, and without it there is none`() {
         val next = fixture("next_never_gonna.json")
         assertEquals("MPTRt_dcYZhAh5urI-1", RelatedResponseParser.relatedBrowseId(withTabs(next) { it.reversed() }))
         // The Lyrics tab (MPLYt_) is a browse tab too, but never taken for Related
@@ -90,7 +90,7 @@ class RelatedResponseParserTest {
     }
 
     @Test
-    fun `getRelatedSongs makes the two calls: next, then the related tab's browse`() = runTest {
+    fun `getRelatedSongs makes the two calls, next then the related tab's browse`() = runTest {
         val inner = mock<InnerTubeClient>()
         runBlocking {
             whenever(inner.next(eq("lYBUbBu4W08"))).thenReturn(fixture("next_never_gonna.json"))
