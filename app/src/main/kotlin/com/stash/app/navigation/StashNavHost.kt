@@ -509,6 +509,15 @@ private fun StashNavGraph(
             AboveChrome {
                 LibraryHealthScreen(
                     onNavigateBack = { navController.popBackStack() },
+                    onOpenPossibleDuplicates = { navController.navigate(PossibleDuplicatesRoute) },
+                )
+            }
+        }
+
+        composable<PossibleDuplicatesRoute> {
+            AboveChrome {
+                com.stash.feature.settings.libraryhealth.PossibleDuplicatesScreen(
+                    onNavigateBack = { navController.popBackStack() },
                 )
             }
         }

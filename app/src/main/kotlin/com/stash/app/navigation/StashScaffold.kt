@@ -107,6 +107,8 @@ fun StashScaffold(
     onDeepLinkConsumed: () -> Unit = {},
     startTab: StartTab = StartTab.HOME,
     losslessNotices: Flow<LosslessQuotaNotice> = emptyFlow(),
+    tidyNotices: Flow<Int?> = emptyFlow(),
+    onTidyNoticeShown: suspend () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -303,6 +305,22 @@ fun StashScaffold(
                     navController.navigate(SettingsAudioQualityRoute) { launchSingleTop = true }
                     navController.navigate(SettingsLosslessSourcesRoute) { launchSingleTop = true }
                 }
+            }
+        }
+    }
+
+    // The one-time duplicate cleanup merged songs that were in the library twice: say so once, on
+    // any screen. Marked shown after the snackbar goes, so a closed app shows it at the next open.
+    LaunchedEffect(lifecycleOwner, tidyNotices) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            tidyNotices.collect { n ->
+                if (n == null || n <= 0) return@collect
+                snackbarHostState.showSnackbar(
+                    message = context.resources.getQuantityString(com.stash.app.R.plurals.tidied_duplicates, n, n),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+                onTidyNoticeShown()
             }
         }
     }

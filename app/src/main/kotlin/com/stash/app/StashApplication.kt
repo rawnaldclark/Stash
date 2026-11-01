@@ -251,6 +251,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var canonicalRecomputeState: com.stash.core.data.library.CanonicalRecomputeState
 
+    /** Gate for the one-time duplicate cleanup after schema 76, see [maybeEnqueueDuplicateCleanup]. */
+    @Inject
+    lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
+
     /** Only to cancel a lyrics upgrade the retired automatic pass queued before an update. */
     @Inject
     lateinit var lyricsUpgradeTrigger: LyricsUpgradeTrigger
@@ -577,6 +581,7 @@ class StashApplication : Application(), Configuration.Provider {
         maybeEnqueueQualityBackfill()
         maybeEnqueueBlocklistIntegrity()
         applicationScope.launch { maybeEnqueueCanonicalRecompute() }
+        applicationScope.launch { maybeEnqueueDuplicateCleanup() }
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
@@ -1116,6 +1121,24 @@ class StashApplication : Application(), Configuration.Provider {
         }.onFailure {
             if (it is kotlinx.coroutines.CancellationException) throw it
             Log.w("StashMigration", "canonical re-key enqueue failed", it)
+        }
+    }
+
+    /**
+     * Schema 76: the one-time duplicate cleanup ([com.stash.core.data.library.duplicates.DuplicateCleanup]):
+     * id-less stubs merged into the row of their song, unused ones removed, two-file cases left for
+     * Library Health → Possible duplicates; never a file deleted. Enqueued on every start until it
+     * has run once (a restored older backup re-arms it), then this is a single DataStore read. The
+     * worker waits while a sync or a mix refresh runs.
+     */
+    private suspend fun maybeEnqueueDuplicateCleanup() {
+        runCatching {
+            if (com.stash.core.data.sync.workers.DuplicateCleanupWorker.enqueueIfPending(this, duplicateCleanupState)) {
+                Log.i("StashMigration", "maybeEnqueueDuplicateCleanup: enqueued the one-time duplicate cleanup")
+            }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "duplicate cleanup enqueue failed", it)
         }
     }
 
