@@ -308,4 +308,22 @@ interface ListeningEventDao {
         """
     )
     suspend fun getTopTracksByLocalPlays(sinceEpochMs: Long, limit: Int): List<TrackArtistTitle>
+
+    /** A play's song and start, for Home's "Because you like" seed scores (this phone's plays only). */
+    data class PlayStamp(val trackId: Long, val startedAt: Long)
+
+    /** This phone's plays since [sinceMs], each its song and start: Home's "Because you like" seeds weigh them by age. */
+    @Query(
+        "SELECT track_id AS trackId, started_at AS startedAt FROM listening_events " +
+            "WHERE started_at >= :sinceMs AND origin_device IS NULL",
+    )
+    suspend fun playStampsSince(sinceMs: Long): List<PlayStamp>
+
+    /** The newest listen's id (0 with none): where Home's "Because you like" starts counting plays after a build. */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
+    suspend fun lastEventId(): Long
+
+    /** This phone's listens after [afterId] that played through (crossed the completion mark): full plays. */
+    @Query("SELECT COUNT(*) FROM listening_events WHERE id > :afterId AND completed_at IS NOT NULL AND origin_device IS NULL")
+    suspend fun countFullPlaysAfter(afterId: Long): Int
 }
