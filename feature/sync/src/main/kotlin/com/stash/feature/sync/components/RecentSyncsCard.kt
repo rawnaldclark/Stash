@@ -44,7 +44,7 @@ import com.stash.core.common.extensions.pluralize
  */
 data class RecentSyncRow(
     val id: Long,
-    val modeLabel: String?,     // "Stream only" / "Download"; null on pre-migration rows
+    val modeLabel: String?,     // "Online" / "Offline"; null on pre-migration rows
     val relativeTime: String,   // "35m ago"
     val duration: String?,      // "45s" / "1m 12s"; null when unknown/interrupted
     val added: Int,             // surfaced (online) or downloaded (offline/legacy) this run

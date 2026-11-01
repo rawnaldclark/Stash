@@ -685,7 +685,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 controller.shuffleModeEnabled,
             )
         }
-        _userMessages.tryEmit("No earlier song is available offline right now.")
+        // Not "offline": that's the mode's name (2026-11-01).
+        _userMessages.tryEmit("No earlier song can play right now.")
     }
 
     /**
@@ -852,7 +853,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 when {
                     tracks[safeStart].isScannedSong -> SCANNED_FILE_MISSING_MESSAGE
                     !streamOk -> DOWNLOAD_MODE_MESSAGE
-                    else -> "That song isn't available offline right now."
+                    // Online, and the player refused it: confirmed to have nowhere to stream from.
+                    else -> "That song isn't available right now."
                 },
             )
             // Don't fall back to track 0 — bail rather than silently substitute.
@@ -1861,7 +1863,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
-                _userMessages.tryEmit("That song isn't available offline right now.")
+                _userMessages.tryEmit(FILE_MISSING_CANT_STREAM_MESSAGE)
             }
             return false
         }
@@ -3210,7 +3212,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 "silent-skip: offline + stream-only '$failingTitle' — end of queue, pausing",
             )
             controller.pause()
-            _userMessages.tryEmit("End of offline Mix")
+            _userMessages.tryEmit("No internet connection, and the rest of this queue isn't downloaded.")
         }
     }
 
@@ -3592,8 +3594,11 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
 
         /** Shown when an All Songs file can't be played because it isn't where the scan found it. */
-        /** Download mode refuses a song that isn't on the phone. */
-        internal const val DOWNLOAD_MODE_MESSAGE = "You're in Download mode. Switch to Stream only to play this."
+        /** Offline (Download mode in code) refuses a song that isn't on the phone. */
+        internal const val DOWNLOAD_MODE_MESSAGE = "Offline plays only your downloads. Switch to Online to play this."
+
+        /** A downloaded song whose file is gone or broken, and it can't stream instead (no connection, or nowhere to stream from). */
+        internal const val FILE_MISSING_CANT_STREAM_MESSAGE = "That song's file is missing and it can't stream right now."
 
         internal const val SCANNED_FILE_MISSING_MESSAGE =
             "That file isn't there anymore. Rescan your folders: Library, then the disk icon at the top."

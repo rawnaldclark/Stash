@@ -19,7 +19,7 @@ fun SyncHistoryInfo.toRecentSyncRow(relativeTime: String): RecentSyncRow {
     val online = streamingMode
     return RecentSyncRow(
         id = id,
-        modeLabel = when (online) { true -> "Stream only"; false -> "Download"; null -> null },
+        modeLabel = when (online) { true -> "Online"; false -> "Offline"; null -> null },
         relativeTime = relativeTime,
         duration = formatSyncDuration(startedAt, completedAt),
         added = if (online == true) newTracksFound else tracksDownloaded,

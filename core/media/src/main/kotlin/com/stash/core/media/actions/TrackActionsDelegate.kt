@@ -234,7 +234,7 @@ class TrackActionsDelegate @Inject constructor(
                         com.stash.core.media.StreamRoutingResult.CellularRefused ->
                             _userMessages.emit("Streaming on cellular is off in Settings.")
                         com.stash.core.media.StreamRoutingResult.NoConnectivity ->
-                            _userMessages.emit("You're offline — can't stream this track.")
+                            _userMessages.emit("No internet connection, and this song isn't downloaded.")
                         com.stash.core.media.StreamRoutingResult.DownloadMode ->
                             _userMessages.emit(com.stash.core.media.PlayerRepositoryImpl.DOWNLOAD_MODE_MESSAGE)
                     }

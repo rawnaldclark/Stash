@@ -821,10 +821,10 @@ private fun LibraryContent(
         // -- Active source filter, on the tab it narrows. It's persisted and re-applied every
         // launch, and since the chip rows moved into the sheet nothing on screen showed it: a
         // FLAC filter from days ago left Songs at 40 of 5,000 with no hint why. Tap to clear.
-        val activeFilterLabel = sourceFilterLabel(state.sourceFilter)
+        val activeFilterLabel = activeFilterChipLabel(state.sourceFilter)
         if (activeFilterLabel != null && state.activeTab == LibraryTab.TRACKS) {
             ActiveFilterChip(
-                label = "Showing $activeFilterLabel only",
+                label = activeFilterLabel,
                 onClear = { onSourceFilterChanged(SourceFilter.ALL) },
             )
         }

@@ -327,8 +327,6 @@
     <string name="settings_lossless_routing_header">ACHEMINEMENT</string>
     <string name="settings_lossless_routing_footer">L’audio sans perte provient des sources ci-dessus. En cas d’échec, JioSaavn est essayé avant de passer à YouTube, affiché comme « via YT » pendant la lecture.</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Streaming uniquement</string>
-    <string name="settings_mode_download">Téléchargement</string>
     <string name="settings_stream_on_cellular_title">Streaming sur réseau mobile</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Lire via YouTube</string>

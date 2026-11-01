@@ -159,10 +159,10 @@
     <string name="sync_syncing_body">Play anything that\'s landed. You can leave this screen.</string>
     <string name="sync_stop">Stop</string>
 
-    <!-- Sync tab overhaul: Download mode -->
+    <!-- Sync tab overhaul: Offline (the Download switch in code) -->
     <string name="sync_download_title">On this phone</string>
     <string name="sync_download_choose">Choose what to save</string>
-    <string name="sync_download_note">Download mode plays your downloads and hides anything that\'s not downloaded.</string>
+    <string name="sync_download_note">Offline plays only your downloads and hides the rest. Sync and downloads still use the network.</string>
     <string name="sync_download_none">Nothing saved yet.</string>
     <string name="sync_saved_cd">Saved</string>
 

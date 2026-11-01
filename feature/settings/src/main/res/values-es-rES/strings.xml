@@ -327,8 +327,6 @@
     <string name="settings_lossless_routing_header">ENRUTAMIENTO</string>
     <string name="settings_lossless_routing_footer">El audio sin pérdida proviene de las fuentes anteriores. En caso de fallo, primero se prueba JioSaavn antes de recurrir a YouTube; durante la reproducción se muestra como \"via YT\".</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Solo streaming</string>
-    <string name="settings_mode_download">Descarga</string>
     <string name="settings_stream_on_cellular_title">Reproducir con datos móviles</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Reproducir a través de YouTube</string>

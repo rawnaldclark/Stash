@@ -29,12 +29,14 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
 
 /**
- * Two-tile picker for the one mode switch: "Stream only" vs "Download".
- * Download: Sync saves to the phone and only saved songs play. Stream only: nothing
- * is saved and everything streams. Selected tile is
+ * Two-tile picker for the one mode switch: "Online" vs "Offline" (called
+ * "Stream only" / "Download" until 2026-11-01; the preference and its names
+ * in code kept the old words). Offline: only downloaded songs play, while Sync
+ * still saves switched-on playlists over the network. Online: everything plays
+ * and what isn't downloaded streams. Selected tile is
  * filled with primary-tinted glass; the other is muted. Tapping either
- * fires [onSelect] with the chosen mode (`true` = stream only, `false` =
- * download). Re-tapping the already-selected tile is a no-op via the
+ * fires [onSelect] with the chosen mode (`true` = Online, `false` =
+ * Offline). Re-tapping the already-selected tile is a no-op via the
  * caller's responsibility (we still emit, which the caller can dedupe).
  *
  * Used in the bottom sheet that opens from the [StreamingModeChip] on
@@ -58,14 +60,14 @@ fun OnlineOfflinePicker(
     ) {
         ModeTile(
             icon = Icons.Default.CloudQueue,
-            label = "Stream only",
+            label = "Online",
             selected = streamingEnabled,
             onClick = { onSelect(true) },
             modifier = Modifier.weight(1f),
         )
         ModeTile(
             icon = Icons.Default.OfflinePin,
-            label = "Download",
+            label = "Offline",
             selected = !streamingEnabled,
             onClick = { onSelect(false) },
             modifier = Modifier.weight(1f),
