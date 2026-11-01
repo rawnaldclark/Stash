@@ -21,7 +21,7 @@ class FailedMatchesListKeysTest {
         currentYoutubeId = "wrong$trackId", currentFilePath = null, searchQuery = "Artist - Flagged $trackId",
     )
 
-    @Test fun `the keys follow the list: header, banner, unmatched songs, flagged section`() {
+    @Test fun `the keys follow the list, header then banner then unmatched songs then the flagged section`() {
         val keys = failedMatchesListKeys(
             tracks = listOf(unmatched(1L), unmatched(2L)),
             flagged = listOf(flagged(7L)),
