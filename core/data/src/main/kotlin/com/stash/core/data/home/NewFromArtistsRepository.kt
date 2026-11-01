@@ -153,14 +153,15 @@ class NewFromArtistsRepository internal constructor(
             }.awaitAll()
         }
         val anyLoaded = outcomes.any { it.second is Outcome.Loaded }
-        val entries = HashMap(known)
+        // Today's artists only: one who left your top ten is looked up afresh if they come back
+        val entries = HashMap<String, SavedArtist>()
         for ((key, outcome) in outcomes) {
             val entry = when {
                 // A page that fails while others load may be the wrong page or a gone one: look it up again next time
                 outcome is Outcome.Failed && outcome.pageFailed && anyLoaded -> outcome.saved?.copy(id = null)
                 else -> outcome.saved
             }
-            if (entry != null) entries[key] = entry else entries.remove(key)
+            if (entry != null) entries[key] = entry
         }
         // The row: each loaded page, and the saved releases of an artist whose page didn't answer today
         val pages = outcomes.mapNotNull { (_, outcome) ->
