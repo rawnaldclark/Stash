@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.stash.feature.record.R
@@ -299,8 +300,8 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onM
         onLongClickLabel = stringResource(R.string.record_card_more),
         spoken = spoken,
     ) {
-        // Beside the artwork while the words get at least RecordCardLayout.MinWordsWidth; above them when they wouldn't (a
-        // narrow phone, a large Display size), worked out from the card's own width: never a name cut for room.
+        // Beside the artwork while the words get at least RecordCardLayout.MinWordsWidth, more at a larger font; above them when
+        // they wouldn't (a narrow phone, a large font or Display size), from the card's own width: never a name cut for room.
         BoxWithConstraints(Modifier.weight(1f)) {
             val artwork: @Composable () -> Unit = {
                 RecordArtwork(
@@ -320,7 +321,7 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onM
                     faces = if (view.artists.isEmpty()) null else { { Faces(view.artists, s.artistArt) } },
                 )
             }
-            if (RecordCardLayout.artOnTop(maxWidth)) {
+            if (RecordCardLayout.artOnTop(maxWidth, LocalDensity.current.fontScale)) {
                 Column(Modifier.fillMaxWidth()) {
                     artwork()
                     Spacer(Modifier.height(RecordCardLayout.ArtGap))
@@ -339,10 +340,11 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onM
 
 /**
  * The card's words, none ever cut for room: the eyebrow; the hours, large, wrapping only between the number and its word
- * ("4,321" over "hours", never "hou…"); since when and how many plays, wrapping only after the dot
- * ([RecordCardLayout.wrapOnlyAtDot]); "Most played" small on a line of its own and the name under it, up to two lines (cut
- * only past two); then [faces], when there are any.
+ * ("4,321" over "hours", never "hou…"); since when and how many plays, the plays under the year whole when both don't fit
+ * ([RecordCardLayout.splitAtDot]); "Most played" small on a line of its own and the name under it, up to two lines (cut only
+ * past two); then [faces], when there are any.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RecordWords(
     eyebrow: String,
@@ -367,11 +369,15 @@ private fun RecordWords(
             style = MaterialTheme.typography.titleMedium.copy(fontFamily = SpaceGrotesk, lineHeight = 38.sp),
             color = Color.White.copy(alpha = 0.82f),
         )
-        Text(
-            RecordCardLayout.wrapOnlyAtDot(line),
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.86f),
-        )
+        // "since 2016 ·" and "330,827 plays": side by side when they fit, the plays on the next line when they don't, and each
+        // wrapping as text does when even it alone doesn't fit (a long word, a large font)
+        val (since, plays) = RecordCardLayout.splitAtDot(line)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            val lineStyle = MaterialTheme.typography.bodySmall
+            val lineColor = Color.White.copy(alpha = 0.86f)
+            Text(since, style = lineStyle, color = lineColor)
+            if (plays != null) Text(plays, style = lineStyle, color = lineColor)
+        }
         if (topArtist != null) {
             Spacer(Modifier.height(6.dp))
             Text(

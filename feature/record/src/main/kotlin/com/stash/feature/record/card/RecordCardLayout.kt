@@ -9,37 +9,34 @@ import androidx.compose.ui.unit.dp
  */
 internal object RecordCardLayout {
     /**
-     * The least room the words get beside the artwork before it goes above them. Measured on a Pixel 6 (411 dp wide): the
-     * words had 179 dp, enough for the new layout (the name on its own line, up to two) at a large font; much less and the
-     * hours' number itself has no room at 32 sp.
+     * The least room the words get beside the artwork at the default font, before it goes above them; a larger font needs
+     * as much more ([artOnTop]). 125 dp holds the hours' number at 32 sp (five digits and a separator) and the name in up to
+     * two lines; a 360 dp phone (128 dp of words) keeps the artwork beside them at the default font.
      */
-    val MinWordsWidth: Dp = 170.dp
+    val MinWordsWidth: Dp = 125.dp
 
     /** Between the artwork and the words, beside them or above. */
     val ArtGap: Dp = 14.dp
 
     /**
-     * Whether the card puts its artwork above its words: when beside it the words would get less than [MinWordsWidth] (a
-     * narrow phone, or Stash's Display size). [inner] is the card's width inside its padding, from the layout's own
-     * constraints, never from the device model.
+     * Whether the card puts its artwork above its words: when beside it the words would get less than [MinWordsWidth] scaled
+     * by the font ([fontScale], the system's font size): a 360 dp phone stacks from the Large font on, a Pixel 6 (179 dp of
+     * words) only past about 1.4×. [inner] is the card's width inside its padding, from the layout's own constraints, never
+     * from the device model.
      */
-    fun artOnTop(inner: Dp): Boolean = inner - RecordArtWidth - ArtGap < MinWordsWidth
-
-    /** The plain space and the no-break space that replaces it. */
-    private const val SPACE = ' '
-    private const val NO_BREAK = ' '
+    fun artOnTop(inner: Dp, fontScale: Float): Boolean = inner - RecordArtWidth - ArtGap < MinWordsWidth * fontScale
 
     /** The separator between "since 2016" and "330,827 plays" in every language's `record_since`. */
     private const val DOT = " · "
 
     /**
-     * [line] ("since 2016 · 330,827 plays") set so it can wrap only after its dot: every other space (inside each half, and
-     * before the dot) made a no-break space, so a narrow card shows "since 2016 ·" over "330,827 plays", never "330,827" over
-     * "plays". A line without the dot (just the plays, or a language that words it otherwise) comes back as it is.
+     * [line] ("since 2016 · 330,827 plays") as its two halves, the dot kept with the first ("since 2016 ·", "330,827 plays"):
+     * the card sets them side by side when they fit and the second under the first when they don't, each wrapping as text
+     * does on its own. Null second half when there's no dot (just the plays, or a language that words it otherwise).
      */
-    fun wrapOnlyAtDot(line: String): String {
-        val parts = line.split(DOT)
-        if (parts.size < 2) return line
-        return parts.joinToString("$NO_BREAK· ") { it.replace(SPACE, NO_BREAK) }
+    fun splitAtDot(line: String): Pair<String, String?> {
+        val at = line.indexOf(DOT)
+        if (at < 0) return line to null
+        return line.substring(0, at) + " ·" to line.substring(at + DOT.length)
     }
 }
