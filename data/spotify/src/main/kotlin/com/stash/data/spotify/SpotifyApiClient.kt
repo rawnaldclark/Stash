@@ -208,22 +208,42 @@ class SpotifyApiClient @Inject constructor(
         }
 
         /**
-         * The gallery (largest source of each photo) and the wide header from a
-         * `queryArtistOverview` answer: `data.artistUnion.visuals`. The header sits under
-         * `headerImage.data.sources` (or `headerImage.sources`). Null when neither is there.
+         * The gallery (largest source of each photo), the wide header and the monthly listeners
+         * from a `queryArtistOverview` answer, all under `data.artistUnion`: the photos in
+         * `visuals` (the header under `headerImage.data.sources`, or `headerImage.sources`), the
+         * listeners in `stats.monthlyListeners`. A 0 is no number: the page shows nothing rather
+         * than "0 monthly listeners". Null when none of the three is there. The top tracks' titles
+         * (`discography.topTracks.items[].track.name`) come along, to check the listeners belong to
+         * the artist the page is about.
          */
         internal fun parseArtistVisuals(root: JsonObject): SpotifyArtistVisuals? {
-            val visuals = (((root["data"] as? JsonObject)?.get("artistUnion") as? JsonObject)
-                ?.get("visuals")) as? JsonObject ?: return null
-            val gallery = ((visuals["gallery"] as? JsonObject)?.get("items") as? JsonArray)
+            val artist = ((root["data"] as? JsonObject)?.get("artistUnion")) as? JsonObject ?: return null
+            val visuals = artist["visuals"] as? JsonObject
+            val gallery = ((visuals?.get("gallery") as? JsonObject)?.get("items") as? JsonArray)
                 ?.mapNotNull { largestSource((it as? JsonObject)?.get("sources")) }
                 ?.distinct()
                 .orEmpty()
-            val header = visuals["headerImage"] as? JsonObject
+            val header = visuals?.get("headerImage") as? JsonObject
             val headerUrl = largestSource((header?.get("data") as? JsonObject)?.get("sources"))
                 ?: largestSource(header?.get("sources"))
-            if (gallery.isEmpty() && headerUrl == null) return null
-            return SpotifyArtistVisuals(gallery = gallery, headerUrl = headerUrl)
+            val monthlyListeners = ((artist["stats"] as? JsonObject)?.get("monthlyListeners") as? JsonPrimitive)
+                ?.longOrNull
+                ?.takeIf { it > 0 }
+            if (gallery.isEmpty() && headerUrl == null && monthlyListeners == null) return null
+            val topTrackTitles = ((((artist["discography"] as? JsonObject)?.get("topTracks") as? JsonObject)
+                ?.get("items")) as? JsonArray)
+                ?.mapNotNull { item ->
+                    val o = item as? JsonObject ?: return@mapNotNull null
+                    val track = (o["track"] as? JsonObject) ?: o
+                    (track["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                }
+                .orEmpty()
+            return SpotifyArtistVisuals(
+                gallery = gallery,
+                headerUrl = headerUrl,
+                monthlyListeners = monthlyListeners,
+                topTrackTitles = topTrackTitles,
+            )
         }
 
         /** The widest https image of a `sources` array (a missing width counts as 0). */
@@ -632,7 +652,8 @@ class SpotifyApiClient @Inject constructor(
 
     /**
      * An artist's photos on Spotify, for the artist page: the photo gallery (About) and the wide
-     * header (the banner when YouTube has none). Finds the artist by [name] with `searchDesktop`
+     * header (the banner when YouTube has none), plus the monthly listeners the hero shows, read
+     * from the same answer (no extra request). Finds the artist by [name] with `searchDesktop`
      * (an exact name match only, so a namesake never lends their photos), then reads its
      * `queryArtistOverview`. Null when not signed in to Spotify, no single exact match, or nothing
      * parses. Both requests stop when the caller's coroutine is cancelled (review on #738): the
@@ -668,7 +689,11 @@ class SpotifyApiClient @Inject constructor(
                 cancellable = true,
             ) ?: return@withContext null
             parseArtistVisuals(overview).also {
-                Log.d(TAG, "getArtistVisuals: '$name' gallery=${it?.gallery?.size ?: 0} header=${it?.headerUrl != null}")
+                Log.d(
+                    TAG,
+                    "getArtistVisuals: '$name' gallery=${it?.gallery?.size ?: 0} header=${it?.headerUrl != null} " +
+                        "monthlyListeners=${it?.monthlyListeners} topTracks=${it?.topTrackTitles?.size ?: 0}",
+                )
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e

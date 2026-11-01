@@ -133,10 +133,22 @@ data class ArtistProfile(
     val id: String,
     val name: String,
     val avatarUrl: String?,
+    /**
+     * The YouTube channel's subscriber count, as YouTube writes it ("290K"). Never shown: it is a
+     * different, smaller number than the monthly listeners people compare (Sonic Youth: 290K
+     * subscribers, 574K monthly audience, 1.7M on Spotify). Still parsed and cached so a blob this
+     * build writes keeps decoding in an older build, whose model requires the field.
+     */
     val subscribersText: String?,
     val popular: List<TrackSummary>,
     val albums: List<AlbumSummary>,
     val singles: List<AlbumSummary>,
     val related: List<ArtistSummary>,
     val about: ArtistAbout? = null,
+    /**
+     * YouTube's monthly audience for the channel (the header's `monthlyListenerCount`, "574K
+     * monthly audience"), as a number. The artist page's listener count when Spotify has none.
+     * Null when YouTube sends none, and in profiles cached before this field existed.
+     */
+    val monthlyAudience: Long? = null,
 )

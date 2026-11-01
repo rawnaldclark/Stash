@@ -72,6 +72,8 @@ class ArtistProfileViewModel @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
+    /** Whether Spotify is signed in: its monthly listeners count only then (see [monthlyListenersOf]). */
+    private val tokenManager: com.stash.core.auth.TokenManager,
 ) : ViewModel() {
 
     private val artistId: String = requireNotNull(savedStateHandle["artistId"]) {
@@ -86,7 +88,7 @@ class ArtistProfileViewModel @Inject constructor(
             hero = HeroState(
                 name = initialName,
                 avatarUrl = initialAvatar,
-                subscribersText = null,
+                monthlyListeners = null,
             ),
             status = ArtistProfileStatus.Loading,
             focusAlbum = initialFocusAlbum,
@@ -200,6 +202,7 @@ class ArtistProfileViewModel @Inject constructor(
                         profile = cached.profile,
                         status = ArtistProfileStatus.Fresh,
                         t0 = t0,
+                        enriched = false,
                     )
                     is CachedProfile.Fresh -> apply(
                         profile = cached.profile,
@@ -382,21 +385,32 @@ class ArtistProfileViewModel @Inject constructor(
     /**
      * Fold a freshly-arrived profile into the UI state and kick the preview
      * prefetcher on the first non-empty Popular list we see.
+     *
+     * [enriched] is false for a cold miss's first paint ([CachedProfile.Partial]):
+     * the YouTube profile before Spotify has answered. With Spotify signed in, its
+     * listener count is held back, so the hero never shows YouTube's number and then
+     * swaps it for Spotify's a moment later; the enriched profile that follows sets
+     * it. Without Spotify there is nothing to wait for: YouTube's number shows at
+     * once (review on #770), as the subscriber count used to.
      */
     private fun apply(
         profile: ArtistProfile,
         status: ArtistProfileStatus,
         t0: Long,
+        enriched: Boolean = true,
     ) {
         // A profile whose header didn't parse must not blank the hero the
         // nav args (or an earlier, good emission) already painted — fall
         // back to what is on screen for any field the profile lacks.
         val currentHero = _uiState.value.hero
+        val spotifyConnected =
+            tokenManager.spotifyAuthState.value is com.stash.core.auth.model.AuthState.Connected
+        val listeners = if (enriched || !spotifyConnected) monthlyListenersOf(profile, spotifyConnected) else null
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name.ifBlank { currentHero.name },
                 avatarUrl = profile.avatarUrl ?: currentHero.avatarUrl,
-                subscribersText = profile.subscribersText ?: currentHero.subscribersText,
+                monthlyListeners = listeners ?: currentHero.monthlyListeners,
             ),
             popular = profile.popular,
             albums = profile.albums,

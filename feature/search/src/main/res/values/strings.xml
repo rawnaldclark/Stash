@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Artist page (feature/search). -->
+    <!-- Under the artist's name. %1$s: the count, already short ("1.7M", "574K"). Monthly listeners
+         are the people who played the artist in the last 28 days; the source is not named.
+         Translators: the plural is chosen by the number as shown (1.7M picks the form for 1700000,
+         574K the form for 574000), so languages with few/many forms (Russian, Polish, Czech...)
+         get the form their grammar uses after a rounded "млн" / "tys."; please fill every form. -->
+    <plurals name="artist_monthly_listeners">
+        <item quantity="one">%1$s monthly listener</item>
+        <item quantity="other">%1$s monthly listeners</item>
+    </plurals>
+</resources>

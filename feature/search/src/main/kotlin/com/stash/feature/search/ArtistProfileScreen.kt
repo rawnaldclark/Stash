@@ -222,7 +222,7 @@ fun ArtistProfileScreen(
                 ArtistProfileStatus.Fresh,
                 ArtistProfileStatus.Stale -> if (
                     state.popular.isEmpty() && state.albums.isEmpty() &&
-                    state.singles.isEmpty() && state.related.isEmpty() && state.about == null
+                    state.singles.isEmpty() && state.related.isEmpty() && state.about?.hasSection != true
                 ) {
                     // Loaded, but YouTube Music returned nothing to show. The
                     // shelves below would render as a blank page under the
@@ -390,7 +390,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             )
         }
     }
-    val about = state.about
+    // A listener count alone is the hero's; About shows only with something of its own.
+    val about = state.about?.takeIf { it.hasSection }
     if (about != null) {
         item { SectionHeader(title = "About") }
         item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl, artistName = state.hero.name) }

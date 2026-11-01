@@ -789,7 +789,7 @@ class YTMusicApiClient @Inject constructor(
      *
      * The browse response for an artist channel (browseId starting with `UC`
      * or `MPLAUC`) contains:
-     *   - `header.musicImmersiveHeaderRenderer` — name, avatar, subscribers.
+     *   - `header.musicImmersiveHeaderRenderer` — name, avatar, monthly audience.
      *   - A single `singleColumnBrowseResultsRenderer` tab holding a mix of
      *     `musicShelfRenderer` (Popular) and `musicCarouselShelfRenderer`
      *     (Albums, Singles, "Fans also like") sections.
@@ -825,17 +825,20 @@ class YTMusicApiClient @Inject constructor(
             ?.maxByOrNull { it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0 }
             ?.asObject()?.get("url")?.asString()
             ?.let { com.stash.core.common.ArtUrlUpgrader.upgrade(it) }
+        // Kept for cache compatibility only (see ArtistProfile.subscribersText): never shown.
         val subscribersText = header?.navigatePath(
             "subscriptionButton", "subscribeButtonRenderer",
             "subscriberCountText", "runs",
         )?.firstArray()?.firstOrNull()?.asObject()?.get("text")?.asString()
+        // The listener count the page shows when Spotify has none: YouTube's monthly audience.
+        val monthlyAudience = header?.let { parseMonthlyAudience(it) }
 
         val sections = response.navigatePath(
             "contents", "singleColumnBrowseResultsRenderer", "tabs",
         )?.firstArray()?.firstOrNull()?.asObject()
             ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
             ?.asArray()
-            ?: return emptyArtistProfile(normalized, name, avatarUrl, subscribersText)
+            ?: return emptyArtistProfile(normalized, name, avatarUrl, subscribersText, monthlyAudience)
 
         var popular = emptyList<TrackSummary>()
         var albums = emptyList<AlbumSummary>()
@@ -942,6 +945,7 @@ class YTMusicApiClient @Inject constructor(
             albums = albums,
             singles = singles,
             related = related,
+            monthlyAudience = monthlyAudience,
         )
     }
 
@@ -951,6 +955,7 @@ class YTMusicApiClient @Inject constructor(
         name: String = "",
         avatarUrl: String? = null,
         subscribersText: String? = null,
+        monthlyAudience: Long? = null,
     ): ArtistProfile = ArtistProfile(
         id = id,
         name = name,
@@ -960,6 +965,7 @@ class YTMusicApiClient @Inject constructor(
         albums = emptyList(),
         singles = emptyList(),
         related = emptyList(),
+        monthlyAudience = monthlyAudience,
     )
 
     /**
