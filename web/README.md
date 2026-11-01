@@ -215,6 +215,7 @@ in `worker/index.js`.
 | `POST /signout` | Clears the cookie (the button is in the home page's footer) |
 | `GET` and `POST /admin` | Requests, the access list and the goal, behind Cloudflare Access |
 | `GET /player` | Signed in with early access: a 2-minute ticket and a redirect to the web player (below) |
+| `GET /goal.json` | This month's goal as data, `{ "raised_cents": 16800, "goal_cents": 20000, "month": "2026-11" }`, from the same KV keys as the page's bar. Public (CORS `*`, no cookie), kept 10 minutes at the edge; a 503 nobody caches when KV can't be read. The app's Support card reads it at most once a day (`worker/goal-json.js`) |
 
 Which paths reach the Worker at all is `assets.run_worker_first` in `wrangler.jsonc`. With
 `not_found_handling` set, a browser navigation (a form post too) to a path with no file never reaches
