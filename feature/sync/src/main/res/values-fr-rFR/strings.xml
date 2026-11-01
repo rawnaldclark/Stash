@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync Screen Header & General -->
+    <string name="sync_title">Synchronisation</string>
+    <string name="sync_cancel">Annuler</string>
+    <string name="sync_ok">OK</string>
+    <!-- Sync Sections -->
+    <string name="sync_section_sources">Sources</string>
+    <string name="sync_section_schedule">Calendrier</string>
+    <string name="sync_section_library">Bibliothèque</string>
+    <string name="sync_section_recent_syncs">Synchronisations récentes</string>
+    <!-- Downloads Card -->
+    <string name="sync_downloads_title">Téléchargements</string>
+    <string name="sync_downloads_subtitle">Afficher les téléchargements en cours, la file d\'attente et l\'historique</string>
+    <string name="sync_downloads_cd">Téléchargements ouverts</string>
+    <!-- Source Dashboard Stats & Empty Hints -->
+    <string name="sync_source_stat_mixes">MIXES</string>
+    <string name="sync_source_stat_playlists">PLAYLISTS</string>
+    <string name="sync_source_stat_liked">AIMÉ</string>
+    <string name="sync_source_stat_recommended">RECOMMANDÉ</string>
+    <string name="sync_source_empty_spotify">Vos playlists Spotify et vos mix quotidiens s\'afficheront ici après la première synchronisation. Appuyez sur « Synchroniser maintenant » pour les charger — rien ne sera téléchargé tant que vous n\'aurez pas activé cette option.</string>
+    <string name="sync_source_empty_youtube">Vos « Home Mixes », vos titres préférés et vos playlists issues de votre bibliothèque YouTube Music s\'afficheront ici après la première synchronisation. Rien ne sera téléchargé tant que vous n\'aurez pas sélectionné ce que vous souhaitez : pas de téléchargements inattendus.</string>
+    <string name="sync_source_empty_lastfm">Une playlist composée de titres recommandés par Last.fm — en fonction de vos écoutes — sera créée lors de la prochaine synchronisation. Appuyez sur « Synchroniser maintenant » pour lancer la synchronisation.</string>
+    <!-- Library Maintenance Card -->
+    <string name="sync_blocked_songs_title">Morceaux bloqués</string>
+    <string name="sync_blocked_songs_none">Aucun morceau bloqué</string>
+    <plurals name="sync_blocked_songs_count">
+        <item quantity="one">Le titre %d ne sera plus jamais téléchargé</item>
+        <item quantity="other">%d titres ne seront plus jamais téléchargés</item>
+    </plurals>
+    <!-- Unmatched / Review Warning Card -->
+    <plurals name="sync_review_need_review">
+        <item quantity="one">%d titre doit être réécouté</item>
+        <item quantity="other">%d titres doivent être réécoutés</item>
+    </plurals>
+    <plurals name="sync_review_flagged_wrong">
+        <item quantity="one">%d titre signalé comme ne correspondant pas</item>
+        <item quantity="other">%d titres signalés comme ne correspondant pas</item>
+    </plurals>
+    <plurals name="sync_review_unmatched">
+        <item quantity="one">%d morceau n\'a pas pu être identifié</item>
+        <item quantity="other">%d morceaux n\'ont pas pu être identifiés</item>
+    </plurals>
+    <string name="sync_review_sub_both">%1$d éléments non correspondants · %2$d éléments signalés — appuyez pour corriger</string>
+    <string name="sync_review_sub_flagged">Appuyez pour choisir un produit de remplacement</string>
+    <string name="sync_review_sub_unmatched">Appuyez ici pour consulter</string>
+    <!-- Failed Downloads Warning Card -->
+    <string name="sync_failed_downloads_title">Téléchargements ayant échoué</string>
+    <plurals name="sync_failed_downloads_count">
+        <item quantity="one">%d titre nécessite une attention particulière</item>
+        <item quantity="other">%d titres nécessitent une attention particulière</item>
+    </plurals>
+    <!-- Sync Terminal -->
+    <string name="sync_log_title">JOURNAL DE SYNCHRONISATION</string>
+    <string name="sync_log_copy">Copier</string>
+    <!-- Undo Last Sync -->
+    <string name="sync_undo_last_sync_title">Annuler la dernière synchronisation</string>
+    <string name="sync_undo_last_sync_subtitle">Rétablit les %1$s qu\'il a modifiés, tels qu\'ils étaient à l\'origine (%2$s)</string>
+    <string name="sync_undo">Annuler</string>
+    <string name="sync_undoing">Annulation…</string>
+    <string name="sync_auto_sync_paused_note">La synchronisation automatique a été interrompue après l\'annulation. Appuyez sur « Synchroniser » pour la reprendre.</string>
+    <string name="sync_undo_dialog_title">Annuler la dernière synchronisation ?</string>
+    <string name="sync_undo_dialog_body">Votre bibliothèque revient à l\'état où elle se trouvait avant la dernière synchronisation : les playlists qu\'elle avait masquées réapparaissent, celles qu\'elle avait ajoutées sont masquées, et celles qu\'elle avait vidées sont à nouveau remplies dans leur ordre d\'origine%1$s.\n\nLes titres que vous avez ajoutés ou supprimés vous-même, ainsi que les paramètres de téléchargement que vous avez modifiés, sont conservés. Les fichiers téléchargés qui avaient déjà été supprimés ne peuvent pas être restaurés.\n\nLa synchronisation automatique est alors mise en pause jusqu’à ce que vous appuyiez sur « Synchroniser », afin qu’elle ne soit pas effectuée une nouvelle fois.</string>
+    <string name="sync_undo_sync_confirm">Annuler la synchronisation</string>
+    <string name="sync_undone_title">Synchronisation annulée</string>
+    <plurals name="sync_playlists_count">
+        <item quantity="one">%d playlist</item>
+        <item quantity="other">%d playlists</item>
+    </plurals>
+    <!-- Relative Time Strings -->
+    <string name="sync_time_just_now">il y a quelques instants</string>
+    <string name="sync_time_mins_ago">Il y a %d minutes</string>
+    <string name="sync_time_hours_ago">Il y a %d heures</string>
+    <plurals name="sync_time_days_ago">
+        <item quantity="one">Il y a %d jour</item>
+        <item quantity="other">Il y a %d jours</item>
+    </plurals>
+    <!-- Refresh Mode Dialog & Chips -->
+    <string name="sync_switch_to_refresh_title">Passer au mode « Actualiser » ?</string>
+    <string name="sync_switch_to_refresh_body">La fonction « Refresh » actualise les titres à chaque synchronisation : vos mix quotidiens générés automatiquement, vos découvertes hebdomadaires et vos autres playlists tournantes. Les titres qui ne font plus partie de la rotation sont retirés du mix et leurs fichiers téléchargés sont supprimés afin d’alléger votre bibliothèque. Le nettoyage s’effectue une fois que toutes les sources sont configurées sur « Refresh » ; tant qu’une source continue d’accumuler des titres, rien n’est supprimé. Les titres que vous avez ajoutés manuellement sont conservés.</string>
+    <string name="sync_switch_to_refresh_confirm">Passer au mode « Actualiser »</string>
+    <string name="sync_mix_mode_title">Mode de synchronisation « Mix »</string>
+    <string name="sync_mode_refresh">Actualiser</string>
+    <string name="sync_mode_accumulate">Accumuler</string>
+    <string name="sync_mode_refresh_desc">Les mix sont mis à jour avec de nouveaux morceaux à chaque synchronisation</string>
+    <string name="sync_mode_accumulate_desc">Les nouveaux morceaux s\'ajoutent aux anciens</string>
+    <!-- Last.fm Recommendations Toggle -->
+    <string name="sync_recommended_tracks_title">Titres recommandés</string>
+    <string name="sync_lastfm_recommended_enabled_desc">Une playlist renouvelée régulièrement, composée de recommandations de Last.fm, est mise à jour en permanence</string>
+    <string name="sync_lastfm_recommended_disabled_desc">Désactivé — aucune recommandation n\'est générée</string>
+    <!-- Playlist / Tracks Counts & Studio Only -->
+    <plurals name="sync_tracks_count">
+        <item quantity="one">%d piste</item>
+        <item quantity="other">%d pistes</item>
+    </plurals>
+    <string name="sync_studio_only_title">Uniquement des enregistrements en studio</string>
+    <string name="sync_studio_only_desc">Les reprises, les enregistrements live et les vidéos mises en ligne par les utilisateurs ne sont pas pris en compte dans vos « Titres que vous avez aimés ». Les autres playlists YouTube ne sont pas concernées.</string>
+</resources>
