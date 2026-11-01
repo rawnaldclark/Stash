@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -281,6 +282,7 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onM
     val year = RecordCard.sinceYear(view)
     val line = if (year != null) stringResource(R.string.record_since, year, plays) else plays
     val eyebrow = stringResource(R.string.record_eyebrow)
+    // The sentence for TalkBack; the card shows its label and the name on lines of their own
     val mostPlayed = view.topArtist?.let { stringResource(R.string.record_most_played, it) }
     // "Your record, 18 hours, since 2026, 333 plays. Most played: Radiohead.", then the role and "double-tap to open your
     // record" from the click label (CardFrame)
@@ -297,48 +299,97 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onM
         onLongClickLabel = stringResource(R.string.record_card_more),
         spoken = spoken,
     ) {
-        RecordArtwork(
-            sleeve = view.albums.mapIndexed { i, a -> SleeveTile(seed = a.album, cover = s.albumArt.getOrNull(i)) },
-            label = label,
-            modifier = Modifier.clearAndSetSemantics { },
+        // Beside the artwork while the words get at least RecordCardLayout.MinWordsWidth; above them when they wouldn't (a
+        // narrow phone, a large Display size), worked out from the card's own width: never a name cut for room.
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val artwork: @Composable () -> Unit = {
+                RecordArtwork(
+                    sleeve = view.albums.mapIndexed { i, a -> SleeveTile(seed = a.album, cover = s.albumArt.getOrNull(i)) },
+                    label = label,
+                    modifier = Modifier.clearAndSetSemantics { },
+                )
+            }
+            val words: @Composable (Modifier) -> Unit = { m ->
+                RecordWords(
+                    eyebrow = eyebrow,
+                    hours = RecordCard.count(hours, locale),
+                    hoursWord = hoursWord,
+                    line = line,
+                    topArtist = view.topArtist,
+                    modifier = m,
+                    faces = if (view.artists.isEmpty()) null else { { Faces(view.artists, s.artistArt) } },
+                )
+            }
+            if (RecordCardLayout.artOnTop(maxWidth)) {
+                Column(Modifier.fillMaxWidth()) {
+                    artwork()
+                    Spacer(Modifier.height(RecordCardLayout.ArtGap))
+                    words(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    artwork()
+                    Spacer(Modifier.width(RecordCardLayout.ArtGap))
+                    words(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The card's words, none ever cut for room: the eyebrow; the hours, large, wrapping only between the number and its word
+ * ("4,321" over "hours", never "hou…"); since when and how many plays, wrapping only after the dot
+ * ([RecordCardLayout.wrapOnlyAtDot]); "Most played" small on a line of its own and the name under it, up to two lines (cut
+ * only past two); then [faces], when there are any.
+ */
+@Composable
+private fun RecordWords(
+    eyebrow: String,
+    hours: String,
+    hoursWord: String,
+    line: String,
+    topArtist: String?,
+    modifier: Modifier = Modifier,
+    faces: (@Composable () -> Unit)? = null,
+) {
+    Column(modifier) {
+        Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.035).em, color = Color.White)) {
+                    append(hours)
+                }
+                // The one place this line may wrap: the number's own separators never break it, and the word goes down whole
+                append(" ")
+                append(hoursWord)
+            },
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = SpaceGrotesk, lineHeight = 38.sp),
+            color = Color.White.copy(alpha = 0.82f),
         )
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.78f), maxLines = 1)
+        Text(
+            RecordCardLayout.wrapOnlyAtDot(line),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.86f),
+        )
+        if (topArtist != null) {
+            Spacer(Modifier.height(6.dp))
             Text(
-                text = buildAnnotatedString {
-                    withStyle(SpanStyle(fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.035).em, color = Color.White)) {
-                        append(RecordCard.count(hours, locale))
-                    }
-                    append(" ")
-                    append(hoursWord)
-                },
-                style = MaterialTheme.typography.titleMedium.copy(fontFamily = SpaceGrotesk, lineHeight = 38.sp),
-                color = Color.White.copy(alpha = 0.82f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                stringResource(R.string.record_most_played_label),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = Color.White.copy(alpha = 0.6f),
             )
             Text(
-                line,
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.86f),
-                // "since 2016 · 330,827 plays": a heavy history's count takes a second line rather than losing its end
+                topArtist,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (view.topArtist != null && mostPlayed != null) {
-                Text(
-                    emphasised(mostPlayed, view.topArtist),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (view.artists.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Faces(view.artists, s.artistArt)
-            }
+        }
+        if (faces != null) {
+            Spacer(Modifier.height(8.dp))
+            faces()
         }
     }
 }
@@ -364,13 +415,6 @@ private fun Faces(artists: List<String>, pictures: List<String?>) {
             }
         }
     }
-}
-
-/** [text] with [part] (where it is) set bold and white: the artist's name in "Most played: …", in any language's order. */
-private fun emphasised(text: String, part: String) = buildAnnotatedString {
-    append(text)
-    val at = text.lastIndexOf(part)
-    if (at >= 0) addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White), at, at + part.length)
 }
 
 /** The invitation's × (HomeCard.svelte's `rc-x`): hides it on this phone until Settings brings it back. [label]: what it does, spoken. */
