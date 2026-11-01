@@ -29,7 +29,7 @@ class LikeOutboxTest {
 
     // -- On disk, across a process restart ---------------------------------------------------------------------------------
 
-    @Test fun `what is waiting survives the process being killed`() = runBlocking {
+    @Test fun `what is waiting survives the process being killed`() = runBlocking<Unit> {
         val file = File(tmp.root, "like_mirror.preferences_pb")
         val scopes = mutableListOf<CoroutineScope>()
         fun open(): LikeOutbox {
@@ -58,7 +58,7 @@ class LikeOutboxTest {
         scopes.removeAt(0).coroutineContext[Job]!!.cancelAndJoin()
     }
 
-    @Test fun `an unreadable or newer-build file never crashes a heart`() = runBlocking {
+    @Test fun `an unreadable or newer-build file never crashes a heart`() = runBlocking<Unit> {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val store = PreferenceDataStoreFactory.create(scope = scope) { File(tmp.root, "bad.preferences_pb") }
         val key = stringPreferencesKey("outbox_v1")

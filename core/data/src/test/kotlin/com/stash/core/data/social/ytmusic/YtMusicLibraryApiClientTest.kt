@@ -18,30 +18,30 @@ class YtMusicLibraryApiClientTest {
     private val client = YtMusicLibraryApiClient(innerTube)
     private val ok = RequestOutcome(JsonObject(emptyMap()), 200)
 
-    @Test fun `removeLike passes through on success`() = runBlocking {
+    @Test fun `removeLike passes through on success`() = runBlocking<Unit> {
         coEvery { innerTube.setLiked("vid", false) } returns ok
         client.removeLike("vid") // must not throw
     }
 
-    @Test fun `removeLike lifts a failure into YtMusicLibraryException`() = runBlocking {
+    @Test fun `removeLike lifts a failure into YtMusicLibraryException`() = runBlocking<Unit> {
         coEvery { innerTube.setLiked("vid", false) } returns RequestOutcome(null, 500)
         val e = failure { client.removeLike("vid") }
         assertEquals(500, e.status)
     }
 
-    @Test fun `likeVideo lifts a failure into YtMusicLibraryException`() = runBlocking {
+    @Test fun `likeVideo lifts a failure into YtMusicLibraryException`() = runBlocking<Unit> {
         coEvery { innerTube.setLiked("vid", true) } returns RequestOutcome(null, 401)
         val e = failure { client.likeVideo("vid") }
         assertEquals(LikeMirrorError.SIGNED_OUT, LikeMirrorError.of(e))
     }
 
-    @Test fun `a 2xx with no body is still a failure`() = runBlocking {
+    @Test fun `a 2xx with no body is still a failure`() = runBlocking<Unit> {
         coEvery { innerTube.setLiked("vid", true) } returns RequestOutcome(null, 200)
         failure { client.likeVideo("vid") }
         Unit
     }
 
-    @Test fun `nothing came back reads as offline, not as a refusal`() = runBlocking {
+    @Test fun `nothing came back reads as offline, not as a refusal`() = runBlocking<Unit> {
         coEvery { innerTube.setLiked("vid", true) } returns RequestOutcome(null, RequestOutcome.STATUS_NETWORK_ERROR)
         assertEquals(LikeMirrorError.OFFLINE, LikeMirrorError.of(failure { client.likeVideo("vid") }))
     }

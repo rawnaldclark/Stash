@@ -139,7 +139,7 @@ class LikeMirrorWorkerTest {
         ),
     )
 
-    @Test fun `it retries while the service keeps saying no`() = runBlocking {
+    @Test fun `it retries while the service keeps saying no`() = runBlocking<Unit> {
         coEvery { dispatcher.like(any(), any()) } returns mapOf(Destination.SPOTIFY to Result.failure(RuntimeException("down")))
         val outbox = failedOnce()
 
@@ -147,7 +147,7 @@ class LikeMirrorWorkerTest {
         assertThat(outbox.current().single().attempts).isEqualTo(2)
     }
 
-    @Test fun `it is done once the like went through`() = runBlocking {
+    @Test fun `it is done once the like went through`() = runBlocking<Unit> {
         coEvery { dispatcher.like(any(), any()) } returns mapOf(Destination.SPOTIFY to Result.success(Unit))
         val outbox = failedOnce()
 
@@ -155,7 +155,7 @@ class LikeMirrorWorkerTest {
         assertThat(outbox.current()).isEmpty()
     }
 
-    @Test fun `it stops when only parked likes are left, waiting for tap to retry`() = runBlocking {
+    @Test fun `it stops when only parked likes are left, waiting for tap to retry`() = runBlocking<Unit> {
         val outbox = failedOnce(attempts = LikeOutbox.MAX_ATTEMPTS)
 
         assertThat(worker(outbox).doWork()).isEqualTo(ListenableWorker.Result.success())

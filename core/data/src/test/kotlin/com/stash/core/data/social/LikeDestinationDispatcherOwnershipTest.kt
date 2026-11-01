@@ -58,7 +58,7 @@ class LikeDestinationDispatcherOwnershipTest {
 
     private val all = setOf(Destination.SPOTIFY, Destination.YT_MUSIC, Destination.LAST_FM)
 
-    @Test fun `already liked there - nothing is sent, nothing stamped, the like is the listener's own`() = runBlocking {
+    @Test fun `already liked there - nothing is sent, nothing stamped, the like is the listener's own`() = runBlocking<Unit> {
         answer(LikedThere.YES, LikedThere.YES, LikedThere.YES)
 
         val results = dispatcher.like(song, all)
@@ -73,7 +73,7 @@ class LikeDestinationDispatcherOwnershipTest {
         assertThat(owned).containsExactly(Destination.SPOTIFY to 7L, Destination.YT_MUSIC to 7L, Destination.LAST_FM to 7L)
     }
 
-    @Test fun `and un-hearting it later never un-likes it`() = runBlocking {
+    @Test fun `and un-hearting it later never un-likes it`() = runBlocking<Unit> {
         answer(LikedThere.YES, LikedThere.YES, LikedThere.YES)
         dispatcher.like(song, all)
 
@@ -85,7 +85,7 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), false) }
     }
 
-    @Test fun `when the check fails the heart still goes out, but it is never taken back`() = runBlocking {
+    @Test fun `when the check fails the heart still goes out, but it is never taken back`() = runBlocking<Unit> {
         answer(LikedThere.UNKNOWN, LikedThere.UNKNOWN, LikedThere.UNKNOWN)
 
         dispatcher.like(song, all)
@@ -104,7 +104,7 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 0) { lastFm.setLoved(any(), any(), any(), false) }
     }
 
-    @Test fun `not liked there - Stash's like is stamped, and an un-heart may take it back`() = runBlocking {
+    @Test fun `not liked there - Stash's like is stamped, and an un-heart may take it back`() = runBlocking<Unit> {
         answer(LikedThere.NO, LikedThere.NO, LikedThere.NO)
         owned += Destination.SPOTIFY to 7L // an earlier like there, since removed by the listener
 
@@ -123,7 +123,7 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 1) { lastFm.setLoved(any(), any(), any(), false) }
     }
 
-    @Test fun `a stamped row recorded as the listener's own is still never un-liked`() = runBlocking {
+    @Test fun `a stamped row recorded as the listener's own is still never un-liked`() = runBlocking<Unit> {
         owned += Destination.SPOTIFY to 7L
 
         dispatcher.unlike(song.copy(spotifySavedAt = 1L), setOf(Destination.SPOTIFY))
@@ -131,7 +131,7 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 0) { spotify.removeTracks(any()) }
     }
 
-    @Test fun `an ownership record that can't be read counts as the listener's own`() = runBlocking {
+    @Test fun `an ownership record that can't be read counts as the listener's own`() = runBlocking<Unit> {
         coEvery { ownership.isLikedByService(any(), any()) } throws java.io.IOException("disk")
 
         dispatcher.unlike(song.copy(spotifySavedAt = 1L), setOf(Destination.SPOTIFY))
@@ -139,7 +139,7 @@ class LikeDestinationDispatcherOwnershipTest {
         coVerify(exactly = 0) { spotify.removeTracks(any()) }
     }
 
-    @Test fun `a like that fails is not recorded either way`() = runBlocking {
+    @Test fun `a like that fails is not recorded either way`() = runBlocking<Unit> {
         answer(LikedThere.NO, LikedThere.NO, LikedThere.NO)
         coEvery { spotify.saveTracks(any()) } throws RuntimeException("down")
 
@@ -150,7 +150,7 @@ class LikeDestinationDispatcherOwnershipTest {
         assertThat(owned).isEmpty()
     }
 
-    @Test fun `Last_fm is asked with the artist it will be loved under`() = runBlocking {
+    @Test fun `Last_fm is asked with the artist it will be loved under`() = runBlocking<Unit> {
         every { lastFmSession.firstArtistOnly } returns flowOf(true)
         answer(LikedThere.NO, LikedThere.NO, LikedThere.NO)
 
