@@ -24,7 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.stash.core.ui.ambient.rememberReducedMotion
+import com.stash.core.ui.ambient.rememberLiveReducedMotion
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -144,8 +144,9 @@ fun RadioSignalGlyph(
         modifier
     }
     // Branch BEFORE creating the infinite transition (the RadarSweep lesson): a still glyph must not
-    // keep the frame clock ticking for as long as its screen is open.
-    if (state == RadioGlyphState.PULSING && !rememberReducedMotion()) {
+    // keep the frame clock ticking for as long as its screen is open. "Remove animations" is read
+    // live, so flipping it stops (or restarts) the breath at once.
+    if (state == RadioGlyphState.PULSING && !rememberLiveReducedMotion()) {
         PulsingSignal(tint, described.size(size))
     } else {
         Canvas(described.size(size)) { drawSignal(tint, phase = null) }

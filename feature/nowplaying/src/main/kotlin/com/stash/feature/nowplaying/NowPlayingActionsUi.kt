@@ -98,10 +98,11 @@ internal data class ActionVisualState(
     val castConnectingTo: String? = null,
     /** The speaker playing, while casting. */
     val castingTo: String? = null,
-    /** The player means to play (playWhenReady): a station on air then breathes. */
+    /**
+     * A station on air may breathe: the player means to play (playWhenReady) and Now Playing is on
+     * screen (not parked under the mini player for its keep-warm span, where it costs no frames).
+     */
     val radioPlaying: Boolean = false,
-    /** What the station on air grew from (PlayerRepository.radioSeedLabel), for the On air line. */
-    val radioStation: String? = null,
 ) {
     /** How the Signal glyph shows the station: still and ink, still and accent, or breathing. */
     val radioGlyph: RadioGlyphState
@@ -229,12 +230,7 @@ internal fun NowPlayingTopBar(
     ) {
         TopBarIcon(Icons.Default.KeyboardArrowDown, dismissDescription, ink, slot, iconSize = 28.dp, onClick = onDismiss, modifier = dismissModifier)
 
-        // While a station is on air its name fills the row's free span, beside the pins (the Signal
-        // glyph among them): "On air · Radiohead". A line of text, no chip, gone with the station.
-        Box(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterEnd) {
-            val station = visualState.radioStation
-            if (hasTrack && station != null) OnAirLine(station, ink)
-        }
+        Spacer(modifier = Modifier.weight(1f))
 
         if (!hasTrack) return@Row
 
@@ -368,18 +364,6 @@ private fun TopBarRadio(
     ) {
         RadioSignalGlyph(state = state, tint = tint, size = 24.dp, contentDescription = description)
     }
-}
-
-/** The station on air, in the top row: "On air · <seed>", one line, in the row's ink. */
-@Composable
-private fun OnAirLine(station: String, ink: Color) {
-    Text(
-        text = androidx.compose.ui.res.stringResource(com.stash.core.media.R.string.radio_on_air, station),
-        style = MaterialTheme.typography.labelMedium,
-        color = ink.copy(alpha = 0.8f),
-        maxLines = 1,
-        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-    )
 }
 
 @Composable

@@ -575,8 +575,11 @@ fun NowPlayingScreen(
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
     val castingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connected)?.deviceName
-    val radioPlaying = uiState.playWhenReady || uiState.isPlaying
-    val visualState = remember(radioLabel, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
+    // The Signal glyph breathes only while a station plays AND Now Playing is on screen: parked under
+    // the mini player (composed for KEEP_WARM_MS after it closes) it holds still and asks for no frames.
+    val radioPlaying = (uiState.playWhenReady || uiState.isPlaying) &&
+        com.stash.feature.nowplaying.ui.LocalNowPlayingShown.current
+    val visualState = remember(radioLabel != null, radioTuning, radioPlaying, reading, togetherState, playbackSpeed, isDownloaded, castConnectingTo, castingTo) {
         ActionVisualState(
             radioActive = radioLabel != null,
             radioTuning = radioTuning,
@@ -587,7 +590,6 @@ fun NowPlayingScreen(
             castConnectingTo = castConnectingTo,
             castingTo = castingTo,
             radioPlaying = radioPlaying,
-            radioStation = radioLabel,
         )
     }
     // The row's width: the window less Now Playing's 24dp margins. Pins that don't fit at 44dp
