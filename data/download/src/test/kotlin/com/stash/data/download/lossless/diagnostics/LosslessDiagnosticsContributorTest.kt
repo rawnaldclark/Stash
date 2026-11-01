@@ -65,7 +65,7 @@ class LosslessDiagnosticsContributorTest {
 
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
         val s = contributor().section()
-        assertThat(s).contains("Mode:               Download (sync writes files)")
+        assertThat(s).contains("Mode:               Offline (sync writes files; only downloads play)")
         assertThat(s).contains("Lossless streaming: on")
         assertThat(s).contains("Download quality:   Lossless · Hi-Res (24-bit/96 kHz) · lossy fallback off")
         assertThat(s).contains("Save Data:          off")
