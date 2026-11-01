@@ -740,6 +740,15 @@ fun HomeScreen(
                         )
                     }
                 }
+                HomeSection.BECAUSE_YOU_LIKE -> if (shelves.becauseYouLike.isNotEmpty()) {
+                    item(key = "section_because_you_like") {
+                        // Streamed songs, mostly ones you don't have: a tap plays the row from that song
+                        com.stash.feature.home.shelves.BecauseYouLikeRows(
+                            rows = shelves.becauseYouLike,
+                            onPlay = shelvesViewModel::playRow,
+                        )
+                    }
+                }
             }
         }
 
