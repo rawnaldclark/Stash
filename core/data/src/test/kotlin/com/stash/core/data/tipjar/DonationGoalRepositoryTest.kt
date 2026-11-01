@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.time.Instant
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,6 +99,17 @@ class DonationGoalRepositoryTest {
         assertThat(DonationGoals.forMonth(nov, ms("2026-12-01T00:00:00Z"))).isNull()
         assertThat(DonationGoals.forMonth(null, now)).isNull()
         assertThat(DonationGoals.utcMonth(ms("2026-01-05T00:00:00Z"))).isEqualTo("2026-01")
+    }
+
+    @Test fun `the month is written in ISO digits whatever the phone's language`() {
+        val before = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("ar-EG"))
+            assertThat(DonationGoals.utcMonth(now)).isEqualTo("2026-11")
+            assertThat(DonationGoals.forMonth(DonationGoal(1, 20000, "2026-11"), now)).isNotNull()
+        } finally {
+            Locale.setDefault(before)
+        }
     }
 
     // ── The repository ──────────────────────────────────────────────────────

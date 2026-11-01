@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -172,9 +171,9 @@ fun SupportBanner(
  */
 @Composable
 private fun Makers() {
-    Row(Modifier.clearAndSetSemantics { }) {
+    Row(Modifier.clearAndSetSemantics { }, horizontalArrangement = Arrangement.spacedBy(-AvatarOverlap)) {
         Avatar(R.drawable.donate_avatar_rawn, Modifier.zIndex(1f))
-        Avatar(R.drawable.donate_avatar_evo, Modifier.offset(x = -AvatarOverlap))
+        Avatar(R.drawable.donate_avatar_evo)
     }
 }
 

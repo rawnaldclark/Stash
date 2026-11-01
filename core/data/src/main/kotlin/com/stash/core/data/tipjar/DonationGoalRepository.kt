@@ -15,6 +15,7 @@ import com.stash.core.model.share.ShareConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.time.Instant
+import java.time.YearMonth
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -79,11 +80,11 @@ internal object DonationGoals {
         return DonationGoal(raised, goal, month)
     }
 
-    /** The UTC month of [ms], "2026-11": the month the site counts in. */
-    fun utcMonth(ms: Long): String {
-        val date = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
-        return "%04d-%02d".format(date.year, date.monthValue)
-    }
+    /**
+     * The UTC month of [ms], "2026-11": the month the site counts in. ISO digits whatever the phone's language
+     * (a locale-formatted "%04d" would write Arabic-Indic digits and never match the site's month).
+     */
+    fun utcMonth(ms: Long): String = YearMonth.from(Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC)).toString()
 
     /**
      * Whether to ask the site now: never asked, or the last ask ([lastAttemptMs], failed ones too) was on another UTC
