@@ -23,14 +23,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.stash.feature.nowplaying.ui.LocalNpSpacing
 import com.stash.feature.nowplaying.ui.npInk
-
-/**
- * The line's height, taken whether or not it shows: the queue running out on its last song must
- * not grow the art under the listener's eyes. 40dp: a comfortable target for a full-width row
- * without costing the art a full 48.
- */
-private val UpNextLineHeight = 40.dp
 
 /**
  * "Up next · Title — Artist" under Now Playing's transport, one line, quiet ink. A tap opens the
@@ -46,21 +40,29 @@ internal fun UpNextLine(
     inRoom: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    alignStart: Boolean = false,
 ) {
+    // The line's height (NpSpacing.upNextHeight, 40 dp), taken whether or not it shows: the queue
+    // running out on its last song must not grow the art under the listener's eyes. 40 dp: a
+    // comfortable target for a full-width row without costing the art a full 48.
+    val spacing = LocalNpSpacing.current
+    val height = spacing.upNextHeight.dp
     if (peek == null) {
-        Box(modifier = modifier.fillMaxWidth().height(UpNextLineHeight))
+        Box(modifier = modifier.fillMaxWidth().height(height))
         return
     }
+    // Start-aligned (as the title is): the text starts at the title's edge, so no padding before it.
+    val sidePadding = spacing.upNextSidePadding.dp
     val description = upNextDescription(peek, inRoom)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(UpNextLineHeight)
+            .height(height)
             .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClick = onOpen)
             .semantics { contentDescription = description }
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
+            .padding(start = if (alignStart) 0.dp else sidePadding, end = sidePadding),
+        contentAlignment = if (alignStart) Alignment.CenterStart else Alignment.Center,
     ) {
         Text(
             text = buildAnnotatedString {
@@ -72,7 +74,7 @@ internal fun UpNextLine(
             color = npInk().copy(alpha = 0.6f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
             // The row's description says it all, and where a tap goes.
             modifier = Modifier.clearAndSetSemantics { },
         )
