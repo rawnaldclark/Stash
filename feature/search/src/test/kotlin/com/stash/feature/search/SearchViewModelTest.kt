@@ -171,7 +171,7 @@ class SearchViewModelTest {
         vm.onQueryChanged("abc")
         advanceUntilIdle()
         val error = vm.uiState.value.status as SearchStatus.Error
-        assertEquals("You're offline, or YouTube Music can't be reached.", error.message)
+        assertEquals("No internet connection, or YouTube Music can't be reached.", error.message)
 
         vm.retry()
         advanceUntilIdle()
@@ -282,8 +282,30 @@ class SearchViewModelTest {
 
         vm.userMessages.test {
             vm.onResultTap(sampleTrack())
-            val msg = awaitItem()
-            assertTrue(msg.contains("offline", ignoreCase = true))
+            // Says "no internet connection", never "offline" (that's the mode's name).
+            assertEquals("No internet connection, and this song isn't downloaded.", awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `onResultTap refused by Offline names the mode and the way out`() = runTest {
+        // The mode is "Offline" / "Online" on screen (2026-11-01); the refusal must
+        // use those words, not the old "Download mode" / "Stream only".
+        val playerRepository = mock<PlayerRepository> {
+            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.DownloadMode
+        }
+        val streamingPreference = mock<StreamingPreference> {
+            onBlocking { current() } doReturn false
+        }
+        val vm = newVm(
+            playerRepository = playerRepository,
+            streamingPreference = streamingPreference,
+        )
+
+        vm.userMessages.test {
+            vm.onResultTap(sampleTrack())
+            assertEquals("Offline plays only your downloads. Switch to Online to play this.", awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }

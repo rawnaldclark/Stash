@@ -99,8 +99,6 @@
     <string name="settings_quality_tier_best">Лучшее</string>
     <!-- Settings > Audio & Quality > LosslessRoutingStatus -->
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Только поток</string>
-    <string name="settings_mode_download">Загруженные</string>
     <string name="settings_stream_on_cellular_title">Поток через мобильный интернет</string>
     <string name="settings_stream_via_youtube_title">Поток через YouTube</string>
     <string name="settings_force_qobuz_debug_title">Принудительно только Qobuz (отладка)</string>
@@ -162,6 +160,24 @@
     <string name="blocked_songs_empty_title">Нет заблокированных треков</string>
     <!-- Settings > Library Health -->
     <string name="settings_library_health_scanning_progress">Сканирование... %1$d / %2$d</string>
+    <plurals name="settings_library_health_scan_complete">
+        <item quantity="one">Сканирование завершено: %1$d из %2$d трека обновлён.</item>
+        <item quantity="few">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
+        <item quantity="many">Сканирование завершено: %1$d из %2$d треков обновлены.</item>
+        <item quantity="other">Scan complete: %1$d of %2$d tracks updated.</item>
+    </plurals>
+    <plurals name="settings_library_health_scan_unreadable">
+        <item quantity="one">%d трек все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="few">%d трека все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="many">%d треков все ещё не может быть прочитан — скорее всего его нет в хранилище или MediaMetadataRetriever не поддерживает его.</item>
+        <item quantity="other">%d tracks still couldn\'t be read — likely missing on disk or unsupported by MediaMetadataRetriever.</item>
+    </plurals>
+    <plurals name="settings_library_health_restore_queued">
+        <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
+        <item quantity="few">В очереди %d трека. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
+        <item quantity="many">В очереди %d треков. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
+        <item quantity="other">Queued %d tracks. They download in the background — the Sync tab shows progress.</item>
+    </plurals>
     <!-- Settings > Equalizer -->
     <string name="settings_equalizer_section_5band_eq">5-Band EQ</string>
     <string name="settings_equalizer_section_bass_boost">Bass Boost</string>

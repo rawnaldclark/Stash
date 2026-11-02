@@ -29,6 +29,11 @@ internal data class ActionContext(
     val isCloudSong: Boolean = false,
     val isSoundCloudSong: Boolean = false,
     val isPreview: Boolean = false,
+    /**
+     * Songs stream (Stream only). In Download mode nothing streams, so Streaming quality would
+     * change nothing and isn't offered.
+     */
+    val streams: Boolean = false,
 )
 
 /** What an All Songs file can't do: each needs a library row, an online identity, or both. */
@@ -66,6 +71,7 @@ private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionCon
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
+    NowPlayingAction.STREAM_QUALITY -> ctx.streams
     else -> true
 }
 
@@ -176,6 +182,8 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
 /** Why a pinned action is missing from the row right now, or null when it shows. */
 internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
     isActionAvailable(action, ctx) -> null
+    // Its only rule, so first: a room or a cast doesn't hide it.
+    action == NowPlayingAction.STREAM_QUALITY -> "Nothing streams in Download mode"
     ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> "Previews cannot be downloaded"
     ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> "This plays the exact SoundCloud upload"
     ctx.inRoom && action != NowPlayingAction.POST_TO_COMMUNITY -> "Hidden while listening together"

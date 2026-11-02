@@ -34,7 +34,7 @@ class LibraryReconciliationAdoptionTest {
         coEvery { isAuthenticated(any()) } returns false
     }
 
-    private fun useCase() = LibraryReconciliationUseCase(downloadQueueDao, trackDao, tokenManager)
+    private fun useCase() = LibraryReconciliationUseCase(downloadQueueDao, trackDao, tokenManager, mockk(relaxed = true))
 
     @Test
     fun `adopter runs before the requeue step`() = runTest {

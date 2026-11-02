@@ -48,6 +48,11 @@ internal fun ListeningBars(
     onBarClick: ((Int) -> Unit)? = null,
     /** The TalkBack action name for a bar ("Open Oct 11 in History"); each bar with a value gets one. */
     barActionLabel: ((Int) -> String)? = null,
+    /**
+     * The bars' colour read while drawing, instead of [barColor]: for a colour that animates (the
+     * album colour fading in), so each frame only redraws the chart rather than recomposing it.
+     */
+    barColorAt: (() -> Color)? = null,
 ) {
     val currentValues by rememberUpdatedState(values)
     val click by rememberUpdatedState(onBarClick)
@@ -93,6 +98,7 @@ internal fun ListeningBars(
         val stub = 3.dp.toPx()
         // A bar with any listening is always clearly taller than the empty-day stub.
         val minBar = minBarHeight.toPx().coerceAtMost(size.height)
+        val base = barColorAt?.invoke() ?: barColor
         values.forEachIndexed { i, v ->
             val x = i * slot + (slot - barWidth) / 2f
             if (v <= 0) {
@@ -105,7 +111,7 @@ internal fun ListeningBars(
             } else {
                 val h = (size.height * v / max).coerceAtLeast(minBar)
                 val radius = minOf(barWidth / 2f, h / 2f, 6.dp.toPx())
-                val color = if (highlight == null || highlight == i) barColor else barColor.copy(alpha = 0.55f)
+                val color = if (highlight == null || highlight == i) base else base.copy(alpha = 0.55f)
                 drawRoundRect(
                     color = color,
                     topLeft = Offset(x, size.height - h),

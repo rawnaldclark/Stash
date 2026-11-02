@@ -26,6 +26,11 @@ class PlaybackResumerTest {
 
     private val resumer = PlaybackResumer(playbackStateStore, trackDao)
 
+    init {
+        // No duplicate merges unless a test says so.
+        coEvery { trackDao.mergedIntoAll(any()) } returns emptyMap()
+    }
+
     private fun track(id: Long) = TrackEntity(id = id, title = "t$id", artist = "a$id")
 
     @Test
@@ -136,5 +141,55 @@ class PlaybackResumerTest {
         assertThat(plan.tracks.map { it.id }).containsExactly(10L, 20L, 30L, 10L).inOrder()
         assertThat(plan.startIndex).isEqualTo(3)
         assertThat(plan.positionMs).isEqualTo(30_000)
+    }
+
+    /**
+     * A queue of Stash Mix stubs, saved before the duplicate cleanup merged them: each id the
+     * cleanup took away plays as the row it went into, the song that was playing resumes where it
+     * was, and a song reached twice through merges (or already in the queue) is not added again.
+     */
+    @Test
+    fun mergedAwayRows_resumeAsTheRowsTheyWentInto() = runTest {
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = 20,
+            positionMs = 61_000,
+            queueIndex = 1,
+            queueTrackIds = listOf(10, 20, 30, 40, 50),
+            isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
+        )
+        // 20 went into 200; 30 into 10 (already queued); 40 into 200 too (a repeat); 50 is gone.
+        coEvery { trackDao.getByIds(listOf(10, 20, 30, 40, 50)) } returns listOf(track(10))
+        coEvery { trackDao.mergedIntoAll(listOf(20, 30, 40, 50)) } returns
+            mapOf(20L to track(200), 30L to track(10), 40L to track(200))
+
+        val plan = resumer.buildResumePlan()!!
+
+        assertThat(plan.tracks.map { it.id }).containsExactly(10L, 200L).inOrder()
+        assertThat(plan.startIndex).isEqualTo(1)
+        assertThat(plan.positionMs).isEqualTo(61_000)
+    }
+
+    @Test
+    fun mergedAwayPlayingRow_alreadyInTheQueue_resumesThereAtItsPosition() = runTest {
+        // Paused on 30, which the cleanup merged into 10, also queued: resume 10, not 0:00 of 40.
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = 30,
+            positionMs = 12_000,
+            queueIndex = 2,
+            queueTrackIds = listOf(10, 20, 30, 40),
+            isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
+        )
+        coEvery { trackDao.getByIds(listOf(10, 20, 30, 40)) } returns listOf(track(10), track(20), track(40))
+        coEvery { trackDao.mergedIntoAll(listOf(30)) } returns mapOf(30L to track(10))
+
+        val plan = resumer.buildResumePlan()!!
+
+        assertThat(plan.tracks.map { it.id }).containsExactly(10L, 20L, 40L).inOrder()
+        assertThat(plan.startIndex).isEqualTo(0)
+        assertThat(plan.positionMs).isEqualTo(12_000)
     }
 }

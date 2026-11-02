@@ -39,7 +39,7 @@ class TrackActionsDelegateDownloadTest {
         searchPreviewMediaSource = mockk(relaxed = true),
         previewUrlExtractor = mockk(relaxed = true),
         previewUrlCache = mockk(relaxed = true),
-        trackDao = mockk(relaxed = true),
+        trackDao = mockk(relaxed = true) { io.mockk.coEvery { findByAlias(any(), any()) } returns null },
         searchDownloadCoordinator = coordinator,
         playerRepository = mockk(relaxed = true),
         streamingPreference = mockk(relaxed = true),
