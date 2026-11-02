@@ -224,7 +224,7 @@ class ArtBackfillWorkerTest {
         assertThat(backoff.backedOff(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, now)).containsExactly(id)
     }
 
-    @Test fun `both enqueue paths share one unique work`() {
+    @Test fun `both enqueue paths share one unique work`() = runBlocking<Unit> {
         WorkManagerTestInitHelper.initializeTestWorkManager(
             context,
             Configuration.Builder().setExecutor(SynchronousExecutor()).setTaskExecutor(SynchronousExecutor()).build(),
