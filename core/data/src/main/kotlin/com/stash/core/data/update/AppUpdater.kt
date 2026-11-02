@@ -211,9 +211,14 @@ class AppUpdater internal constructor(
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** The sheet was closed after a failure: start over next time. */
+    /**
+     * The sheet was closed after a failure or at Android's permission step (Later): start over next time. A downloaded APK
+     * stays, so that next Update now installs it without downloading again.
+     */
+    @Synchronized
     fun reset() {
-        if (_state.value is UpdateState.Failed) _state.value = UpdateState.Idle
+        val s = _state.value
+        if (s is UpdateState.Failed || s == UpdateState.NeedsPermission) _state.value = UpdateState.Idle
     }
 
     /** [UpdateInstallReceiver]: the installer's answer. Public: called from another file (see the incremental-build note in #741). */

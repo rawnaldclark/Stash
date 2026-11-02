@@ -238,7 +238,8 @@ class UpdateCheckWorker(
                 responseBody ?: return giveUpOrRetry(manual)
             }
             val root = json.parseToJsonElement(body).jsonObject
-            val tagName = root["tag_name"]?.jsonPrimitive?.content
+            // Trimmed as the stored release's tag is (AppUpdates.parseRelease), so Skip and "already notified" compare alike.
+            val tagName = root["tag_name"]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotEmpty() }
                 ?: return giveUpOrRetry(manual)
 
             val outcome = outcomeFor(isNewerVersion(tagName, installedVersion))

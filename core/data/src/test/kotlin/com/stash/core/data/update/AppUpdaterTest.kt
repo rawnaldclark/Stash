@@ -87,6 +87,26 @@ class AppUpdaterTest {
     }
 
     @Test
+    fun `Later at the permission step starts over next time and keeps the download`() {
+        val steps = FakeSteps(allowed = false)
+        val updater = AppUpdater(context, OkHttpClient(), steps)
+        updater.update()
+        updater.awaitState { it == UpdateState.NeedsPermission }
+
+        updater.reset()
+        assertThat(updater.state.value).isEqualTo(UpdateState.Idle)
+        val kept = File(File(context.cacheDir, "updates"), "Stash-0.9.1.apk")
+        assertThat(kept.exists()).isTrue()
+
+        // Next time, allowed: Update now installs the kept file (the test release's own file is gone, so no new download).
+        apk.delete()
+        steps.allowed = true
+        updater.update()
+        updater.awaitState { it == UpdateState.Installing }
+        assertThat(steps.installs.get()).isEqualTo(1)
+    }
+
+    @Test
     fun `a broken download leaves no part file behind`() {
         val missing = File(context.filesDir, "gone.apk")
         store(1_000, missing)
