@@ -65,6 +65,11 @@ object AutoBrowseQueue {
         val playable = tracks.filter { it.isPlayableInAuto() }
         val startIndex = playable.indexOfFirst { it.id == tappedTrackId }
             .coerceAtLeast(0)
-        return QueuePlan(playable, startIndex)
+        // The car hands its queue straight to the player, past the app's big-queue window: a liked
+        // list of 12k songs went in whole. It gets the same window around the tapped song instead.
+        if (playable.size <= com.stash.core.media.QUEUE_WINDOW_SIZE) return QueuePlan(playable, startIndex)
+        val from = (startIndex - com.stash.core.media.QUEUE_WINDOW_BEHIND)
+            .coerceIn(0, playable.size - com.stash.core.media.QUEUE_WINDOW_SIZE)
+        return QueuePlan(playable.subList(from, from + com.stash.core.media.QUEUE_WINDOW_SIZE).toList(), startIndex - from)
     }
 }

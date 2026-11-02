@@ -44,7 +44,9 @@ class PlaybackResumer @Inject constructor(
     )
 
     suspend fun buildResumePlan(): ResumePlan? {
-        val saved = playbackStateStore.getLastPlaybackState() ?: return null
+        // A queue saved whole before big queues were windowed (72,593 ids in one report) comes back
+        // as the window around its song: every row of it was read and built into the player at once.
+        val saved = playbackStateStore.getLastPlaybackState()?.boundedToWindow() ?: return null
         if (saved.queueTrackIds.isEmpty()) return null
 
         // `IN` doesn't preserve order, so re-sort into the saved queue order.
@@ -91,4 +93,23 @@ class PlaybackResumer @Inject constructor(
             source = saved.source,
         )
     }
+}
+
+/**
+ * This saved queue cut to at most [size] ids around its song (up to [behind] before it), with the
+ * saved index moved to match; unchanged when it is no bigger. The song is found as
+ * [PlaybackResumer.buildResumePlan] finds it: at the saved index when it holds it, else by id, else
+ * the saved index itself.
+ */
+internal fun SavedPlaybackState.boundedToWindow(
+    size: Int = QUEUE_WINDOW_SIZE,
+    behind: Int = QUEUE_WINDOW_BEHIND,
+): SavedPlaybackState {
+    val ids = queueTrackIds
+    if (ids.size <= size) return this
+    val center = queueIndex.takeIf { it in ids.indices && ids[it] == trackId }
+        ?: ids.indexOf(trackId).takeIf { it >= 0 }
+        ?: queueIndex.coerceIn(0, ids.size - 1)
+    val from = (center - behind).coerceIn(0, ids.size - size)
+    return copy(queueTrackIds = ids.subList(from, from + size).toList(), queueIndex = center - from)
 }

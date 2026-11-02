@@ -28,5 +28,7 @@ internal fun shouldAutoplayRadio(
     // the queue just ends, as it does with the setting off.
     if (track.isScannedSong) return false
     if (state.queue.isEmpty() || state.currentIndex != state.queue.lastIndex) return false
+    // A big queue's window ends before the queue does: more songs follow, the window brings them in.
+    if (state.queueSongsAfter > 0) return false
     return track.id != triedTrackId
 }

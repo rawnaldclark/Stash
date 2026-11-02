@@ -156,12 +156,13 @@ class PlayerRepositoryFullTimelineTest {
 
         repo.setQueue(tracks, startIndex = 999)
 
+        // More than the player holds: the window around the tapped song (QUEUE_WINDOW_BEHIND before it).
         assertThat(items.captured.map { it.mediaId })
-            .containsExactlyElementsIn((1L..2_000L).map(Long::toString))
+            .containsExactlyElementsIn((950L..1_449L).map(Long::toString))
             .inOrder()
         assertThat(checksWhenPlaybackStarted).isEqualTo(1)
         assertThat(checkedPathsWhenPlaybackStarted).containsExactly("/library/1000.opus")
-        verify { controller.setMediaItems(any(), 999, 0L) }
+        verify { controller.setMediaItems(any(), QUEUE_WINDOW_BEHIND, 0L) }
     }
 
     @Test

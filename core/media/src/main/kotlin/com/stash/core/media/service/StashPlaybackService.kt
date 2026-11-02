@@ -211,6 +211,16 @@ class StashPlaybackService : MediaLibraryService() {
         const val EXTRA_SHUFFLE_ORDER = "com.stash.extra.SHUFFLE_ORDER"
 
         /**
+         * A big queue (the repository's QueueWindow): its timeline is already in play order, shuffle
+         * or not, so while [EXTRA_KEEP_TIMELINE_ORDER] is true the master player's shuffle order is put
+         * back to the identity after every change ([keepTimelineOrder]). Done here because a shuffle
+         * order sent by a controller can arrive before the items it is for: setMediaItems and
+         * addMediaItems wait for this service's async onSetMediaItems/onAddMediaItems, custom commands don't.
+         */
+        const val COMMAND_KEEP_TIMELINE_ORDER = "com.stash.KEEP_TIMELINE_ORDER"
+        const val EXTRA_KEEP_TIMELINE_ORDER = "com.stash.extra.KEEP_TIMELINE_ORDER"
+
+        /**
          * "Play next" under shuffle: inserts the MediaItem in [EXTRA_PLAY_NEXT_ITEM] after the current
          * song and the Play next songs already behind it, in the timeline AND in the master's real
          * shuffle order, in one step ([com.stash.core.media.PlayNext.insert]); a controller only sees a
@@ -553,6 +563,7 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            keepTimelineOrder()
             // While casting, "play" means the speaker: never start the stopped master.
             val master = activePlayer ?: return
             when (resumePlayGate.onTimelineChanged(
@@ -566,7 +577,36 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) = updateCustomLayout()
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = updateCustomLayout()
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+            keepTimelineOrder()
+            updateCustomLayout()
+        }
+    }
+
+    /** See [COMMAND_KEEP_TIMELINE_ORDER]. Main thread. */
+    private var keepTimelineOrderOn = false
+
+    /**
+     * While [keepTimelineOrderOn] and shuffle is on: the master player's shuffle walk back to the
+     * timeline's own order whenever it isn't (an insert under shuffle lands at a random place in
+     * it). Setting it fires another timeline change, which finds the identity and stops.
+     */
+    @OptIn(UnstableApi::class)
+    private fun keepTimelineOrder() {
+        if (!keepTimelineOrderOn) return
+        val master = crossfadeEngine?.masterPlayer ?: return
+        val n = master.mediaItemCount
+        if (!master.shuffleModeEnabled || n == 0) return
+        val timeline = master.currentTimeline
+        if (timeline.windowCount != n || com.stash.core.media.isTimelineOrder(n, timeline.getFirstWindowIndex(true)) {
+                timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
+            }
+        ) {
+            return
+        }
+        master.setShuffleOrder(
+            androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(IntArray(n) { it }, android.os.SystemClock.elapsedRealtime()),
+        )
     }
 
     @OptIn(UnstableApi::class)
@@ -2090,11 +2130,15 @@ class StashPlaybackService : MediaLibraryService() {
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
+            // A queue set by another controller (the car, a media button) is not the app's big queue:
+            // its shuffle is Media3's own again. The app asks for it again with each big queue it sets.
+            if (controller.packageName != packageName) keepTimelineOrderOn = false
             return serviceScope.future {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
                     val tracks = shuffleSourceTracks(mediaItems[0].mediaId)
                     if (tracks != null) {
-                        val items = tracks.map { it.toAutoMediaItem() }.shuffled()
+                        // A window of the shuffle, as the app holds a big queue (QUEUE_WINDOW_SIZE).
+                        val items = tracks.shuffled().take(com.stash.core.media.QUEUE_WINDOW_SIZE).map { it.toAutoMediaItem() }
 
                         kotlinx.coroutines.withContext(Dispatchers.Main) {
                             mediaSession.player.shuffleModeEnabled = true
@@ -2200,7 +2244,7 @@ class StashPlaybackService : MediaLibraryService() {
             return serviceScope.future {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
                     shuffleSourceTracks(mediaItems[0].mediaId)?.let { tracks ->
-                        return@future tracks.map { it.toAutoMediaItem() }.shuffled()
+                        return@future tracks.shuffled().take(com.stash.core.media.QUEUE_WINDOW_SIZE).map { it.toAutoMediaItem() }
                     }
                 }
                 mediaItems.map { item ->
@@ -2632,6 +2676,10 @@ class StashPlaybackService : MediaLibraryService() {
                     }
                 }
                 COMMAND_PLAY_NEXT_SHUFFLED -> return Futures.immediateFuture(playNextShuffled(session, controller, args))
+                COMMAND_KEEP_TIMELINE_ORDER -> {
+                    keepTimelineOrderOn = args.getBoolean(EXTRA_KEEP_TIMELINE_ORDER, false)
+                    keepTimelineOrder()
+                }
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -2821,6 +2869,9 @@ internal fun grantedCustomActions(privileged: Boolean, ownApp: Boolean = false):
         add(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER)
     }
     if (ownApp) add(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
+    // Only the app's own big queue asks for it; another controller turning it on would quietly
+    // unshuffle the user's queue.
+    if (ownApp) add(StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER)
 }
 
 /**
