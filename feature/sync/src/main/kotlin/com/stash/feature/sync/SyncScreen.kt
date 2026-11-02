@@ -223,7 +223,7 @@ fun SyncScreen(
                         // Each cover opens its mix; the fallback art (no mixes yet) is pictures only.
                         onCoverTap = if (fan.isEmpty()) null else { i -> onOpenPlaylist(fan[i].id) },
                         summary = librarySummary(uiState, rows),
-                        syncedAgo = uiState.lastSyncRelativeTime,
+                        syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         newest = newest,
                         onPlay = { row -> viewModel.onPlayPlaylist(row.id, row.name) },
                         onSync = viewModel::onSyncNow,
@@ -233,7 +233,7 @@ fun SyncScreen(
                     OnThisPhoneHero(
                         saved = savedRows,
                         songsOnPhone = uiState.syncStatus.totalTracks,
-                        syncedAgo = uiState.lastSyncRelativeTime,
+                        syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         onChoose = { firstSource?.let(onManageSource) },
                         onSync = viewModel::onSyncNow,
                         onOpenPlaylist = onOpenPlaylist,
