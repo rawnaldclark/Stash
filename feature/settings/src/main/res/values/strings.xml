@@ -919,15 +919,15 @@
     </plurals>
     <string name="settings_web_link_reading_code">Reading the code…</string>
     <string name="settings_web_link_confirm_title">Link %s?</string>
-    <string name="settings_web_link_confirm_body_before_code">Your computer will ask you to check </string>
+    <string name="settings_web_link_confirm_body_before_code">"Your computer will ask you to check "</string>
     <string name="settings_web_link_confirm_body_after_code">. It will see what you\'re playing here, and you can choose to mirror your library with it.</string>
     <string name="settings_web_link_confirm_from_link_warning">Only continue if you just opened Link your phone on your own computer, and it\'s in front of you now.</string>
     <string name="settings_web_link_action_link">Link</string>
-    <string name="settings_web_link_waiting_computer">Waiting for your computer… · </string>
+    <string name="settings_web_link_waiting_computer">"Waiting for your computer… · "</string>
     <string name="settings_web_link_waiting_desc">Check that %s shows the same six digits, then tap Link there.</string>
     <string name="settings_web_link_linked_to">Linked to %s</string>
     <string name="settings_web_link_linked_desc">Linked. Nothing is mirrored yet.</string>
-    <string name="settings_web_link_code_label">Code </string>
+    <string name="settings_web_link_code_label">"Code "</string>
     <string name="settings_web_link_scan_again">Scan again</string>
     <string name="settings_web_link_action_rename">Rename</string>
     <string name="settings_web_link_rename_dialog_title">Rename</string>
@@ -964,17 +964,17 @@
     <string name="settings_mirror_section_title">Mirror between your devices</string>
     <string name="settings_mirror_section_desc">Off keeps a separate library on each. What mirrors is end-to-end encrypted.</string>
     <string name="settings_mirror_likes_title">Likes</string>
-    <string name="settings_mirror_likes_waiting_share"> · Waiting for %s to share its likes.</string>
-    <string name="settings_mirror_likes_choose_combine"> · Choose how to combine them</string>
+    <string name="settings_mirror_likes_waiting_share">" · Waiting for %s to share its likes."</string>
+    <string name="settings_mirror_likes_choose_combine">" · Choose how to combine them"</string>
     <string name="settings_mirror_playlists_title">Playlists</string>
     <plurals name="settings_mirror_playlists_chosen">
-        <item quantity="one"> · %d chosen</item>
-        <item quantity="other"> · %d chosen</item>
+        <item quantity="one">" · %d chosen"</item>
+        <item quantity="other">" · %d chosen"</item>
     </plurals>
     <string name="settings_mirror_choose_playlists_title">Choose playlists</string>
     <string name="settings_mirror_choose_playlists_subtitle">Spotify and YouTube Music playlists go to the web only, read-only there.</string>
     <string name="settings_mirror_plays_title">Plays</string>
-    <string name="settings_mirror_plays_subtitle_note"> · Plays from the web show in History, never in your Stash Mixes</string>
+    <string name="settings_mirror_plays_subtitle_note">" · Plays from the web show in History, never in your Stash Mixes"</string>
     <plurals name="settings_mirror_held_unlikes">
         <item quantity="one">Mirroring is holding %1$d unlike from this phone. Send it to %2$s, or keep that like?</item>
         <item quantity="other">Mirroring is holding %1$d unlikes from this phone. Send them to %2$s, or keep those likes?</item>
@@ -987,8 +987,8 @@
         <item quantity="one">1 song</item>
         <item quantity="other">%d songs</item>
     </plurals>
-    <string name="settings_mirror_playlist_readonly_web"> · From your phone, read-only on the web</string>
-    <string name="settings_mirror_playlist_shared_mix"> · Shared mix</string>
+    <string name="settings_mirror_playlist_readonly_web">" · From your phone, read-only on the web"</string>
+    <string name="settings_mirror_playlist_shared_mix">" · Shared mix"</string>
     <string name="settings_mirror_switch_off_note">Switching one off stops mirroring it and leaves every copy where it is.</string>
     <string name="settings_mirror_first_merge_title">Your likes: %1$d on %2$s, %3$d here</string>
     <string name="settings_mirror_first_merge_changed">Your likes changed since you answered. Check the numbers again.</string>
@@ -1024,7 +1024,7 @@
         <item quantity="one">%d song</item>
         <item quantity="other">%,d songs</item>
     </plurals>
-    <string name="settings_picker_shared_mix"> · Shared mix</string>
+    <string name="settings_picker_shared_mix">" · Shared mix"</string>
 
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
     <string name="settings_inbox_sent_you">sent you %s.</string>
