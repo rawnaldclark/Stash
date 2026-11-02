@@ -17,6 +17,7 @@ import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.data.sync.SyncScheduler
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.toDisplayStatus
+import com.stash.core.data.sync.unreadPlaylistsIn
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.data.download.files.LibrarySizeHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -62,7 +63,14 @@ data class SyncHistoryInfo(
      * interruption (process kill), and genuine failure.
      */
     val displayStatus: SyncDisplayStatus = SyncDisplayStatus.Idle,
-)
+) {
+    /**
+     * The playlists this run listed but couldn't read, by name. Decoded once per
+     * record from [diagnostics], not on every recomposition of the History row
+     * (its screen recomposes with each progress tick of a running sync).
+     */
+    val unreadPlaylists: com.stash.core.data.sync.UnreadPlaylists = unreadPlaylistsIn(diagnostics)
+}
 
 /**
  * Full UI state for the Sync screen.
