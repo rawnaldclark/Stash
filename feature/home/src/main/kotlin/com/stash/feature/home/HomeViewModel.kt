@@ -765,10 +765,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Hide (or unhide) a mix's playlist from the Home rails. Hiding unpins it;
-     * showing pins it, so it leads its rail (see MixRail.pinnedThenFreshest).
-     */
     /** Today in the phone's time zone: a rotation flips at local midnight. */
     private fun today(): Long = java.time.LocalDate.now().toEpochDay()
 
@@ -782,9 +778,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Hide (or unhide) a mix's playlist from the Home rails. Hiding drops its
+     * favorite (the pin); showing it again leaves the pin as it is, since only
+     * Favorite sets that.
+     */
     fun setHideFromHome(playlistId: Long, hidden: Boolean) {
         viewModelScope.launch {
-            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
+            if (hidden) {
+                playlistDao.setHomeVisibility(playlistId, hidden = true, pinnedAt = null)
+            } else {
+                playlistDao.setHideFromHome(playlistId, hidden = false)
+            }
         }
     }
 

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.HighQuality
@@ -1716,9 +1717,22 @@ private fun PlaylistsGrid(
                 },
             )
 
+            // On a mix the Home pin is its Favorite, so it says so, as on Home.
+            val onHome = playlist.pinnedToHomeAt != null
+            val isMix = playlist.type == PlaylistType.DAILY_MIX || playlist.type == PlaylistType.STASH_MIX
             BottomSheetActionRow(
-                icon = if (playlist.pinnedToHomeAt != null) Icons.Filled.Home else Icons.Outlined.Home,
-                label = if (playlist.pinnedToHomeAt != null) "Remove from Home" else "Show on Home",
+                icon = when {
+                    isMix && onHome -> Icons.Filled.Favorite
+                    isMix -> Icons.Filled.FavoriteBorder
+                    onHome -> Icons.Filled.Home
+                    else -> Icons.Outlined.Home
+                },
+                label = when {
+                    isMix && onHome -> "Remove from favorites"
+                    isMix -> "Favorite"
+                    onHome -> "Remove from Home"
+                    else -> "Show on Home"
+                },
                 onClick = {
                     onTogglePlaylistOnHome(playlist)
                     selectedPlaylist = null

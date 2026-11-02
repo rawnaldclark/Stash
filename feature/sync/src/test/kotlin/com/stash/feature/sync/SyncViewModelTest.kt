@@ -176,34 +176,6 @@ class SyncViewModelTest {
         assertNull(vm.uiState.value.pendingRefreshSource)
     }
 
-    // -- "Shown on Home" pins the mix (2026-09-07) ---------------------------------
-
-    @Test
-    fun `showing a mix on Home pins it`() {
-        newVm().onToggleHideFromHome(7L, hidden = false)
-        coVerify { playlistDao.setHomeVisibility(7L, false, match { it != null }) }
-    }
-
-    @Test
-    fun `hiding a mix from Home unpins it`() {
-        newVm().onToggleHideFromHome(7L, hidden = true)
-        coVerify { playlistDao.setHomeVisibility(7L, true, null) }
-    }
-
-    // -- The Sync tab's switch decides Home (2026-09-07): sync on pins, sync off unpins --
-
-    @Test
-    fun `syncing a playlist pins it to Home`() {
-        newVm().onTogglePlaylistSync(7L, enabled = true)
-        coVerify { playlistDao.setSyncEnabledAndPin(7L, true, match { it > 0L }) }
-    }
-
-    @Test
-    fun `turning sync off unpins it`() {
-        newVm().onTogglePlaylistSync(7L, enabled = false)
-        coVerify { playlistDao.setSyncEnabledAndPin(7L, false, any()) }
-    }
-
     // -- Auto-sync schedule (2026-09-28): Stop keeps it, Auto-sync off ends it ---------
 
     @Test
@@ -487,5 +459,26 @@ class SyncViewModelTest {
 
         coVerify { playlistDao.setSyncEnabledAndPin(42L, true, any()) }
         coVerify { musicRepository.setPlaylistDownload(42L, true) }
+    }
+
+    /**
+     * Save never writes a Home pin of its own, on or off, in either mode: on a mix the pin
+     * is its Favorite (2026-11-02). The one write that may pin, setSyncEnabledAndPin, leaves
+     * mixes alone (PlaylistDaoHomeVisibilityTest).
+     */
+    @Test
+    fun `Save on and off writes no Home pin of its own`() = runTest {
+        for (streamOnly in listOf(true, false)) {
+            coEvery { streamingPreference.current() } returns streamOnly
+            val vm = newVm()
+            vm.onSavePlaylist(42L, true)
+            vm.onSavePlaylist(42L, false)
+            advanceUntilIdle()
+        }
+
+        coVerify(exactly = 0) { playlistDao.setHomeVisibility(any(), any(), any()) }
+        coVerify(exactly = 0) { playlistDao.setPinnedToHome(any(), any()) }
+        coVerify(exactly = 0) { musicRepository.setPlaylistPinnedToHome(any(), any()) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), false, any()) }
     }
 }
