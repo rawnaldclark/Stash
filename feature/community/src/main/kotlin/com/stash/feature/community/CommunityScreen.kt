@@ -55,8 +55,9 @@ import kotlinx.coroutines.launch
 
 /**
  * See all (spec 2026-09-26 §3, redrawn 2026-11-01): Top this week / New / Your posts, `+ Post` in the top bar.
- * Top: Play all / Shuffle (a taste of the chart), the #1 as the hero, then #2 on as ranked rows. New: the same
- * posts newest first. Your posts: yours, with how long each has left. Pull to refresh; skeletons while the first
+ * Top: this week's posts by votes (every live post when the week has fewer than five: then it says "Top"), Play all
+ * / Shuffle (a taste of that chart), the #1 as the hero, then #2 on as ranked rows. New: the same posts newest
+ * first. Your posts: yours, with how long each has left. Pull to refresh; skeletons while the first
  * list loads; a card with Retry, or one that asks you to post, instead of an empty page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,7 +79,10 @@ fun CommunityScreen(
     CommunitySnackbar(state.message, viewModel::messageShown)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val ui = listUi(state, segment)
+    val ui = listUi(state, segment, now)
+    // Top's label ("Top this week" or "Top") follows the chart, and keeps the last one it knew while Your posts shows.
+    var topThisWeek by remember { mutableStateOf(true) }
+    (listUi(state, Segment.TOP, now) as? ListUi.Ready)?.let { topThisWeek = it.thisWeek }
     // One width for every rank, up to the last one shown.
     val rankWidth = rankWidthFor((ui as? ListUi.Ready)?.rows?.lastOrNull()?.rank ?: 1)
 
@@ -97,6 +101,7 @@ fun CommunityScreen(
         }
         SegmentedTabs(
             selected = segment,
+            topThisWeek = topThisWeek,
             onSelect = { picked ->
                 if (picked != segment) {
                     segment = picked
@@ -123,7 +128,8 @@ fun CommunityScreen(
                     is ListUi.Ready -> {
                         if (showsChartPlay(segment, ui)) {
                             item(key = "chart_play") {
-                                ChartPlay(starting = state.startingChart, onPlay = { viewModel.playChart(shuffle = it) })
+                                // In the order shown: the hero, then #2 on.
+                                ChartPlay(starting = state.startingChart, onPlay = { viewModel.playChart(shuffle = it, posts = ui.chartPosts()) })
                             }
                         }
                         ui.hero?.let { hero ->
@@ -131,6 +137,7 @@ fun CommunityScreen(
                                 CommunityHero(
                                     post = hero,
                                     now = now,
+                                    thisWeek = ui.thisWeek,
                                     onOpen = { onOpenPost(hero.id) },
                                     onVote = { viewModel.vote(hero, it) },
                                     modifier = gutter.padding(bottom = 8.dp),

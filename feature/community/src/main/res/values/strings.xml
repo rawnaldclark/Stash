@@ -6,13 +6,16 @@
     <string name="community_back">Back</string>
     <!-- The See all page's button that opens the posting picker -->
     <string name="community_post">Post</string>
-    <string name="community_post_description">Post to Community</string>
     <!-- See all's three lists -->
     <string name="community_segment_top">Top this week</string>
+    <!-- The Top list when fewer than 5 posts went up this week, so it shows every live post by votes -->
+    <string name="community_segment_top_all">Top</string>
     <string name="community_segment_new">New</string>
     <string name="community_segment_mine">Your posts</string>
     <!-- Over the most voted post, on Home and on See all -->
     <string name="community_hero_eyebrow">#1 this week</string>
+    <!-- Over the most voted post when the list reaches past this week (fewer than 5 posts in it) -->
+    <string name="community_hero_eyebrow_all">#1</string>
     <!-- Home: the last card of the rail, which opens the posting picker -->
     <string name="community_share_card_title">Share yours</string>
     <string name="community_share_card_body">A song or playlist</string>

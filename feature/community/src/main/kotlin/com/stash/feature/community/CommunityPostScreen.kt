@@ -57,6 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
@@ -94,6 +96,7 @@ fun CommunityPostScreen(
     val openingArtist by viewModel.openingArtist.collectAsStateWithLifecycle()
     val loaded = state as? UiState.Loaded
     val snackbar = LocalAppSnackbar.current
+    val context = LocalContext.current
     val takenDown = stringResource(R.string.community_taken_down)
     // Saveable, so the dialog survives rotation.
     var confirmTakeDown by rememberSaveable { mutableStateOf(false) }
@@ -140,8 +143,8 @@ fun CommunityPostScreen(
                 TextButton(onClick = {
                     confirmTakeDown = false
                     viewModel.takeDown {
-                        // On the app's snackbar, so it stays up over the screen Back lands on.
-                        snackbar?.show(takenDown)
+                        // On the app's snackbar, so it stays up over the screen Back lands on (a toast outside the scaffold).
+                        snackbar?.show(takenDown) ?: Toast.makeText(context, takenDown, Toast.LENGTH_SHORT).show()
                         onBack()
                     }
                 }) { Text(stringResource(R.string.community_take_down)) }
@@ -248,7 +251,7 @@ private fun PostBody(
                             .padding(vertical = 4.dp),
                     ) {
                         Text(
-                            postHeadline(post),
+                            words().postHeadline(post),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -264,7 +267,7 @@ private fun PostBody(
                     }
                 } else {
                     Text(
-                        postHeadline(post),
+                        words().postHeadline(post),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -275,7 +278,7 @@ private fun PostBody(
                     PosterInitial(post.name)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        stringResource(R.string.community_posted_by, post.name, ageText(ageOf(post.createdAt, now), long = true)),
+                        stringResource(R.string.community_posted_by, post.name, words().ageText(ageOf(post.createdAt, now), long = true)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -409,18 +412,4 @@ private fun SongLine(t: SharedTrack) {
             )
         }
     }
-}
-
-/** "Playlist · 42 songs · 2 h 11 min", "Mix · 34 songs", or a song's artist (spec 2026-09-26 §3 The post screen). */
-@Composable
-private fun postHeadline(post: CommunityPost): String {
-    if (post.kind == "song") return post.track?.artist ?: post.artist.orEmpty()
-    val minutes = post.lengthMinutes()
-    val length = when {
-        minutes <= 0 -> null
-        minutes < 60 -> stringResource(R.string.community_length_minutes, minutes.toInt())
-        minutes % 60 == 0L -> stringResource(R.string.community_length_hours, (minutes / 60).toInt())
-        else -> stringResource(R.string.community_length_hours_minutes, (minutes / 60).toInt(), (minutes % 60).toInt())
-    }
-    return listOfNotNull(postFacts(post), length).joinToString(SEP)
 }

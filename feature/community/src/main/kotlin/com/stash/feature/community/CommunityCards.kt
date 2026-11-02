@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,11 +13,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import com.stash.core.ui.util.ArtSizeInterceptor
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +38,7 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -78,16 +89,25 @@ private val HeroPadding = 14.dp
 private val HeroSkeletonHeight = 164.dp
 
 /**
- * This week's #1 (Home and See all ▸ Top): its cover large on the left, under it the cover blurred, then "#1 this
- * week" in the cover's ink, the title, what it is, who posted it and when, and the vote pill in the cover's colour.
- * The whole card opens the post. Dark in every theme, like the other heroes.
+ * The chart's #1 (Home and See all ▸ Top): its cover large on the left, under it the cover blurred, then "#1 this
+ * week" ([thisWeek]; "#1" when the chart reached past the week), the title, what it is, who posted it and when (YOU
+ * on your own), and the vote pill in the cover's colour. The whole card opens the post. Dark in every theme, like
+ * the other heroes; its own backdrop (below) keeps the white text readable over a white cover.
  */
 @Composable
-internal fun CommunityHero(post: CommunityPost, now: Long, onOpen: () -> Unit, onVote: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun CommunityHero(
+    post: CommunityPost,
+    now: Long,
+    thisWeek: Boolean,
+    onOpen: () -> Unit,
+    onVote: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     // Only a cover host's link is ever loaded, for the backdrop and its colour too.
     val art = post.coverUrls().firstOrNull(ShareConfig::isAllowedCover)
     val roles = rememberCoverRoles(art, Ground.DARK)
     val shape = MaterialTheme.shapes.large
+    val res = words()
     Box(
         modifier
             .fillMaxWidth()
@@ -95,15 +115,15 @@ internal fun CommunityHero(post: CommunityPost, now: Long, onOpen: () -> Unit, o
             .clip(shape)
             .clickable(onClick = onOpen),
     ) {
-        BlurredCoverBackdrop(model = art, modifier = Modifier.matchParentSize())
+        HeroBackdrop(art, Modifier.matchParentSize())
         Row(Modifier.fillMaxWidth().padding(HeroPadding), verticalAlignment = Alignment.CenterVertically) {
             CoverArt(post.coverUrls(), Modifier.size(HeroCoverSize), corner = 10.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    stringResource(R.string.community_hero_eyebrow),
+                    stringResource(if (thisWeek) R.string.community_hero_eyebrow else R.string.community_hero_eyebrow_all),
                     style = MaterialTheme.typography.labelMedium,
-                    color = roles.ink,
+                    color = Color.White,
                     maxLines = 1,
                 )
                 Text(
@@ -115,25 +135,58 @@ internal fun CommunityHero(post: CommunityPost, now: Long, onOpen: () -> Unit, o
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    postFacts(post),
+                    res.postFacts(post),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.78f),
+                    color = Color.White.copy(alpha = HERO_FACTS_ALPHA),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    listOf(post.name, ageText(ageOf(post.createdAt, now))).joinToString(SEP),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.62f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (post.mine) YouTag(Color.White)
+                    val spoken = res.posterLine(post, now, long = true)
+                    Text(
+                        res.posterLine(post, now),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = HERO_POSTER_ALPHA),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { contentDescription = spoken },
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 VotePill(post, onVote, colors = VotePillDefaults.onArt(roles))
             }
         }
     }
 }
+
+/**
+ * The hero's ground: its cover blurred under an even black layer ([HERO_SCRIM_ALPHA]), not the Discover hero's
+ * left-to-right scrim. That one is lightest on the right, where this card's text sits, and over a pale cover the
+ * small lines fell under 4.5:1 (sampled on the phone, 2026-11-01). No cover: Stash's purple, as the other heroes.
+ */
+@Composable
+private fun HeroBackdrop(art: String?, modifier: Modifier) {
+    if (art == null) {
+        BlurredCoverBackdrop(model = null, modifier = modifier)
+        return
+    }
+    Box(modifier) {
+        // As BlurredCoverBackdrop: a small decode is all a 24 dp blur needs, from the same URL as the crisp cover.
+        val context = LocalContext.current
+        val request = remember(context, art) {
+            ImageRequest.Builder(context)
+                .data(art)
+                .size(HERO_BACKDROP_DECODE_PX)
+                .apply { extras[ArtSizeInterceptor.SkipSizing] = true }
+                .build()
+        }
+        AsyncImage(model = request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().blur(24.dp))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = HERO_SCRIM_ALPHA)))
+    }
+}
+
+private const val HERO_BACKDROP_DECODE_PX = 256
 
 /** The rank over a rail card's cover: big Space Grotesk, white with a soft shadow so it reads on a pale cover. */
 private val RankNumeral = TextStyle(
@@ -239,20 +292,21 @@ internal fun ShareCard(onPost: () -> Unit) {
  * chips are). Each takes a share of the width by its label's length, so a long one doesn't wrap at a large font.
  */
 @Composable
-internal fun SegmentedTabs(selected: Segment, onSelect: (Segment) -> Unit, modifier: Modifier = Modifier) {
+internal fun SegmentedTabs(selected: Segment, onSelect: (Segment) -> Unit, modifier: Modifier = Modifier, topThisWeek: Boolean = true) {
     val chrome = LocalAlbumChrome.current
     val ext = StashTheme.extendedColors
     Row(
         modifier
             .fillMaxWidth()
-            .clip(CircleShape)
-            .background(ext.glassBackground)
+            // Painted, not clipped: a clip would cut the segments' 48 dp tap areas, which reach past the track.
+            .background(ext.glassBackground, CircleShape)
             .border(1.dp, ext.glassBorder, CircleShape)
             .padding(3.dp)
             .selectableGroup(),
     ) {
         for (segment in Segment.entries) {
-            val label = stringResource(segment.label)
+            // "Top this week", or "Top" when the chart reached past the week (see topChart).
+            val label = stringResource(if (segment == Segment.TOP && !topThisWeek) R.string.community_segment_top_all else segment.label)
             val on = segment == selected
             val fill by animateColorAsState(if (on) chrome.accent else Color.Transparent, tween(SEGMENT_FADE_MS), label = "segmentFill")
             val ink by animateColorAsState(
@@ -260,50 +314,82 @@ internal fun SegmentedTabs(selected: Segment, onSelect: (Segment) -> Unit, modif
                 tween(SEGMENT_FADE_MS),
                 label = "segmentInk",
             )
+            val interaction = remember { MutableInteractionSource() }
             Box(
                 Modifier
                     .weight(maxOf(label.length, 6).toFloat())
-                    .heightIn(min = 36.dp)
-                    .clip(CircleShape)
-                    .background(fill)
-                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(segment) })
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .height(SegmentHeight)
+                    // A 48 dp tap area over the 36 dp segment, reaching above and below the track.
+                    .wrapContentHeight(unbounded = true)
+                    .height(MinTouch)
+                    .selectable(selected = on, interactionSource = interaction, indication = null, role = Role.Tab, onClick = { onSelect(segment) }),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(SegmentHeight)
+                        .clip(CircleShape)
+                        .background(fill)
+                        .indication(interaction, ripple())
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
 
-/** See all's top-bar "+ Post": a glass pill. */
+/** A segment's height (its track is 3 dp more on each side); its tap area is [MinTouch]. */
+private val SegmentHeight = 36.dp
+
+/** See all's top-bar "+ Post": a glass pill, in a 48 dp tap area (the top bar's own height, so it costs no room). */
 @Composable
 internal fun PostPill(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val ext = StashTheme.extendedColors
-    Row(
+    val interaction = remember { MutableInteractionSource() }
+    Box(
         modifier
-            .clip(CircleShape)
-            .background(ext.glassBackground)
-            .border(1.dp, ext.glassBorderBright, CircleShape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = MinTouch)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.Add, contentDescription = null, tint = LocalAlbumChrome.current.accent, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.community_post), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+        Row(
+            Modifier
+                .clip(CircleShape)
+                .background(ext.glassBackground)
+                .border(1.dp, ext.glassBorderBright, CircleShape)
+                .indication(interaction, ripple())
+                .padding(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, tint = LocalAlbumChrome.current.accent, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.community_post), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+        }
     }
 }
 
 /** What an empty or failed list shows: a glass card with an icon, a line, a quieter line and one action. */
 @Composable
-internal fun StateCard(icon: ImageVector, title: String, body: String, action: String?, onAction: (() -> Unit)?, modifier: Modifier = Modifier) {
+internal fun StateCard(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    action: String?,
+    onAction: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    /** A quieter second action under the first (Home's error card: post anyway). */
+    secondary: Pair<String, () -> Unit>? = null,
+) {
     val chrome = LocalAlbumChrome.current
     val ext = StashTheme.extendedColors
     val shape = MaterialTheme.shapes.large
@@ -330,17 +416,38 @@ internal fun StateCard(icon: ImageVector, title: String, body: String, action: S
         Spacer(Modifier.height(4.dp))
         Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         if (action != null && onAction != null) {
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
+            // A 40 dp button in a 48 dp tap area, as Material's own buttons.
+            val interaction = remember { MutableInteractionSource() }
             Box(
                 Modifier
-                    .heightIn(min = 40.dp)
-                    .clip(CircleShape)
-                    .background(chrome.accent)
-                    .clickable(role = Role.Button, onClick = onAction)
-                    .padding(horizontal = 22.dp, vertical = 10.dp),
+                    .heightIn(min = MinTouch)
+                    .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onAction),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(action, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = chrome.onAccent)
+                Box(
+                    Modifier
+                        .heightIn(min = 40.dp)
+                        .clip(CircleShape)
+                        .background(chrome.accent)
+                        .indication(interaction, ripple())
+                        .padding(horizontal = 22.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(action, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = chrome.onAccent)
+                }
+            }
+        }
+        if (secondary != null) {
+            Box(
+                Modifier
+                    .heightIn(min = MinTouch)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = secondary.second)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(secondary.first, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = chrome.ink)
             }
         }
     }
@@ -348,13 +455,14 @@ internal fun StateCard(icon: ImageVector, title: String, body: String, action: S
 
 /** Nothing loaded and the last try failed. */
 @Composable
-internal fun ErrorCard(onRetry: () -> Unit, modifier: Modifier = Modifier) = StateCard(
+internal fun ErrorCard(onRetry: () -> Unit, modifier: Modifier = Modifier, onPost: (() -> Unit)? = null) = StateCard(
     icon = Icons.Rounded.CloudOff,
     title = stringResource(R.string.community_error_title),
     body = stringResource(R.string.community_error_body),
     action = stringResource(R.string.community_retry),
     onAction = onRetry,
     modifier = modifier,
+    secondary = onPost?.let { stringResource(R.string.community_mine_empty_action) to it },
 )
 
 /** Loaded and empty: on Your posts, "You have no posts up"; elsewhere "Nothing posted this week yet · Be the first". */
@@ -387,11 +495,11 @@ internal fun HeroSkeleton(modifier: Modifier = Modifier) {
     ShimmerPlaceholder(modifier.fillMaxWidth().height(HeroSkeletonHeight), shape = MaterialTheme.shapes.large)
 }
 
-/** Three rail cards while Home's list loads. */
+/** Rail cards while Home's list loads, then the real Share card: posting never waits on the list. */
 @Composable
-internal fun RailSkeleton(modifier: Modifier = Modifier) {
+internal fun RailSkeleton(onPost: () -> Unit, modifier: Modifier = Modifier) {
     Row(modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        repeat(3) {
+        repeat(2) {
             Column {
                 ShimmerPlaceholder(Modifier.size(HomeRailCardSize), shape = HomeRailCoverShape)
                 Spacer(Modifier.height(8.dp))
@@ -400,6 +508,7 @@ internal fun RailSkeleton(modifier: Modifier = Modifier) {
                 ShimmerPlaceholder(Modifier.width(56.dp).height(10.dp), shape = MaterialTheme.shapes.extraSmall)
             }
         }
+        ShareCard(onPost)
     }
 }
 

@@ -59,7 +59,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `a vote shows at once, then takes the server's counts`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returns CommunityResult.Ok(listOf(post()))
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(post()))
         coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 9, down = 1, myVote = 1))
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
@@ -71,7 +71,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `a refused vote flips back and says why`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returns CommunityResult.Ok(listOf(post()))
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(post()))
         coEvery { repo.vote(any(), any()) } returns CommunityResult.Failed("offline")
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
@@ -81,17 +81,17 @@ class CommunityViewModelTest {
     }
 
     @Test fun `a vote on a post that's gone reloads the list`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(emptyList()))
+        coEvery { repo.feed(100) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(emptyList()))
         coEvery { repo.vote(any(), any()) } returns CommunityResult.Rejected("gone")
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
         vm.vote(post(), 1); advanceUntilIdle()
-        coVerify(exactly = 2) { repo.feed(5) }
+        coVerify(exactly = 2) { repo.feed(100) }
         assertThat(vm.state.value.posts).isEmpty()
     }
 
     @Test fun `a tap while a vote is out shows at once and is sent after it`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returns CommunityResult.Ok(listOf(post()))
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(post()))
         coEvery { repo.vote("AAAAAAAA", 1) } coAnswers { delay(1_000); CommunityResult.Ok(VoteCounts(up = 4, down = 1, myVote = 1)) }
         coEvery { repo.vote("AAAAAAAA", -1) } returns CommunityResult.Ok(VoteCounts(up = 3, down = 5, myVote = -1))
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
@@ -109,7 +109,7 @@ class CommunityViewModelTest {
 
     @Test fun `a reload while a vote is out keeps the vote on its row`() = runTest(dispatcher) {
         // The reload's row is from before the vote, with someone else's upvote since.
-        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 5))))
+        coEvery { repo.feed(100) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 5))))
         coEvery { repo.vote("AAAAAAAA", 1) } coAnswers { delay(1_000); CommunityResult.Ok(VoteCounts(up = 9, down = 1, myVote = 1)) }
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
@@ -129,7 +129,7 @@ class CommunityViewModelTest {
 
     @Test fun `Home shows the last list at once and keeps it when a reload fails`() = runTest(dispatcher) {
         every { repo.lastHome } returns listOf(post())
-        coEvery { repo.feed(5) } returns CommunityResult.Failed("offline")
+        coEvery { repo.feed(100) } returns CommunityResult.Failed("offline")
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         assertThat(vm.state.value.posts).containsExactly(post())
         vm.show(Tab.HOME); advanceUntilIdle()
@@ -138,7 +138,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `nothing loaded and no connection is a failure to retry`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returns CommunityResult.Failed("offline")
+        coEvery { repo.feed(100) } returns CommunityResult.Failed("offline")
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
         assertThat(vm.state.value.posts).isNull()
@@ -157,7 +157,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `Home reloads when it shows again only after 30 seconds or a vote`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returnsMany listOf(
+        coEvery { repo.feed(100) } returnsMany listOf(
             CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))), CommunityResult.Ok(listOf(post(up = 8))),
         )
         var now = 1_000_000L // well past 30 s, since a loadedAt of 0 means never loaded
@@ -165,7 +165,7 @@ class CommunityViewModelTest {
         vm.onShown(); advanceUntilIdle()
         now += 29_000
         vm.onShown(); advanceUntilIdle()
-        coVerify(exactly = 1) { repo.feed(5) }
+        coVerify(exactly = 1) { repo.feed(100) }
         now += 2_000
         vm.onShown(); advanceUntilIdle()
         assertThat(vm.state.value.posts).containsExactly(post(up = 7))
@@ -175,7 +175,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `Home reloads after the clock is set back`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))))
+        coEvery { repo.feed(100) } returnsMany listOf(CommunityResult.Ok(listOf(post())), CommunityResult.Ok(listOf(post(up = 7))))
         var now = 1_000_000L
         val vm = CommunityViewModel(repo, mockk(relaxed = true)).apply { clock = { now } }
         vm.onShown(); advanceUntilIdle()
@@ -185,7 +185,7 @@ class CommunityViewModelTest {
     }
 
     @Test fun `a post or take-down elsewhere reloads the list on screen`() = runTest(dispatcher) {
-        coEvery { repo.feed(5) } returnsMany listOf(CommunityResult.Ok(emptyList()), CommunityResult.Ok(listOf(post())))
+        coEvery { repo.feed(100) } returnsMany listOf(CommunityResult.Ok(emptyList()), CommunityResult.Ok(listOf(post())))
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
         revision.value = 1; advanceUntilIdle()

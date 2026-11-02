@@ -17,10 +17,22 @@ import kotlinx.coroutines.launch
  */
 @Stable
 class AppSnackbar(private val host: SnackbarHostState, private val scope: CoroutineScope) {
-    /** Queues [message] as a short snackbar. The same line already showing isn't queued again (three failed votes say it once). */
+    /** The lines showing or waiting their turn (main thread only). */
+    private val pending = mutableSetOf<String>()
+
+    /**
+     * Queues [message] as a short snackbar. A line already showing or waiting isn't queued again, so three failed
+     * votes in a row say it once, not three times one after another.
+     */
     fun show(message: String) {
-        if (message.isBlank() || host.currentSnackbarData?.visuals?.message == message) return
-        scope.launch { host.showSnackbar(message, duration = SnackbarDuration.Short) }
+        if (message.isBlank() || !pending.add(message)) return
+        scope.launch {
+            try {
+                host.showSnackbar(message, duration = SnackbarDuration.Short)
+            } finally {
+                pending.remove(message)
+            }
+        }
     }
 }
 

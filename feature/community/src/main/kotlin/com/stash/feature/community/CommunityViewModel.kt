@@ -83,7 +83,9 @@ class CommunityViewModel @Inject constructor(
             // When it was asked, not answered: a vote made during a slow load then counts as newer.
             val asked = clock()
             val result = when (tab) {
-                Tab.HOME -> repository.feed(CommunityRepository.HOME_SIZE)
+                // Home reads the whole list too: its #1 is this week's top by votes (topChart), which the Worker's
+                // first five ("hot": votes plus age) needn't hold.
+                Tab.HOME -> repository.feed(CommunityRepository.ALL_SIZE)
                 Tab.ALL -> repository.feed(CommunityRepository.ALL_SIZE)
                 Tab.MINE -> repository.mine()
             }
@@ -141,9 +143,9 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
-    /** Play all / Shuffle on the All list: a taste of the top posts (see [CommunityChartPlayer]). */
-    fun playChart(shuffle: Boolean) {
-        val posts = _state.value.posts?.takeIf { it.isNotEmpty() } ?: return
+    /** Play all / Shuffle on Top: a taste of [posts], the chart in the order shown (see [CommunityChartPlayer]). */
+    fun playChart(shuffle: Boolean, posts: List<CommunityPost>) {
+        if (posts.isEmpty()) return
         if (chart?.isActive == true) return
         _state.update { it.copy(startingChart = true) }
         chart = viewModelScope.launch {

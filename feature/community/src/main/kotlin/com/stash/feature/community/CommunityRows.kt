@@ -1,5 +1,6 @@
 package com.stash.feature.community
 
+import android.content.res.Resources
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,15 +24,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -49,23 +52,57 @@ import com.stash.core.ui.theme.StashTheme
 /** Between the facts on one line: "Playlist · 42 songs". */
 internal const val SEP = " · "
 
-/** [age] as a list shows it ("3d"), or spelled out ([long]: "3 days ago") for TalkBack and a post's page. */
+/** The resources Community's words come from, read in composition (and again when the configuration changes). */
 @Composable
-internal fun ageText(age: Age, long: Boolean = false): String = when (age) {
-    Age.JustNow -> stringResource(R.string.community_age_just_now)
+@ReadOnlyComposable
+internal fun words(): Resources {
+    LocalConfiguration.current
+    return LocalContext.current.resources
+}
+
+/** [age] as a list shows it ("3d"), or spelled out ([long]: "3 days ago") for TalkBack and a post's page. */
+internal fun Resources.ageText(age: Age, long: Boolean = false): String = when (age) {
+    Age.JustNow -> getString(R.string.community_age_just_now)
     is Age.Minutes ->
-        if (long) pluralStringResource(R.plurals.community_age_minutes, age.n, age.n) else stringResource(R.string.community_age_minutes_short, age.n)
+        if (long) getQuantityString(R.plurals.community_age_minutes, age.n, age.n) else getString(R.string.community_age_minutes_short, age.n)
     is Age.Hours ->
-        if (long) pluralStringResource(R.plurals.community_age_hours, age.n, age.n) else stringResource(R.string.community_age_hours_short, age.n)
+        if (long) getQuantityString(R.plurals.community_age_hours, age.n, age.n) else getString(R.string.community_age_hours_short, age.n)
     is Age.Days ->
-        if (long) pluralStringResource(R.plurals.community_age_days, age.n, age.n) else stringResource(R.string.community_age_days_short, age.n)
+        if (long) getQuantityString(R.plurals.community_age_days, age.n, age.n) else getString(R.string.community_age_days_short, age.n)
 }
 
 /** What the post is: "Playlist · 42 songs", "Mix · 34 songs", or a song's "Song · Death Plus". */
-@Composable
-internal fun postFacts(post: CommunityPost): String {
-    val what = if (post.kind == "song") post.artist.orEmpty() else pluralStringResource(R.plurals.community_songs, post.count, post.count)
-    return listOf(stringResource(kindLabel(post.kind)), what).filter { it.isNotBlank() }.joinToString(SEP)
+internal fun Resources.postFacts(post: CommunityPost): String {
+    val what = if (post.kind == "song") post.artist.orEmpty() else getQuantityString(R.plurals.community_songs, post.count, post.count)
+    return listOf(getString(kindLabel(post.kind)), what).filter { it.isNotBlank() }.joinToString(SEP)
+}
+
+/** A playlist's length: "5 min", "1 h", "2 h 11 min"; null when no song says how long it is. */
+internal fun Resources.postLength(minutes: Long): String? = when {
+    minutes <= 0 -> null
+    minutes < 60 -> getString(R.string.community_length_minutes, minutes.toInt())
+    minutes % 60 == 0L -> getString(R.string.community_length_hours, (minutes / 60).toInt())
+    else -> getString(R.string.community_length_hours_minutes, (minutes / 60).toInt(), (minutes % 60).toInt())
+}
+
+/** A post's page: "Playlist · 42 songs · 2 h 11 min", "Mix · 34 songs", or a song's artist (spec 2026-09-26 §3). */
+internal fun Resources.postHeadline(post: CommunityPost): String {
+    if (post.kind == "song") return post.track?.artist ?: post.artist.orEmpty()
+    return listOfNotNull(postFacts(post), postLength(post.lengthMinutes())).joinToString(SEP)
+}
+
+/**
+ * Who posted it and when: "Maya · 3d". Your own post drops the name (it's tagged YOU, or it's on Your posts), and
+ * on Your posts ([ownList]) adds how long it has left: "3d · Leaves in 26 days". [long] spells the age out (TalkBack).
+ */
+internal fun Resources.posterLine(post: CommunityPost, now: Long, ownList: Boolean = false, long: Boolean = false): String {
+    val left = daysLeft(post.expiresAt, now)
+    val leaves = when {
+        !ownList || left == null -> null
+        left == 0 -> getString(R.string.community_leaves_today)
+        else -> getQuantityString(R.plurals.community_leaves_in, left, left)
+    }
+    return listOfNotNull(post.name.takeUnless { post.mine }, ageText(ageOf(post.createdAt, now), long), leaves).joinToString(SEP)
 }
 
 /**
@@ -151,26 +188,17 @@ internal fun PostListRow(
                 )
                 if (post.mine && !ownList) YouTag()
             }
+            val res = words()
             Text(
-                text = postFacts(post),
+                text = res.postFacts(post),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val age = ageOf(post.createdAt, now)
-            val left = daysLeft(post.expiresAt, now)
-            val leaves = when {
-                !ownList || left == null -> null
-                left == 0 -> stringResource(R.string.community_leaves_today)
-                else -> pluralStringResource(R.plurals.community_leaves_in, left, left)
-            }
-            // Your own post (tagged YOU, or on Your posts) needs no name; everyone else's says who posted it.
-            val first = if (post.mine) null else post.name
-            val shown = listOfNotNull(first, ageText(age), leaves).joinToString(SEP)
-            val spoken = listOfNotNull(first, ageText(age, long = true), leaves).joinToString(SEP)
+            val spoken = res.posterLine(post, now, ownList, long = true)
             Text(
-                text = shown,
+                text = res.posterLine(post, now, ownList),
                 style = MaterialTheme.typography.bodySmall,
                 color = StashTheme.extendedColors.textTertiary,
                 maxLines = 1,
@@ -185,16 +213,16 @@ internal fun PostListRow(
     }
 }
 
-/** A small tag on your own post in a list of everyone's. */
+/** A small tag on your own post among everyone's: in the primary colour on the page, in [color] elsewhere (white on the hero). */
 @Composable
-internal fun YouTag() {
+internal fun YouTag(color: Color = MaterialTheme.colorScheme.primary) {
     Text(
         text = stringResource(R.string.community_you),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
+        color = color,
         maxLines = 1,
         modifier = Modifier
-            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+            .border(1.dp, color, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp),
     )
 }

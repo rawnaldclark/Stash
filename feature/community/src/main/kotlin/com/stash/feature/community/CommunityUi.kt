@@ -1,7 +1,10 @@
 package com.stash.feature.community
 
 import androidx.annotation.StringRes
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import com.stash.core.model.community.CommunityPost
+import com.stash.core.ui.ambient.contrastRatio
 import com.stash.feature.community.CommunityViewModel.Tab
 
 /*
@@ -10,9 +13,9 @@ import com.stash.feature.community.CommunityViewModel.Tab
  */
 
 /**
- * See all's three lists. Top and New are the same Worker list (`/feed`, ranked by votes with age, up to 100
- * posts): New is it newest first, so no API change and no second request when switching between the two.
- * Your posts is `/mine`.
+ * See all's three lists. Top and New come from one Worker list (`/feed`, up to 100 posts), ordered here: the
+ * Worker's own order is "hot" (votes plus age, 3.6 h a vote), which is neither a top nor a newest. So no API
+ * change, and no second request when switching between the two. Your posts is `/mine`.
  */
 internal enum class Segment(val tab: Tab, @param:StringRes val label: Int) {
     TOP(Tab.ALL, R.string.community_segment_top),
@@ -34,15 +37,43 @@ internal sealed interface ListUi {
     /** Loaded, and there's nothing to show. */
     data object Empty : ListUi
 
-    /** [hero] is the #1 (Home and Top), shown as a card; [rows] are the rest. */
-    data class Ready(val hero: CommunityPost?, val rows: List<RankedPost>) : ListUi
+    /**
+     * [hero] is the #1 (Home and Top), shown as a card; [rows] are the rest. [thisWeek] is false when the chart had
+     * to reach past the last 7 days (fewer than [TOP_WEEK_MIN] posts in them): it then says "Top" and "#1", not
+     * "this week".
+     */
+    data class Ready(val hero: CommunityPost?, val rows: List<RankedPost>, val thisWeek: Boolean = true) : ListUi
+}
+
+/** A week: what "this week" counts back from now. */
+internal const val WEEK_MS = 7 * 86_400_000L
+
+/** Fewer posts than this in the last week, and Top shows every live post instead (and stops saying "this week"). */
+internal const val TOP_WEEK_MIN = 5
+
+/** Home's rail: #2 to #5 after the hero. */
+internal const val HOME_RAIL = 4
+
+/** The chart: [posts] by score (up − down), the newer first between equals; [thisWeek] when it's the last 7 days' only. */
+internal data class Chart(val posts: List<CommunityPost>, val thisWeek: Boolean)
+
+/**
+ * Top this week: the posts made in the last 7 days by score, then newest. With fewer than [TOP_WEEK_MIN] of
+ * them it's every live post by score (the Worker keeps a post 30 days) and [Chart.thisWeek] is false. A post
+ * dated after [now] (this phone's clock behind the server's) counts as this week.
+ */
+internal fun topChart(posts: List<CommunityPost>, now: Long): Chart {
+    val byScore = compareByDescending<CommunityPost> { it.up - it.down }.thenByDescending { it.createdAt }
+    val week = posts.filter { now - it.createdAt < WEEK_MS }
+    return if (week.size >= TOP_WEEK_MIN) Chart(week.sortedWith(byScore), thisWeek = true) else Chart(posts.sortedWith(byScore), thisWeek = false)
 }
 
 /**
- * The list [state] shows on [segment] (null: Home's section). A state still holding another tab's list (the frame
- * between a segment tap and the load it starts) reads as loading, so Your posts never flashes the chart's posts.
+ * The list [state] shows on [segment] (null: Home's section), with "this week" counted back from [now]. A state
+ * still holding another tab's list (the frame between a segment tap and the load it starts) reads as loading, so
+ * Your posts never flashes the chart's posts.
  */
-internal fun listUi(state: CommunityViewModel.UiState, segment: Segment?): ListUi {
+internal fun listUi(state: CommunityViewModel.UiState, segment: Segment?, now: Long): ListUi {
     val tab = segment?.tab ?: Tab.HOME
     val posts = state.posts
     return when {
@@ -51,13 +82,38 @@ internal fun listUi(state: CommunityViewModel.UiState, segment: Segment?): ListU
         posts.isEmpty() -> ListUi.Empty
         segment == Segment.NEW -> ListUi.Ready(hero = null, rows = posts.sortedByDescending { it.createdAt }.map { RankedPost(null, it) })
         segment == Segment.MINE -> ListUi.Ready(hero = null, rows = posts.map { RankedPost(null, it) })
-        // Home and Top: the chart. The #1 is the hero; the rest keep their places from 2.
-        else -> ListUi.Ready(hero = posts.first(), rows = posts.drop(1).mapIndexed { i, p -> RankedPost(i + 2, p) })
+        // Home and Top: the chart. The #1 is the hero; the rest keep their places from 2 (Home: up to #5).
+        else -> {
+            val chart = topChart(posts, now)
+            val rest = chart.posts.drop(1).let { if (segment == null) it.take(HOME_RAIL) else it }
+            ListUi.Ready(hero = chart.posts.first(), rows = rest.mapIndexed { i, p -> RankedPost(i + 2, p) }, thisWeek = chart.thisWeek)
+        }
     }
 }
 
 /** Play all / Shuffle (a taste of the chart) belongs to the chart: Top only, once it has posts. */
 internal fun showsChartPlay(segment: Segment, ui: ListUi): Boolean = segment == Segment.TOP && ui is ListUi.Ready
+
+/** The chart in its order, hero first: what Play all plays. */
+internal fun ListUi.Ready.chartPosts(): List<CommunityPost> = listOfNotNull(hero) + rows.map { it.post }
+
+/*
+ * The hero's ink. Its backdrop is the cover blurred, so a white cover makes a white backdrop: an even black layer
+ * over it keeps the white text at 4.5:1 or more over any cover (CommunityUiTest checks white and sampled covers).
+ */
+
+/** The even black layer over the hero's blurred cover. */
+internal const val HERO_SCRIM_ALPHA = 0.7f
+
+/** The hero's quieter lines: what the post is, and who posted it and when (white at these alphas). */
+internal const val HERO_FACTS_ALPHA = 0.8f
+internal const val HERO_POSTER_ALPHA = 0.72f
+
+/** WCAG contrast of white text at [textAlpha] on the hero over a blurred cover of [backdrop]'s colour. */
+internal fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
+    val ground = Color.Black.copy(alpha = HERO_SCRIM_ALPHA).compositeOver(backdrop)
+    return contrastRatio(Color.White.copy(alpha = textAlpha).compositeOver(ground), ground)
+}
 
 /** The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own post). */
 internal data class VotePillUi(val score: Int, val upLit: Boolean, val downLit: Boolean, val enabled: Boolean)

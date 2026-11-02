@@ -23,9 +23,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.SectionHeader
 
 /**
- * Home's Community section (spec 2026-09-26 §3, redrawn 2026-11-01): Home's own section header with See all, this
- * week's #1 as a hero, then #2–#5 as a rail of art cards ending in a "Share yours" card (the picker). Skeletons
- * while the first list loads, a card with Retry when it can't, "Be the first" when there's nothing.
+ * Home's Community section (spec 2026-09-26 §3, redrawn 2026-11-01): Home's own section header with See all, the
+ * chart's #1 as a hero (this week's top post by votes, see topChart), then #2–#5 as a rail of art cards ending in a
+ * "Share yours" card (the picker). Skeletons while the first list loads (the Share card already there), a card with
+ * Retry and "Share something" when it can't, "Be the first" when there's nothing: there's always a way to post.
  * Composed only while Community is on, so nothing here runs, or asks the Worker anything, while it's off.
  */
 @Composable
@@ -50,19 +51,20 @@ fun CommunitySection(
             actionText = stringResource(R.string.community_see_all),
             onActionClick = onSeeAll,
         )
-        when (val ui = listUi(state, segment = null)) {
+        when (val ui = listUi(state, segment = null, now = now)) {
             ListUi.Loading -> {
                 HeroSkeleton(gutter)
                 Spacer(Modifier.height(16.dp))
-                RailSkeleton()
+                RailSkeleton(onPost)
             }
-            ListUi.Failed -> ErrorCard(onRetry = { viewModel.show(CommunityViewModel.Tab.HOME) }, modifier = gutter)
+            ListUi.Failed -> ErrorCard(onRetry = { viewModel.show(CommunityViewModel.Tab.HOME) }, modifier = gutter, onPost = onPost)
             ListUi.Empty -> EmptyCard(segment = null, onPost = onPost, modifier = gutter)
             is ListUi.Ready -> {
                 ui.hero?.let { hero ->
                     CommunityHero(
                         post = hero,
                         now = now,
+                        thisWeek = ui.thisWeek,
                         onOpen = { onOpenPost(hero.id) },
                         onVote = { viewModel.vote(hero, it) },
                         modifier = gutter,

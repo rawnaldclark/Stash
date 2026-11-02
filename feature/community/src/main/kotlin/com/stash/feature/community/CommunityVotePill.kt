@@ -11,11 +11,14 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,9 +28,11 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -128,8 +133,8 @@ internal fun VotePill(
     Row(
         modifier = modifier
             .height(height)
-            .clip(CircleShape)
-            .background(fill)
+            // Painted, not clipped: a clip would also cut the arrows' 48 dp tap areas, which reach past the pill.
+            .background(fill, CircleShape)
             .border(1.dp, border, CircleShape)
             .then(if (ui.enabled) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
@@ -142,6 +147,8 @@ internal fun VotePill(
             colors = colors,
             width = arrowWidth,
             height = height,
+            // The up arrow's tap area reaches out past the pill's start, never in over the score.
+            inner = Alignment.CenterEnd,
         ) { onVote(1) }
         val votes = pluralStringResource(R.plurals.community_votes, ui.score, ui.score)
         // The number rolls up for a vote up and down for a vote down.
@@ -175,11 +182,17 @@ internal fun VotePill(
             colors = colors,
             width = arrowWidth,
             height = height,
+            inner = Alignment.CenterStart,
         ) { onVote(-1) }
     }
 }
 
-/** One arrow's tap area, the pill's full height. Disabled (your own post), it's dimmed, silent to TalkBack and lets taps through. */
+/**
+ * One arrow: [width] × [height] of the pill, with a 48 dp tap area. The tap area is bigger than the arrow's part of
+ * the pill and reaches outward from it ([inner] is the side facing the score, where it stops), past the pill's ends
+ * and above and below it, without taking any room in the layout. The ripple stays on the arrow's own part.
+ * Disabled (your own post), it's dimmed, silent to TalkBack and lets taps through.
+ */
 @Composable
 private fun PillArrow(
     icon: ImageVector,
@@ -189,6 +202,7 @@ private fun PillArrow(
     colors: VotePillColors,
     width: Dp,
     height: Dp,
+    inner: Alignment,
     onClick: () -> Unit,
 ) {
     val tint by animateColorAsState(
@@ -200,17 +214,34 @@ private fun PillArrow(
         tween(PILL_FADE_MS),
         label = "pillArrow",
     )
+    val interaction = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .size(width = width, height = height)
-            .clip(RoundedCornerShape(50))
+            // The tap area: 48 dp, laid out over the arrow's slot without growing it.
+            .wrapContentSize(inner, unbounded = true)
+            .size(width = maxOf(width, MinTouch), height = maxOf(height, MinTouch))
             // Not selectable(enabled = false): a disabled one still swallows the tap, which should open the post.
-            .then(if (enabled) Modifier.selectable(selected = lit, role = Role.Button, onClick = onClick) else Modifier.clearAndSetSemantics {}),
-        contentAlignment = Alignment.Center,
+            .then(
+                if (enabled) {
+                    Modifier.selectable(selected = lit, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier.clearAndSetSemantics {}
+                },
+            ),
+        contentAlignment = inner,
     ) {
-        Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(if (height < 34.dp) 20.dp else 22.dp))
+        Box(
+            Modifier.size(width = width, height = height).clip(RoundedCornerShape(50)).indication(interaction, ripple()),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(if (height < 34.dp) 20.dp else 22.dp))
+        }
     }
 }
+
+/** The smallest tap area (Material's and Android's 48 dp). */
+internal val MinTouch = 48.dp
 
 /** The pill's colour change and the score's roll (the tab bar's colour step). */
 private const val PILL_FADE_MS = 180
