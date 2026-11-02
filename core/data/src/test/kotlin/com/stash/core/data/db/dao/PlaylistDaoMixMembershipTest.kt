@@ -113,6 +113,29 @@ class PlaylistDaoMixMembershipTest {
         assertNull(dao.findBySourceId("stash_mix_2"))
     }
 
+    @Test fun `refreshMixCover keeps the cover while no song has art, then builds the mosaic`() = runTest {
+        db.trackDao().insert(track(1L))
+        db.trackDao().insert(track(2L))
+        val id = dao.createMixWithMembership(mix("Daily Discover", "stash_mix_1"), listOf(1L, 2L), Instant.EPOCH)
+
+        dao.refreshMixCover(id)
+        assertNull(dao.getById(id)!!.artUrl)
+
+        db.trackDao().fillMissingAlbumArtUrl(2L, "https://img/2.png")
+        db.trackDao().fillMissingAlbumArtUrl(1L, "https://img/1.png")
+        dao.refreshMixCover(id)
+
+        // In song order, whichever song got its art first.
+        assertEquals("https://img/1.png|https://img/2.png", dao.getById(id)!!.artUrl)
+    }
+
+    @Test fun `getStashMixPlaylistIds lists only Stash Mixes`() = runTest {
+        val mixId = dao.insert(mix("Daily Discover", "stash_mix_1"))
+        dao.insert(mix("Mine", "mine").copy(type = PlaylistType.CUSTOM))
+
+        assertEquals(listOf(mixId), dao.getStashMixPlaylistIds())
+    }
+
     private fun mix(name: String, sourceId: String) = PlaylistEntity(
         name = name,
         source = MusicSource.BOTH,

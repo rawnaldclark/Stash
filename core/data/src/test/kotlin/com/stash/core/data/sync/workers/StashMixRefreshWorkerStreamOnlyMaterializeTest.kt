@@ -186,6 +186,8 @@ class StashMixRefreshWorkerStreamOnlyMaterializeTest {
         // txn boundary itself, or a removed short-circuit would pass silently.)
         coVerify(exactly = 0) { playlistDao.replaceMixMembership(any(), any(), any(), any()) }
         coVerify(exactly = 0) { playlistDao.createMixWithMembership(any(), any(), any()) }
+        // The cover is still rebuilt: its songs may have got their art since it was last built.
+        coVerify(exactly = 1) { playlistDao.refreshMixCover(100L) }
     }
 
     @Test fun `materializeMix re-materializes when membership order differs`() = runTest {

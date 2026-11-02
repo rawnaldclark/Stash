@@ -511,6 +511,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
                         networkPartWorked = false
                         Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it)
                     }
+            } else if (recipe.discoveryRatio > 0f && !lastFmConfigured && !materializeOnly) {
+                Log.i(TAG, "'${recipe.name}': no discovery this run, Last.fm isn't configured")
             }
         }
 
@@ -810,6 +812,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
                 // Name can still drift (e.g. a recipe rename) even when the
                 // track set matches; keep that cheap, non-destructive update.
                 playlistDao.updateName(existing.id, recipe.name)
+                // The cover can too: discovery stubs get their art after they are
+                // linked (ArtBackfillWorker), so a mix first built from art-less
+                // stubs would keep a blank cover until its membership changed.
+                playlistDao.refreshMixCover(existing.id)
                 return MaterializeResult(existing.id, discoveryTrackIds)
             }
         }
@@ -853,12 +859,10 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // tracks carry album art. Up to 4 distinct arts, "|"-joined: the mix
         // card renders a tile mosaic, and single-image call sites take the
         // first (PlaylistMapper). Recomputed every refresh, so the mosaic
-        // fills in once stub art is backfilled. Cosmetic, so it deliberately
-        // stays OUTSIDE the membership transaction, reading the committed rows.
-        val coverArtUrls = playlistDao.getCoverArtUrlsForPlaylist(playlistId, limit = 4)
-        if (coverArtUrls.isNotEmpty()) {
-            playlistDao.updateArtUrl(playlistId, coverArtUrls.joinToString("|"))
-        }
+        // fills in once stub art is backfilled (ArtBackfillWorker also rebuilds
+        // it after filling art). Cosmetic, so it deliberately stays OUTSIDE the
+        // membership transaction, reading the committed rows.
+        playlistDao.refreshMixCover(playlistId)
         return MaterializeResult(playlistId, discoveryTrackIds)
     }
 
@@ -940,7 +944,16 @@ class StashMixRefreshWorker @AssistedInject constructor(
             seedTracks = seedTracks,
             personas = personas,
         )
-        if (candidates.isEmpty()) return
+        if (candidates.isEmpty()) {
+            // An empty Daily Discover hides its Home slot, so say why the run found nothing. Counts only:
+            // artist names say what someone listens to.
+            Log.i(
+                TAG,
+                "'${recipe.name}': 0 candidates via $strategy from ${seedArtists.size} seed artists, " +
+                    "${seedTracks.size} seed tracks, ${topTags.size} tags (${recentArtists.size} recent artists)",
+            )
+            return
+        }
 
         // v0.9.20: pre-filter against library + skip-ban so discovery_queue
         // PENDING rows represent genuinely-new music, not "rediscovery" hits.
