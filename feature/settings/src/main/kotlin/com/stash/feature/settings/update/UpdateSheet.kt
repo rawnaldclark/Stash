@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -22,27 +21,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,28 +46,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.CollectionItemInfo
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.collectionItemInfo
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -91,6 +71,7 @@ import com.stash.core.data.update.AvailableUpdate
 import com.stash.core.data.update.ReleaseNotes
 import com.stash.core.data.update.UpdateState
 import com.stash.core.ui.ambient.LocalAlbumChrome
+import com.stash.core.ui.components.SheetNavigationBarUnscrimmed
 import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
@@ -112,10 +93,13 @@ import kotlinx.coroutines.launch
 fun UpdateSheetHost(viewModel: UpdateViewModel = hiltViewModel()) {
     val visible by viewModel.visible.collectAsStateWithLifecycle()
     val update by viewModel.available.collectAsStateWithLifecycle()
+    val parsed by viewModel.notes.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
     val u = update
-    if (!visible || u == null) return
+    // The notes are read off the main thread; the sheet comes up once they are (a few milliseconds), whole.
+    val notes = parsed
+    if (!visible || u == null || notes == null) return
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -127,8 +111,10 @@ fun UpdateSheetHost(viewModel: UpdateViewModel = hiltViewModel()) {
         containerColor = StashTheme.extendedColors.elevatedSurface,
         properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
+        SheetNavigationBarUnscrimmed()
         UpdateSheetContent(
             update = u,
+            notes = notes,
             installedVersion = viewModel.installedVersion,
             state = state,
             actions = UpdateSheetActions(
@@ -160,7 +146,7 @@ internal class UpdateSheetActions(
 )
 
 /** The colours the sheet wears: neutral ink with nothing playing, the album's while a song plays (the Support card's recipe). */
-private class SheetColours(val accent: Color, val onAccent: Color, val ink: Color)
+internal class SheetColours(val accent: Color, val onAccent: Color, val ink: Color)
 
 @Composable
 private fun sheetColours(): SheetColours {
@@ -177,11 +163,11 @@ private fun sheetColours(): SheetColours {
 @Composable
 internal fun UpdateSheetContent(
     update: AvailableUpdate,
+    notes: ReleaseNotes,
     installedVersion: String?,
     state: UpdateState,
     actions: UpdateSheetActions,
 ) {
-    val notes = remember(update.notes) { ReleaseNotes.parse(update.notes) }
     val colours = sheetColours()
     // "+4 new · …" opens the full notes in the sheet; Back closes them again before it closes the sheet.
     var allNotes by rememberSaveable(update.tag) { mutableStateOf(false) }
@@ -410,7 +396,7 @@ private fun NoteRow(note: ReleaseNotes.Note, ink: Color, compact: Boolean, modif
 
 /** The Donate sheet's card: the glass fill, a 1 dp hairline, 16 dp corners and padding. */
 @Composable
-private fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val ext = StashTheme.extendedColors
     val shape = MaterialTheme.shapes.large
     Column(
@@ -430,208 +416,5 @@ private fun Hairline() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(StashTheme.extendedColors.glassBorder))
 }
 
-// ── Actions ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ActionArea(update: AvailableUpdate, state: UpdateState, colours: SheetColours, actions: UpdateSheetActions) {
-    when (state) {
-        UpdateState.Idle -> {
-            PrimaryButton(Icons.Rounded.Download, stringResource(R.string.update_sheet_update_now), colours, actions.update)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QuietButton(stringResource(R.string.update_sheet_later), actions.later, Modifier.weight(1f))
-                QuietButton(stringResource(R.string.update_sheet_skip), actions.skip, Modifier.weight(1f))
-            }
-        }
-        is UpdateState.Downloading -> {
-            DownloadProgress(state.fraction, update.sizeBytes, colours.accent)
-            QuietButton(stringResource(R.string.update_sheet_hide), actions.hide, Modifier.fillMaxWidth())
-        }
-        UpdateState.NeedsPermission -> {
-            PermissionSteps(colours.ink)
-            PrimaryButton(Icons.Rounded.Settings, stringResource(R.string.update_sheet_open_settings), colours, actions.openSettings)
-        }
-        UpdateState.Installing -> {
-            Bar(fraction = null, fill = colours.accent)
-            Text(
-                stringResource(R.string.update_sheet_installing),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        is UpdateState.Failed -> {
-            Failure(state.reason)
-            if (state.reason == UpdateState.Failed.Reason.ALREADY_NEWER) {
-                SecondaryButton(stringResource(R.string.update_sheet_close), null, actions.close)
-            } else {
-                PrimaryButton(Icons.Rounded.Refresh, stringResource(R.string.update_sheet_try_again), colours, actions.retry)
-                SecondaryButton(stringResource(R.string.update_sheet_github), Icons.AutoMirrored.Rounded.OpenInNew) {
-                    actions.openUrl(update.pageUrl)
-                }
-            }
-        }
-    }
-}
-
-/** "82 of 174 MB" (the 82 in the strong ink) over the 6 dp bar, read by TalkBack as one progress indicator. */
-@Composable
-private fun DownloadProgress(fraction: Float?, sizeBytes: Long, fill: Color) {
-    val sentence = when {
-        fraction != null && sizeBytes > 0 ->
-            stringResource(R.string.update_sheet_progress, (fraction * sizeBytes / 1_000_000).toInt(), AppUpdates.sizeLabel(sizeBytes))
-        fraction != null -> stringResource(R.string.update_sheet_downloading_pct, (fraction * 100).toInt())
-        else -> stringResource(R.string.update_sheet_downloading)
-    }
-    val strong = if (fraction != null && sizeBytes > 0) (fraction * sizeBytes / 1_000_000).toInt().toString() else null
-    val text = buildAnnotatedString {
-        append(sentence)
-        val at = strong?.let { sentence.indexOf(it) } ?: -1
-        if (strong != null && at >= 0) {
-            addStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface), at, at + strong.length)
-        }
-    }
-    Column(
-        Modifier.clearAndSetSemantics {
-            contentDescription = sentence
-            progressBarRangeInfo = if (fraction != null) ProgressBarRangeInfo(fraction, 0f..1f) else ProgressBarRangeInfo.Indeterminate
-        },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Bar(fraction, fill)
-        Text(
-            stringResource(R.string.update_sheet_downloading_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** The Support card's 6 dp bar in [fill] on the bright glass track; moving when [fraction] isn't known. */
-@Composable
-private fun Bar(fraction: Float?, fill: Color) {
-    val track = StashTheme.extendedColors.glassBorderBright
-    if (fraction == null) {
-        LinearProgressIndicator(
-            modifier = Modifier.fillMaxWidth().height(BarHeight).clip(CircleShape),
-            color = fill,
-            trackColor = track,
-            strokeCap = StrokeCap.Round,
-            gapSize = 0.dp,
-        )
-        return
-    }
-    Box(Modifier.fillMaxWidth().height(BarHeight).clip(CircleShape).background(track)) {
-        if (fraction > 0f) {
-            Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight().clip(CircleShape).background(fill))
-        }
-    }
-}
-
-/** Android's one-time "Install unknown apps" step, as three numbered lines. */
-@Composable
-private fun PermissionSteps(ink: Color) {
-    GlassCard {
-        Text(
-            stringResource(R.string.update_sheet_permission_title),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        listOf(
-            R.string.update_sheet_permission_step_1,
-            R.string.update_sheet_permission_step_2,
-            R.string.update_sheet_permission_step_3,
-        ).forEachIndexed { i, step ->
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    "${i + 1}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = ink,
-                    modifier = Modifier.widthIn(min = 20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(step),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-/** What went wrong, in plain words, beside a quiet warning mark (not a wall of red). */
-@Composable
-private fun Failure(reason: UpdateState.Failed.Reason) {
-    GlassCard {
-        Row(verticalAlignment = Alignment.Top) {
-            Icon(
-                Icons.Rounded.ErrorOutline,
-                contentDescription = null,
-                tint = StashTheme.extendedColors.warning,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                stringResource(
-                    when (reason) {
-                        UpdateState.Failed.Reason.NOT_AN_UPDATE -> R.string.update_failed_not_an_update
-                        UpdateState.Failed.Reason.ALREADY_NEWER -> R.string.update_failed_already_newer
-                        UpdateState.Failed.Reason.DOWNLOAD -> R.string.update_failed_download
-                        UpdateState.Failed.Reason.INSTALL -> R.string.update_failed_install
-                    },
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-/** The main action: full width, the album's accent (neutral ink idle), an 18 dp icon, as the Support card's Donate. */
-@Composable
-private fun PrimaryButton(icon: ImageVector, label: String, colours: SheetColours, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = colours.accent, contentColor = colours.onAccent),
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-/** A second way out: outlined in the bright glass border. */
-@Composable
-private fun SecondaryButton(label: String, icon: ImageVector?, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        border = BorderStroke(1.dp, StashTheme.extendedColors.glassBorderBright),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-        }
-        Text(label, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-/** Later, Skip this version, Hide: text only, in the secondary ink. */
-@Composable
-private fun QuietButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TextButton(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 48.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
-    }
-}
-
 private val AppIconSize = 56.dp
 private val DotSize = 6.dp
-private val BarHeight = 6.dp
