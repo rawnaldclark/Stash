@@ -738,3 +738,163 @@ test("existing routes are unchanged: GET / and any GET path list supporters; POS
     await start(e, "ann@example.org");
     assert.equal(e.MAILER.calls.at(-1).body.kind, "code");
 });
+
+// ---- the $5 entry (owner's call, 2026-11-02) ----
+
+/** One Ko-fi payment from [email] through the webhook, as transaction [txn]. */
+async function kofiPay(e, amount, txn, email = EMAIL, over = {}) {
+    const ctx = fakeCtx();
+    const res = await worker.fetch(kofiPost(donation({ email, amount, kofi_transaction_id: txn, message_id: `m-${txn}`, ...over })), e, ctx);
+    await Promise.all(ctx.waiting);
+    assert.equal(res.status, 200);
+}
+
+/** The claim emails asked of MAILER (the webhook's welcomes go through it too). */
+const claimMails = (e) => e.MAILER.calls.filter((c) => c.url === MAILER_CLAIM_URL).map((c) => c.body);
+
+test("start for a Ko-fi donor under $5: the below_entry email with the total so far, no claim, and verify mints nothing", async () => {
+    const e = claimEnv();
+    await logsOf(() => kofiPay(e, "3.00", "tx-a"));
+    const { res, body } = await logsOf(() => start(e)).then((r) => r.result);
+    assert.equal(res.status, 202);
+    assert.deepEqual(body, { ok: true });
+    assert.deepEqual(claimMails(e), [{ email: EMAIL, kind: "below_entry", cents: 300 }]);
+    assert.equal(e.CLAIMS_DB.count("claims"), 0);
+    await assertBadCode(await verifyReq(e, "123456"), "no claim to verify");
+});
+
+test("start once an email's Ko-fi payments add up to $5 ($3, then $2): a code, and verify mints a token", async () => {
+    const e = claimEnv();
+    await logsOf(() => kofiPay(e, "3.00", "tx-a"));
+    await logsOf(() => kofiPay(e, "2.00", "tx-b"));
+    await logsOf(() => start(e));
+    const [mail] = claimMails(e);
+    assert.equal(mail.kind, "code");
+    const res = await verifyReq(e, mail.code);
+    assert.equal(res.status, 200);
+    assert.equal(checkToken((await res.json()).token).payload.tier, "supporter");
+});
+
+test("monthly payments count toward the claim: $3 a month is below_entry after one, a code after two", async () => {
+    const e = claimEnv();
+    const monthly = { type: "Subscription", is_subscription_payment: true };
+    await logsOf(() => kofiPay(e, "3.00", "tx-m1", EMAIL, monthly));
+    await logsOf(() => start(e, EMAIL, "203.0.113.20"));
+    await logsOf(() => kofiPay(e, "3.00", "tx-m2", EMAIL, { ...monthly, timestamp: "2026-11-04T12:00:00Z" }));
+    await logsOf(() => start(e, EMAIL, "203.0.113.21"));
+    assert.deepEqual(claimMails(e).map((m) => m.kind), ["below_entry", "code"]);
+});
+
+test("a non-USD donor under the entry hears their US$ total; at the US$5 equivalent they get a code", async () => {
+    const e = claimEnv();
+    await logsOf(() => kofiPay(e, "3.00", "tx-c1", EMAIL, { currency: "CAD" })); // 219 US cents
+    await logsOf(() => start(e, EMAIL, "203.0.113.30"));
+    assert.deepEqual(claimMails(e).at(-1), { email: EMAIL, kind: "below_entry", cents: 219 });
+    await logsOf(() => kofiPay(e, "3.00", "tx-e1", EMAIL, { currency: "EUR" })); // + 324 = 543
+    await logsOf(() => start(e, EMAIL, "203.0.113.31"));
+    assert.equal(claimMails(e).at(-1).kind, "code");
+});
+
+test("an unknown currency can't be checked: the donor is let in and can claim", async () => {
+    const e = claimEnv();
+    await logsOf(() => kofiPay(e, "1.00", "tx-x", EMAIL, { currency: "XYZ" }));
+    await logsOf(() => start(e));
+    assert.equal(claimMails(e)[0].kind, "code");
+});
+
+test("a donor let in before the entry keeps their claim: a $1 payment now changes nothing", async () => {
+    const e = claimEnv();
+    await asDonor(e); // a kofi entry from before 2026-11-02, whatever it was for
+    await logsOf(() => kofiPay(e, "1.00", "tx-small"));
+    await logsOf(() => start(e));
+    assert.equal(claimMails(e)[0].kind, "code");
+});
+
+test("an address added by hand (manual) with Ko-fi payments under $5 gets below_entry, and its entry is untouched", async () => {
+    const e = claimEnv();
+    const h = await asDonor(e, EMAIL, "manual");
+    const raw = e.ACCESS_KV.map.get(`access:${h}`).value;
+    await logsOf(() => kofiPay(e, "4.00", "tx-man"));
+    await logsOf(() => start(e));
+    assert.deepEqual(claimMails(e), [{ email: EMAIL, kind: "below_entry", cents: 400 }]);
+    assert.equal(e.ACCESS_KV.map.get(`access:${h}`).value, raw);
+});
+
+test("a mailer from before below_entry (400 bad_kind) gets no_donation instead, so the address still hears back", async () => {
+    const mailer = fakeMailer(() =>
+        mailer.calls.at(-1).body.kind === "below_entry" ? Response.json({ error: "bad_kind" }, { status: 400 }) : Response.json({ sent: true }),
+    );
+    const e = claimEnv({ MAILER: mailer });
+    await logsOf(() => kofiPay(e, "3.00", "tx-a"));
+    const { ctx } = await logsOf(() => start(e)).then((r) => r.result);
+    assert.equal(await ctx.waiting[0], true, "an email went out");
+    assert.deepEqual(claimMails(e).map((m) => m.kind), ["below_entry", "no_donation"]);
+    assert.equal(e.CLAIMS_DB.count("claims"), 0);
+});
+
+test("below_entry the mailer refuses for any other reason (its per-address limit) is not sent twice", async () => {
+    const mailer = fakeMailer(() =>
+        mailer.calls.at(-1).body.kind === "below_entry" ? Response.json({ sent: false, error: "rate_limited" }) : Response.json({ sent: true }),
+    );
+    const e = claimEnv({ MAILER: mailer });
+    await logsOf(() => kofiPay(e, "3.00", "tx-a"));
+    const { ctx } = await logsOf(() => start(e)).then((r) => r.result);
+    assert.equal(await ctx.waiting[0], false);
+    assert.deepEqual(claimMails(e).map((m) => m.kind), ["below_entry"]);
+});
+
+test("below_entry emails count against the hourly no-donation cap like no_donation ones", async () => {
+    const e = claimEnv();
+    const realNow = clock.now;
+    try {
+        clock.now = () => Date.UTC(2026, 10, 3, 10, 5, 0);
+        await logsOf(() => kofiPay(e, "3.00", "tx-cap"));
+        for (let i = 0; i < LIMITS.noDonationPerHour; i++) await logsOf(() => start(e, `nobody${i}@example.org`, `198.51.100.${i}`));
+        await logsOf(() => start(e, EMAIL, "192.0.2.60"));
+        assert.equal(claimMails(e).length, LIMITS.noDonationPerHour, "the cap held");
+        assert.ok(claimMails(e).every((m) => m.kind === "no_donation"));
+    } finally {
+        clock.now = realNow;
+    }
+});
+
+test("start logs no amount, address or code for a below_entry email", async () => {
+    const e = claimEnv();
+    await logsOf(() => kofiPay(e, "3.21", "tx-log"));
+    const { logs } = await logsOf(() => start(e));
+    assert.match(logs, /below_entry email sent/);
+    assert.ok(!/321|3\.21|ann@|example\.org/.test(logs), logs);
+});
+
+test("Ko-fi payments that add up to $5 with no access entry (the webhook race) get a code, not no_donation", async () => {
+    // Two payments whose webhooks each missed the other in KV's list(): both kept, neither wrote access:<hash>.
+    const e = claimEnv();
+    const h = await hashEmail(EMAIL, PEPPER);
+    for (const [id, cents] of [["tx-r1", 300], ["tx-r2", 200]]) {
+        const pay = { cents, at: "2026-11-03T10:00:00.000Z" };
+        await e.ACCESS_KV.put(`kofipay:${h}:${id}`, JSON.stringify(pay), { metadata: pay });
+    }
+    assert.equal(e.ACCESS_KV.map.has(`access:${h}`), false);
+    await logsOf(() => start(e));
+    const [mail] = claimMails(e);
+    assert.equal(mail.kind, "code");
+    const res = await verifyReq(e, mail.code);
+    assert.equal(res.status, 200);
+    assert.equal(e.ACCESS_KV.map.has(`access:${h}`), false, "the claim writes no access entry");
+});
+
+test("the same with a manual entry: Ko-fi payments of $5 or more get a code; a donor at $5 isn't held back by the no-donation cap", async () => {
+    const e = claimEnv();
+    const h = await asDonor(e, EMAIL, "manual");
+    const pay = { cents: 520, at: "2026-11-03T10:00:00.000Z" };
+    await e.ACCESS_KV.put(`kofipay:${h}:tx-big`, JSON.stringify(pay), { metadata: pay });
+    const realNow = clock.now;
+    try {
+        clock.now = () => Date.UTC(2026, 10, 3, 12, 5, 0);
+        for (let i = 0; i < LIMITS.noDonationPerHour; i++) await logsOf(() => start(e, `nobody${i}@example.org`, `198.51.100.${i}`));
+        await logsOf(() => start(e, EMAIL, "192.0.2.70"));
+    } finally {
+        clock.now = realNow;
+    }
+    assert.equal(claimMails(e).at(-1).kind, "code");
+});

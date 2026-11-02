@@ -679,6 +679,7 @@ class DatabaseBackupManager @Inject constructor(
                     // No restart follows a merge, so the re-key runs now.
                     rearmCanonicalRecompute(runNow = true)
                     rearmDuplicateCleanup(runNow = true)
+                    rearmMixPinCleanup(runNow = true)
                     return@runCatching BackupImportResult(
                         restoredTreeUri = null,
                         requiresRestart = false,
@@ -729,6 +730,7 @@ class DatabaseBackupManager @Inject constructor(
             if (scope.swapsDatabaseFile) {
                 rearmCanonicalRecompute(runNow = false)
                 rearmDuplicateCleanup(runNow = false)
+                rearmMixPinCleanup(runNow = false)
             }
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
@@ -784,6 +786,30 @@ class DatabaseBackupManager @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.w("BackupManager", "Couldn't re-arm the duplicate cleanup", e)
+        }
+    }
+
+    /**
+     * A restored or merged backup made before v0.9.119 brings back the mix pins the one-time
+     * [MixPinCleanup] cleared: hearts nobody gave. Its done flag lives in SharedPreferences, which a
+     * restore leaves alone, so it is re-armed here. A swap leaves the run to the restart (the old
+     * database is closed; the DAO is only handed over, never queried); [runNow] runs it at once after
+     * a merge, which restarts nothing. It only touches mix pins from before Favorite existed.
+     * Best-effort, like [rearmCanonicalRecompute].
+     */
+    private suspend fun rearmMixPinCleanup(runNow: Boolean) {
+        try {
+            val cleanup = MixPinCleanup.forContext(context, database.playlistDao())
+            cleanup.rearm()
+            if (runNow) {
+                cleanup.runOnce()?.let {
+                    android.util.Log.i("BackupManager", "Mix pin cleanup: cleared ${it.cleared}, ${it.kept} left")
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the mix pin cleanup", e)
         }
     }
 

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Stash app icon" width="120" />
+<img src="docs/readme/logo.png" alt="Stash app icon" width="120" />
 
 # Stash (stashfm.app)
 
@@ -196,7 +196,7 @@ Flip **Download** on (Sync tab) and your playlists get saved to your phone so th
 <summary><b>Where does the FLAC come from?</b></summary>
 <br>
 
-Qobuz and Tidal. Stash looks every song up there. If you have a Qobuz account you can connect it in Settings and it uses yours. If not, it uses the project's relays, which hand your phone a link and the audio comes straight from Qobuz or Tidal. Everyone gets 500 lossless songs a day, which is a lot. No lossless copy? It plays AAC or Opus instead, and Now Playing tells you where it came from. The full details are in [PRIVACY.md](PRIVACY.md#where-lossless-comes-from).
+Qobuz and Tidal. Stash looks every song up there. If you have a Qobuz account you can connect it in Settings and it uses yours. If not, it uses the project's relays, which hand your phone a link and the audio comes straight from Qobuz or Tidal. Everyone gets 300 lossless songs a day, which is a lot. No lossless copy? It plays AAC or Opus instead, and Now Playing tells you where it came from. The full details are in [PRIVACY.md](PRIVACY.md#where-lossless-comes-from).
 
 </details>
 

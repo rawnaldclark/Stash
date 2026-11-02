@@ -135,6 +135,7 @@ import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -870,7 +871,7 @@ fun HomeScreen(
                     icon = Icons.Filled.RemoveCircleOutline,
                     label = "Hide from Home",
                     onClick = {
-                        viewModel.setHideFromHome(id, true)
+                        viewModel.hideFromHome(id)
                         actionSheetMixId = null
                     },
                 )
@@ -1346,9 +1347,13 @@ private fun SupporterTicker(
 
 // \u2500\u2500 Qobuz discovery rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-/** Horizontal carousel of Qobuz albums (New Releases). Tap \u2192 album detail. */
+/**
+ * Horizontal carousel of albums (New Releases, Top Albums, New from your artists). Tap opens the
+ * album page. Its covers are [HomeRailCardSize], the same as the mix rails around it (internal for
+ * HomeAlbumRowsSizeTest, which checks that).
+ */
 @Composable
-private fun DiscoveryAlbumRow(
+internal fun DiscoveryAlbumRow(
     title: String,
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
@@ -1370,6 +1375,7 @@ private fun DiscoveryAlbumRow(
                     thumbnailUrl = album.thumbnailUrl,
                     year = album.year,
                     isLossless = lossless,
+                    size = HomeRailCardSize,
                     onClick = { onOpen(album) },
                 )
             }
@@ -1380,10 +1386,11 @@ private fun DiscoveryAlbumRow(
 /**
  * Horizontal carousel of Qobuz community playlists. Each card carries the
  * curator as its subtitle and opens via a QOBUZ_PLAYLIST [AlbumSummary] so the
- * existing album-detail screen renders + plays it.
+ * existing album-detail screen renders + plays it. Its covers are [HomeRailCardSize], like the
+ * album rows (internal for HomeAlbumRowsSizeTest, which checks that).
  */
 @Composable
-private fun DiscoveryPlaylistRow(
+internal fun DiscoveryPlaylistRow(
     title: String,
     playlists: List<PlaylistSummary>,
     onOpen: (AlbumSummary) -> Unit,
@@ -1407,6 +1414,7 @@ private fun DiscoveryPlaylistRow(
                     thumbnailUrl = playlist.thumbnailUrl,
                     year = null,
                     isLossless = true,
+                    size = HomeRailCardSize,
                     onClick = { onOpen(playlist.toAlbumNav()) },
                 )
             }

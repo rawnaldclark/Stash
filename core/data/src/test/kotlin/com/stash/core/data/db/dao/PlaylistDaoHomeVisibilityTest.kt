@@ -96,6 +96,54 @@ class PlaylistDaoHomeVisibilityTest {
         assertEquals(true, dao.getById(liked)!!.syncEnabled)
     }
 
+    // -- A mix is never pinned by its sync switch: on a mix the pin is its Favorite (2026-11-02) --
+
+    @Test fun `switching a mix on for sync leaves it unpinned`() = runTest {
+        val dailyMix = insert("Daily Mix 1", pinnedAt = null, type = PlaylistType.DAILY_MIX)
+        val stashMix = insert("Daily Discover", pinnedAt = null, type = PlaylistType.STASH_MIX)
+        dao.setSyncEnabledAndPin(dailyMix, enabled = true, now = 1_000L)
+        dao.setSyncEnabledAndPin(stashMix, enabled = true, now = 1_000L)
+
+        assertEquals(null, dao.getById(dailyMix)!!.pinnedToHomeAt)
+        assertEquals(null, dao.getById(stashMix)!!.pinnedToHomeAt)
+        assertEquals(true, dao.getById(dailyMix)!!.syncEnabled)
+        assertEquals(true, dao.getById(stashMix)!!.syncEnabled)
+    }
+
+    @Test fun `switching a favorite mix off for sync keeps the favorite`() = runTest {
+        val id = insert("Discover Weekly", pinnedAt = 5L, type = PlaylistType.DAILY_MIX, synced = true)
+        dao.setSyncEnabledAndPin(id, enabled = false, now = 1_000L)
+
+        assertEquals(5L, dao.getById(id)!!.pinnedToHomeAt)
+        assertEquals(false, dao.getById(id)!!.syncEnabled)
+    }
+
+    /**
+     * The Sync tab's Save circle on a mix in Download mode, as SyncViewModel.onSavePlaylist
+     * and MusicRepository.setPlaylistDownload write it: on, then off. No heart either way,
+     * and one the user gave stays.
+     */
+    @Test fun `Save on a mix in Download mode, then off, never favorites it`() = runTest {
+        val mix = insert("Release Radar", pinnedAt = null, type = PlaylistType.DAILY_MIX)
+        val favorite = insert("Daily Mix 2", pinnedAt = 7L, type = PlaylistType.DAILY_MIX)
+        for (id in listOf(mix, favorite)) {
+            // Save on.
+            dao.setUserHidden(id, false)
+            dao.setSyncEnabledAndPin(id, enabled = true, now = 1_000L)
+            dao.setKeepOffline(id, true)
+        }
+        assertEquals(null, dao.getById(mix)!!.pinnedToHomeAt)
+        assertEquals(7L, dao.getById(favorite)!!.pinnedToHomeAt)
+
+        for (id in listOf(mix, favorite)) {
+            // Save off.
+            dao.setKeepOffline(id, false)
+            dao.setSyncEnabled(id, false)
+        }
+        assertEquals(null, dao.getById(mix)!!.pinnedToHomeAt)
+        assertEquals(7L, dao.getById(favorite)!!.pinnedToHomeAt)
+    }
+
     // -- One-time backfill: playlists synced before the pin rule get pinned once ------
 
     @Test fun `the backfill pins every already-synced playlist and nothing else`() = runTest {
@@ -104,14 +152,16 @@ class PlaylistDaoHomeVisibilityTest {
         val notSynced = insert("Old mixtape", pinnedAt = null, type = PlaylistType.CUSTOM, synced = false)
         val liked = insert("Liked Songs", pinnedAt = null, type = PlaylistType.LIKED_SONGS, synced = true)
         val syncedMix = insert("Daily Mix 1", pinnedAt = null, type = PlaylistType.DAILY_MIX, synced = true)
+        val syncedStashMix = insert("Daily Discover", pinnedAt = null, type = PlaylistType.STASH_MIX, synced = true)
 
-        assertEquals(2, dao.pinSyncedPlaylists(now = 1_000L))
+        assertEquals(1, dao.pinSyncedPlaylists(now = 1_000L))
 
         assertEquals(1_000L, dao.getById(synced)!!.pinnedToHomeAt)
         assertEquals(5L, dao.getById(syncedPinned)!!.pinnedToHomeAt)
         assertEquals(null, dao.getById(notSynced)!!.pinnedToHomeAt)
         assertEquals(null, dao.getById(liked)!!.pinnedToHomeAt)
-        assertEquals(1_000L, dao.getById(syncedMix)!!.pinnedToHomeAt)
+        assertEquals(null, dao.getById(syncedMix)!!.pinnedToHomeAt)
+        assertEquals(null, dao.getById(syncedStashMix)!!.pinnedToHomeAt)
         assertEquals(0, dao.pinSyncedPlaylists(now = 2_000L))
     }
 }

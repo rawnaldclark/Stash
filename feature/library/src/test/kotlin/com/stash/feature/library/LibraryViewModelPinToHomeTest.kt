@@ -8,6 +8,7 @@ import com.stash.core.media.PlayerRepository
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Playlist
+import com.stash.core.model.PlaylistType
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.files.LocalImportState
 import kotlinx.coroutines.Dispatchers
@@ -24,11 +25,13 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argThat
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verifyBlocking
 
 /**
@@ -67,6 +70,21 @@ class LibraryViewModelPinToHomeTest {
         advanceUntilIdle()
 
         verifyBlocking(musicRepository) { setPlaylistPinnedToHome(7L, null) }
+    }
+
+    /** On a mix the pin is its Favorite: it goes the way Home's Favorite does, which also unhides. */
+    @Test fun toggle_on_a_mix_favorites_it_as_home_does() = runTest {
+        val musicRepository = repoMock()
+        val vm = buildVm(musicRepository)
+        val mix = Playlist(id = 9, name = "Daily Mix 1", source = MusicSource.SPOTIFY, type = PlaylistType.DAILY_MIX)
+
+        vm.togglePlaylistOnHome(mix)
+        vm.togglePlaylistOnHome(mix.copy(pinnedToHomeAt = 123L))
+        advanceUntilIdle()
+
+        verifyBlocking(musicRepository) { setMixFavorite(9L, true) }
+        verifyBlocking(musicRepository) { setMixFavorite(9L, false) }
+        verifyBlocking(musicRepository, never()) { setPlaylistPinnedToHome(any(), anyOrNull()) }
     }
 
     @Test fun unfollow_calls_the_repository() = runTest {

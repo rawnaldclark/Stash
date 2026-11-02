@@ -84,6 +84,9 @@ internal fun SavedAlbum.toAlbumInfo(): AlbumInfo = AlbumInfo(
     copyIds = copyIds,
 )
 
+/** A service mix or a Stash mix: on these the Home pin is the Favorite. */
+internal fun Playlist.isMix(): Boolean = type == PlaylistType.DAILY_MIX || type == PlaylistType.STASH_MIX
+
 /**
  * ViewModel for the Library screen.
  *
@@ -1017,13 +1020,20 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Pin/unpin [playlist] on Home's "Your playlists" rail. */
+    /**
+     * Pin/unpin [playlist] on Home's "Your playlists" rail. On a mix the pin is its Favorite,
+     * which also shows a hidden mix again, exactly as Home's own Favorite does.
+     */
     fun togglePlaylistOnHome(playlist: Playlist) {
         viewModelScope.launch {
-            musicRepository.setPlaylistPinnedToHome(
-                playlist.id,
-                if (playlist.pinnedToHomeAt == null) System.currentTimeMillis() else null,
-            )
+            if (playlist.isMix()) {
+                musicRepository.setMixFavorite(playlist.id, favorite = playlist.pinnedToHomeAt == null)
+            } else {
+                musicRepository.setPlaylistPinnedToHome(
+                    playlist.id,
+                    if (playlist.pinnedToHomeAt == null) System.currentTimeMillis() else null,
+                )
+            }
         }
     }
 

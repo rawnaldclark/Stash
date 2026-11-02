@@ -187,8 +187,8 @@ The site practises what the app promises:
 
 ## Early access
 
-The website is in early access. Supporters (Ko-fi automatically; GitHub Sponsors and PayPal added by
-hand) are on the list as a thank-you, anyone else can ask, and the owner and Evo answer requests on
+The website is in early access. Supporters (Ko-fi automatically, at $5 or more added up per email since
+2026-11-02; GitHub Sponsors and PayPal added by hand) are on the list as a thank-you, anyone else can ask, and the owner and Evo answer requests on
 `/admin`. Never word it as "donate to get in", and keep Qobuz, lossless and the relay out of this copy.
 
 The web player (play.stashfm.app) is in early access, and stashfm.app is where people sign in to it.

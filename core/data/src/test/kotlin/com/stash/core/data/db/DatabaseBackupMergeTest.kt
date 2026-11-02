@@ -13,6 +13,7 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SharedMixEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -850,6 +851,57 @@ class DatabaseBackupMergeTest {
                 }
             }
             assertEquals(listOf("sp-backup" to null), stamps)
+        } finally {
+            listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
+        }
+    }
+
+    // ── Mix pins from before Favorite (MixPinCleanup) ────────────────────
+    //
+    // The cleanup's done flag lives in SharedPreferences, which a restore leaves
+    // alone; an old backup brings the pins back, so both paths re-arm it.
+
+    private val migrations get() = context.getSharedPreferences(MixPinCleanup.PREFS_NAME, Context.MODE_PRIVATE)
+    private val oldPin = MixPinCleanup.FAVORITE_RELEASED_AT_MS - 1
+    private val newPin = MixPinCleanup.FAVORITE_RELEASED_AT_MS + 1
+
+    private fun mix(name: String, sourceId: String, pinnedAt: Long?) =
+        playlist(name, sourceId).copy(type = PlaylistType.DAILY_MIX, pinnedToHomeAt = pinnedAt)
+
+    @Test
+    fun `merge clears old mix pins`() = runTest {
+        migrations.edit().putBoolean(MixPinCleanup.DONE_KEY, true).commit() // ran on this phone already
+        val liveFavorite = live.playlistDao().insert(mix("Release Radar", "sp-rr", newPin))
+        val uri = buildBackupZip { backup ->
+            backup.playlistDao().insert(mix("Daily Mix 1", "sp-dm1", oldPin))
+            backup.playlistDao().insert(mix("My Mix 2", "sp-mm2", newPin))
+            backup.playlistDao().insert(playlist("Road trip", "sp-own").copy(pinnedToHomeAt = oldPin))
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertNull("the backup's pre-Favorite mix pin goes", live.playlistDao().findBySourceId("sp-dm1")!!.pinnedToHomeAt)
+        assertEquals("a later one may be a real favorite", newPin, live.playlistDao().findBySourceId("sp-mm2")!!.pinnedToHomeAt)
+        assertEquals("your own playlist keeps its pin", oldPin, live.playlistDao().findBySourceId("sp-own")!!.pinnedToHomeAt)
+        assertEquals(newPin, live.playlistDao().getById(liveFavorite)!!.pinnedToHomeAt)
+        assertTrue("it ran, so it's done again", migrations.getBoolean(MixPinCleanup.DONE_KEY, false))
+    }
+
+    @Test
+    fun `replace re-arms the mix pin cleanup`() = runTest {
+        migrations.edit().putBoolean(MixPinCleanup.DONE_KEY, true).commit()
+        val uri = buildBackupZip { backup -> backup.playlistDao().insert(mix("Daily Mix 1", "sp-dm1", oldPin)) }
+        val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        liveFile.parentFile?.mkdirs()
+        try {
+            val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            assertFalse(
+                "the restart after the restore runs the cleanup again",
+                migrations.getBoolean(MixPinCleanup.DONE_KEY, false),
+            )
         } finally {
             listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
         }

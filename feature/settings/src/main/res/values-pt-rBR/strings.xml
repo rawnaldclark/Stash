@@ -316,7 +316,7 @@
     <string name="settings_supporter_remove_from_device">Remover deste dispositivo</string>
     <string name="settings_supporter_offer">Tidal &amp; Qobuz ilimitados para apoiadores</string>
     <string name="settings_supporter_sheet_title">Tidal &amp; Qobuz ilimitados</string>
-    <string name="settings_supporter_sheet_desc">Qualquer valor no Ko-fi desbloqueia acesso ilimitado ao Tidal e ao Qobuz, além de reprodução em FLAC e AAC. Digite o e-mail usado no Ko-fi para receber um código.</string>
+    <string name="settings_supporter_sheet_desc">Um valor de US$ 5 ou mais no Ko-fi desbloqueia acesso ilimitado ao Tidal e ao Qobuz, além de reprodução em FLAC e AAC. Digite o e-mail usado no Ko-fi para receber um código.</string>
     <string name="settings_supporter_kofi_email_label">E-mail Ko-fi</string>
     <string name="settings_supporter_email_code_button">Enviar um código por e-mail</string>
     <string name="settings_supporter_code_sent_desc">Se %1$s estiver em nossa lista Ko-fi, um código está a caminho. Pode demorar um minuto.</string>

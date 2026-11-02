@@ -65,7 +65,7 @@ fun AlbumsRowSkeleton(count: Int = 6, modifier: Modifier = Modifier) {
     ) {
         items(count) {
             Column {
-                ShimmerPlaceholder(Modifier.size(140.dp), RoundedCornerShape(8.dp))
+                ShimmerPlaceholder(Modifier.size(AlbumCardSize), RoundedCornerShape(8.dp))
                 Spacer(Modifier.height(6.dp))
                 ShimmerPlaceholder(Modifier.height(12.dp).width(120.dp))
             }

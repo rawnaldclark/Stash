@@ -32,6 +32,7 @@ import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.home.BecauseRow
 import com.stash.core.ui.components.AlbumSquareCard
+import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.home.R
 
@@ -102,6 +103,7 @@ internal fun BecauseYouLikeRows(
                         thumbnailUrl = song.thumbnailUrl,
                         year = null,
                         isLossless = false,
+                        size = HomeRailCardSize,
                         onClick = { onPlay(row, index, label) },
                         modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
                     )
