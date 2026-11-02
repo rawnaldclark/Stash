@@ -1,6 +1,9 @@
 package com.stash.core.data.link
 
 import android.util.Log
+import com.stash.core.data.album.SavedAlbum
+import com.stash.core.data.album.SavedAlbums
+import com.stash.core.data.album.toSavedAlbum
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.weblibrary.ImportSelection
@@ -20,6 +23,9 @@ import com.stash.data.ytmusic.model.YTMusicTrack
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 /** What a link brings in. */
 enum class LinkKind { PLAYLIST, ALBUM, SONG }
@@ -120,8 +126,28 @@ class LinkImporter @Inject constructor(
         LinkLoad.Failed(CANT_OPEN)
     }
 
-    /** The playlist [preview] became already, or null. */
-    suspend fun existing(preview: LinkPreview): Long? = playlists.findBySourceId(preview.sourceId)?.takeIf { it.isActive }?.id
+    /**
+     * The playlist [preview] became already, or null. An album is also found saved any other way
+     * ([SavedAlbums.findSaved]): YouTube Music's synced copy (`MPREb_…`), its page's Save, or another
+     * service's link for the same title, artist and songs.
+     */
+    suspend fun existing(preview: LinkPreview): Long? =
+        playlists.findBySourceId(preview.sourceId)?.takeIf { it.isActive }?.id
+            ?: if (preview.kind == LinkKind.ALBUM) savedCopyOf(preview)?.playlistId else null
+
+    /** The album [preview] is, saved already under another key, or null. */
+    private suspend fun savedCopyOf(preview: LinkPreview): SavedAlbum? {
+        val saved = playlists.observeSavedAlbums().first()
+        return withContext(Dispatchers.Default) {
+            SavedAlbums.findSaved(
+                saved = saved.map { it.toSavedAlbum() },
+                sourceIds = listOf(preview.sourceId),
+                title = preview.name,
+                artist = preview.byline.orEmpty(),
+                songTitles = preview.songs.map { it.title },
+            )
+        }
+    }
 
     /**
      * Brings [preview] into the library, its playlist kept on the phone when [download]; [progress] is told the songs matched
@@ -129,6 +155,13 @@ class LinkImporter @Inject constructor(
      */
     suspend fun add(preview: LinkPreview, download: Boolean, progress: (done: Int, total: Int) -> Unit): LinkAdded {
         if (preview.soundCloudSongs != null) return requireNotNull(soundCloud).add(preview, download, progress)
+        // An album saved already another way is that album: never a second copy, or a second download.
+        if (preview.kind == LinkKind.ALBUM && playlists.findBySourceId(preview.sourceId)?.isActive != true) {
+            savedCopyOf(preview)?.let { saved ->
+                if (download) musicRepository.setPlaylistDownload(saved.playlistId, true)
+                return LinkAdded(saved.playlistId, 0)
+            }
+        }
         val now = System.currentTimeMillis()
         val content = WebLibraryContent(
             likes = emptyList(),

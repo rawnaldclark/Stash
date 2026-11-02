@@ -145,6 +145,12 @@ fun PlaylistDetailScreen(
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val readOnly = follow?.readOnly == true
+    // A saved album (Library › Albums) keeps the album's own order and cover: no Edit order, no
+    // cover change. Its header names the album's artist.
+    val savedAlbum = state.playlist?.let { com.stash.core.data.album.SavedAlbums.isSavedAlbum(it) } == true
+    val albumArtist = remember(savedAlbum, state.tracks) {
+        if (savedAlbum) com.stash.core.data.album.SavedAlbums.leadArtist(state.tracks.map { it.artist }) else null
+    }
     // The page's Download button (#474); null on pages that have none.
     val downloadButton by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
@@ -277,6 +283,7 @@ fun PlaylistDetailScreen(
                         onToggleSearch = { viewModel.toggleSearch() },
                         onShare = { showShareSheet = true },
                         readOnly = readOnly,
+                        albumArtist = albumArtist,
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -344,7 +351,7 @@ fun PlaylistDetailScreen(
                             TextButton(onClick = { viewModel.stopEditOrder() }) { Text("Done") }
                         }
                     }
-                } else if (!selection.isActive && state.searchQuery.isEmpty() && state.tracks.size >= 2) {
+                } else if (!savedAlbum && !selection.isActive && state.searchQuery.isEmpty() && state.tracks.size >= 2) {
                     item(key = "order-edit") {
                         Box(Modifier.fillMaxWidth().padding(end = 8.dp), contentAlignment = Alignment.CenterEnd) {
                             TextButton(onClick = { selection.clear(); viewModel.startEditOrder() }) { Text("Edit order") }
@@ -620,7 +627,8 @@ fun PlaylistDetailScreen(
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            if (readOnly) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            // A saved album is a release: no song is taken out of it (Remove the album instead).
+            if (readOnly || savedAlbum) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
                 showBatchDelete = true
             },
             SelectionAction("play_next", com.stash.core.ui.components.playNextLabel(listenRole, "Play next"), Icons.Default.PlaylistPlay) {
@@ -669,7 +677,7 @@ fun PlaylistDetailScreen(
                     // lingering behind the dialog.
                     trackToDelete = t
                     selectedTrack = null
-                }.takeUnless { readOnly },
+                }.takeUnless { readOnly || savedAlbum },
                 onDownload = {
                     viewModel.queueDownload(it.id)
                     selectedTrack = null
@@ -925,6 +933,8 @@ private fun PlaylistHeader(
     onToggleSearch: () -> Unit,
     onShare: () -> Unit,
     readOnly: Boolean,
+    /** A saved album's artist: the header says "Album · artist", and the cover stays the album's. Null for a playlist. */
+    albumArtist: String? = null,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -1021,6 +1031,17 @@ private fun PlaylistHeader(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            if (albumArtist != null) {
+                Text(
+                    text = if (albumArtist.isBlank()) "Album" else "Album • $albumArtist",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1139,7 +1160,7 @@ private fun PlaylistHeader(
                     )
                 }
 
-                if (playlist.type == PlaylistType.CUSTOM && !readOnly) {
+                if (playlist.type == PlaylistType.CUSTOM && !readOnly && albumArtist == null) {
                     IconButton(
                         onClick = onSetImage,
                         modifier = Modifier

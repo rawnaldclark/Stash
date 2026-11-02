@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.discography.QobuzAlbumUnavailableException
 import com.stash.core.data.link.LinkImporter
@@ -24,6 +25,7 @@ import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -161,15 +164,30 @@ class AlbumDiscoveryViewModel @Inject constructor(
     val userPlaylists: StateFlow<List<Playlist>> =
         delegate.userPlaylists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** The page as the saved-album check reads it: its title, artist and tracklist. */
+    private val pageIdentity = _uiState
+        .map { Triple(it.hero.title, it.hero.artist, it.tracks.map { t -> t.title }) }
+        .distinctUntilChanged()
+
     /**
-     * #304: true once this album sits in the library as a saved playlist, under the
-     * album on screen or, after a #481 switch, under the Qobuz album it replaced
-     * (saved in a country Qobuz sells in, or over a VPN), so Save doesn't file it twice.
+     * #304: true once this album is in the library, so Save doesn't file it twice:
+     *  - a playlist page (YouTube Music's, or Qobuz's): saved under its key ([userPlaylists]);
+     *  - an album page: saved on any service or in Stash ([SavedAlbums.findSaved]), under the
+     *    album on screen, under the Qobuz album a #481 switch replaced (saved in a country Qobuz
+     *    sells in, or over a VPN), synced from YouTube Music (`MPREb_…`), or the same title,
+     *    artist and songs saved from another service (owner, 2026-11-02).
      */
     val isSaved: StateFlow<Boolean> =
-        combine(userPlaylists, album) { lists, ref ->
-            lists.any { it.sourceId == ref.savedSourceId || it.sourceId == navAlbum.savedSourceId }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        combine(userPlaylists, musicRepository.observeSavedAlbums(), album, pageIdentity) { lists, saved, ref, page ->
+            val keys = listOf(ref.savedSourceId, navAlbum.savedSourceId)
+            // A playlist page (YouTube Music's, or a Qobuz one) is saved as a playlist: its key only.
+            val playlistPage = ref.source == AlbumSource.YOUTUBE_PLAYLIST || ref.source == AlbumSource.QOBUZ_PLAYLIST
+            lists.any { it.sourceId in keys } ||
+                (!playlistPage && SavedAlbums.findSaved(saved, keys, title = page.first, artist = page.second, songTitles = page.third) != null)
+        }
+            // Folding every saved album's name and the page's songs is no work for the main thread.
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
     val currentPlayingYoutubeId: StateFlow<String?> =
@@ -287,6 +305,10 @@ class AlbumDiscoveryViewModel @Inject constructor(
     fun onDownloadAllConfirmed() {
         val queue = _uiState.value.downloadConfirmQueue
         _uiState.update { it.copy(showDownloadConfirm = false, downloadConfirmQueue = emptyList()) }
+        // "Download all" keeps the album too (owner, 2026-11-02), so a downloaded album is in
+        // Library › Albums, whole and in order, not loose songs. Quietly: the downloads speak.
+        // Run beside the downloads: a song both write is one row (found by its video id).
+        if (!isPlaylist) viewModelScope.launch { saveAlbumNow(announce = false) }
         queue.forEach { track -> delegate.downloadTrack(trackItemFor(track)) }
     }
 
@@ -360,13 +382,25 @@ class AlbumDiscoveryViewModel @Inject constructor(
      * reused, never duplicated. Downloading stays a separate, explicit step.
      */
     fun saveAlbum() {
-        viewModelScope.launch {
-            if (isSaved.value) {
-                _userMessages.emit("Already in your library")
-                return@launch
-            }
-            val tracks = synthesizeDomainTracks()
-            if (tracks.isEmpty()) return@launch
+        viewModelScope.launch { saveAlbumNow(announce = true) }
+    }
+
+    /** A save in flight: Save and Download all tapped together file the album once. */
+    private var saving = false
+
+    /**
+     * [saveAlbum]'s work. The tracks go in in the page's order, which is the album's own (the
+     * album page's tracklist as YouTube Music or Qobuz lists it), so the saved album keeps it.
+     */
+    private suspend fun saveAlbumNow(announce: Boolean) {
+        if (isSaved.value || saving) {
+            if (announce) _userMessages.emit("Already in your library")
+            return
+        }
+        val tracks = synthesizeDomainTracks()
+        if (tracks.isEmpty()) return
+        saving = true
+        try {
             val ids = tracks.map { musicRepository.ensureTrackPersisted(it.copy(id = 0L)) }
             val hero = _uiState.value.hero
             // #479: once the playlist exists it must get its tracks, or isSaved blocks a re-save.
@@ -378,8 +412,16 @@ class AlbumDiscoveryViewModel @Inject constructor(
                 )
                 musicRepository.addTracksToPlaylist(ids, playlistId)
             }
-            _userMessages.emit("Saved to your library")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "save album $browseId failed", e)
+            if (announce) _userMessages.emit("Couldn't save this $pageNoun. Try again.")
+            return
+        } finally {
+            saving = false
         }
+        if (announce) _userMessages.emit("Saved to your library")
     }
 
     fun addAlbumToQueue() {

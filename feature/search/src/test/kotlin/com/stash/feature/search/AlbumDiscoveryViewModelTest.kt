@@ -27,8 +27,11 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -86,6 +89,8 @@ class AlbumDiscoveryViewModelTest {
         delegate: TrackActionsDelegate = stubDelegate(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
+        savedAlbums: List<com.stash.core.data.album.SavedAlbum> = emptyList(),
+        savedAlbumsFlow: kotlinx.coroutines.flow.Flow<List<com.stash.core.data.album.SavedAlbum>>? = null,
     ): AlbumDiscoveryViewModel = AlbumDiscoveryViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -100,11 +105,18 @@ class AlbumDiscoveryViewModelTest {
         ytMusicApiClient = mock(),
         prefetcher = prefetcher,
         playerRepository = playerRepository,
-        musicRepository = musicRepository,
+        musicRepository = savedAlbumsFlow?.let { musicRepository.withSavedAlbums(it) } ?: musicRepository.withSavedAlbums(savedAlbums),
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
     )
+
+    /**
+     * Whether [AlbumDiscoveryViewModel.isSaved] comes to read [value], waiting in real time: the check runs on
+     * Dispatchers.Default, outside the test scheduler, so reading `.value` after advanceUntilIdle can beat it.
+     */
+    private suspend fun AlbumDiscoveryViewModel.savedBecomes(value: Boolean): Boolean =
+        withContext(Dispatchers.Default) { withTimeoutOrNull(10_000) { isSaved.first { it == value } } } != null
 
     /**
      * Returns a [TrackActionsDelegate] mock with all flows stubbed to their
@@ -447,15 +459,10 @@ class AlbumDiscoveryViewModelTest {
             whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
         }
         val repo = mock<MusicRepository>()
-        val delegate = stubDelegate(
-            userPlaylists = listOf(
-                Playlist(id = 77L, name = "Curtains", source = MusicSource.BOTH, sourceId = "album:youtube:MPREb_xxx"),
-            ),
-        )
-        val vm = vmWith(cache = cache, musicRepository = repo, delegate = delegate)
+        val vm = vmWith(cache = cache, musicRepository = repo, savedAlbums = listOf(savedAlbum(77L, "album:youtube:MPREb_xxx")))
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         vm.userMessages.test {
             vm.saveAlbum()
             advanceUntilIdle()
@@ -463,5 +470,86 @@ class AlbumDiscoveryViewModelTest {
         }
         verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
         verify(repo, never()).addTracksToPlaylist(any(), any())
+    }
+
+    // ── Saved on any service (owner, 2026-11-02) ─────────────────────────
+
+    @Test
+    fun `an album saved on YouTube Music and synced reports saved`() = runTest {
+        val cache = mock<AlbumCache>().also { whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail()) }
+        val repo = mock<MusicRepository>()
+        val synced = savedAlbum(5L, "MPREb_xxx", source = MusicSource.YOUTUBE)
+        val vm = vmWith(cache = cache, musicRepository = repo, savedAlbums = listOf(synced))
+        advanceUntilIdle()
+
+        assertTrue(vm.isSaved.first { it })
+        vm.saveAlbum()
+        advanceUntilIdle()
+        verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
+    }
+
+    @Test
+    fun `the same album saved from another service reports saved once its songs load`() = runTest {
+        val cache = mock<AlbumCache>().also { whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail()) }
+        val fromSpotify = savedAlbum(
+            6L, "album:spotify:curtains", title = "Curtains", artist = "John Frusciante",
+            songs = listOf("title-v1", "title-v2", "title-v3"),
+        )
+        val sameNameOtherSongs = savedAlbum(
+            7L, "album:qobuz:other", title = "Curtains", artist = "John Frusciante", songs = listOf("x", "y", "z"),
+        )
+
+        val saved = MutableStateFlow(listOf(fromSpotify))
+        val vm = vmWith(cache = cache, savedAlbumsFlow = saved)
+        advanceUntilIdle()
+        assertTrue("the same title, artist and songs saved from Spotify reads Saved", vm.savedBecomes(true))
+
+        // Only an album that shares the name is left. The page read Saved, so reading not Saved now can only
+        // be the check run over this list: it has finished, and found nothing.
+        saved.value = listOf(sameNameOtherSongs)
+        assertTrue("an album that only shares the name isn't this one", vm.savedBecomes(false))
+    }
+
+    @Test
+    fun `Download all also saves the album, in album order, without a second message`() = runTest {
+        val detail = albumDetail(tracks = listOf("v1", "v2").map(::trackSummary))
+        val cache = mock<AlbumCache>().also { whenever(it.get(any(), any())).thenReturn(detail) }
+        val repo = mock<MusicRepository>()
+        whenever(repo.ensureTrackPersisted(any())).thenReturn(11L, 12L)
+        whenever(repo.ensureCustomPlaylist(any(), any(), anyOrNull())).thenReturn(77L)
+        val delegate = stubDelegate()
+        val vm = vmWith(cache = cache, musicRepository = repo, delegate = delegate)
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.onDownloadAllClicked()
+            vm.onDownloadAllConfirmed()
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+
+        verify(delegate, times(2)).downloadTrack(any())
+        verify(repo).ensureCustomPlaylist(eq("Curtains"), eq("album:youtube:MPREb_xxx"), eq("u"))
+        verify(repo).addTracksToPlaylist(listOf(11L, 12L), 77L)
+    }
+
+    @Test
+    fun `Download all on a saved album downloads without saving it again`() = runTest {
+        val cache = mock<AlbumCache>().also { whenever(it.get(any(), any())).thenReturn(albumDetail()) }
+        val repo = mock<MusicRepository>()
+        val delegate = stubDelegate()
+        val vm = vmWith(
+            cache = cache, musicRepository = repo, delegate = delegate,
+            savedAlbums = listOf(savedAlbum(77L, "album:youtube:MPREb_xxx")),
+        )
+        advanceUntilIdle()
+        assertTrue(vm.isSaved.first { it })
+
+        vm.onDownloadAllClicked()
+        vm.onDownloadAllConfirmed()
+        advanceUntilIdle()
+
+        verify(delegate, times(3)).downloadTrack(any())
+        verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
     }
 }

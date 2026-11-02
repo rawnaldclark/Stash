@@ -84,7 +84,7 @@ class AlbumRegionFallbackWiringTest {
             ytMusicApiClient = yt,
             prefetcher = mock(),
             playerRepository = mock(),
-            musicRepository = mock(),
+            musicRepository = mock<com.stash.core.data.repository.MusicRepository>().withSavedAlbums(),
             streamingPreference = mock(),
             delegate = stubDelegate(),
             losslessPrefetcher = mock(),

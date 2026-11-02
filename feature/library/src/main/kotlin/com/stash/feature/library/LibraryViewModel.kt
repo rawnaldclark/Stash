@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthState
 import com.stash.core.common.primaryArtist
+import com.stash.core.data.album.SavedAlbum
+import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.db.dao.ArtistImageDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -71,32 +73,19 @@ private fun Track.matchesQuery(query: String): Boolean =
         artist.lowercase().contains(query) ||
         album.lowercase().contains(query)
 
+/** A saved album as its Library › Albums card shows it, standing for every saved copy of it. */
+internal fun SavedAlbum.toAlbumInfo(): AlbumInfo = AlbumInfo(
+    playlistId = playlistId,
+    name = title,
+    artist = artist,
+    trackCount = trackCount,
+    artUrl = artUrl,
+    dateAdded = dateAdded,
+    copyIds = copyIds,
+)
+
 /** A service mix or a Stash mix: on these the Home pin is the Favorite. */
 internal fun Playlist.isMix(): Boolean = type == PlaylistType.DAILY_MIX || type == PlaylistType.STASH_MIX
-
-/**
- * Collapses album rows that describe the SAME album but arrived as separate
- * DAO groups. `getAllAlbums` groups by `(album, album_artist)`, so an album
- * whose tracks disagree on the `album_artist` tag (common in tag-inconsistent
- * FLAC rips) yields two rows that resolve to the same displayed name+artist.
- * The Albums grid keys each card on `"name|artist"`, and two identical keys
- * crash `LazyVerticalGrid` — the Albums tab force-close in issue #244.
- *
- * Merging by case-insensitive (name, artist) guarantees the grid key is
- * unique again and shows one card per album with the combined track count.
- */
-internal fun mergeDuplicateAlbums(albums: List<AlbumInfo>): List<AlbumInfo> =
-    albums
-        .groupBy { it.name.lowercase() to it.artist.lowercase() }
-        .map { (_, group) ->
-            group.reduce { acc, next ->
-                acc.copy(
-                    trackCount = acc.trackCount + next.trackCount,
-                    artPath = acc.artPath ?: next.artPath,
-                    artUrl = acc.artUrl ?: next.artUrl,
-                )
-            }
-        }
 
 /**
  * ViewModel for the Library screen.
@@ -366,6 +355,16 @@ class LibraryViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
 
     /**
+     * The Albums tab's cards: saved albums only, one per album, each opening its own tracklist
+     * ([MusicRepository.getLibraryAlbums]). Never songs grouped by their album text (owner,
+     * 2026-11-02: "should be exclusively for real full albums").
+     */
+    private val albumCards: Flow<List<AlbumInfo>> = musicRepository.getLibraryAlbums()
+        .map { albums -> albums.map { it.toAlbumInfo() } }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+
+    /**
      * [pipelineControls] with the Downloaded / Online filters read as All outside
      * Stream-only mode. Those chips only exist in Stream-only, so a saved Online
      * choice would otherwise empty the Songs list in Download mode with no chip to
@@ -388,7 +387,7 @@ class LibraryViewModel @Inject constructor(
         downloadedTracks,
         libraryDataFlow,
         artistCards,
-        musicRepository.getAllAlbums(),
+        albumCards,
     ) { controls, allTracks, libraryData, allArtists, allAlbums ->
         DataSnapshot(controls, allTracks, libraryData, allArtists, allAlbums)
     }.combine(authStateFlow) { snapshot, authPair ->
@@ -397,7 +396,8 @@ class LibraryViewModel @Inject constructor(
         val libraryData = snapshot.libraryData
         // Playlists tab shows user (CUSTOM) playlists only — mixes and Liked
         // Songs live on Home now, so surfacing them here would double them up.
-        val allPlaylists = libraryData.playlists.filter { it.type == PlaylistType.CUSTOM }
+        // A saved album is a CUSTOM row too, but it belongs to Albums (owner, 2026-11-02).
+        val allPlaylists = libraryData.playlists.filter { it.type == PlaylistType.CUSTOM && !SavedAlbums.isSavedAlbum(it) }
         val allArtists = snapshot.allArtists
         val allAlbums = snapshot.allAlbums
 
@@ -407,13 +407,7 @@ class LibraryViewModel @Inject constructor(
         // Artists arrive as cards already (see [artistCards]): one per PRIMARY act, so
         // "Aarne, Toxi$, Big Baby Tape" lands on a single "Aarne" card.
         val artists = allArtists
-        val albums = mergeDuplicateAlbums(
-            // Album card shows the lead act of a collaboration credit
-            // ("Metro Boomin" for "Metro Boomin, Travis Scott"), so the card
-            // reads cleanly. Merging still happens on the same display name —
-            // a collab album and its lead-act album are one release, not two.
-            allAlbums.map { AlbumInfo(it.album, it.artist.primaryArtist(), it.trackCount, it.artPath, it.artUrl) }
-        )
+        val albums = allAlbums
 
         // -- Apply source filter --
         val sourceFiltered = when (controls.sourceFilter) {
@@ -481,18 +475,17 @@ class LibraryViewModel @Inject constructor(
             SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
-            SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
+            // A saved album has a real date: the newest saved first.
+            SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.dateAdded }
             SortOrder.ALPHABETICAL -> filteredAlbums.sortedWith(compareBy(alphabeticalOrder) { it.name })
+            // Albums carry no play count or duration — the longest tracklist first.
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
-            // Albums carry no duration projection — fall back to track count.
             SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
         }
 
         // Split into multi-track (primary) and single-track (collapsed)
         val multiTrackArtists = sortedArtists.filter { it.trackCount >= 2 }
         val singleTrackArtists = sortedArtists.filter { it.trackCount == 1 }
-        val multiTrackAlbums = sortedAlbums.filter { it.trackCount >= 2 }
-        val singleTrackAlbums = sortedAlbums.filter { it.trackCount == 1 }
 
         LibraryUiState(
             activeTab = controls.activeTab,
@@ -504,8 +497,8 @@ class LibraryViewModel @Inject constructor(
             recentlyAdded = libraryData.recentlyAdded,
             artists = multiTrackArtists,
             singleTrackArtists = singleTrackArtists,
-            albums = multiTrackAlbums,
-            singleTrackAlbums = singleTrackAlbums,
+            // Every saved album, a saved single included: it was saved whole on purpose.
+            albums = sortedAlbums,
             isLoading = false,
             spotifyConnected = authPair.first,
             youTubeConnected = authPair.second,
@@ -997,10 +990,12 @@ class LibraryViewModel @Inject constructor(
 
     /** Remove playlist from library without deleting its downloaded tracks. */
     fun removePlaylist(playlist: Playlist) {
-        viewModelScope.launch {
-            mirror?.beforeDelete(playlist.id, everywhere = false) // removing it here never removes it from your other devices
-            musicRepository.removePlaylist(playlist)
-        }
+        viewModelScope.launch { removePlaylistNow(playlist) }
+    }
+
+    private suspend fun removePlaylistNow(playlist: Playlist) {
+        mirror?.beforeDelete(playlist.id, everywhere = false) // removing it here never removes it from your other devices
+        musicRepository.removePlaylist(playlist)
     }
 
     fun setPlaylistImage(playlistId: Long, imageUri: Uri) {
@@ -1158,28 +1153,43 @@ class LibraryViewModel @Inject constructor(
     // ── Album actions ───────────────────────────────────────────────────
 
     /**
-     * Plays the songs [albumName]'s page lists, from the first: the album's songs crediting
-     * [artist] ([MusicRepository.getTracksByAlbum], so a collaboration album plays from its
-     * primary-act card), every one in Stream only, the downloaded ones in Download. Offline,
-     * only songs on the phone play; with none, says it needs a connection.
+     * Plays [album] from its first song, in album order: what its page lists
+     * ([MusicRepository.getShownTracksByPlaylist]), every song in Stream only, the downloaded
+     * ones in Download. Offline, only songs on the phone play; with none, says it needs a
+     * connection.
      */
-    fun playAlbum(albumName: String, artist: String) {
+    fun playAlbum(album: AlbumInfo) {
         viewModelScope.launch {
-            val tracks = playableFromCard(musicRepository.getTracksByAlbum(albumName, artist).first(), ALBUM_NEEDS_CONNECTION)
+            val tracks = playableFromCard(musicRepository.getShownTracksByPlaylist(album.playlistId).first(), ALBUM_NEEDS_CONNECTION)
             if (tracks.isEmpty()) return@launch
             playerRepository.setQueue(
                 tracks,
                 startIndex = 0,
-                source = com.stash.core.model.PlaybackSource.Album(albumName, artist),
+                source = com.stash.core.model.PlaybackSource.Album(album.name, album.artist),
             )
         }
     }
 
     /** Appends the songs [playAlbum] would play to the queue, under the same rule. */
-    fun addAlbumToQueue(albumName: String, artist: String) {
+    fun addAlbumToQueue(album: AlbumInfo) {
         viewModelScope.launch {
-            val tracks = playableFromCard(musicRepository.getTracksByAlbum(albumName, artist).first(), ALBUM_NEEDS_CONNECTION)
+            val tracks = playableFromCard(musicRepository.getShownTracksByPlaylist(album.playlistId).first(), ALBUM_NEEDS_CONNECTION)
             if (tracks.isNotEmpty()) playerRepository.addToQueue(tracks)
+        }
+    }
+
+    /**
+     * Takes [album] out of the library, every saved copy of it ([AlbumInfo.copyIds]), or the card
+     * would come straight back as the next copy. Its songs stay (in Songs, and on the phone if
+     * downloaded). A copy saved in Stash goes, as Remove does for a playlist; one synced from a
+     * service is hidden, so the next sync leaves it out instead of bringing it back.
+     */
+    fun removeAlbum(album: AlbumInfo) {
+        viewModelScope.launch {
+            album.copyIds.forEach { id ->
+                val playlist = musicRepository.observePlaylist(id).first() ?: return@forEach
+                if (playlist.source == MusicSource.BOTH) removePlaylistNow(playlist) else musicRepository.hidePlaylist(id)
+            }
         }
     }
 
@@ -1286,7 +1296,7 @@ private data class DataSnapshot(
     val allTracks: List<Track>,
     val libraryData: LibraryData,
     val allArtists: List<ArtistInfo>,
-    val allAlbums: List<com.stash.core.data.db.dao.AlbumSummary>,
+    val allAlbums: List<AlbumInfo>,
 )
 
 /**

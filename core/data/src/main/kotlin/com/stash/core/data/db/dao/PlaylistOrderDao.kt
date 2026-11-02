@@ -85,7 +85,7 @@ abstract class PlaylistOrderDao {
         """
         SELECT pt.track_id FROM playlist_tracks pt
         INNER JOIN playlists p ON pt.playlist_id = p.id
-        LEFT JOIN playlist_order o ON o.playlist_id = pt.playlist_id
+        LEFT JOIN playlist_order o ON o.playlist_id = pt.playlist_id AND NOT """ + SAVED_ALBUM + """
         LEFT JOIN playlist_order_entries e ON e.playlist_id = pt.playlist_id AND e.track_id = pt.track_id
         WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL
         ORDER BY
