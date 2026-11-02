@@ -15,7 +15,8 @@ import GoalBar from '../../components/gate/GoalBar.astro';
     <p class="notice" role="status" data-if="flash" data-fill="flash"></p>
     <p class="notice warning" data-if="hash-mismatch">
       The tip jar hashes emails differently from this site, so Ko-fi supporters can't sign in. Set the same
-      EMAIL_PEPPER secret on both Workers, or on neither, then import past supporters again.
+      EMAIL_PEPPER secret on both Workers, or on neither, then import past supporters again. The import only adds
+      donors from before 2026-11-02 (the $5 entry); add anyone who has given $5 or more since then by hand.
     </p>
   </header>
 
@@ -45,7 +46,7 @@ import GoalBar from '../../components/gate/GoalBar.astro';
       </form>
 
       <h2 class="later" id="remove-title">Remove access</h2>
-      <p>Their sign-in stops working within a few minutes.</p>
+      <p>Their sign-in stops working within a few minutes. Any Ko-fi amounts kept toward their $5 are deleted too.</p>
       <form method="post" action="/admin" class="stack" aria-labelledby="remove-title">
         <input type="hidden" name="action" value="remove" />
         <div>
@@ -74,7 +75,7 @@ import GoalBar from '../../components/gate/GoalBar.astro';
         </form>
       </div>
       <div data-if="has-kept-open">
-        <p><span data-fill="kept-open-count">0 kept from the open window</span>. You can remove them all at any time; supporters and people you added yourself stay.</p>
+        <p><span data-fill="kept-open-count">0 kept from the open window</span>. You can remove them all at any time; Ko-fi supporters on the list ($5 or more) and people you added yourself stay, but someone who has given less than $5 is removed with the rest.</p>
         <div class="admin-actions">
           <form method="post" action="/admin">
             <input type="hidden" name="action" value="remove-kept-open" />

@@ -58,7 +58,7 @@ const DONE = {
     added: "Added to the list.",
     "added-emailed": "Added to the list, and emailed.",
     "added-noemail": "Added to the list, but the email didn't send",
-    removed: "Access removed. Their sign-in stops working within a few minutes.",
+    removed: "Access removed, with any Ko-fi amounts kept toward the $5 entry. Their sign-in stops working within a few minutes.",
     "not-listed": "That email wasn't on the list.",
     donation: "Donation added to this month.",
     "entry-removed": "Entry removed.",
@@ -67,9 +67,9 @@ const DONE = {
     "bad-source": "Say where the donation came from, like \"GitHub Sponsors\".",
     "bad-form": "That form didn't come through. Try again.",
     "open-kept": "Kept: everyone who signed up in the open window is on the list for good. The count takes a minute to catch up.",
-    "open-removed": "Removed everyone who signed up in the open window (supporters among them keep their access). Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
+    "open-removed": "Removed everyone who signed up in the open window (Ko-fi supporters on the list among them keep their access). Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
     "open-more": "Done with a batch. Some are left: wait a minute (the list takes that long to catch up), then press it again.",
-    "kept-open-removed": "Removed everyone you kept from the open window. Supporters and people you added yourself keep their access. Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
+    "kept-open-removed": "Removed everyone you kept from the open window, including anyone who has given less than $5 on Ko-fi. Ko-fi supporters on the list ($5 or more) and people you added yourself keep their access. Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
     "open-wait": "The other button ran less than two minutes ago. Wait a couple of minutes, so the list has caught up, then try again.",
     "no-pepper": "EMAIL_PEPPER isn't set on this Worker, so emails can't be added or removed (they'd be hashed differently from the tip jar's).",
 };
@@ -270,6 +270,20 @@ async function removeKept(env, h) {
     rememberAccess(h, false);
 }
 
+/**
+ * Remove access also deletes the Ko-fi amounts the tip jar keeps for [h] while it's under the $5 entry
+ * (KEYS.kofiPayPrefix), so a removed email starts again from $0 and the privacy page's "taken off the list" holds for
+ * them too. A payment written in the last minute may not be listed yet (KV's list() lag) and stays.
+ */
+async function clearKofiPayments(kv, h) {
+    let cursor;
+    do {
+        const page = await kv.list({ prefix: KEYS.kofiPayPrefix(h), cursor });
+        await Promise.all(page.keys.map((k) => kv.delete(k.name)));
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+}
+
 /** Refuses a bulk button that would undo one pressed less than OPEN_ACTION_GAP_MS ago; otherwise records it. */
 async function bulkGuard(kv, action, at) {
     const last = await kv.get(KEYS.openAction, "json");
@@ -324,6 +338,7 @@ async function act(request, env, url, admin) {
             const listed = onList !== null || signedUp !== null;
             await Promise.all([kv.delete(KEYS.access(h)), kv.delete(KEYS.open(h))]);
             await clearCodes(env, h);
+            await clearKofiPayments(kv, h);
             rememberAccess(h, false);
             return back(url, listed ? "removed" : "not-listed");
         }
