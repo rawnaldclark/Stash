@@ -6,14 +6,18 @@
  *
  * - **Hello first.** A browser's WebSocket can't carry `Authorization`, so every socket starts with
  *   `{ "t": "hello", "device", "token" }` and is checked exactly like a REST call (Space.admit: the token in constant time, a
- *   browser only through the player, the 90-day idle rule, the per-device read count). A socket that says nothing for 10 s is
- *   closed; a second socket of the same device replaces the first (`4409 replaced`, which clients don't reconnect after).
- * - **Frames.** `state` (a device says what it plays) goes to every other member; `cmd` (a remote command) goes to the one
- *   device it names, or comes back as `{ t: "error", code: "offline" }` when that device has no socket. Nothing is stored.
- *   Members hear `peer` on/off as devices come and go, so a browser speaks only while a phone listens.
- * - **Limits.** Frames over 32 KiB close the socket (1009); more than 10 a second close it (1008); at most 10 sockets per space
- *   (one per device, as many again saying hello). `ping` is answered by the runtime (`pong`) without waking the object; a bound
- *   socket with neither a frame nor a ping for 90 s is closed when the object next runs.
+ *   browser only through the player, the 90-day idle rule, the per-device read count). A socket that hasn't said hello wakes the
+ *   object at most once: its first frame must be a well-formed hello within 10 s, or it is closed (`4401`). A space that doesn't
+ *   exist answers the upgrade and closes at once (`4401`, as a revoked device hears). A second socket of the same device replaces
+ *   the first (`4409 replaced`, which clients don't reconnect after) and the others hear the device (re)join.
+ * - **Frames.** `state` (a browser says what it plays) goes to the phones; `cmd` (a phone's remote command) goes to the one
+ *   browser it names, or comes back as `{ t: "error", code: "offline" }` when it has no socket. Nothing is stored. Members hear
+ *   `peer` on/off as devices come and go, so a browser speaks only while a phone listens.
+ * - **Limits.** Frames over 32 KiB close the socket (1009); more than 10 a second close it (1008); at most 10 open sockets per
+ *   space (one per device, the rest saying hello): a new socket on a full space takes the place of the oldest one still saying
+ *   hello, so sockets that never authenticate can't lock the members out. `ping` is answered by the runtime (`pong`) without
+ *   waking the object; a bound socket with neither a frame nor a ping for 90 s is closed by the next sweep (on any upgrade, and
+ *   from a frame at most every 10 s).
  * - **Membership.** Removing a device closes its socket at once (`4401 revoked`), unlinking everything closes all of them, and a
  *   key rotation tells every socket the new epoch.
  *
@@ -38,6 +42,8 @@ export const LIVE = {
     envChars: LIMITS.nowChars,
     /** The socket's `at` is rewritten at most this often (it marks the socket as alive). */
     touchMs: 5_000,
+    /** A frame runs the idle sweep at most this often (an upgrade always does). */
+    sweepMs: 10_000,
 };
 
 /** Close codes (4xxx: the application's). Clients reconnect after a drop, never after `replaced`, `revoked` or `forbidden`. */
@@ -85,23 +91,49 @@ export class Live {
         this.wipe = wipe;
         /** Frames per socket in the current second. In memory: it starts over when the object hibernates, which is fine for a brake. */
         this.rates = new WeakMap();
+        /** When a frame last ran the sweep (in memory: the first frame after a wake sweeps). */
+        this.sweptAt = -Infinity;
     }
 
     /** The upgrade, after the Worker checked the route, the method and the caller's rate limit. */
     accept(request) {
         if ((request.headers.get("Upgrade") ?? "").toLowerCase() !== "websocket") return new Response(null, { status: 426 });
+        const player = request.headers.get(VIA_PLAYER) === "1";
+        if (!this.space.meta()) {
+            // No such space: answer as a revoked device hears it (no probing which ids exist), and keep nothing open.
+            const [client, server] = this.pair();
+            this.ctx.acceptWebSocket(server);
+            server.serializeAttachment({ device: null, type: null, at: this.now(), player, done: true });
+            shut(server, CLOSE.revoked, "revoked");
+            return this.upgraded(client);
+        }
         this.sweep();
-        if (this.ctx.getWebSockets().length >= LIVE.maxSockets) return new Response(null, { status: 409 });
+        const open = this.open();
+        if (open.length >= LIVE.maxSockets) {
+            // Full: the oldest socket still saying hello makes room. Only members' sockets filling it means a 409.
+            const waiting = open.filter((ws) => !ws.deserializeAttachment()?.device);
+            if (!waiting.length) return new Response(null, { status: 409 });
+            waiting.sort((x, y) => (x.deserializeAttachment()?.at ?? 0) - (y.deserializeAttachment()?.at ?? 0));
+            this.close(waiting[0], CLOSE.idle, "no hello");
+        }
         const [client, server] = this.pair();
         this.ctx.acceptWebSocket(server);
-        server.serializeAttachment({ device: null, type: null, at: this.now(), player: request.headers.get(VIA_PLAYER) === "1" });
+        server.serializeAttachment({ device: null, type: null, at: this.now(), player });
         return this.upgraded(client);
+    }
+
+    /**
+     * The sockets still open. The runtime keeps a socket it was told to close in getWebSockets() until the client answers the
+     * close; such a socket is marked `done` and counts for nothing (not bound, not in the cap, not swept again).
+     */
+    open() {
+        return this.ctx.getWebSockets().filter((ws) => !ws.deserializeAttachment()?.done);
     }
 
     /** The sockets that said hello, with their attachment. */
     bound() {
         const out = [];
-        for (const ws of this.ctx.getWebSockets()) {
+        for (const ws of this.open()) {
             const a = ws.deserializeAttachment();
             if (a?.device) out.push({ ws, a });
         }
@@ -109,59 +141,66 @@ export class Live {
     }
 
     async message(ws, data) {
-        if (this.flooding(ws)) return shut(ws, CLOSE.flood, "too many messages");
-        if ((typeof data === "string" ? data.length : data.byteLength) > LIVE.maxFrame) return shut(ws, CLOSE.tooBig, "too big");
-        let msg;
-        try {
-            msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data));
-        } catch {
-            return;
-        }
-        if (!msg || typeof msg !== "object" || typeof msg.t !== "string") return;
         const a = ws.deserializeAttachment() ?? {};
-        if (!a.device) return msg.t === "hello" ? this.hello(ws, a, msg) : undefined; // the first frame must be hello
+        if (a.done) return; // closed: the client's late frames change nothing
+        if (!a.device) return this.unbound(ws, a, data);
+        if (this.flooding(ws)) return this.close(ws, CLOSE.flood, "too many messages");
+        if ((typeof data === "string" ? data.length : data.byteLength) > LIVE.maxFrame) return this.close(ws, CLOSE.tooBig, "too big");
         const t = this.now();
+        if (t - this.sweptAt >= LIVE.sweepMs) this.sweep();
+        if (ws.deserializeAttachment()?.done) return; // the sweep closed this one
+        const msg = parseFrame(data);
+        if (!msg) return;
         if (t - a.at >= LIVE.touchMs) ws.serializeAttachment({ ...a, at: t });
-        if (msg.t === "state") return this.relay(ws, a, msg, null);
-        if (msg.t === "cmd") return this.relay(ws, a, msg, msg.to);
-        // Anything else is a newer client's frame: ignored.
+        // Direction: a browser says what it plays, a phone sends commands. Anything else is a newer client's frame: ignored.
+        if (msg.t === "state") return a.type === "web" ? this.relay(ws, a, msg, null) : refuse(ws);
+        if (msg.t === "cmd") return a.type === "phone" ? this.relay(ws, a, msg, msg.to) : refuse(ws);
+    }
+
+    /**
+     * A socket that hasn't said hello wakes the object at most once: its first frame must be a well-formed hello, in time;
+     * anything else (junk, a state, a second frame before the answer, a late hello) closes it as revoked.
+     */
+    unbound(ws, a, data) {
+        const late = this.now() - (a.at ?? 0) > LIVE.helloMs;
+        const size = typeof data === "string" ? data.length : data.byteLength;
+        const msg = !late && !a.hello && size <= LIVE.maxFrame ? parseFrame(data) : null;
+        const hello = msg?.t === "hello" && isDeviceId(msg.device) && typeof msg.token === "string" && TOKEN.test(msg.token);
+        if (!hello) return this.close(ws, CLOSE.revoked, late ? "no hello" : "revoked");
+        ws.serializeAttachment({ ...a, hello: true }); // a second frame before the answer is junk
+        return this.hello(ws, a, msg);
     }
 
     /** Checks the device like a REST call and binds the socket to it. */
     async hello(ws, a, msg) {
-        const device = msg.device;
-        const tokenHash = isDeviceId(device) && typeof msg.token === "string" && TOKEN.test(msg.token) ? await tokenHashOf(msg.token) : null;
-        if (!tokenHash) return shut(ws, CLOSE.revoked, "revoked");
-        const r = this.space.admitLive({ deviceId: device, tokenHash }, a.player === true);
+        const tokenHash = await tokenHashOf(msg.token);
+        if (ws.deserializeAttachment()?.done) return; // closed while hashing
+        const r = this.space.admitLive({ deviceId: msg.device, tokenHash }, a.player === true);
         if (r.deleteSpace) {
             await this.wipe();
-            return shut(ws, CLOSE.revoked, "revoked");
+            return this.close(ws, CLOSE.revoked, "revoked");
         }
         if (!r.device) {
             const code = r.status === 403 ? CLOSE.forbidden : r.status === 429 ? CLOSE.limited : CLOSE.revoked;
-            return shut(ws, code, r.body?.error?.code ?? "revoked");
+            return this.close(ws, code, r.body?.error?.code ?? "revoked");
         }
         const me = r.device;
-        let replaced = false;
-        for (const o of this.bound()) {
-            if (o.ws === ws || o.a.device !== me.id) continue;
-            o.ws.serializeAttachment({ ...o.a, device: null }); // its late close changes nothing
-            shut(o.ws, CLOSE.replaced, "replaced");
-            replaced = true;
-        }
+        // Bound first, then the older socket of this device goes: the others never hear it leave.
         ws.serializeAttachment({ device: me.id, type: me.type, at: this.now(), player: a.player === true });
+        for (const o of this.bound()) {
+            if (o.ws !== ws && o.a.device === me.id) this.close(o.ws, CLOSE.replaced, "replaced");
+        }
         const others = this.bound().filter((o) => o.ws !== ws);
         put(ws, JSON.stringify({ t: "ready", me: me.id, epoch: r.epoch, peers: others.map((o) => ({ device: o.a.device, type: o.a.type })) }));
-        if (!replaced) {
-            const note = JSON.stringify({ t: "peer", device: me.id, type: me.type, on: true });
-            for (const o of others) put(o.ws, note);
-        }
+        // Also after a replacement: a phone that came back starts a new session with the browser, which then sends its state.
+        const note = JSON.stringify({ t: "peer", device: me.id, type: me.type, on: true });
+        for (const o of others) put(o.ws, note);
     }
 
-    /** A `state` (to every other member) or a `cmd` (to the device `to`). The envelope is checked, never opened. */
+    /** A browser's `state` (to the phones) or a phone's `cmd` (to the browser `to`). The envelope is checked, never opened. */
     relay(ws, a, msg, to) {
         const env = cleanEnv(msg.env, LIVE.envChars);
-        if (!env || (to !== null && (!isDeviceId(to) || to === a.device))) return put(ws, JSON.stringify({ t: "error", code: "bad_request" }));
+        if (!env || (to !== null && (!isDeviceId(to) || to === a.device))) return refuse(ws);
         const m = this.space.meta();
         if (!m) return this.closeAll(CLOSE.revoked, "revoked");
         if (m.rotationDue) return put(ws, JSON.stringify({ t: "error", code: "rotation_due" }));
@@ -169,22 +208,29 @@ export class Live {
         const others = this.bound().filter((o) => o.ws !== ws);
         if (to === null) {
             const text = JSON.stringify({ t: "state", from: a.device, env });
-            for (const o of others) put(o.ws, text);
+            for (const o of others) if (o.a.type === "phone") put(o.ws, text);
             return;
         }
         const target = others.find((o) => o.a.device === to);
         if (!target) return put(ws, JSON.stringify({ t: "error", code: "offline", to }));
+        if (target.a.type !== "web") return refuse(ws);
         put(target.ws, JSON.stringify({ t: "cmd", from: a.device, env }));
     }
 
-    /** The runtime says a socket closed (or failed): the others hear that its device left, unless another socket took it over. */
+    /** The runtime says a socket closed (or failed): it is answered, and the others hear its device left (unless replaced). */
     closed(ws, code = 1000, reason = "") {
-        const a = ws.deserializeAttachment();
+        this.close(ws, code, reason);
+    }
+
+    /**
+     * Closes a socket for good: marked done (it counts for nothing while the runtime waits for the client's answer), and if it
+     * was bound the others hear its device left, unless another socket of that device is open.
+     */
+    close(ws, code, reason) {
+        const a = ws.deserializeAttachment() ?? {};
+        if (!a.done) ws.serializeAttachment({ ...a, device: null, done: true });
         shut(ws, code, reason);
-        if (a?.device) {
-            ws.serializeAttachment({ ...a, device: null });
-            this.left(ws, a);
-        }
+        if (a.device && !a.done) this.left(ws, a);
     }
 
     left(ws, a) {
@@ -194,31 +240,25 @@ export class Live {
         for (const o of rest) put(o.ws, note);
     }
 
-    /** Closes one bound socket and tells the others. */
-    drop(ws, a, code, reason) {
-        ws.serializeAttachment({ ...a, device: null });
-        shut(ws, code, reason);
-        this.left(ws, a);
-    }
-
     /** Sockets that never said hello in time, and bound ones gone quiet (no frame, no ping) for LIVE.idleMs. */
     sweep() {
         const t = this.now();
-        for (const ws of this.ctx.getWebSockets()) {
+        this.sweptAt = t;
+        for (const ws of this.open()) {
             const a = ws.deserializeAttachment() ?? {};
             if (!a.device) {
-                if (t - (a.at ?? 0) > LIVE.helloMs) shut(ws, CLOSE.idle, "no hello");
+                if (t - (a.at ?? 0) > LIVE.helloMs) this.close(ws, CLOSE.idle, "no hello");
                 continue;
             }
             const pinged = this.ctx.getWebSocketAutoResponseTimestamp?.(ws)?.getTime?.() ?? 0;
-            if (t - Math.max(a.at ?? 0, pinged) > LIVE.idleMs) this.drop(ws, a, CLOSE.idle, "idle");
+            if (t - Math.max(a.at ?? 0, pinged) > LIVE.idleMs) this.close(ws, CLOSE.idle, "idle");
         }
     }
 
     /** After a removal (or the idle sweep): a socket whose device left the space is cut off at once. */
     sweepMembers() {
         for (const { ws, a } of this.bound()) {
-            if (!this.space.isMember(a.device)) this.drop(ws, a, CLOSE.revoked, "revoked");
+            if (!this.space.isMember(a.device)) this.close(ws, CLOSE.revoked, "revoked");
         }
     }
 
@@ -228,10 +268,10 @@ export class Live {
         for (const { ws } of this.bound()) put(ws, text);
     }
 
+    /** Every socket closes together (no peer notes: nobody is left to hear them). */
     closeAll(code, reason) {
-        for (const ws of this.ctx.getWebSockets()) {
-            const a = ws.deserializeAttachment();
-            if (a) ws.serializeAttachment({ ...a, device: null });
+        for (const ws of this.open()) {
+            ws.serializeAttachment({ ...(ws.deserializeAttachment() ?? {}), device: null, done: true });
             shut(ws, code, reason);
         }
     }
@@ -246,3 +286,16 @@ export class Live {
         return ++r.count > LIVE.perSecond;
     }
 }
+
+/** A frame as an object with a string `t`, or null. */
+function parseFrame(data) {
+    let msg;
+    try {
+        msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data));
+    } catch {
+        return null;
+    }
+    return msg && typeof msg === "object" && typeof msg.t === "string" ? msg : null;
+}
+
+const refuse = (ws) => put(ws, JSON.stringify({ t: "error", code: "bad_request" }));

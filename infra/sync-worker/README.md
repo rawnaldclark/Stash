@@ -69,17 +69,18 @@ opens or stores an envelope.
 
 | Frame | Direction | |
 |---|---|---|
-| `{ t: "hello", device, token }` | client → server, first | Checked like a member call (token in constant time, a browser only through the player, the 90-day idle rule, one read). Bad → close `4401 revoked` (also for a space that doesn't exist), `4403 forbidden`, `4429` (daily reads). A second socket of the same device closes the first with `4409 replaced` |
+| `{ t: "hello", device, token }` | client → server, first | Checked like a member call (token in constant time, a browser only through the player, the 90-day idle rule, one read). Bad → close `4401 revoked`, `4403 forbidden`, `4429` (daily reads). The first frame must be a well-formed hello within 10 s: anything else (junk, another frame, a late hello) closes `4401` (a socket that never authenticates wakes the object at most once). A space that doesn't exist answers the upgrade and closes `4401` at once. A second socket of the same device closes the first with `4409 replaced`, and the others hear `peer` on again |
 | `{ t: "ready", me, epoch, peers: [{ device, type }] }` | server → client | After a good hello: the devices with a socket open now |
-| `{ t: "peer", device, type, on }` | server → others | A device's socket opened or closed |
-| `{ t: "state", env }` → `{ t: "state", from, env }` | to every other socket | sync-v1 `stash-remote-state` |
-| `{ t: "cmd", to, env }` → `{ t: "cmd", from, env }` | to `to`'s socket only | sync-v1 `stash-remote-cmd`; `{ t: "error", code: "offline", to }` when `to` has no socket |
+| `{ t: "peer", device, type, on }` | server → others | A device's socket opened (or replaced an older one) or closed |
+| `{ t: "state", env }` → `{ t: "state", from, env }` | browser → the phones' sockets | sync-v1 `stash-remote-state`; from a phone: `bad_request` |
+| `{ t: "cmd", to, env }` → `{ t: "cmd", from, env }` | phone → `to`'s socket only (a browser) | sync-v1 `stash-remote-cmd`; `{ t: "error", code: "offline", to }` when `to` has no socket; from a browser, or to a phone: `bad_request` |
 | `{ t: "epoch", epoch }` | server → all | The key was rotated: fetch your envelope before the next frame |
 | `{ t: "error", code, … }` | server → sender | `bad_request`, `epoch` (with the current `epoch`), `rotation_due`, `offline` |
 
-Limits: 10 sockets per space (one per device, as many again before hello); no hello within 10 s, or a bound socket with neither a
-frame nor a ping for 90 s, is closed (`4408`) the next time the object runs; more than 10 frames a second closes the socket (`1008`), a
-frame over 32 KiB too (`1009`). Removing a device closes its socket at once (`4401`); unlinking everything closes them all. Clients
+Limits: 10 open sockets per space (one per device, the rest before hello); a new socket on a full space closes the oldest one still
+before hello (`4408`), so sockets that never authenticate can't lock members out (`409` only when members' sockets fill it). A socket
+with no hello within 10 s, or a bound one with neither a frame nor a ping for 90 s, is closed (`4408`) by the sweep, which runs on every
+upgrade and from a frame at most every 10 s; more than 10 frames a second closes the socket (`1008`), a frame over 32 KiB too (`1009`). Removing a device closes its socket at once (`4401`); unlinking everything closes them all. Clients
 reconnect with a backoff after a drop, never after `4401`, `4403` or `4409`.
 
 ## Limits (spec §6.4)

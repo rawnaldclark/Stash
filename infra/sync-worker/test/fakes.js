@@ -49,6 +49,8 @@ export function fakeSocket() {
     return {
         sent: [],
         closed: false,
+        /** The client answered the close: only then does the runtime drop it from getWebSockets(). */
+        gone: false,
         closeCode: null,
         closeReason: null,
         pingedAt: null,
@@ -78,7 +80,8 @@ export function fakeCtx() {
         sockets,
         alarm: null,
         acceptWebSocket(ws) { sockets.push(ws); },
-        getWebSockets() { return sockets.filter((s) => !s.closed); },
+        // As the runtime: a socket the object closed stays listed until the client answers the close (see `gone`).
+        getWebSockets() { return sockets.filter((s) => !s.gone); },
         getWebSocketAutoResponseTimestamp(ws) { return ws.pingedAt === null ? null : new Date(ws.pingedAt); },
         storage: {
             sql,

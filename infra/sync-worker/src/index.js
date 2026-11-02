@@ -1,7 +1,8 @@
 /**
  * stash-sync: links Stash for Android with Stash on the web (spec docs/superpowers/specs/2026-10-10-link-sync-handoff-design.md §6).
  * Pairing slots (PairSlot) and sync spaces (SyncSpace) are Durable Objects; this Worker only routes, checks shapes,
- * sizes, rate limits and who may call what, and hashes device tokens before they reach an object.
+ * sizes, rate limits and who may call what, and hashes device tokens before they reach an object, except a live socket's: its
+ * token comes in the socket's first frame, which goes straight to the space's object (src/live.js hashes it there).
  *
  * Callers: the phone directly, the browser only through the player Worker (play.stashfm.app's /api/sync/*), which adds
  * `X-Stash-Player-Key` (the PLAYER_KEY secret), `X-Stash-Client-IP` and `X-Stash-Session`. Routes marked "player" refuse
