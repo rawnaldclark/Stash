@@ -633,7 +633,9 @@ class SyncViewModel @Inject constructor(
      * Download switch does the same thing ([MusicRepository.setPlaylistDownload],
      * #474), so the two always agree. In Download mode a saved playlist is also
      * switched on for sync, as the old switch was, so later syncs download what
-     * it gains and it stays on Home; off there turns sync off too.
+     * it gains and it stays on Home; off there turns sync off too. A mix is
+     * never pinned by this: on a mix the pin is its Favorite (see
+     * [com.stash.core.data.db.dao.PlaylistDao.setSyncEnabledAndPin]).
      */
     fun onSavePlaylist(playlistId: Long, save: Boolean) {
         viewModelScope.launch {
@@ -657,32 +659,6 @@ class SyncViewModel @Inject constructor(
      */
     fun onStopSync() {
         viewModelScope.launch { syncScheduler.cancelSync() }
-    }
-
-    /** Toggle sync_enabled for a specific Spotify playlist. */
-    fun onTogglePlaylistSync(playlistId: Long, enabled: Boolean) {
-        viewModelScope.launch {
-            // The switch decides Home too: sync on pins the playlist to the Your
-            // playlists rail, sync off unpins it (the user's rule, 2026-09-07).
-            playlistDao.setSyncEnabledAndPin(playlistId, enabled, System.currentTimeMillis())
-            // v0.9.21: when DISABLING, sweep pending download_queue rows
-            // whose tracks no longer belong to any sync-enabled playlist.
-            // Without this, deselecting a playlist leaves its in-flight
-            // downloads draining — confusing because the user expects
-            // "deselect" to actually stop downloads. The query is
-            // DELETE-with-NOT-IN so tracks shared with another enabled
-            // playlist (e.g. same track in Liked Songs on both services)
-            // stay queued.
-            if (!enabled) {
-                val cancelled = downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist()
-                if (cancelled > 0) {
-                    android.util.Log.i(
-                        "SyncToggle",
-                        "cancelled $cancelled orphan PENDING download(s) after disable",
-                    )
-                }
-            }
-        }
     }
 
     /**
@@ -720,20 +696,6 @@ class SyncViewModel @Inject constructor(
                 musicRepository.setPlaylistDownload(playlistId, false)
             }
             playlistDao.setUserHidden(playlistId, !inLibrary)
-        }
-    }
-
-    /**
-     * Toggle hide_from_home for a specific playlist. Unlike [onTogglePlaylistSync]
-     * this does NOT sweep downloads — hiding a mix from Home has nothing to do
-     * with what's queued or synced.
-     */
-    fun onToggleHideFromHome(playlistId: Long, hidden: Boolean) {
-        // Showing pins the mix so it leads its Home rail; hiding unpins it. The
-        // rail shows only its 12 freshest mixes otherwise, and "Shown on Home"
-        // was a promise it kept for none of the others (Cup Noodle Radio, 2026-09-07).
-        viewModelScope.launch {
-            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
         }
     }
 

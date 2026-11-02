@@ -762,12 +762,17 @@ interface PlaylistDao {
      * it there (`pinned_to_home_at`, an earlier pin stamp is kept so the rail
      * order stays put), turning sync off unpins it. Liked Songs is exempt: it
      * has its own Home card and never belongs on the Your playlists rail.
+     *
+     * Mixes are exempt too, both ways (2026-11-02): on a mix the pin is its
+     * Favorite (#686), which only the user sets. Switching a mix on used to
+     * pin it, and v0.9.119 showed every one of those pins as a heart.
      */
     @Query(
         """
         UPDATE playlists SET
             sync_enabled = :enabled,
             pinned_to_home_at = CASE
+                WHEN type IN ('DAILY_MIX', 'STASH_MIX') THEN pinned_to_home_at
                 WHEN :enabled = 0 THEN NULL
                 WHEN type IN ('LIKED_SONGS', 'STASH_LIKED') THEN pinned_to_home_at
                 ELSE COALESCE(pinned_to_home_at, :now)
@@ -780,16 +785,38 @@ interface PlaylistDao {
     /**
      * One-time backfill for installs that synced playlists before the pin
      * rule existed: every active, synced, unpinned playlist gets pinned now,
-     * Liked Songs excepted. Returns the number of rows pinned. Idempotent.
+     * Liked Songs and mixes excepted. Returns the number of rows pinned. Idempotent.
      */
     @Query(
         """
         UPDATE playlists SET pinned_to_home_at = :now
         WHERE is_active = 1 AND sync_enabled = 1 AND pinned_to_home_at IS NULL
-          AND type NOT IN ('LIKED_SONGS', 'STASH_LIKED')
+          AND type NOT IN ('LIKED_SONGS', 'STASH_LIKED', 'DAILY_MIX', 'STASH_MIX')
         """
     )
     suspend fun pinSyncedPlaylists(now: Long): Int
+
+    /**
+     * One-time cleanup (2026-11-02, [com.stash.core.data.db.MixPinCleanup]):
+     * a mix pinned before [before] loses its pin, and with it the heart. Only
+     * mixes; every other type keeps its pin. Returns the number of rows cleared.
+     */
+    @Query(
+        """
+        UPDATE playlists SET pinned_to_home_at = NULL
+        WHERE type IN ('DAILY_MIX', 'STASH_MIX') AND pinned_to_home_at < :before
+        """
+    )
+    suspend fun clearMixPinsBefore(before: Long): Int
+
+    /** How many mixes are pinned (favorited) now: the cleanup's log line. */
+    @Query(
+        """
+        SELECT COUNT(*) FROM playlists
+        WHERE type IN ('DAILY_MIX', 'STASH_MIX') AND pinned_to_home_at IS NOT NULL
+        """
+    )
+    suspend fun countPinnedMixes(): Int
 
     /** Toggle whether a playlist is hidden from the Home rails. */
     @Query("UPDATE playlists SET hide_from_home = :hidden WHERE id = :playlistId")

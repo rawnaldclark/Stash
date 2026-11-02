@@ -765,10 +765,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Hide (or unhide) a mix's playlist from the Home rails. Hiding unpins it;
-     * showing pins it, so it leads its rail (see MixRail.pinnedThenFreshest).
-     */
     /** Today in the phone's time zone: a rotation flips at local midnight. */
     private fun today(): Long = java.time.LocalDate.now().toEpochDay()
 
@@ -782,16 +778,17 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun setHideFromHome(playlistId: Long, hidden: Boolean) {
+    /** Hide a mix's playlist from the Home rails; it drops its favorite (the pin) too. */
+    fun hideFromHome(playlistId: Long) {
         viewModelScope.launch {
-            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
+            playlistDao.setHomeVisibility(playlistId, hidden = true, pinnedAt = null)
         }
     }
 
     /**
      * Pin/unpin a playlist on the "Your playlists" rail (Home-side unpin
      * sheet). Goes through the repository — deliberately unlike
-     * [setHideFromHome]'s DAO-direct write above — because Library's sheet
+     * [hideFromHome]'s DAO-direct write above — because Library's sheet
      * shares the same repository write path (it can't reach the DAO).
      */
     fun setPinnedToHome(playlistId: Long, pinned: Boolean) {
