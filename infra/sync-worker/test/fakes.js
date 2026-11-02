@@ -40,13 +40,49 @@ export function sqlStorage() {
     };
 }
 
+/**
+ * A hibernatable WebSocket as the object sees it: what was sent to it (parsed), how it was closed, its attachment, and when the
+ * runtime last answered its `ping` (`pingedAt`, set by a test).
+ */
+export function fakeSocket() {
+    let attachment = null;
+    return {
+        sent: [],
+        closed: false,
+        /** The client answered the close: only then does the runtime drop it from getWebSockets(). */
+        gone: false,
+        closeCode: null,
+        closeReason: null,
+        pingedAt: null,
+        send(text) {
+            if (this.closed) throw new Error("closed");
+            this.sent.push(JSON.parse(text));
+        },
+        close(code, reason) {
+            this.closed = true;
+            this.closeCode ??= code;
+            this.closeReason ??= reason;
+        },
+        serializeAttachment(v) { attachment = structuredClone(v); },
+        deserializeAttachment() { return attachment; },
+        /** The frames of type `t` it received. */
+        of(t) { return this.sent.filter((m) => m.t === t); },
+    };
+}
+
 export function fakeCtx() {
     const sql = sqlStorage();
     const kv = new Map();
+    const sockets = [];
     const ctx = {
         sql,
         kv,
+        sockets,
         alarm: null,
+        acceptWebSocket(ws) { sockets.push(ws); },
+        // As the runtime: a socket the object closed stays listed until the client answers the close (see `gone`).
+        getWebSockets() { return sockets.filter((s) => !s.gone); },
+        getWebSocketAutoResponseTimestamp(ws) { return ws.pingedAt === null ? null : new Date(ws.pingedAt); },
         storage: {
             sql,
             transactionSync: (fn) => sql.transactionSync(fn),
@@ -110,7 +146,12 @@ export function world({ t = 1_760_000_000_000, limits = {} } = {}) {
     });
     const env = { PLAYER_KEY };
     env.PAIRS = namespace((ctx) => new PairSlot(ctx, env, { now, sleep }));
-    env.SPACES = namespace((ctx) => new SyncSpace(ctx, env, { now }));
+    // A live socket's upgrade answers `{ status: 101, webSocket: { server } }`: the test drives the object's side.
+    const pair = () => {
+        const server = fakeSocket();
+        return [{ server }, server];
+    };
+    env.SPACES = namespace((ctx) => new SyncSpace(ctx, env, { now, pair, upgraded: (client) => ({ status: 101, webSocket: client }) }));
     env.PAIR_RL = limiter(limits.pair ?? 1000);
     env.QUOTAS = namespace((ctx) => new Quota(ctx, env, { now }));
     env.SAFE_RL = limiter(limits.safe ?? 1000);

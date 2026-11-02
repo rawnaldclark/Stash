@@ -197,6 +197,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
 
+    /** Link Stash on the web: this phone as a remote for a linked browser (link-sync spec §6.7). */
+    @Inject
+    lateinit var webRemote: com.stash.core.data.weblink.remote.WebRemote
+
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
@@ -346,6 +350,8 @@ class StashApplication : Application(), Configuration.Provider {
                     webLinkInbox.onForeground()
                     // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
                     mirrorSignal.onForeground()
+                    // ...and the phone as a remote for a linked browser: its live socket, only while in the foreground (§6.7).
+                    webRemote.onForeground()
                     // ...and an open Recap story carries its song on.
                     recapAudio.onAppForeground()
                 }
@@ -358,6 +364,8 @@ class StashApplication : Application(), Configuration.Provider {
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
                     // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
                     handoffPublisher.onBackground()
+                    // No remote socket in the background (no battery, no server time).
+                    webRemote.onBackground()
                     // An open Recap story's song pauses; the story itself stays open (a share to
                     // Instagram or the lock screen is not a close, so the music isn't given back).
                     recapAudio.onAppBackground()
