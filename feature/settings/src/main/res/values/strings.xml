@@ -97,7 +97,7 @@
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
     <string name="settings_support_star">Star</string>
     <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
-    <string name="settings_support_tagline">Free, no ads. Made by two people.</string>
+    <string name="settings_support_tagline">Keeps Stash running and updated, and pays for its servers and hosting.</string>
     <!-- The month's goal, as stashfm.app shows it: "$168 of $200 this month". -->
     <string name="settings_support_goal">%1$s of %2$s this month</string>
     <!-- The supporter perk, one line; tapping it opens the Ko-fi claim (Lossless sources). -->
