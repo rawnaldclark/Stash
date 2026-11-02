@@ -30,6 +30,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,6 +90,7 @@ class AlbumDiscoveryViewModelTest {
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
         savedAlbums: List<com.stash.core.data.album.SavedAlbum> = emptyList(),
+        savedAlbumsFlow: kotlinx.coroutines.flow.Flow<List<com.stash.core.data.album.SavedAlbum>>? = null,
     ): AlbumDiscoveryViewModel = AlbumDiscoveryViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -102,11 +105,18 @@ class AlbumDiscoveryViewModelTest {
         ytMusicApiClient = mock(),
         prefetcher = prefetcher,
         playerRepository = playerRepository,
-        musicRepository = musicRepository.withSavedAlbums(savedAlbums),
+        musicRepository = savedAlbumsFlow?.let { musicRepository.withSavedAlbums(it) } ?: musicRepository.withSavedAlbums(savedAlbums),
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
     )
+
+    /**
+     * Whether [AlbumDiscoveryViewModel.isSaved] comes to read [value], waiting in real time: the check runs on
+     * Dispatchers.Default, outside the test scheduler, so reading `.value` after advanceUntilIdle can beat it.
+     */
+    private suspend fun AlbumDiscoveryViewModel.savedBecomes(value: Boolean): Boolean =
+        withContext(Dispatchers.Default) { withTimeoutOrNull(10_000) { isSaved.first { it == value } } } != null
 
     /**
      * Returns a [TrackActionsDelegate] mock with all flows stubbed to their
@@ -489,12 +499,15 @@ class AlbumDiscoveryViewModelTest {
             7L, "album:qobuz:other", title = "Curtains", artist = "John Frusciante", songs = listOf("x", "y", "z"),
         )
 
-        val vm = vmWith(cache = cache, savedAlbums = listOf(fromSpotify))
-        val other = vmWith(cache = cache, savedAlbums = listOf(sameNameOtherSongs))
+        val saved = MutableStateFlow(listOf(fromSpotify))
+        val vm = vmWith(cache = cache, savedAlbumsFlow = saved)
         advanceUntilIdle()
+        assertTrue("the same title, artist and songs saved from Spotify reads Saved", vm.savedBecomes(true))
 
-        assertTrue(vm.isSaved.first { it })
-        assertFalse(other.isSaved.value)
+        // Only an album that shares the name is left. The page read Saved, so reading not Saved now can only
+        // be the check run over this list: it has finished, and found nothing.
+        saved.value = listOf(sameNameOtherSongs)
+        assertTrue("an album that only shares the name isn't this one", vm.savedBecomes(false))
     }
 
     @Test
