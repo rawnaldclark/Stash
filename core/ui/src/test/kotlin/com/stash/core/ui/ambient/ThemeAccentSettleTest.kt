@@ -3,7 +3,9 @@ package com.stash.core.ui.ambient
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
@@ -29,10 +31,76 @@ class ThemeAccentSettleTest {
     private val idle = AmbientPalette.Default
     private val settle = SCHEME_SETTLE_MS
 
-    @Test fun `the first palette lands at once, so a cold start never waits`() = runTest {
+    /** A cover read that takes [readMs] (a cold start decodes it), as AlbumColorSource's retryingLoad. */
+    private fun reads(palettes: Map<String, AmbientPalette>, readMs: Long = 600) =
+        { model: String, fallback: AmbientPalette ->
+            flow<AmbientPalette> {
+                delay(readMs)
+                emit(palettes[model] ?: fallback)
+            }
+        }
+
+    /** The scheme's input as the app builds it: AlbumColorSource's covers, settled on their colours. */
+    private fun schemeInput(models: Flow<String?>, seed: PaletteSeed?, palettes: Map<String, AmbientPalette>) =
+        coverPalettes(models, seed, reads(palettes)).map { it.second }.settledColours(settle)
+
+    @Test fun `a cold start with a restored queue opens in the song's colour and never shows idle`() = runTest {
+        // The player reports nothing for a moment, then its restored song; the app closed on red.
+        val models = flow {
+            emit(null)
+            delay(400)
+            emit("cover-red")
+            delay(10_000)
+        }
+        val seed = PaletteSeed("cover-red", red)
         val out = mutableListOf<Pair<Long, AmbientPalette>>()
-        flow { emit(red) }.settled(settle).collect { out += currentTime to it }
-        assertEquals(listOf(0L to red), out)
+        schemeInput(models, seed, mapOf("cover-red" to red)).collect { out += currentTime to it }
+        // Red from the first value (the StateFlow starts on the seed too), and nothing after: the
+        // fresh read of the same cover changes nothing.
+        assertEquals(listOf(400L to red.coloursOnly()), out)
+    }
+
+    @Test fun `with no restored queue the remembered colour gives way to idle after the grace`() = runTest {
+        val out = mutableListOf<Pair<Long, AmbientPalette>>()
+        schemeInput(flow { emit(null); delay(10_000) }, PaletteSeed("cover-red", red), emptyMap())
+            .collect { out += currentTime to it }
+        assertEquals(listOf(RESTORE_GRACE_MS to idle.coloursOnly()), out)
+    }
+
+    @Test fun `without a seed a cold start is idle, then the song once its cover is read`() = runTest {
+        val out = mutableListOf<Pair<Long, AmbientPalette>>()
+        schemeInput(flow { emit(null); delay(400); emit("cover-red"); delay(10_000) }, null, mapOf("cover-red" to red))
+            .collect { out += currentTime to it }
+        assertEquals(listOf(0L to idle.coloursOnly(), (400L + 600L + settle) to red.coloursOnly()), out)
+    }
+
+    @Test fun `an offline cold start keeps the remembered colour`() = runTest {
+        // The read fails (the fallback is the seed itself), so the app stays red rather than going idle.
+        val out = mutableListOf<AmbientPalette>()
+        schemeInput(flowOf("cover-red"), PaletteSeed("cover-red", red), emptyMap()).collect { out += it }
+        assertEquals(listOf(red.coloursOnly()), out)
+    }
+
+    @Test fun `two cover files of the same colour are one accent (an imported album saves one per track)`() = runTest {
+        var emitted = 0
+        flow {
+            // Each track of an imported album has its own cover file, so its own key: same pixels.
+            repeat(12) { track ->
+                emit(red.copy(key = "art:local_track_$track.jpg"))
+                delay(200_000)
+            }
+        }.settledColours(settle).collect { emitted++ }
+        assertEquals(1, emitted)
+    }
+
+    @Test fun `the remembered palette survives the snapshot unchanged`() {
+        for (p in listOf(red, blue, pastel, yellow, neutralPaletteFrom(solid(0xFF777777L), key = "grey")!!)) {
+            val seed = PaletteSeed("content://covers/a b,c.jpg", p)
+            assertEquals(seed, PaletteSeed.decode(seed.model, p.key, seed.encodedColours()))
+        }
+        assertEquals(null, PaletteSeed.decode(null, "k", PaletteSeed("m", red).encodedColours()))
+        assertEquals(null, PaletteSeed.decode("m", "k", "COVER,1,2"))
+        assertEquals(null, PaletteSeed.decode("m", "k", "NOPE,1,2,3,4,5,6"))
     }
 
     @Test fun `a run of skips swaps the scheme once, after the last one settles`() = runTest {

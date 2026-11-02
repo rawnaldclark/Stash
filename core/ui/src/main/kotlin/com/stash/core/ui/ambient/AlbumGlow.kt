@@ -24,24 +24,28 @@ private const val ALBUM_GLOW_MID_ALPHA = 0.35f
  *
  * Pure-black safe: the colour is [AccentRoles.glow], whose alpha already keeps the page's text at 7:1
  * (R8), nothing is drawn below [reach], so the rest of an AMOLED page keeps its pixels off, and with
- * nothing playing (or Album colours on Neutral with no cover) the glow is transparent and nothing is
- * drawn at all. Read at draw time from [chrome], so a song change's crossfade only redraws this layer.
+ * nothing playing the glow is transparent and nothing is drawn at all; nor with [enabled] false (Album
+ * colours on Neutral: pass [ThemeAccent.followsSong]). Read at draw time from [chrome] (its one glow
+ * role, not the whole set), so a song change's crossfade only redraws this layer.
  *
  * Draws behind the node's content, from the node's own top: put it before any status-bar padding so
  * the light starts at the top of the screen, and on a node that does not scroll so the light stays
  * put while the page scrolls under it.
  */
-fun Modifier.albumGlow(chrome: AlbumChrome, reach: Dp = ALBUM_GLOW_REACH): Modifier = drawBehind {
-    val glow = chrome.roles.glow
-    if (glow.alpha <= 0f) return@drawBehind
-    val radius = reach.toPx()
-    val center = Offset(size.width / 2f, -ALBUM_GLOW_LIFT.toPx())
-    val brush = Brush.radialGradient(
-        0f to glow,
-        ALBUM_GLOW_MID_STOP to glow.copy(alpha = glow.alpha * ALBUM_GLOW_MID_ALPHA),
-        1f to glow.copy(alpha = 0f),
-        center = center,
-        radius = radius + ALBUM_GLOW_LIFT.toPx(),
-    )
-    drawRect(brush = brush, size = Size(size.width, minOf(size.height, radius)))
+fun Modifier.albumGlow(chrome: AlbumChrome, enabled: Boolean = true, reach: Dp = ALBUM_GLOW_REACH): Modifier {
+    if (!enabled) return this
+    return drawBehind {
+        val glow = chrome.glow
+        if (glow.alpha <= 0f) return@drawBehind
+        val radius = reach.toPx()
+        val center = Offset(size.width / 2f, -ALBUM_GLOW_LIFT.toPx())
+        val brush = Brush.radialGradient(
+            0f to glow,
+            ALBUM_GLOW_MID_STOP to glow.copy(alpha = glow.alpha * ALBUM_GLOW_MID_ALPHA),
+            1f to glow.copy(alpha = 0f),
+            center = center,
+            radius = radius + ALBUM_GLOW_LIFT.toPx(),
+        )
+        drawRect(brush = brush, size = Size(size.width, minOf(size.height, radius)))
+    }
 }

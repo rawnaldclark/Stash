@@ -100,6 +100,9 @@ class AlbumChrome internal constructor(
     /** The Now Playing ambient's muted colour (lifted on light). */
     val mut: Color get() = animator.role { it.mut }
 
+    /** Home's glow ([AccentRoles.glow]), crossfading: read at draw time by [albumGlow]. */
+    val glow: Color get() = animator.role { it.glow }
+
     /** The wordmark's one ink: plain when idle or paused, the contrast-checked mood tint while a song plays. */
     val wordmark: Color get() = wordmarkRef()
 

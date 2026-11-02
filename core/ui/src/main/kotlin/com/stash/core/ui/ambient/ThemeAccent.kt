@@ -10,12 +10,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.withIndex
 
@@ -24,9 +25,11 @@ import kotlinx.coroutines.flow.withIndex
  * current song, paused included, and is neutral with nothing playing (owner decision D9, 2026-11-01).
  *
  * Material's colour scheme is one static CompositionLocal of immutable colours, so swapping it
- * recomposes everything under it. It is therefore built once per album, never per frame: the palette
- * is held until it has stayed put for one album crossfade ([settled]), then the scheme is rebuilt from
- * its roles ([withAlbumAccent]) and swapped in one go. What fades smoothly is what already did: the
+ * recomposes everything under it (and M3's ColorScheme has no equals, so every new one counts). It is
+ * therefore built once per change of colour, never per frame and never per cover file: the palette's
+ * colours, its cache key left out ([coloursOnly]: an imported album keeps one cover file per track,
+ * all the same colour), are held until they have stayed put for one album crossfade ([settled]), then
+ * the scheme is rebuilt from their roles ([withAlbumAccent]) and swapped in one go. What fades smoothly is what already did: the
  * chrome read at draw time through [LocalAlbumChrome] (the mini player, Now Playing, the tab bar, the
  * wordmark, Home's glow). The scheme lands as that crossfade ends, and a run of skips lands once.
  *
@@ -51,6 +54,43 @@ private const val SCHEME_TEXT_MIN_CONTRAST = 4.5
 
 /** The inks a filled accent can carry: white or the neutral near-black, as the roles' onAccent. */
 private val SchemeInks = listOf(Color.White, InkOnBright)
+
+/**
+ * A container's least contrast with every page ground it can sit on (the page, a sheet, a dialog), so
+ * a selected chip or segment reads as filled next to an unselected one's faint outline (review of #792:
+ * the wash alone was ~1.2:1 there).
+ */
+internal const val CONTAINER_MIN_CONTRAST = 1.6
+
+/** The container's first try: the accent at this alpha over the surface, raised until it stands out. */
+private const val CONTAINER_START_ALPHA = 0.35f
+
+/** One step of the container's alpha search. */
+private const val CONTAINER_ALPHA_STEP = 0.05f
+
+/**
+ * The accent made solid over [surface] at the lowest alpha (from [CONTAINER_START_ALPHA]) that holds
+ * [CONTAINER_MIN_CONTRAST] against every one of [grounds]. [accent] is a text-safe colour (4.5:1 on all
+ * of them), so the search always ends, at worst at the accent itself.
+ */
+internal fun containerOver(accent: Color, surface: Color, grounds: List<Color>): Color {
+    var alpha = CONTAINER_START_ALPHA
+    while (true) {
+        val c = compositeOver(accent.copy(alpha = alpha), surface)
+        if (alpha >= 1f || grounds.all { contrastRatio(c, it) >= CONTAINER_MIN_CONTRAST }) return c
+        alpha = (alpha + CONTAINER_ALPHA_STEP).coerceAtMost(1f)
+    }
+}
+
+/**
+ * Text on [container]: [start] moved away from it until it holds 4.5:1, else the better of the two
+ * inks (white or the near-black), which always reads on a container this dark or this light.
+ */
+private fun textOn(container: Color, start: Color, lighter: Boolean): Color {
+    val moved = textSafe(start, listOf(container), lighter, needsInk = false).first
+    if (contrastRatio(moved, container) >= SCHEME_TEXT_MIN_CONTRAST) return moved
+    return SchemeInks.maxBy { contrastRatio(container, it) }
+}
 
 /**
  * [start] as it is when it already holds 4.5:1 on every one of [grounds], else the nearest colour of
@@ -90,8 +130,9 @@ internal fun textSafe(
  *    declares (dialogs and sheets included), with onPrimary the better of white and the near-black;
  *  - secondary and tertiary = the song's accent ([AccentRoles.accent]) held the same way (the softer,
  *    more saturated shade), with their ink;
- *  - every container = the wash ([AccentRoles.wash]) made solid on the surface, its "on" colour the
- *    primary (R3 already holds the ink on the wash);
+ *  - every container = the secondary made solid over the surface, at the least alpha that stands out
+ *    [CONTAINER_MIN_CONTRAST] from every page ground ([containerOver]); its "on" colour the primary
+ *    moved until it holds 4.5:1 there (a selected chip, segment or FAB);
  *  - inversePrimary = the ink held at 4.5:1 on the inverse surface (snackbar actions);
  *  - the fixed roles follow primary and secondary (Material's defaults are its baseline lavender);
  *  - surfaceTint = primary, except on pure black, where it stays black so elevation never lifts a
@@ -107,8 +148,12 @@ fun ColorScheme.withAlbumAccent(roles: AccentRoles, ground: Ground): ColorScheme
     )
     val (primary, onPrimary) = textSafe(roles.ink, grounds, lighter)
     val (secondary, onSecondary) = textSafe(roles.accent, grounds, lighter)
-    val container = compositeOver(roles.wash, surface)
-    val onContainer = textSafe(primary, listOf(container), lighter, needsInk = false).first
+    // The grounds a container sits on: the page, its cards, a sheet (containerLow), a dialog (High).
+    val pageGrounds = listOf(
+        background, surface, surfaceContainerLowest, surfaceContainerLow, surfaceContainer, surfaceContainerHigh,
+    )
+    val container = containerOver(secondary, surface, pageGrounds)
+    val onContainer = textOn(container, primary, lighter)
     val inversePrimary = textSafe(roles.ink, listOf(inverseSurface), !lighter, needsInk = false).first
     return copy(
         primary = primary,
@@ -143,10 +188,12 @@ fun ColorScheme.withAlbumAccent(roles: AccentRoles, ground: Ground): ColorScheme
 /**
  * The accent the app's Material scheme wears: the current song's palette once it has settled
  * ([AmbientPalette.Default], neutral, with nothing playing or with Settings › Appearance › Album
- * colours on Neutral). Changes at most once per album, never per frame.
+ * colours on Neutral). Changes at most once per change of colour, never per frame. [followsSong] is
+ * false on Neutral: the scheme and Home's glow stay neutral, while the player's own chrome (the mini
+ * player, Now Playing, the wordmark, the tab bar) keeps following the album as it always did.
  */
 @Immutable
-data class ThemeAccent(val palette: AmbientPalette) {
+data class ThemeAccent(val palette: AmbientPalette, val followsSong: Boolean = true) {
     /** [base]'s grounds wearing this accent on [ground]. Remember it per accent, base and ground. */
     fun scheme(base: ColorScheme, ground: Ground): ColorScheme = base.withAlbumAccent(palette.roles(ground), ground)
 
@@ -156,8 +203,12 @@ data class ThemeAccent(val palette: AmbientPalette) {
     }
 }
 
-/** The settled accent the scheme wears, for a surface that builds its own scheme (Now Playing's full art). */
-val LocalThemeAccent = staticCompositionLocalOf { ThemeAccent.Idle }
+/**
+ * The settled accent the scheme wears, for a surface that builds its own scheme (Now Playing's full
+ * art) or follows the Album colours choice (Home's glow). Dynamic, so a change recomposes only those
+ * few readers; the scheme itself is what the rest of the app reads.
+ */
+val LocalThemeAccent = compositionLocalOf { ThemeAccent.Idle }
 
 /**
  * Each value once it has stayed for [settleMs]; the first at once. A value that comes back before
@@ -175,21 +226,37 @@ fun <T> Flow<T>.settled(settleMs: Long): Flow<T> =
         .distinctUntilChanged()
 
 /**
+ * [this] palette's colours alone: its cache [AmbientPalette.key] (one per cover file) left out, so two
+ * covers of the same colour are the same accent and never rebuild the scheme.
+ */
+fun AmbientPalette.coloursOnly(): AmbientPalette = if (key.isEmpty()) this else copy(key = "")
+
+/** The palettes the scheme takes: their colours ([coloursOnly]), each once it has [settled]. */
+fun Flow<AmbientPalette>.settledColours(settleMs: Long): Flow<AmbientPalette> =
+    map { it.coloursOnly() }.settled(settleMs)
+
+/**
  * The app's Material scheme wearing [palette]'s accent once it has [settled] (see the file comment):
  * [MaterialTheme]'s scheme for [content] is the enclosing one's grounds with the album's primary,
- * secondary and tertiary families. Reads the theme, so it must sit inside StashTheme.
+ * secondary and tertiary families; with [followSong] false (Album colours: Neutral) it is the idle,
+ * neutral accent whatever plays, and a switch either way lands at once. Reads the theme, so it must
+ * sit inside StashTheme.
  */
 @Composable
-fun ProvideThemeAccent(palette: AmbientPalette, content: @Composable () -> Unit) {
+fun ProvideThemeAccent(palette: AmbientPalette, followSong: Boolean = true, content: @Composable () -> Unit) {
     val settleMs = if (rememberReducedMotion()) SCHEME_SETTLE_REDUCED_MS else SCHEME_SETTLE_MS
-    val latest = rememberUpdatedState(palette)
-    val settledPalette by remember(settleMs) { snapshotFlow { latest.value }.settled(settleMs) }
-        .collectAsState(initial = palette)
-    val accent = remember(settledPalette) { ThemeAccent(settledPalette) }
+    val wanted = if (followSong) palette else AmbientPalette.Default
+    val latest = rememberUpdatedState(wanted)
+    // Keyed by the mode too: a new flow's first value lands at once, so the Settings switch is immediate.
+    val settledPalette by remember(settleMs, followSong) { snapshotFlow { latest.value }.settledColours(settleMs) }
+        .collectAsState(initial = wanted.coloursOnly())
+    val accent = remember(settledPalette, followSong) { ThemeAccent(settledPalette, followSong) }
     val ground = currentGround()
     val base = MaterialTheme.colorScheme
-    // A theme flip (base, ground) rebuilds at once, as MaterialTheme switches at once.
-    val scheme = remember(accent, base, ground) { accent.scheme(base, ground) }
+    // Keyed on the settled colours, not the accent: switching Album colours rebuilds it once, when the
+    // neutral palette lands, not also for the frame where only the choice has changed. A theme flip
+    // (base, ground) rebuilds at once, as MaterialTheme switches at once.
+    val scheme = remember(settledPalette, base, ground) { accent.scheme(base, ground) }
     CompositionLocalProvider(LocalThemeAccent provides accent) {
         MaterialTheme(
             colorScheme = scheme,
@@ -203,12 +270,14 @@ fun ProvideThemeAccent(palette: AmbientPalette, content: @Composable () -> Unit)
 /**
  * The app's album colours, both halves: [ProvideAlbumChrome] (the crossfading chrome, read at draw
  * time) around [ProvideThemeAccent] (the Material scheme, once per album). The chrome sits outside
- * so its neutral selected tab reads the theme's own (neutral) primary, not the song's.
+ * so its neutral selected tab reads the theme's own (neutral) primary, not the song's. [followSong]
+ * (Settings › Appearance › Album colours) only decides the scheme and Home's glow; the chrome always
+ * follows the album.
  */
 @Composable
-fun ProvideAlbumColours(colors: AlbumColors, content: @Composable () -> Unit) {
+fun ProvideAlbumColours(colors: AlbumColors, followSong: Boolean = true, content: @Composable () -> Unit) {
     ProvideAlbumChrome(colors) {
-        ProvideThemeAccent(colors.palette, content)
+        ProvideThemeAccent(colors.palette, followSong, content)
     }
 }
 

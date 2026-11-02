@@ -3,6 +3,7 @@ package com.stash.core.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import com.stash.core.ui.ambient.AmbientPalette
+import com.stash.core.ui.ambient.CONTAINER_MIN_CONTRAST
 import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.PaletteKind
 import com.stash.core.ui.ambient.ThemeAccent
@@ -134,7 +135,13 @@ class ColorSchemeTest {
         check("onPrimary on primary", contrastRatio(scheme.onPrimary, scheme.primary), 4.5)
         check("onSecondary on secondary", contrastRatio(scheme.onSecondary, scheme.secondary), 4.5)
         check("onTertiary on tertiary", contrastRatio(scheme.onTertiary, scheme.tertiary), 4.5)
-        // Text on a container (a selected chip, a FAB, the FLAC badge), and the page's own text on it.
+        // A container (a selected chip or segment, a FAB): solid, its text at 4.5:1 (the page's text too),
+        // and standing out from every page ground it sits on, so selected never looks fainter than an
+        // unselected outline (review of #792: the old wash was ~1.2:1).
+        val pageGrounds = listOf(
+            scheme.background, scheme.surface, scheme.surfaceContainerLowest, scheme.surfaceContainerLow,
+            scheme.surfaceContainer, scheme.surfaceContainerHigh,
+        )
         for ((name, fill, on) in listOf(
             Triple("primaryContainer", scheme.primaryContainer, scheme.onPrimaryContainer),
             Triple("secondaryContainer", scheme.secondaryContainer, scheme.onSecondaryContainer),
@@ -142,7 +149,8 @@ class ColorSchemeTest {
         )) {
             assertEquals("$what: $name is solid", 1f, fill.alpha)
             check("on$name on $name", contrastRatio(on, fill), 4.5)
-            check("onSurface on $name", contrastRatio(scheme.onSurface, fill), 7.0)
+            check("onSurface on $name", contrastRatio(scheme.onSurface, fill), 4.5)
+            check("$name ${hex(fill)} against the page", pageGrounds.minOf { contrastRatio(fill, it) }, CONTAINER_MIN_CONTRAST)
         }
         // A snackbar's action on the inverse surface.
         check("inversePrimary on inverseSurface", contrastRatio(scheme.inversePrimary, scheme.inverseSurface), 4.5)
@@ -156,15 +164,38 @@ class ColorSchemeTest {
                 val scheme = ThemeAccent(palette).scheme(base, g)
                 assertReadable("$album on $ground", scheme)
                 report.append(
-                    "%-14s %-10s primary %s on bg %.1f:1, onPrimary %.1f:1, secondary %s %.1f:1\n".format(
+                    "%-14s %-10s primary %s on bg %.1f:1, onPrimary %.1f:1, secondary %s %.1f:1, container %s %.1f:1 on bg, its text %.1f:1\n".format(
                         album, ground, hex(scheme.primary), contrastRatio(scheme.primary, scheme.background),
                         contrastRatio(scheme.onPrimary, scheme.primary), hex(scheme.secondary),
-                        contrastRatio(scheme.secondary, scheme.background),
+                        contrastRatio(scheme.secondary, scheme.background), hex(scheme.secondaryContainer),
+                        contrastRatio(scheme.secondaryContainer, scheme.background),
+                        contrastRatio(scheme.onSecondaryContainer, scheme.secondaryContainer),
                     ),
                 )
             }
         }
         println(report)
+    }
+
+    @Test fun `a sweep of cover colours keeps every rule on every theme`() {
+        // 24 hues x 3 saturations x 5 lightnesses of solid covers, plus greys: what the six above
+        // stand for, so a rule that only holds for them is caught.
+        val covers = buildList {
+            for (h in 0 until 360 step 15) for (s in listOf(0.35f, 0.65f, 0.95f)) for (l in listOf(0.15f, 0.3f, 0.5f, 0.7f, 0.85f)) {
+                add(Color.hsl(h.toFloat(), s, l))
+            }
+            for (v in listOf(0.05f, 0.3f, 0.5f, 0.7f, 0.95f)) add(Color.hsl(0f, 0f, v))
+        }
+        var n = 0
+        for ((ground, base, g) in bases) {
+            for (c in covers) {
+                val argb = (0xFF shl 24) or ((c.red * 255).toInt() shl 16) or ((c.green * 255).toInt() shl 8) or (c.blue * 255).toInt()
+                val palette = readCoverPalette(IntArray(400) { argb }, key = "sweep") ?: continue
+                assertReadable("${hex(c)} on $ground", ThemeAccent(palette).scheme(base, g))
+                n++
+            }
+        }
+        assertTrue("swept $n schemes", n >= 3 * 300)
     }
 
     @Test fun `a coloured album colours the scheme, a colourless one stays grey`() {
