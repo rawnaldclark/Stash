@@ -368,7 +368,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Join on Crowdin, then request access",
+                                        text = "After getting access, contribute on Weblate",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -383,7 +383,7 @@ fun HomeScreen(
                             },
                             onClick = {
                                 showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
+                                runCatching { socialUriHandler.openUri(STASH_WEBSITE_URL) }
                             },
                         )
                         DropdownMenuItem(
@@ -1141,10 +1141,10 @@ private data class Supporter(
 // browser. Edit when the invite rotates.
 private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
 
-// Translation project on Crowdin. Tap → Crowdin project page.
-private const val STASH_CROWDIN_URL = "https://crowdin.com/project/stash-music-player"
+// Translation project on Weblate. Tap → Weblate project page.
+private const val STASH_WEBSITE_URL = "https://weblate.paraliyzed.net/projects/stash-music-app/"
 
-// Form to request translator access on Crowdin.
+// Form to request translator access on Weblate.
 private const val STASH_TRANSLATE_ACCESS_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform"
 
