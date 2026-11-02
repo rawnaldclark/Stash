@@ -99,7 +99,7 @@ class PossibleDuplicatesViewModel @Inject constructor(
         if (pair.removesAFile) {
             _state.update { it.copy(confirming = pair) }
         } else {
-            doMerge(pair)
+            doMerge(pair, confirmed = false)
         }
     }
 
@@ -107,7 +107,7 @@ class PossibleDuplicatesViewModel @Inject constructor(
     fun confirmMerge() {
         val pair = _state.value.confirming ?: return
         _state.update { it.copy(confirming = null) }
-        doMerge(pair)
+        doMerge(pair, confirmed = true)
     }
 
     fun cancelConfirm() = _state.update { it.copy(confirming = null) }
@@ -132,13 +132,14 @@ class PossibleDuplicatesViewModel @Inject constructor(
 
     fun messageShown() = _state.update { it.copy(message = null) }
 
-    private fun doMerge(pair: PairUi) {
+    /** [confirmed]: the user said yes to "Remove the extra copy?" for this pair. */
+    private fun doMerge(pair: PairUi, confirmed: Boolean) {
         if (pair.key in _state.value.working) return
         _state.update { it.copy(working = it.working + pair.key) }
         viewModelScope.launch {
             val result = withContext(io) {
                 try {
-                    duplicates.merge(keeperId = pair.keepId, otherId = pair.goId)
+                    duplicates.merge(keeperId = pair.keepId, otherId = pair.goId, confirmed = confirmed)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -146,13 +147,20 @@ class PossibleDuplicatesViewModel @Inject constructor(
                     PossibleDuplicates.MergeResult.Refused
                 }
             }
+            if (result == PossibleDuplicates.MergeResult.NeedsConfirmation) {
+                // A download finished since the list was read: both are on the phone now. Ask.
+                _state.update { it.copy(working = it.working - pair.key, confirming = pair) }
+                reload()
+                return@launch
+            }
             val message = when (result) {
                 is PossibleDuplicates.MergeResult.Merged -> {
                     // The extra copy's file is gone: the player drops it like any deleted song.
                     if (result.removedFile) musicRepository.announceTrackGone(result.removedId)
                     if (result.removedFile) DuplicatesMessage.MERGED_FILE_REMOVED else DuplicatesMessage.MERGED
                 }
-                PossibleDuplicates.MergeResult.Refused -> DuplicatesMessage.NOT_MERGED
+                PossibleDuplicates.MergeResult.KeptFileMissing -> DuplicatesMessage.KEPT_FILE_MISSING
+                PossibleDuplicates.MergeResult.Refused, PossibleDuplicates.MergeResult.NeedsConfirmation -> DuplicatesMessage.NOT_MERGED
             }
             _state.update { it.copy(working = it.working - pair.key, message = message) }
             reload()
@@ -181,7 +189,7 @@ data class PossibleDuplicatesState(
 )
 
 /** A one-off line for the screen's snackbar. */
-enum class DuplicatesMessage { MERGED, MERGED_FILE_REMOVED, NOT_MERGED, DISMISSED }
+enum class DuplicatesMessage { MERGED, MERGED_FILE_REMOVED, NOT_MERGED, KEPT_FILE_MISSING, DISMISSED }
 
 /**
  * One offered pair as the screen shows it. [first] is the suggested keeper and [second] the other;

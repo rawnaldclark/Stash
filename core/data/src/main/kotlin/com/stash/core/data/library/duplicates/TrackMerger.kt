@@ -31,8 +31,9 @@ import kotlinx.serialization.json.put
  *    counts, last played; Stash Mix discovery rows.
  *  - **Likes**: the like columns ([DuplicateRules.mergedRow]); Liked Songs memberships move with
  *    the playlists.
- *  - **Downloads**: a waiting download request of the loser moves to a keeper that has no file and
- *    no request of its own; any other queue row (finished, failed) goes with the loser.
+ *  - **Downloads**: a waiting download request of the loser (the user's own, or a sync's) moves to
+ *    a keeper that has no file and no active download of its own; any other queue row (finished,
+ *    failed) goes with the loser.
  *  - **Caches**: lyrics, tags, Spotify resolution, cloud upload state and sync-undo snapshots move
  *    unless the keeper has its own.
  *  - **Aliases and "Not a duplicate"** marks of the loser move to the keeper.
@@ -120,7 +121,9 @@ class TrackMerger @Inject constructor(
         dao.moveUndoMemberships(loserId, keeperId)
         dao.dropUndoMemberships(loserId)
 
-        val downloads = if (!DuplicateRules.holdsFile(keeper) && dao.downloadRowCount(keeperId) == 0) {
+        // A finished or failed row of the keeper's is history, not a download: only an active one
+        // (waiting or running) makes the loser's request redundant.
+        val downloads = if (!DuplicateRules.holdsFile(keeper) && dao.activeDownloadCount(keeperId) == 0) {
             dao.moveWaitingDownloads(loserId, keeperId, keeper.youtubeId?.takeIf { it.isNotBlank() }?.let(::watchUrl))
         } else {
             0

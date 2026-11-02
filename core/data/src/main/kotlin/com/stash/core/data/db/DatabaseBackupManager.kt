@@ -906,6 +906,16 @@ class DatabaseBackupManager @Inject constructor(
                         liveByCanonical.getOrPut(canonicalKey(t.canonicalTitle, t.canonicalArtist)) { mutableListOf() }.add(t)
                     }
                 }
+                // A Spotify or YouTube id a duplicate merge took away (schema 76) finds the row
+                // it went into, so a backup made before the merge doesn't bring the duplicate
+                // back. After the rows' own ids: a row holding the id in its column owns it.
+                val aliasKinds = listOf(com.stash.core.data.db.entity.TrackAliasEntity.KIND_SPOTIFY_URI, com.stash.core.data.db.entity.TrackAliasEntity.KIND_YOUTUBE_ID)
+                for (alias in database.duplicateDao().aliasesOfKinds(aliasKinds)) {
+                    when (alias.kind) {
+                        com.stash.core.data.db.entity.TrackAliasEntity.KIND_SPOTIFY_URI -> liveBySpotifyUri.putIfAbsent(alias.value, alias.trackId)
+                        com.stash.core.data.db.entity.TrackAliasEntity.KIND_YOUTUBE_ID -> liveByYoutubeId.putIfAbsent(alias.value, alias.trackId)
+                    }
+                }
 
                 /** Backup track id → live track id (inserted or matched). */
                 val trackIdMap = HashMap<Long, Long>(backupTracks.size)

@@ -44,6 +44,10 @@ interface DuplicateDao {
     @Query("SELECT * FROM track_aliases WHERE track_id = :trackId")
     suspend fun aliasesOf(trackId: Long): List<TrackAliasEntity>
 
+    /** Every alias of [kinds] (a small table: one row per merged-away id). */
+    @Query("SELECT * FROM track_aliases WHERE kind IN (:kinds)")
+    suspend fun aliasesOfKinds(kinds: List<String>): List<TrackAliasEntity>
+
     /** Aliases that pointed at [loserId] point at [keeperId]: an id merged twice still finds its song. */
     @Query("UPDATE track_aliases SET track_id = :keeperId WHERE track_id = :loserId")
     suspend fun repointAliases(loserId: Long, keeperId: Long)

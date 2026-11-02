@@ -89,12 +89,19 @@ object DuplicateRules {
     fun holdsLosslessFile(row: TrackEntity): Boolean =
         holdsFile(row) && row.fileFormat.lowercase() in LOSSLESS_FORMATS
 
+    /** Whether [row] is liked anywhere: in Stash, on Spotify, on YouTube Music or on Last.fm. */
+    fun isLiked(row: TrackEntity): Boolean =
+        row.stashLikedAt != null || row.spotifySavedAt != null || row.ytMusicSavedAt != null ||
+            row.lastFmLovedAt != null || row.lastfmUserLoved
+
     /**
-     * Which of two rows of one song stays, best first: the downloaded one, then the one whose file
-     * is lossless, then the more played, then the older row (the one other places have pointed at
-     * longest).
+     * Which of two rows of one song stays, best first: the downloaded one, then the liked one, then
+     * the one whose file is lossless, then the more played, then the older row (the one other
+     * places have pointed at longest). Likes move in a merge either way; the order decides whose
+     * identity (ids, words, source) the song keeps.
      */
     val keeperOrder: Comparator<TrackEntity> = compareByDescending<TrackEntity> { holdsFile(it) }
+        .thenByDescending { isLiked(it) }
         .thenByDescending { holdsLosslessFile(it) }
         .thenByDescending { it.playCount }
         .thenBy { it.id }
@@ -112,7 +119,8 @@ object DuplicateRules {
      * - Plays: counts added, the later last play. Likes: the earliest Stash like; a Spotify, YouTube
      *   Music or Last.fm like on either side is kept.
      * - Album, art, length, explicit flag, MusicBrainz id: the keeper's, or the loser's when the
-     *   keeper has none. Streamable when either was.
+     *   keeper has none; but never an id-less stub's explicit flag, which is discovery's guess, not
+     *   the catalog's. Streamable when either was.
      */
     fun mergedRow(keeper: TrackEntity, loser: TrackEntity): TrackEntity {
         val keeperHadIds = isIdentified(keeper)
@@ -128,7 +136,7 @@ object DuplicateRules {
             ytCanonicalVideoId = if (videoFromLoser) loser.ytCanonicalVideoId else keeper.ytCanonicalVideoId,
             isrc = keeper.isrc?.takeIf { it.isNotBlank() } ?: loser.isrc?.takeIf { it.isNotBlank() },
             mbid = keeper.mbid ?: loser.mbid,
-            explicit = keeper.explicit ?: loser.explicit,
+            explicit = keeper.explicit ?: loser.explicit.takeUnless { isStub(loser) },
             source = TrackSourceRule.honestSource(claimed, spotifyUri, youtubeId),
             album = if (albumFromLoser) loser.album else keeper.album,
             albumArtist = if (albumFromLoser) loser.albumArtist else keeper.albumArtist,

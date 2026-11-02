@@ -50,7 +50,9 @@ class SearchDownloadCoordinatorReuseTest {
     private val registry: LosslessSourceRegistry = mockk(relaxed = true)
     private val downloadExecutor: DownloadExecutor = mockk()
     private val trackFinalizer: TrackFinalizer = mockk()
-    private val trackDao: TrackDao = mockk(relaxed = true)
+    private val trackDao: TrackDao = mockk(relaxed = true) {
+        io.mockk.coEvery { findByAlias(any(), any()) } returns null
+    }
     private val context: Context = mockk(relaxed = true)
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
     private val localFileOps: LocalFileOps = mockk()

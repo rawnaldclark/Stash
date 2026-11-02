@@ -57,7 +57,7 @@ class PossibleDuplicatesViewModelTest {
     @Test fun `a merge that removes a file asks first, then merges the row the user ticked`() {
         val pair = DuplicatePair(row(1, "/m/a.flac"), row(2, "/m/b.opus"), DuplicateKind.TWO_FILES)
         coEvery { duplicates.find() } returns listOf(pair)
-        coEvery { duplicates.merge(any(), any(), any()) } returns
+        coEvery { duplicates.merge(any(), any(), any(), any()) } returns
             PossibleDuplicates.MergeResult.Merged(keptId = 2, removedId = 1, removedFile = true)
         val vm = vm()
         val key = vm.state.value.pairs.single().key
@@ -66,11 +66,11 @@ class PossibleDuplicatesViewModelTest {
         vm.merge(key)
 
         assertEquals("asks before anything is deleted", key, vm.state.value.confirming?.key)
-        coVerify(exactly = 0) { duplicates.merge(any(), any(), any()) }
+        coVerify(exactly = 0) { duplicates.merge(any(), any(), any(), any()) }
 
         vm.confirmMerge()
 
-        coVerify(exactly = 1) { duplicates.merge(keeperId = 2L, otherId = 1L, now = any()) }
+        coVerify(exactly = 1) { duplicates.merge(keeperId = 2L, otherId = 1L, confirmed = true, now = any()) }
         coVerify { musicRepository.announceTrackGone(1L) }
         assertNull(vm.state.value.confirming)
         assertEquals(DuplicatesMessage.MERGED_FILE_REMOVED, vm.state.value.message)
@@ -84,14 +84,45 @@ class PossibleDuplicatesViewModelTest {
         vm.merge(vm.state.value.pairs.single().key)
         vm.cancelConfirm()
 
-        coVerify(exactly = 0) { duplicates.merge(any(), any(), any()) }
+        coVerify(exactly = 0) { duplicates.merge(any(), any(), any(), any()) }
         assertNull(vm.state.value.confirming)
+    }
+
+    @Test fun `a download that landed after the list loaded asks before its file goes`() {
+        val pair = DuplicatePair(row(1, "/m/a.flac"), row(2), DuplicateKind.TWO_UPLOADS)
+        coEvery { duplicates.find() } returns listOf(pair)
+        coEvery { duplicates.merge(any(), any(), confirmed = false, any()) } returns PossibleDuplicates.MergeResult.NeedsConfirmation
+        coEvery { duplicates.merge(any(), any(), confirmed = true, any()) } returns
+            PossibleDuplicates.MergeResult.Merged(keptId = 1, removedId = 2, removedFile = true)
+        val vm = vm()
+        val key = vm.state.value.pairs.single().key
+
+        vm.merge(key)
+
+        assertEquals("the question comes now", key, vm.state.value.confirming?.key)
+        assertNull(vm.state.value.message)
+        vm.confirmMerge()
+        coVerify(exactly = 1) { duplicates.merge(keeperId = 1L, otherId = 2L, confirmed = true, now = any()) }
+        assertEquals(DuplicatesMessage.MERGED_FILE_REMOVED, vm.state.value.message)
+    }
+
+    @Test fun `a kept copy whose file is missing says to keep the other`() {
+        val pair = DuplicatePair(row(1, "/m/a.flac"), row(2, "/m/b.opus"), DuplicateKind.TWO_FILES)
+        coEvery { duplicates.find() } returns listOf(pair)
+        coEvery { duplicates.merge(any(), any(), any(), any()) } returns PossibleDuplicates.MergeResult.KeptFileMissing
+        val vm = vm()
+
+        vm.merge(vm.state.value.pairs.single().key)
+        vm.confirmMerge()
+
+        assertEquals(DuplicatesMessage.KEPT_FILE_MISSING, vm.state.value.message)
+        coVerify(exactly = 0) { musicRepository.announceTrackGone(any()) }
     }
 
     @Test fun `a merge with one file merges at once and keeps the downloaded row`() {
         val pair = DuplicatePair(row(1, "/m/a.flac"), row(2), DuplicateKind.TWO_UPLOADS)
         coEvery { duplicates.find() } returns listOf(pair)
-        coEvery { duplicates.merge(any(), any(), any()) } returns
+        coEvery { duplicates.merge(any(), any(), any(), any()) } returns
             PossibleDuplicates.MergeResult.Merged(keptId = 1, removedId = 2, removedFile = false)
         val vm = vm()
         val key = vm.state.value.pairs.single().key
@@ -101,7 +132,7 @@ class PossibleDuplicatesViewModelTest {
         vm.merge(key)
 
         assertNull("nothing to confirm: no file goes", vm.state.value.confirming)
-        coVerify(exactly = 1) { duplicates.merge(keeperId = 1L, otherId = 2L, now = any()) }
+        coVerify(exactly = 1) { duplicates.merge(keeperId = 1L, otherId = 2L, confirmed = false, now = any()) }
         coVerify(exactly = 0) { musicRepository.announceTrackGone(any()) }
         assertEquals(DuplicatesMessage.MERGED, vm.state.value.message)
     }

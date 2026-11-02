@@ -66,6 +66,7 @@ fun PossibleDuplicatesScreen(
             DuplicatesMessage.MERGED -> R.string.settings_duplicates_merged
             DuplicatesMessage.MERGED_FILE_REMOVED -> R.string.settings_duplicates_merged_file_removed
             DuplicatesMessage.NOT_MERGED -> R.string.settings_duplicates_not_merged
+            DuplicatesMessage.KEPT_FILE_MISSING -> R.string.settings_duplicates_kept_file_missing
             DuplicatesMessage.DISMISSED -> R.string.settings_duplicates_dismissed
         }
         viewModel.messageShown()

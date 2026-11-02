@@ -50,6 +50,19 @@ class PossibleDuplicates @Inject constructor(
 
         /** Nothing changed: the pair is no longer mergeable (a row is gone, flagged, downloading, or would lose its only file). */
         data object Refused : MergeResult
+
+        /**
+         * Nothing changed: the merge would now delete a file the user wasn't asked about (a
+         * download finished after the list was read). Ask "Remove the extra copy?", then merge
+         * again with `confirmed`.
+         */
+        data object NeedsConfirmation : MergeResult
+
+        /**
+         * Nothing changed: the row to keep says it has a file, but that file isn't on the phone,
+         * while the other row's is. Keeping it would leave the song with no audio: keep the other.
+         */
+        data object KeptFileMissing : MergeResult
     }
 
     /**
@@ -77,18 +90,40 @@ class PossibleDuplicates @Inject constructor(
     }
 
     /**
-     * Merges [otherId] into [keeperId] ([TrackMerger]), then, when both held a different file,
-     * deletes the merged-away row's file: the caller asks the one "Remove the extra copy?" first
-     * ([DuplicatePair.removesAFile]). The file goes only after the rows are merged, and only if no other row
-     * still plays from it, so a failure leaves at worst a leftover file, never a row without audio.
+     * Merges [otherId] into [keeperId] ([TrackMerger]) and, when both hold a different file and the
+     * user said yes to "Remove the extra copy?" ([confirmed]), deletes the merged-away row's file.
+     *
+     * The rows are read again here, not trusted from the list on screen: a download that finished
+     * since the list was read gives [MergeResult.NeedsConfirmation] instead of a silent delete, and
+     * a row to keep whose file isn't really on the phone (a stale "downloaded" mark) gives
+     * [MergeResult.KeptFileMissing] instead of a merge that leaves the song without audio. The file
+     * goes only after the rows are merged, only while the kept row's own file is on the phone, and
+     * only if no other row still plays from it: a failure leaves at worst a leftover file, never a
+     * row without audio.
      */
-    suspend fun merge(keeperId: Long, otherId: Long, now: Long = System.currentTimeMillis()): MergeResult {
+    suspend fun merge(
+        keeperId: Long,
+        otherId: Long,
+        confirmed: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ): MergeResult {
+        val trackDao = database.trackDao()
+        val keeper = trackDao.getById(keeperId) ?: return MergeResult.Refused
+        val other = trackDao.getById(otherId) ?: return MergeResult.Refused
+        val otherFile = other.filePath?.takeIf { DuplicateRules.holdsFile(other) && it.isNotBlank() }
+        if (otherFile != null && DuplicateRules.holdsFile(keeper)) {
+            val keptOnPhone = localFileOps.exists(keeper.filePath)
+            val otherOnPhone = !localFileOps.isSameFile(otherFile, keeper.filePath) && localFileOps.exists(otherFile)
+            if (otherOnPhone && !keptOnPhone) return MergeResult.KeptFileMissing
+            if (otherOnPhone && !confirmed) return MergeResult.NeedsConfirmation
+        }
         val merged = merger.merge(keeperId, otherId, TrackMergeLogEntity.REASON_USER_MERGE, now)
             ?: return MergeResult.Refused
         val path = merged.removed.filePath?.takeIf { DuplicateRules.holdsFile(merged.removed) && it.isNotBlank() }
-        val removedFile = path != null &&
+        val removedFile = confirmed && path != null &&
             !localFileOps.isSameFile(path, merged.kept.filePath) &&
-            !database.trackDao().fileUsedByAnotherTrack(path, merged.removed.id) &&
+            localFileOps.exists(merged.kept.filePath) &&
+            !trackDao.fileUsedByAnotherTrack(path, merged.removed.id) &&
             deleteQuietly(path)
         return MergeResult.Merged(keptId = merged.kept.id, removedId = merged.removed.id, removedFile = removedFile)
     }

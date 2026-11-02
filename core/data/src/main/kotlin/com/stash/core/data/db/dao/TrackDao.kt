@@ -11,6 +11,7 @@ import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -915,6 +916,23 @@ interface TrackDao {
         """,
     )
     suspend fun findByAlias(kind: String, value: String): TrackEntity?
+
+    @Query("SELECT * FROM track_aliases WHERE kind = :kind AND value IN (:values)")
+    suspend fun aliasRowsRaw(kind: String, values: List<String>): List<TrackAliasEntity>
+
+    /**
+     * For each of [trackIds] that a duplicate merge took away, the row it went into (schema 76,
+     * `track_aliases` kind `track_id`): two batched reads, chunked for the bind cap. Ids that were
+     * never merged away are absent from the map. What a saved queue's ids go through on a cold start.
+     */
+    suspend fun mergedIntoAll(trackIds: Collection<Long>): Map<Long, TrackEntity> {
+        if (trackIds.isEmpty()) return emptyMap()
+        val aliases = trackIds.map(Long::toString).distinct()
+            .chunkedForBind { aliasRowsRaw(TrackAliasEntity.KIND_TRACK_ID, it) }
+        if (aliases.isEmpty()) return emptyMap()
+        val rows = getByIds(aliases.map { it.trackId }.distinct()).associateBy { it.id }
+        return aliases.mapNotNull { alias -> rows[alias.trackId]?.let { alias.value.toLong() to it } }.toMap()
+    }
 
     @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
     suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?

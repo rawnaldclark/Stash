@@ -799,6 +799,7 @@
     <string name="settings_duplicates_merged">Merged.</string>
     <string name="settings_duplicates_merged_file_removed">Merged. The extra copy was removed.</string>
     <string name="settings_duplicates_not_merged">Couldn\'t merge these two.</string>
+    <string name="settings_duplicates_kept_file_missing">The copy you\'re keeping isn\'t on your phone any more. Keep the other one.</string>
     <string name="settings_duplicates_dismissed">Won\'t be shown again.</string>
     <string name="settings_library_health_section_lyrics">Lyrics</string>
     <string name="settings_library_health_fetch_lyrics_title">Fetch lyrics</string>

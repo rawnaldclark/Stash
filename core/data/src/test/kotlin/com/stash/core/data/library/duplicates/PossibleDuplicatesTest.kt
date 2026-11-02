@@ -103,7 +103,7 @@ class PossibleDuplicatesTest {
         assertEquals(DuplicateKind.TWO_FILES, pair.kind)
         assertTrue(pair.removesAFile)
 
-        val result = duplicates.merge(keeperId = keep, otherId = go)
+        val result = duplicates.merge(keeperId = keep, otherId = go, confirmed = true)
 
         assertEquals(PossibleDuplicates.MergeResult.Merged(keptId = keep, removedId = go, removedFile = true), result)
         assertNull(f.row(go))
@@ -119,7 +119,7 @@ class PossibleDuplicatesTest {
         val suggested = f.song(youtubeId = "videoOne001", file = first.path, format = "flac", plays = 5)
         val chosen = f.song(youtubeId = "videoTwo001", file = second.path, format = "flac")
 
-        val result = duplicates.merge(keeperId = chosen, otherId = suggested)
+        val result = duplicates.merge(keeperId = chosen, otherId = suggested, confirmed = true)
 
         assertTrue(result is PossibleDuplicates.MergeResult.Merged)
         assertNull(f.row(suggested))
@@ -133,9 +133,51 @@ class PossibleDuplicatesTest {
         val bare = f.song(youtubeId = "bareVideo01")
         val withFile = f.song(youtubeId = "fileVideo01", file = file.path)
 
-        assertEquals(PossibleDuplicates.MergeResult.Refused, duplicates.merge(keeperId = bare, otherId = withFile))
+        assertEquals(PossibleDuplicates.MergeResult.Refused, duplicates.merge(keeperId = bare, otherId = withFile, confirmed = true))
         assertTrue(file.exists())
         assertNotNull(f.row(withFile))
+    }
+
+    @Test fun `a download that finished after the list was read is not deleted without asking`() = runBlocking {
+        val flac = tmp.newFile("kept.flac").apply { writeBytes(ByteArray(64)) }
+        val keep = f.song(youtubeId = "handVideo01", file = flac.path, format = "flac")
+        val other = f.song(youtubeId = "otherVideo1")
+        assertFalse("read with one file: no question to ask", duplicates.find().single().removesAFile)
+        // The other row's download lands while the list is on screen.
+        val landed = tmp.newFile("landed.opus").apply { writeBytes(ByteArray(16)) }
+        db.trackDao().update(f.row(other)!!.copy(filePath = landed.path, isDownloaded = true))
+
+        assertEquals(PossibleDuplicates.MergeResult.NeedsConfirmation, duplicates.merge(keeperId = keep, otherId = other, confirmed = false))
+        assertNotNull("nothing changed", f.row(other))
+        assertTrue(landed.exists())
+
+        assertEquals(
+            PossibleDuplicates.MergeResult.Merged(keptId = keep, removedId = other, removedFile = true),
+            duplicates.merge(keeperId = keep, otherId = other, confirmed = true),
+        )
+        assertFalse(landed.exists())
+        assertTrue(flac.exists())
+    }
+
+    @Test fun `a stale downloaded mark on the kept row never costs the song its real file`() = runBlocking {
+        val real = tmp.newFile("real.opus").apply { writeBytes(ByteArray(16)) }
+        val stale = f.song(youtubeId = "staleVideo1", file = java.io.File(tmp.root, "gone.flac").path, format = "flac")
+        val other = f.song(youtubeId = "otherVideo1", file = real.path)
+
+        assertEquals(
+            PossibleDuplicates.MergeResult.KeptFileMissing,
+            duplicates.merge(keeperId = stale, otherId = other, confirmed = true),
+        )
+        assertNotNull(f.row(stale))
+        assertNotNull(f.row(other))
+        assertTrue(real.exists())
+    }
+
+    @Test fun `a liked row is suggested before a more played one`() = runBlocking {
+        f.song(youtubeId = "playedVid01", plays = 9)
+        val liked = f.song(youtubeId = "likedVid001", likedAt = 1L)
+
+        assertEquals(liked, duplicates.find().single().keeper.id)
     }
 
     @Test fun `a file another row still plays from is kept`() = runBlocking {
@@ -145,7 +187,7 @@ class PossibleDuplicatesTest {
         val go = f.song(youtubeId = "videoTwo001", file = shared.path)
         f.song(title = "Some Import", file = shared.path, source = com.stash.core.model.MusicSource.LOCAL)
 
-        val result = duplicates.merge(keeperId = keep, otherId = go) as PossibleDuplicates.MergeResult.Merged
+        val result = duplicates.merge(keeperId = keep, otherId = go, confirmed = true) as PossibleDuplicates.MergeResult.Merged
 
         assertFalse(result.removedFile)
         assertTrue(shared.exists())
