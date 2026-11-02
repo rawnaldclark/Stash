@@ -208,9 +208,11 @@ internal class QueueWindow private constructor(
         val unwrapped = start + slot
         // Past the order's end the slot is in the wrapped part, at the order's beginning: positions
         // there are before start, so start moves up one. Exactly at the end it is an append.
-        val p = if (unwrapped <= total) unwrapped else unwrapped - total
+        // Decided before the insert: it grows total.
+        val inWrappedPart = unwrapped > total
+        val p = if (inWrappedPart) unwrapped - total else unwrapped
         insertPositionInternal(p, id, logicalAtEnd)
-        if (unwrapped > total) start += 1
+        if (inWrappedPart) start += 1
         count += 1
     }
 

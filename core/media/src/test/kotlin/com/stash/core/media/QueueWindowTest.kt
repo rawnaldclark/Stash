@@ -238,14 +238,18 @@ class QueueWindowTest {
         )
         var nextId = 100_000L
         check(w, ref, -1)
+        val log = ArrayDeque<String>()
         repeat(1_500) { step ->
             val repeatAll = rnd.nextBoolean()
-            when (rnd.nextInt(10)) {
-                0 -> if (w.count > 1) { val s = rnd.nextInt(w.count); w.removeSlot(s); ref.order.remove(ref.timeline.removeAt(s)) }
-                1 -> if (w.count > 0) { val s = rnd.nextInt(w.count + 1); val id = nextId++; w.insertSlot(s, id); ref.insertSlot(s, id) }
+            val op = rnd.nextInt(10)
+            var d = ""
+            val before0 = "$w wrapped=${w.wrapped}"
+            when (op) {
+                0 -> if (w.count > 1) { val s = rnd.nextInt(w.count); d = "remove $s"; w.removeSlot(s); ref.order.remove(ref.timeline.removeAt(s)) }
+                1 -> if (w.count > 0) { val s = rnd.nextInt(w.count + 1); val id = nextId++; d = "insert $s"; w.insertSlot(s, id); ref.insertSlot(s, id) }
                 2 -> if (w.count > 1) {
                     val from = rnd.nextInt(w.count); val to = rnd.nextInt(w.count)
-                    w.moveSlot(from, to)
+                    d = "move $from $to"; w.moveSlot(from, to)
                     if (from != to) { val id = ref.timeline.removeAt(from); ref.order.remove(id); ref.insertSlot(to, id) }
                 }
                 3, 4 -> {
@@ -254,7 +258,7 @@ class QueueWindowTest {
                         val n = 1 + rnd.nextInt(minOf(gap, 15))
                         val found = BooleanArray(n) { rnd.nextInt(5) != 0 }
                         val next = ref.nextAfterTimeline(n)
-                        w.admitForward(found)
+                        d = "fwd ${found.joinToString("") { if (it) "1" else "0" }}"; w.admitForward(found)
                         next.forEachIndexed { i, id -> if (found[i]) ref.timeline.add(id) else ref.order.remove(id) }
                     }
                 }
@@ -264,17 +268,17 @@ class QueueWindowTest {
                         val n = 1 + rnd.nextInt(minOf(gap, 15))
                         val found = BooleanArray(n) { rnd.nextInt(5) != 0 }
                         val before = ref.beforeTimeline(n)
-                        w.admitBackward(found)
+                        d = "back ${found.joinToString("") { if (it) "1" else "0" }}"; w.admitBackward(found)
                         ref.timeline.addAll(0, before.filterIndexed { i, _ -> found[i] })
                         before.forEachIndexed { i, id -> if (!found[i]) ref.order.remove(id) }
                     }
                 }
-                6 -> if (w.count > 20) { val n = rnd.nextInt(10); w.dropFront(n); repeat(n) { ref.timeline.removeAt(0) } }
+                6 -> if (w.count > 20) { val n = rnd.nextInt(10); d = "dropFront $n"; w.dropFront(n); repeat(n) { ref.timeline.removeAt(0) } }
                 7 -> if (w.count > 20) { val n = rnd.nextInt(10); w.dropBack(n); repeat(n) { ref.timeline.removeAt(ref.timeline.lastIndex) } }
                 8 -> {
                     val victims = (0 until 3).map { ref.order[rnd.nextInt(ref.order.size)] }
                         .filter { it !in ref.timeline || ref.timeline.size > 3 }.toSet()
-                    w.removeIds(victims)
+                    d = "removeIds ${victims.map { ref.order.indexOf(it) to (it in ref.timeline) }}"; w.removeIds(victims)
                     ref.order.removeAll(victims); ref.timeline.removeAll(victims)
                 }
                 9 -> if (!repeatAll && w.count > 0) {
@@ -285,7 +289,8 @@ class QueueWindowTest {
                     }
                 }
             }
-            check(w, ref, step)
+            log.addLast("step $step op $op $d repeatAll=$repeatAll before $before0"); if (log.size > 4) log.removeFirst()
+            try { check(w, ref, step) } catch (e: AssertionError) { throw AssertionError(log.joinToString(" | ") + " | after $w", e) }
         }
     }
 
