@@ -233,7 +233,7 @@ class AlbumDetailViewModelTest {
         runCurrent()
 
         verify(playerRepo, never()).setQueue(any(), any(), any())
-        assertEquals(listOf("This song isn't downloaded. Connect to play it."), messages)
+        assertEquals(listOf("No internet connection, and this song isn't downloaded."), messages)
     }
 
     @Test

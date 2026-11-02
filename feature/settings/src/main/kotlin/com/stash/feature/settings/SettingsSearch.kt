@@ -65,7 +65,8 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
     return listOf(
         // Playback
         SettingsSearchEntry(s(R.string.settings_stream_on_cellular_title), SettingsPage.PLAYBACK, listOf("mobile data", "5g", "lte")),
-        SettingsSearchEntry(s(R.string.settings_search_stream_or_download), SettingsPage.PLAYBACK, listOf("stream only", "offline", "mode")),
+        // The mode's names before 2026-11-01 stay findable: "stream only", "download mode".
+        SettingsSearchEntry(s(R.string.settings_search_online_or_offline), SettingsPage.PLAYBACK, listOf("stream only", "download mode", "mode")),
         SettingsSearchEntry(s(R.string.settings_autoplay_radio_title), SettingsPage.PLAYBACK, listOf("endless", "keep playing", "continue")),
         SettingsSearchEntry(s(R.string.settings_crossfade_title), SettingsPage.PLAYBACK, listOf("fade", "gapless", "transition")),
         SettingsSearchEntry(s(R.string.settings_lyrics_section), SettingsPage.PLAYBACK, listOf("lrc", "synced", "karaoke", "apple music")),
@@ -130,5 +131,6 @@ internal fun settingsSearchIndex(context: Context): List<SettingsSearchEntry> {
         SettingsSearchEntry(s(R.string.settings_share_diagnostics_bundle), SettingsPage.ABOUT, listOf("logs", "bug", "report", "problem")),
         SettingsSearchEntry(s(R.string.settings_share_latest_crash), SettingsPage.ABOUT, listOf("crash", "bug")),
         SettingsSearchEntry(s(R.string.settings_license_label), SettingsPage.ABOUT, listOf("open source")),
+        SettingsSearchEntry(s(R.string.settings_about_star), SettingsPage.ABOUT, listOf("star", "github", "source code", "repository")),
     )
 }

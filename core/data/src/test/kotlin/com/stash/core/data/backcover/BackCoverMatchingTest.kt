@@ -181,6 +181,19 @@ class BackCoverMatchingTest {
         assertThat(releasesWithoutMoreArt(body)).containsExactly("none", "front")
     }
 
+    @Test fun `a release whose summary says no back is known to have none, one with a back or unknown isn't`() {
+        val body = Json.parseToJsonElement(
+            """{"releases":[
+                {"id":"none","cover-art-archive":{"artwork":false,"count":0,"front":false,"back":false}},
+                {"id":"front","cover-art-archive":{"artwork":true,"count":1,"front":true,"back":false}},
+                {"id":"six","cover-art-archive":{"artwork":true,"count":6,"front":true,"back":true}},
+                {"id":"pages","cover-art-archive":{"artwork":true,"count":3,"front":true,"back":false}},
+                {"id":"unknown"}
+            ]}""",
+        ).jsonObject
+        assertThat(releasesWithoutBack(body)).containsExactly("none", "front", "pages")
+    }
+
     @Test fun `releases are checked vinyl first, digital last`() {
         val body = fixture("releases_nevermind.json")
         val formatsById = body["releases"]!!.jsonArray.associate { el ->

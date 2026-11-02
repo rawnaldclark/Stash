@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Library's "+" menu: bring in a playlist from an .m3u, .pls, .xspf, .csv or .txt file (another service's export, issue #61). -->
+    <string name="library_import_playlist_file">Import a playlist file</string>
+
+    <!-- The preview a picked playlist file opens (the one a pasted link opens). Above its name, where a link's says "Spotify playlist". -->
+    <string name="playlist_file_kind">Playlist</string>
+    <!-- Beside its song count, where a link's shows who made the playlist ("From a file · 52 songs · 3 hr 10 min"). -->
+    <string name="playlist_file_from">From a file</string>
+    <!-- The file was read, and no line or row in it names a song (a title and its artist). -->
+    <string name="playlist_file_nothing">Nothing in this file we could read</string>
+    <!-- The file holds several Spotify / YouTube links and no song names. "Add from a link" is the Library "+" menu item that takes one link. -->
+    <string name="playlist_file_links">This file is a list of links. Add them one at a time with + › Add from a link.</string>
+    <!-- The file couldn't be opened (it was moved or deleted, or the app holding it failed); a Retry button follows. -->
+    <string name="playlist_file_cant_open">Couldn’t open this file.</string>
+    <!-- The button under a link's or a file's error: load it again. -->
+    <string name="link_import_retry">Retry</string>
+</resources>

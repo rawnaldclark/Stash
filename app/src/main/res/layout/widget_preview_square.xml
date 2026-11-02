@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The square widget in the picker (Android 12+). Mirrors NowPlayingWidget's SquareCard. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_card"
+    android:backgroundTint="@color/widget_surface"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop"
+        android:src="@drawable/widget_cover_placeholder" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/widget_scrim"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingTop="28dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/space_grotesk_semibold"
+            android:maxLines="1"
+            android:text="@string/widget_preview_title"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_regular"
+                android:maxLines="1"
+                android:text="@string/widget_preview_artist"
+                android:textColor="#C7FFFFFF"
+                android:textSize="12sp" />
+
+            <FrameLayout
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/widget_circle"
+                android:backgroundTint="@color/widget_accent">
+
+                <ImageView
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/widget_ic_play" />
+            </FrameLayout>
+
+            <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="2dp"
+                android:importantForAccessibility="no"
+                android:padding="6dp"
+                android:src="@drawable/widget_ic_next" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

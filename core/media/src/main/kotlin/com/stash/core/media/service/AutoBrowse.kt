@@ -9,6 +9,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.media.putSoundCloudMetadata
+import com.stash.core.media.putTrackOrigin
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_DURATION_MS
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
@@ -133,8 +134,10 @@ internal fun TrackEntity.toAutoMediaItem(
                     // "Will stream" — drives the offline silent-skip for
                     // car-queued items exactly like in-app queue items.
                     putBoolean(EXTRA_TRACK_IS_STREAMABLE, !isDownloaded || filePath.isNullOrBlank())
+                    // The song's origin, for the Track Now Playing rebuilds from this item (a
+                    // cloud song stays one; a YouTube stream is never a Spotify song).
+                    putTrackOrigin(source, spotifyUri)
                     if (source == com.stash.core.model.MusicSource.CLOUD) {
-                        putString(com.stash.core.media.EXTRA_TRACK_SOURCE, source.name)
                         putString(com.stash.core.media.EXTRA_CLOUD_FILE_FORMAT, fileFormat)
                     }
                 })

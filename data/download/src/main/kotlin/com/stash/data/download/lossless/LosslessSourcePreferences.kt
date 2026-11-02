@@ -125,11 +125,13 @@ class LosslessSourcePreferences @Inject constructor(
 
     /**
      * The user's own self-hosted BitChord Lossless Relay (Tidal), or null = the Tidal
-     * rung is off. Same normalisation as [customLosslessEndpoint] (https only, no
-     * query, no trailing slash), so a path prefix survives: BitChord's own
-     * `https://host/<ACCESS_TOKEN>` form works as-is. The APK ships no default —
-     * a BitChord server spends ONE person's Tidal account, so it is never shared
-     * through the signed runtime config. Deduped and fail-closed.
+     * rung uses Stash's relay from the signed config, when it carries one. Set, it
+     * replaces that relay and, with none of the user's own Qobuz set up, leads the
+     * lossless chain above CD quality ([LosslessAvailability.ownTidalFirst]). Same normalisation as
+     * [customLosslessEndpoint] (https only, no query, no trailing slash), so a path
+     * prefix survives: BitChord's own `https://host/<ACCESS_TOKEN>` form works as-is.
+     * The APK ships no default — the user's server spends ONE person's Tidal account,
+     * so it is never shared through the signed runtime config. Deduped and fail-closed.
      */
     val bitchordEndpoint: Flow<String?> = context.losslessDataStore.data.map { prefs ->
         prefs[bitchordEndpointKey]?.takeIf { it.isNotBlank() }
@@ -453,15 +455,22 @@ class LosslessSourcePreferences @Inject constructor(
          *    Ranked FIRST: it's
          *    the fastest lossless path — plain Range-seekable FLAC, no proxy
          *    operator and no client-side decryption.
-         * 2. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
-         * 3. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
-         *    2–3 are currently PARKED (hosts down for us) — see
+         * 2. tidal_bitchord — Tidal FLAC through a BitChord server (the user's own,
+         *    or Stash's from the signed config). The registry moves it ahead of 1
+         *    when it is the user's own server, none of their own Qobuz is set up and
+         *    the tier is above CD ([LosslessAvailability.ownTidalFirstNow]): their
+         *    endpoint is asked first. Nothing calls [setPriorityOrder] today; if a
+         *    manual order is ever offered, that rule has to respect it, so streaming
+         *    and Settings follow it too.
+         * 3. squid_qobuz — Qobuz Hi-Res FLAC via qobuz.squid.wtf.
+         * 4. kennyy_qobuz — Qobuz Hi-Res FLAC via qobuz.kennyy.com.br.
+         *    3–4 are currently PARKED (hosts down for us) — see
          *    [LosslessSourceRegistry.PARKED_SOURCE_IDS]; the code + this ranking
          *    stay so re-enabling is a one-line change when they recover.
          *
          * Every rung is user-owned OR build-carried: 1 self-gates off without a
          * connected account, a custom endpoint or a relay from the signed config,
-         * and 2 and 3 are parked. With nothing of the user's own
+         * 2 without a server, and 3 and 4 are parked. With nothing of the user's own
          * connected, a build carrying a relay config still resolves through 1 with
          * no user action (see [LosslessAvailability] and [com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter]); a
          * build without one reaches NO lossless source at all and falls back to lossy.

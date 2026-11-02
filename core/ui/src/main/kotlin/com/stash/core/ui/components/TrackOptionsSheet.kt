@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -175,7 +174,7 @@ fun TrackOptionsSheet(
         // -- Start Radio option --
         if (onStartRadio != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
-                icon = Icons.Default.Radio,
+                icon = com.stash.core.ui.icons.RadioSignal.Icon,
                 label = "Start radio",
                 onClick = { onStartRadio(track) },
             )
