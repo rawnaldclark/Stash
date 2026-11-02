@@ -32,7 +32,7 @@ fun settingsHubSummaries(
     /** Connected accounts that live outside [SettingsUiState] (ListenBrainz, cloud storage). */
     otherAccounts: List<String> = emptyList(),
 ): HubSummaries {
-    val mode = if (streamingEnabled) "Stream only" else "Download"
+    val mode = if (streamingEnabled) "Online" else "Offline"
     val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
     val playback = "$mode · $cellular"
 

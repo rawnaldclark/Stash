@@ -24,6 +24,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -433,6 +434,56 @@ class BitchordClientCacheTest {
 
         assertThat(found.stream.trackId).isEqualTo("td:1")
         assertThat(searches.get()).isEqualTo(1)
+    }
+
+    // -- The user's own server giving no answer (it is the base these tests use) --
+
+    /** The server stops answering: each request gives up after a quarter second instead of 10 s. */
+    private fun serverHangs() {
+        client.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
+        searchReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
+        streamReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
+    }
+
+    private fun serverAnswers() {
+        client.httpClient = OkHttpClient()
+        searchReply = { ok(SEARCH_HIT) }
+        streamReply = { ok(FLAC) }
+    }
+
+    /** Leading the chain, every play waited out the timeout before Stash's relay was asked. */
+    @Test fun `the user's own server giving no answer is skipped for a minute, then asked again`() = runBlocking {
+        serverHangs()
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(client.isBusy()).isTrue()
+        // Any song, any mode: no request while paused.
+        assertThat(client.lookup(query.copy(isrc = "OTHER"))).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(client.lookup(query, allowAac = true)).isInstanceOf(TidalLookup.Busy::class.java)
+        assertThat(searches.get()).isEqualTo(1)
+        // Not remembered against the song: an outage is not a miss.
+        assertThat(dao.rows).isEmpty()
+
+        now += BitchordClient.OWN_SERVER_PAUSE_MS
+        serverAnswers()
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        assertThat(searches.get()).isEqualTo(2)
+    }
+
+    @Test fun `the pause doubles while the own server stays down, and its next answer starts it over`() = runBlocking {
+        serverHangs()
+        val pauses = List(5) {
+            assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
+            val busy = client.lookup(query) as TidalLookup.Busy
+            (busy.untilMs - now).also { now = busy.untilMs }
+        }
+        assertThat(pauses).containsExactly(60_000L, 120_000L, 240_000L, 300_000L, 300_000L).inOrder()
+
+        serverAnswers()
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        serverHangs()
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        val busy = client.lookup(query) as TidalLookup.Busy
+        assertThat(busy.untilMs - now).isEqualTo(BitchordClient.OWN_SERVER_PAUSE_MS)
     }
 
     private companion object {

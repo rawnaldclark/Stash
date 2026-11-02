@@ -10,6 +10,7 @@ import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.prefs.LyricsSourcePreference
 import com.stash.data.lyrics.TtmlUpgradeResult
 import com.stash.data.lyrics.TtmlUpgradeSources
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.SleepTimerController
@@ -1200,10 +1201,18 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Flag the currently-playing track as the wrong song. Surfaces it in
-     * the Failed Matches screen so the user can pick a replacement. No-op
-     * when nothing is playing. Emits a snackbar message so the user knows
-     * where to go next.
+     * One-shot: open Failed Matches on this song id, "find it yourself" searching for it. Emitted
+     * by [flagCurrentTrackAsWrongMatch] once the flag is saved (the id of a stream only exists after
+     * its persist). `extraBufferCapacity = 1` as for [artistNavEvents].
+     */
+    private val _matchFixEvents = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val matchFixEvents: SharedFlow<Long> = _matchFixEvents.asSharedFlow()
+
+    /**
+     * Flag the currently-playing track as the wrong song, then go straight to the fix: Failed
+     * Matches opens on it with "find it yourself" searching ([matchFixEvents]). It used to stop at
+     * a toast pointing to Sync → Failed Matches, where the song then had to be found by hand. No-op
+     * when nothing is playing, and for a cloud or SoundCloud song (the user's own file, no match).
      */
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
@@ -1216,7 +1225,7 @@ class NowPlayingViewModel @Inject constructor(
                 return@launchUserAction
             }
             musicRepository.setMatchFlagged(trackId, true)
-            _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
+            _matchFixEvents.emit(trackId)
         }
     }
 
@@ -1298,11 +1307,19 @@ class NowPlayingViewModel @Inject constructor(
                     _userMessages.tryEmit("Couldn't queue download.")
                     return@launchUserAction
                 }
-                val queued = musicRepository.queueDownload(realId)
-                if (!queued) {
-                    _downloadingKeys.update { it - key }
-                    _userMessages.tryEmit("Couldn't queue download.")
-                    return@launchUserAction
+                when (musicRepository.requestDownload(realId)) {
+                    DownloadRequestResult.QUEUED -> Unit
+                    // Another row of this song already holds its audio: nothing downloads twice.
+                    DownloadRequestResult.ALREADY_ON_PHONE -> {
+                        _downloadingKeys.update { it - key }
+                        _userMessages.tryEmit("Already on your phone.")
+                        return@launchUserAction
+                    }
+                    DownloadRequestResult.NOT_QUEUED -> {
+                        _downloadingKeys.update { it - key }
+                        _userMessages.tryEmit("Couldn't queue download.")
+                        return@launchUserAction
+                    }
                 }
                 _userMessages.tryEmit("Downloading…")
                 // Watchdog: drop the spinner once the song lands on disk, or as

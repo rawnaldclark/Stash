@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync Screen Header & General -->
+    <!-- Sync Sections -->
+    <!-- Downloads Card -->
+    <!-- Source Dashboard Stats & Empty Hints -->
+    <!-- Library Maintenance Card -->
+    <!-- Unmatched / Review Warning Card -->
+    <!-- Failed Downloads Warning Card -->
+    <!-- Sync Terminal -->
+    <!-- Undo Last Sync -->
+    <!-- Relative Time Strings -->
+    <!-- Refresh Mode Dialog & Chips -->
+    <!-- Last.fm Recommendations Toggle -->
+    <!-- Playlist / Tracks Counts & Studio Only -->
+    <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
+    <!-- Sync tab overhaul: nothing connected / ready -->
+    <!-- Sync tab overhaul: synced -->
+    <!-- Sync tab overhaul: syncing -->
+    <!-- Sync tab overhaul: Download mode -->
+    <!-- Sync tab overhaul: History screen -->
+    <!-- Sync tab overhaul: an account's playlists -->
+</resources>

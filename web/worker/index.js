@@ -14,6 +14,8 @@
  *   GET  /player         signed in with early access: a 2-minute ticket and a 302 to the web player (player.js).
  *                        Not signed in: the early-access sign-in page, which comes back to /player after signing in.
  *   GET|POST /admin      requests, the access list and the goal (Cloudflare Access + access-jwt.js)
+ *   GET  /goal.json      this month's goal as data, { raised_cents, goal_cents, month }, for the app's Support card:
+ *                        public, CORS *, 10 minutes at the edge (goal-json.js)
  *
  * Anything else goes to the static assets: files, /privacy and the 404 page are public, and any other HTML
  * page needs a session (so a page added later is private until it's listed in PUBLIC_PAGES). Which paths
@@ -35,6 +37,7 @@ import { checkCode, cleanCode, issueCode } from "./codes.js";
 import { clock, hashEmail, normalizeEmail, validEmail } from "./crypto.js";
 import { codeEmail, sendEmail } from "./email.js";
 import { currentGoal, goalTarget, goalView } from "./goal.js";
+import { defaultEdgeCache, goalJson } from "./goal-json.js";
 import { clientKey, readForm, sameOrigin } from "./http.js";
 import { KEYS } from "./keys.js";
 import { grantOpenAccess, isOpen, openFills, openSendAllowed } from "./open.js";
@@ -83,17 +86,17 @@ export default {
     },
 };
 
-export async function handle(request, env, ctx, { fetchImpl } = {}) {
+export async function handle(request, env, ctx, { fetchImpl, edgeCache = defaultEdgeCache() } = {}) {
     // Work that mustn't delay (or show in the timing of) the answer. Without a ctx (some tests), it's awaited
     // before handle returns instead.
     const pending = [];
     const later = (p) => (ctx ? ctx.waitUntil(p) : pending.push(p));
-    const response = await route(request, env, later, fetchImpl);
+    const response = await route(request, env, later, fetchImpl, edgeCache);
     await Promise.all(pending);
     return response;
 }
 
-async function route(request, env, later, fetchImpl) {
+async function route(request, env, later, fetchImpl, edgeCache) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method === "HEAD" ? "GET" : request.method;
@@ -127,6 +130,8 @@ async function route(request, env, later, fetchImpl) {
         case "/player":
             if (method !== "GET") return notAllowed("GET");
             return player(request, env, url);
+        case "/goal.json":
+            return goalJson(request, env, method, later, edgeCache);
     }
     // The gate's own page templates are only ever served through the routes above (however the path is spelled).
     if (/^\/gate(?:[/.]|$)/.test(loosePath(path))) return env.ASSETS.fetch(new Request(new URL("/404-not-a-page", url.origin)));

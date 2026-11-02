@@ -148,6 +148,8 @@ import androidx.compose.ui.unit.toSize
  * one) reads it in a graphicsLayer, so a drag never recomposes this screen.
  *
  * @param onDismiss Callback invoked when the user taps the dismiss (down arrow) button.
+ * @param onFixMatch "Find a better match" in the wrong-match dialog, once the song is flagged:
+ *   the host opens Failed Matches on that song id with its finder searching.
  * @param viewModel The [NowPlayingViewModel] provided by Hilt (the activity's: the mini player's).
  * @param sheet The player sheet hosting this screen; null draws it as a plain full screen.
  */
@@ -157,6 +159,7 @@ fun NowPlayingScreen(
     onDismiss: () -> Unit,
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
+    onFixMatch: (trackId: Long) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     sheet: PlayerSheetState? = null,
 ) {
@@ -292,6 +295,11 @@ fun NowPlayingScreen(
     val castConnection by castViewModel.connection.collectAsStateWithLifecycle()
     val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected
     var showCastSheet by remember { mutableStateOf(false) }
+    // Streaming quality (#716): Settings' streaming switches in a sheet, offered while songs stream.
+    val qualityViewModel: StreamingQualityViewModel = hiltViewModel()
+    val streams by qualityViewModel.streams.collectAsStateWithLifecycle()
+    var showQualitySheet by remember { mutableStateOf(false) }
+    val qualitySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
     // Where Next / Previous can go, for the art's swipe and its TalkBack actions: the queue's ends,
@@ -357,6 +365,13 @@ fun NowPlayingScreen(
                 onNavigateToAlbum(a.albumId, a.name, a.artUrl, a.artistName)
             }
         }
+    }
+
+    // "Find a better match": once the flag is saved, straight to the fix. Not dropped when the
+    // player has started closing, unlike a lookup above: the listener asked for this page, and the
+    // flag lands in milliseconds.
+    LaunchedEffect(Unit) {
+        viewModel.matchFixEvents.collect { trackId -> onFixMatch(trackId) }
     }
 
     // TalkBack: when the player settles open, focus moves to its Dismiss button, so the reader
@@ -560,7 +575,7 @@ fun NowPlayingScreen(
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
     val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
     val isPreview = track?.soundCloudPreview == true && !isDownloaded
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview) {
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
@@ -571,6 +586,7 @@ fun NowPlayingScreen(
             isCloudSong = isCloudSong,
             isSoundCloudSong = isSoundCloudSong,
             isPreview = isPreview,
+            streams = streams,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
@@ -625,6 +641,7 @@ fun NowPlayingScreen(
                 // Resolves and opens the actual remote album page.
                 NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
                 NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
+                NowPlayingAction.STREAM_QUALITY -> showQualitySheet = true
                 // The ⋮ menu's labelled "Download" / "Remove download" row.
                 NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
                 NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
@@ -734,6 +751,21 @@ fun NowPlayingScreen(
             onDismiss = { showSpeedSheet = false },
             sheetState = speedSheetState,
         )
+    }
+
+    if (showQualitySheet) {
+        val quality by qualityViewModel.state.collectAsStateWithLifecycle()
+        // Read eagerly since Now Playing opened, so this is all but never null by the time it's tapped.
+        quality?.let { q ->
+            StreamingQualitySheet(
+                state = q,
+                onLosslessChange = qualityViewModel::onLosslessChanged,
+                onSaveDataChange = qualityViewModel::onSaveDataChanged,
+                onPreferTidalAacChange = qualityViewModel::onPreferTidalAacChanged,
+                onDismiss = { showQualitySheet = false },
+                sheetState = qualitySheetState,
+            )
+        }
     }
 
     if (showCustomSpeedDialog) {

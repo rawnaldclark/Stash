@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -360,7 +361,7 @@ class PlaylistDetailViewModel @Inject constructor(
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
                 if (!connectivityMonitor.isConnected()) {
-                    _userMessages.tryEmit("Online only — connect to play this track")
+                    _userMessages.tryEmit("No internet connection, and this song isn't downloaded.")
                     return@launch
                 }
             }
@@ -462,9 +463,12 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun queueDownload(trackId: Long) {
         viewModelScope.launch {
-            val queued = musicRepository.queueDownload(trackId)
             _userMessages.tryEmit(
-                if (queued) "Queued for download." else "Couldn't queue download.",
+                when (musicRepository.requestDownload(trackId)) {
+                    DownloadRequestResult.QUEUED -> "Queued for download."
+                    DownloadRequestResult.ALREADY_ON_PHONE -> "Already on your phone."
+                    DownloadRequestResult.NOT_QUEUED -> "Couldn't queue download."
+                },
             )
         }
     }

@@ -56,7 +56,7 @@ class FlacUpgradeViewModel @Inject constructor(
         viewModelScope.launch { autoPref.setEnabled(enabled) }
     }
 
-    /** What the last tap answered when it queued nothing (Stream only, Lossless off, ...). */
+    /** What the last tap answered when it queued nothing (Online, Lossless off, ...). */
     private val tapResult = MutableStateFlow<FlacSweepResult?>(null)
 
     val state: StateFlow<FlacUpgradeUiState> = combine(
@@ -114,7 +114,7 @@ internal fun flacUpgradeUiState(infos: List<WorkInfo>, tap: FlacSweepResult?): F
 }
 
 private fun tapMessage(tap: FlacSweepResult?): String? = when (tap) {
-    FlacSweepResult.StreamingMode -> "Stream only is on, so there are no downloads to upgrade."
+    FlacSweepResult.StreamingMode -> "Stash is set to Online, so there are no downloads to upgrade."
     FlacSweepResult.LosslessDisabled -> "Set Download quality to Lossless in Audio & Quality first."
     FlacSweepResult.NothingToUpgrade ->
         "Nothing to upgrade. Every downloaded track is FLAC already or was checked in the last two weeks."

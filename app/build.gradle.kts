@@ -320,4 +320,7 @@ dependencies {
     // Google Cast: casting to Chromecast / Cast speakers (spec 2026-10-06).
     implementation(libs.play.services.cast.framework)
     implementation(libs.androidx.mediarouter)
+
+    // Plain JVM tests of the app's own pieces (navigation routes); no Android in them.
+    testImplementation("junit:junit:4.13.2")
 }

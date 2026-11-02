@@ -275,6 +275,7 @@ private fun StashNavGraph(
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
                 onOpenLink = { navController.navigate(LinkImportRoute(it)) },
+                onOpenPlaylistFile = { navController.navigate(PlaylistFileRoute(it)) },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
@@ -308,7 +309,7 @@ private fun StashNavGraph(
         composable<SyncRoute> {
             SyncScreen(
                 onNavigateToFailedMatches = {
-                    navController.navigate(FailedMatchesRoute)
+                    navController.navigate(FailedMatchesRoute())
                 },
                 onNavigateToFailedDownloads = {
                     navController.navigate(FailedDownloadsRoute)
@@ -328,6 +329,7 @@ private fun StashNavGraph(
                 },
                 onManageSource = { source -> navController.navigate(ManagePlaylistsRoute(source.name)) },
                 onOpenHistory = { navController.navigate(SyncHistoryRoute) },
+                onOpenDownloads = { navController.navigate(DownloadManagementRoute) },
                 onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) },
             )
         }
@@ -374,7 +376,6 @@ private fun StashNavGraph(
                     navController.navigate(SettingsAudioQualityRoute)
                     navController.navigate(EqualizerRoute)
                 },
-                onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }
 
@@ -509,6 +510,15 @@ private fun StashNavGraph(
             AboveChrome {
                 LibraryHealthScreen(
                     onNavigateBack = { navController.popBackStack() },
+                    onOpenPossibleDuplicates = { navController.navigate(PossibleDuplicatesRoute) },
+                )
+            }
+        }
+
+        composable<PossibleDuplicatesRoute> {
+            AboveChrome {
+                com.stash.feature.settings.libraryhealth.PossibleDuplicatesScreen(
+                    onNavigateBack = { navController.popBackStack() },
                 )
             }
         }
@@ -561,6 +571,16 @@ private fun StashNavGraph(
                     onBack = { navController.popBackStack() },
                     // Back from the playlist skips the link's screen.
                     onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<LinkImportRoute> { inclusive = true } } },
+                )
+            }
+        }
+
+        // A playlist file from Library's "+": the link's screen, reading the file instead.
+        composable<PlaylistFileRoute> {
+            AboveChrome {
+                com.stash.feature.library.share.LinkImportScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenPlaylist = { id -> navController.navigate(PlaylistDetailRoute(id)) { popUpTo<PlaylistFileRoute> { inclusive = true } } },
                 )
             }
         }
@@ -704,6 +724,7 @@ private fun StashNavGraph(
             AboveChrome {
                 FailedMatchesScreen(
                     onBack = { navController.popBackStack() },
+                    focusTrackId = it.toRoute<FailedMatchesRoute>().focusTrackId,
                 )
             }
         }
