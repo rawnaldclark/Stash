@@ -1125,10 +1125,8 @@ internal fun UndoSyncCard(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
-    val mins = remember(capturedAtEpochMs) {
-        val ageMs = (System.currentTimeMillis() - capturedAtEpochMs).coerceAtLeast(0)
-        ageMs / 60_000L
-    }
+    // Read again each minute while on screen, so the age doesn't stay as it was first drawn.
+    val mins = (rememberMinuteClock(capturedAtEpochMs) - capturedAtEpochMs).coerceAtLeast(0) / 60_000L
     val when_ = when {
         mins < 1 -> stringResource(R.string.sync_time_just_now)
         mins < 60 -> stringResource(R.string.sync_time_mins_ago, mins.toInt())

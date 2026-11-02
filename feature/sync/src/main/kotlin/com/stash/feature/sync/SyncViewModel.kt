@@ -177,8 +177,8 @@ data class SyncUiState(
 
     // -- Hero card: last-sync metadata ----------------------------------------
     /**
-     * When the most recent sync finished (its start while it has no end), or null if never
-     * synced. The screen words it ("synced 3 minutes ago") as it draws, against a clock that
+     * When the most recent sync finished ([syncedAt]: its start while it has no real end), or
+     * null if never synced. The screen words it ("synced 3 minutes ago") as it draws, against a clock that
      * ticks while the tab is on screen: [rememberSyncedAgo].
      */
     val lastSyncFinishedAt: Long? = null,
@@ -990,7 +990,7 @@ class SyncViewModel @Inject constructor(
                 }
                 _uiState.update { state ->
                     state.copy(
-                        lastSyncFinishedAt = latest?.let { it.completedAt ?: it.startedAt },
+                        lastSyncFinishedAt = latest?.syncedAt(),
                         // What the sync FOUND, not what it downloaded. In Online
                         // mode nothing downloads, so tracksDownloaded is always 0
                         // and the headline read "0 tracks" after a run that added

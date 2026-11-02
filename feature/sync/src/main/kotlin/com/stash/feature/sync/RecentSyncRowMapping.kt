@@ -10,8 +10,8 @@ import com.stash.feature.sync.components.formatSyncDuration
  * Pure mapping from a [SyncHistoryInfo] record to the view-layer [RecentSyncRow].
  *
  * [relativeTime] is a PARAMETER (filled by the Compose call site via
- * `formatRelativeTime`) rather than computed here — `formatRelativeTime` wraps
- * Android `DateUtils`, which returns null under `isReturnDefaultValues=true` and
+ * `syncedAgoText`, against a clock that ticks each minute) rather than computed
+ * here — `syncedAgoText` wraps Android `DateUtils`, which returns null under `isReturnDefaultValues=true` and
  * NPEs in unit tests. Keeping it out makes this function pure and unit-testable.
  * `formatSyncDuration` / `formatSyncBytes` are pure Kotlin and stay inline.
  */

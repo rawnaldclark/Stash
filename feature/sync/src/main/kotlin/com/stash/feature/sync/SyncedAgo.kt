@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.model.SyncDisplayStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -24,10 +25,28 @@ private const val MINUTE_MS = 60_000L
 @Composable
 internal fun rememberSyncedAgo(finishedAt: Long?): String {
     val justNow = stringResource(R.string.sync_time_just_now)
-    val now by remember(finishedAt) { syncedAgoClock(finishedAt) }
-        .collectAsStateWithLifecycle(initialValue = System.currentTimeMillis())
-    return syncedAgoText(finishedAt, now, justNow)
+    return syncedAgoText(finishedAt, rememberMinuteClock(finishedAt), justNow)
 }
+
+/**
+ * The time now, read again at each whole minute after [since] ([syncedAgoClock]) while the
+ * screen is at least STARTED; for any "N minutes ago" drawn on the Sync screens.
+ */
+@Composable
+internal fun rememberMinuteClock(since: Long?): Long {
+    val now by remember(since) { syncedAgoClock(since) }
+        .collectAsStateWithLifecycle(initialValue = System.currentTimeMillis())
+    return now
+}
+
+/**
+ * When this run finished, for "synced N ago": its completed time, or its start while it has
+ * none. An interrupted run is the exception. The next launch closes a run that died part-way
+ * and stamps the launch time as its end (SyncHistoryDao.resetStaleSyncs), so it counts from
+ * its start, as it always did.
+ */
+internal fun SyncHistoryInfo.syncedAt(): Long =
+    if (displayStatus is SyncDisplayStatus.Interrupted) startedAt else completedAt ?: startedAt
 
 /**
  * The words for a sync that finished at [finishedAt], read at [now]: [justNow] under a minute
