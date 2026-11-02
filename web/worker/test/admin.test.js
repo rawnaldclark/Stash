@@ -235,6 +235,23 @@ test("add by email (source manual), with or without the email; remove ends acces
     assert.equal((await adminPost({ action: "add", email: "not an email" }, e)).headers.get("location"), "/admin?done=bad-email");
 });
 
+test("Remove access also deletes the tip jar's Ko-fi amounts kept for that email (listed or not), nobody else's", async () => {
+    const e = env();
+    const h = await hashEmail("giver@example.com");
+    const other = await hashEmail("someone@example.com");
+    const pay = (cents) => ({ metadata: { cents, at: "2026-11-03T10:00:00.000Z" } });
+    await e.ACCESS_KV.put(`kofipay:${h}:tx-1`, '{"cents":300}', pay(300));
+    await e.ACCESS_KV.put(`kofipay:${h}:tx-2`, '{"cents":100}', pay(100));
+    await e.ACCESS_KV.put(`kofipay:${other}:tx-3`, '{"cents":200}', pay(200));
+    // Under $5, so not on the list: Remove access still deletes the amounts.
+    assert.equal((await adminPost({ action: "remove", email: "Giver@Example.com" }, e)).headers.get("location"), "/admin?done=not-listed");
+    assert.deepEqual([...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith("kofipay:")), [`kofipay:${other}:tx-3`]);
+    // On the list (it reached $5): removed with the amounts.
+    await e.ACCESS_KV.put(`access:${other}`, JSON.stringify({ source: "kofi", firstAt: "2026-11-03T10:00:00.000Z", lastAt: "2026-11-03T10:00:00.000Z" }));
+    assert.equal((await adminPost({ action: "remove", email: "someone@example.com" }, e)).headers.get("location"), "/admin?done=removed");
+    assert.equal([...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith("kofipay:")).length, 0);
+});
+
 test("donations by hand: one key each in this month, shown, and removable; Ko-fi's entries aren't", async () => {
     const month = new Date().toISOString().slice(0, 7);
     const kofi = { cents: 500, source: "Ko-fi", at: "2026-10-01T00:00:00Z", orig: "4.63 EUR" };

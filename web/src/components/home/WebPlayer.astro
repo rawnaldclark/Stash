@@ -7,8 +7,9 @@
  * `npm run dev` has no Worker, so it shows both. The goal's numbers are filled in by the Worker too (data-goal),
  * and the bar is removed if they can't be read.
  *
- * Words: "the same great Stash, in your browser", streaming plus FLAC downloads. Owner's call (2026-10-15): say plainly that
- * $1 or more on Ko-fi gets you on the list (only Ko-fi supporters are added automatically).
+ * Words: "the same great Stash, in your browser", streaming plus FLAC downloads. Owner's call (2026-10-15): say plainly what
+ * on Ko-fi gets you on the list (only Ko-fi supporters are added automatically). Since 2026-11-02 that's $5 or more, added up
+ * per email (infra/tipjar-worker, ENTRY_USD_CENTS); front.astro says the same.
  */
 import BrowserFrame from '../BrowserFrame.astro';
 import Icon from '../Icon.astro';
@@ -39,7 +40,7 @@ import { LINKS } from '../../data/site';
       <div class="card glass access" id="early-access" data-if="signed-out">
         <h3 data-if="not-open">Get early access</h3>
         <h3 data-if="open">Try it now</h3>
-        <p data-if="not-open">Supporting with $1 or more on <a href={LINKS.kofi} target="_blank" rel="noopener">Ko-fi</a> gets you on the list. Enter the email you supported with, and we'll send you a code.</p>
+        <p data-if="not-open">Supporting with $5 or more on <a href={LINKS.kofi} target="_blank" rel="noopener">Ko-fi</a> gets you on the list, and smaller donations add up. Enter the email you supported with, and we'll send you a code.</p>
         <p data-if="open">Open to everyone for 48 hours, until <span data-fill="open-until">the end of the window</span>. Enter your email and we'll send you a code.</p>
         <form method="post" action="/access">
           {/* A fresh random id, filled in by the Worker for a browser with no sign-in cookie yet (worker/session.js). */}

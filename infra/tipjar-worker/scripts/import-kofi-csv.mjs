@@ -20,7 +20,13 @@
  * orders and commissions don't), or every row with an email when the export has no type
  * column or you pass --all-types. Column names are matched loosely, since Ko-fi's export has
  * changed over time: any header with "email" in it, "type" or "transaction type", and a
- * date or time column if there is one.
+ * date or time column.
+ *
+ * Only rows dated before ENTRY_SINCE (2026-11-02, the $5 entry) count. This doesn't read amounts,
+ * so it can only add the donors the entry keeps in whatever they gave: everyone from before it.
+ * Later rows, and rows it can't date (or every row, in an export with no date column), are
+ * skipped and counted: since the entry the webhook lets an email in once its Ko-fi payments add
+ * up to $5 (src/access.js), and anyone who reached $5 since then is added by hand if need be.
  *
  * Safe to re-run: each supporter's entry is rewritten with the same hash.
  */
@@ -32,6 +38,9 @@ import { pathToFileURL } from "node:url";
 
 const HASHCHECK_EMAIL = "hashcheck@stashfm.app"; // src/access.js
 const SUPPORT_TYPES = /donation|subscription|membership|tip|coffee/i;
+
+/** When the $5 entry began (src/access.js ENTRY_USD_CENTS): rows from then on are the webhook's, not this import's. */
+export const ENTRY_SINCE = "2026-11-02T00:00:00.000Z";
 
 export const normalizeEmail = (email) => String(email ?? "").trim().toLowerCase();
 
@@ -94,10 +103,11 @@ export function findColumns(header) {
 
 /**
  * The bulk file's entries, plus counts for the summary. Each supporter gets
- * { source: "kofi", firstAt, lastAt } from their earliest and latest rows (or now, with no
- * date column), and the file also carries meta:hashcheck (see src/access.js).
+ * { source: "kofi", firstAt, lastAt } from their earliest and latest rows before [since], and the
+ * file also carries meta:hashcheck (see src/access.js). Rows from [since] on, or with no readable
+ * date, are counted as afterEntry and skipped (see the top of this file).
  */
-export function buildBulk(rows, { pepper, allTypes = false, now = new Date() } = {}) {
+export function buildBulk(rows, { pepper, allTypes = false, since = ENTRY_SINCE } = {}) {
     const [header, ...data] = rows;
     if (!header) throw new Error("The CSV is empty.");
     const col = findColumns(header);
@@ -105,14 +115,15 @@ export function buildBulk(rows, { pepper, allTypes = false, now = new Date() } =
     if (col.email === -1) throw new Error(`No email column among the ${header.length} columns of the first row. Is the first row a header? Ko-fi's export has one with an "Email" column.`);
     const filterByType = !allTypes && col.type !== -1;
     const seen = new Map();
-    const counts = { rows: data.length, used: 0, noEmail: 0, otherType: 0 };
+    const counts = { rows: data.length, used: 0, noEmail: 0, otherType: 0, afterEntry: 0 };
     for (const row of data) {
         const email = normalizeEmail(row[col.email]);
         if (!email.includes("@")) { counts.noEmail++; continue; }
         if (filterByType && !SUPPORT_TYPES.test(row[col.type] ?? "")) { counts.otherType++; continue; }
+        const when = col.date === -1 ? null : parseDate(row[col.date]);
+        if (!when || Number.isNaN(when.getTime()) || when.toISOString() >= since) { counts.afterEntry++; continue; }
         counts.used++;
-        const when = col.date === -1 ? now : parseDate(row[col.date]);
-        const at = Number.isNaN(when.getTime()) ? now.toISOString() : when.toISOString();
+        const at = when.toISOString();
         const hash = hashEmail(email, pepper);
         const prev = seen.get(hash);
         seen.set(hash, prev ? { firstAt: at < prev.firstAt ? at : prev.firstAt, lastAt: at > prev.lastAt ? at : prev.lastAt } : { firstAt: at, lastAt: at });
@@ -157,6 +168,7 @@ function main(argv) {
     console.log(`Rows used:            ${counts.used}`);
     console.log(`Skipped, no email:    ${counts.noEmail}`);
     console.log(`Skipped, other type:  ${filteredByType ? counts.otherType : "n/a (no type filter)"}`);
+    console.log(`Skipped, from ${ENTRY_SINCE.slice(0, 10)} on or undated: ${counts.afterEntry} (the $5 entry: the webhook's, by amount)`);
     console.log(`Supporters (unique):  ${counts.supporters}`);
     console.log("Hashing:              HMAC-SHA256 with EMAIL_PEPPER");
     console.log(`Wrote ${entries.length} entries to ${out}`);
