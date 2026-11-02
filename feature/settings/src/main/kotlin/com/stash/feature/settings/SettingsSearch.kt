@@ -139,6 +139,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         // Appearance
         SettingsSearchEntry(s(R.string.settings_theme_section), SettingsPage.APPEARANCE, listOf("dark mode", "light mode", "night", "system")),
         SettingsSearchEntry(s(R.string.settings_amoled_title), SettingsPage.APPEARANCE, listOf("oled", "black", "dark")),
+        SettingsSearchEntry(s(R.string.settings_album_colours_title), SettingsPage.APPEARANCE, listOf("colour", "color", "accent", "neutral", "dynamic", "album")),
         SettingsSearchEntry(s(R.string.settings_ui_scale_title), SettingsPage.APPEARANCE, listOf("display size", "text size", "font", "zoom", "bigger", "smaller")),
         SettingsSearchEntry(s(R.string.settings_ambient_motion_title), SettingsPage.APPEARANCE, listOf("now playing", "animation", "background", "battery", "ambient style")),
         SettingsSearchEntry(s(R.string.settings_home_layout_section), SettingsPage.HOME_LAYOUT, listOf("sections", "order", "made for you", "radios", "community", "moods", "decades", "your listening")),

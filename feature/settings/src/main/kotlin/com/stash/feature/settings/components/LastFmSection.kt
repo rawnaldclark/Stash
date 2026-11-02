@@ -128,9 +128,11 @@ internal fun ScrobbleQueueRow(
             .padding(start = SettingsRowPadH, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // A result message in weight as well as colour (the idle accent is near-white).
         Text(
             text = message ?: pluralStringResource(R.plurals.settings_scrobbles_waiting, pending, pending),
             style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (message != null) androidx.compose.ui.text.font.FontWeight.Medium else null,
             color = if (message != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )

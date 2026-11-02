@@ -338,12 +338,15 @@ internal fun rememberFullArtState(): FullArtState = remember { FullArtState() }
 
 /**
  * Now Playing's colours while full art is out: the dark theme's, whatever the app's, since the
- * controls sit on the art's darkened blend. Always composed (with [on] false it passes the theme
- * through) so turning full art on or off never rebuilds the screen under it.
+ * controls sit on the art's darkened blend, wearing the song's accent as the rest of the app does
+ * (it used to be the literal dark scheme, so full art turned the accents back to the idle colour).
+ * Always composed (with [on] false it passes the theme through) so turning full art on or off never
+ * rebuilds the screen under it.
  */
 @Composable
 internal fun FullArtTheme(on: Boolean, content: @Composable () -> Unit) {
-    val scheme = if (on) StashDarkColorScheme else MaterialTheme.colorScheme
+    val dark = com.stash.core.ui.ambient.rememberDarkAccentScheme(StashDarkColorScheme)
+    val scheme = if (on) dark else MaterialTheme.colorScheme
     CompositionLocalProvider(
         LocalIsDarkTheme provides (on || LocalIsDarkTheme.current),
         LocalStashColors provides (if (on) StashExtendedColorsDark else LocalStashColors.current),

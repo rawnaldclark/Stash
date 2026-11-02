@@ -145,8 +145,10 @@ fun ArtistHero(
     val ink = MaterialTheme.colorScheme.onBackground
     val uriHandler = LocalUriHandler.current
     val dark = background.luminance() < 0.5f
-    val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val cream = Color(0xFFF2ECE2)
+    // The play coin wears the theme's accent: the playing album's colour, neutral when idle (D9;
+    // it was a fixed plum under cream).
+    val coin = MaterialTheme.colorScheme.primary
+    val coinInk = MaterialTheme.colorScheme.onPrimary
     val gold = Color(0xFFFFC947)
     val goldInk = if (dark) gold else Color(0xFF7A5A00)
     val support = remember(socials) { supportUrl(socials) }
@@ -260,7 +262,7 @@ fun ArtistHero(
                 Surface(
                     onClick = onPlayArtist,
                     shape = CircleShape,
-                    color = plum,
+                    color = coin,
                     shadowElevation = 6.dp,
                     modifier = Modifier.size(56.dp),
                 ) {
@@ -268,7 +270,7 @@ fun ArtistHero(
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Play ${hero.name}",
-                            tint = cream,
+                            tint = coinInk,
                             modifier = Modifier.size(30.dp),
                         )
                     }

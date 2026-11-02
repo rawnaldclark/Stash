@@ -13,20 +13,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.stash.core.ui.ambient.Ground
+import com.stash.core.ui.ambient.brandRoles
+import com.stash.core.ui.ambient.withAlbumAccent
 
 // ── Color schemes ────────────────────────────────────────────────────────
+//
+// Each scheme is its grounds (backgrounds, surfaces, text, error, outlines) wearing the neutral idle
+// accent: purple and cyan are gone (owner decision D9, 2026-11-01). The accent families (primary,
+// secondary, tertiary, their containers, inversePrimary, surfaceTint) come from the idle palette's
+// roles through withAlbumAccent, the same function that dresses the scheme in the playing album's
+// colour (ProvideThemeAccent), so the app with nothing playing, or with "Album colours: Neutral",
+// is exactly these schemes. Initialisation reads the ambient maths (AccentRoles.kt), which only
+// reads Color.kt: nothing there may read back from this file.
 
-val StashDarkColorScheme = darkColorScheme(
-    primary = StashPurple,
-    onPrimary = Color.White,
-    primaryContainer = StashPurpleDark,
-    onPrimaryContainer = StashPurpleLight,
-    secondary = StashCyan,
-    onSecondary = Color.Black,
-    secondaryContainer = StashCyanDark,
-    onSecondaryContainer = StashCyanLight,
-    tertiary = StashCyan,
-    onTertiary = Color.Black,
+/** The dark theme's grounds, before the accent. */
+private val StashDarkGrounds = darkColorScheme(
     background = StashBackground,
     onBackground = StashTextPrimary,
     surface = StashSurface,
@@ -39,17 +41,8 @@ val StashDarkColorScheme = darkColorScheme(
     outlineVariant = StashGlassBorderBright,
 )
 
-val StashLightColorScheme = lightColorScheme(
-    primary = StashPurpleDark,                   // deeper purple on light bg for contrast
-    onPrimary = Color.White,
-    primaryContainer = StashPurpleLight,
-    onPrimaryContainer = StashPurpleDark,
-    secondary = StashCyanDark,
-    onSecondary = Color.White,
-    secondaryContainer = StashCyanLight,
-    onSecondaryContainer = StashCyanDark,
-    tertiary = StashCyanDark,
-    onTertiary = Color.White,
+/** The light theme's grounds, before the accent (the lavender grounds are phase 2 of D9). */
+private val StashLightGrounds = lightColorScheme(
     background = StashBackgroundLight,
     onBackground = StashTextPrimaryLight,
     surface = StashSurfaceLight,
@@ -61,6 +54,12 @@ val StashLightColorScheme = lightColorScheme(
     outline = StashGlassBorderLight,
     outlineVariant = StashGlassBorderBrightLight,
 )
+
+/** Dark: near-white grey accents with near-black ink on them, on the dark grounds. */
+val StashDarkColorScheme = StashDarkGrounds.withAlbumAccent(brandRoles(Ground.DARK), Ground.DARK)
+
+/** Light: dark grey accents under white, on the light grounds. */
+val StashLightColorScheme = StashLightGrounds.withAlbumAccent(brandRoles(Ground.LIGHT), Ground.LIGHT)
 
 /**
  * AMOLED variant of the dark scheme: every ground the eye reads as "the app's
@@ -76,7 +75,7 @@ val StashLightColorScheme = lightColorScheme(
  * distinguishable on true black — hierarchy on AMOLED is carried by the
  * glass borders, not by big tonal fills.
  */
-val StashAmoledColorScheme = StashDarkColorScheme.copy(
+val StashAmoledColorScheme = StashDarkGrounds.copy(
     background = Color.Black,
     surface = Color.Black,
     surfaceTint = Color.Black,
@@ -87,7 +86,7 @@ val StashAmoledColorScheme = StashDarkColorScheme.copy(
     surfaceContainer = Color.Black,
     surfaceContainerHigh = StashAmoledSurfaceHigh,
     surfaceContainerHighest = StashElevatedSurface,
-)
+).withAlbumAccent(brandRoles(Ground.AMOLED), Ground.AMOLED)
 
 // ── LocalIsDarkTheme — queried by composables that need theme-aware assets
 //    (e.g. the wordmark drawable selection in HomeScreen). ────────────────

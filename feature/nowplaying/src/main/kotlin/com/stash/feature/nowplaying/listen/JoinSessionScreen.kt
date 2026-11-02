@@ -119,7 +119,7 @@ private fun Ready(
             Modifier.size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).border(3.dp, HOST_RING, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials(s.hostName), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 32.sp)
+            Text(initials(s.hostName), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 32.sp)
         }
         Spacer(Modifier.height(20.dp))
         Text(
@@ -178,7 +178,12 @@ private fun Ready(
             modifier = Modifier.fillMaxWidth().height(52.dp),
         ) {
             if (viewModel.joining) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                // The disabled button's own content colour: onPrimary is meant for the enabled fill.
+                CircularProgressIndicator(
+                    Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = androidx.compose.material3.LocalContentColor.current,
+                )
                 Spacer(Modifier.width(10.dp))
                 Text("Joining…")
             } else {

@@ -23,7 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.stash.core.ui.theme.LocalIsAmoledTheme
 import com.stash.core.ui.theme.LocalIsDarkTheme
-import com.stash.core.ui.theme.StashPurple
+import com.stash.core.ui.theme.StashDarkColorScheme
 
 /*
  * One album colour for the whole app. The player-level source (app's AlbumColorSource) reads the
@@ -103,6 +103,9 @@ class AlbumChrome internal constructor(
     /** The Now Playing ambient's muted colour (lifted on light). */
     val mut: Color get() = animator.role { it.mut }
 
+    /** Home's glow ([AccentRoles.glow]), crossfading: read at draw time by [albumGlow]. */
+    val glow: Color get() = animator.role { it.glow }
+
     /** The wordmark's one ink: plain when idle or paused, the contrast-checked mood tint while a song plays. */
     val wordmark: Color get() = wordmarkRef()
 
@@ -131,7 +134,7 @@ class AlbumChrome internal constructor(
 }
 
 /**
- * The idle chrome outside any [ProvideAlbumChrome] (previews, tests): Stash purple, white wordmark,
+ * The idle chrome outside any [ProvideAlbumChrome] (previews, tests): neutral, white wordmark,
  * on the dark ground. A CompositionLocal's default is built without a composition, so it can't
  * see the theme; everything the app draws sits under ProvideAlbumChrome, which does.
  */
@@ -139,7 +142,7 @@ private val IdleAnimator = AccentAnimator(brandRoles(Ground.DARK))
 private val IdleChrome = AlbumChrome(
     animatorRef = { IdleAnimator },
     wordmarkRef = { WordmarkPlainDark },
-    selectedTabRef = { StashPurple },
+    selectedTabRef = { StashDarkColorScheme.primary },
     tintRef = { 0f },
 )
 

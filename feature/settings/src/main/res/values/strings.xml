@@ -288,6 +288,10 @@
     <string name="settings_ui_scale_subtitle">Text and layout size across the app</string>
     <string name="settings_amoled_title">Pure black (AMOLED)</string>
     <string name="settings_amoled_subtitle">Black backgrounds in dark theme</string>
+    <string name="settings_album_colours_title">Album colours</string>
+    <string name="settings_album_colours_subtitle">Buttons, switches and highlights take the colour of the song that’s on</string>
+    <string name="settings_album_colours_follow">Follow the song</string>
+    <string name="settings_album_colours_neutral">Neutral</string>
     <string name="settings_now_playing_section">Now Playing</string>
     <string name="settings_ambient_motion_title">Ambient motion</string>
     <string name="settings_ambient_motion_subtitle">Moving color behind Now Playing</string>

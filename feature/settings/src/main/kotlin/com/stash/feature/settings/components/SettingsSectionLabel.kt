@@ -9,9 +9,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.stash.core.ui.theme.StashPurpleLight
 
-/** Purple Space-Grotesk uppercase group label (titleSmall). Optional trailing Beta pill. */
+/**
+ * Space-Grotesk uppercase group label (titleSmall) in the theme's primary: the playing album's text
+ * colour, neutral with nothing playing (D9). Optional trailing Beta pill.
+ */
 @Composable
 fun SettingsSectionLabel(
     text: String,
@@ -27,7 +29,7 @@ fun SettingsSectionLabel(
             style = MaterialTheme.typography.titleSmall.copy(
                 fontWeight = FontWeight.SemiBold, letterSpacing = 1.0.sp,
             ),
-            color = StashPurpleLight,
+            color = MaterialTheme.colorScheme.primary,
         )
         if (beta) {
             Spacer(Modifier.width(8.dp))

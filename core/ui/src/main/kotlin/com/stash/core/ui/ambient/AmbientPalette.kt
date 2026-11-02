@@ -14,7 +14,10 @@ import kotlin.math.sin
 
 /** Where an [AmbientPalette] came from, which decides how its roles are built ([roles]). */
 enum class PaletteKind {
-    /** No cover, an unreadable one, or nothing playing: Stash purple, the design system's own tokens. */
+    /**
+     * No cover, an unreadable one, or nothing playing: Stash's own look, which is neutral (black, white
+     * and grey; purple is gone, owner decision D9, 2026-11-01). It wears the neutral roles, with no glow.
+     */
     BRAND,
 
     /** A cover with a clear colour: the web's hue vote picked it. */
@@ -54,19 +57,30 @@ data class AmbientPalette(
     val kind: PaletteKind,
 ) {
     companion object {
-        /** The Stash-purple default (palette.ts DEFAULT_PALETTE). */
+        /**
+         * The idle palette (nothing playing, or a song with no readable cover): plain greys on the
+         * neutral palette's lightness ladder (dom 0.24, vib 0.50, mut 0.27), with a near-white ink on
+         * dark grounds and a dark grey on light. It replaced the web's purple DEFAULT_PALETTE in the
+         * app (D9, 2026-11-01); the web player follows in phase 2.
+         */
         val Default = AmbientPalette(
-            dom = Color(0xFF2E1B6E),
-            vib = Color(0xFF8B5CF6),
-            mut = Color(0xFF3B3358),
+            dom = Color(0xFF3D3D3D),
+            vib = Color(0xFF808080),
+            mut = Color(0xFF454545),
             key = "default",
+            textDark = DefaultTextDark,
+            textLight = DefaultTextLight,
+            ink = Color.White,
             kind = PaletteKind.BRAND,
         )
     }
 }
 
-private val DefaultTextDark = Color(0xFFAE8DF9)
-private val DefaultTextLight = Color(0xFF4F3390)
+/** The idle ink on dark grounds: a near-white grey (L 0.85), a step under the body text so it still reads as an accent. */
+private val DefaultTextDark = Color(0xFFD9D9D9)
+
+/** The idle ink on light grounds: a dark grey (L 0.30), darkened further by the roles when a ground needs it. */
+private val DefaultTextLight = Color(0xFF4D4D4D)
 
 /** palette.ts inkFor (monochrome's rule): YIQ brightness of the accent above 128 takes the dark ink. */
 internal fun inkFor(vib: Color): Color {
@@ -76,8 +90,12 @@ internal fun inkFor(vib: Color): Color {
     return if ((r * 299 + g * 587 + b * 114) / 1000.0 > 128) InkOnBright else Color.White
 }
 
-/** The near-black ink on a bright accent (palette.ts `#1a0b2e`, the light theme's text). */
-internal val InkOnBright = Color(0xFF1A0B2E)
+/**
+ * The near-black ink on a bright accent. A neutral #121212 since D9 (2026-11-01): palette.ts still
+ * carries the aubergine `#1a0b2e`, which read as a hint of purple on every bright play button and
+ * filled button. Darker than the aubergine, so every contrast it held it still holds.
+ */
+internal val InkOnBright = Color(0xFF121212)
 
 private fun clamp(n: Double, lo: Double, hi: Double) = min(hi, max(lo, n))
 
@@ -202,8 +220,8 @@ fun neutralPaletteFrom(argb: IntArray, key: String = "img"): AmbientPalette? {
 /**
  * palette.ts `forScheme`: on the light ground dom and mut are lifted to mid lightness in the
  * vibrant's hue (a clean tint instead of a brown-grey haze), and [AmbientPalette.textLight] is
- * darkened in 0.02 lightness steps until it holds 5:1 on that wash (yellows need it); the brand
- * purple is left alone. A neutral palette is lifted the same way but keeps its grey: its saturation
+ * darkened in 0.02 lightness steps until it holds 5:1 on that wash (yellows need it); the idle
+ * (brand) palette is left alone, as the web leaves its default. A neutral palette is lifted the same way but keeps its grey: its saturation
  * never rises above [NEUTRAL_MAX_SATURATION].
  */
 fun AmbientPalette.forScheme(light: Boolean): AmbientPalette {

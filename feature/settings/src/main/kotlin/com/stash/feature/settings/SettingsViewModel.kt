@@ -1650,6 +1650,21 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * Settings › Appearance › Album colours: follow the song (the default) or stay neutral. Null until
+     * the stored choice arrives, so the screen never shows "Follow the song" to a Neutral user first.
+     */
+    val albumColours: StateFlow<com.stash.core.model.AlbumColourMode?> = themePreference.albumColours.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        null,
+    )
+
+    /** Persists the Album colours choice; the whole app's accent follows within one crossfade. */
+    fun onAlbumColoursChanged(mode: com.stash.core.model.AlbumColourMode) {
+        viewModelScope.launch { themePreference.setAlbumColours(mode) }
+    }
+
+    /**
      * App-wide UI scale (Settings › Appearance › Display size). Seeded with the scale the app is
      * laid out at, read synchronously, so the label doesn't show 1.00x for a frame before the
      * DataStore read lands.

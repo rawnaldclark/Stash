@@ -79,7 +79,7 @@ import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
 import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.LocalAlbumChrome
-import com.stash.core.ui.ambient.ProvideAlbumChrome
+import com.stash.core.ui.ambient.ProvideAlbumColours
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.components.rememberAppSnackbar
@@ -172,6 +172,7 @@ fun StashScaffold(
     // at the player level so it follows the song whether or not Now Playing is open.
     val albumColorsViewModel: AlbumColorsViewModel = hiltViewModel()
     val albumColors by albumColorsViewModel.colors.collectAsStateWithLifecycle()
+    val albumColoursFollowSong by albumColorsViewModel.followSong.collectAsStateWithLifecycle()
 
     // The backdrop the bottom chrome frosts: the nav host, drawn under the bars.
     val hazeState = rememberHazeState()
@@ -312,6 +313,8 @@ fun StashScaffold(
             }
         }
     }
+    // The album colours wrap everything below, the posting and Drive hosts' sheets and dialogs included.
+    ProvideAlbumColours(albumColors, followSong = albumColoursFollowSong) {
 
     // The one-time duplicate cleanup merged songs that were in the library twice: say so once, on
     // any screen. Marked shown after the snackbar goes, so a closed app shows it at the next open.
@@ -342,7 +345,6 @@ fun StashScaffold(
     ) {
     // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
     CloudSaveHost {
-    ProvideAlbumChrome(albumColors) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,

@@ -734,9 +734,11 @@ private fun ClockCard(s: ListeningStatsState, use24Hour: Boolean) {
             Row(Modifier.fillMaxWidth()) {
                 parts.forEach { (name, pct) ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        // The top part in weight as well as colour (the idle accent is near-white).
                         Text(
                             "$pct%",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (pct == top) androidx.compose.ui.text.font.FontWeight.Bold else null,
                             color = if (pct == top) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         )
                         Text(name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

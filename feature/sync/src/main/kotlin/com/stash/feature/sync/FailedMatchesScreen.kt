@@ -638,7 +638,8 @@ private fun FailedMatchesHeader(
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        // The disabled button's own content colour: onPrimary is meant for the enabled fill.
+                        color = androidx.compose.material3.LocalContentColor.current,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Searching $resyncProgress...")

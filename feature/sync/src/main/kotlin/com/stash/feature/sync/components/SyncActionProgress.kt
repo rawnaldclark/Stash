@@ -47,15 +47,16 @@ fun SyncActionProgress(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Disabled "Syncing…" row mirrors the current phase label.
+        // Disabled "Syncing…" row mirrors the current phase label. A solid container under its own
+        // ink: onPrimary on a 40% primary read ~2.7:1 once onPrimary turned near-black (D9).
         Button(
             onClick = { /* disabled while syncing */ },
             enabled = false,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
-                disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                disabledContentColor = MaterialTheme.colorScheme.onPrimary,
+                disabledContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                disabledContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ),
         ) {
             if (phase is SyncPhase.WaitingForNetwork) {
@@ -68,7 +69,7 @@ fun SyncActionProgress(
             } else {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     strokeWidth = 2.dp,
                 )
             }

@@ -42,7 +42,8 @@ class AmbientPaletteTest {
         val orange = ambientPaletteFromPixels(solid(226, 115, 58))!!
         assertEquals("#f5ab85", hex(orange.textDark))
         assertEquals("#773f22", hex(orange.textLight))
-        assertEquals("#1a0b2e", hex(orange.ink)) // bright accent: near-black ink
+        // Bright accent: the near-black ink, neutral in the app since D9 (the web's is #1a0b2e).
+        assertEquals("#121212", hex(orange.ink))
         val lilac = ambientPaletteFromPixels(solid(150, 120, 230))!!
         assertEquals("#a588f1", hex(lilac.textDark))
         assertEquals("#392277", hex(lilac.textLight))
@@ -58,10 +59,14 @@ class AmbientPaletteTest {
         assertEquals("#82f7eb", hex(teal.forScheme(light = true).textDark))
     }
 
-    @Test fun `the default carries the web's default inks`() {
-        assertEquals("#ae8df9", hex(AmbientPalette.Default.textDark))
-        assertEquals("#4f3390", hex(AmbientPalette.Default.textLight))
-        assertEquals("#ffffff", hex(AmbientPalette.Default.ink))
+    @Test fun `the default is neutral, no longer the web's purple (D9)`() {
+        val d = AmbientPalette.Default
+        assertEquals("#3d3d3d", hex(d.dom))
+        assertEquals("#808080", hex(d.vib))
+        assertEquals("#454545", hex(d.mut))
+        assertEquals("#d9d9d9", hex(d.textDark))
+        assertEquals("#4d4d4d", hex(d.textLight))
+        assertEquals("#ffffff", hex(d.ink))
     }
 
     @Test fun `greyscale and transparent covers keep the default`() {

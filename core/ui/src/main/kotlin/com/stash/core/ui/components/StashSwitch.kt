@@ -10,17 +10,16 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 
 /**
- * Stash's app-wide switch: plum & cream (earthy purple), full M3 anatomy.
+ * Stash's app-wide switch, full M3 anatomy, in the theme's accent (D9, 2026-11-01): the playing
+ * album's colour, neutral with nothing playing (it was a fixed plum).
  *
- * ON  = filled plum track, warm cream thumb with a small plum check.
- * OFF = outlined track, small muted thumb (state reads by shape, not just hue).
+ * ON  = filled track in primary, a thumb in onPrimary with a small check in primary (4.5:1 by the
+ *       scheme's own rule, ThemeAccent.kt).
+ * OFF = outlined track, small grey thumb (state reads by shape, not just hue).
  *
- * Single source of truth for every toggle (sync flow + settings) — replaces
- * the old primary-violet-on-half-alpha-violet look that washed out on the
- * lavender ground.
+ * Single source of truth for every toggle (sync flow + settings).
  */
 @Composable
 fun StashSwitch(
@@ -29,14 +28,12 @@ fun StashSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    // Follow the *resolved* app theme (manual/AMOLED overrides included), not
-    // the system setting — dark ground lifts the plum a step so it stays
-    // visible against near-black.
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val trackOn = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val thumbOn = Color(0xFFF2ECE2)
-    val borderOff = if (dark) Color(0xFF4A4160) else Color(0xFFB9AEC8)
-    val thumbOff = if (dark) Color(0xFF8A7FA0) else Color(0xFF8F84A0)
+    val scheme = MaterialTheme.colorScheme
+    val trackOn = scheme.primary
+    val thumbOn = scheme.onPrimary
+    // The off state is the theme's secondary text grey: visible on black, never a colour.
+    val thumbOff = scheme.onSurfaceVariant
+    val borderOff = scheme.onSurfaceVariant.copy(alpha = OFF_BORDER_ALPHA)
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -66,3 +63,6 @@ fun StashSwitch(
         ),
     )
 }
+
+/** The off track's outline: the off thumb's grey, lighter, so the thumb still leads. */
+private const val OFF_BORDER_ALPHA = 0.55f

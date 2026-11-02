@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -175,10 +176,16 @@ private fun MonthGrid(
 private fun DayCell(date: LocalDate, plays: Int, level: Int, isToday: Boolean, onClick: () -> Unit) {
     val primary = MaterialTheme.colorScheme.primary
     val fill = if (level == 0) Color.Transparent else primary.copy(alpha = LEVEL_ALPHA[level])
-    val ink = when {
-        level >= 3 -> MaterialTheme.colorScheme.onPrimary
-        level > 0 -> MaterialTheme.colorScheme.onSurface
-        else -> StashTheme.extendedColors.textTertiary
+    // The day's number in whichever of the page's text and the accent's ink reads better on its fill
+    // over the sheet: the accent is near-white with nothing playing, so a busy day needs the dark ink.
+    val sheet = StashTheme.extendedColors.elevatedSurface
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val ink = if (level == 0) {
+        StashTheme.extendedColors.textTertiary
+    } else {
+        val behind = fill.compositeOver(sheet)
+        listOf(onSurface, onPrimary).maxBy { com.stash.core.ui.ambient.contrastRatio(it, behind) }
     }
     val label = "${date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.getDefault()))}, " +
         if (plays == 0) "no listens" else ListeningLabels.plays(plays)

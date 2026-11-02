@@ -41,6 +41,7 @@ import com.stash.core.data.prefs.NpTitleAlign
 import com.stash.core.data.prefs.TitleButton
 import com.stash.core.data.prefs.NowPlayingPreference
 import com.stash.core.data.prefs.StartTab
+import com.stash.core.model.AlbumColourMode
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.UiScale
 import com.stash.core.ui.theme.LocalUiScaleMax
@@ -87,6 +88,7 @@ fun SettingsAppearanceScreen(
     val titleAlign by viewModel.titleAlign.collectAsStateWithLifecycle()
     val titleButton by viewModel.titleButton.collectAsStateWithLifecycle()
     val fullArtBlend by viewModel.fullArtBlend.collectAsStateWithLifecycle()
+    val albumColours by viewModel.albumColours.collectAsStateWithLifecycle()
     var titleButtonSheet by rememberSaveable { mutableStateOf(false) }
     // As the display size: the slider moves a draft, stored once on release.
     var draftZoom by remember(fullArtZoom) { mutableFloatStateOf(fullArtZoom) }
@@ -117,6 +119,21 @@ fun SettingsAppearanceScreen(
                     onCheckedChange = viewModel::onAmoledDarkChanged,
                 )
             }
+        }
+        // D9 (2026-11-01): the app's accent is the playing album's colour, or neutral. Shown once the
+        // stored choice has arrived (a moment), never a guessed one first.
+        val albumColoursMode = albumColours
+        if (albumColoursMode != null) theme += {
+            LabeledSegmented(
+                title = stringResource(R.string.settings_album_colours_title),
+                subtitle = stringResource(R.string.settings_album_colours_subtitle),
+                options = listOf(
+                    stringResource(R.string.settings_album_colours_follow),
+                    stringResource(R.string.settings_album_colours_neutral),
+                ), // AlbumColourMode order
+                selectedIndex = albumColoursMode.ordinal,
+                onSelect = { viewModel.onAlbumColoursChanged(AlbumColourMode.entries[it]) },
+            )
         }
         SettingsGroupCard(rows = theme)
 

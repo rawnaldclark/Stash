@@ -23,13 +23,14 @@ internal fun BetaPill() {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            // The badges' fixed rose (as the FLAC badge), not the album-following tertiary container.
+            .background(com.stash.core.ui.theme.badgeColors().container)
             .padding(horizontal = 6.dp, vertical = 1.dp),
     ) {
         Text(
             text = stringResource(R.string.settings_beta),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            color = com.stash.core.ui.theme.badgeColors().content,
         )
     }
 }

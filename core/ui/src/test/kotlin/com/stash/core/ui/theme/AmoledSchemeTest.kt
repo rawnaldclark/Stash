@@ -40,6 +40,13 @@ class AmoledSchemeTest {
     }
 
     @Test
+    fun `the accent never lifts a surface off black`() {
+        // The idle accent (and every album's, ColorSchemeTest) is applied without touching grounds.
+        assertThat(StashAmoledColorScheme.primaryContainer.alpha).isEqualTo(1f)
+        assertThat(StashAmoledColorScheme.surfaceTint).isEqualTo(Color.Black)
+    }
+
+    @Test
     fun `non-surface identity is inherited from the dark scheme`() {
         val amoled = StashAmoledColorScheme
         val dark = StashDarkColorScheme

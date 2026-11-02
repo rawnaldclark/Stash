@@ -160,10 +160,11 @@ fun SongRow(
                     modifier = Modifier.fillMaxSize().background(scrim),
                     contentAlignment = Alignment.Center,
                 ) {
+                    // White on the dark scrim (onPrimary is near-black on the dark themes now).
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = androidx.compose.ui.graphics.Color.White,
                     )
                 }
                 isPreviewPlaying -> Box(
@@ -173,7 +174,7 @@ fun SongRow(
                     Icon(
                         imageVector = Icons.Default.Stop,
                         contentDescription = "Stop preview",
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = androidx.compose.ui.graphics.Color.White,
                     )
                 }
             }
@@ -195,9 +196,12 @@ fun SongRow(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                 }
+                // Playing (or previewing) also reads in weight, not only colour: with nothing playing the
+                // accent is near-white, as the title already is.
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (isPlaying || isPreviewPlaying) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

@@ -7,8 +7,6 @@ import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashBackgroundLight
 import com.stash.core.ui.theme.StashElevatedSurface
 import com.stash.core.ui.theme.StashElevatedSurfaceLight
-import com.stash.core.ui.theme.StashPurple
-import com.stash.core.ui.theme.StashPurpleDark
 import com.stash.core.ui.theme.StashSurface
 import com.stash.core.ui.theme.StashSurfaceLight
 import com.stash.core.ui.theme.StashTextPrimary
@@ -23,10 +21,9 @@ import com.stash.core.ui.theme.StashTextSecondaryLight
  *
  * The rules (lightness moves in HSL steps of 0.02 with the hue and saturation fixed):
  *  R1 accent holds 3:1 (WCAG non-text) against every base of the ground.
- *  R2 onAccent is the better of white and #1a0b2e and holds 4.5:1 on the accent; when neither does,
- *     the accent keeps moving (R1 still holding). The smallest move that satisfies R1 and R2 wins.
- *     Brand carve-out: the brand keeps the theme's primary/onPrimary pairing, which on dark is
- *     white on #8b5cf6 at 4.23:1 (see below); every cover and neutral palette holds 4.5:1.
+ *  R2 onAccent is the better of white and the neutral near-black (#121212) and holds 4.5:1 on the
+ *     accent; when neither does, the accent keeps moving (R1 still holding). The smallest move that
+ *     satisfies R1 and R2 wins. Every palette holds it, the idle one included.
  *  R3 ink (text in the song's colour) holds 4.5:1 on every base and on the wash over every base.
  *  R4 wash (the accent as a translucent fill) keeps the ground's text at 7:1 and its secondary text
  *     at 4.5:1 on top of it; its alpha steps down until it does.
@@ -37,8 +34,12 @@ import com.stash.core.ui.theme.StashTextSecondaryLight
  *     dark grey with white ink on light.
  *  R7 a cover that would need a move of more than 0.35 lightness for R1..R3 takes the neutral roles
  *     instead (its ambient colours stay); the test sweep reports how often that happens.
- * The brand palette is exempt from the search: it wears the design system's own primary and
- * onPrimary, so the idle app looks exactly as it always has.
+ *  R8 glow (vib as a soft light at the top of a page, Home's ambience) keeps the ground's text at 7:1
+ *     and its secondary text at 4.5:1 on the background, as R5 does, and is allowed on AMOLED: it
+ *     lights only the top of the page, the rest stays black. None for the idle (brand) palette.
+ * The idle (brand) palette is neutral since D9 (2026-11-01, purple is gone): it wears the neutral
+ * roles of a plain grey, and the theme's own primary is built from them (Theme.kt), so the app with
+ * nothing playing and the app with "Album colours: Neutral" are the same black, white and grey.
  */
 
 /** The glass of the mini player and the tab bar on dark (#0d0d18 at 70 %) over the background. */
@@ -64,6 +65,8 @@ enum class Ground(
     val washAlpha: Float,
     /** The page tint's starting alpha (R5); zero means no tint at all. */
     val pageTintAlpha: Float,
+    /** The glow's starting alpha at its brightest point (R8): low, so it reads as light, not paint. */
+    val glowAlpha: Float,
 ) {
     DARK(
         bases = listOf(StashBackground, StashSurface, StashElevatedSurface, GlassDark),
@@ -72,6 +75,7 @@ enum class Ground(
         textSecondary = StashTextSecondary,
         washAlpha = 0.16f,
         pageTintAlpha = 0.20f,
+        glowAlpha = 0.22f,
     ),
     AMOLED(
         bases = listOf(Color.Black, StashAmoledSurfaceHigh),
@@ -80,6 +84,7 @@ enum class Ground(
         textSecondary = StashTextSecondary,
         washAlpha = 0.24f,
         pageTintAlpha = 0f,
+        glowAlpha = 0.22f,
     ),
     LIGHT(
         bases = listOf(StashBackgroundLight, StashSurfaceLight, StashElevatedSurfaceLight, NpPaperLight),
@@ -88,6 +93,7 @@ enum class Ground(
         textSecondary = StashTextSecondaryLight,
         washAlpha = 0.12f,
         pageTintAlpha = 0.10f,
+        glowAlpha = 0.14f,
     ),
     ;
 
@@ -103,7 +109,7 @@ enum class Ground(
 data class AccentRoles(
     /** The song's accent: play buttons, progress lines, active icons (3:1 on every base). */
     val accent: Color,
-    /** Ink on [accent]: white or #1a0b2e, 4.5:1. */
+    /** Ink on [accent]: white or the neutral near-black, 4.5:1. */
     val onAccent: Color,
     /** Text and small glyphs in the song's colour (4.5:1 on every base and on [wash]). */
     val ink: Color,
@@ -111,6 +117,11 @@ data class AccentRoles(
     val wash: Color,
     /** The dominant colour as a translucent page glow; transparent on AMOLED. */
     val pageTint: Color,
+    /**
+     * The vibrant colour as a soft light at the top of a page (R8; Home wears it through
+     * [albumGlow]). Allowed on AMOLED; transparent for the idle palette.
+     */
+    val glow: Color,
     /** The Now Playing ambient's three colours, lifted for the light ground. */
     val dom: Color,
     val vib: Color,
@@ -143,9 +154,9 @@ private const val NEUTRAL_ACCENT_L_LIGHT = 0.30
 private val OnAccentInks = listOf(Color.White, InkOnBright)
 
 /**
- * This palette's roles on [ground]. Brand palettes wear the design system's tokens; cover palettes
- * are searched for the smallest contrast-safe move (falling back to the neutral roles, R7); neutral
- * palettes wear a grey accent. Cheap (a few hundred contrast checks): remember it per palette and ground.
+ * This palette's roles on [ground]. Cover palettes are searched for the smallest contrast-safe move
+ * (falling back to the neutral roles, R7); neutral palettes, and the idle (brand) one, wear a grey
+ * accent; the idle one has no glow. Cheap (a few hundred contrast checks): remember it per palette and ground.
  */
 fun AmbientPalette.roles(ground: Ground): AccentRoles = when (kind) {
     PaletteKind.BRAND -> brandRoles(this, ground)
@@ -153,7 +164,11 @@ fun AmbientPalette.roles(ground: Ground): AccentRoles = when (kind) {
     PaletteKind.COVER -> coverRolesOrNull(ground) ?: coverFallbackRoles(this, ground)
 }
 
-/** The idle look on [ground]: Stash purple (the theme's primary for that ground) with white ink. */
+/**
+ * The idle look on [ground]: nothing playing, or a song with no readable cover. Neutral: a near-white
+ * grey on dark grounds with near-black ink on it, a dark grey under white on light, and no glow. The
+ * theme's base primary is built from these (Theme.kt).
+ */
 fun brandRoles(ground: Ground): AccentRoles = AmbientPalette.Default.roles(ground)
 
 /**
@@ -171,6 +186,7 @@ internal fun AmbientPalette.coverRolesOrNull(ground: Ground): AccentRoles? {
         ink = ink,
         wash = wash,
         pageTint = pageTintFor(lifted.dom, ground),
+        glow = glowFor(lifted.vib, ground),
         dom = lifted.dom,
         vib = lifted.vib,
         mut = lifted.mut,
@@ -190,29 +206,16 @@ private fun coverFallbackRoles(palette: AmbientPalette, ground: Ground): AccentR
     val lifted = palette.forScheme(ground.isLight)
     return neutralRoles(twin, ground).copy(
         pageTint = pageTintFor(lifted.dom, ground),
+        glow = glowFor(lifted.vib, ground),
         dom = lifted.dom,
         vib = lifted.vib,
         mut = lifted.mut,
     )
 }
 
-private fun brandRoles(palette: AmbientPalette, ground: Ground): AccentRoles {
-    // The theme's own primary for the ground (Theme.kt): StashPurple on dark, the deeper
-    // StashPurpleDark on light, both under white, as every brand button in the app is.
-    val accent = if (ground.isLight) StashPurpleDark else StashPurple
-    val wash = washFor(accent, ground)
-    val inkStart = if (ground.isLight) palette.textLight else palette.textDark
-    return AccentRoles(
-        accent = accent,
-        onAccent = Color.White,
-        ink = findInk(inkStart, ground, wash) ?: inkStart,
-        wash = wash,
-        pageTint = pageTintFor(palette.dom, ground),
-        dom = palette.dom,
-        vib = palette.vib,
-        mut = palette.mut,
-    )
-}
+/** The idle palette: the neutral roles of its plain grey, with no glow (no cover to glow from). */
+private fun brandRoles(palette: AmbientPalette, ground: Ground): AccentRoles =
+    neutralRoles(palette, ground).let { it.copy(glow = it.glow.copy(alpha = 0f)) }
 
 private fun neutralRoles(palette: AmbientPalette, ground: Ground): AccentRoles {
     val lifted = palette.forScheme(ground.isLight)
@@ -231,6 +234,7 @@ private fun neutralRoles(palette: AmbientPalette, ground: Ground): AccentRoles {
         ink = findInk(inkStart, ground, wash) ?: inkStart,
         wash = wash,
         pageTint = pageTintFor(lifted.dom, ground),
+        glow = glowFor(lifted.vib, ground),
         dom = lifted.dom,
         vib = lifted.vib,
         mut = lifted.mut,
@@ -283,6 +287,10 @@ private fun washFor(accent: Color, ground: Ground): Color =
 private fun pageTintFor(dom: Color, ground: Ground): Color =
     tintHoldingText(dom, ground.pageTintAlpha, ground, listOf(ground.background))
 
+/** R8: vib at the ground's glow alpha over the background, thinned until the page's text still reads on it. */
+private fun glowFor(vib: Color, ground: Ground): Color =
+    tintHoldingText(vib, ground.glowAlpha, ground, listOf(ground.background))
+
 /**
  * [colour] at [startAlpha], stepped down until the ground's primary text holds 7:1 and its
  * secondary text 4.5:1 on it over each of [over]. Keeps the colour's own RGB at alpha 0, so a
@@ -313,6 +321,7 @@ fun lerpRoles(a: AccentRoles, b: AccentRoles, t: Float): AccentRoles = when {
         ink = mixSrgb(a.ink, b.ink, t),
         wash = mixSrgb(a.wash, b.wash, t),
         pageTint = mixSrgb(a.pageTint, b.pageTint, t),
+        glow = mixSrgb(a.glow, b.glow, t),
         dom = mixSrgb(a.dom, b.dom, t),
         vib = mixSrgb(a.vib, b.vib, t),
         mut = mixSrgb(a.mut, b.mut, t),

@@ -223,9 +223,12 @@ internal fun RankedRow(
         art()
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            // Highlighted in weight as well as colour: with nothing playing the accent is near-white.
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Medium,
+                ),
                 color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

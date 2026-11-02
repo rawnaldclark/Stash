@@ -2,6 +2,7 @@ package com.stash.core.data.prefs
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.model.AlbumColourMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -62,5 +63,14 @@ class ThemeUiScaleTest {
         context.getSharedPreferences(ThemeSnapshot.PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putFloat("ui_scale", 0.2f).commit()
         assertEquals(0.85f, ThemeSnapshot.readUiScale(context))
+    }
+
+    @Test fun `album colours follow the song until someone picks Neutral (D9)`() = runTest {
+        assertEquals(AlbumColourMode.FOLLOW_SONG, preference.albumColours.first())
+        preference.setAlbumColours(AlbumColourMode.NEUTRAL)
+        assertEquals(AlbumColourMode.NEUTRAL, preference.albumColours.first())
+        // Put the default back for whichever test runs next (one DataStore per process).
+        preference.setAlbumColours(AlbumColourMode.FOLLOW_SONG)
+        assertEquals(AlbumColourMode.FOLLOW_SONG, preference.albumColours.first())
     }
 }
