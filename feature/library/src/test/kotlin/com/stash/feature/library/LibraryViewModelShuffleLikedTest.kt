@@ -68,7 +68,7 @@ class LibraryViewModelShuffleLikedTest {
     @Test fun shuffle_liked_queues_the_liked_list_from_the_top() = runTest {
         val playerRepository = playerRepoMock()
         val liked = listOf(track(1), track(2), track(3))
-        val vm = buildVm(playerRepository, liked)
+        val vm = buildVm(playerRepository, liked).apply { selectTab(LibraryTab.LIKED) } // Shuffle liked lives on the Liked tab
         assertThat(vm.likedTracks.first { it.isNotEmpty() }).hasSize(3)
 
         vm.shuffleLiked()
@@ -87,7 +87,7 @@ class LibraryViewModelShuffleLikedTest {
         // songs out, and the player refuses any that get through (2026-10-29).
         val playerRepository = playerRepoMock()
         val liked = listOf(track(1), track(2, downloaded = false), track(3))
-        val vm = buildVm(playerRepository, liked)
+        val vm = buildVm(playerRepository, liked).apply { selectTab(LibraryTab.LIKED) } // Shuffle liked lives on the Liked tab
         assertThat(vm.likedTracks.first { it.isNotEmpty() }).hasSize(3)
 
         vm.shuffleLiked()
@@ -102,7 +102,7 @@ class LibraryViewModelShuffleLikedTest {
 
     @Test fun shuffle_liked_with_an_empty_list_leaves_the_queue_alone() = runTest {
         val playerRepository = playerRepoMock()
-        val vm = buildVm(playerRepository, liked = emptyList())
+        val vm = buildVm(playerRepository, liked = emptyList()).apply { selectTab(LibraryTab.LIKED) }
         advanceUntilIdle()
 
         vm.shuffleLiked()

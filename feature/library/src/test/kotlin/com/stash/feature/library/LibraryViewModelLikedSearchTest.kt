@@ -54,7 +54,7 @@ class LibraryViewModelLikedSearchTest {
     )
 
     @Test fun search_query_narrows_the_liked_list() = runTest {
-        val vm = buildVm()
+        val vm = buildVm().apply { selectTab(LibraryTab.LIKED) } // liked songs are read on the Liked tab
 
         // Unfiltered first, so we know the flow is live before querying.
         assertThat(vm.likedTracks.first { it.isNotEmpty() }).hasSize(3)
@@ -69,7 +69,7 @@ class LibraryViewModelLikedSearchTest {
     }
 
     @Test fun clearing_the_query_restores_the_full_liked_list() = runTest {
-        val vm = buildVm()
+        val vm = buildVm().apply { selectTab(LibraryTab.LIKED) } // liked songs are read on the Liked tab
         vm.setSearchQuery("terpukau")
         assertThat(vm.likedTracks.first { it.size == 1 }).hasSize(1)
 
