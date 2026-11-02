@@ -57,7 +57,30 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | `GET /v1/spaces/{sid}/inbox` | member | `{ sends: [{ sendId, from, count, bytes, serverAt }] }` (complete sends to the caller) |
 | `GET /v1/spaces/{sid}/inbox/{sendId}/{part}` | receiver | `{ sendId, part, count, from, serverAt, env }` |
 | `DELETE /v1/spaces/{sid}/inbox/{sendId}` | receiver or sender | → 204 |
-| `GET /v1/spaces/{sid}/ws` | — | reserved for live control (§6.7): 404 |
+| `GET /v1/spaces/{sid}/ws` | member, by its first frame | WebSocket (`Upgrade: websocket`, else 426) for live control (spec §6.7, sync-v1 §5.7); see "Live control" below. Counts against `API_RL` at the upgrade |
+
+## Live control (spec §6.7)
+
+`GET /v1/spaces/{sid}/ws` opens one WebSocket on the space's object (`src/live.js`, the Hibernation API: idle sockets cost no
+duration, and `ping` is answered `pong` by the runtime without waking the object). The phone connects directly; a browser only
+through the player (`/api/sync/spaces/{sid}/ws`), whose key marks the socket as the player's. Frames are JSON text; the server reads
+only `t` and `to` and checks each `env` like a slot write (shape, ≤ 16 KiB, the current epoch, refused while `rotationDue`). It never
+opens or stores an envelope.
+
+| Frame | Direction | |
+|---|---|---|
+| `{ t: "hello", device, token }` | client → server, first | Checked like a member call (token in constant time, a browser only through the player, the 90-day idle rule, one read). Bad → close `4401 revoked` (also for a space that doesn't exist), `4403 forbidden`, `4429` (daily reads). A second socket of the same device closes the first with `4409 replaced` |
+| `{ t: "ready", me, epoch, peers: [{ device, type }] }` | server → client | After a good hello: the devices with a socket open now |
+| `{ t: "peer", device, type, on }` | server → others | A device's socket opened or closed |
+| `{ t: "state", env }` → `{ t: "state", from, env }` | to every other socket | sync-v1 `stash-remote-state` |
+| `{ t: "cmd", to, env }` → `{ t: "cmd", from, env }` | to `to`'s socket only | sync-v1 `stash-remote-cmd`; `{ t: "error", code: "offline", to }` when `to` has no socket |
+| `{ t: "epoch", epoch }` | server → all | The key was rotated: fetch your envelope before the next frame |
+| `{ t: "error", code, … }` | server → sender | `bad_request`, `epoch` (with the current `epoch`), `rotation_due`, `offline` |
+
+Limits: 10 sockets per space (one per device, as many again before hello); no hello within 10 s, or a bound socket with neither a
+frame nor a ping for 90 s, is closed (`4408`) the next time the object runs; more than 10 frames a second closes the socket (`1008`), a
+frame over 32 KiB too (`1009`). Removing a device closes its socket at once (`4401`); unlinking everything closes them all. Clients
+reconnect with a backoff after a drop, never after `4401`, `4403` or `4409`.
 
 ## Limits (spec §6.4)
 

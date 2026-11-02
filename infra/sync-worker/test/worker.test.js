@@ -9,7 +9,7 @@ import { linkNew, newSpaceId } from "./link.js";
 
 const MiB = 1024 * 1024;
 
-test("routes: the allow-list, ids only in the path, 405 with Allow, the reserved ws route", () => {
+test("routes: the allow-list, ids only in the path, 405 with Allow", () => {
     assert.deepEqual(spaceRoute([], "GET"), { op: "get", params: {} });
     assert.deepEqual(spaceRoute(["devices", "me", "label"], "PUT"), { op: "label", params: {} });
     assert.deepEqual(spaceRoute(["devices", "me"], "DELETE"), { op: "removeDevice", params: { target: "me" } });
@@ -28,7 +28,7 @@ test("every answer is no-store and carries the server time; queries, unknown rou
         [req("GET", `/v1/spaces/${spaceId}?x=1`, { device: phone }), 400],
         [req("GET", "/v1/nothing"), 404],
         [req("GET", "/"), 404],
-        [req("GET", `/v1/spaces/${spaceId}/ws`, { device: phone }), 404],
+        [req("GET", `/v1/spaces/${spaceId}/ws`, { device: phone }), 426],
         [req("PATCH", `/v1/spaces/${spaceId}`, { device: phone }), 405],
         [req("GET", "/v1/spaces"), 405],
         [req("GET", "/v1/pair"), 405],

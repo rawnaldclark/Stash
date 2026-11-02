@@ -210,6 +210,26 @@ export class Space {
         return { device: d };
     }
 
+    /**
+     * A live socket's hello (src/live.js): the same checks as any member request (`admit`, counted as one read), plus the
+     * epoch the socket's frames must be sealed under. `{ device, epoch }` or a ready error (with `deleteSpace` when the idle
+     * rule just removed the last device).
+     */
+    admitLive(caller, player) {
+        const now = this.now();
+        return this.tx(() => {
+            const r = this.admit("live", caller, now, player);
+            if (r.status) return r;
+            return { device: { id: r.device.id, type: r.device.type }, epoch: this.meta().epoch };
+        });
+    }
+
+    /** Whether `id` is still a device of this space (a live socket is cut off when it isn't). */
+    isMember(id) {
+        if (!this.meta()) return false;
+        return !!this.one("SELECT id FROM devices WHERE id = ?", id);
+    }
+
     // ---------------------------------------------------------------- devices
 
     info(m, me, now) {
