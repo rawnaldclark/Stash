@@ -12,6 +12,15 @@ android {
         }
     }
 }
+// JoinedStringSpacesTest reads every module's strings: they're inputs of these tests too, so a change
+// to any of them reruns it instead of leaving its last result up to date.
+tasks.withType<Test>().configureEach {
+    inputs.files(
+        rootProject.allprojects.map { module ->
+            fileTree(module.projectDir.resolve("src/main/res")) { include("values*/strings.xml") }
+        },
+    ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("allModuleStrings")
+}
 dependencies {
     implementation(project(":core:auth"))
     implementation(project(":core:data"))
