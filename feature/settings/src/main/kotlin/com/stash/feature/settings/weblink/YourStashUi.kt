@@ -18,7 +18,8 @@ import com.stash.feature.settings.cloud.CloudAccountRow
  * @property devices this phone and the browsers in the space.
  * @property linkFeatures Pick up where you left off, Mirror, Send my library, Waiting for you and Unlink everything: they act
  *   on the space, so they show only while this phone is in one (null otherwise).
- * @property supporter the Ko-fi claim as Lossless sources shows it ([SupporterRow.Hidden]: no section).
+ * @property supporter the Ko-fi claim as Lossless sources shows it ([SupporterRow.Hidden]: no section, also while it is
+ *   not read yet).
  * @property cloud the user's own cloud accounts.
  * @property backups the existing local backup actions. Always offered, linked or not: nothing on this page is gated.
  * @property coming planned work, shown as future with no dates. Never actionable.
@@ -72,7 +73,7 @@ internal sealed interface DeviceSeen {
 
 /** The Cloud section: the user's own Dropbox, OneDrive or Google Drive, signed in on this phone. */
 internal sealed interface YourStashCloud {
-    /** This build offers no cloud provider (no keys): no section, as on Accounts & Sync. */
+    /** This build offers no cloud provider (no keys), or the accounts aren't read yet: no section. */
     data object Hidden : YourStashCloud
 
     /** Nothing connected: one row to connect, naming what this build offers. */
@@ -102,15 +103,16 @@ private const val DAY_MS = 86_400_000L
 
 /**
  * Builds the page from the existing state: the link's status ([WebLinkStatus]), the supporter row ([SupporterRow]) and the
- * cloud accounts ([CloudAccountRow]). [cloudAvailable] and [cloudProviders] are what this build offers
- * ([com.stash.feature.settings.cloud.CloudStorageViewModel.available] and `providers`).
+ * cloud accounts ([CloudAccountRow]). [cloudAvailable] and [cloudProviders] are what this build offers. A null [supporter]
+ * or [cloudAccounts] hasn't been read yet: its section waits rather than showing a placeholder that then changes
+ * (see [YourStashViewModel]).
  */
 internal fun yourStashUi(
     link: WebLinkStatus,
-    supporter: SupporterRow,
+    supporter: SupporterRow?,
     cloudAvailable: Boolean,
     cloudProviders: List<CloudProvider>,
-    cloudAccounts: List<CloudAccountRow>,
+    cloudAccounts: List<CloudAccountRow>?,
 ): YourStashUi {
     val devices = when (link) {
         WebLinkStatus.Loading -> YourStashDevices.Loading
@@ -121,14 +123,14 @@ internal fun yourStashUi(
         )
     }
     val cloud = when {
-        !cloudAvailable -> YourStashCloud.Hidden
+        !cloudAvailable || cloudAccounts == null -> YourStashCloud.Hidden
         cloudAccounts.isEmpty() -> YourStashCloud.NoneConnected(cloudProviders)
         else -> YourStashCloud.Connected(cloudAccounts)
     }
     return YourStashUi(
         devices = devices,
         linkFeatures = (link as? WebLinkStatus.Linked)?.let { YourStashLinkFeatures(canSend = it.browsers.isNotEmpty()) },
-        supporter = supporter,
+        supporter = supporter ?: SupporterRow.Hidden,
         cloud = cloud,
     )
 }

@@ -73,7 +73,7 @@ class WebLinkViewModel @Inject constructor(
                 .filter { it }
                 .collect { session.reset() }
         }
-        // The list is read when the screen resumes (SettingsWebLinkScreen), so not here too.
+        // The list is read when the screen resumes (YourStashScreen), so not here too.
         // A link handed in by the route is opened once, not again after a configuration change.
         val link = savedState.get<String>(ARG_LINK)
         if (link != null && savedState.get<Boolean>(KEY_LINK_OPENED) != true) {

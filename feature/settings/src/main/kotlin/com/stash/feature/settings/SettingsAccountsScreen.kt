@@ -50,6 +50,9 @@ fun SettingsAccountsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    // Your Stash's scroll to Cloud storage happens once. Kept up here, before the sign-in screens
+    // below return early: inside the page it was dropped while one showed, and fired again after.
+    var cloudFocused by rememberSaveable { mutableStateOf(false) }
     // The last sync's verdict on each stored sign-in: an expired card leads with
     // Reconnect (the Sync tab's "Re-authenticate" lands here).
     val authExpiry by viewModel.authExpiry.collectAsStateWithLifecycle()
@@ -404,8 +407,7 @@ fun SettingsAccountsScreen(
             )
         }
         if (focusCloud) {
-            // Once: not again after a rotation, or when Back returns here.
-            var cloudFocused by rememberSaveable { mutableStateOf(false) }
+            // Once: not again after a rotation, a sign-in screen, or when Back returns here.
             LaunchedEffect(Unit) {
                 if (cloudFocused) return@LaunchedEffect
                 cloudFocused = true

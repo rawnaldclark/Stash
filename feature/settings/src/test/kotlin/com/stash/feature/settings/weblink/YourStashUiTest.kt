@@ -34,10 +34,10 @@ class YourStashUiTest {
 
     private fun ui(
         link: WebLinkStatus = WebLinkStatus.NotLinked,
-        supporter: SupporterRow = SupporterRow.Offer(hasToken = false),
+        supporter: SupporterRow? = SupporterRow.Offer(hasToken = false),
         cloudAvailable: Boolean = true,
         providers: List<CloudProvider> = allProviders,
-        accounts: List<CloudAccountRow> = emptyList(),
+        accounts: List<CloudAccountRow>? = emptyList(),
     ) = yourStashUi(link, supporter, cloudAvailable, providers, accounts)
 
     // ------------------------------------------------------------------------------------------------------- devices
@@ -117,6 +117,16 @@ class YourStashUiTest {
     @Test fun `a build without cloud keys has no cloud section, whatever is stored`() {
         assertThat(ui(cloudAvailable = false).cloud).isEqualTo(YourStashCloud.Hidden)
         assertThat(ui(cloudAvailable = false, accounts = listOf(cloudRow(CloudProvider.DROPBOX))).cloud).isEqualTo(YourStashCloud.Hidden)
+    }
+
+    @Test fun `before the first read, neither supporter nor cloud shows a placeholder`() {
+        val u = ui(supporter = null, accounts = null)
+        // No late-appearing Supporter row, and no "Connect your cloud storage" flash on a phone with accounts.
+        assertThat(u.supporter).isEqualTo(SupporterRow.Hidden)
+        assertThat(u.cloud).isEqualTo(YourStashCloud.Hidden)
+        // Once read, they show.
+        assertThat(ui(supporter = SupporterRow.Offer(false), accounts = emptyList()).cloud)
+            .isEqualTo(YourStashCloud.NoneConnected(allProviders))
     }
 
     // ------------------------------------------------------------------------------------ backups and what's coming

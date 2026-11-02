@@ -69,7 +69,6 @@ import com.stash.feature.settings.SupporterRow
 import com.stash.feature.settings.SupporterViewModel
 import com.stash.feature.settings.WebLibraryExportSheet
 import com.stash.feature.settings.WebLibraryExportViewModel
-import com.stash.feature.settings.cloud.CloudStorageViewModel
 import com.stash.feature.settings.cloud.accentOf
 import com.stash.feature.settings.cloud.logoOf
 import com.stash.feature.settings.components.SettingsGroupCard
@@ -107,7 +106,7 @@ fun YourStashScreen(
     inboxVm: InboxViewModel = hiltViewModel(),
     mirrorVm: MirrorViewModel = hiltViewModel(),
     supporterVm: SupporterViewModel = hiltViewModel(),
-    cloudVm: CloudStorageViewModel = hiltViewModel(),
+    sources: YourStashViewModel = hiltViewModel(),
 ) {
     val mirror by mirrorVm.status.collectAsStateWithLifecycle()
     val mirrorMessage by mirrorVm.message.collectAsStateWithLifecycle()
@@ -119,9 +118,9 @@ fun YourStashScreen(
     val handoffOn by viewModel.handoffEnabled.collectAsStateWithLifecycle()
     val sends by inboxVm.sends.collectAsStateWithLifecycle()
     val inboxStep by inboxVm.step.collectAsStateWithLifecycle()
-    val supporterRow by supporterVm.row.collectAsStateWithLifecycle()
-    val cloudAccounts by cloudVm.accounts.collectAsStateWithLifecycle()
-    val ui = yourStashUi(status, supporterRow, cloudVm.available, cloudVm.providers, cloudAccounts)
+    val supporterRow by sources.supporter.collectAsStateWithLifecycle()
+    val cloudAccounts by sources.cloudAccounts.collectAsStateWithLifecycle()
+    val ui = yourStashUi(status, supporterRow, sources.cloudAvailable, sources.cloudProviders, cloudAccounts)
     var openSend by remember { mutableStateOf<IncomingSend?>(null) }
     var claimOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -175,8 +174,8 @@ fun YourStashScreen(
         }
     }
 
-    // The Ko-fi claim, the same sheet Lossless sources opens.
-    SupporterClaim(supporterVm, supporterRow, claimOpen, onClose = { claimOpen = false })
+    // The Ko-fi claim, the same sheet Lossless sources opens (supporterVm holds the claim's steps).
+    SupporterClaim(supporterVm, ui.supporter, claimOpen, onClose = { claimOpen = false })
 
     // Send my library to a browser: the export picker (Save as file is there too), and a received send's choices.
     WebLibraryExportSheet(exportVm)

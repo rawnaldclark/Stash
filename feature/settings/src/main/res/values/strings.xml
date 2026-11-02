@@ -874,7 +874,7 @@
     <!-- Settings > Library & Storage > Your Stash: the link's page, which also gathers supporter status, cloud and backups -->
     <string name="settings_your_stash_title">Your Stash</string>
     <string name="settings_your_stash_nav_subtitle">Link the web player, see your devices, supporter status, cloud and backups</string>
-    <string name="settings_your_stash_posture">Your Stash is your devices. No account, no email. Everything is encrypted before it leaves your phone.</string>
+    <string name="settings_your_stash_posture">Your Stash is your devices. No account, no email. What your phone and browsers share with each other is encrypted before it leaves them.</string>
     <string name="settings_your_stash_section_devices">Devices</string>
     <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
     <string name="settings_your_stash_section_supporter">Supporter</string>
