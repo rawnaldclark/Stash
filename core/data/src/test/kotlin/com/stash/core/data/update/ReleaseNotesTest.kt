@@ -273,6 +273,64 @@ class ReleaseNotesTest {
     }
 
     @Test
+    fun `closing hashes, rules and an unclosed comment read as GitHub shows them`() {
+        val n = ReleaseNotes.parse("Line.\n\n## Bug fixes ##\n- One.\n- - -\n- Two in C#.\n\n<!-- left open\n- Hidden, as on GitHub.")
+        assertThat(n.sections.single().heading).isEqualTo("Bug fixes")
+        assertThat(n.sections.single().notes.map { it.body }).containsExactly("One.", "Two in C#.").inOrder()
+    }
+
+    // ── Bounded work (review on #814) ──────────────────────────────────────
+
+    /**
+     * A body as long as GitHub allows (125k), made of what made the old patterns slow: long runs of blanks inside a
+     * heading, a PR number, "by @someone in" and a credit; a line of pictures; unclosed links, pictures, comments and
+     * code; marks repeated thousands of times. The old parser took seconds on 40k of such text (quadratic) and could
+     * try 2ⁿ ways through a line of pictures. Each line is a little over the line cap, so the first 32k (the body cap)
+     * holds every kind. Parsed by [ReleaseNotesParser] itself, so a stack overflow would fail the test instead of turning
+     * into EMPTY quietly.
+     */
+    @Test
+    fun `a hostile 125k body parses in well under a second`() {
+        val blanks = " ".repeat(2_100)
+        val tabs = "\t".repeat(300)
+        val part = buildString {
+            append("Headline a").append(blanks).append("b.\n\n")
+            append("## a").append(blanks).append("b\n")
+            append("- **Lead.** text (#1").append(blanks).append("x\n")
+            append("- note by @a").append(tabs).append("in").append(tabs).append("x\n")
+            append("- (thanks ").append("@a ".repeat(700)).append("\n")
+            append("Wow").append("!".repeat(1_000)).append(" Next").append(".".repeat(1_000)).append(" Then.\n")
+            repeat(65) { append("<picture><img src=a></picture> ") }
+            append("\n")
+            repeat(65) { append("<picture><img src=a></picture> ") }
+            append("x\n")
+            repeat(260) { append("![a](b) ") }
+            append("![\n")
+            append("[a](".repeat(520)).append('\n')
+            append("<picture".repeat(260)).append('\n')
+            append("`".repeat(2_100)).append('\n')
+            append("**a".repeat(700)).append('\n')
+            append("-".repeat(2_100)).append('\n')
+            append("# ").append("#".repeat(2_100)).append(" x\n\n")
+        }
+        assertThat(part.length).isLessThan(ReleaseNotesParser.MAX_BODY)
+        val body = buildString {
+            while (length < 120_000) append(part)
+            append("<!-- app ".repeat(600))
+        }
+        assertThat(body.length).isAtLeast(125_000)
+        ReleaseNotesParser.parse("Warm up.\n\n## What's new\n- **One.** Two.")
+
+        val start = System.nanoTime()
+        val n = ReleaseNotesParser.parse(body)
+        val ms = (System.nanoTime() - start) / 1_000_000
+
+        assertWithMessage("parse took $ms ms").that(ms).isLessThan(1_000L)
+        assertThat(n.headline).startsWith("Headline a")
+        assertThat(n.sections).isNotEmpty()
+    }
+
+    @Test
     fun `first sentences skip feat, e_g and initials`() {
         assertThat(ReleaseNotesParser.firstSentence("Plays Song (feat. Drake) right. Then more.")).isEqualTo("Plays Song (feat. Drake) right.")
         assertThat(ReleaseNotesParser.firstSentence("Sources, e.g. Qobuz, are faster. And more.")).isEqualTo("Sources, e.g. Qobuz, are faster.")

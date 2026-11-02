@@ -65,20 +65,45 @@ data class ReleaseNotes(
 
         val EMPTY = ReleaseNotes("", emptyList(), emptyList(), 0, 0, 0, false)
 
-        /** The user's part of [markdown], a GitHub release body. Never throws; unreadable notes give [EMPTY]. */
+        /**
+         * The user's part of [markdown], a GitHub release body. Never throws; unreadable notes give [EMPTY]. Bounded work
+         * whatever the body (see [ReleaseNotesParser]'s limits), but still a parse: call it off the main thread.
+         */
         fun parse(markdown: String): ReleaseNotes = runCatching { ReleaseNotesParser.parse(markdown) }.getOrDefault(EMPTY)
     }
 }
 
-/** [ReleaseNotes.parse]'s work: a line-by-line read of the Markdown GitHub's releases use. */
+/**
+ * [ReleaseNotes.parse]'s work: a line-by-line read of the Markdown GitHub's releases use.
+ *
+ * Its work is bounded whatever the body says (review on #814: a long run of spaces made three patterns quadratic, seconds
+ * of work at 40k characters). The body, each line, each note and the number of lines read are capped far above any real
+ * release (v0.9.122's user part is ~6k characters in ~60 lines); [clean] folds blank runs before anything else; and no
+ * pattern can try more than one way through the same text: runs are possessive (`*+`, `++`) or atomic, scans stop at the
+ * next opener (`[^()]`, `[^<>]`), and the closing `#`s of a heading, `<!-- -->` comments and rules are read in code.
+ */
 internal object ReleaseNotesParser {
 
+    /** The most of a body read: GitHub allows 125k; a real release's user part is ~6k. */
+    const val MAX_BODY = 32_000
+
+    /** The most of one line read. */
+    const val MAX_LINE = 2_000
+
+    /** The most lines read before GitHub's part. */
+    const val MAX_LINES = 400
+
+    /** The most one note, one point under it, or the headline grows to from its wrapped lines. */
+    const val MAX_NOTE = 4_000
+
     fun parse(markdown: String): ReleaseNotes {
-        val text = markdown.replace("\r\n", "\n").replace('\r', '\n')
-        val block = APP_BLOCK.find(text)?.let { appBlock(it.groupValues[1]) }
-        val lines = userLines(COMMENT.replace(text, ""))
+        val text = markdown.take(MAX_BODY).replace("\r\n", "\n").replace('\r', '\n')
+        val (visible, comments) = splitComments(text)
+        val block = comments.firstNotNullOfOrNull { c -> APP_BLOCK_START.find(c)?.let { appBlock(c.substring(it.range.last + 1)) } }
+        val lines = userLines(visible)
 
         val headlineParts = mutableListOf<String>()
+        var headlineLength = 0
         var headlineOpen = true
         val sections = mutableListOf<SectionBuilder>()
         var note: NoteBuilder? = null
@@ -121,7 +146,10 @@ internal object ReleaseNotesParser {
                 }
                 is Line.Text -> {
                     if (headlineOpen && (headlineParts.isEmpty() || !blank) && !(headlineParts.isEmpty() && line.text.trimStart().startsWith("**"))) {
-                        headlineParts += line.text
+                        if (headlineLength < MAX_NOTE) {
+                            headlineParts += line.text
+                            headlineLength += line.text.length + 1
+                        }
                         blank = false
                         continue
                     }
@@ -129,7 +157,11 @@ internal object ReleaseNotesParser {
                     val owner = note
                     if (owner != null && (!blank || (line.indent >= 2 && owner.bullet))) {
                         // A line of the same item (wrapped, or an indented paragraph under a bullet).
-                        if (inDetail) owner.details[owner.details.lastIndex] += " " + line.text else owner.body += " " + line.text
+                        if (inDetail) {
+                            owner.details[owner.details.lastIndex] = joinCapped(owner.details.last(), line.text)
+                        } else {
+                            owner.body = joinCapped(owner.body, line.text)
+                        }
                     } else {
                         flush()
                         note = NoteBuilder(line.text, bullet = false)
@@ -188,7 +220,8 @@ internal object ReleaseNotesParser {
         val out = mutableListOf<Line>()
         var fence = false
         for (raw in text.split('\n')) {
-            val line = raw.replace("\t", "    ").trimEnd()
+            if (out.size >= MAX_LINES) break
+            val line = raw.replace("\t", "    ").take(MAX_LINE).trimEnd()
             if (FENCE.matches(line)) {
                 fence = !fence
                 continue
@@ -197,13 +230,14 @@ internal object ReleaseNotesParser {
             if (isDevTail(line)) break
             val unquoted = QUOTE.replace(line, "")
             when {
-                unquoted.isBlank() || RULE.matches(unquoted) || PICTURES_ONLY.matches(unquoted) -> out += Line.Blank
+                unquoted.isBlank() || isRule(unquoted) || PICTURES_ONLY.matches(unquoted) -> out += Line.Blank
                 TABLE.matches(unquoted) || LINK_DEFINITION.matches(unquoted) || GENERATED_PR_LINE.containsMatchIn(unquoted) -> Unit
                 else -> {
-                    val heading = HEADING.matchEntire(unquoted) ?: BOLD_HEADING.matchEntire(unquoted)?.takeUnless { it.groupValues[1].trimEnd().endsWith('.') }
+                    val heading = headingText(unquoted)
+                        ?: BOLD_HEADING.matchEntire(unquoted)?.groupValues?.get(1)?.takeUnless { it.trimEnd().endsWith('.') }
                     val bullet = BULLET.matchEntire(unquoted)
                     out += when {
-                        heading != null -> Line.Heading(heading.groupValues[1])
+                        heading != null -> Line.Heading(heading)
                         bullet != null -> Line.Bullet(bullet.groupValues[1].length, bullet.groupValues[2])
                         else -> Line.Text(unquoted.length - unquoted.trimStart().length, unquoted.trim())
                     }
@@ -213,14 +247,66 @@ internal object ReleaseNotesParser {
         return out
     }
 
+    /** A `# Heading`'s words, without the closing `#`s some writers add ("## Fixes ##"); null for any other line. */
+    private fun headingText(line: String): String? {
+        val words = HEADING.matchEntire(line)?.groupValues?.get(1)?.trimEnd() ?: return null
+        val open = words.trimEnd('#')
+        return if (open.length < words.length && (open.isEmpty() || open.last().isWhitespace())) open.trimEnd() else words
+    }
+
+    /** `---`, `***` or `___` (spaces between allowed): a rule, which the notes read as a gap. */
+    private fun isRule(line: String): Boolean {
+        val mark = line.trimStart()
+        if (line.length - mark.length > 3 || mark.isEmpty() || mark[0] !in "-*_") return false
+        var count = 0
+        for (c in mark) {
+            when {
+                c == mark[0] -> count++
+                !c.isWhitespace() -> return false
+            }
+        }
+        return count >= 3
+    }
+
     /** Where GitHub's part starts: `## Install`, `## What's Changed`, `## New Contributors`, `**Full Changelog**`. */
     private fun isDevTail(line: String): Boolean {
-        HEADING.matchEntire(line)?.let { return normalise(it.groupValues[1]) in DEV_HEADINGS }
+        headingText(line)?.let { return normalise(it) in DEV_HEADINGS }
         return FULL_CHANGELOG.containsMatchIn(line)
     }
 
-    private fun normalise(heading: String): String =
-        clean(heading).replace('’', '\'').lowercase().replace(EDGE_SYMBOLS, "").trim()
+    private fun normalise(heading: String): String = trimEdgeSymbols(clean(heading).replace('’', '\'').lowercase())
+
+    /** No emoji or marks in front ("🐛 Fixes" → "Fixes"), no colon or space after. */
+    private fun trimEdgeSymbols(s: String): String = LEADING_SYMBOLS.replace(s, "").trimEnd { it.isWhitespace() || it == ':' }
+
+    /**
+     * [text] without its `<!-- … -->` comments, and the comments' insides in order. One left open runs to the end, as
+     * GitHub hides the rest of the body then too. In code, not a lazy `.*?`: that scans to the end once per unclosed `<!--`.
+     */
+    private fun splitComments(text: String): Pair<String, List<String>> {
+        val visible = StringBuilder(text.length)
+        val comments = mutableListOf<String>()
+        var at = 0
+        while (true) {
+            val open = text.indexOf("<!--", at)
+            if (open < 0) {
+                visible.append(text, at, text.length)
+                break
+            }
+            visible.append(text, at, open)
+            val close = text.indexOf("-->", open + 4)
+            if (close < 0) {
+                comments += text.substring(open + 4)
+                break
+            }
+            comments += text.substring(open + 4, close)
+            at = close + 3
+        }
+        return visible.toString() to comments
+    }
+
+    /** [base] and a wrapped line of it, one space between; [base] as it is once it reaches [MAX_NOTE]. */
+    private fun joinCapped(base: String, more: String): String = if (base.length >= MAX_NOTE) base else "$base $more"
 
     // ── Notes ────────────────────────────────────────────────────────────────
 
@@ -251,7 +337,7 @@ internal object ReleaseNotesParser {
     }
 
     /** A heading in plain words: no emoji in front ("🐛 Fixes" → "Fixes"), no colon after. */
-    fun cleanHeading(raw: String): String? = clean(raw).replace(EDGE_SYMBOLS, "").trim().takeIf { it.isNotEmpty() }
+    fun cleanHeading(raw: String): String? = trimEdgeSymbols(clean(raw)).trim().takeIf { it.isNotEmpty() }
 
     /**
      * "**The Sync tab, rebuilt.** A fresh install…" → ("The Sync tab, rebuilt", "A fresh install…"). A bold start that runs
@@ -270,7 +356,9 @@ internal object ReleaseNotesParser {
     /** The first sentence of [text] (all of it when it is one). Doesn't stop at "feat.", "e.g." or an initial. */
     fun firstSentence(text: String): String {
         for (m in SENTENCE_END.findAll(text)) {
-            val word = text.substring(0, m.range.first).takeLastWhile { !it.isWhitespace() }.trimStart('(', '"', '“')
+            var from = m.range.first
+            while (from > 0 && !text[from - 1].isWhitespace()) from--
+            val word = text.substring(from, m.range.first).trimStart('(', '"', '“')
             if (word.lowercase() in ABBREVIATIONS || (word.length == 1 && word[0].isUpperCase())) continue
             return text.substring(0, m.range.last + 1).trim()
         }
@@ -280,10 +368,10 @@ internal object ReleaseNotesParser {
     /**
      * One line of Markdown as plain words: pictures gone, links' text kept and their addresses dropped, no bare URLs, PR
      * numbers or "by @someone in …", emphasis marks off, and "Thanks to @someone." credits taken out (an @ elsewhere
-     * loses its @). Blank runs folded.
+     * loses its @). Blank runs folded, first of all: no pattern below meets a run of spaces.
      */
     fun clean(s: String): String {
-        var t = s
+        var t = SPACES.replace(s, " ")
         t = IMAGE.replace(t, "")
         t = HTML_IMAGE.replace(t, "")
         t = LINK.replace(t) { it.groupValues[1] }
@@ -317,8 +405,8 @@ internal object ReleaseNotesParser {
     fun appBlock(body: String): AppBlock {
         val headline = mutableListOf<String>()
         val highlights = mutableListOf<ReleaseNotes.Note>()
-        for (raw in body.split('\n')) {
-            val line = raw.trim()
+        for (raw in body.split('\n').take(MAX_LINES)) {
+            val line = raw.take(MAX_LINE).trim()
             if (line.isEmpty()) continue
             val bullet = BLOCK_BULLET.matchEntire(line)
             if (bullet == null) {
@@ -336,62 +424,72 @@ internal object ReleaseNotesParser {
 
     // ── Patterns ────────────────────────────────────────────────────────────
 
-    private val APP_BLOCK = Regex("""<!--\s*(?:stash-app|app)(?:\s*:|\s)(.*?)-->""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-    private val COMMENT = Regex("""<!--.*?-->""", RegexOption.DOT_MATCHES_ALL)
+    // Each pattern is linear in its text (#814 review): a run is taken whole (`*+`, `++`: no giving back to try again),
+    // a scan stops at the next opener of its kind, and a match can start only at the start of a run of blanks
+    // (`(?<!\s)`). Checked against long runs of every mark these patterns read.
+
+    /** The start of the hidden block, inside a comment: "stash-app" or "app", then a colon or a blank. */
+    private val APP_BLOCK_START = Regex("""^\s*+(?:stash-app|app)(?:\s*+:|\s)""", RegexOption.IGNORE_CASE)
     private val BLOCK_BULLET = Regex("""^(?:[-*+•])\s+(.*)$""")
 
     private val FENCE = Regex("""^\s*(?:```|~~~).*$""")
     private val QUOTE = Regex("""^\s{0,3}>\s?""")
-    private val RULE = Regex("""^\s{0,3}([-*_])(?:\s*\1){2,}\s*$""")
-    private val HEADING = Regex("""^\s{0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$""")
+    /** `# Heading`: the closing `#`s are taken off in code ([headingText]); a lazy `.*?` before them was quadratic. */
+    private val HEADING = Regex("""^\s{0,3}#{1,6}\s+(.*)$""")
     /** A line that is only a short bold phrase ("**What's new**") is a heading too, unless it ends a sentence. */
     private val BOLD_HEADING = Regex("""^\s{0,3}\*\*([^*]{1,40})\*\*:?\s*$""")
     private val BULLET = Regex("""^(\s*)(?:[-*+•]|\d{1,3}[.)])\s+(.*)$""")
     private val TABLE = Regex("""^\s*\|.*\|\s*$""")
     private val LINK_DEFINITION = Regex("""^\s{0,3}\[[^\]]+]:\s*\S+.*$""")
-    private val PICTURES_ONLY = Regex("""^\s*(?:(?:!\[(?:[^\[\]]|\[[^\]]*])*](?:\([^)]*\)|\[[^\]]*])|<img\b[^>]*>|<picture\b.*?</picture>)\s*)+$""", RegexOption.IGNORE_CASE)
+    /** A line of nothing but pictures. Each picture is atomic and can't run into the next: one way through, never 2ⁿ. */
+    private val PICTURES_ONLY = Regex(
+        """^\s*+(?:(?>!\[(?:[^\[\]]++|\[[^\[\]]*+])*+](?:\((?:[^()]++|\([^()]*+\))*+\)|\[[^\[\]]*+])|<img\b[^<>]*+>|<picture\b(?:(?!</?picture\b)[\s\S])*+</picture>)\s*+)++$""",
+        RegexOption.IGNORE_CASE,
+    )
     /** A line of GitHub's generated PR list that lost its heading: "* Title by @someone in https://github.com/…/pull/1". */
     private val GENERATED_PR_LINE = Regex("""\bby @[\w-]+ in https?://github\.com/""")
-    private val FULL_CHANGELOG = Regex("""^\s*\**\s*full changelog\b""", RegexOption.IGNORE_CASE)
+    private val FULL_CHANGELOG = Regex("""^\s*+\**+\s*+full changelog\b""", RegexOption.IGNORE_CASE)
     private val DEV_HEADINGS = setOf(
         "install", "installation", "how to install", "what's changed", "whats changed", "new contributors", "full changelog",
         "checksums", "commits",
     )
-    private val EDGE_SYMBOLS = Regex("""^[^\p{L}\p{N}]+|[\s:]+$""")
+    private val LEADING_SYMBOLS = Regex("""^[^\p{L}\p{N}]++""")
 
     private val FIX_WORDS = Regex("""\b(?:bugs?|fix(?:es|ed)?)\b""")
     private val POLISH_WORDS = Regex("""polish|improve|tweak|refine|smaller changes|under the hood""")
     private val INFO_WORDS = Regex("""good to know|known (?:issues?|limitations?|problems?)|heads.?up|before you update|\bnotes?\b""")
 
     private val LEAD = Regex("""^(?:\*\*(.+?)\*\*|__(.+?)__)(.*)$""")
-    private val SENTENCE_END = Regex("""[.!?]+["”’')\]]*(?=\s+["“‘(\[]?[\p{Lu}\d])""")
+    /** A sentence's end: starts only at the first mark of a run ("Wow!!! Next"), never once per mark. */
+    private val SENTENCE_END = Regex("""(?<![.!?])[.!?]++["”’')\]]*+(?=\s+["“‘(\[]?[\p{Lu}\d])""")
     private val ABBREVIATIONS = setOf("e.g", "i.e", "vs", "approx", "mr", "mrs", "ms", "dr", "st", "no", "feat", "ft", "vol")
 
-    private val IMAGE = Regex("""!\[(?:[^\[\]]|\[[^\]]*])*](?:\([^)]*\)|\[[^\]]*])""")
-    private val HTML_IMAGE = Regex("""<picture\b.*?</picture>|<img\b[^>]*>""", RegexOption.IGNORE_CASE)
-    private val LINK = Regex("""\[((?:[^\[\]]|\[[^\]]*])+)]\([^)]*\)""")
-    private val REF_LINK = Regex("""\[([^\[\]]+)]\[[^\]]*]""")
-    private val AUTOLINK = Regex("""<(?:https?|mailto):[^>]+>""", RegexOption.IGNORE_CASE)
-    private val HTML_TAG = Regex("""</?[A-Za-z][^>]*>""")
-    private val GENERATED_BY = Regex("""\s+by\s+@[\w-]+\s+in\s+\S+""")
+    /** `![alt](address)`: brackets and parentheses one deep inside, each scan ending at the next opener. */
+    private val IMAGE = Regex("""!\[(?:[^\[\]]++|\[[^\[\]]*+])*+](?:\((?:[^()]++|\([^()]*+\))*+\)|\[[^\[\]]*+])""")
+    private val HTML_IMAGE = Regex("""<picture\b(?:(?!</?picture\b)[\s\S])*+</picture>|<img\b[^<>]*+>""", RegexOption.IGNORE_CASE)
+    private val LINK = Regex("""\[((?:[^\[\]]++|\[[^\[\]]*+])++)]\((?:[^()]++|\([^()]*+\))*+\)""")
+    private val REF_LINK = Regex("""\[([^\[\]]++)]\[[^\[\]]*+]""")
+    private val AUTOLINK = Regex("""<(?:https?|mailto):[^<>]++>""", RegexOption.IGNORE_CASE)
+    private val HTML_TAG = Regex("""</?[A-Za-z][^<>]*+>""")
+    private val GENERATED_BY = Regex("""(?<!\s)\s++by\s++@[\w-]++\s++in\s++\S++""")
     /** A bare address, not the punctuation after it. */
     private val URL = Regex("""\bhttps?://[^\s<>]*[^\s<>.,;:!?)'"\]]""", RegexOption.IGNORE_CASE)
-    private val PR_REF = Regex("""\s*\(\s*(?:PR\s*)?#\d+(?:\s*,\s*#\d+)*\s*\)""", RegexOption.IGNORE_CASE)
+    private val PR_REF = Regex("""(?<!\s)\s*+\(\s*+(?:PR\s*+)?#\d++(?:\s*+,\s*+#\d++)*+\s*+\)""", RegexOption.IGNORE_CASE)
     private val BOLD = Regex("""\*\*(.+?)\*\*|__(.+?)__""")
     private val ITALIC_STAR = Regex("""(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])""")
     private val ITALIC_UNDERSCORE = Regex("""(?<![\w_])_(?!\s)([^_\n]+?)(?<!\s)_(?![\w_])""")
     private val STRIKE = Regex("""~~(.+?)~~""")
-    private val CODE = Regex("""`+([^`]+)`+""")
+    private val CODE = Regex("""(?<!`)`++([^`]++)`++""")
     /** Emphasis marks with nothing to mark, left from a broken line. */
     private val STRAY_MARKS = Regex("""\*\*+|__+|`+""")
     private val ENTITIES = mapOf("&amp;" to "&", "&lt;" to "<", "&gt;" to ">", "&quot;" to "\"", "&#39;" to "'", "&nbsp;" to " ")
     /** An @handle (not an e-mail address, not inside a path). */
     private val HANDLE = Regex("""(?<![\w.@/])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\b""")
     private val THANKS = Regex("""^\W*(?:big\s+)?(?:thanks|thank you|kudos|shout-?outs?|credits?|props|hat tip|h/t|reported by|fixed by|contributed by|via)\b""", RegexOption.IGNORE_CASE)
-    private val THANKS_ASIDE = Regex("""\s*\(\s*(?:thanks|thank you|h/t|via|by)\b[^)]*@[^)]*\)""", RegexOption.IGNORE_CASE)
+    private val THANKS_ASIDE = Regex("""(?<!\s)\s*+\(\s*+(?:thanks|thank you|h/t|via|by)\b[^()@]*+@[^()]*+\)""", RegexOption.IGNORE_CASE)
     private val SENTENCE_BREAK = Regex("""(?<=[.!?])\s+""")
     private val LONE_BANG = Regex("""(?<=^|\s)!+(?=\s|$)""")
     private val SPACES = Regex("""\s+""")
-    private val SPACE_BEFORE_PUNCTUATION = Regex("""\s+([.,;:!?)])""")
+    private val SPACE_BEFORE_PUNCTUATION = Regex("""(?<!\s)\s++([.,;:!?)])""")
     private val EMPTY_BRACKETS = Regex("""\(\s*\)""")
 }
