@@ -73,8 +73,24 @@ interface MusicRepository {
     /** Distinct artists with track counts and durations. */
     fun getAllArtists(): Flow<List<ArtistSummary>>
 
-    /** Distinct albums with metadata. */
+    /**
+     * Songs grouped by their album text. No longer what Library › Albums lists (that is
+     * [getLibraryAlbums], saved albums only, since 2026-11-02).
+     */
     fun getAllAlbums(): Flow<List<AlbumSummary>>
+
+    /**
+     * Every saved album in the library, one entry per saved copy (an album saved on two services
+     * is two entries), with its songs counted. What an album page asks "is this album saved?".
+     */
+    fun observeSavedAlbums(): Flow<List<com.stash.core.data.album.SavedAlbum>>
+
+    /**
+     * Library › Albums: saved albums only, one card per album, by
+     * [com.stash.core.data.album.SavedAlbums.forLibrary]. Follows the Download switch: Stream only
+     * lists every saved album, Download mode one whose songs are all on the phone (or downloading).
+     */
+    fun getLibraryAlbums(): Flow<List<com.stash.core.data.album.SavedAlbum>>
 
     /** Most-recently-added tracks. */
     fun getRecentlyAdded(limit: Int = 20): Flow<List<Track>>

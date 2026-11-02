@@ -1025,6 +1025,10 @@ interface PlaylistDao {
      * inventory. With [hasCurrentIds] false every active one goes. Worked out
      * in memory and written in chunks for the same bind-cap reason as
      * [deactivateMissingForSource].
+     *
+     * Saved albums ([com.stash.core.data.album.SavedAlbums]) are never in the
+     * playlist listing, so they are left out: Spotify's saved albums (item 5)
+     * need their own "still saved" check against the album listing.
      */
     @Transaction
     suspend fun deactivateMissingSpotifyCustomPlaylists(
@@ -1034,6 +1038,7 @@ interface PlaylistDao {
         val current = currentSourceIds.toHashSet()
         val missing = getActivePlaylistsBySource(MusicSource.SPOTIFY)
             .filter { it.type == PlaylistType.CUSTOM && (!hasCurrentIds || it.sourceId !in current) }
+            .filterNot { com.stash.core.data.album.SavedAlbums.isSavedAlbum(it.type, it.source, it.sourceId) }
             .map { it.id }
         return deactivateByIdsChunked(missing)
     }
@@ -1099,15 +1104,74 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = :playlistId AND removed_at IS NULL")
     suspend fun getNextPosition(playlistId: Long): Int
 
-    /** All user-created custom playlists (source = BOTH means local). */
+    /**
+     * All user-created custom playlists (source = BOTH means local): the "Add to playlist"
+     * pickers. A saved album ([SAVED_ALBUM]) is a release, not a list to add songs to, so it
+     * stays out (owner, 2026-11-02).
+     */
     @Query(
         """
-        SELECT * FROM playlists WHERE type = 'CUSTOM' AND source = 'BOTH' AND is_active = 1
-          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
-        ORDER BY name ASC
+        SELECT p.* FROM playlists p WHERE p.type = 'CUSTOM' AND p.source = 'BOTH' AND p.is_active = 1
+          AND NOT """ + SAVED_ALBUM + """
+          AND p.id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
+        ORDER BY p.name ASC
         """
     )
     fun getUserCreatedPlaylists(): Flow<List<PlaylistEntity>>
+
+    /**
+     * Library › Albums' rows: every active saved album ([SAVED_ALBUM]) with its songs counted and
+     * listed in album order ([SavedAlbumRow]). One row per saved copy; merging copies of one album
+     * and Download mode's rule are [com.stash.core.data.album.SavedAlbums.forLibrary]'s.
+     *
+     * Its songs are what the album page lists in Stream only ([TrackDao.getByPlaylist]): live
+     * memberships, blocked songs left out. A song is on the phone when `is_downloaded`, what
+     * Download mode lists ([com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]),
+     * and downloading while a download_queue row for it waits or runs.
+     *
+     * The inner query reads only saved albums' memberships, in position order, so each album's
+     * artists and titles come out in album order.
+     */
+    @Query(
+        """
+        SELECT p.id AS id, p.name AS name, p.source AS source, p.source_id AS sourceId,
+               p.art_url AS artUrl, p.date_added AS dateAdded,
+               COUNT(m.track_id) AS trackCount,
+               COALESCE(SUM(m.on_phone), 0) AS downloadedCount,
+               COALESCE(SUM(m.queued), 0) AS downloadingCount,
+               GROUP_CONCAT(m.artist, char(31)) AS artists,
+               GROUP_CONCAT(m.title, char(31)) AS titles
+        FROM playlists p
+        LEFT JOIN (
+            SELECT pt.playlist_id AS playlist_id, pt.track_id AS track_id,
+                   t.artist AS artist, t.title AS title,
+                   (t.is_downloaded = 1) AS on_phone,
+                   (t.is_downloaded = 0 AND EXISTS (
+                       SELECT 1 FROM download_queue dq
+                       WHERE dq.track_id = t.id
+                         AND dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
+                   )) AS queued
+            FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlist_id
+            INNER JOIN tracks t ON t.id = pt.track_id
+            WHERE pt.removed_at IS NULL
+              AND p.is_active = 1
+              AND """ + SAVED_ALBUM + """
+              AND NOT EXISTS (
+                  SELECT 1 FROM track_blocklist bl
+                  WHERE bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+                     OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+                     OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+              )
+            ORDER BY pt.playlist_id, pt.position, pt.added_at, t.id
+        ) m ON m.playlist_id = p.id
+        WHERE p.is_active = 1
+          AND """ + SAVED_ALBUM + """
+        GROUP BY p.id
+        ORDER BY p.date_added DESC, p.id DESC
+        """
+    )
+    fun observeSavedAlbums(): Flow<List<SavedAlbumRow>>
 
     /**
      * v0.9.23 — playlists the user can pick as a destination for
@@ -1126,28 +1190,31 @@ interface PlaylistDao {
      * (Stash-native customs) is included as a defensive third arm so
      * brand-new empty custom playlists are always pickable as a save
      * destination, even before they have tracks.
+     *
+     * A saved album ([SAVED_ALBUM]) is never a destination (owner, 2026-11-02).
      */
     @Query(
         """
-        SELECT * FROM playlists
-        WHERE is_active = 1
-          AND type IN ('CUSTOM')
+        SELECT p.* FROM playlists p
+        WHERE p.is_active = 1
+          AND p.type IN ('CUSTOM')
+          AND NOT """ + SAVED_ALBUM + """
           -- An active followed shared mix is read-only (spec §6).
-          AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
+          AND p.id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
           AND (
-              source = 'BOTH'
-              OR sync_enabled = 1
+              p.source = 'BOTH'
+              OR p.sync_enabled = 1
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
-                  WHERE pt.playlist_id = playlists.id
+                  WHERE pt.playlist_id = p.id
                     AND pt.removed_at IS NULL
                     AND (t.is_downloaded = 1 OR t.source = 'CLOUD')
               )
           )
         ORDER BY
-          CASE WHEN source = 'BOTH' THEN 0 ELSE 1 END,
-          name ASC
+          CASE WHEN p.source = 'BOTH' THEN 0 ELSE 1 END,
+          p.name ASC
         """
     )
     fun getPickablePlaylists(): Flow<List<PlaylistEntity>>

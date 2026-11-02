@@ -10,6 +10,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
+import com.stash.core.data.album.toSavedAlbum
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -385,9 +386,22 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
         libraryScope { includeNotDownloaded, libraryOnly -> trackDao.getAllArtists(includeNotDownloaded, libraryOnly) }
 
-    /** Albums for the Library Albums tab, in the same scope as [getAllArtists]. */
+    /** Songs grouped by album text, in the same scope as [getAllArtists]. */
     override fun getAllAlbums(): Flow<List<AlbumSummary>> =
         libraryScope { includeNotDownloaded, libraryOnly -> trackDao.getAllAlbums(includeNotDownloaded, libraryOnly) }
+
+    override fun observeSavedAlbums(): Flow<List<com.stash.core.data.album.SavedAlbum>> =
+        playlistDao.observeSavedAlbums()
+            .distinctUntilChanged()
+            .map { rows -> rows.map { it.toSavedAlbum() } }
+            .flowOn(Dispatchers.Default)
+
+    override fun getLibraryAlbums(): Flow<List<com.stash.core.data.album.SavedAlbum>> =
+        combine(observeSavedAlbums(), streamingPreference.enabled) { albums, streamOnly ->
+            com.stash.core.data.album.SavedAlbums.forLibrary(albums, streamOnly)
+        }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.Default)
 
     override fun getRecentlyAdded(limit: Int): Flow<List<Track>> =
         trackDao.getRecentlyAdded(limit).map { entities -> entities.map { it.toDomain() } }
