@@ -85,6 +85,7 @@ import com.stash.feature.listening.ListeningLabels
 import com.stash.feature.listening.ui.RefreshTodayEffect
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.stash.core.ui.components.sheetBarsFollow
 
 /** How close to an end of the loaded list the next page starts loading. */
 private const val PREFETCH_ROWS = 30
@@ -276,6 +277,7 @@ fun HistoryScreen(
             onDismissRequest = { optionsFor = null },
             sheetState = sheetState,
             containerColor = StashTheme.extendedColors.elevatedSurface,
+            properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
         ) {
             TrackOptionsSheet(
                 track = track,

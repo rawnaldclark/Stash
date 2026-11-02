@@ -49,6 +49,7 @@ import com.stash.core.data.community.Draft
 import com.stash.core.data.community.communityMessage
 import com.stash.core.model.community.CommunityMe
 import com.stash.core.model.community.PostTarget
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -175,7 +176,12 @@ internal fun PostConfirmSheet(
     val sending by rememberUpdatedState((state as? PostComposerViewModel.UiState.Ready)?.posting == true)
     val sheetState = rememberModalBottomSheetState(confirmValueChange = { it != SheetValue.Hidden || !sending })
     // M3 1.4.0: back calls onDismissRequest even after confirmValueChange vetoed the hide.
-    ModalBottomSheet(onDismissRequest = { if (!sending) onDismiss() }, sheetState = sheetState, containerColor = StashTheme.extendedColors.elevatedSurface) {
+    ModalBottomSheet(
+        onDismissRequest = { if (!sending) onDismiss() },
+        sheetState = sheetState,
+        containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
+    ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
             Text("Post to Community", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))

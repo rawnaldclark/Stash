@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.components.OnlineOfflinePicker
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -48,6 +49,7 @@ fun StreamingModeSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(extendedColors.elevatedSurface),
         modifier = modifier,
     ) {
         Column(

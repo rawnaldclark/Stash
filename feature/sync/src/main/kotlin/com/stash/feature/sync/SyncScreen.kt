@@ -73,6 +73,7 @@ import com.stash.core.ui.components.streaming.StreamingModeSheet
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.R as UiR
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.feature.sync.components.AccountCard
 import com.stash.feature.sync.components.ArrivalSheet
 import com.stash.feature.sync.components.AttentionRow
@@ -336,6 +337,7 @@ fun SyncScreen(
             onDismissRequest = { showSchedule = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = StashTheme.extendedColors.elevatedSurface,
+            properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
         ) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
                 com.stash.feature.sync.components.ScheduleCard(

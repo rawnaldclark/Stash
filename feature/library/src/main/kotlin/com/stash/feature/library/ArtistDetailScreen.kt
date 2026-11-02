@@ -79,6 +79,7 @@ import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.core.ui.components.sheetBarsFollow
 
 /**
  * Artist Detail screen entry point.
@@ -295,6 +296,7 @@ fun ArtistDetailScreen(
             onDismissRequest = { selectedTrack = null },
             sheetState = sheetState,
             containerColor = extendedColors.elevatedSurface,
+            properties = sheetBarsFollow(extendedColors.elevatedSurface),
         ) {
             TrackOptionsSheet(
                 track = selectedTrack!!,
