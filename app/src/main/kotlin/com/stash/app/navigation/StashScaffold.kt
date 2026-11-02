@@ -79,7 +79,7 @@ import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
 import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.LocalAlbumChrome
-import com.stash.core.ui.ambient.ProvideAlbumChrome
+import com.stash.core.ui.ambient.ProvideAlbumColours
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalChromeHazeState
 import dev.chrisbanes.haze.hazeSource
@@ -317,7 +317,7 @@ fun StashScaffold(
     ) {
     // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
     CloudSaveHost {
-    ProvideAlbumChrome(albumColors) {
+    ProvideAlbumColours(albumColors) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,

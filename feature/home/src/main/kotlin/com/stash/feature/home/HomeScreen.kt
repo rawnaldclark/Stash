@@ -110,6 +110,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.foundation.layout.aspectRatio
 import com.stash.core.ui.ambient.LocalAlbumChrome
+import com.stash.core.ui.ambient.albumGlow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -228,9 +229,14 @@ fun HomeScreen(
         }
     }
 
+    // The album's glow at the top of Home (D9): drawn on the list's own node, before the status-bar
+    // padding, so it starts at the top of the screen and stays put while the feed scrolls under it.
+    // Read at draw time: a song change's crossfade redraws it without recomposing the feed.
+    val albumChrome = LocalAlbumChrome.current
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .albumGlow(albumChrome)
             .statusBarsPadding(),
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
         contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
