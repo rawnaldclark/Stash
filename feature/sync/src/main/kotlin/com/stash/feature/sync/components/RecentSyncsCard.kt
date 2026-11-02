@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +37,7 @@ import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
+import com.stash.feature.sync.R
 
 /**
  * View-layer row model used by [RecentSyncsCard]. Decouples the card from
@@ -55,9 +57,14 @@ data class RecentSyncRow(
     val status: SyncRowStatus,
     val errorMessage: String? = null,
     val diagnostics: String? = null,
+    val unreadCount: Int = 0,   // playlists listed but not read this run, each kept as it was
+    val unreadNames: List<String> = emptyList(), // the first of them by name
 )
 
 enum class SyncRowStatus { HEALTHY, PARTIAL, FAILED, CANCELLED }
+
+/** Playlists the expanded row names before "and N more". */
+private const val UNREAD_NAMES_SHOWN = 5
 
 /**
  * Single [GlassCard] that lists recent sync results with internal dividers.
@@ -90,6 +97,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
     val success = StashTheme.extendedColors.success
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
     val fail = Color(0xFFF87171)
+    val warning = StashTheme.extendedColors.warning
 
     Column(
         modifier = Modifier
@@ -153,6 +161,11 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                         if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
                     },
                 )
+                // Amber, not the red fail tint: nothing was lost, each one was kept as it was.
+                if (row.unreadCount > 0) {
+                    Pill(pluralStringResource(R.plurals.sync_history_not_read, row.unreadCount, row.unreadCount), warning)
+                    Spacer(Modifier.width(8.dp))
+                }
                 if (row.failed > 0) {
                     Pill("⚠ ${row.failed} failed", fail)
                     Spacer(Modifier.width(8.dp))
@@ -165,6 +178,18 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
             Spacer(Modifier.height(8.dp))
             if (!row.errorMessage.isNullOrBlank()) {
                 Text("Error: ${row.errorMessage}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(4.dp))
+            }
+            if (row.unreadCount > 0) {
+                // Above the step list: which playlists, and that they were kept.
+                val shown = row.unreadNames.take(UNREAD_NAMES_SHOWN).joinToString(", ")
+                val more = row.unreadCount - minOf(row.unreadNames.size, UNREAD_NAMES_SHOWN)
+                val named = if (more > 0) pluralStringResource(R.plurals.sync_history_and_more, more, shown, more) else shown
+                Text(
+                    pluralStringResource(R.plurals.sync_history_not_read_detail, row.unreadCount, row.unreadCount, named),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = dim,
+                )
                 Spacer(Modifier.height(4.dp))
             }
             if (!row.diagnostics.isNullOrBlank()) {

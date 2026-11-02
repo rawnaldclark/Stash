@@ -170,6 +170,24 @@ class ArtistProfileViewModelTest {
     }
 
     @Test
+    fun `the Latest releases row is built from the profile's albums and singles`() = runTest {
+        val album = AlbumSummary("MPREa", "Album", "", null, "2020", releaseType = "Album")
+        val single = AlbumSummary("MPREs", "Single", "", null, "2023", releaseType = "Single")
+        val profile = ArtistProfile(
+            id = "UC1", name = "A", avatarUrl = null, subscribersText = null,
+            popular = emptyList(), albums = listOf(album), singles = listOf(single), related = emptyList(),
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val vm = vmWith(cache)
+        advanceUntilIdle()
+        assertEquals(listOf(single, album), vm.uiState.value.latest.map { it.album })
+        // The shelves themselves are untouched by it.
+        assertEquals(listOf(album), vm.uiState.value.albums)
+        assertEquals(listOf(single), vm.uiState.value.singles)
+    }
+
+    @Test
     fun `stale refresh failure surfaces userMessage without changing status to Error`() = runTest {
         val cachedProfile = ArtistProfile(
             id = "UC1",

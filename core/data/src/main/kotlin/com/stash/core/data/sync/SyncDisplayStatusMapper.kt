@@ -3,6 +3,8 @@ package com.stash.core.data.sync
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.core.model.SyncState
+import com.stash.core.model.SyncStepResult
+import kotlinx.serialization.json.Json
 
 /**
  * Marker text used by [com.stash.core.data.repository.MusicRepositoryImpl.runMigrations]
@@ -72,4 +74,29 @@ fun SyncHistoryEntity.toDisplayStatus(): SyncDisplayStatus {
         SyncState.DOWNLOADING,
         SyncState.FINALIZING -> SyncDisplayStatus.Running
     }
+}
+
+private val stepsJson = Json { ignoreUnknownKeys = true }
+
+/** The playlists a sync listed but couldn't read: how many, and the first ones by name. */
+data class UnreadPlaylists(val count: Int, val names: List<String>) {
+    companion object {
+        val NONE = UnreadPlaylists(0, emptyList())
+    }
+}
+
+/**
+ * The playlists a sync listed but couldn't read, from its recorded steps
+ * ([SyncHistoryEntity.diagnostics], [SyncStepResult.unreadPlaylists]): what the
+ * Sync History row counts and names. [UnreadPlaylists.NONE] for a run with none,
+ * and for steps that don't decode, which the row then shows as it always did.
+ */
+fun unreadPlaylistsIn(diagnostics: String?): UnreadPlaylists {
+    if (diagnostics.isNullOrBlank()) return UnreadPlaylists.NONE
+    val steps = runCatching { stepsJson.decodeFromString<List<SyncStepResult>>(diagnostics) }.getOrNull()
+        ?: return UnreadPlaylists.NONE
+    return UnreadPlaylists(
+        count = steps.sumOf { maxOf(it.unreadPlaylistCount, it.unreadPlaylists.size) },
+        names = steps.flatMap { it.unreadPlaylists },
+    )
 }
