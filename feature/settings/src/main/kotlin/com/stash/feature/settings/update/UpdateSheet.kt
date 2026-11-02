@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.update.AppUpdates
 import com.stash.core.data.update.AvailableUpdate
 import com.stash.core.data.update.UpdateState
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
 
@@ -57,6 +58,7 @@ fun UpdateSheetHost(viewModel: UpdateViewModel = hiltViewModel()) {
         onDismissRequest = viewModel::dismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         UpdateSheetContent(
             update = u,

@@ -41,6 +41,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.model.community.PostTarget
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -89,7 +90,11 @@ class CommunityPickerViewModel @Inject constructor(
 internal fun CommunityPicker(onPick: (PostTarget) -> Unit, onDismiss: () -> Unit, viewModel: CommunityPickerViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { viewModel.load() }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
+    ) {
         Column(Modifier.padding(horizontal = 20.dp)) {
             Text("What are you digging?", style = MaterialTheme.typography.titleLarge)
             Text(

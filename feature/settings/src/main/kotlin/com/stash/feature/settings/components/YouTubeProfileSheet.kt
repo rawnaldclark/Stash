@@ -46,6 +46,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil3.compose.AsyncImage
 import com.stash.core.data.youtube.YouTubeProfileRepository
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.ytmusic.YouTubeProfile
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -131,6 +132,7 @@ fun YouTubeProfileSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(

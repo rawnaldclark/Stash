@@ -36,6 +36,9 @@ import kotlinx.coroutines.delay
  * when it is. The caller keeps that flag, because this rail is composed afresh
  * on Back from an album and when it scrolls off and back, and each time it
  * would jump back to the card the user had already scrolled away from.
+ *
+ * Without a focus, a newer album arriving in front (the enriched profile's Qobuz merge)
+ * shows as the first card ([ShowNewFirstCard]); with one, the focused card keeps its place.
  */
 @Composable
 fun AlbumsRow(
@@ -47,6 +50,7 @@ fun AlbumsRow(
     onFocusShown: () -> Unit = {},
 ) {
     val rowState = rememberLazyListState()
+    ShowNewFirstCard(rowState, firstKey = albums.firstOrNull()?.id, enabled = focusIndex == null)
     var highlighted by remember { mutableStateOf(false) }
     // focusShown is no key: turning it on mid-ring would restart this and cut the ring short.
     LaunchedEffect(focusIndex, albums) {

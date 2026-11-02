@@ -38,15 +38,15 @@
     <string name="settings_discord_risk_title">Прежде, чем вы привяжете Discord</string>
     <string name="settings_discord_risk_body">У Discord нет официального способа, с помощью которого мобильное приложение могло бы менять ваш статус, поэтому Stash входит в ваш аккаунт и использует собственную сессию. Правила Discord называют это \"self-bot\" и разрешают применять к такому аккаунту меры.\n\nМеры обычно направлены против спама, а не против обновления статуса, так что это маловероятно — но аккаунт ваш, и решать вам.\n\nПри отвязке статус очищается, а токен удаляется с этого устройства.</string>
     <string name="settings_discord_risk_connect">Привязать</string>
-    <string name="settings_discord_finish_connecting">Завершить привязку </string>
+    <string name="settings_discord_finish_connecting">Завершить привязку</string>
     <!-- Settings > Accounts > Discord Login & Token -->
     <!-- Settings > Accounts > Spotify Login & Cookie -->
     <!-- Settings > Accounts > YouTube Login & Fallbacks -->
     <string name="settings_lastfm_connect_first">Сначала привяжите Last.fm.</string>
     <!-- Settings > Accounts > AccountConnectionCard -->
-    <string name="settings_account_reconnect">Перепривязать </string>
-    <string name="settings_account_disconnect">Отвязать </string>
-    <string name="settings_account_connect">Привязать </string>
+    <string name="settings_account_reconnect">Перепривязать</string>
+    <string name="settings_account_disconnect">Отвязать</string>
+    <string name="settings_account_connect">Привязать</string>
     <!-- Settings > Accounts > DisconnectAccountDialog -->
     <string name="settings_disconnect_account_title">Отвязать %1$s?</string>
     <string name="settings_disconnect_account_body">Stash выйдет из %1$s на данном устройстве и перестанет его синхронизировать. Треки из %1$s ожидающие загрузки будут удалены из очереди.
@@ -120,11 +120,11 @@
     <string name="settings_backup_export_dialog_title">Экспорт резервной копии</string>
     <string name="settings_backup_export_dialog_subtitle">Выберите, что должна содержать резервная копия:</string>
     <string name="settings_backup_export_scope_likes_only_label">Только понравившиеся</string>
-    <string name="settings_backup_export_scope_likes_only_desc">Всё, что вам понравилось и ничего больше. Маленький файл. </string>
+    <string name="settings_backup_export_scope_likes_only_desc">Всё, что вам понравилось и ничего больше. Маленький файл.</string>
     <string name="settings_backup_export_scope_everything_label">Всё</string>
-    <string name="settings_backup_export_scope_everything_desc">Медиатека и настройки. Логины не могут быть восстановлены. </string>
+    <string name="settings_backup_export_scope_everything_desc">Медиатека и настройки. Логины не могут быть восстановлены.</string>
     <string name="settings_backup_export_scope_library_only_label">Только медиатека</string>
-    <string name="settings_backup_export_scope_library_only_desc">Треки, плейлисты и история. Без настроек. </string>
+    <string name="settings_backup_export_scope_library_only_desc">Треки, плейлисты и история. Без настроек.</string>
     <string name="settings_backup_export_scope_settings_only_desc">Настройки без прикреплённой медиатеки.</string>
     <string name="settings_backup_export_choose_file_button">Выберите файл</string>
     <string name="settings_backup_import_dialog_title">Импорт резервной копии</string>
@@ -132,7 +132,7 @@
     <string name="settings_backup_import_scope_merge_label">Объединить в медиатеку</string>
     <string name="settings_backup_import_scope_merge_desc">Добавляет отсутствующие треки и плейлисты из резервной копии. Ничего не удаляется и не заменяется. Настройки остаются нетронутыми.</string>
     <string name="settings_backup_import_scope_replace_library_label">Заменить только медиатеку</string>
-    <string name="settings_backup_import_scope_replace_library_desc">Восстанавливает медиатеку из резервной копии. Ваши текущие настройки сохраняются. </string>
+    <string name="settings_backup_import_scope_replace_library_desc">Восстанавливает медиатеку из резервной копии. Ваши текущие настройки сохраняются.</string>
     <string name="settings_backup_import_scope_replace_library_confirm">Заменить медиатеку</string>
     <string name="settings_backup_import_scope_restore_settings_desc">Восстанавливает настройки из резервной копии. Ваша текущая медиатека сохранена.</string>
     <string name="settings_backup_import_scope_replace_everything_label">Заменить всё</string>
@@ -149,7 +149,7 @@
     <string name="settings_listening_history_clear_everything_title">Очистить всё</string>
     <string name="settings_listening_history_confirm_everything_title">Очистить всю историю прослушиваний?</string>
     <!-- Settings > Web Library Sheets -->
-    <string name="web_library_export_what_to_include">Что включить </string>
+    <string name="web_library_export_what_to_include">Что включить</string>
     <!-- The export picker's tick for this phone's whole history (library-file v1 "Listens"), for Your record on the web. -->
     <!-- %1$s the count ("12,480"), %2$s the month of the first play ("March 2025"). -->
     <!-- The export picker's "Plays" row: the newest plays that go into the web's history (up to 5,000). -->
@@ -173,7 +173,7 @@
         <item quantity="other">%d tracks still couldn\'t be read — likely missing on disk or unsupported by MediaMetadataRetriever.</item>
     </plurals>
     <plurals name="settings_library_health_restore_queued">
-        <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс. </item>
+        <item quantity="one">В очереди %d трек. Он загружается в фоне — на вкладке синхронизации показан прогресс.</item>
         <item quantity="few">В очереди %d трека. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
         <item quantity="many">В очереди %d треков. Они загружаются в фоне — на вкладке синхронизации показан прогресс.</item>
         <item quantity="other">Queued %d tracks. They download in the background — the Sync tab shows progress.</item>

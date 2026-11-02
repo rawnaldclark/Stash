@@ -45,6 +45,8 @@ internal fun StreamingQualitySheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = com.stash.core.ui.theme.StashTheme.extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(com.stash.core.ui.theme.StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 36.dp)) {
             Text(
@@ -76,10 +78,10 @@ internal fun StreamingQualitySheet(
             )
             QualitySwitchRow(
                 title = stringResource(R.string.np_quality_save_data_title),
-                // Lossless stays lossless: Save Data is its lowest tier, or the lowest lossy quality.
-                subtitle = stringResource(
-                    if (state.lossless) R.string.np_quality_save_data_lossless_subtitle else R.string.np_quality_save_data_subtitle,
-                ),
+                // One line, whatever Lossless is, as Settings' row (#774): on a metered network it
+                // streams lossy (no FLAC with Lossless on, the lowest lossy with it off); Wi-Fi is
+                // untouched. Settings' longer subtitle adds pictures, prefetch and metered Wi-Fi.
+                subtitle = stringResource(R.string.np_quality_data_saver_subtitle),
                 checked = state.saveData,
                 onCheckedChange = onSaveDataChange,
             )

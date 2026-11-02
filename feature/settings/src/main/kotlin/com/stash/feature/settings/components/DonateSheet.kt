@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.R
 
@@ -68,6 +69,7 @@ fun DonateSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(
             modifier = Modifier

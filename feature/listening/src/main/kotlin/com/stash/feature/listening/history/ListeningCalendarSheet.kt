@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.db.dao.DayCount
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.ListeningLabels
 import kotlinx.coroutines.launch
@@ -79,6 +80,7 @@ internal fun ListeningCalendarSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = colors.elevatedSurface,
+        properties = sheetBarsFollow(colors.elevatedSurface),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             val month = months[pager.currentPage]

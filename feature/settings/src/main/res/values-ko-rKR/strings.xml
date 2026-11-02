@@ -770,15 +770,15 @@
     </plurals>
     <string name="settings_web_link_reading_code">이 코드를 읽는 중…</string>
     <string name="settings_web_link_confirm_title">%s을 연결하시겠습니까?</string>
-    <string name="settings_web_link_confirm_body_before_code">컴퓨터에서 확인 요청이 표시됩니다</string>
+    <string name="settings_web_link_confirm_body_before_code">"컴퓨터에서 확인 요청이 표시됩니다 "</string>
     <string name="settings_web_link_confirm_body_after_code">. 여기에서 재생 중인 항목을 확인할 수 있으며, 라이브러리를 미러링할 지 선택할 수 있습니다</string>
     <string name="settings_web_link_confirm_from_link_warning">직접 컴퓨터에서 ‘Link your phone’을 열었고, 현재 해당 컴퓨터가 눈앞에 있는 경우에만 계속 진행하세요</string>
     <string name="settings_web_link_action_link">링크</string>
-    <string name="settings_web_link_waiting_computer">내 컴퓨터를 기다리는 중… · </string>
+    <string name="settings_web_link_waiting_computer">"내 컴퓨터를 기다리는 중… · "</string>
     <string name="settings_web_link_waiting_desc">%s에 표시된 6자리 숫자가 동일한지 확인한 다음, 해당 기기에서 Link를 탭하세요</string>
     <string name="settings_web_link_linked_to">%s에 연결됨</string>
     <string name="settings_web_link_linked_desc">연결되었습니다. 아직 미러링된 항목이 없습니다</string>
-    <string name="settings_web_link_code_label">코드 </string>
+    <string name="settings_web_link_code_label">"코드 "</string>
     <string name="settings_web_link_scan_again">다시 스캔</string>
     <string name="settings_web_link_action_rename">이름 변경</string>
     <string name="settings_web_link_rename_dialog_title">이름 변경</string>
@@ -792,16 +792,16 @@
     <string name="settings_mirror_section_title">기기 간 미러링</string>
     <string name="settings_mirror_section_desc">끄면 각 기기에서 별도의 라이브러리가 유지됩니다. 미러링되는 데이터는 종단 간 암호화로 보호됩니다</string>
     <string name="settings_mirror_likes_title">좋아요 수</string>
-    <string name="settings_mirror_likes_waiting_share"> · %s가 좋아요를 공유할 때까지 기다리는 중입니다</string>
-    <string name="settings_mirror_likes_choose_combine"> · 결합 방법을 선택하세요</string>
+    <string name="settings_mirror_likes_waiting_share">" · %s가 좋아요를 공유할 때까지 기다리는 중입니다"</string>
+    <string name="settings_mirror_likes_choose_combine">" · 결합 방법을 선택하세요"</string>
     <string name="settings_mirror_playlists_title">재생목록</string>
     <plurals name="settings_mirror_playlists_chosen">
-        <item quantity="other"> · %d 개 선택됨</item>
+        <item quantity="other">" · %d 개 선택됨"</item>
     </plurals>
     <string name="settings_mirror_choose_playlists_title">재생목록 선택</string>
     <string name="settings_mirror_choose_playlists_subtitle">Spotify 및 YouTube Music 재생목록은 웹에서만 볼 수 있으며, 웹에서는 읽기 전용입니다</string>
     <string name="settings_mirror_plays_title">재생횟수</string>
-    <string name="settings_mirror_plays_subtitle_note"> · 웹에서 재생한 내용은 기록에 표시되며, Stash 믹스에는 표시되지 않습니다</string>
+    <string name="settings_mirror_plays_subtitle_note">" · 웹에서 재생한 내용은 기록에 표시되며, Stash 믹스에는 표시되지 않습니다"</string>
     <plurals name="settings_mirror_held_unlikes">
         <item quantity="other">미러링이 이 휴대폰에서 %1$d 개의 싫어요를 저장하고 있습니다. %2$s로 보내시겠습니까, 아니면 유지하시겠습니까?</item>
     </plurals>
@@ -812,8 +812,8 @@
     <plurals name="settings_mirror_playlist_songs">
         <item quantity="other">%d 개의 노래</item>
     </plurals>
-    <string name="settings_mirror_playlist_readonly_web"> · 휴대폰에서는 웹에서 읽기 전용</string>
-    <string name="settings_mirror_playlist_shared_mix"> · 공유된 믹스</string>
+    <string name="settings_mirror_playlist_readonly_web">" · 휴대폰에서는 웹에서 읽기 전용"</string>
+    <string name="settings_mirror_playlist_shared_mix">" · 공유된 믹스"</string>
     <string name="settings_mirror_switch_off_note">하나를 끄면 미러링이 중지되고 모든 복사본은 원래 위치에 그대로 있습니다</string>
     <string name="settings_mirror_first_merge_title">내 좋아요 수: %2$s에서 %1$d 개, 여기서 %3$d 개</string>
     <string name="settings_mirror_first_merge_changed">응답한 이후 내 좋아요 수가 변경되었습니다. 숫자를 다시 확인하세요</string>
@@ -845,7 +845,7 @@
     <plurals name="settings_picker_songs_count">
         <item quantity="other">%,d 개의 노래</item>
     </plurals>
-    <string name="settings_picker_shared_mix"> · 공유된 믹스</string>
+    <string name="settings_picker_shared_mix">" · 공유된 믹스"</string>
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
     <string name="settings_inbox_sent_you">%s를 보냈습니다</string>
     <string name="settings_inbox_adding_note">항목을 추가해도 라이브러리에서 기존 항목이 삭제되지는 않습니다</string>

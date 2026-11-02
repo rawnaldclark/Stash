@@ -802,15 +802,15 @@
     </plurals>
     <string name="settings_web_link_reading_code">Lecture du code…</string>
     <string name="settings_web_link_confirm_title">Lien %s ?</string>
-    <string name="settings_web_link_confirm_body_before_code">Votre ordinateur vous demandera de vérifier </string>
+    <string name="settings_web_link_confirm_body_before_code">"Votre ordinateur vous demandera de vérifier "</string>
     <string name="settings_web_link_confirm_body_after_code">. Il détectera ce que vous écoutez ici, et vous pourrez choisir de synchroniser votre bibliothèque avec lui.</string>
     <string name="settings_web_link_confirm_from_link_warning">Ne continuez que si vous venez d\'ouvrir « Connecter votre téléphone » sur votre propre ordinateur et que celui-ci se trouve devant vous en ce moment.</string>
     <string name="settings_web_link_action_link">Lier</string>
-    <string name="settings_web_link_waiting_computer">En attente de votre ordinateur… · </string>
+    <string name="settings_web_link_waiting_computer">"En attente de votre ordinateur… · "</string>
     <string name="settings_web_link_waiting_desc">Vérifiez que %s affiche bien les six mêmes chiffres, puis appuyez sur « Lier » à cet endroit.</string>
     <string name="settings_web_link_linked_to">Lié à %s</string>
     <string name="settings_web_link_linked_desc">Lien établi. Aucun contenu n\'est encore répliqué.</string>
-    <string name="settings_web_link_code_label">Code </string>
+    <string name="settings_web_link_code_label">"Code "</string>
     <string name="settings_web_link_scan_again">Scanner à nouveau</string>
     <string name="settings_web_link_action_rename">Renommer</string>
     <string name="settings_web_link_rename_dialog_title">Renommer</string>
@@ -824,17 +824,17 @@
     <string name="settings_mirror_section_title">Synchroniser vos appareils</string>
     <string name="settings_mirror_section_desc">Off conserve une bibliothèque distincte sur chacune d\'entre elles. Les données mises en miroir sont chiffrées de bout en bout.</string>
     <string name="settings_mirror_likes_title">J\'aime</string>
-    <string name="settings_mirror_likes_waiting_share"> · En attente que %s partage ses mentions « J\'aime ».</string>
-    <string name="settings_mirror_likes_choose_combine"> · Choisissez comment les associer</string>
+    <string name="settings_mirror_likes_waiting_share">" · En attente que %s partage ses mentions « J\'aime »."</string>
+    <string name="settings_mirror_likes_choose_combine">" · Choisissez comment les associer"</string>
     <string name="settings_mirror_playlists_title">Playlists</string>
     <plurals name="settings_mirror_playlists_chosen">
-        <item quantity="one"> · %d sélectionnée</item>
-        <item quantity="other"> · %d sélectionnées</item>
+        <item quantity="one">" · %d sélectionnée"</item>
+        <item quantity="other">" · %d sélectionnées"</item>
     </plurals>
     <string name="settings_mirror_choose_playlists_title">Choisir des playlists</string>
     <string name="settings_mirror_choose_playlists_subtitle">Les playlists Spotify et YouTube Music sont disponibles uniquement sur le Web, où elles sont en lecture seule.</string>
     <string name="settings_mirror_plays_title">Lecture</string>
-    <string name="settings_mirror_plays_subtitle_note"> · Les morceaux écoutés depuis le site web apparaissent dans l\'historique, mais jamais dans vos « Stash Mixes »</string>
+    <string name="settings_mirror_plays_subtitle_note">" · Les morceaux écoutés depuis le site web apparaissent dans l\'historique, mais jamais dans vos « Stash Mixes »"</string>
     <plurals name="settings_mirror_held_unlikes">
         <item quantity="one">La synchronisation affiche %1$d, ce qui diffère de ce téléphone. Voulez-vous l\'envoyer à %2$s ou conserver cette valeur ?</item>
         <item quantity="other">La synchronisation contient %1$d « Je n\'aime pas » provenant de ce téléphone. Souhaitez-vous les envoyer vers %2$s ou conserver ces « J\'aime » ?</item>
@@ -847,8 +847,8 @@
         <item quantity="one">1 titre</item>
         <item quantity="other">%d titres</item>
     </plurals>
-    <string name="settings_mirror_playlist_readonly_web"> · Depuis votre téléphone, en lecture seule sur le Web</string>
-    <string name="settings_mirror_playlist_shared_mix"> · Mix partagé</string>
+    <string name="settings_mirror_playlist_readonly_web">" · Depuis votre téléphone, en lecture seule sur le Web"</string>
+    <string name="settings_mirror_playlist_shared_mix">" · Mix partagé"</string>
     <string name="settings_mirror_switch_off_note">La désactivation d\'une copie met fin à sa mise en miroir, mais toutes les copies restent à leur emplacement d\'origine.</string>
     <string name="settings_mirror_first_merge_title">Vos « J\'aime » : %1$d sur %2$s, %3$d ici</string>
     <string name="settings_mirror_first_merge_changed">Le nombre de « J\'aime » a changé depuis que vous avez répondu. Vérifiez à nouveau les chiffres.</string>
@@ -883,7 +883,7 @@
         <item quantity="one">%d titre</item>
         <item quantity="other">%d titres</item>
     </plurals>
-    <string name="settings_picker_shared_mix"> · Mix partagé</string>
+    <string name="settings_picker_shared_mix">" · Mix partagé"</string>
     <!-- Settings > Link Stash on the Web > InboxPrompt -->
     <string name="settings_inbox_sent_you">Je vous ai envoyé %s.</string>
     <string name="settings_inbox_adding_note">L\'ajout ne supprime jamais rien de votre bibliothèque.</string>

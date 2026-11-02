@@ -139,14 +139,18 @@ fun GlowingProgressBar(
     // Smoothly animate progress when not dragging to avoid jitter. A just-released seek holds
     // its target (no tween) until the player reports it: retargeting straight back to the old
     // progress made the bar rubber-band backwards, then forwards, a few frames later.
+    // With motion still (Battery Saver, or Remove animations) it steps with the tick instead: a
+    // 150 ms tween every 250 ms tick redraws most frames for as long as a song plays, a loop in all
+    // but name, and a step of half a dp a tick can't be seen.
     val heldProgress = pendingSeek
+    val still = rememberNpLoopsStill()
     val displayProgress by animateFloatAsState(
         targetValue = when {
             isDragging -> dragProgress
             heldProgress != null -> heldProgress
             else -> progressNow
         },
-        animationSpec = tween(durationMillis = if (isDragging || heldProgress != null) 0 else 150),
+        animationSpec = tween(durationMillis = if (isDragging || heldProgress != null || still) 0 else 150),
         label = "progressAnim",
     )
     val displayMs = when {

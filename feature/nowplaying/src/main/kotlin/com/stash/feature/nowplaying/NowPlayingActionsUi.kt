@@ -411,6 +411,8 @@ internal fun NowPlayingOptionsSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(extendedColors.elevatedSurface),
     ) {
         AnimatedContent(
             targetState = editing,

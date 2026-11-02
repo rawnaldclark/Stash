@@ -55,6 +55,7 @@ import com.stash.core.ui.components.LocalPostToCommunity
 import com.stash.core.ui.components.PlaylistInfo
 import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.core.ui.components.TrackOptionsSheet
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.core.ui.theme.StashTextPrimary
 import com.stash.core.ui.theme.StashTextSecondary
 import com.stash.core.ui.theme.StashTheme
@@ -265,6 +266,7 @@ internal fun RecordSongMenu(open: MenuSong?, actions: RecordSongActions, onDismi
             onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(),
             containerColor = StashTheme.extendedColors.elevatedSurface,
+            properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
         ) {
             CompositionLocalProvider(LocalPostToCommunity provides null) {
                 TrackOptionsSheet(

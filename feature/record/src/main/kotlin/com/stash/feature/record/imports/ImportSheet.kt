@@ -85,6 +85,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.components.sheetBarsFollow
 import com.stash.feature.record.R
 import com.stash.feature.record.card.RecordArtwork
 import com.stash.feature.record.card.RecordCard
@@ -169,6 +170,7 @@ fun RecordImportHost(onOpenRecord: () -> Unit, onConnectLastfm: () -> Unit = {},
         onDismissRequest = imports::closeSheet,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = StashTheme.extendedColors.elevatedSurface,
+        properties = sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(
             Modifier

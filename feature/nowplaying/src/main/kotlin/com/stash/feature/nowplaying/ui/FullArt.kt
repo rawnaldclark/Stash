@@ -128,9 +128,11 @@ private const val MAX_SHOWN = 3
 
 /**
  * With the loops still (Remove animations, or Battery Saver) nothing pans or fades, so the clock
- * ticks this often instead of every frame: a page's cut lands within half a second of its time. A
- * page turned by hand, a new song's front or a page just loaded wakes it at once
- * ([FullArtState.wake]).
+ * ticks this often instead of every frame: a page's cut lands within half a second of its time. So
+ * it does whenever nothing moves: paused, or playing with nothing to pan (Full art pan off, or
+ * lyrics up over the art), with no page fading in. A page turned by hand, a new song's front, a
+ * page just loaded, full art opening, or the pan starting again (play resuming, the pan turned
+ * back on, lyrics closed) wakes it at once ([FullArtState.wake]).
  */
 internal const val STILL_TICK_MS = 500L
 
@@ -206,6 +208,9 @@ internal class FullArtState {
     private var turns = 0
     private var pending: FullArtPage? = null
 
+    /** The last tick found nothing moving: the loop rested, so this tick comes a still tick later. */
+    private var resting = false
+
     /** [pending] is a new song's front: it fades in over [SONG_FADE_MS]. */
     private var pendingIsNewSong = false
 
@@ -234,6 +239,9 @@ internal class FullArtState {
         pending = null
         ready = false
         shown.add(Shown(pages[first], now - PAGE_FADE_MS, playMs, direction()))
+        // A loop resting between still ticks would see the page (and grow the art out) up to
+        // STILL_TICK_MS later: reopened while paused, the pages are usually in hand already.
+        wake()
     }
 
     /** A new song: its front, faded to over the page the last one ended on. */
@@ -271,12 +279,28 @@ internal class FullArtState {
         withTimeoutOrNull(ms) { wakeups.receive() }
     }
 
-    /** One frame: the clocks move, and the page the song has reached comes in once it's loaded. */
-    fun tick(now: Long, position: Long, playing: Boolean, failed: Set<String>, still: Boolean) {
-        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, if (still) STILL_MAX_STEP_MS else MAX_STEP_MS)
+    /**
+     * One frame: the clocks move, and the page the song has reached comes in once it's loaded.
+     * Returns whether the art moves on from here (it pans while playing, a page fades in): the
+     * frame loop ticks every frame only then.
+     *
+     * @param pans The art is up and pans: Full art pan isn't off and lyrics aren't over it. Playing
+     *   without it, nothing moves but a page fading in.
+     */
+    fun tick(
+        now: Long,
+        position: Long,
+        playing: Boolean,
+        failed: Set<String>,
+        still: Boolean,
+        pans: Boolean = true,
+    ): Boolean {
+        // Resting, a step is a still tick long and real: the clocks keep up with a song playing with
+        // nothing to pan. Not when the pan starts again from a rest (play resuming): most of that
+        // step was paused, and a frame's step is all the pan may jump.
+        val maxStep = if (still || (resting && !(playing && pans))) STILL_MAX_STEP_MS else MAX_STEP_MS
+        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, maxStep)
         lastFrameMs = now
-        // Still, the art neither pans nor fades: nothing to redraw per tick (a cut redraws by itself).
-        if (!still) frameMs = now
         if (playing) playMs += dt
         // The last song's position, still reported a moment after the change, is passed over.
         val believed = now >= settleUntilMs || position < NEW_SONG_START_MS
@@ -285,7 +309,7 @@ internal class FullArtState {
             playing -> (songMs + dt).let { if (abs(it - position) > RESYNC_MS) position else it }
             else -> position
         }
-        if (pages.isEmpty()) return
+        if (pages.isEmpty()) return movesOn(now, still, playing, pans, fading = false)
 
         val at = schedule.segmentAt(songMs)
         if (at != segment) {
@@ -316,7 +340,8 @@ internal class FullArtState {
             ready = true
             fadeMs = now
         }
-        if (top != null && now - top.bornMs < top.fadeMs) fadeMs = now
+        val fading = top != null && now - top.bornMs < top.fadeMs
+        if (fading) fadeMs = now
         // Pages fully covered by the one fading in over them are let go.
         if (top != null && shown.size > 1 && now - top.bornMs >= top.fadeMs) {
             shown.removeRange(0, shown.size - 1)
@@ -327,6 +352,21 @@ internal class FullArtState {
             reported = index
             onPage(index)
         }
+        return movesOn(now, still, playing, pans, fading)
+    }
+
+    /**
+     * Moves the frame clock, which the art is drawn on, when the art moves this frame, and says
+     * whether it does. Still, it neither pans nor fades; paused, or playing with nothing to pan
+     * ([pans] false), only a page fading in moves. Otherwise nothing is redrawn per tick (a cut, or
+     * the covered pages let go after a fade, redraws by itself): a paused Now Playing drew every
+     * frame for nothing, and so did one playing with the pan off or lyrics up.
+     */
+    private fun movesOn(now: Long, still: Boolean, playing: Boolean, pans: Boolean, fading: Boolean): Boolean {
+        val moving = !still && ((playing && pans) || fading)
+        if (moving) frameMs = now
+        resting = !moving
+        return moving
     }
 
     /** The pan's side, alternating page to page. */
@@ -439,6 +479,9 @@ internal fun FullArtLayer(
     val currentPosition by rememberUpdatedState(positionMs)
     val currentPlaying by rememberUpdatedState(isPlaying)
     val currentStart by rememberUpdatedState(startPage)
+    // Nothing to pan with Full art pan off, or with lyrics up over the (invisible) art.
+    val pans = panDpPerS > 0f && artShown
+    val currentPans by rememberUpdatedState(pans)
 
     // Opened (or reopened with the sheet): the page the square art was showing.
     LaunchedEffect(target) {
@@ -457,16 +500,22 @@ internal fun FullArtLayer(
             state.newSong(withFrameMillis { it })
         }
     }
-    // The frame loop: while it's out and in sight. With motion still it ticks every STILL_TICK_MS
-    // rather than every frame: the pages only cut, so nothing needs the display's refresh rate.
+    // The frame loop: while it's out and in sight. It ticks every frame only while the art moves
+    // (a pan while playing, a page fading in). Otherwise (motion still, paused, or nothing to pan)
+    // every STILL_TICK_MS: the pages only cut, so nothing needs the display's refresh rate.
     LaunchedEffect(running, loopsStill) {
         if (!running) return@LaunchedEffect
         while (true) {
-            withFrameMillis { now ->
-                state.tick(now, currentPosition(), currentPlaying, failed.keys, loopsStill)
+            val moving = withFrameMillis { now ->
+                state.tick(now, currentPosition(), currentPlaying, failed.keys, loopsStill, currentPans)
             }
-            if (loopsStill) state.awaitWake(STILL_TICK_MS)
+            if (!moving) state.awaitWake(STILL_TICK_MS)
         }
+    }
+    // The pan starting again (play resuming, the pan turned back on, lyrics closed): a loop waiting
+    // out a still tick picks it up at once.
+    LaunchedEffect(isPlaying, pans) {
+        if (isPlaying && pans) state.wake()
     }
 
     // The pages in hand: those on screen, the front and the back, and the page after the one up

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,7 +26,11 @@ fun RelatedArtistsRow(
     onClick: (ArtistSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A refreshed profile can put another artist first: it shows ([ShowNewFirstCard]).
+    val rowState = rememberLazyListState()
+    ShowNewFirstCard(rowState, firstKey = artists.firstOrNull()?.id)
     LazyRow(
+        state = rowState,
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

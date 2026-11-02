@@ -6,6 +6,8 @@ import coil3.request.ImageRequest
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -26,6 +28,9 @@ class FullArtStateTest {
         schedule = fullArtSchedule(200_000L, pages.size)
         loaded = pages.associate { it.key to Unit }
     }
+
+    /** Takes the wake [FullArtState.open] leaves, so a test sees only the wake it's about. */
+    private suspend fun FullArtState.takeOpenWake() = awaitWake(STILL_TICK_MS)
 
     @Test
     fun `a new song's front fades in quickly`() {
@@ -86,6 +91,121 @@ class FullArtStateTest {
     }
 
     @Test
+    fun `playing, every tick moves the frame clock, so the art pans`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        assertTrue(state.tick(1_016L, 16L, playing = true, failed = emptySet(), still = false))
+        assertEquals(1_016L, state.frameMs)
+        assertTrue(state.tick(1_032L, 32L, playing = true, failed = emptySet(), still = false))
+        assertEquals(1_032L, state.frameMs)
+    }
+
+    @Test
+    fun `paused with nothing fading, a tick doesn't move the frame clock and asks for no next frame`() {
+        // The Pixel 6 Pro test: full art out, paused, 619 frames drawn in 5 s for a still picture.
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 16L, playing = true, failed = emptySet(), still = false)
+        val drawnAt = state.frameMs
+        assertFalse(state.tick(1_032L, 16L, playing = false, failed = emptySet(), still = false))
+        assertFalse(state.tick(1_532L, 16L, playing = false, failed = emptySet(), still = false))
+        assertEquals(drawnAt, state.frameMs)
+    }
+
+    @Test
+    fun `paused, a page turned by hand still fades in frame by frame, then the loop rests`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        assertFalse(state.tick(1_016L, 0L, playing = false, failed = emptySet(), still = false))
+
+        state.turn(1)
+        assertTrue(state.tick(1_032L, 0L, playing = false, failed = emptySet(), still = false))
+        assertEquals(1_032L, state.frameMs)
+        assertTrue(state.tick(2_000L, 0L, playing = false, failed = emptySet(), still = false))
+        assertEquals(2_000L, state.frameMs)
+
+        // The fade over (2.2 s), the page under it is let go and nothing moves any more.
+        assertFalse(state.tick(3_300L, 0L, playing = false, failed = emptySet(), still = false))
+        assertEquals(listOf("back:a"), state.shown.map { it.page.key })
+    }
+
+    @Test
+    fun `opening wakes a still loop at once`() = runTest {
+        // Reopened while paused with its pages in hand: the art grows out now, not a still tick later.
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        val before = currentTime
+        state.awaitWake(STILL_TICK_MS)
+        assertEquals(0L, currentTime - before)
+    }
+
+    @Test
+    fun `playing with Full art pan off or lyrics up, a tick doesn't move the frame clock and asks for no next frame`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 16L, playing = true, failed = emptySet(), still = false)
+        val drawnAt = state.frameMs
+        assertFalse(state.tick(1_032L, 32L, playing = true, failed = emptySet(), still = false, pans = false))
+        assertFalse(state.tick(1_532L, 532L, playing = true, failed = emptySet(), still = false, pans = false))
+        assertEquals(drawnAt, state.frameMs)
+    }
+
+    @Test
+    fun `playing with nothing to pan, a page turned by hand still fades in frame by frame`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a"), page("back:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        assertFalse(state.tick(1_016L, 16L, playing = true, failed = emptySet(), still = false, pans = false))
+
+        state.turn(1)
+        assertTrue(state.tick(1_032L, 32L, playing = true, failed = emptySet(), still = false, pans = false))
+        assertEquals(1_032L, state.frameMs)
+    }
+
+    @Test
+    fun `playing with nothing to pan, the rested ticks keep the clocks with real time`() {
+        // One page: no page change (and its fade) in the middle of the ten seconds.
+        val state = FullArtState()
+        state.show(listOf(page("front:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        state.tick(1_016L, 16L, playing = true, failed = emptySet(), still = false, pans = false)
+        val before = state.playMs
+        // Ten seconds of playback at the still rate (500 ms apart, not a frame apart).
+        var now = 1_016L
+        repeat(20) {
+            now += STILL_TICK_MS
+            state.tick(now, now - 1_000L, playing = true, failed = emptySet(), still = false, pans = false)
+        }
+        // A frame's 100 ms clamp would have counted 2 s of these 10.
+        assertEquals(10_000L, state.playMs - before)
+    }
+
+    @Test
+    fun `play resuming after a rest moves the pan no more than a frame's step`() {
+        // Most of the step since the last (paused) tick was paused: it isn't played time.
+        val state = FullArtState()
+        state.show(listOf(page("front:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        assertFalse(state.tick(1_016L, 0L, playing = false, failed = emptySet(), still = false))
+        val before = state.playMs
+        assertTrue(state.tick(1_516L, 0L, playing = true, failed = emptySet(), still = false))
+        assertEquals(100L, state.playMs - before)
+    }
+
+    @Test
+    fun `with motion still, a tick asks for no next frame even while playing`() {
+        val state = FullArtState()
+        state.show(listOf(page("front:a")))
+        state.open(now = 1_000L, position = 0L, start = 0)
+        assertFalse(state.tick(1_500L, 500L, playing = true, failed = emptySet(), still = true))
+    }
+
+    @Test
     fun `with motion still, a page turned by hand is fully shown at once`() {
         val state = FullArtState()
         state.show(listOf(page("front:a"), page("back:a")))
@@ -106,6 +226,7 @@ class FullArtStateTest {
         val state = FullArtState()
         state.show(listOf(page("front:a"), page("back:a")))
         state.open(now = 1_000L, position = 0L, start = 0)
+        state.takeOpenWake()
         state.turn(1)
         val before = currentTime
         state.awaitWake(STILL_TICK_MS)
@@ -117,6 +238,7 @@ class FullArtStateTest {
         val state = FullArtState()
         state.show(listOf(page("front:a")))
         state.open(now = 1_000L, position = 0L, start = 0)
+        state.takeOpenWake()
         state.newSong(2_000L)
         val before = currentTime
         state.awaitWake(STILL_TICK_MS)
@@ -128,6 +250,7 @@ class FullArtStateTest {
         val state = FullArtState()
         state.show(listOf(page("front:a"), page("back:a")))
         state.open(now = 1_000L, position = 0L, start = 0)
+        state.takeOpenWake()
         val before = currentTime
         state.awaitWake(STILL_TICK_MS)
         assertEquals(STILL_TICK_MS, currentTime - before)
