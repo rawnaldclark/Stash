@@ -6,8 +6,10 @@
  * both namespaces is listed in ../README.md, "KV keys".
  *
  * A Ko-fi Donation or Subscription:
- *   - gives the donor's email early access: access:<hash> = { source: "kofi", firstAt, lastAt }.
- *     Only the hash of the email is stored, never the email itself.
+ *   - gives the donor's email early access once that email's Ko-fi payments add up to ENTRY_USD_CENTS (US$5):
+ *     access:<hash> = { source: "kofi", firstAt, lastAt }. Only the hash of the email is stored, never the email
+ *     itself. Until then each payment's amount is kept under the hash, kofipay:<hash>:<transaction id> (see
+ *     recordKofiSupport), so the next one can add them up.
  *   - adds one goal entry, goal:<YYYY-MM>:kofi:<transaction id>, with { cents, source, at, orig? } as
  *     its KV metadata. One key per donation means two Workers never overwrite each other's totals, and
  *     a retry writes the same key again instead of counting twice. The website sums a month with
@@ -22,6 +24,9 @@
 
 export const KEYS = {
     access: (hash) => `access:${hash}`,
+    /** One Ko-fi payment from an email still under the entry: { cents, at }, the same as metadata. Kept for good. */
+    kofiPay: (hash, id) => `kofipay:${hash}:${id}`,
+    kofiPayPrefix: (hash) => `kofipay:${hash}:`,
     goalEntry: (month, kind, id) => `goal:${month}:${kind}:${id}`,
     /** In STASH_KV: this Ko-fi transaction's progress, "listed" then "done" (src/index.js). */
     kofiTxn: (id) => `kofitxn:${id}`,
@@ -33,6 +38,15 @@ export const HASHCHECK_EMAIL = "hashcheck@stashfm.app";
 export const KOFI_TXN_TTL_S = 60 * 24 * 3600;
 
 /**
+ * The entry, in US cents: what one email's Ko-fi payments must add up to before it gets early access (and with it the
+ * app's supporter claim, src/claim.js). Owner's call, 2026-11-02: "$5 is the entry to the site and supporter status on
+ * the app". One-off donations and monthly payments both count; other currencies count at USD_PER_UNIT; a currency
+ * missing from that table can't be checked and is let in. Everyone already on the list keeps their entry, whatever
+ * they gave. The copy that states the amount (the site, the mailer, the app) says "$5" in words: change it with this.
+ */
+export const ENTRY_USD_CENTS = 500;
+
+/**
  * Ko-fi's "Send test" buttons on its webhooks page all use this transaction id (and an
  * @example.com email). A test never reaches the goal or the access list. It reaches the
  * supporters list the first time only: like any transaction, it's then marked done for 60
@@ -41,10 +55,10 @@ export const KOFI_TXN_TTL_S = 60 * 24 * 3600;
 export const KOFI_TEST_TXN = "00000000-1111-2222-3333-444444444444";
 
 /**
- * Approximate US dollars per unit, for counting non-USD Ko-fi payments toward the goal.
- * Fixed on purpose (no rate API to call or trust); updated by hand now and then. Last set
- * 2026-10. The admin page says these totals are approximate. A currency missing here is
- * left out of the goal (the donor still gets access) and logged.
+ * Approximate US dollars per unit, for counting non-USD Ko-fi payments toward the goal and
+ * the entry. Fixed on purpose (no rate API to call or trust); updated by hand now and then.
+ * Last set 2026-10. The admin page says these totals are approximate. A currency missing
+ * here is left out of the goal (the donor still gets access) and logged.
  */
 export const USD_PER_UNIT = {
     USD: 1,
@@ -108,18 +122,56 @@ export function dedupeId(payload) {
 /** "2026-10" for any moment in October 2026, UTC. */
 export const monthKey = (date) => date.toISOString().slice(0, 7);
 
+/** A payment's currency as the table names it: trimmed and upper case, USD when Ko-fi sends none. */
+export const currencyOf = (currency) => String(currency || "USD").trim().toUpperCase();
+
 /** An amount in a currency to US cents, or null for an unknown currency or a bad amount. */
 export function toUsdCents(amount, currency) {
     const value = Number.parseFloat(amount);
-    const rate = USD_PER_UNIT[String(currency || "USD").trim().toUpperCase()];
+    const rate = USD_PER_UNIT[currencyOf(currency)];
     if (!Number.isFinite(value) || value <= 0 || rate === undefined) return null;
     return Math.round(value * rate * 100);
+}
+
+/**
+ * What one email (by its hash) has given on Ko-fi while under the entry, in US cents: the sum of its
+ * kofipay:<hash>:* entries, read from their KV metadata. [except] (a key name) is left out, for a caller that
+ * adds that payment itself. Also read by the supporter claim (src/claim.js) for its "not unlocked yet" email.
+ */
+export async function kofiTotalCents(kv, hash, except = null) {
+    let total = 0;
+    let cursor;
+    do {
+        const page = await kv.list({ prefix: KEYS.kofiPayPrefix(hash), cursor });
+        for (const { name, metadata } of page.keys) {
+            const cents = metadata?.cents;
+            if (name !== except && Number.isSafeInteger(cents) && cents > 0) total += cents;
+        }
+        cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    return total;
 }
 
 /**
  * Everything early access needs from one Ko-fi Donation or Subscription. Called after the supporter is
  * stored and the list rebuilt (src/supporters.js). It's safe to run again for the same donation (every
  * write is to a key of its own), which is what a Ko-fi retry does after a throw here.
+ *
+ * Who gets early access (access:<hash>, source "kofi"), checked in this order:
+ *   - an email that already has a "kofi" entry keeps it, whatever this payment is: everyone let in before the
+ *     entry existed keeps their place (only its lastAt moves, as before);
+ *   - a currency missing from USD_PER_UNIT can't be checked: let in, and logged;
+ *   - otherwise this payment is kept as kofipay:<hash>:<transaction id> = { cents, at } (metadata too), and the
+ *     email is let in once its kofipay entries add up to ENTRY_USD_CENTS. A Ko-fi retry writes the same key, and
+ *     this payment is added by hand rather than read back, so a retry counts it once and a list() that hasn't
+ *     caught up with the write still counts it.
+ * Under the entry nothing is granted and no welcome is sent, and an "approved" or "manual" entry is left exactly as
+ * it was (only reaching the entry turns it into "kofi", as any donation did before). The supporters list and the
+ * goal count every payment, as before.
+ *
+ * Known limit: two payments from one email whose webhooks land within KV's list() lag (up to a minute) may each
+ * miss the other, so neither lets the email in. The next payment from that email adds all of them up; the owner can
+ * also add the email by hand.
  *
  * [onNewAccess] (optional) is called with the normalised email right after an access entry is written for
  * an email that had none: the welcome email (src/welcome.js). Called at that point, not at the end, so a
@@ -132,29 +184,49 @@ export async function recordKofiSupport(env, payload, now = new Date(), { onNewA
     const id = dedupeId(payload);
     if (id === KOFI_TEST_TXN) return { test: true };
 
-    const result = { access: false, newAccess: false, cents: null };
+    const result = { access: false, newAccess: false, cents: null, totalCents: null };
+    const cents = toUsdCents(payload.amount, payload.currency);
+    const currency = currencyOf(payload.currency);
     const email = normalizeEmail(payload.email);
     if (email.includes("@")) {
         const hash = await hashEmail(email, env.EMAIL_PEPPER);
         const prev = await kv.get(KEYS.access(hash), "json");
         const at = now.toISOString();
-        await kv.put(KEYS.access(hash), JSON.stringify({ source: "kofi", firstAt: prev?.firstAt ?? prev?.at ?? at, lastAt: at }));
-        if (!prev) {
-            result.newAccess = true;
-            onNewAccess?.(email);
+        let letIn;
+        if (prev?.source === "kofi") {
+            letIn = true;
+        } else if (USD_PER_UNIT[currency] === undefined) {
+            letIn = true;
+            console.log(`access: currency ${JSON.stringify(currency.slice(0, 8))} isn't in the table, so the entry can't be checked: let in`);
+        } else {
+            let payKey = null;
+            if (cents !== null) {
+                payKey = KEYS.kofiPay(hash, id || crypto.randomUUID());
+                const pay = { cents, at };
+                await kv.put(payKey, JSON.stringify(pay), { metadata: pay });
+            }
+            const total = (cents ?? 0) + (await kofiTotalCents(kv, hash, payKey));
+            result.totalCents = total;
+            letIn = total >= ENTRY_USD_CENTS;
+            if (!letIn) console.log(`access: under the entry so far (${total} of ${ENTRY_USD_CENTS} US cents): not added yet`);
         }
-        const check = await hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER);
-        if ((await kv.get(KEYS.hashCheck)) !== check) await kv.put(KEYS.hashCheck, check);
-        result.access = true;
+        if (letIn) {
+            await kv.put(KEYS.access(hash), JSON.stringify({ source: "kofi", firstAt: prev?.firstAt ?? prev?.at ?? at, lastAt: at }));
+            if (!prev) {
+                result.newAccess = true;
+                onNewAccess?.(email);
+            }
+            const check = await hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER);
+            if ((await kv.get(KEYS.hashCheck)) !== check) await kv.put(KEYS.hashCheck, check);
+            result.access = true;
+        }
     }
 
-    const cents = toUsdCents(payload.amount, payload.currency);
     if (cents === null) {
         console.log(`goal: not counted (amount ${JSON.stringify(payload.amount)}, currency ${JSON.stringify(payload.currency)})`);
     } else {
         const when = new Date(payload.timestamp);
         const month = monthKey(Number.isNaN(when.getTime()) ? now : when);
-        const currency = String(payload.currency || "USD").trim().toUpperCase();
         const entry = { cents, source: payload.type === "Subscription" ? "Ko-fi (monthly)" : "Ko-fi", at: now.toISOString() };
         if (currency !== "USD") entry.orig = `${String(payload.amount).slice(0, 16)} ${currency}`;
         await kv.put(KEYS.goalEntry(month, "kofi", id || crypto.randomUUID()), JSON.stringify(entry), { metadata: entry });

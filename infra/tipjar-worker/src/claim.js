@@ -9,7 +9,9 @@
  *   - start: every valid, non-rate-limited request gets the same 202, and the whole lookup (access list, email,
  *     claim write) runs after the response (ctx.waitUntil), so its timing says nothing either. The email is what
  *     differs: a donor (ACCESS_KV access:<hash> with source "kofi", see isDonation) gets a 6-digit code, valid 10
- *     minutes; anyone else is told no donation was found and that any amount on Ko-fi unlocks unlimited lossless.
+ *     minutes. Anyone else is told it isn't unlocked yet and that $5 or more on Ko-fi (ENTRY_USD_CENTS, added up per
+ *     email) unlocks unlimited lossless: an address with Ko-fi payments under the entry (kofipay:<hash>:*, see
+ *     src/access.js) gets the "below_entry" email with its total so far, any other the "no_donation" one.
  *   - verify: no pending claim, an expired one, a wrong code and a claim whose tries are used up all get the same
  *     401 {"error":"bad_code"}, after the same work (two HMACs, one D1 statement, one constant-time compare). An
  *     exhausted claim is deleted after the response.
@@ -41,9 +43,12 @@
  * The emails themselves are the mailer's (templates in stash-mailer, like the welcome): this Worker sends
  *   POST https://stash-mailer/supporter-claim   Authorization: Bearer <MAILER_TOKEN>
  *     {"email","kind":"code","code":"123456"}  or  {"email","kind":"no_donation"}
- * and counts only 200 {"sent":true} as sent. See ../README.md, "Supporter claim", for the contract and the copy.
+ *     or  {"email","kind":"below_entry","cents":300}   (cents: the address's Ko-fi total so far, 1 to 499)
+ * and counts only 200 {"sent":true} as sent. A mailer from before below_entry answers it 400 {"error":"bad_kind"}; the
+ * no_donation email goes instead, so this Worker can be deployed before or after the mailer. See ../README.md,
+ * "Supporter claim", for the contract and the copy.
  */
-import { hashEmail, KEYS, normalizeEmail, sameSecret } from "./access.js";
+import { ENTRY_USD_CENTS, hashEmail, KEYS, kofiTotalCents, normalizeEmail, sameSecret } from "./access.js";
 import { consumeClaim, countWithin, dropExhausted, putClaim, takeTry } from "./claim-store.js";
 import { mintSupporterToken } from "./entitlement.js";
 
@@ -71,9 +76,11 @@ export const clock = { now: () => Date.now() };
 
 /**
  * Whether an access-list entry stands for a donation. Only "kofi" does: the Ko-fi webhook (src/access.js) and the
- * Ko-fi CSV import (scripts/import-kofi-csv.mjs) write it, and nothing else does. The website's entries are not
- * donations: "approved" (an access request the owner accepted), "manual" (added by hand on the admin page, with no
- * amount behind it) and "open" (an open-window sign-up). A Ko-fi donation overwrites any of those with "kofi".
+ * Ko-fi CSV import (scripts/import-kofi-csv.mjs) write it, and nothing else does. Since 2026-11-02 the webhook writes
+ * it only once an email's Ko-fi payments add up to the entry ($5, ENTRY_USD_CENTS); entries from before then are kept
+ * whatever they gave. The website's entries are not donations: "approved" (an access request the owner accepted),
+ * "manual" (added by hand on the admin page, with no amount behind it) and "open" (an open-window sign-up). A Ko-fi
+ * donation that brings the email to the entry overwrites any of those with "kofi".
  */
 export function isDonation(entry) {
     return !!entry && typeof entry === "object" && entry.source === "kofi";
@@ -246,9 +253,10 @@ async function hourlyLimit(kv, ipHash, emailHash, nowS) {
 }
 
 /**
- * Asks the mailer for one claim email. Resolves true only when it answers 200 {"sent":true}; anything else (its
- * per-address limit's 200 {"sent":false}, an error status, a network failure) is false. Never rejects; logs no
- * address or code.
+ * Asks the mailer for one claim email. Resolves { sent: true } only when it answers 200 {"sent":true}; anything else
+ * (its per-address limit's 200 {"sent":false}, an error status, a network failure) is { sent: false }, with
+ * badKind: true when the mailer doesn't know the kind (400 {"error":"bad_kind"}). Never rejects; logs no address,
+ * code or amount.
  */
 async function sendClaimMail(env, message) {
     try {
@@ -265,20 +273,33 @@ async function sendClaimMail(env, message) {
         }
         if (res.status === 200 && body?.sent === true) {
             console.log(`claim: ${message.kind} email sent`);
-            return true;
+            return { sent: true };
         }
         console.error(`claim: ${message.kind} email not sent: ${res.status} ${String(body?.error ?? "").slice(0, 64)}`);
-        return false;
+        return { sent: false, badKind: res.status === 400 && body?.error === "bad_kind" };
     } catch (err) {
         console.error(`claim: ${message.kind} email not sent: ${String(err?.message ?? err).slice(0, 120)}`);
-        return false;
+        return { sent: false };
     }
 }
 
 /**
+ * The email for an address that can't claim: "below_entry" with its total when it has Ko-fi payments under the
+ * entry, else "no_donation". A mailer that doesn't know below_entry yet gets no_donation instead.
+ */
+async function sendNotUnlocked(env, email, hash) {
+    const cents = await kofiTotalCents(env.ACCESS_KV, hash);
+    if (cents > 0 && cents < ENTRY_USD_CENTS) {
+        const below = await sendClaimMail(env, { email, kind: "below_entry", cents });
+        if (!below.badKind) return below.sent;
+    }
+    return (await sendClaimMail(env, { email, kind: "no_donation" })).sent;
+}
+
+/**
  * Everything start does after its 202: look the address up; for a donor send a code and, once the mailer says
- * it's sent, store it as the pending claim; for anyone else send the no-donation email, within the global cap.
- * Resolves true when an email went out. Never rejects (it runs in waitUntil).
+ * it's sent, store it as the pending claim; for anyone else send the not-unlocked email (sendNotUnlocked), within
+ * the global cap. Resolves true when an email went out. Never rejects (it runs in waitUntil).
  */
 export async function deliverClaim(env, email, hash, nowMs = clock.now()) {
     try {
@@ -292,14 +313,14 @@ export async function deliverClaim(env, email, hash, nowMs = clock.now()) {
                 console.log("claim: no_donation email skipped: hourly cap reached");
                 return false;
             }
-            return await sendClaimMail(env, { email, kind: "no_donation" });
+            return await sendNotUnlocked(env, email, hash);
         }
         const code = newCode();
         // Hashed before the send, so nothing but the store is left to do once the mailer answers.
         const codeHash = await codeHashOf(code, hash, env.EMAIL_PEPPER);
         // Send first, store after: a code the mailer refused (its one-per-minute limit, a failure) never reaches
         // anyone, so it must not replace the claim whose code the donor already holds.
-        if (!(await sendClaimMail(env, { email, kind: "code", code }))) return false;
+        if (!(await sendClaimMail(env, { email, kind: "code", code })).sent) return false;
         await putClaim(env.CLAIMS_DB, hash, codeHash, nowS + CLAIM_TTL_S);
         return true;
     } catch (err) {
