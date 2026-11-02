@@ -22,11 +22,20 @@ import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.ui.components.motion.pressScale
 
 /**
- * Square album card with rounded thumbnail, title, and "year • artist" subtitle: 140 dp unless
- * [size] says otherwise.
+ * [AlbumSquareCard]'s cover and width everywhere but Home (which uses [HomeRailCardSize]), and the
+ * size of the placeholders that stand in for it while the artist page loads ([AlbumsRowSkeleton]).
+ */
+val AlbumCardSize = 140.dp
+
+/**
+ * Square album card with rounded thumbnail, title, and "year • artist" subtitle: [AlbumCardSize]
+ * (140 dp) unless [size] says otherwise.
  *
- * Used in search results and on Artist Profile discography rails at the default size; Home's album
- * rows pass [HomeRailCardSize] so they step with the mix rails beside them.
+ * At [AlbumCardSize]: Search's Albums row; the artist page's Latest releases, Albums and Singles &
+ * EPs rails, and an album page's More by this artist (all through `AlbumsRow`/`LatestReleasesRow`);
+ * Library's Recently downloaded; the mood pages; and the Qobuz playlist browse grid.
+ * At [HomeRailCardSize] (120 dp): Home's New Releases, Qobuz Playlists, Top Albums, New from your
+ * artists and Because you like rows, so they step with the mix rails beside them.
  *
  * @param title Album title shown on the first text row.
  * @param artist Artist name for the subtitle.
@@ -38,9 +47,8 @@ import com.stash.core.ui.components.motion.pressScale
  * @param modifier Optional layout modifier applied to the root column.
  * @param isLossless When true, overlays a small FLAC badge on the cover art
  *   (Premium Crisp quality signal). Defaults to false so existing callers are unaffected.
- * @param size The cover's side and the card's width. 140 dp by default (Search, the artist page,
- *   Library, the mood pages); Home's rows pass [HomeRailCardSize] (120 dp). Only the size changes:
- *   corners, badge and text stay.
+ * @param size The cover's side and the card's width: [AlbumCardSize] by default, [HomeRailCardSize]
+ *   on Home's rows (the callers are listed above). Only the size changes: corners, badge and text stay.
  * @param onClick Invoked on tap — typically opens the album detail screen.
  */
 @Composable
@@ -51,7 +59,7 @@ fun AlbumSquareCard(
     year: String?,
     modifier: Modifier = Modifier,
     isLossless: Boolean = false,
-    size: Dp = 140.dp,
+    size: Dp = AlbumCardSize,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }

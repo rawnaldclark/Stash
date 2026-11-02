@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -22,7 +23,8 @@ import org.robolectric.annotation.Config
 /**
  * The album card's size. Home's album rows (New Releases, Top Albums, Qobuz Playlists, New from your
  * artists, Because you like) were 140 dp beside 120 dp mix rails; they now pass [HomeRailCardSize].
- * Every other screen keeps the 140 dp default, and the FLAC badge still sits inside the smaller cover.
+ * The card's default stays [AlbumCardSize], 140 dp, and the FLAC badge still sits inside the smaller
+ * cover. That Home's rows really pass the smaller size is checked in feature/home (HomeAlbumRowsSizeTest).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -53,13 +55,15 @@ class AlbumSquareCardSizeTest {
         }
     }
 
-    @Test fun `Search, the artist page and Library keep the 140 dp card`() {
+    @Test fun `with no size the card and its cover are AlbumCardSize, 140 dp`() {
+        assertEquals(140.dp, AlbumCardSize)
         show()
         rule.onNodeWithTag(CARD).assertWidthIsEqualTo(140.dp)
         rule.onNodeWithContentDescription(title, useUnmergedTree = true).assertWidthIsEqualTo(140.dp).assertHeightIsEqualTo(140.dp)
     }
 
-    @Test fun `Home's rows get the mix rails' 120 dp card, cover and width`() {
+    @Test fun `with HomeRailCardSize the card and its cover are the mix rails' 120 dp`() {
+        assertEquals(120.dp, HomeRailCardSize)
         show(HomeRailCardSize)
         rule.onNodeWithTag(CARD).assertWidthIsEqualTo(120.dp)
         rule.onNodeWithContentDescription(title, useUnmergedTree = true).assertWidthIsEqualTo(120.dp).assertHeightIsEqualTo(120.dp)

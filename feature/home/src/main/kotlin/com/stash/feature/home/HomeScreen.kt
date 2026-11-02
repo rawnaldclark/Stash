@@ -1349,10 +1349,11 @@ private fun SupporterTicker(
 
 /**
  * Horizontal carousel of albums (New Releases, Top Albums, New from your artists). Tap opens the
- * album page. Its covers are [HomeRailCardSize], the same as the mix rails around it.
+ * album page. Its covers are [HomeRailCardSize], the same as the mix rails around it (internal for
+ * HomeAlbumRowsSizeTest, which checks that).
  */
 @Composable
-private fun DiscoveryAlbumRow(
+internal fun DiscoveryAlbumRow(
     title: String,
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
@@ -1385,10 +1386,11 @@ private fun DiscoveryAlbumRow(
 /**
  * Horizontal carousel of Qobuz community playlists. Each card carries the
  * curator as its subtitle and opens via a QOBUZ_PLAYLIST [AlbumSummary] so the
- * existing album-detail screen renders + plays it.
+ * existing album-detail screen renders + plays it. Its covers are [HomeRailCardSize], like the
+ * album rows (internal for HomeAlbumRowsSizeTest, which checks that).
  */
 @Composable
-private fun DiscoveryPlaylistRow(
+internal fun DiscoveryPlaylistRow(
     title: String,
     playlists: List<PlaylistSummary>,
     onOpen: (AlbumSummary) -> Unit,

@@ -9,6 +9,8 @@ android {
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
+            // HomeAlbumRowsSizeTest composes Because you like on Robolectric, which reads this module's strings.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -43,4 +45,11 @@ dependencies {
     // Matches the test harness in :feature:library — see MixOfflineTapGuardTest.
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    // HomeAlbumRowsSizeTest composes Home's album rows on Robolectric, as :feature:search's RailFirstCardTest
+    // does the artist page's. The Compose BOM is only on the main classpath, so it is applied again here.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
 }
