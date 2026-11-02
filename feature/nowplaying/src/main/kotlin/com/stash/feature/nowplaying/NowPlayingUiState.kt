@@ -37,6 +37,12 @@ data class NowPlayingUiState(
     val currentIndex: Int = 0,
     /** Full list of tracks in the playback queue (including the currently playing track). */
     val queue: List<Track> = emptyList(),
+    /**
+     * A queue too big for the player is a window of [queue]: its songs before and after it (see
+     * [com.stash.core.model.PlayerState.queueSongsBefore]). 0 and 0 for every other queue.
+     */
+    val queueSongsBefore: Int = 0,
+    val queueSongsAfter: Int = 0,
     /** User-created playlists available for the "Save to Playlist" sheet. */
     val userPlaylists: List<PlaylistInfo> = emptyList(),
     /**
