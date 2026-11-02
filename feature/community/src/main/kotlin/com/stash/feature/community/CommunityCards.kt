@@ -419,7 +419,7 @@ internal fun RowSkeleton() {
             Spacer(Modifier.height(6.dp))
             ShimmerPlaceholder(Modifier.width(72.dp).height(10.dp), shape = MaterialTheme.shapes.extraSmall)
         }
-        ShimmerPlaceholder(Modifier.width(96.dp).height(36.dp), shape = CircleShape)
+        ShimmerPlaceholder(Modifier.width(76.dp).height(32.dp), shape = CircleShape)
     }
 }
 

@@ -64,14 +64,18 @@ internal data class VotePillColors(
 )
 
 internal object VotePillDefaults {
-    /** On the page (a list row, the post's page): glass, and the app's album colour when voted (as the chips are). */
+    /**
+     * On the page (a list row, a rail card, the post's page): quiet glass with a hairline, and the app's album colour
+     * when voted (as the chips are). The hairline is the faint one: on the phone (2026-11-01) the bright one made a
+     * column of idle pills read as a stack of outlined buttons, heavier than the posts beside them.
+     */
     @Composable
     fun onPage(): VotePillColors {
         val ext = StashTheme.extendedColors
         val chrome = LocalAlbumChrome.current
         return VotePillColors(
             fill = ext.glassBackground,
-            border = ext.glassBorderBright,
+            border = ext.glassBorder,
             icon = MaterialTheme.colorScheme.onSurfaceVariant,
             text = MaterialTheme.colorScheme.onSurface,
             litFill = chrome.wash,
@@ -104,7 +108,8 @@ internal object VotePillDefaults {
  * Taps on the pill never reach the row or card under it: a near miss on an arrow shouldn't open the post. Your own
  * post's pill takes no taps at all, so a tap on it opens the post as before.
  *
- * @param compact the rail cards' smaller pill (32 dp high instead of 36).
+ * @param compact the smaller pill of list rows and rail cards (32 dp high instead of 36, narrower arrows), so the
+ *   title beside it keeps its room.
  */
 @Composable
 internal fun VotePill(
@@ -119,7 +124,7 @@ internal fun VotePill(
     val fill by animateColorAsState(if (lit) colors.litFill else colors.fill, tween(PILL_FADE_MS), label = "pillFill")
     val border by animateColorAsState(if (lit) colors.litBorder else colors.border, tween(PILL_FADE_MS), label = "pillBorder")
     val height = if (compact) 32.dp else 36.dp
-    val arrowWidth = if (compact) 32.dp else 40.dp
+    val arrowWidth = if (compact) 30.dp else 40.dp
     Row(
         modifier = modifier
             .height(height)

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -68,6 +69,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.share.SharedTrack
 import com.stash.feature.community.CommunityPostViewModel.UiState
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.components.bottomChromePadding
 
@@ -173,6 +175,9 @@ private fun PostBody(
     val post = s.post
     val song = post.kind == "song"
     val glass = StashTheme.extendedColors.glassBackground
+    val chrome = LocalAlbumChrome.current
+    // Back and ⋮ sit on the cover: a dark disc with a white glyph reads on a white cover too (the glass one vanished there).
+    val overCover = Color.Black.copy(alpha = 0.4f)
     // Refreshed each time the screen resumes, so "Posted … ago" never freezes.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); onPauseOrDispose {} }
@@ -195,9 +200,9 @@ private fun PostBody(
                         .padding(start = 8.dp, top = 8.dp)
                         .align(Alignment.TopStart)
                         .size(48.dp)
-                        .background(glass, CircleShape),
+                        .background(overCover, CircleShape),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.community_back), tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.community_back), tint = Color.White)
                 }
                 if (post.mine) {
                     var menu by remember { mutableStateOf(false) }
@@ -211,9 +216,9 @@ private fun PostBody(
                         IconButton(
                             onClick = { menu = true },
                             enabled = !s.busy,
-                            modifier = Modifier.size(48.dp).background(glass, CircleShape),
+                            modifier = Modifier.size(48.dp).background(overCover, CircleShape),
                         ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.community_more_options), tint = MaterialTheme.colorScheme.onSurface)
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.community_more_options), tint = Color.White)
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.community_take_down_menu)) }, onClick = { menu = false; onTakeDown() })
@@ -286,6 +291,8 @@ private fun PostBody(
                     Button(
                         onClick = viewModel::play,
                         enabled = !s.busy,
+                        // The album colour, as See all's Play all and a lit vote.
+                        colors = ButtonDefaults.buttonColors(containerColor = chrome.accent, contentColor = chrome.onAccent),
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(vertical = 12.dp),
                         shape = RoundedCornerShape(12.dp),

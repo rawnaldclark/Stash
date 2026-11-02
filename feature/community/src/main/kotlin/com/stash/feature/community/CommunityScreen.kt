@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.bottomChromePadding
 import kotlinx.coroutines.launch
 
@@ -154,16 +156,19 @@ fun CommunityScreen(
 }
 
 /**
- * Play all / Shuffle: a taste of the chart (see CommunityChartPlayer), shaped as a playlist page's buttons. Opening
- * the first posts takes a moment; the strip under them keeps its space so the list doesn't jump.
+ * Play all / Shuffle: a taste of the chart (see CommunityChartPlayer), shaped as a playlist page's buttons, Play all
+ * in the album colour like the page's other accents (the segment, a lit vote). Opening the first posts takes a
+ * moment; the strip under them keeps its space so the list doesn't jump.
  */
 @Composable
 private fun ChartPlay(starting: Boolean, onPlay: (shuffle: Boolean) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val chrome = LocalAlbumChrome.current
             Button(
                 onClick = { onPlay(false) },
                 enabled = !starting,
+                colors = ButtonDefaults.buttonColors(containerColor = chrome.accent, contentColor = chrome.onAccent),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(vertical = 12.dp),
                 shape = RoundedCornerShape(12.dp),

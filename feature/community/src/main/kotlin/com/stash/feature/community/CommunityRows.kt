@@ -181,7 +181,7 @@ internal fun PostListRow(
                 Text(stringResource(R.string.community_hidden), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
-        if (showVotes) VotePill(post, onVote)
+        if (showVotes) VotePill(post, onVote, compact = true)
     }
 }
 

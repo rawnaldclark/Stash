@@ -14,7 +14,7 @@ import com.stash.feature.community.CommunityViewModel.Tab
  * posts): New is it newest first, so no API change and no second request when switching between the two.
  * Your posts is `/mine`.
  */
-internal enum class Segment(val tab: Tab, @StringRes val label: Int) {
+internal enum class Segment(val tab: Tab, @param:StringRes val label: Int) {
     TOP(Tab.ALL, R.string.community_segment_top),
     NEW(Tab.ALL, R.string.community_segment_new),
     MINE(Tab.MINE, R.string.community_segment_mine),
