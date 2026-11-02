@@ -9,8 +9,9 @@ import javax.inject.Singleton
 
 /**
  * The songs Home's shelves show right now, by shelf, so another shelf doesn't repeat them: the record's mixes on
- * Home ("From your record", feature/record) publish theirs, and "Because you like" leaves those out. Keys are
- * [BecauseYouLike.songKey] (main act and title, loose). In memory only: each shelf publishes again when it's made.
+ * Home ("From your record", feature/record) and Daily Discover (Home's hero, while it's shown) publish theirs, and
+ * "Because you like" leaves those out when it's shown. Keys are [BecauseYouLike.songKey] (main act and title, loose).
+ * In memory only: each shelf publishes again when it's made, and publishes none when it's no longer shown.
  */
 @Singleton
 class HomeShownSongs @Inject constructor() {
@@ -29,5 +30,8 @@ class HomeShownSongs @Inject constructor() {
     companion object {
         /** The record's mixes on Home ("From your record"). */
         const val RECORD_MIXES = "record_mixes"
+
+        /** Daily Discover, Home's hero (HomeViewModel). */
+        const val DAILY_DISCOVER = "daily_discover"
     }
 }
