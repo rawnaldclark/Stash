@@ -263,7 +263,51 @@ class SyncViewModel @Inject constructor(
     private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
     /** "Play something new" on the synced hero. */
     private val playerRepository: com.stash.core.media.PlayerRepository,
+    /** Live progress of the songs downloading now, for the Sync tab's Downloads row. */
+    private val downloadManager: com.stash.data.download.DownloadManager,
 ) : ViewModel() {
+
+    /** The Sync tab's Downloads row: how many run, wait and failed, and how far the running ones are. */
+    data class DownloadsSummary(
+        val downloading: Int = 0,
+        val waiting: Int = 0,
+        val failed: Int = 0,
+        /** Mean progress of the songs downloading now, 0..1; null while none runs. */
+        val progress: Float? = null,
+    )
+
+    private val progressByTrackId = MutableStateFlow<Map<Long, Float>>(emptyMap())
+
+    val downloadsSummary: StateFlow<DownloadsSummary> = combine(
+        downloadQueueDao.observeActiveDownloadRows(),
+        downloadQueueDao.getFailedDownloads(),
+        progressByTrackId,
+    ) { active, failed, progress ->
+        val running = active.filter { it.status == com.stash.core.model.DownloadStatus.IN_PROGRESS }
+        DownloadsSummary(
+            downloading = running.size,
+            waiting = active.size - running.size,
+            failed = failed.size,
+            progress = running.takeIf { it.isNotEmpty() }
+                ?.map { progress[it.trackId] ?: 0f }?.average()?.toFloat(),
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsSummary())
+
+    init {
+        // A song's last progress tick, dropped once its download ends either way (as the Downloads screen keeps it).
+        viewModelScope.launch {
+            downloadManager.progress.collect { update ->
+                progressByTrackId.value = when (update.status) {
+                    com.stash.data.download.model.DownloadStatus.COMPLETED,
+                    com.stash.data.download.model.DownloadStatus.FAILED,
+                    com.stash.data.download.model.DownloadStatus.UNMATCHED,
+                    com.stash.data.download.model.DownloadStatus.DEFERRED,
+                    -> progressByTrackId.value - update.trackId
+                    else -> progressByTrackId.value + (update.trackId to update.progress)
+                }
+            }
+        }
+    }
 
     /**
      * Reactive count of blocked songs, displayed as a badge on the

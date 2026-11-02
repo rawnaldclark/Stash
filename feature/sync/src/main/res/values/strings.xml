@@ -152,6 +152,21 @@
     <string name="sync_auto_sync_at">At %1$s</string>
     <string name="sync_auto_sync_at_wifi">At %1$s · Wi-Fi</string>
     <string name="sync_history_row">History, blocked songs, undo</string>
+    <!-- The Downloads row above Auto-sync: its trailing text is the counts joined with " · ". -->
+    <string name="sync_downloads_row">Downloads</string>
+    <string name="sync_downloads_none">None running</string>
+    <plurals name="sync_downloads_downloading">
+        <item quantity="one">%d downloading</item>
+        <item quantity="other">%d downloading</item>
+    </plurals>
+    <plurals name="sync_downloads_waiting">
+        <item quantity="one">%d waiting</item>
+        <item quantity="other">%d waiting</item>
+    </plurals>
+    <plurals name="sync_downloads_failed">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
     <string name="sync_accounts_row">Accounts</string>
 
     <!-- Sync tab overhaul: syncing -->
