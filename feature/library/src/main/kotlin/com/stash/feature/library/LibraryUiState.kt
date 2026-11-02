@@ -103,8 +103,7 @@ data class ArtistInfo(
  * @property artist      The act most of its songs credit first.
  * @property trackCount  Its songs.
  * @property dateAdded   When it was saved (epoch millis): Recently added sorts by it.
- * @property onPhoneCount Download mode, while its download is still running: how many of its
- *                       songs are on the phone ("9 of 14 on this phone"). Null otherwise.
+ * @property copyIds     Every saved copy of the album (the one shown first): Remove takes them all.
  */
 data class AlbumInfo(
     val playlistId: Long,
@@ -113,5 +112,5 @@ data class AlbumInfo(
     val trackCount: Int,
     val artUrl: String? = null,
     val dateAdded: Long = 0L,
-    val onPhoneCount: Int? = null,
+    val copyIds: List<Long> = listOf(playlistId),
 )

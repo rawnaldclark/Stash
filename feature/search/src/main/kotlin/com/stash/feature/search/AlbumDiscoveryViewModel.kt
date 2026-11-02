@@ -25,6 +25,7 @@ import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -182,7 +184,10 @@ class AlbumDiscoveryViewModel @Inject constructor(
             val playlistPage = ref.source == AlbumSource.YOUTUBE_PLAYLIST || ref.source == AlbumSource.QOBUZ_PLAYLIST
             lists.any { it.sourceId in keys } ||
                 (!playlistPage && SavedAlbums.findSaved(saved, keys, title = page.first, artist = page.second, songTitles = page.third) != null)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        }
+            // Folding every saved album's name and the page's songs is no work for the main thread.
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** youtubeId of the currently-playing track, for the SongRow now-playing indicator. */
     val currentPlayingYoutubeId: StateFlow<String?> =

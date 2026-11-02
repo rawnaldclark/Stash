@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -308,7 +309,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         )
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
     }
 
     /** Saved from Qobuz earlier (another country, a VPN): still "Saved", and Save doesn't file it twice. */
@@ -323,7 +324,7 @@ class AlbumDiscoveryViewModelQobuzTest {
 
         // The screen did switch: the YouTube copy is what's showing.
         assertEquals(listOf("yv1", "yv2"), vm.uiState.value.tracks.map { it.videoId })
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         vm.userMessages.test {
             vm.saveAlbum()
             advanceUntilIdle()

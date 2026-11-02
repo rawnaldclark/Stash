@@ -192,7 +192,11 @@ class MixOfflineTapGuardTest {
             on { playerState } doReturn MutableStateFlow(PlayerState())
         }
         val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
-        val offlinePref = mock<StreamingPreference> { onBlocking { current() } doReturn false }
+        // The tap reads Download mode (current()); the list is stubbed to show every song either way.
+        val offlinePref = mock<StreamingPreference> {
+            onBlocking { current() } doReturn false
+            on { enabled } doReturn flowOf(true)
+        }
         val vm = buildVm(
             playlistId = playlist.id,
             tracks = listOf(downloaded, streamOnly),
@@ -236,7 +240,11 @@ class MixOfflineTapGuardTest {
             on { playerState } doReturn MutableStateFlow(PlayerState())
         }
         val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
-        val offlinePref = mock<StreamingPreference> { onBlocking { current() } doReturn false }
+        // The tap reads Download mode (current()); the list is stubbed to show every song either way.
+        val offlinePref = mock<StreamingPreference> {
+            onBlocking { current() } doReturn false
+            on { enabled } doReturn flowOf(true)
+        }
         val vm = buildVm(
             playlistId = playlist.id,
             tracks = listOf(downloaded, streamOnly),
@@ -278,6 +286,7 @@ class MixOfflineTapGuardTest {
         connectivityMonitor: ConnectivityMonitor,
         streamingPreference: StreamingPreference = mock {
             onBlocking { current() } doReturn true
+            on { enabled } doReturn flowOf(true)
         },
     ): PlaylistDetailViewModel {
         val musicRepo = mock<MusicRepository> {

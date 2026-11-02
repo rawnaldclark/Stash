@@ -94,6 +94,3 @@ internal fun albumsEmptyMessage(downloadMode: Boolean): String =
     } else {
         "Albums you save show here, every song in order. Tap Save on any album, or sync your saved albums from YouTube Music."
     }
-
-/** A Download-mode album card while its download runs: "9 of 14 on this phone". */
-internal fun albumOnPhoneLine(onPhone: Int, total: Int): String = "$onPhone of $total on this phone"

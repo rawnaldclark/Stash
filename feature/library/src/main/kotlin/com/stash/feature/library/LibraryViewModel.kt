@@ -73,18 +73,15 @@ private fun Track.matchesQuery(query: String): Boolean =
         artist.lowercase().contains(query) ||
         album.lowercase().contains(query)
 
-/**
- * A saved album as its Library › Albums card shows it. In Download mode an album still
- * downloading is listed with how many of its songs are on the phone ([AlbumInfo.onPhoneCount]).
- */
-internal fun SavedAlbum.toAlbumInfo(downloadMode: Boolean): AlbumInfo = AlbumInfo(
+/** A saved album as its Library › Albums card shows it, standing for every saved copy of it. */
+internal fun SavedAlbum.toAlbumInfo(): AlbumInfo = AlbumInfo(
     playlistId = playlistId,
     name = title,
     artist = artist,
     trackCount = trackCount,
     artUrl = artUrl,
     dateAdded = dateAdded,
-    onPhoneCount = if (downloadMode && downloading) downloadedCount else null,
+    copyIds = copyIds,
 )
 
 /**
@@ -359,10 +356,8 @@ class LibraryViewModel @Inject constructor(
      * ([MusicRepository.getLibraryAlbums]). Never songs grouped by their album text (owner,
      * 2026-11-02: "should be exclusively for real full albums").
      */
-    private val albumCards: Flow<List<AlbumInfo>> = combine(
-        musicRepository.getLibraryAlbums(),
-        streamingPreference.enabled,
-    ) { albums, streamOnly -> albums.map { it.toAlbumInfo(downloadMode = !streamOnly) } }
+    private val albumCards: Flow<List<AlbumInfo>> = musicRepository.getLibraryAlbums()
+        .map { albums -> albums.map { it.toAlbumInfo() } }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
 
@@ -992,10 +987,12 @@ class LibraryViewModel @Inject constructor(
 
     /** Remove playlist from library without deleting its downloaded tracks. */
     fun removePlaylist(playlist: Playlist) {
-        viewModelScope.launch {
-            mirror?.beforeDelete(playlist.id, everywhere = false) // removing it here never removes it from your other devices
-            musicRepository.removePlaylist(playlist)
-        }
+        viewModelScope.launch { removePlaylistNow(playlist) }
+    }
+
+    private suspend fun removePlaylistNow(playlist: Playlist) {
+        mirror?.beforeDelete(playlist.id, everywhere = false) // removing it here never removes it from your other devices
+        musicRepository.removePlaylist(playlist)
     }
 
     fun setPlaylistImage(playlistId: Long, imageUri: Uri) {
@@ -1172,14 +1169,17 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
-     * Takes [album] out of the library, as Remove does for a playlist: the saved album goes, its
-     * songs stay (in Songs, and on the phone if downloaded). One saved on YouTube Music comes back
-     * with the next sync while it is still saved there.
+     * Takes [album] out of the library, every saved copy of it ([AlbumInfo.copyIds]), or the card
+     * would come straight back as the next copy. Its songs stay (in Songs, and on the phone if
+     * downloaded). A copy saved in Stash goes, as Remove does for a playlist; one synced from a
+     * service is hidden, so the next sync leaves it out instead of bringing it back.
      */
     fun removeAlbum(album: AlbumInfo) {
         viewModelScope.launch {
-            val playlist = musicRepository.observePlaylist(album.playlistId).first() ?: return@launch
-            removePlaylist(playlist)
+            album.copyIds.forEach { id ->
+                val playlist = musicRepository.observePlaylist(id).first() ?: return@forEach
+                if (playlist.source == MusicSource.BOTH) removePlaylistNow(playlist) else musicRepository.hidePlaylist(id)
+            }
         }
     }
 

@@ -277,8 +277,11 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<PlaylistDetailUiState> = combine(
         _playlist,
-        // Download mode lists only what it plays: the downloaded songs.
-        musicRepository.getShownTracksByPlaylist(playlistId).withSearchFilter(_searchQuery),
+        // Download mode lists only what it plays: the downloaded songs (as getShownTracksByPlaylist),
+        // from the one shared tracks query.
+        combine(playlistTracks, streamingPreference.enabled) { tracks, streamOnly ->
+            if (streamOnly) tracks else tracks.filter { it.isDownloaded }
+        }.withSearchFilter(_searchQuery),
         playerRepository.playerState,
         _searchQuery,
         _showSearch,

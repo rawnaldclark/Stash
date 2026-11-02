@@ -199,6 +199,8 @@ class PlaylistDetailViewModelTest {
         runCurrent()
 
         verify(music, org.mockito.kotlin.times(1)).getSongsByPlaylist(1L)
+        // The list is that query too, not a second build of it (review on #815).
+        verify(music, org.mockito.kotlin.never()).getShownTracksByPlaylist(any())
         assertEquals(listOf(1L, 2L), vm.uiState.value.tracks.map { it.id })
         assertEquals(DownloadButtonState(on = true, downloaded = 1, total = 2), vm.downloadButton.value)
     }

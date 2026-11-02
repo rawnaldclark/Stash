@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -213,7 +214,7 @@ class AlbumDiscoveryPlaylistTest {
         val pasted = Playlist(id = 5L, name = "Coffee Shop Blend", source = MusicSource.BOTH, sourceId = "custom_link_yt_RDCLAK5uy_1")
         val again = vm(cacheOf(playlist()), userPlaylists = listOf(pasted))
         advanceUntilIdle()
-        assertTrue(again.isSaved.value)
+        assertTrue(again.isSaved.first { it })
     }
 
     /** "Download all" keeps an album (owner, 2026-11-02); a playlist page's songs stay songs. */

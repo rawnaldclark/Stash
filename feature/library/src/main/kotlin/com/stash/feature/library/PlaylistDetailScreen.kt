@@ -627,7 +627,8 @@ fun PlaylistDetailScreen(
                     viewModel.downloadSelected(selectedIds); selection.clear()
                 }
             },
-            if (readOnly) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
+            // A saved album is a release: no song is taken out of it (Remove the album instead).
+            if (readOnly || savedAlbum) null else SelectionAction("delete", "Delete", Icons.Default.Delete) {
                 showBatchDelete = true
             },
             SelectionAction("play_next", com.stash.core.ui.components.playNextLabel(listenRole, "Play next"), Icons.Default.PlaylistPlay) {
@@ -676,7 +677,7 @@ fun PlaylistDetailScreen(
                     // lingering behind the dialog.
                     trackToDelete = t
                     selectedTrack = null
-                }.takeUnless { readOnly },
+                }.takeUnless { readOnly || savedAlbum },
                 onDownload = {
                     viewModel.queueDownload(it.id)
                     selectedTrack = null

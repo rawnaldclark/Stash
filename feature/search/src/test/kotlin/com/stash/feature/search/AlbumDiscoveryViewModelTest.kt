@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -451,7 +452,7 @@ class AlbumDiscoveryViewModelTest {
         val vm = vmWith(cache = cache, musicRepository = repo, savedAlbums = listOf(savedAlbum(77L, "album:youtube:MPREb_xxx")))
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         vm.userMessages.test {
             vm.saveAlbum()
             advanceUntilIdle()
@@ -471,7 +472,7 @@ class AlbumDiscoveryViewModelTest {
         val vm = vmWith(cache = cache, musicRepository = repo, savedAlbums = listOf(synced))
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         vm.saveAlbum()
         advanceUntilIdle()
         verify(repo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
@@ -492,7 +493,7 @@ class AlbumDiscoveryViewModelTest {
         val other = vmWith(cache = cache, savedAlbums = listOf(sameNameOtherSongs))
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         assertFalse(other.isSaved.value)
     }
 
@@ -529,6 +530,7 @@ class AlbumDiscoveryViewModelTest {
             savedAlbums = listOf(savedAlbum(77L, "album:youtube:MPREb_xxx")),
         )
         advanceUntilIdle()
+        assertTrue(vm.isSaved.first { it })
 
         vm.onDownloadAllClicked()
         vm.onDownloadAllConfirmed()

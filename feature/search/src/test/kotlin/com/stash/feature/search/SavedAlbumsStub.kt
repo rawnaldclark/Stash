@@ -22,6 +22,6 @@ internal fun savedAlbum(
     songs: List<String> = emptyList(),
 ) = SavedAlbum(
     playlistId = id, title = title, artist = artist, artUrl = null, source = source, sourceId = sourceId,
-    dateAdded = id, trackCount = songs.size, downloadedCount = 0, downloadingCount = 0,
+    dateAdded = id, trackCount = songs.size, downloadedCount = 0,
     songKeys = songs.mapTo(LinkedHashSet()) { SavedAlbums.songKey(it) },
 )

@@ -26,6 +26,7 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 
@@ -41,7 +42,7 @@ class LibraryViewModelAlbumsTest {
     @After fun tearDown() { Dispatchers.resetMain() }
 
     private val repeater = saved(1, "Repeater", dateAdded = 10, downloaded = 11, trackCount = 11)
-    private val redMedicine = saved(2, "Red Medicine", dateAdded = 30, downloaded = 9, downloading = 4, trackCount = 13)
+    private val redMedicine = saved(2, "Red Medicine", dateAdded = 30, downloaded = 9, trackCount = 13)
     private val argument = saved(3, "The Argument", artist = "Fugazi, Ian MacKaye", dateAdded = 20, trackCount = 10)
 
     private val roadTrip = Playlist(id = 50, name = "Road trip", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM)
@@ -58,14 +59,12 @@ class LibraryViewModelAlbumsTest {
         assertThat(state.playlists.map { it.id }).containsExactly(50L)
     }
 
-    @Test fun `in Download mode a card still downloading says how far it is`() = runTest {
-        val download = buildVm(repo(albums = listOf(repeater, redMedicine)), streaming = false).uiState.first { !it.isLoading }
-        val stream = buildVm(repo(albums = listOf(repeater, redMedicine)), streaming = true).uiState.first { !it.isLoading }
+    @Test fun `a card is the album the repository lists, whatever the mode`() = runTest {
+        // Download mode's filter (complete albums only) is the repository's: the tab shows its cards as they come.
+        val download = buildVm(repo(albums = listOf(repeater)), streaming = false).uiState.first { !it.isLoading }
 
-        assertThat(download.albums.single { it.playlistId == 2L }.onPhoneCount).isEqualTo(9)
-        assertThat(download.albums.single { it.playlistId == 1L }.onPhoneCount).isNull()
-        assertThat(stream.albums.map { it.onPhoneCount }).containsExactly(null, null)
-        assertThat(albumOnPhoneLine(9, 13)).isEqualTo("9 of 13 on this phone")
+        assertThat(download.albums.map { it.playlistId }).containsExactly(1L)
+        assertThat(download.albums.single().copyIds).containsExactly(1L)
     }
 
     @Test fun `search finds an album by its artist`() = runTest {
@@ -88,6 +87,25 @@ class LibraryViewModelAlbumsTest {
         verify(music).removePlaylist(albumRow)
     }
 
+    @Test fun `Remove on a merged card takes every copy: a saved one goes, a synced one is hidden`() = runTest {
+        // Red Medicine synced from YouTube Music (2) and saved again from its Qobuz page (1): one card.
+        val merged = redMedicine.copy(copyIds = listOf(2L, 1L))
+        val music = repo(albums = listOf(merged)).stub {
+            on { observePlaylist(1L) } doReturn flowOf(albumRow)
+            on { observePlaylist(2L) } doReturn flowOf(syncedAlbumRow)
+        }
+        val vm = buildVm(music)
+
+        vm.removeAlbum(vm.uiState.first { !it.isLoading }.albums.single())
+        advanceUntilIdle()
+
+        verify(music).removePlaylist(albumRow)
+        // Deleting the synced copy would bring it back on the next sync: it is hidden instead.
+        verify(music).hidePlaylist(2L)
+        verify(music, never()).removePlaylist(syncedAlbumRow)
+        verify(music, never()).hidePlaylist(1L)
+    }
+
     @Test fun `the empty Albums tab says how to fill it`() {
         assertThat(albumsEmptyMessage(downloadMode = false)).contains("Tap Save on any album")
         assertThat(albumsEmptyMessage(downloadMode = true)).contains("once every song is on your phone")
@@ -102,11 +120,10 @@ class LibraryViewModelAlbumsTest {
         dateAdded: Long = id,
         trackCount: Int = 12,
         downloaded: Int = 0,
-        downloading: Int = 0,
     ) = SavedAlbum(
         playlistId = id, title = title, artist = artist, artUrl = null, source = MusicSource.BOTH,
         sourceId = "album:qobuz:$id", dateAdded = dateAdded, trackCount = trackCount,
-        downloadedCount = downloaded, downloadingCount = downloading,
+        downloadedCount = downloaded,
     )
 
     private fun repo(albums: List<SavedAlbum>, playlists: List<Playlist> = emptyList()): MusicRepository = mock {

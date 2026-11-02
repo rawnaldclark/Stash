@@ -2548,16 +2548,6 @@ private fun AlbumsGrid(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    // Download mode, still downloading: how far it is (it plays what's on the phone).
-                    album.onPhoneCount?.let { onPhone ->
-                        Text(
-                            text = albumOnPhoneLine(onPhone, album.trackCount),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
             }
         }
