@@ -7,8 +7,8 @@
  * - **Hello first.** A browser's WebSocket can't carry `Authorization`, so every socket starts with
  *   `{ "t": "hello", "device", "token" }` and is checked exactly like a REST call (Space.admit: the token in constant time, a
  *   browser only through the player, the 90-day idle rule, the per-device read count). A socket that hasn't said hello wakes the
- *   object at most once: its first frame must be a well-formed hello within 10 s, or it is closed (`4401`). A space that doesn't
- *   exist answers the upgrade and closes at once (`4401`, as a revoked device hears). A second socket of the same device replaces
+ *   object at most once: its first frame must be a well-formed hello within 10 s, or it is closed (`4401`). On a space that
+ *   doesn't exist, the first frame closes it `4401` (as a revoked device's hello is answered). A second socket of the same device replaces
  *   the first (`4409 replaced`, which clients don't reconnect after) and the others hear the device (re)join.
  * - **Frames.** `state` (a browser says what it plays) goes to the phones; `cmd` (a phone's remote command) goes to the one
  *   browser it names, or comes back as `{ t: "error", code: "offline" }` when it has no socket. Nothing is stored. Members hear
@@ -99,14 +99,10 @@ export class Live {
     accept(request) {
         if ((request.headers.get("Upgrade") ?? "").toLowerCase() !== "websocket") return new Response(null, { status: 426 });
         const player = request.headers.get(VIA_PLAYER) === "1";
-        if (!this.space.meta()) {
-            // No such space: answer as a revoked device hears it (no probing which ids exist), and keep nothing open.
-            const [client, server] = this.pair();
-            this.ctx.acceptWebSocket(server);
-            server.serializeAttachment({ device: null, type: null, at: this.now(), player, done: true });
-            shut(server, CLOSE.revoked, "revoked");
-            return this.upgraded(client);
-        }
+        // No such space: the socket is accepted as one already overdue for its hello, so its first frame closes it `4401`, as a
+        // revoked device's hello is answered (no probing which ids exist), and the next upgrade's sweep closes it if it never
+        // speaks. (Closing it here, before the 101 is out, reaches the client but the runtime never finishes the close.)
+        const ghost = !this.space.meta();
         this.sweep();
         const open = this.open();
         if (open.length >= LIVE.maxSockets) {
@@ -118,7 +114,7 @@ export class Live {
         }
         const [client, server] = this.pair();
         this.ctx.acceptWebSocket(server);
-        server.serializeAttachment({ device: null, type: null, at: this.now(), player });
+        server.serializeAttachment(ghost ? { device: null, type: null, at: 0, player, ghost: true } : { device: null, type: null, at: this.now(), player });
         return this.upgraded(client);
     }
 
@@ -162,6 +158,7 @@ export class Live {
      * anything else (junk, a state, a second frame before the answer, a late hello) closes it as revoked.
      */
     unbound(ws, a, data) {
+        if (a.ghost) return this.close(ws, CLOSE.revoked, "revoked");
         const late = this.now() - (a.at ?? 0) > LIVE.helloMs;
         const size = typeof data === "string" ? data.length : data.byteLength;
         const msg = !late && !a.hello && size <= LIVE.maxFrame ? parseFrame(data) : null;

@@ -61,17 +61,23 @@ test("hello: a member's token binds the socket; a wrong token, a stranger, anoth
     assert.equal(ok.closed, false, "the phone's own socket is untouched");
 });
 
-test("a space that doesn't exist: the upgrade is answered and the socket closed at once (4401), keeping nothing open", async () => {
+test("a space that doesn't exist: its first frame closes it 4401, as a revoked device's hello; one that never speaks goes at the next upgrade", async () => {
     const w = world();
     const made = newSpaceId();
     const res = await w.fetch(req("GET", `/v1/spaces/${made}/ws`, upgrade));
-    assert.equal(res.status, 101, "answered like a revoked device, not a 404 (no probing which ids exist)");
+    assert.equal(res.status, 101, "answered like a space whose device was revoked, not a 404 (no probing which ids exist)");
     const ws = res.webSocket.server;
+    const phone = await makeDevice("p");
+    await frame(w, made, ws, { t: "hello", device: phone.id, token: phone.token });
     assert.equal(ws.closeCode, CLOSE.revoked);
-    // Whatever it sends before the close handshake wakes nothing up: no answer, no storage.
-    await frame(w, made, ws, { t: "hello", device: "d_abcdefghijkl", token: "x".repeat(43) });
     assert.equal(ws.sent.length, 0);
-    assert.equal(w.env.SPACES.ctxs.get(made).sql.exec("SELECT name FROM sqlite_master WHERE type = 'table'").toArray().length, 0);
+    await frame(w, made, ws, { t: "hello", device: phone.id, token: phone.token });
+    assert.equal(ws.sent.length, 0, "its later frames wake nothing");
+    const silent = (await w.fetch(req("GET", `/v1/spaces/${made}/ws`, upgrade))).webSocket.server;
+    assert.equal(silent.closed, false);
+    await w.fetch(req("GET", `/v1/spaces/${made}/ws`, upgrade)); // any upgrade sweeps
+    assert.equal(silent.closeCode, CLOSE.idle);
+    assert.equal(w.env.SPACES.ctxs.get(made).sql.exec("SELECT name FROM sqlite_master WHERE type = 'table'").toArray().length, 0, "nothing stored");
 });
 
 test("before hello, one frame decides: junk, a state, a malformed hello, a late hello or a second frame close it (4401)", async () => {
