@@ -1719,7 +1719,7 @@ private fun PlaylistsGrid(
 
             // On a mix the Home pin is its Favorite, so it says so, as on Home.
             val onHome = playlist.pinnedToHomeAt != null
-            val isMix = playlist.type == PlaylistType.DAILY_MIX || playlist.type == PlaylistType.STASH_MIX
+            val isMix = playlist.isMix()
             BottomSheetActionRow(
                 icon = when {
                     isMix && onHome -> Icons.Filled.Favorite

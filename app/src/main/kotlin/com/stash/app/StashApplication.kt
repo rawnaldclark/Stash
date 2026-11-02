@@ -1144,15 +1144,16 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * 2026-11-02, once per install: mixes pinned before Favorite existed lose the
-     * pin, and so the heart they never got from the user ([MixPinCleanup]).
+     * 2026-11-02, once per install (and again after a restored backup re-arms it):
+     * mixes pinned before Favorite existed lose the pin, and so the heart they never
+     * got from the user ([MixPinCleanup]).
      */
     private suspend fun maybeClearPreFavoriteMixPins() {
-        val result = MixPinCleanup(playlistDao, getSharedPreferences("stash_migrations", MODE_PRIVATE)).runOnce()
-            ?: return
+        val result = MixPinCleanup.forContext(this, playlistDao).runOnce() ?: return
         Log.i(
             "StashMigration",
-            "maybeClearPreFavoriteMixPins: cleared ${result.cleared} mix pin(s) from before Favorite, ${result.kept} left",
+            "maybeClearPreFavoriteMixPins: cleared ${result.cleared} mix pin(s) " +
+                "from before Favorite, ${result.kept} left",
         )
     }
 

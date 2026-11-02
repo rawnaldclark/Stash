@@ -1,5 +1,6 @@
 package com.stash.core.data.db
 
+import android.content.Context
 import android.content.SharedPreferences
 import com.stash.core.data.db.dao.PlaylistDao
 
@@ -13,7 +14,10 @@ import com.stash.core.data.db.dao.PlaylistDao
  * favorite the user chose, so its pin goes. Later pins stay: they may be real favorites.
  *
  * Runs once per install: a done flag in [prefs]. The update is idempotent, so a run cut
- * short before the flag is written does no harm when it runs again.
+ * short before the flag is written does no harm when it runs again. A restored or merged
+ * backup can bring those pins back while the flag stays set (a restore leaves
+ * SharedPreferences alone), so [DatabaseBackupManager] calls [rearm] next to its other
+ * re-arms.
  */
 class MixPinCleanup(
     private val playlistDao: PlaylistDao,
@@ -32,6 +36,14 @@ class MixPinCleanup(
         return Result(cleared = cleared, kept = kept)
     }
 
+    /**
+     * Asks for another run: a restored or merged backup may hold pre-Favorite mix pins.
+     * Written to disk at once, since a restore restarts the app straight after.
+     */
+    fun rearm() {
+        prefs.edit().remove(DONE_KEY).commit()
+    }
+
     companion object {
         /**
          * When v0.9.119, the first release with Favorite, was published on GitHub:
@@ -39,7 +51,16 @@ class MixPinCleanup(
          */
         const val FAVORITE_RELEASED_AT_MS = 1_792_756_313_000L
 
-        /** The done flag, in the app's `stash_migrations` preferences. */
+        /** The app's one-time-migration flags file, where the done flag lives. */
+        const val PREFS_NAME = "stash_migrations"
+
+        /** The done flag, in [PREFS_NAME]. */
         const val DONE_KEY = "pre_favorite_mix_pins_cleared"
+
+        /** Over the app's flags file, for code that has a Context but no injection. */
+        fun forContext(context: Context, playlistDao: PlaylistDao): MixPinCleanup = MixPinCleanup(
+            playlistDao,
+            context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+        )
     }
 }

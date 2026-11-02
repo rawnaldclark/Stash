@@ -97,6 +97,17 @@ class MixPinCleanupTest {
         assertEquals(CUTOFF - 1, pinOf(restored))
     }
 
+    @Test fun `a re-arm runs it again`() = runTest {
+        assertEquals(MixPinCleanup.Result(cleared = 0, kept = 0), cleanup().runOnce())
+        // A restored backup brings an old pin back, and the restore re-arms the cleanup.
+        val restored = insert("Daily Mix 4", PlaylistType.DAILY_MIX, pinnedAt = CUTOFF - 1)
+        cleanup().rearm()
+
+        assertEquals(MixPinCleanup.Result(cleared = 1, kept = 0), cleanup().runOnce())
+        assertNull(pinOf(restored))
+        assertNull(cleanup().runOnce())
+    }
+
     @Test fun `the update itself is idempotent`() = runTest {
         val old = insert("Daily Mix 1", PlaylistType.DAILY_MIX, pinnedAt = CUTOFF - 1)
         val kept = insert("Daily Mix 2", PlaylistType.DAILY_MIX, pinnedAt = CUTOFF + 1)

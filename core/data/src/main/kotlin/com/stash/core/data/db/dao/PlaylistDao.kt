@@ -810,7 +810,12 @@ interface PlaylistDao {
     suspend fun clearMixPinsBefore(before: Long): Int
 
     /** How many mixes are pinned (favorited) now: the cleanup's log line. */
-    @Query("SELECT COUNT(*) FROM playlists WHERE type IN ('DAILY_MIX', 'STASH_MIX') AND pinned_to_home_at IS NOT NULL")
+    @Query(
+        """
+        SELECT COUNT(*) FROM playlists
+        WHERE type IN ('DAILY_MIX', 'STASH_MIX') AND pinned_to_home_at IS NOT NULL
+        """
+    )
     suspend fun countPinnedMixes(): Int
 
     /** Toggle whether a playlist is hidden from the Home rails. */

@@ -870,7 +870,7 @@ fun HomeScreen(
                     icon = Icons.Filled.RemoveCircleOutline,
                     label = "Hide from Home",
                     onClick = {
-                        viewModel.setHideFromHome(id, true)
+                        viewModel.hideFromHome(id)
                         actionSheetMixId = null
                     },
                 )

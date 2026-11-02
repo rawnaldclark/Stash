@@ -778,25 +778,17 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Hide (or unhide) a mix's playlist from the Home rails. Hiding drops its
-     * favorite (the pin); showing it again leaves the pin as it is, since only
-     * Favorite sets that.
-     */
-    fun setHideFromHome(playlistId: Long, hidden: Boolean) {
+    /** Hide a mix's playlist from the Home rails; it drops its favorite (the pin) too. */
+    fun hideFromHome(playlistId: Long) {
         viewModelScope.launch {
-            if (hidden) {
-                playlistDao.setHomeVisibility(playlistId, hidden = true, pinnedAt = null)
-            } else {
-                playlistDao.setHideFromHome(playlistId, hidden = false)
-            }
+            playlistDao.setHomeVisibility(playlistId, hidden = true, pinnedAt = null)
         }
     }
 
     /**
      * Pin/unpin a playlist on the "Your playlists" rail (Home-side unpin
      * sheet). Goes through the repository — deliberately unlike
-     * [setHideFromHome]'s DAO-direct write above — because Library's sheet
+     * [hideFromHome]'s DAO-direct write above — because Library's sheet
      * shares the same repository write path (it can't reach the DAO).
      */
     fun setPinnedToHome(playlistId: Long, pinned: Boolean) {
