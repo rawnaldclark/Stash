@@ -223,7 +223,7 @@ fun SyncScreen(
                         // Each cover opens its mix; the fallback art (no mixes yet) is pictures only.
                         onCoverTap = if (fan.isEmpty()) null else { i -> onOpenPlaylist(fan[i].id) },
                         summary = librarySummary(uiState, rows),
-                        syncedAgo = uiState.lastSyncRelativeTime,
+                        syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         newest = newest,
                         onPlay = { row -> viewModel.onPlayPlaylist(row.id, row.name) },
                         onSync = viewModel::onSyncNow,
@@ -233,7 +233,7 @@ fun SyncScreen(
                     OnThisPhoneHero(
                         saved = savedRows,
                         songsOnPhone = uiState.syncStatus.totalTracks,
-                        syncedAgo = uiState.lastSyncRelativeTime,
+                        syncedAgo = rememberSyncedAgo(uiState.lastSyncFinishedAt),
                         onChoose = { firstSource?.let(onManageSource) },
                         onSync = viewModel::onSyncNow,
                         onOpenPlaylist = onOpenPlaylist,
@@ -1125,10 +1125,8 @@ internal fun UndoSyncCard(
     modifier: Modifier = Modifier,
 ) {
     val extendedColors = StashTheme.extendedColors
-    val mins = remember(capturedAtEpochMs) {
-        val ageMs = (System.currentTimeMillis() - capturedAtEpochMs).coerceAtLeast(0)
-        ageMs / 60_000L
-    }
+    // Read again each minute while on screen, so the age doesn't stay as it was first drawn.
+    val mins = (rememberMinuteClock(capturedAtEpochMs) - capturedAtEpochMs).coerceAtLeast(0) / 60_000L
     val when_ = when {
         mins < 1 -> stringResource(R.string.sync_time_just_now)
         mins < 60 -> stringResource(R.string.sync_time_mins_ago, mins.toInt())

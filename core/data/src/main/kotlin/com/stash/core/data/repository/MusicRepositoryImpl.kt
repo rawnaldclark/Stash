@@ -1175,6 +1175,14 @@ class MusicRepositoryImpl @Inject constructor(
         playlistDao.setPinnedToHome(playlistId, pinnedAt)
     }
 
+    override suspend fun setMixFavorite(playlistId: Long, favorite: Boolean) {
+        playlistDao.setHomeVisibility(
+            playlistId,
+            hidden = false,
+            pinnedAt = if (favorite) System.currentTimeMillis() else null,
+        )
+    }
+
     // ── Custom playlist management ──────────────────────────────────────
 
     override suspend fun createPlaylist(name: String): Long {

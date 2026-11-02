@@ -38,7 +38,6 @@ import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.components.RecentSyncsCard
 import com.stash.feature.sync.components.SourcePreferencesCard
-import com.stash.feature.sync.components.formatRelativeTime
 
 /**
  * Everything about syncing that isn't needed every day, one row away from the
@@ -182,7 +181,13 @@ fun SyncHistoryScreen(
             if (uiState.recentSyncs.isNotEmpty()) {
                 item(key = "recent_label") { SyncSectionLabel(stringResource(R.string.sync_section_recent_syncs)) }
                 item(key = "recent") {
-                    RecentSyncsCard(uiState.recentSyncs.map { it.toRecentSyncRow(formatRelativeTime(it.startedAt)) })
+                    // One clock for the list, ticking on the newest run's minutes: the older
+                    // rows read in hours or days, where a minute's lag doesn't show.
+                    val now = rememberMinuteClock(uiState.recentSyncs.firstOrNull()?.syncedAt())
+                    val justNow = stringResource(R.string.sync_time_just_now)
+                    RecentSyncsCard(
+                        uiState.recentSyncs.map { it.toRecentSyncRow(syncedAgoText(it.syncedAt(), now, justNow)) },
+                    )
                 }
             }
 

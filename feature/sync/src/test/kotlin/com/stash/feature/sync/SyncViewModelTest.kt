@@ -125,6 +125,49 @@ class SyncViewModelTest {
         Dispatchers.resetMain()
     }
 
+    // -- "synced N ago" counts from when the last sync really finished (2026-11-02) --------
+
+    private fun lastSyncAt(row: com.stash.core.data.db.entity.SyncHistoryEntity): Long? {
+        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(listOf(row))
+        return newVm().uiState.value.lastSyncFinishedAt
+    }
+
+    private val threeAm = java.time.Instant.parse("2026-11-02T03:00:00Z")
+
+    @Test
+    fun `a finished sync counts from its finish`() {
+        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 1, startedAt = threeAm, completedAt = threeAm.plusSeconds(20 * 60),
+            status = com.stash.core.model.SyncState.COMPLETED,
+        )
+        assertEquals(threeAm.plusSeconds(20 * 60).toEpochMilli(), lastSyncAt(row))
+    }
+
+    /**
+     * Auto-sync starts at 03:00 and the phone reboots part-way. The 09:00 launch closes the row
+     * as SyncHistoryDao.resetStaleSyncs does: FAILED, "Interrupted", ended at 09:00. Counting
+     * from that end would read "synced just now" at 09:00; it counts from 03:00.
+     */
+    @Test
+    fun `a sync the next launch closed as interrupted counts from its start`() {
+        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 2, startedAt = threeAm, completedAt = threeAm.plusSeconds(6 * 3600),
+            status = com.stash.core.model.SyncState.FAILED,
+            errorMessage = com.stash.core.data.sync.INTERRUPTED_ERROR_MARKER,
+        )
+        assertEquals(threeAm.toEpochMilli(), lastSyncAt(row))
+    }
+
+    @Test
+    fun `a sync with no end yet counts from its start, and none reads nothing`() {
+        val running = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 3, startedAt = threeAm, status = com.stash.core.model.SyncState.DOWNLOADING,
+        )
+        assertEquals(threeAm.toEpochMilli(), lastSyncAt(running))
+        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(emptyList())
+        assertNull(newVm().uiState.value.lastSyncFinishedAt)
+    }
+
     @Test fun `requesting Spotify refresh from accumulate opens the dialog without changing mode`() = runTest {
         val vm = newVm()
         vm.onRequestSpotifyRefresh()
@@ -174,34 +217,6 @@ class SyncViewModelTest {
 
         vm.onRequestSpotifyRefresh()
         assertNull(vm.uiState.value.pendingRefreshSource)
-    }
-
-    // -- "Shown on Home" pins the mix (2026-09-07) ---------------------------------
-
-    @Test
-    fun `showing a mix on Home pins it`() {
-        newVm().onToggleHideFromHome(7L, hidden = false)
-        coVerify { playlistDao.setHomeVisibility(7L, false, match { it != null }) }
-    }
-
-    @Test
-    fun `hiding a mix from Home unpins it`() {
-        newVm().onToggleHideFromHome(7L, hidden = true)
-        coVerify { playlistDao.setHomeVisibility(7L, true, null) }
-    }
-
-    // -- The Sync tab's switch decides Home (2026-09-07): sync on pins, sync off unpins --
-
-    @Test
-    fun `syncing a playlist pins it to Home`() {
-        newVm().onTogglePlaylistSync(7L, enabled = true)
-        coVerify { playlistDao.setSyncEnabledAndPin(7L, true, match { it > 0L }) }
-    }
-
-    @Test
-    fun `turning sync off unpins it`() {
-        newVm().onTogglePlaylistSync(7L, enabled = false)
-        coVerify { playlistDao.setSyncEnabledAndPin(7L, false, any()) }
     }
 
     // -- Auto-sync schedule (2026-09-28): Stop keeps it, Auto-sync off ends it ---------
@@ -487,5 +502,26 @@ class SyncViewModelTest {
 
         coVerify { playlistDao.setSyncEnabledAndPin(42L, true, any()) }
         coVerify { musicRepository.setPlaylistDownload(42L, true) }
+    }
+
+    /**
+     * Save never writes a Home pin of its own, on or off, in either mode: on a mix the pin
+     * is its Favorite (2026-11-02). The one write that may pin, setSyncEnabledAndPin, leaves
+     * mixes alone (PlaylistDaoHomeVisibilityTest).
+     */
+    @Test
+    fun `Save on and off writes no Home pin of its own`() = runTest {
+        for (streamOnly in listOf(true, false)) {
+            coEvery { streamingPreference.current() } returns streamOnly
+            val vm = newVm()
+            vm.onSavePlaylist(42L, true)
+            vm.onSavePlaylist(42L, false)
+            advanceUntilIdle()
+        }
+
+        coVerify(exactly = 0) { playlistDao.setHomeVisibility(any(), any(), any()) }
+        coVerify(exactly = 0) { playlistDao.setPinnedToHome(any(), any()) }
+        coVerify(exactly = 0) { musicRepository.setPlaylistPinnedToHome(any(), any()) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), false, any()) }
     }
 }

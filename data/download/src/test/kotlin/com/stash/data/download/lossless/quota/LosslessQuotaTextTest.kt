@@ -8,13 +8,13 @@ class LosslessQuotaTextTest {
 
     @Test fun `running low shows the counter and the supporter option`() {
         assertThat(LosslessQuotaText.notice(LosslessQuotaNotice.RunningLow(50, 500, 0L), "8:00 PM"))
-            .isEqualTo("Tidal & Qobuz today: 450 / 500. Unlimited for supporters: any amount on Ko-fi")
+            .isEqualTo("Tidal & Qobuz today: 450 / 500. Unlimited for supporters: \$5 or more on Ko-fi")
     }
 
     @Test fun `the limit shows the counter, the reset and the supporter option`() {
         assertThat(LosslessQuotaText.notice(LosslessQuotaNotice.Spent(500, 0L), "8:00 PM")).isEqualTo(
             "Tidal & Qobuz today: 500 / 500 — lower quality until 8:00 PM. " +
-                "Unlimited for supporters: any amount on Ko-fi",
+                "Unlimited for supporters: \$5 or more on Ko-fi",
         )
     }
 

@@ -71,6 +71,9 @@ private fun Track.matchesQuery(query: String): Boolean =
         artist.lowercase().contains(query) ||
         album.lowercase().contains(query)
 
+/** A service mix or a Stash mix: on these the Home pin is the Favorite. */
+internal fun Playlist.isMix(): Boolean = type == PlaylistType.DAILY_MIX || type == PlaylistType.STASH_MIX
+
 /**
  * Collapses album rows that describe the SAME album but arrived as separate
  * DAO groups. `getAllAlbums` groups by `(album, album_artist)`, so an album
@@ -1022,13 +1025,20 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Pin/unpin [playlist] on Home's "Your playlists" rail. */
+    /**
+     * Pin/unpin [playlist] on Home's "Your playlists" rail. On a mix the pin is its Favorite,
+     * which also shows a hidden mix again, exactly as Home's own Favorite does.
+     */
     fun togglePlaylistOnHome(playlist: Playlist) {
         viewModelScope.launch {
-            musicRepository.setPlaylistPinnedToHome(
-                playlist.id,
-                if (playlist.pinnedToHomeAt == null) System.currentTimeMillis() else null,
-            )
+            if (playlist.isMix()) {
+                musicRepository.setMixFavorite(playlist.id, favorite = playlist.pinnedToHomeAt == null)
+            } else {
+                musicRepository.setPlaylistPinnedToHome(
+                    playlist.id,
+                    if (playlist.pinnedToHomeAt == null) System.currentTimeMillis() else null,
+                )
+            }
         }
     }
 

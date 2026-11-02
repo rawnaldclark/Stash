@@ -11,6 +11,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import coil3.SingletonImageLoader
 import android.util.Log
+import com.stash.core.data.db.MixPinCleanup
 import com.stash.core.data.db.dao.ArtistProfileCacheDao
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -671,10 +672,10 @@ class StashApplication : Application(), Configuration.Provider {
         // periodic check still runs, when Android lets it.
         if (!saverAtStart) UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
-        // The pin backfill reads sync_enabled as intent. Stale mix flags from
-        // older releases are already gone: MIGRATION_50_51 clears them when the
-        // database opens, before this runs.
+        // The pin backfill reads sync_enabled as intent. It leaves mixes alone,
+        // so it can't race the mix-pin cleanup below.
         applicationScope.launch { maybePinSyncedPlaylists() }
+        applicationScope.launch { maybeClearPreFavoriteMixPins() }
         applicationScope.launch { maybeHideEmptyYouTubePlaylists() }
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
@@ -1125,24 +1126,12 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * Clears stale download consent from algorithmic mixes on every cold start.
-     *
-     * Older releases auto-enabled YouTube playlists and newly discovered
-     * online mixes. Mix visibility now has its own `hide_from_home` setting,
-     * while every playlist starts sync-disabled, so retaining those legacy
-     * flags makes mixes appear selected without the user choosing them.
-     * Custom and liked playlists are deliberately untouched because their
-     * enabled state may reflect an explicit user choice. This is intentionally
-     * idempotent rather than preference-gated: restoring an older database can
-     * reintroduce stale mix flags while SharedPreferences survives the restore.
-     */
-    /**
      * v0.9.104: the Sync tab's switch decides Home — sync on pins the playlist
      * to the Your playlists rail. Playlists synced before that rule existed
      * were never pinned, so they'd need one off-and-on flip each; this pins
      * them once per install instead (Liked Songs excepted, it has its own
-     * card). A sync switch that is on is always the user's own choice, unlike
-     * the mix switches, so this backfill carries no risk of pinning by default.
+     * card). Mixes are left out: on a mix the pin is its Favorite, and only
+     * the user sets that.
      */
     private suspend fun maybePinSyncedPlaylists() {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
@@ -1152,6 +1141,20 @@ class StashApplication : Application(), Configuration.Provider {
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
         }
+    }
+
+    /**
+     * 2026-11-02, once per install (and again after a restored backup re-arms it):
+     * mixes pinned before Favorite existed lose the pin, and so the heart they never
+     * got from the user ([MixPinCleanup]).
+     */
+    private suspend fun maybeClearPreFavoriteMixPins() {
+        val result = MixPinCleanup.forContext(this, playlistDao).runOnce() ?: return
+        Log.i(
+            "StashMigration",
+            "maybeClearPreFavoriteMixPins: cleared ${result.cleared} mix pin(s) " +
+                "from before Favorite, ${result.kept} left",
+        )
     }
 
     /**

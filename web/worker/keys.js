@@ -37,6 +37,11 @@ export const KEYS = {
     /** One goal entry: goal:<YYYY-MM>:<kofi|manual>:<id>, metadata { cents, source, at, by?, orig? }. */
     goalEntry: (month, kind, id) => `goal:${month}:${kind}:${id}`,
     goalMonth: (month) => `goal:${month}:`,
+    /**
+     * The tip jar's Ko-fi payments for one email still under the $5 entry: kofipay:<h>:<Ko-fi transaction id>, { cents, at }
+     * (infra/tipjar-worker/src/access.js). The tip jar writes them; this Worker only deletes them, on Remove access.
+     */
+    kofiPayPrefix: (h) => `kofipay:${h}:`,
     /** The tip jar's hash of HASHCHECK_EMAIL, to spot an EMAIL_PEPPER mismatch between the two Workers. */
     hashCheck: "meta:hashcheck",
 };

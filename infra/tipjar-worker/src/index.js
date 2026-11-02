@@ -21,8 +21,9 @@
  * two donations at once can't lose either donor (src/supporters.js).
  *
  * Since 2026-10 a Donation or Subscription also gives the donor early access
- * to stashfm.app and counts toward the site's monthly goal (src/access.js,
- * in the separate ACCESS_KV namespace). The webhook URL and the GET JSON are
+ * to stashfm.app (since 2026-11-02 once the email's payments add up to $5)
+ * and counts toward the site's monthly goal (src/access.js, in the separate
+ * ACCESS_KV namespace). The webhook URL and the GET JSON are
  * unchanged; the webhook answers 500 when that early-access step fails, so
  * Ko-fi retries it, and a retry never lists the same supporter twice.
  * A donor who wasn't on the early-access list yet also gets the welcome email,

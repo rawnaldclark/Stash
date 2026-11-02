@@ -361,6 +361,12 @@ interface MusicRepository {
     /** Pin/unpin a playlist on Home's "Your playlists" rail. Null clears the pin. */
     suspend fun setPlaylistPinnedToHome(playlistId: Long, pinnedAt: Long?)
 
+    /**
+     * A mix's Favorite (its Home pin), as Home's long-press sets it: on stamps the pin now,
+     * off clears it, and either way the mix shows on Home again if it was hidden.
+     */
+    suspend fun setMixFavorite(playlistId: Long, favorite: Boolean)
+
     // ── Cleanup ──────────────────────────────────────────────────────────
 
     /**

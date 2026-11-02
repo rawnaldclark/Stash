@@ -1,6 +1,5 @@
 package com.stash.feature.sync
 
-import android.text.format.DateUtils
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
@@ -177,8 +176,12 @@ data class SyncUiState(
     val flaggedCount: Int = 0,
 
     // -- Hero card: last-sync metadata ----------------------------------------
-    /** Relative time string for the most recent sync, e.g. "2 hours ago". Empty if never synced. */
-    val lastSyncRelativeTime: String = "",
+    /**
+     * When the most recent sync finished ([syncedAt]: its start while it has no real end), or
+     * null if never synced. The screen words it ("synced 3 minutes ago") as it draws, against a clock that
+     * ticks while the tab is on screen: [rememberSyncedAgo].
+     */
+    val lastSyncFinishedAt: Long? = null,
     /** New tracks the most recent sync added, or null if never synced. */
     val lastSyncTrackCount: Int? = null,
     /** Short health label: "✓ healthy", "! partial", "× failed", or "". */
@@ -633,7 +636,9 @@ class SyncViewModel @Inject constructor(
      * Download switch does the same thing ([MusicRepository.setPlaylistDownload],
      * #474), so the two always agree. In Download mode a saved playlist is also
      * switched on for sync, as the old switch was, so later syncs download what
-     * it gains and it stays on Home; off there turns sync off too.
+     * it gains and it stays on Home; off there turns sync off too. A mix is
+     * never pinned by this: on a mix the pin is its Favorite (see
+     * [com.stash.core.data.db.dao.PlaylistDao.setSyncEnabledAndPin]).
      */
     fun onSavePlaylist(playlistId: Long, save: Boolean) {
         viewModelScope.launch {
@@ -657,32 +662,6 @@ class SyncViewModel @Inject constructor(
      */
     fun onStopSync() {
         viewModelScope.launch { syncScheduler.cancelSync() }
-    }
-
-    /** Toggle sync_enabled for a specific Spotify playlist. */
-    fun onTogglePlaylistSync(playlistId: Long, enabled: Boolean) {
-        viewModelScope.launch {
-            // The switch decides Home too: sync on pins the playlist to the Your
-            // playlists rail, sync off unpins it (the user's rule, 2026-09-07).
-            playlistDao.setSyncEnabledAndPin(playlistId, enabled, System.currentTimeMillis())
-            // v0.9.21: when DISABLING, sweep pending download_queue rows
-            // whose tracks no longer belong to any sync-enabled playlist.
-            // Without this, deselecting a playlist leaves its in-flight
-            // downloads draining — confusing because the user expects
-            // "deselect" to actually stop downloads. The query is
-            // DELETE-with-NOT-IN so tracks shared with another enabled
-            // playlist (e.g. same track in Liked Songs on both services)
-            // stay queued.
-            if (!enabled) {
-                val cancelled = downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist()
-                if (cancelled > 0) {
-                    android.util.Log.i(
-                        "SyncToggle",
-                        "cancelled $cancelled orphan PENDING download(s) after disable",
-                    )
-                }
-            }
-        }
     }
 
     /**
@@ -720,20 +699,6 @@ class SyncViewModel @Inject constructor(
                 musicRepository.setPlaylistDownload(playlistId, false)
             }
             playlistDao.setUserHidden(playlistId, !inLibrary)
-        }
-    }
-
-    /**
-     * Toggle hide_from_home for a specific playlist. Unlike [onTogglePlaylistSync]
-     * this does NOT sweep downloads — hiding a mix from Home has nothing to do
-     * with what's queued or synced.
-     */
-    fun onToggleHideFromHome(playlistId: Long, hidden: Boolean) {
-        // Showing pins the mix so it leads its Home rail; hiding unpins it. The
-        // rail shows only its 12 freshest mixes otherwise, and "Shown on Home"
-        // was a promise it kept for none of the others (Cup Noodle Radio, 2026-09-07).
-        viewModelScope.launch {
-            playlistDao.setHomeVisibility(playlistId, hidden, if (hidden) null else System.currentTimeMillis())
         }
     }
 
@@ -964,13 +929,6 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncHistoryDao.getRecentSyncs(limit = 1).collect { entities ->
                 val latest = entities.firstOrNull()?.toInfo()
-                val relativeTime = latest?.let {
-                    DateUtils.getRelativeTimeSpanString(
-                        it.startedAt,
-                        System.currentTimeMillis(),
-                        DateUtils.MINUTE_IN_MILLIS,
-                    ).toString()
-                } ?: ""
                 val healthLabel = when (latest?.displayStatus) {
                     null -> ""
                     SyncDisplayStatus.Success -> "✓"
@@ -994,7 +952,7 @@ class SyncViewModel @Inject constructor(
                 }
                 _uiState.update { state ->
                     state.copy(
-                        lastSyncRelativeTime = relativeTime,
+                        lastSyncFinishedAt = latest?.syncedAt(),
                         // What the sync FOUND, not what it downloaded. In Online
                         // mode nothing downloads, so tracksDownloaded is always 0
                         // and the headline read "0 tracks" after a run that added

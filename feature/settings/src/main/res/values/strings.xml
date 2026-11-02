@@ -490,7 +490,7 @@
     <string name="settings_supporter_remove_from_device">Remove from this device</string>
     <string name="settings_supporter_offer">Unlimited Tidal &amp; Qobuz for supporters</string>
     <string name="settings_supporter_sheet_title">Unlimited Tidal &amp; Qobuz</string>
-    <string name="settings_supporter_sheet_desc">Any amount on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
+    <string name="settings_supporter_sheet_desc">$5 or more on Ko-fi unlocks unlimited Tidal and Qobuz, FLAC and AAC. Enter the email you used on Ko-fi and we\'ll send you a code.</string>
     <string name="settings_supporter_kofi_email_label">Ko-fi email</string>
     <string name="settings_supporter_email_code_button">Email me a code</string>
     <string name="settings_supporter_code_sent_desc">If %1$s is on our Ko-fi list, a code is on its way. It can take a minute.</string>
@@ -964,7 +964,7 @@
     <string name="settings_your_stash_section_devices">Devices</string>
     <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
     <string name="settings_your_stash_section_supporter">Supporter</string>
-    <string name="settings_your_stash_supporter_offer_subtitle">Gave on Ko-fi? Unlock it with your Ko-fi email.</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Gave $5 or more on Ko-fi? Unlock it with your Ko-fi email.</string>
     <string name="settings_your_stash_supporter_code_here">Your supporter code is on this phone</string>
     <string name="settings_your_stash_section_cloud">Cloud</string>
     <string name="settings_your_stash_cloud_connect_title">Connect your cloud storage</string>
