@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { buildBulk, findColumns, hashEmail, parseCsv } from "../scripts/import-kofi-csv.mjs";
+import { buildBulk, ENTRY_SINCE, findColumns, hashEmail, parseCsv } from "../scripts/import-kofi-csv.mjs";
 
 const CSV = [
     "DateTime (UTC),From,Message,Item,Received,Given,Currency,TransactionType,TransactionId,Email",
@@ -32,7 +32,7 @@ test("findColumns matches Ko-fi's headers loosely", () => {
 
 test("buildBulk: one entry per supporter (donations and subscriptions only), first and last dates, plus the hash check", () => {
     const { entries, counts } = buildBulk(parseCsv(CSV));
-    assert.deepEqual(counts, { rows: 5, used: 3, noEmail: 1, otherType: 1, supporters: 2 });
+    assert.deepEqual(counts, { rows: 5, used: 3, noEmail: 1, otherType: 1, afterEntry: 0, supporters: 2 });
     const byKey = new Map(entries.map((e) => [e.key, e.value]));
     const cedric = JSON.parse(byKey.get(`access:${hashEmail("cedric@example.com")}`));
     assert.equal(cedric.source, "kofi");
@@ -100,4 +100,27 @@ test("the CLI writes the bulk file and never prints an email", () => {
     const written = readFileSync(out, "utf8");
     assert.ok(!/example\.com/i.test(written), "the bulk file holds an email");
     assert.equal(JSON.parse(written).length, 3);
+});
+
+test("only rows from before the $5 entry (2026-11-02) are imported: later or undated rows are the webhook's", () => {
+    assert.equal(ENTRY_SINCE, "2026-11-02T00:00:00.000Z");
+    const csv = [
+        "DateTime (UTC),From,Received,Currency,TransactionType,Email",
+        "2026-11-01 23:59,Old,1.00,USD,Donation,old@example.com",
+        "2026-11-02 00:00,New,3.00,USD,Donation,new@example.com",
+        "2026-12-01 10:00,Later,1.00,USD,Donation,old@example.com",
+        "not a date,Odd,3.00,USD,Donation,odd@example.com",
+    ].join("\n");
+    const { entries, counts } = buildBulk(parseCsv(csv));
+    assert.deepEqual(counts, { rows: 4, used: 1, noEmail: 0, otherType: 0, afterEntry: 3, supporters: 1 });
+    const keys = entries.map((e) => e.key);
+    assert.ok(keys.includes(`access:${hashEmail("old@example.com")}`));
+    assert.ok(!keys.includes(`access:${hashEmail("new@example.com")}`), "a $3 donor after the entry isn't let in by the import");
+    assert.ok(!keys.includes(`access:${hashEmail("odd@example.com")}`));
+    const old = JSON.parse(entries.find((e) => e.key === `access:${hashEmail("old@example.com")}`).value);
+    assert.equal(old.lastAt, "2026-11-01T23:59:00.000Z", "the later row doesn't move lastAt either");
+    // An export with no date column can't be dated: nothing from it is imported.
+    const undated = buildBulk(parseCsv("Email,Type\na@example.com,Donation\n"));
+    assert.equal(undated.counts.supporters, 0);
+    assert.equal(undated.counts.afterEntry, 1);
 });
