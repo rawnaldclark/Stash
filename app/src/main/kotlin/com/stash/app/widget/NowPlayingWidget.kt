@@ -47,6 +47,7 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
+import androidx.glance.layout.wrapContentHeight
 import androidx.glance.material3.ColorProviders
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
@@ -183,7 +184,7 @@ private fun WideCard(
             Cover(cover, GlanceModifier.size(coverDp.dp).cornerRadius(CoverRadius))
             Spacer(GlanceModifier.width(WidgetWideLayout.COVER_GAP_DP.dp))
         }
-        Column(modifier = GlanceModifier.defaultWeight(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = GlanceModifier.defaultWeight().wrapContentHeight(), verticalAlignment = Alignment.CenterVertically) {
             WidgetText(
                 text = title,
                 layout = R.layout.widget_text_title,
@@ -221,15 +222,17 @@ private fun SquareCard(
     Box(modifier = cardModifier(open)) {
         Cover(cover, GlanceModifier.fillMaxSize())
         Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.Bottom) {
-            // The strip: a gradient from clear to 72% black, so white text reads on any cover.
+            // The strip: a gradient from clear to 72% black, so white text reads on any cover. Every
+            // piece of it says wrapContentHeight (see WidgetText for why it has to be said).
             Column(
                 modifier = GlanceModifier
                     .fillMaxWidth()
+                    .wrapContentHeight()
                     .background(ImageProvider(R.drawable.widget_scrim))
                     .padding(start = 12.dp, end = 8.dp, top = 28.dp, bottom = 8.dp),
             ) {
                 WidgetText(text = title, layout = R.layout.widget_text_title_cover, light = OnScrim, dark = OnScrim)
-                Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = GlanceModifier.fillMaxWidth().wrapContentHeight(), verticalAlignment = Alignment.CenterVertically) {
                     Box(modifier = GlanceModifier.defaultWeight()) {
                         if (artist.isNotEmpty()) {
                             WidgetText(text = artist, layout = R.layout.widget_text_artist, light = OnScrimSecondary, dark = OnScrimSecondary)
@@ -324,6 +327,12 @@ private fun mediaAction(context: Context, transport: WidgetTransport): Action =
  * One line of text in the app's own fonts. Glance's Text can only name system font families, so
  * the line is a tiny RemoteViews layout ([layout]: a TextView whose `fontFamily` is the app's
  * Space Grotesk or Inter resource), which the launcher inflates from Stash's resources.
+ *
+ * The height has to be said. On Android 13+ Glance puts the line in a frame whose XML is
+ * match_parent both ways and only overrides what a modifier names, so a line with no height takes
+ * every pixel its column offers. The square's strip column is measured at an exact height (its
+ * background image makes Glance wrap it in a box and fill that box), so the title took the whole
+ * strip and the artist-and-buttons row got none.
  */
 @Composable
 private fun WidgetText(text: String, @LayoutRes layout: Int, light: Color, dark: Color) {
@@ -337,7 +346,7 @@ private fun WidgetText(text: String, @LayoutRes layout: Int, light: Color, dark:
             setTextColor(R.id.widget_text, (if (context.isNightMode()) dark else light).toArgb())
         }
     }
-    AndroidRemoteViews(views, GlanceModifier.fillMaxWidth())
+    AndroidRemoteViews(views, GlanceModifier.fillMaxWidth().wrapContentHeight())
 }
 
 private fun Context.isNightMode(): Boolean =
