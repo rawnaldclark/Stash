@@ -511,6 +511,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
                         networkPartWorked = false
                         Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it)
                     }
+            } else if (recipe.discoveryRatio > 0f && !lastFmConfigured && !materializeOnly) {
+                Log.i(TAG, "'${recipe.name}': no discovery this run, Last.fm isn't configured")
             }
         }
 
@@ -940,7 +942,16 @@ class StashMixRefreshWorker @AssistedInject constructor(
             seedTracks = seedTracks,
             personas = personas,
         )
-        if (candidates.isEmpty()) return
+        if (candidates.isEmpty()) {
+            // An empty Daily Discover hides its Home slot, so say why the run found nothing. Counts only:
+            // artist names say what someone listens to.
+            Log.i(
+                TAG,
+                "'${recipe.name}': 0 candidates via $strategy from ${seedArtists.size} seed artists, " +
+                    "${seedTracks.size} seed tracks, ${topTags.size} tags (${recentArtists.size} recent artists)",
+            )
+            return
+        }
 
         // v0.9.20: pre-filter against library + skip-ban so discovery_queue
         // PENDING rows represent genuinely-new music, not "rediscovery" hits.
