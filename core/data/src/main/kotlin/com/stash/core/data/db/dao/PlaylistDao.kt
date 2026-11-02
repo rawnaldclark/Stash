@@ -856,6 +856,27 @@ interface PlaylistDao {
     suspend fun getCoverArtUrlsForPlaylist(playlistId: Long, limit: Int): List<String>
 
     /**
+     * Rebuilds a Stash Mix's cover from its songs' art: up to 4 distinct arts
+     * ([getCoverArtUrlsForPlaylist]), "|"-joined, as the mix card draws a tile
+     * mosaic and single-image call sites take the first (PlaylistMapper).
+     * Keeps the old cover while no song has art, and writes only when the
+     * cover changes, so an unchanged one doesn't re-emit every playlist flow.
+     */
+    @Transaction
+    suspend fun refreshMixCover(playlistId: Long) {
+        val arts = getCoverArtUrlsForPlaylist(playlistId, limit = 4)
+        if (arts.isNotEmpty()) updateArtUrlIfChanged(playlistId, arts.joinToString("|"))
+    }
+
+    /** [updateArtUrl] that touches no row when the cover is already [artUrl]. */
+    @Query("UPDATE playlists SET art_url = :artUrl WHERE id = :playlistId AND art_url IS NOT :artUrl")
+    suspend fun updateArtUrlIfChanged(playlistId: Long, artUrl: String)
+
+    /** Every Stash Mix playlist's id, for [refreshMixCover]. */
+    @Query("SELECT id FROM playlists WHERE type = 'STASH_MIX'")
+    suspend fun getStashMixPlaylistIds(): List<Long>
+
+    /**
      * Refreshes the user-facing name for a synced playlist. Spotify changes
      * the display name for its generated mixes over time (e.g. "Your Daily
      * Mix 1" → "Daily Mix 1" or back), so sync runs update the name to

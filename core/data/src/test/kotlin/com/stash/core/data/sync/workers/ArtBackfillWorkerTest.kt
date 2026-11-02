@@ -15,12 +15,15 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmApiException
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmTrackInfo
+import com.stash.core.model.MusicSource
+import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +41,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
 import java.io.IOException
+import java.time.Instant
 
 /**
  * [ArtBackfillWorker] asks Last.fm only about rows a lookup can fill: never
@@ -88,7 +92,7 @@ class ArtBackfillWorkerTest {
         .setWorkerFactory(object : WorkerFactory() {
             override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                 ArtBackfillWorker(
-                    appContext, workerParameters, db.trackDao(), api,
+                    appContext, workerParameters, db.trackDao(), db.playlistDao(), api,
                     LastFmCredentials(apiKey = "k", apiSecret = "s"),
                     mockk<AudioDurationExtractor>(relaxed = true),
                     backoff, schedule,
@@ -160,6 +164,32 @@ class ArtBackfillWorkerTest {
         assertThat(dao.getById(played)!!.album).isEmpty()
         assertThat(asked).doesNotContain("Boards of Canada" to "Roygbiv")
     }
+
+    /**
+     * A mix refresh builds a mix's cover from its songs' art when it links them, and discovery's stubs
+     * have none yet: the owner's Daily Discover showed a blank cover on Home. The run that gives them
+     * art rebuilds the Stash Mix covers, and leaves other playlists' covers alone.
+     */
+    @Test fun `a mix built from songs without art gets its cover once their art comes`() = runBlocking<Unit> {
+        val first = stub("Jerry Lee Lewis", "High School Confidential")
+        val second = stub("The Ventures", "Pipeline")
+        answers["Jerry Lee Lewis" to "High School Confidential"] = Result.success(info("https://img/jll.png", 150_000))
+        answers["The Ventures" to "Pipeline"] = Result.success(info("https://img/ventures.png", 140_000))
+        val playlists = db.playlistDao()
+        val mix = playlists.createMixWithMembership(playlist(PlaylistType.STASH_MIX), listOf(first, second), Instant.EPOCH)
+        val mine = playlists.createMixWithMembership(playlist(PlaylistType.CUSTOM), listOf(first), Instant.EPOCH)
+        assertThat(playlists.getById(mix)!!.artUrl).isNull()
+
+        worker().doWork()
+
+        assertThat(playlists.getById(mix)!!.artUrl).isEqualTo("https://img/jll.png|https://img/ventures.png")
+        assertThat(playlists.getById(mine)!!.artUrl).isNull()
+    }
+
+    private fun playlist(type: PlaylistType) = PlaylistEntity(
+        name = type.name, source = MusicSource.BOTH, sourceId = type.name, type = type,
+        syncEnabled = true, isActive = true,
+    )
 
     @Test fun `a second run with nothing new asks nothing`() = runBlocking<Unit> {
         stub("Nobody", "Missing")

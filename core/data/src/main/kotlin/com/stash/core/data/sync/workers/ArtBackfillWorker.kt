@@ -11,6 +11,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.audio.AudioDurationExtractor
+import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmApiException
@@ -76,6 +77,7 @@ class ArtBackfillWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
     private val lastFmApiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
     private val audioDurationExtractor: AudioDurationExtractor,
@@ -188,6 +190,7 @@ class ArtBackfillWorker @AssistedInject constructor(
         runArtPass(startedAt)
         runDurationPass()
         runStreamableMetadataPass(startedAt)
+        if (stats.artFilled > 0) refreshMixCovers()
         Log.i(
             TAG,
             "run done: lastfm network=${stats.network} cached=${stats.cached} " +
@@ -196,12 +199,32 @@ class ArtBackfillWorker @AssistedInject constructor(
         return Result.success()
     }
 
+    /**
+     * Rebuilds every Stash Mix's cover ([PlaylistDao.refreshMixCover]) after
+     * this run filled art. A mix refresh builds the cover from its songs' art
+     * when it links them, and fresh discovery stubs have none until this
+     * worker runs, so a Daily Discover made of them showed a blank cover on
+     * Home until its membership next changed. Cosmetic: a failure is logged.
+     */
+    private suspend fun refreshMixCovers() {
+        try {
+            playlistDao.getStashMixPlaylistIds().forEach { playlistDao.refreshMixCover(it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "couldn't rebuild the mix covers", e)
+        }
+    }
+
     /** How the lookups of one run went, for the log line that proves the traffic. */
     private class Stats {
         var network = 0
         var cached = 0
         var unlookable = 0
         var transient = 0
+
+        /** Songs any pass gave art this run: the Stash Mix covers are rebuilt when there are some. */
+        var artFilled = 0
     }
 
     private var stats = Stats()
@@ -310,6 +333,7 @@ class ArtBackfillWorker @AssistedInject constructor(
             if (lookup?.fromNetwork == true) delay(REQUEST_INTERVAL_MS)
         }
         backoff.recordFailures(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, unfillable, startedAt)
+        stats.artFilled += filled
         Log.i(TAG, "art backfill done: filled=$filled unfillable=${unfillable.size} (backed off)")
     }
 
@@ -414,6 +438,7 @@ class ArtBackfillWorker @AssistedInject constructor(
             if (art == null || ms == null) unfillable += row.id
         }
         backoff.recordFailures(LastFmEnrichmentBackoff.Pass.ART_BACKFILL, unfillable, startedAt)
+        stats.artFilled += artFilled
         Log.i(
             TAG,
             "stream-only backfill done: art=$artFilled duration=$durationFilled " +
