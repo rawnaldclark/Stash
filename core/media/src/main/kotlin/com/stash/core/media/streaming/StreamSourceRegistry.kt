@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
+import com.stash.data.download.lossless.LosslessAvailability
 import com.stash.data.download.lossless.LosslessSourcePreferences
 import com.stash.data.download.lossless.quota.LosslessQuota
 import kotlinx.coroutines.CoroutineDispatcher
@@ -35,9 +36,12 @@ import javax.inject.Singleton
  *      in for one). Primary lossless source: plain Range-seekable FLAC, no proxy
  *      operator and no client-side decrypt, so it's the fastest path.
  *      Foreground-only (allowYtDlp) since it spends that account's quota.
- *   1b. [TidalStreamResolver]  — Tidal lossless through the user's self-hosted
- *      BitChord server (progressive FLAC or a DASH MPD). Same gates as qbdlx;
- *      inert until a server is set in Settings.
+ *   1b. [TidalStreamResolver]  — Tidal lossless through a BitChord server: the
+ *      user's own, or Stash's (progressive FLAC or a DASH MPD). Same gates as qbdlx;
+ *      inert with no server. The user's own server, with none of their own Qobuz set
+ *      up ([LosslessAvailability.ownTidalFirst]), goes ahead of 1 instead above CD
+ *      quality (FLAC only), and is asked again for its AAC after 1, when "Tidal AAC
+ *      when no FLAC" is on.
  *   While the day's Tidal & Qobuz allowance is spent ([LosslessQuota]) neither relay rung
  *   asks the owner's relays for anything: qbdlx skips them (a user's own account still
  *   serves), and Tidal asks for neither FLAC nor AAC, since AAC counts toward the same
@@ -91,6 +95,11 @@ class StreamSourceRegistry internal constructor(
     /** "Play my cloud copies first" (#679); null in hand-built tests (no cloud copies). */
     private val cloudCopies: CloudCopyFinder? = null,
     private val soundCloud: SoundCloudStreamResolver? = null,
+    /**
+     * Whose lossless paths are set up ([LosslessAvailability.ownTidalFirst]); null in hand-built
+     * tests (Qobuz first). Read with [qualityPolicy]'s tier: without a policy, Qobuz stays first too.
+     */
+    private val availability: LosslessAvailability? = null,
 ) {
     @Inject
     constructor(
@@ -108,10 +117,11 @@ class StreamSourceRegistry internal constructor(
         qualityPolicy: StreamQualityPolicy,
         cloudCopies: CloudCopyFinder,
         soundCloud: SoundCloudStreamResolver,
+        availability: LosslessAvailability,
     ) : this(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         losslessSourceHealth, losslessPrefs, Dispatchers.IO, diagnosticsLog, tidal, losslessQuota,
-        qualityPolicy, cloudCopies, soundCloud,
+        qualityPolicy, cloudCopies, soundCloud, availability,
     )
     /**
      * The user's own lossless copy of [track] in their cloud storage, as a [StreamUrl] whose url is
@@ -158,7 +168,9 @@ class StreamSourceRegistry internal constructor(
          * A look-ahead resolve (next-up prefetch) that the user may never play. It never
          * makes the Tidal relay search: when Qobuz misses and Tidal's answer for the track is
          * not cached, it returns null (nothing cached, no lossy fallback) and leaves the
-         * track to the real play, which asks Tidal. The shared Tidal pool is small.
+         * track to the real play, which asks Tidal. The shared Tidal pool is small. The one
+         * exception is the user's own server leading the chain ([LosslessAvailability.ownTidalFirst]):
+         * it is asked like any first rung.
          */
         speculative: Boolean = false,
     ): StreamUrl? {
@@ -312,8 +324,8 @@ class StreamSourceRegistry internal constructor(
                 // Prefer Tidal AAC: Tidal's 320 kbps AAC (`?aac=only&hires=0`, the AAC
                 // download mode's request) ahead of Qobuz, for a listener saving data. Only
                 // where the Tidal rung itself runs (foreground, Lossless on, a relay set), and
-                // a miss, busy pool, spent day or error falls straight to qbdlx below with no
-                // wait. Its own in-flight key and miss stamp in BitchordClient, so it never
+                // a miss, busy pool, spent day or error falls straight on to the lossless rungs
+                // below with no wait. Its own in-flight key and miss stamp in BitchordClient, so it never
                 // hides the Tidal FLAC lookup further down (or the other way round).
                 val tidalAacRung = tidal
                 if (preferTidalAac && allowYtDlp && lossless && tidalAacRung != null) {
@@ -327,6 +339,25 @@ class StreamSourceRegistry internal constructor(
                     }
                 }
 
+                // Tidal through a BitChord server: the user's own, or Stash's from the
+                // signed config. Same gates as qbdlx (foreground only, Lossless switch
+                // on): it spends a Tidal account. Off (returns null at once) when no
+                // server is configured.
+                val tidalRung = tidal?.takeIf { allowYtDlp && lossless }
+                // The user's own server, with none of their own Qobuz set up, goes
+                // BEFORE qbdlx, whose file URL would otherwise come from Stash's shared
+                // relay before their server was ever asked; qbdlx stays the fallback
+                // right behind it. Above CD only: Tidal serves its best (usually 24-bit)
+                // where qbdlx asks for this tier, so at CD (Save Data, mobile data by
+                // default) qbdlx keeps the lead. FLAC only there: Tidal's AAC for a
+                // CD-only song must not stand in for a FLAC Qobuz still has. Look-aheads
+                // ask it too: the stop further down spares Stash's shared pool, and in
+                // the lead it would leave every next-up song unprefetched.
+                val ownTidalFirst = tidalRung != null && availability != null &&
+                    qualityPolicy?.streamingTier()?.let { availability.ownTidalFirstNow(it) } == true
+                if (tidalRung != null && ownTidalFirst) {
+                    add("tidal" to { t: TrackEntity -> tidalRung.resolveLossless(t) })
+                }
                 // qbdlx (direct Qobuz API) is the primary lossless source:
                 // plain Range-seekable FLAC, no proxy, no client-side decrypt —
                 // the fastest path. Foreground/next-up only (allowYtDlp = true),
@@ -336,12 +367,12 @@ class StreamSourceRegistry internal constructor(
                 if (allowYtDlp && lossless && !skipQobuz) {
                     add("qbdlx" to qbdlx::resolve)
                 }
-                // Tidal via the user's own BitChord server — the second lossless
-                // rung, for what Qobuz misses. Same gates as qbdlx (foreground only,
-                // Lossless switch on): it spends one person's Tidal account. Off
-                // (returns null at once) when no server is configured.
-                val tidalRung = tidal
-                if (allowYtDlp && lossless && tidalRung != null) {
+                if (tidalRung != null && ownTidalFirst) {
+                    // The same server's AAC 320 for a song with no lossless version
+                    // anywhere ("Tidal AAC when no FLAC"), now that Qobuz missed too.
+                    if (losslessPrefs.tidalAacFallbackNow()) add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
+                } else if (tidalRung != null) {
+                    // The second lossless rung, for what Qobuz misses.
                     // Speculative and Tidal would have to be asked: stop the walk here
                     // (see [resolve]'s `speculative`), so no lossy URL is cached for a
                     // track Tidal may serve when it is really played.

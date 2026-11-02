@@ -20,24 +20,24 @@ class SettingsHubSummariesTest {
 
     // --- playback ---------------------------------------------------------
 
-    @Test fun `playback stream-only + cellular off`() {
+    @Test fun `playback Online + cellular off`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Stream only · Cellular off", s.playback)
+        assertEquals("Online · Cellular off", s.playback)
     }
 
-    @Test fun `playback download + cellular on`() {
+    @Test fun `playback Offline + cellular on`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(),
             versionName = "0.9.51",
             streamingEnabled = false,
             streamOnCellular = true,
         )
-        assertEquals("Download · Cellular on", s.playback)
+        assertEquals("Offline · Cellular on", s.playback)
     }
 
     // --- audioQuality -----------------------------------------------------
@@ -185,7 +185,7 @@ class SettingsHubSummariesTest {
 
     @Test fun `appearance SYSTEM → Follow system`() {
         val s = settingsHubSummaries(
-            state = SettingsUiState(themeMode = ThemeMode.SYSTEM),
+            state = SettingsUiState(themeMode = ThemeMode.SYSTEM, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
@@ -195,7 +195,7 @@ class SettingsHubSummariesTest {
 
     @Test fun `appearance DARK → Dark`() {
         val s = settingsHubSummaries(
-            state = SettingsUiState(themeMode = ThemeMode.DARK),
+            state = SettingsUiState(themeMode = ThemeMode.DARK, amoledDark = false),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,

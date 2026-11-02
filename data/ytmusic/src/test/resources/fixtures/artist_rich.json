@@ -1,5 +1,5 @@
 {
-  "_comment": "Synthetic artist browse response. Popular shelf uses title 'Popular' to match parser's case-insensitive contains('popular') check. Real InnerTube has shipped both 'Top songs' and 'Popular' over time; either works.",
+  "_comment": "Synthetic artist browse response. Header counts copy the real shape (Sonic Youth, WEB_REMIX hl=en, 2026-11-01): a bare subscriber count, and the monthly audience with its words. Popular shelf uses title 'Popular' to match parser's case-insensitive contains('popular') check. Real InnerTube has shipped both 'Top songs' and 'Popular' over time; either works.",
   "header": {
     "musicImmersiveHeaderRenderer": {
       "title": {
@@ -21,10 +21,15 @@
         "subscribeButtonRenderer": {
           "subscriberCountText": {
             "runs": [
-              { "text": "12K subscribers" }
+              { "text": "290K" }
             ]
           }
         }
+      },
+      "monthlyListenerCount": {
+        "runs": [
+          { "text": "574K monthly audience" }
+        ]
       }
     }
   },

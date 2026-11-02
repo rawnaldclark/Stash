@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.streaming.ConnectivityMonitor
@@ -519,7 +520,7 @@ class PlaylistDetailViewModelTest {
     @Test
     fun queueDownload_reports_when_single_item_was_not_queued() = runTest {
         val musicRepo = musicRepoMock()
-        whenever(musicRepo.queueDownload(eq(1L))).thenReturn(false)
+        whenever(musicRepo.requestDownload(eq(1L))).thenReturn(DownloadRequestResult.NOT_QUEUED)
         val vm = buildVm(musicRepository = musicRepo)
 
         val messages = collectMessages(vm)
@@ -527,6 +528,20 @@ class PlaylistDetailViewModelTest {
         runCurrent()
 
         assertEquals(listOf("Couldn't queue download."), messages)
+    }
+
+    /** A song already on the phone as another row is not downloaded twice, and the tap says so. */
+    @Test
+    fun queueDownload_says_when_the_song_is_already_on_the_phone() = runTest {
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.requestDownload(eq(1L))).thenReturn(DownloadRequestResult.ALREADY_ON_PHONE)
+        val vm = buildVm(musicRepository = musicRepo)
+
+        val messages = collectMessages(vm)
+        vm.queueDownload(1L)
+        runCurrent()
+
+        assertEquals(listOf("Already on your phone."), messages)
     }
 
     @Test
@@ -586,6 +601,7 @@ class PlaylistDetailViewModelTest {
         on { observePlaylist(any()) } doReturn flowOf(null)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         onBlocking { queueDownload(any()) } doReturn true
+        onBlocking { requestDownload(any()) } doReturn DownloadRequestResult.QUEUED
         onBlocking {
             removeTrackFromPlaylistAndMaybeDelete(any(), any(), any())
         } doReturn MusicRepository.CascadeRemovalSummary(

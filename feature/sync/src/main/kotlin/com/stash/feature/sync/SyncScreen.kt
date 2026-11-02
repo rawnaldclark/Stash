@@ -76,6 +76,7 @@ import com.stash.core.ui.R as UiR
 import com.stash.feature.sync.components.AccountCard
 import com.stash.feature.sync.components.ArrivalSheet
 import com.stash.feature.sync.components.AttentionRow
+import com.stash.feature.sync.components.SyncDownloadsRow
 import com.stash.feature.sync.components.AuthExpiredBanner
 import com.stash.feature.sync.components.BrandDotLabel
 import com.stash.feature.sync.components.ConnectButton
@@ -112,11 +113,13 @@ fun SyncScreen(
     onNavigateToAccounts: () -> Unit = {},
     onManageSource: (SyncSource) -> Unit = {},
     onOpenHistory: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
     onOpenPlaylist: (Long) -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
+    val downloads by viewModel.downloadsSummary.collectAsStateWithLifecycle()
     val authState by viewModel.authExpiry.collectAsStateWithLifecycle()
     val streamingMode by viewModel.streamingEnabled.collectAsStateWithLifecycle()
     var showModeSheet by remember { mutableStateOf(false) }
@@ -284,8 +287,13 @@ fun SyncScreen(
                     }
                 }
 
-                item(key = "links") {
+                // Downloads get their own row above Auto-sync (the owner: they were hidden behind History).
+                item(key = "downloads") {
                     Spacer(Modifier.height(10.dp))
+                    SyncDownloadsRow(summary = downloads, onClick = onOpenDownloads)
+                }
+
+                item(key = "links") {
                     SyncLinkRow(
                         title = stringResource(R.string.sync_auto_sync),
                         trailing = autoSyncSummary(uiState.syncPreferences),

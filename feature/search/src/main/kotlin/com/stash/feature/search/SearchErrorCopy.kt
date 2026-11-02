@@ -9,7 +9,8 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /** Error-screen copy for a failed search. */
 internal object SearchErrorCopy {
-    const val OFFLINE = "You're offline, or YouTube Music can't be reached."
+    // Not "You're offline": Offline is the mode's name (2026-11-01).
+    const val OFFLINE = "No internet connection, or YouTube Music can't be reached."
     const val SLOW = "YouTube Music took too long to answer. Try again."
     const val BUSY = "YouTube Music is busy right now. Try again in a minute."
     const val NO_ANSWER = "YouTube Music didn't answer. Try again."

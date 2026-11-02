@@ -1,5 +1,6 @@
 package com.stash.feature.community
 
+import android.content.res.Resources
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,30 +16,29 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -46,44 +46,64 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.ShareConfig
+import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.theme.StashTheme
 
-internal fun kindLabel(kind: String): String = when (kind) {
-    "mix" -> "Mix"
-    "song" -> "Song"
-    else -> "Playlist"
+/** Between the facts on one line: "Playlist · 42 songs". */
+internal const val SEP = " · "
+
+/** The resources Community's words come from, read in composition (and again when the configuration changes). */
+@Composable
+@ReadOnlyComposable
+internal fun words(): Resources {
+    LocalConfiguration.current
+    return LocalContext.current.resources
 }
 
-internal fun songs(n: Int): String = if (n == 1) "1 song" else "$n songs"
+/** [age] as a list shows it ("3d"), or spelled out ([long]: "3 days ago") for TalkBack and a post's page. */
+internal fun Resources.ageText(age: Age, long: Boolean = false): String = when (age) {
+    Age.JustNow -> getString(R.string.community_age_just_now)
+    is Age.Minutes ->
+        if (long) getQuantityString(R.plurals.community_age_minutes, age.n, age.n) else getString(R.string.community_age_minutes_short, age.n)
+    is Age.Hours ->
+        if (long) getQuantityString(R.plurals.community_age_hours, age.n, age.n) else getString(R.string.community_age_hours_short, age.n)
+    is Age.Days ->
+        if (long) getQuantityString(R.plurals.community_age_days, age.n, age.n) else getString(R.string.community_age_days_short, age.n)
+}
 
-/** How long ago [then] was: "just now", "5m", "4h", "3d"; [long] spells it out: "5 minutes ago", "3 days ago". */
-internal fun ago(then: Long, now: Long, long: Boolean = false): String {
-    val minutes = (now - then).coerceAtLeast(0) / 60_000
-    fun of(n: Long, short: String, word: String) = if (long) "$n $word${if (n == 1L) "" else "s"} ago" else "$n$short"
-    return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> of(minutes, "m", "minute")
-        minutes < 24 * 60 -> of(minutes / 60, "h", "hour")
-        else -> of(minutes / (24 * 60), "d", "day")
-    }
+/** What the post is: "Playlist · 42 songs", "Mix · 34 songs", or a song's "Song · Death Plus". */
+internal fun Resources.postFacts(post: CommunityPost): String {
+    val what = if (post.kind == "song") post.artist.orEmpty() else getQuantityString(R.plurals.community_songs, post.count, post.count)
+    return listOf(getString(kindLabel(post.kind)), what).filter { it.isNotBlank() }.joinToString(SEP)
+}
+
+/** A playlist's length: "5 min", "1 h", "2 h 11 min"; null when no song says how long it is. */
+internal fun Resources.postLength(minutes: Long): String? = when {
+    minutes <= 0 -> null
+    minutes < 60 -> getString(R.string.community_length_minutes, minutes.toInt())
+    minutes % 60 == 0L -> getString(R.string.community_length_hours, (minutes / 60).toInt())
+    else -> getString(R.string.community_length_hours_minutes, (minutes / 60).toInt(), (minutes % 60).toInt())
+}
+
+/** A post's page: "Playlist · 42 songs · 2 h 11 min", "Mix · 34 songs", or a song's artist (spec 2026-09-26 §3). */
+internal fun Resources.postHeadline(post: CommunityPost): String {
+    if (post.kind == "song") return post.track?.artist ?: post.artist.orEmpty()
+    return listOfNotNull(postFacts(post), postLength(post.lengthMinutes())).joinToString(SEP)
 }
 
 /**
- * "Playlist · 42 songs · Maya", "Song · Death Plus · Sam". Your own post is tagged YOU, so its age takes the
- * name's place; [withAge] adds the age to everyone else's (See all). [longAge] spells the age out (TalkBack).
+ * Who posted it and when: "Maya · 3d". Your own post drops the name (it's tagged YOU, or it's on Your posts), and
+ * on Your posts ([ownList]) adds how long it has left: "3d · Leaves in 26 days". [long] spells the age out (TalkBack).
  */
-internal fun CommunityPost.subtitle(withAge: Boolean, now: Long, longAge: Boolean = false): String {
-    val what = if (kind == "song") artist.orEmpty() else songs(count)
-    val age = ago(createdAt, now, longAge)
-    val who = when {
-        mine -> age
-        withAge -> "$name · $age"
-        else -> name
+internal fun Resources.posterLine(post: CommunityPost, now: Long, ownList: Boolean = false, long: Boolean = false): String {
+    val left = daysLeft(post.expiresAt, now)
+    val leaves = when {
+        !ownList || left == null -> null
+        left == 0 -> getString(R.string.community_leaves_today)
+        else -> getQuantityString(R.plurals.community_leaves_in, left, left)
     }
-    return listOf(kindLabel(kind), what, who).filter { it.isNotBlank() }.joinToString(" · ")
+    return listOfNotNull(post.name.takeUnless { post.mine }, ageText(ageOf(post.createdAt, now), long), leaves).joinToString(SEP)
 }
-
-internal fun CommunityPost.coverUrls(): List<String> = if (kind == "song") listOfNotNull(art) else covers
 
 /**
  * One cover, or a 2×2 mosaic when there are four (spec 2026-09-26 §3). Only cover-host links are ever loaded.
@@ -109,180 +129,117 @@ internal fun CoverArt(urls: List<String>, modifier: Modifier = Modifier, corner:
 }
 
 /**
- * ▲ score ▼ (spec §3 Votes): your vote lights in purple. Stacked, the two arrows' tap areas meet under the score,
- * so a tap anywhere on it votes instead of opening the post. On your own post the arrows are dimmed and inert.
+ * The rank column for a list whose ranks run up to [highest], one width for every row so the covers line up. A digit
+ * is at most 0.65 em in Space Grotesk. It's in em of the rank's own style because Android scales large sp values less
+ * than small ones, so a width in sp would stop growing before the 16sp numbers do.
  */
 @Composable
-internal fun VoteControl(post: CommunityPost, onVote: (Int) -> Unit, modifier: Modifier = Modifier, vertical: Boolean = true) {
-    val up = @Composable {
-        VoteArrow(
-            Icons.Default.KeyboardArrowUp, "Vote up", lit = post.myVote == 1, enabled = !post.mine,
-            iconAt = if (vertical) Alignment.TopCenter else Alignment.Center,
-        ) { onVote(1) }
-    }
-    val score = @Composable {
-        val n = post.up - post.down
-        Text(
-            text = "$n",
-            style = MaterialTheme.typography.labelLarge,
-            color = if (post.myVote != 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.semantics { contentDescription = if (n == 1) "1 vote" else "$n votes" },
-        )
-    }
-    val down = @Composable {
-        VoteArrow(
-            Icons.Default.KeyboardArrowDown, "Vote down", lit = post.myVote == -1, enabled = !post.mine,
-            iconAt = if (vertical) Alignment.BottomCenter else Alignment.Center,
-        ) { onVote(-1) }
-    }
-    if (vertical) {
-        // The score sits over the seam. Text takes no taps, so a tap on it reaches the arrow underneath.
-        Box(modifier, contentAlignment = Alignment.Center) {
-            Column { up(); down() }
-            score()
-        }
-    } else {
-        Row(modifier, verticalAlignment = Alignment.CenterVertically) { up(); score(); down() }
-    }
-}
-
-/** A 40×30 tap area with its arrow at [iconAt]. Disabled (your own post), it's dimmed, silent to TalkBack and lets taps through. */
-@Composable
-private fun VoteArrow(icon: ImageVector, label: String, lit: Boolean, enabled: Boolean, iconAt: Alignment, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(width = 40.dp, height = 30.dp)
-            .clip(RoundedCornerShape(8.dp))
-            // Not selectable(enabled = false): a disabled one still swallows the tap, which should open the post.
-            .then(if (enabled) Modifier.selectable(selected = lit, role = Role.Button, onClick = onClick) else Modifier.clearAndSetSemantics {}),
-        contentAlignment = iconAt,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = when {
-                !enabled -> StashTheme.extendedColors.textTertiary.copy(alpha = 0.38f)
-                lit -> MaterialTheme.colorScheme.primary
-                else -> StashTheme.extendedColors.textTertiary
-            },
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-/**
- * The rank column for a list of [count] posts, one width for every row so the covers line up. A digit is at most
- * 0.65 em in Space Grotesk. It's in em of the rank's own style because Android scales large sp values less than
- * small ones, so a width in sp would stop growing before the 16sp numbers do.
- */
-@Composable
-internal fun rankWidthFor(count: Int): Dp {
+internal fun rankWidthFor(highest: Int): Dp {
     val em = with(LocalDensity.current) { MaterialTheme.typography.titleMedium.fontSize.toDp() }
-    return maxOf(22.dp, em * 0.7f * count.toString().length)
+    return maxOf(22.dp, em * 0.7f * highest.toString().length)
 }
 
+/** A list row's cover: big enough to tell posts apart at a glance (was 46 dp). */
+internal val RowCoverSize = 64.dp
+
 /**
- * One ranked post (the Top Albums row, with votes on the right). [rankWidth] comes from [rankWidthFor] for the
- * whole list; [rank] null leaves the number and its column out (Mine). Ages are counted to [now].
+ * One post in a list (See all, a post's "More from Community"): the rank when it has one, the cover, then three
+ * quiet lines (the title, what it is, who posted it and when) and the vote pill. On Your posts ([ownList]) the
+ * third line is its age and how long it has left, and a post hidden by votes says so. Ages are counted to [now].
  */
 @Composable
-internal fun PostRow(
+internal fun PostListRow(
     rank: Int?,
     rankWidth: Dp,
     post: CommunityPost,
-    withAge: Boolean,
     now: Long,
     onOpen: () -> Unit,
     onVote: (Int) -> Unit,
-    /** False drops the vote column (a list where voting happens elsewhere, e.g. a post's "More from Community"). */
+    ownList: Boolean = false,
+    /** False drops the pill (a list where voting happens elsewhere, e.g. a post's "More from Community"). */
     showVotes: Boolean = true,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (rank != null) {
             Text(
                 text = "$rank",
                 style = MaterialTheme.typography.titleMedium,
-                color = StashTheme.extendedColors.textTertiary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 softWrap = false,
                 modifier = Modifier.width(rankWidth),
             )
         }
-        CoverArt(post.coverUrls(), Modifier.size(46.dp))
+        CoverArt(post.coverUrls(), Modifier.size(RowCoverSize), corner = 8.dp)
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = post.title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (post.mine) YouTag()
+                if (post.mine && !ownList) YouTag()
             }
+            val res = words()
             Text(
-                text = post.subtitle(withAge, now),
+                text = res.postFacts(post),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics { contentDescription = post.subtitle(withAge, now, longAge = true) },
+            )
+            val spoken = res.posterLine(post, now, ownList, long = true)
+            Text(
+                text = res.posterLine(post, now, ownList),
+                style = MaterialTheme.typography.bodySmall,
+                color = StashTheme.extendedColors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { contentDescription = spoken },
             )
             if (post.hidden) {
-                Text("Hidden by votes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.community_hidden), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
-        if (showVotes) VoteControl(post, onVote) else Spacer(Modifier.width(12.dp))
+        if (showVotes) VotePill(post, onVote, compact = true)
     }
 }
 
+/** A small tag on your own post among everyone's: in the primary colour on the page, in [color] elsewhere (white on the hero). */
 @Composable
-private fun YouTag() {
+internal fun YouTag(color: Color = MaterialTheme.colorScheme.primary) {
     Text(
-        text = "YOU",
+        text = stringResource(R.string.community_you),
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.primary,
+        color = color,
+        maxLines = 1,
         modifier = Modifier
-            .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+            .border(1.dp, color, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp),
     )
 }
 
-/** What shows instead of rows (spec §3): loading, "Couldn't load Community" with Retry, or [emptyText]. */
+/**
+ * Shows [message] once on the app's snackbar (above the bottom chrome), then clears it. Outside the scaffold
+ * (a preview) it falls back to a toast. The snackbar shows from the scaffold's scope, so clearing the message
+ * (which restarts this effect) never cuts it short.
+ */
 @Composable
-internal fun ListStatus(state: CommunityViewModel.UiState, emptyText: String, onRetry: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
-        val posts = state.posts
-        when {
-            posts == null && state.failed -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Couldn't load Community",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onRetry) { Text("Retry") }
-            }
-            posts == null -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            posts.isEmpty() -> Text(emptyText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-/** Shows [message] once as a short toast, then clears it. */
-@Composable
-internal fun MessageToast(message: String?, onShown: () -> Unit) {
+internal fun CommunitySnackbar(message: String?, onShown: () -> Unit) {
+    val snackbar = LocalAppSnackbar.current
     val context = LocalContext.current
+    val shown by rememberUpdatedState(onShown)
     LaunchedEffect(message) {
-        if (message != null) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            onShown()
-        }
+        if (message == null) return@LaunchedEffect
+        if (snackbar != null) snackbar.show(message) else Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        shown()
     }
 }

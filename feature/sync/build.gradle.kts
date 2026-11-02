@@ -17,6 +17,9 @@ dependencies {
     implementation(project(":core:auth"))
     implementation(project(":core:media"))
     implementation(project(":data:download"))
+    // Failed Matches' "find it yourself" (#19) runs the Search tab's own
+    // YouTube Music search (YTMusicApiClient.searchAll).
+    implementation(project(":data:ytmusic"))
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
