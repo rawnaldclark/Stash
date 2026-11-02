@@ -54,10 +54,11 @@ class HomeAddedSectionsTest {
         val saved = savedBy0_9_122 + "new_from_artists"
         assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(saved).last())
         val first = listOf("new_from_artists") + savedBy0_9_122
-        // Because you like, new to this order, goes above it; New from your artists keeps the place the user gave it
+        // New from your artists keeps the place the user gave it; Because you like, new to this order, would go
+        // above it, but never above Discover: it lands directly under Discover instead
         assertEquals(
-            listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS),
-            resolveHomeSectionOrder(first).take(2),
+            listOf(HomeSection.NEW_FROM_ARTISTS, HomeSection.DISCOVER, HomeSection.BECAUSE_YOU_LIKE),
+            resolveHomeSectionOrder(first).take(3),
         )
         assertEquals(HomeSection.NEW_FROM_ARTISTS, resolveHomeSectionOrder(listOf("because_you_like") + first).take(2).last())
     }
@@ -116,6 +117,27 @@ class HomeAddedSectionsTest {
         val placed = resolveHomeSectionOrder(asDefault)
         assertEquals(placed.indexOf(HomeSection.NEW_FROM_ARTISTS) - 1, placed.indexOf(HomeSection.BECAUSE_YOU_LIKE))
         assertFalse(HomeSection.BECAUSE_YOU_LIKE in visibleHomeSections(placed, setOf(HomeSection.BECAUSE_YOU_LIKE), communityOn = false))
+    }
+
+    @Test
+    fun `a new section never goes above discover, which keeps its lead`() {
+        // The user moved the catalogs over Discover: the new shelves land directly under it, not above it
+        val catalogsFirst = listOf("new_releases", "qobuz_playlists", "top_albums", "discover") +
+            savedBy0_9_122.filter { it !in setOf("new_releases", "qobuz_playlists", "top_albums", "discover") }
+        val resolved = resolveHomeSectionOrder(catalogsFirst)
+        val discover = resolved.indexOf(HomeSection.DISCOVER)
+        assertEquals(3, discover)
+        for (added in listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS)) {
+            assertTrue("$added above Discover in $resolved", resolved.indexOf(added) > discover)
+        }
+        // Because you like above the shelves it's anchored to; Moods & moments still under New from your artists
+        assertEquals(
+            listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS),
+            resolved.subList(discover + 1, discover + 4),
+        )
+        // Discover first (every default order): it stays first
+        assertEquals(HomeSection.DISCOVER, resolveHomeSectionOrder(emptyList()).first())
+        assertEquals(HomeSection.DISCOVER, resolveHomeSectionOrder(savedBy0_9_122).first())
     }
 
     @Test

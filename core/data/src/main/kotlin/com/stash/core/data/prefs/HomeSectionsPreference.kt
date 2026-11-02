@@ -124,9 +124,11 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
 
 /**
  * The sections added after "From your record", each with where it goes in an order saved before it existed:
- * directly above the first of its anchors there, or last when none of them is. Placed in this list's order, so one
- * anchored like an earlier one lands under it. A fresh install's order comes out of the same rule, and a saved
- * order is never rewritten: this is applied each time it's read, until the user's next reorder saves it whole.
+ * directly above the first of its anchors there, or last when none of them is, and never above Discover (an anchor
+ * the user moved over Discover puts the new section directly under it, so Discover keeps its lead). Placed in this
+ * list's order, so one anchored like an earlier one lands under it. A fresh install's order comes out of the same
+ * rule, and a saved order is never rewritten: this is applied each time it's read, until the user's next reorder
+ * saves it whole.
  */
 internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> = listOf(
     // Your artists' new releases right above everyone's (Qobuz's New Releases, then the other catalogs)
@@ -143,11 +145,22 @@ internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> =
 /** [order] with each of [ADDED_SECTION_ANCHORS]' sections that the saved order was [missing] moved to its place. */
 internal fun withAddedSectionsPlaced(order: List<HomeSection>, missing: Collection<HomeSection>): List<HomeSection> {
     var placed = order
+    val placedNow = HashSet<HomeSection>()
     for ((section, anchors) in ADDED_SECTION_ANCHORS) {
         if (section !in missing) continue
         val rest = placed - section
-        val at = rest.indexOfFirst { it in anchors }
+        val anchor = rest.indexOfFirst { it in anchors }
+        val discover = rest.indexOf(HomeSection.DISCOVER)
+        val at = if (anchor >= 0 && discover >= 0 && anchor <= discover) {
+            // Under Discover, and under the new sections already put there unless it's anchored above them
+            var under = discover + 1
+            while (under < rest.size && rest[under] in placedNow && rest[under] !in anchors) under++
+            under
+        } else {
+            anchor
+        }
         placed = if (at < 0) rest + section else rest.take(at) + section + rest.drop(at)
+        placedNow += section
     }
     return placed
 }
