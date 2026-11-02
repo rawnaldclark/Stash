@@ -309,7 +309,7 @@ private fun StashNavGraph(
         composable<SyncRoute> {
             SyncScreen(
                 onNavigateToFailedMatches = {
-                    navController.navigate(FailedMatchesRoute)
+                    navController.navigate(FailedMatchesRoute())
                 },
                 onNavigateToFailedDownloads = {
                     navController.navigate(FailedDownloadsRoute)
@@ -716,6 +716,7 @@ private fun StashNavGraph(
             AboveChrome {
                 FailedMatchesScreen(
                     onBack = { navController.popBackStack() },
+                    focusTrackId = it.toRoute<FailedMatchesRoute>().focusTrackId,
                 )
             }
         }

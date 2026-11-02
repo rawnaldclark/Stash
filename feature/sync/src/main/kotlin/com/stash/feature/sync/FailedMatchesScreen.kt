@@ -49,7 +49,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,7 +71,9 @@ import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.sync.components.ApprovedDownloadsBanner
 import com.stash.feature.sync.components.ManualMatchFinder
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Screen displaying tracks that could not be matched on YouTube during sync.
@@ -81,11 +85,14 @@ import kotlinx.coroutines.launch
  * whose results preview and approve like the automatic candidates.
  *
  * @param onBack   Callback invoked when the back arrow is tapped.
+ * @param focusTrackId The song to open "find it yourself" on as the screen opens, scrolled to:
+ *   Now Playing's "Find a better match" (the song was just flagged). Null from the Sync tab.
  * @param viewModel Injected via Hilt; provides unmatched track data.
  */
 @Composable
 fun FailedMatchesScreen(
     onBack: () -> Unit,
+    focusTrackId: Long? = null,
     viewModel: FailedMatchesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,9 +119,24 @@ fun FailedMatchesScreen(
     val density = LocalDensity.current
     val revealOffset = -(WindowInsets.statusBars.getTop(density) + with(density) { 8.dp.roundToPx() })
     fun reveal(rowKey: Any) {
-        // The row was just tapped (or its box was), so it is on screen.
-        val index = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == rowKey }?.index ?: return
-        scope.launch { listState.animateScrollToItem(index, revealOffset) }
+        // Usually the row was just tapped (or its box was), so it is on screen. Opened from Now
+        // Playing it can be far below (the flagged section sits under every unmatched song, up to
+        // hundreds), so it is found by its place in the list, the keys the LazyColumn below uses.
+        val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == rowKey }?.index
+        val index = visible
+            ?: failedMatchesListKeys(state.tracks, state.flaggedTracks, approvedDownloads.active)
+                .indexOf(rowKey).takeIf { it >= 0 }
+            ?: return
+        scope.launch {
+            // A list opened a moment ago may not have laid out its items yet; a scroll asked of it
+            // then does nothing. Bounded: a row that left the list meanwhile is no reason to wait.
+            if (visible == null) {
+                withTimeoutOrNull(LAYOUT_WAIT_MS) {
+                    snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > index }
+                } ?: return@launch
+            }
+            listState.animateScrollToItem(index, revealOffset)
+        }
     }
     val openTrackId = manualSearch?.trackId
     // Again once YouTube Music answers: while a search runs the box has no rows
@@ -123,8 +145,17 @@ fun FailedMatchesScreen(
     val musicAnswered = manualSearch?.searchingMusic == false
     LaunchedEffect(openTrackId, musicAnswered) {
         val trackId = openTrackId ?: return@LaunchedEffect
-        // The row keys used below: an unmatched row's queue id, else the flagged row's.
-        reveal(state.tracks.firstOrNull { it.trackId == trackId }?.id ?: "flagged_$trackId")
+        // The row keys used below: an unmatched row's, else the flagged row's.
+        reveal(state.tracks.firstOrNull { it.trackId == trackId }?.let(::unmatchedRowKey) ?: flaggedRowKey(trackId))
+    }
+    // From Now Playing's "Find a better match": the song's finder opens once, searching, and the
+    // effect above scrolls to it. Saved, so a rotation (or coming back) never opens it again.
+    var focusHandled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(focusTrackId) {
+        if (focusTrackId != null && !focusHandled) {
+            focusHandled = true
+            viewModel.openFinderFor(focusTrackId)
+        }
     }
     // The song left the list (Approve All, or a sync matched it): its finder goes with it.
     val openRowGone = openTrackId != null && !state.isLoading &&
@@ -222,7 +253,7 @@ fun FailedMatchesScreen(
                     contentPadding = PaddingValues(bottom = 120.dp),
                 ) {
                     // -- Header --
-                    item(key = "header") {
+                    item(key = HEADER_KEY) {
                         FailedMatchesHeader(
                             trackCount = state.tracks.size,
                             flaggedCount = state.flaggedTracks.size,
@@ -238,7 +269,7 @@ fun FailedMatchesScreen(
 
                     // -- Approved matches still downloading --
                     if (approvedDownloads.active) {
-                        item(key = "approved-downloads") {
+                        item(key = APPROVED_DOWNLOADS_KEY) {
                             ApprovedDownloadsBanner(
                                 downloads = approvedDownloads,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -249,7 +280,7 @@ fun FailedMatchesScreen(
                     // -- Track list --
                     itemsIndexed(
                         items = state.tracks,
-                        key = { _, track -> track.id },
+                        key = { _, track -> unmatchedRowKey(track) },
                     ) { index, track ->
                         val candidate = state.resyncCandidates[track.trackId]
                         val isPreviewPlaying = previewState is PreviewState.Playing &&
@@ -291,7 +322,7 @@ fun FailedMatchesScreen(
                                     previewingId = previewingId,
                                     previewLoadingId = state.previewLoading,
                                     onSearch = viewModel::searchManually,
-                                    onFieldFocused = { reveal(track.id) },
+                                    onFieldFocused = { reveal(unmatchedRowKey(track)) },
                                     onPreview = viewModel::previewRejectedMatch,
                                     onStopPreview = viewModel::stopPreview,
                                     onPick = viewModel::pickManualMatch,
@@ -315,7 +346,7 @@ fun FailedMatchesScreen(
                     // + preview infrastructure; approve SWAPS the file
                     // rather than downloading fresh.
                     if (state.flaggedTracks.isNotEmpty()) {
-                        item(key = "flagged_header") {
+                        item(key = FLAGGED_HEADER_KEY) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                                 Text(
@@ -336,7 +367,7 @@ fun FailedMatchesScreen(
 
                         itemsIndexed(
                             items = state.flaggedTracks,
-                            key = { _, row -> "flagged_${row.trackId}" },
+                            key = { _, row -> flaggedRowKey(row.trackId) },
                         ) { index, row ->
                             val candidate = state.resyncCandidates[row.trackId]
                             val isPreviewPlaying = previewState is PreviewState.Playing &&
@@ -376,7 +407,7 @@ fun FailedMatchesScreen(
                                         previewingId = previewingId,
                                         previewLoadingId = state.previewLoading,
                                         onSearch = viewModel::searchManually,
-                                        onFieldFocused = { reveal("flagged_${row.trackId}") },
+                                        onFieldFocused = { reveal(flaggedRowKey(row.trackId)) },
                                         onPreview = viewModel::previewRejectedMatch,
                                         onStopPreview = viewModel::stopPreview,
                                         onPick = viewModel::pickManualMatch,
@@ -441,6 +472,42 @@ fun FailedMatchesScreen(
             },
             containerColor = extendedColors.elevatedSurface,
         )
+    }
+}
+
+// -- The list's item keys ----------------------------------------------------
+
+private const val HEADER_KEY = "header"
+private const val APPROVED_DOWNLOADS_KEY = "approved-downloads"
+private const val FLAGGED_HEADER_KEY = "flagged_header"
+
+/** How long a reveal by position waits for a list that hasn't laid out its items yet. */
+private const val LAYOUT_WAIT_MS = 2_000L
+
+/** An unmatched song's row key: its download-queue entry id. */
+internal fun unmatchedRowKey(track: UnmatchedTrackView): Long = track.id
+
+/** A flagged song's row key. */
+internal fun flaggedRowKey(trackId: Long): String = "flagged_$trackId"
+
+/**
+ * Every item key of the Failed Matches list, in the order the LazyColumn lays them out: the
+ * header, the approved-downloads banner while it shows, the unmatched songs, then the flagged
+ * section's header and songs. A reveal scrolls to a key's index here when its row is off screen
+ * (opened from Now Playing). The LazyColumn takes its keys from the same helpers, so the two
+ * can't name rows differently; a new item there belongs here too, in its place.
+ */
+internal fun failedMatchesListKeys(
+    tracks: List<UnmatchedTrackView>,
+    flagged: List<FlaggedTrackRow>,
+    approvedBanner: Boolean,
+): List<Any> = buildList {
+    add(HEADER_KEY)
+    if (approvedBanner) add(APPROVED_DOWNLOADS_KEY)
+    tracks.forEach { add(unmatchedRowKey(it)) }
+    if (flagged.isNotEmpty()) {
+        add(FLAGGED_HEADER_KEY)
+        flagged.forEach { add(flaggedRowKey(it.trackId)) }
     }
 }
 

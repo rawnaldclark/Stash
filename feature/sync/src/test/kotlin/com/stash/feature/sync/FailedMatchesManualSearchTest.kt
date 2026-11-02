@@ -36,10 +36,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -142,9 +144,10 @@ class FailedMatchesManualSearchTest {
     private fun TestScope.makeVm(
         tracks: List<UnmatchedTrackView> = listOf(unmatched()),
         flaggedTracks: List<TrackEntity> = emptyList(),
+        flaggedFlow: Flow<List<TrackEntity>> = flowOf(flaggedTracks),
     ): FailedMatchesViewModel {
         every { musicRepository.getUnmatchedTracks() } returns flowOf(tracks)
-        every { musicRepository.getFlaggedTracks() } returns flowOf(flaggedTracks)
+        every { musicRepository.getFlaggedTracks() } returns flaggedFlow
         val vm = FailedMatchesViewModel(
             musicRepository, previewPlayer, previewUrlExtractor, searchExecutor,
             downloadExecutor, fileOrganizer, qualityPrefs, trackDao,
@@ -218,6 +221,93 @@ class FailedMatchesManualSearchTest {
         advanceUntilIdle()
 
         assertEquals(listOf(song), vm.shownIds())
+    }
+
+    // -- Opened from Now Playing ("Find a better match") ----------------------
+
+    @Test fun `Now Playing's jump opens the flagged song's finder, searched for it`() = runTest {
+        coEvery { ytMusicApi.searchAll("Evanescence Lacrymosa") } returns answer(wrong, song)
+        val vm = makeVm(tracks = listOf(unmatched()), flaggedTracks = listOf(flagged()))
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
+
+        vm.openFinderFor(7L)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<String>(), messages)
+
+        val open = vm.manualSearch.value!!
+        assertEquals(7L, open.trackId)
+        assertEquals("Evanescence Lacrymosa", open.query)
+        // Searched straight away, and never offering the video it was flagged for.
+        assertEquals(listOf(song), vm.shownIds())
+    }
+
+    @Test fun `the jump waits for the just-flagged song to reach the list`() = runTest {
+        val flaggedNow = MutableStateFlow<List<TrackEntity>>(emptyList())
+        val vm = makeVm(tracks = listOf(unmatched()), flaggedFlow = flaggedNow)
+
+        vm.openFinderFor(7L)
+        runCurrent()
+        assertNull(vm.manualSearch.value)
+
+        flaggedNow.value = listOf(flagged())
+        runCurrent()
+        assertEquals(7L, vm.manualSearch.value?.trackId)
+    }
+
+    @Test fun `a song that never reaches the list opens nothing and says so`() = runTest {
+        val vm = makeVm(tracks = listOf(unmatched()))
+        val messages = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.userMessages.collect(messages::add) }
+
+        vm.openFinderFor(99L)
+        advanceTimeBy(FailedMatchesViewModel.FOCUS_WAIT_MS - 1)
+        runCurrent()
+        assertEquals(emptyList<String>(), messages)
+
+        advanceTimeBy(2)
+        runCurrent()
+
+        assertNull(vm.manualSearch.value)
+        coVerify(exactly = 0) { ytMusicApi.searchAll(any()) }
+        assertEquals(listOf(FailedMatchesViewModel.FOCUS_NOT_FOUND_MESSAGE), messages)
+    }
+
+    @Test fun `the jump never closes a finder already open on the song`() = runTest {
+        val vm = makeVm(tracks = emptyList(), flaggedTracks = listOf(flagged()))
+        vm.toggleManualSearch(7L, "Evanescence", "Lacrymosa")
+        vm.searchManually("lacrymosa synthesis")
+
+        vm.openFinderFor(7L)
+        advanceUntilIdle()
+
+        assertEquals(7L, vm.manualSearch.value?.trackId)
+        // Left as the listener had it, words and all.
+        assertEquals("lacrymosa synthesis", vm.manualSearch.value?.query)
+    }
+
+    @Test fun `a finder the listener opened while the jump waited stays theirs`() = runTest {
+        val flaggedNow = MutableStateFlow<List<TrackEntity>>(emptyList())
+        val vm = makeVm(tracks = listOf(unmatched(1L)), flaggedFlow = flaggedNow)
+
+        vm.openFinderFor(7L)
+        runCurrent()
+        vm.toggleManualSearch(1L, "Daft Punk", "Get Lucky")
+        flaggedNow.value = listOf(flagged())
+        advanceUntilIdle()
+
+        assertEquals(1L, vm.manualSearch.value?.trackId)
+    }
+
+    @Test fun `the jump to an unmatched song searches its artist and title`() = runTest {
+        val vm = makeVm(tracks = listOf(unmatched(1L), unmatched(2L, title = "Instant Crush")))
+
+        vm.openFinderFor(2L)
+        advanceUntilIdle()
+
+        assertEquals(2L, vm.manualSearch.value?.trackId)
+        assertEquals("Daft Punk Instant Crush", vm.manualSearch.value?.query)
     }
 
     @Test fun `tapping the open song closes its finder, tapping another moves it`() = runTest {

@@ -24,7 +24,11 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class ArtistDetailRoute(val artistName: String)
 @Serializable data class AlbumDetailRoute(val albumName: String, val artistName: String)
 @Serializable data class LikedSongsDetailRoute(val source: String? = null)
-@Serializable data object FailedMatchesRoute
+/**
+ * Sync → Failed Matches. [focusTrackId]: the song to open "find it yourself" on, set by Now
+ * Playing's "Find a better match" (the song was just flagged); null from the Sync tab.
+ */
+@Serializable data class FailedMatchesRoute(val focusTrackId: Long? = null)
 @Serializable data object FailedDownloadsRoute
 @Serializable data object DownloadManagementRoute
 @Serializable data object BlockedSongsRoute
