@@ -5,7 +5,7 @@
  * or an IPv6 /56), salted and hashed with COMMUNITY_SALT; counts live in D1 (KV has no atomic increment), one row
  * per network, kind and UTC day, pruned by the daily cron.
  */
-import { networkOf } from "./http.js";
+import { ip } from "./http.js";
 import { sha256Hex } from "./store.js";
 
 /** New records a network may create per UTC day. Far above one person's sharing, so only a shared NAT nears them. */
@@ -19,7 +19,7 @@ const DAY_MS = 86_400_000;
 export async function takeDaily(request, env, kind, now = Date.now()) {
     // Unsalted, the stored IPv4 hashes could be reversed by trying every address: refuse instead (as Community does).
     if (!env.COMMUNITY_SALT) throw new Error("COMMUNITY_SALT is not set");
-    const net = await sha256Hex(`${env.COMMUNITY_SALT}|${networkOf(request.headers.get("CF-Connecting-IP") || "?")}`);
+    const net = await sha256Hex(`${env.COMMUNITY_SALT}|${ip(request, env)}`);
     const row = await env.COMMUNITY_DB.prepare(
         `INSERT INTO share_quota (network, kind, day, n) VALUES (?1, ?2, ?3, 1)
          ON CONFLICT (network, kind, day) DO UPDATE SET n = n + 1 WHERE n < ?4
