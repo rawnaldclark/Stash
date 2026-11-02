@@ -177,7 +177,7 @@ fun HomeScreen(
     yourListeningSection: @Composable () -> Unit = {},
     /** "Your record", from feature/record: the way into the record, or its invitation. */
     yourRecordSection: @Composable () -> Unit = {},
-    /** "From your record", from feature/record: three mixes only the record's years make; nothing without an import. */
+    /** "From your record", from feature/record: mixes only the record's years make, under its card; nothing without an import. */
     recordMixesSection: @Composable () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {

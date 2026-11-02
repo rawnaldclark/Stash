@@ -5,7 +5,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,21 +26,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -78,7 +90,8 @@ import com.stash.feature.record.imports.ImportText
  * - With an import, or [RecordCard.OWN_FOR_RECORD] plays of this phone's own: a preview of the record, in its own numbers. A
  *   disc out of a sleeve of the albums played most, its label the most played album's cover; the hours set large; since when
  *   and how many plays; the artist played most; the top artists' pictures in an overlapping row. The whole card opens the
- *   record ([onOpen]).
+ *   record ([onOpen]); a long press opens a small menu: Open your record, and Hide this card (Home's Your record section
+ *   hidden, as Settings › Home layout does; the record's mixes stay on Home, in its place).
  * - An import on its way with its sheet closed: "Pressing your record" and how far it is, or "Ready to press" for a preview
  *   waiting; Open or Review brings the sheet back.
  * - An import that came to nothing: "Your import didn't finish", Try again (the files kept, read again) and a × that dismisses
@@ -96,13 +109,15 @@ fun YourRecordSection(
     viewModel: YourRecordViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val mixesOnHome by viewModel.mixesOnHome.collectAsStateWithLifecycle()
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
     val s = state ?: return
     if (s == RecordCardState.Hidden) return
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(16.dp))
         val pad = Modifier.padding(horizontal = SidePadding)
         when (s) {
-            is RecordCardState.Record -> RecordPreviewCard(s, onOpen, pad)
+            is RecordCardState.Record -> RecordPreviewCard(s, onOpen, onMenu = { menuOpen = true }, modifier = pad)
             RecordCardState.Invite -> InviteCard(viewModel::openImport, viewModel::hideInvite, pad)
             is RecordCardState.Waiting -> WaitingCard(s.askedAt, viewModel::bring, viewModel::openImport, viewModel::hideInvite, pad)
             is RecordCardState.Importing -> PressingCard(
@@ -131,6 +146,71 @@ fun YourRecordSection(
             RecordCardState.Hidden -> Unit
         }
     }
+    // Only over the record itself: the import's cards have their own ×, or nothing to hide
+    if (menuOpen && s is RecordCardState.Record) {
+        val context = LocalContext.current
+        val hidden = stringResource(if (mixesOnHome) R.string.record_card_hidden_keep_mixes else R.string.record_card_hidden)
+        RecordCardMenu(
+            mixesStay = mixesOnHome,
+            onOpen = {
+                menuOpen = false
+                onOpen()
+            },
+            onHide = {
+                menuOpen = false
+                viewModel.hideCard()
+                android.widget.Toast.makeText(context, hidden, android.widget.Toast.LENGTH_LONG).show()
+            },
+            onDismiss = { menuOpen = false },
+        )
+    }
+}
+
+/**
+ * The record card's long press (Home's way: the Discover hero, a mix and a pinned playlist each long-press into a sheet):
+ * Open your record, and Hide this card. "Hide", never "Remove": Settings › Your record › Remove your record deletes the
+ * history, and this touches nothing of it. With [mixesStay] (the record's mixes are on Home) the hide row says they stay.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecordCardMenu(mixesStay: Boolean, onOpen: () -> Unit, onHide: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Text(
+            text = stringResource(R.string.record_eyebrow),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp).semantics { heading() },
+        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        MenuRow(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.record_open), onOpen)
+        MenuRow(
+            Icons.Filled.VisibilityOff,
+            stringResource(if (mixesStay) R.string.record_card_hide_keep_mixes else R.string.record_card_hide),
+            onHide,
+        )
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+/** One row of [RecordCardMenu], as Home's sheets lay theirs out (its `MixActionRow`); the words wrap at a large font. */
+@Composable
+private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
 }
 
 /**
@@ -141,13 +221,19 @@ fun YourRecordSection(
  * Compose folds a node's semantics from the innermost modifier out, and a clearing one starts afresh, so outside it would
  * clear the click too. A merge instead would have moved the announcement and the role into child nodes, and TalkBack read
  * it, every line again, the faces' initials and "Button" (the rig's accessibility tree, 2026-10-26).
+ *
+ * With [onLongClick] too, the card long-presses (into its menu); TalkBack offers it as the node's long-press action, with
+ * [onLongClickLabel], and the clearing inside it keeps that action as it keeps the click.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CardFrame(
     backdrop: String?,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
     spoken: String? = null,
     overlay: @Composable () -> Unit = {},
     content: @Composable RowScope.() -> Unit,
@@ -158,7 +244,19 @@ private fun CardFrame(
             .fillMaxWidth()
             .shadow(StashElevation.Hero, shape, clip = false)
             .clip(shape)
-            .then(if (onClick != null) Modifier.clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick) else Modifier)
+            .then(
+                when {
+                    onClick != null && onLongClick != null -> Modifier.combinedClickable(
+                        onClickLabel = onClickLabel,
+                        role = Role.Button,
+                        onLongClickLabel = onLongClickLabel,
+                        onLongClick = onLongClick,
+                        onClick = onClick,
+                    )
+                    onClick != null -> Modifier.clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick)
+                    else -> Modifier
+                },
+            )
             .then(if (spoken != null) Modifier.clearAndSetSemantics { contentDescription = spoken } else Modifier),
     ) {
         BlurredCoverBackdrop(model = backdrop, modifier = Modifier.matchParentSize())
@@ -172,7 +270,7 @@ private fun CardFrame(
 }
 
 @Composable
-private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, onMenu: () -> Unit, modifier: Modifier = Modifier) {
     val view = s.view
     val label = s.albumArt.firstOrNull()
     val locale = LocalConfiguration.current.locales[0]
@@ -195,6 +293,8 @@ private fun RecordPreviewCard(s: RecordCardState.Record, onOpen: () -> Unit, mod
         modifier = modifier,
         onClick = onOpen,
         onClickLabel = stringResource(R.string.record_open),
+        onLongClick = onMenu,
+        onLongClickLabel = stringResource(R.string.record_card_more),
         spoken = spoken,
     ) {
         RecordArtwork(
