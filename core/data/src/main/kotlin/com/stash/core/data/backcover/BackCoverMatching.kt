@@ -225,6 +225,20 @@ internal fun releasesWithoutMoreArt(body: JsonObject): Set<String> =
         id.takeIf { flag("artwork") == false || (flag("back") != true && count <= front) }
     }
 
+/**
+ * The releases in a browse known to have no back on the archive: the browse's `cover-art-archive`
+ * summary says no artwork, or no back. When one of their listings fails, the back isn't lost with
+ * it. A release without a summary isn't among them.
+ */
+internal fun releasesWithoutBack(body: JsonObject): Set<String> =
+    body["releases"]?.jsonArray.orEmpty().mapNotNullTo(HashSet()) { el ->
+        val release = el as? JsonObject ?: return@mapNotNullTo null
+        val id = release.string("id") ?: return@mapNotNullTo null
+        val art = release["cover-art-archive"] as? JsonObject ?: return@mapNotNullTo null
+        fun flag(name: String) = (art[name] as? JsonPrimitive)?.booleanOrNull
+        id.takeIf { flag("artwork") == false || flag("back") == false }
+    }
+
 /** Below this a release group search hit is a guess (MusicBrainz scores 0-100). */
 internal const val MIN_SEARCH_SCORE = 80
 

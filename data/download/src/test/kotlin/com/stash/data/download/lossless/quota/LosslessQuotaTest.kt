@@ -1,14 +1,19 @@
 package com.stash.data.download.lossless.quota
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.runBlocking
@@ -134,25 +139,17 @@ class LosslessQuotaTest {
         assertThat(quota.isSpent()).isTrue()
     }
 
-    @Test fun `a lifted day survives a restart`() = runBlocking {
-        val dir: File = Files.createTempDirectory("quota-lift").toFile()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        try {
-            val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "q.preferences_pb") }
-            val first = LosslessQuota(store, { now }, scope)
-            first.awaitLoaded()
-            first.onHeaders("500/500", "$RESET")
-            first.liftSpent()
-            // A real file store on Dispatchers.IO: a busy CI machine took more than 5 s (2026-10-26).
-            withTimeout(20_000) { store.data.first { it.asMap().size >= 6 } }
+    @Test fun `a lifted day survives a restart`() = withFileStore { rig ->
+        val first = LosslessQuota(rig.store, { now }, rig.quotaScope)
+        first.awaitLoaded()
+        first.onHeaders("500/500", "$RESET")
+        first.liftSpent()
+        rig.settle()
+        assertThat(rig.storedKeys()).containsAtLeast("used", "limit", "resets_at", "noticed_day", "noticed_level", "lifted_day")
 
-            val second = LosslessQuota(store, { now }, scope)
-            second.awaitLoaded()
-            assertThat(second.isSpent()).isFalse()
-        } finally {
-            scope.cancel()
-            dir.deleteRecursively()
-        }
+        val second = LosslessQuota(rig.store, { now }, rig.quotaScope)
+        second.awaitLoaded()
+        assertThat(second.isSpent()).isFalse()
     }
 
     @Test fun `a quota body reads numbers, the word unlimited and the supporter flag`() {
@@ -232,26 +229,68 @@ class LosslessQuotaTest {
         assertThat(withTimeoutOrNull(100) { quota.noticeEvents.first() }).isNull()
     }
 
-    @Test fun `the allowance and the day's notices survive a restart`() = runBlocking {
-        val dir: File = Files.createTempDirectory("quota").toFile()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        try {
-            val store = PreferenceDataStoreFactory.create(scope = scope) { File(dir, "q.preferences_pb") }
-            val first = LosslessQuota(store, { now }, scope)
-            first.awaitLoaded()
-            first.onHeaders("500/500", "$RESET")
-            withTimeout(5_000) { first.noticeEvents.first() }
-            withTimeout(5_000) { store.data.first { it.asMap().size >= 5 } }
+    @Test fun `the allowance and the day's notices survive a restart`() = withFileStore { rig ->
+        val first = LosslessQuota(rig.store, { now }, rig.quotaScope)
+        first.awaitLoaded()
+        first.onHeaders("500/500", "$RESET")
+        rig.settle()
+        first.noticeEvents.first() // raised before its write, and buffered: here by now
+        assertThat(rig.storedKeys()).containsAtLeast("used", "limit", "resets_at", "noticed_day", "noticed_level")
 
-            val second = LosslessQuota(store, { now }, scope)
-            second.awaitLoaded()
-            assertThat(second.current()).isEqualTo(LosslessAllowance(500, 500, RESET))
-            assertThat(second.isSpent()).isTrue()
-            // The limit was already announced today: a re-report says nothing.
-            second.onHeaders("500/500", "$RESET")
-            assertThat(withTimeoutOrNull(300) { second.noticeEvents.first() }).isNull()
+        val second = LosslessQuota(rig.store, { now }, rig.quotaScope)
+        second.awaitLoaded()
+        assertThat(second.current()).isEqualTo(LosslessAllowance(500, 500, RESET))
+        assertThat(second.isSpent()).isTrue()
+        // The limit was already announced today: a re-report says nothing.
+        second.onHeaders("500/500", "$RESET")
+        rig.settle() // anything the re-report started has run, so a notice it raised would be waiting now
+        assertThat(withTimeoutOrNull(300) { second.noticeEvents.first() }).isNull()
+    }
+
+    /** A real file DataStore and a scope apart from the store's own for the [LosslessQuota]s under test. */
+    private class FileStoreRig(val store: DataStore<Preferences>, private val quotaJob: Job, val quotaScope: CoroutineScope) {
+        /**
+         * Returns once every write the quotas started (allowance, notice, lift) has finished: it joins each coroutine they
+         * launched, and a DataStore `edit` returns only once its write is in the file. Ends on the work, never on a clock.
+         */
+        suspend fun settle() {
+            while (true) {
+                val running = quotaJob.children.filter { it.isActive }.toList()
+                if (running.isEmpty()) return
+                running.joinAll()
+            }
+        }
+
+        /**
+         * The names of the keys the store holds. Read once nothing is writing (after [settle]), so it is the last write; a write
+         * that failed (LosslessQuota logs and drops it) fails the assertion on it, naming the key, instead of a wait timing out.
+         */
+        suspend fun storedKeys(): Set<String> = store.data.first().asMap().keys.mapTo(HashSet()) { it.name }
+    }
+
+    /**
+     * Runs [body] against a real file DataStore, as the app keeps one, so that it ends on the work and not on the machine's speed:
+     *  - the store and the quotas run on a thread of their own, not the Dispatchers.IO pool every other test in this JVM shares;
+     *  - [FileStoreRig.settle] waits for the writes themselves. Waiting on `store.data.first { <enough keys> }`, as these tests
+     *    did, can wait forever: DataStore 1.1's `data`, collected while a write is under way, reads the old file under the new
+     *    version, then drops the cache update that carries that same version (DataStoreImpl `readDataOrHandleCorruption`
+     *    `preLockVersion`, `dropWhile { it.version <= startState.version }`). When that write was the last one, nothing
+     *    wakes the wait: a hang, not a slow disk, which is why raising its timeout from 5 s to 20 s did not stop the CI failures.
+     * [CEILING_MS] bounds the whole body only so that a real hang fails this test instead of the CI job.
+     */
+    private fun withFileStore(body: suspend (FileStoreRig) -> Unit) {
+        val dir: File = Files.createTempDirectory("lossless-quota").toFile()
+        val io = Executors.newSingleThreadExecutor { r -> Thread(r, "lossless-quota-test").apply { isDaemon = true } }
+            .asCoroutineDispatcher()
+        val storeScope = CoroutineScope(SupervisorJob() + io)
+        val quotaJob = SupervisorJob()
+        try {
+            val store = PreferenceDataStoreFactory.create(scope = storeScope) { File(dir, "q.preferences_pb") }
+            runBlocking { withTimeout(CEILING_MS) { body(FileStoreRig(store, quotaJob, CoroutineScope(quotaJob + io))) } }
         } finally {
-            scope.cancel()
+            quotaJob.cancel()
+            storeScope.cancel()
+            io.close()
             dir.deleteRecursively()
         }
     }
@@ -260,5 +299,8 @@ class LosslessQuotaTest {
         const val DAY = 86_400L
         /** 2026-10-18 00:00 UTC. */
         const val RESET = 1_792_281_600L
+
+        /** Only a hang reaches it: the work inside is a few small file writes on a thread of their own. */
+        const val CEILING_MS = 60_000L
     }
 }

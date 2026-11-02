@@ -116,6 +116,9 @@ private fun parseAlbumCard(renderer: JsonObject): AlbumSummary? {
         artist = artist,
         thumbnailUrl = thumbnailUrl,
         year = year,
+        // Kept for the artist page's Latest releases row, which mixes albums with
+        // singles and EPs and so has to say which each card is ("2021 • EP").
+        releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
     )
 }
 

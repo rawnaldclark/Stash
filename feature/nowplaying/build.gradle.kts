@@ -30,6 +30,9 @@ dependencies {
     // Tap-to-artist: resolveArtist(name) → YT browseId for the Now Playing
     // track → artist-profile navigation.
     implementation(project(":data:ytmusic"))
+    // ⋮ › Streaming quality: the same Lossless / Save Data / Prefer Tidal AAC preferences
+    // Settings › Audio & Quality writes (#716).
+    implementation(project(":data:download"))
     implementation(libs.work.runtime.ktx)
     implementation(libs.coil.compose)
     implementation(libs.compose.material.icons.extended)

@@ -67,11 +67,13 @@ enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
 /**
  * Minimal album identity for horizontal album rows and discography grids.
  *
- * [releaseType] is YouTube's label from a search result ("Album", "Single",
- * "EP"...), null where the source doesn't say. #481: a single that shares an
- * album's title is a different release. [trackCount] is how many tracks the
- * release has where the source lists it (Qobuz's rows do, and send no release
- * type, so it is how a Qobuz single is told from an album); null otherwise.
+ * [releaseType] is YouTube's label from a search result or an artist page's
+ * card ("Album", "Single", "EP"...), null where the source doesn't say (the
+ * artist page's Albums carousel gives the year alone). #481: a single that
+ * shares an album's title is a different release. [trackCount] is how many
+ * tracks the release has where the source lists it (Qobuz's rows do, and send
+ * no release type, so it is how a Qobuz single is told from an album); null
+ * otherwise.
  */
 @Serializable
 data class AlbumSummary(

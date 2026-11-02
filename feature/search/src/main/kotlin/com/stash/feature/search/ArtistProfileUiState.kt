@@ -36,8 +36,8 @@ sealed interface ArtistProfileStatus {
 /**
  * Full UI state surfaced by [ArtistProfileViewModel] to [ArtistProfileScreen].
  *
- * Hero populates from nav args immediately; the shelves (popular / albums /
- * singles / related) fill in once the cache emits.
+ * Hero populates from nav args immediately; the shelves (popular / latest /
+ * albums / singles / related) fill in once the cache emits.
  *
  * Shrunk in the Album Discovery phase-1 migration: the previous
  * `downloadingIds` / `downloadedIds` / `previewLoading` fields moved onto
@@ -48,6 +48,8 @@ sealed interface ArtistProfileStatus {
 data class ArtistProfileUiState(
     val hero: HeroState,
     val popular: List<TrackSummary> = emptyList(),
+    /** The Latest releases row, from [albums] and [singles] ([latestReleases]); empty hides it. */
+    val latest: List<LatestRelease> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val singles: List<AlbumSummary> = emptyList(),
     val related: List<ArtistSummary> = emptyList(),
