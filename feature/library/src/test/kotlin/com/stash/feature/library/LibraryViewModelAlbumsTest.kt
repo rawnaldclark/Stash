@@ -87,7 +87,7 @@ class LibraryViewModelAlbumsTest {
         verify(music).removePlaylist(albumRow)
     }
 
-    @Test fun `Remove on a merged card takes every copy: a saved one goes, a synced one is hidden`() = runTest {
+    @Test fun `Remove on a merged card takes every copy, deleting a saved one and hiding a synced one`() = runTest {
         // Red Medicine synced from YouTube Music (2) and saved again from its Qobuz page (1): one card.
         val merged = redMedicine.copy(copyIds = listOf(2L, 1L))
         val music = repo(albums = listOf(merged)).stub {
