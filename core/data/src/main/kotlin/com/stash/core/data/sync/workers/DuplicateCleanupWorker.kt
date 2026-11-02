@@ -22,11 +22,13 @@ import kotlinx.coroutines.CancellationException
  *
  * Once per install: enqueued at startup ([enqueueIfPending]) only until [DuplicateCleanupState]
  * says it ran, as unique work with `KEEP` so a relaunch never starts a second copy. Local work, no
- * constraints; a few seconds of short transactions on a large library.
+ * constraints; short transactions of 200 stubs (about two minutes for the owner's 5,480 stubs in
+ * the PC rehearsal).
  *
  * It waits its turn: while a sync's diff, a Stash Mix refresh or a discovery run is going, those
  * hold library rows in memory and would trip over a row merged away under them, so the worker
- * retries a minute later (linearly backed off) instead of starting. An error retries the same way;
+ * retries a minute later (linearly backed off) instead of starting, and a run that sees one start
+ * stops after its current batch and retries the same way. An error retries the same way too;
  * after [MAX_ATTEMPTS] it gives up until the next app start enqueues it again. A stopped run loses
  * at most its open batch, and the next run picks up what is left.
  */
@@ -45,8 +47,13 @@ class DuplicateCleanupWorker @AssistedInject constructor(
             Log.i(TAG, "a sync or a mix refresh is running; trying again shortly")
             retryOrGiveUp()
         } else {
-            cleanup.runIfPending()
-            Result.success()
+            val summary = cleanup.runIfPending(yieldWhen = libraryBusy)
+            if (summary?.stoppedEarly == true) {
+                Log.i(TAG, "a sync or a mix refresh started; pausing, the next attempt picks up the rest")
+                retryOrGiveUp()
+            } else {
+                Result.success()
+            }
         }
     } catch (e: CancellationException) {
         throw e

@@ -280,6 +280,28 @@ class DuplicateCleanupTest {
         assertFalse("a restored backup runs it again", state.isDone())
     }
 
+    @Test fun `a run that yields to a sync stops between batches, and the next run finishes and counts both`() = runBlocking {
+        f.song(youtubeId = "Ikn6Z2fxMs4", file = "/music/starting-over.flac")
+        repeat(3) { f.stub() }
+
+        val first = cleanup.runIfPending(batchSize = 1, yieldWhen = { true })
+
+        assertTrue(first!!.stoppedEarly)
+        assertEquals(1, first.merged)
+        assertFalse("not done: the rest is still to tidy", state.isDone())
+        assertNull("no notice for half a run", state.pendingNotice.first())
+        assertEquals(3, f.count("SELECT COUNT(*) FROM tracks"))
+
+        val second = cleanup.runIfPending(batchSize = 1)
+
+        assertFalse(second!!.stoppedEarly)
+        assertEquals(2, second.merged)
+        assertTrue(state.isDone())
+        assertEquals(1, f.count("SELECT COUNT(*) FROM tracks"))
+        assertEquals("the notice counts both runs", 3, state.pendingNotice.first())
+        assertEquals(3, state.lastRun.first()!!.merged)
+    }
+
     private fun snapshot(): List<Int> = listOf(
         "SELECT COUNT(*) FROM tracks", "SELECT COUNT(*) FROM playlist_tracks", "SELECT COUNT(*) FROM track_aliases",
         "SELECT COUNT(*) FROM track_merge_log", "SELECT COUNT(*) FROM listening_events", "SELECT SUM(play_count) FROM tracks",

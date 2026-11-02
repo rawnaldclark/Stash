@@ -67,17 +67,34 @@ class DuplicateCleanupState internal constructor(
         var marked = false
         store.edit {
             if ((it[GENERATION] ?: 0) == pass.generation) {
+                // Runs that yielded before this one did part of the work ([recordPartial]).
+                val merged = summary.merged + (it[PARTIAL_MERGED] ?: 0)
+                val removed = summary.removed + (it[PARTIAL_REMOVED] ?: 0)
                 it[DONE_VERSION] = RULE_VERSION
                 it[DONE_GENERATION] = pass.generation
                 it[LAST_AT] = now
-                it[LAST_MERGED] = summary.merged
-                it[LAST_REMOVED] = summary.removed
+                it[LAST_MERGED] = merged
+                it[LAST_REMOVED] = removed
+                // A finishing run reads every stub again, so its own count is the whole count.
                 it[LAST_LEFT] = summary.leftForReview
-                if (summary.merged > 0) it[NOTICE] = (it[NOTICE] ?: 0) + summary.merged
+                it.remove(PARTIAL_MERGED)
+                it.remove(PARTIAL_REMOVED)
+                if (merged > 0) it[NOTICE] = (it[NOTICE] ?: 0) + merged
                 marked = true
             }
         }
         return marked
+    }
+
+    /**
+     * A run that stopped early (the library got busy) keeps what it merged and removed here, so the
+     * run that finishes counts it in the notice and in Library Health.
+     */
+    suspend fun recordPartial(summary: DuplicateCleanup.Summary) {
+        store.edit {
+            it[PARTIAL_MERGED] = (it[PARTIAL_MERGED] ?: 0) + summary.merged
+            it[PARTIAL_REMOVED] = (it[PARTIAL_REMOVED] ?: 0) + summary.removed
+        }
     }
 
     /** Asks for a fresh run (a restored or merged backup may hold stubs): a new generation. */
@@ -118,6 +135,8 @@ class DuplicateCleanupState internal constructor(
         private val LAST_REMOVED = intPreferencesKey("last_removed")
         private val LAST_LEFT = intPreferencesKey("last_left_for_review")
         private val NOTICE = intPreferencesKey("notice_pending")
+        private val PARTIAL_MERGED = intPreferencesKey("partial_merged")
+        private val PARTIAL_REMOVED = intPreferencesKey("partial_removed")
 
         /** The state over the process-wide DataStore, for code that has a Context but no injection. */
         fun forContext(context: Context): DuplicateCleanupState =

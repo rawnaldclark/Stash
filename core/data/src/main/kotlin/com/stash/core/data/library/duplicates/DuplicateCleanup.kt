@@ -64,9 +64,12 @@ class DuplicateCleanup @Inject constructor(
         val leftForReview: Int = 0,
         /** Stubs with a download waiting or running, or a merge [TrackMerger] refused. */
         val skipped: Int = 0,
+        /** The run stopped between batches because the library got busy; the next run finishes it. */
+        val stoppedEarly: Boolean = false,
     ) {
         operator fun plus(o: Summary) = Summary(
             scanned + o.scanned, merged + o.merged, removed + o.removed, leftForReview + o.leftForReview, skipped + o.skipped,
+            stoppedEarly || o.stoppedEarly,
         )
     }
 
@@ -75,16 +78,29 @@ class DuplicateCleanup @Inject constructor(
     /**
      * Runs the cleanup unless it already ran on this install ([DuplicateCleanupState]); one run at a
      * time. A re-arm that lands during a run (a merged backup) makes it run again before returning.
+     * A run that [yieldWhen] stops early is not marked done: what it did is kept for the notice,
+     * and the next run finishes the rest.
      *
-     * @return what the last run did, or null when it was already done.
+     * @param yieldWhen asked between batches; true stops the run there (a sync or a mix refresh
+     *   started, and would trip over rows merged away under it).
+     * @return what the last run did ([Summary.stoppedEarly] when it yielded), or null when it was
+     *   already done.
      */
-    suspend fun runIfPending(now: () -> Long = System::currentTimeMillis): Summary? = mutex.withLock {
+    suspend fun runIfPending(
+        now: () -> Long = System::currentTimeMillis,
+        batchSize: Int = BATCH_SIZE,
+        yieldWhen: suspend () -> Boolean = { false },
+    ): Summary? = mutex.withLock {
         var last: Summary? = null
         while (true) {
             val pass = state.pendingPass() ?: break
             canonicalRecompute.runIfPending()
-            val summary = run(now = now)
+            val summary = run(batchSize = batchSize, now = now, yieldWhen = yieldWhen)
             last = summary
+            if (summary.stoppedEarly) {
+                state.recordPartial(summary)
+                break
+            }
             if (!state.markDone(pass, summary, now())) {
                 Log.i(TAG, "re-armed during the run; running again")
             }
@@ -94,9 +110,13 @@ class DuplicateCleanup @Inject constructor(
 
     /**
      * One pass over every stub (see [DuplicateCleanup]). Safe to call again: a tidied library gives
-     * an empty [Summary] apart from [Summary.scanned].
+     * an empty [Summary] apart from [Summary.scanned]. Stops after a batch when [yieldWhen] says so.
      */
-    suspend fun run(batchSize: Int = BATCH_SIZE, now: () -> Long = System::currentTimeMillis): Summary {
+    suspend fun run(
+        batchSize: Int = BATCH_SIZE,
+        now: () -> Long = System::currentTimeMillis,
+        yieldWhen: suspend () -> Boolean = { false },
+    ): Summary {
         require(batchSize > 0) { "batchSize must be positive" }
         val dao = database.duplicateDao()
         Log.i(TAG, "checking ${dao.stubCount()} id-less stub(s)")
@@ -111,6 +131,11 @@ class DuplicateCleanup @Inject constructor(
             }
             cursor = batch.last().id
             if (batch.size < batchSize) break
+            if (yieldWhen()) {
+                Log.i(TAG, "the library got busy; stopping after id $cursor, the next run picks up the rest")
+                total = total.copy(stoppedEarly = true)
+                break
+            }
         }
         Log.i(
             TAG,
