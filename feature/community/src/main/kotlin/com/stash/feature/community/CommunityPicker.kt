@@ -1,5 +1,7 @@
 package com.stash.feature.community
 
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,10 +103,11 @@ internal fun CommunityPicker(onPick: (PostTarget) -> Unit, onDismiss: () -> Unit
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(20.dp).size(24.dp)) }
             items(state.playlists, key = { "p${it.id}" }) { p ->
                 val mix = p.type in CommunityRepository.MIX_TYPES
-                PickRow(p.artUrl, p.name, "${if (mix) "Mix" else "Playlist"} · ${songs(p.trackCount)}") { onPick(PostTarget.Playlist(p.id)) }
+                PickRow(p.artUrl, p.name, stringResource(if (mix) R.string.community_kind_mix else R.string.community_kind_playlist) + SEP +
+                    pluralStringResource(R.plurals.community_songs, p.trackCount, p.trackCount)) { onPick(PostTarget.Playlist(p.id)) }
             }
             items(state.songs, key = { "s${it.id}" }) { t ->
-                PickRow(t.albumArtPath ?: t.albumArtUrl, t.title, "Song · ${t.artist}") { onPick(PostTarget.Song(t)) }
+                PickRow(t.albumArtPath ?: t.albumArtUrl, t.title, stringResource(R.string.community_kind_song) + SEP + t.artist) { onPick(PostTarget.Song(t)) }
             }
             if (!state.loading && state.playlists.isEmpty() && state.songs.isEmpty()) {
                 item {

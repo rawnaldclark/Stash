@@ -81,6 +81,8 @@ import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.ProvideAlbumChrome
 import com.stash.core.ui.components.LocalBottomChromeInset
+import com.stash.core.ui.components.LocalAppSnackbar
+import com.stash.core.ui.components.rememberAppSnackbar
 import com.stash.core.ui.components.LocalChromeHazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -307,6 +309,9 @@ fun StashScaffold(
         }
     }
 
+    // Community (and any screen without its own host) shows its lines on this snackbar, above the bottom chrome.
+    val appSnackbar = rememberAppSnackbar(snackbarHostState)
+    CompositionLocalProvider(LocalAppSnackbar provides appSnackbar) {
     CommunityPostingHost(
         communityPosting,
         onSeeMyPosts = {
@@ -530,6 +535,7 @@ fun StashScaffold(
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
         PlayerQueueSheet(onDismiss = { showQueue = false })
+    }
     }
     }
     }

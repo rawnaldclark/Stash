@@ -1,6 +1,5 @@
 package com.stash.feature.community
 
-import android.widget.Toast
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.model.community.CommunityPost
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +68,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.model.share.SharedTrack
 import com.stash.feature.community.CommunityPostViewModel.UiState
+import com.stash.core.ui.components.LocalAppSnackbar
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -91,10 +91,11 @@ fun CommunityPostScreen(
     val related by viewModel.related.collectAsStateWithLifecycle()
     val openingArtist by viewModel.openingArtist.collectAsStateWithLifecycle()
     val loaded = state as? UiState.Loaded
-    val context = LocalContext.current
+    val snackbar = LocalAppSnackbar.current
+    val takenDown = stringResource(R.string.community_taken_down)
     // Saveable, so the dialog survives rotation.
     var confirmTakeDown by rememberSaveable { mutableStateOf(false) }
-    MessageToast(loaded?.message, viewModel::messageShown)
+    CommunitySnackbar(loaded?.message, viewModel::messageShown)
     when (val s = state) {
         is UiState.Loaded -> PostBody(
             s = s,
@@ -108,16 +109,16 @@ fun CommunityPostScreen(
             onTakeDown = { confirmTakeDown = true },
         )
         else -> Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.community_back)) }
             when (s) {
                 UiState.Loading -> Centered { CircularProgressIndicator() }
                 UiState.Gone -> Centered {
-                    Text("This post is no longer available", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                    Text(stringResource(R.string.community_post_gone), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 }
                 is UiState.Failed -> Centered {
                     Text(s.message, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(16.dp))
-                    Button(onClick = viewModel::load) { Text("Retry") }
+                    Button(onClick = viewModel::load) { Text(stringResource(R.string.community_retry)) }
                 }
                 is UiState.Loaded -> Unit
             }
@@ -127,22 +128,23 @@ fun CommunityPostScreen(
     if (confirmTakeDown && loaded != null) {
         AlertDialog(
             onDismissRequest = { confirmTakeDown = false },
-            title = { Text("Take down this post?") },
+            title = { Text(stringResource(R.string.community_take_down_title)) },
             text = {
                 // The Worker counts a post toward the daily two for 24 hours.
                 val countsToday = System.currentTimeMillis() - loaded.post.createdAt < 86_400_000L
-                Text("It leaves Community for everyone." + if (countsToday) " It still counts toward today's two posts." else "")
+                Text(stringResource(if (countsToday) R.string.community_take_down_body_today else R.string.community_take_down_body))
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmTakeDown = false
                     viewModel.takeDown {
-                        Toast.makeText(context, "Post taken down", Toast.LENGTH_SHORT).show()
+                        // On the app's snackbar, so it stays up over the screen Back lands on.
+                        snackbar?.show(takenDown)
                         onBack()
                     }
-                }) { Text("Take down") }
+                }) { Text(stringResource(R.string.community_take_down)) }
             },
-            dismissButton = { TextButton(onClick = { confirmTakeDown = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmTakeDown = false }) { Text(stringResource(R.string.community_cancel)) } },
         )
     }
 }
@@ -195,7 +197,7 @@ private fun PostBody(
                         .size(48.dp)
                         .background(glass, CircleShape),
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.community_back), tint = MaterialTheme.colorScheme.onSurface)
                 }
                 if (post.mine) {
                     var menu by remember { mutableStateOf(false) }
@@ -211,10 +213,10 @@ private fun PostBody(
                             enabled = !s.busy,
                             modifier = Modifier.size(48.dp).background(glass, CircleShape),
                         ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More options", tint = MaterialTheme.colorScheme.onSurface)
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.community_more_options), tint = MaterialTheme.colorScheme.onSurface)
                         }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Take down my post") }, onClick = { menu = false; onTakeDown() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.community_take_down_menu)) }, onClick = { menu = false; onTakeDown() })
                         }
                     }
                 }
@@ -241,7 +243,7 @@ private fun PostBody(
                             .padding(vertical = 4.dp),
                     ) {
                         Text(
-                            post.headline(),
+                            postHeadline(post),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -257,7 +259,7 @@ private fun PostBody(
                     }
                 } else {
                     Text(
-                        post.headline(),
+                        postHeadline(post),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -268,13 +270,14 @@ private fun PostBody(
                     PosterInitial(post.name)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Posted by ${post.name} · ${ago(post.createdAt, now, long = true)}",
+                        stringResource(R.string.community_posted_by, post.name, ageText(ageOf(post.createdAt, now), long = true)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         modifier = Modifier.weight(1f),
                     )
-                    VoteControl(post, onVote = viewModel::vote, vertical = false)
+                    Spacer(Modifier.width(8.dp))
+                    VotePill(post, onVote = viewModel::vote)
                 }
                 Spacer(Modifier.height(14.dp))
 
@@ -289,7 +292,7 @@ private fun PostBody(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Play")
+                        Text(stringResource(R.string.community_play))
                     }
                     if (song) {
                         OutlinedButton(
@@ -301,7 +304,7 @@ private fun PostBody(
                         ) {
                             Icon(if (s.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (s.liked) "Liked" else "Like")
+                            Text(stringResource(if (s.liked) R.string.community_liked else R.string.community_like))
                         }
                     } else {
                         OutlinedButton(
@@ -313,14 +316,14 @@ private fun PostBody(
                         ) {
                             Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Shuffle")
+                            Text(stringResource(R.string.community_shuffle))
                         }
                         IconButton(
                             onClick = { viewModel.saveCopy(onOpenPlaylist) },
                             enabled = !s.busy,
                             modifier = Modifier.size(48.dp).background(glass, RoundedCornerShape(12.dp)),
                         ) {
-                            Icon(Icons.Default.LibraryAdd, contentDescription = "Save a copy", tint = MaterialTheme.colorScheme.onSurface)
+                            Icon(Icons.Default.LibraryAdd, contentDescription = stringResource(R.string.community_save_copy), tint = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -329,7 +332,7 @@ private fun PostBody(
                 if (!song) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "As posted. ${post.name}'s later changes don't show here.",
+                        stringResource(R.string.community_as_posted, post.name),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -341,18 +344,17 @@ private fun PostBody(
         if (song && related.isNotEmpty()) {
             item {
                 Text(
-                    "More from Community",
+                    stringResource(R.string.community_more_from),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
                 )
             }
             items(related, key = { it.id }) { p ->
-                PostRow(
+                PostListRow(
                     rank = null,
                     rankWidth = 0.dp,
                     post = p,
-                    withAge = false,
                     now = now,
                     onOpen = { onOpenPost(p.id) },
                     onVote = {},
@@ -400,4 +402,18 @@ private fun SongLine(t: SharedTrack) {
             )
         }
     }
+}
+
+/** "Playlist · 42 songs · 2 h 11 min", "Mix · 34 songs", or a song's artist (spec 2026-09-26 §3 The post screen). */
+@Composable
+private fun postHeadline(post: CommunityPost): String {
+    if (post.kind == "song") return post.track?.artist ?: post.artist.orEmpty()
+    val minutes = post.lengthMinutes()
+    val length = when {
+        minutes <= 0 -> null
+        minutes < 60 -> stringResource(R.string.community_length_minutes, minutes.toInt())
+        minutes % 60 == 0L -> stringResource(R.string.community_length_hours, (minutes / 60).toInt())
+        else -> stringResource(R.string.community_length_hours_minutes, (minutes / 60).toInt(), (minutes % 60).toInt())
+    }
+    return listOfNotNull(postFacts(post), length).joinToString(SEP)
 }
