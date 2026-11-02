@@ -79,7 +79,7 @@
     <string name="settings_search_no_results">No settings found for \"%1$s\"</string>
     <string name="settings_search_placeholder">Search settings</string>
     <string name="settings_search_clear">Clear search</string>
-    <string name="settings_search_stream_or_download">Stream or download</string>
+    <string name="settings_search_online_or_offline">Online or offline</string>
     <string name="settings_search_sync_your_likes">Sync your likes</string>
 
     <!-- Settings > Support Banner -->
@@ -203,7 +203,7 @@
     <string name="settings_yt_sync_retry">Retry YouTube sync</string>
     <string name="settings_yt_status_up_to_date">Up to date</string>
     <string name="settings_yt_status_pending">%1$d pending</string>
-    <string name="settings_yt_status_pending_offline">%1$d pending · offline</string>
+    <string name="settings_yt_status_pending_offline">%1$d pending · YouTube Music can\'t be reached</string>
     <string name="settings_yt_status_auth_failed">YT Music connection lost — reconnect</string>
     <string name="settings_yt_status_protocol_broken">Disabled due to errors — will re-enable in next update</string>
     <string name="settings_yt_status_disabled">Off</string>
@@ -458,8 +458,9 @@
     <string name="settings_lossless_routing_footer">Lossless comes from the sources above. Misses try JioSaavn before falling back to YouTube, shown as \"via YT\" while it plays.</string>
 
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Stream only</string>
-    <string name="settings_mode_download">Download</string>
+    <!-- The one mode switch. Online: everything plays, and songs that aren't downloaded stream. Offline: only downloaded songs play (Sync still downloads over the network). -->
+    <string name="settings_mode_online">Online</string>
+    <string name="settings_mode_offline">Offline</string>
     <string name="settings_stream_on_cellular_title">Stream on cellular</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Stream via YouTube</string>

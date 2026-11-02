@@ -70,7 +70,7 @@ class FlacUpgradeUiStateTest {
         assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.LosslessDisabled).message)
             .isEqualTo("Set Download quality to Lossless in Audio & Quality first.")
         assertThat(flacUpgradeUiState(emptyList(), FlacSweepResult.StreamingMode).message)
-            .isEqualTo("Stream only is on, so there are no downloads to upgrade.")
+            .isEqualTo("Stash is set to Online, so there are no downloads to upgrade.")
         // ... and is newer news than the last batch's result.
         assertThat(flacUpgradeUiState(listOf(finished(3, 0, 0)), FlacSweepResult.NothingToUpgrade).message)
             .startsWith("Nothing to upgrade.")
