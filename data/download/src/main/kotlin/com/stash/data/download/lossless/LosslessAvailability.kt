@@ -24,7 +24,11 @@ import kotlinx.coroutines.flow.first
  *  - [anyUserOwned]       BYO login || custom endpoint → the Home banner
  *                         (a dead PUBLIC relay must not hide the "connect your
  *                         own account" banner — that is the outage it exists for)
- *  - [routingRows]        the same facts spelled out per path, for Settings › Audio
+ *  - [ownTidalFirst]      own Tidal server && !anyUserOwned → the Tidal rung leads
+ *                         both chains (downloads and streaming) above CD quality
+ *                         ([ownTidalFirstNow])
+ *  - [routingRows]        the same facts spelled out per path, in the order a song
+ *                         asks them, for Settings › Audio
  */
 @Singleton
 class LosslessAvailability @Inject constructor(
@@ -65,10 +69,40 @@ class LosslessAvailability @Inject constructor(
     suspend fun anyUserOwnedNow(): Boolean = anyUserOwned.first()
 
     /**
+     * The user's own Tidal server is set and none of their own Qobuz is: above CD quality
+     * ([ownTidalFirstNow]) the Tidal rung goes ahead of the Qobuz one, whose file URL would
+     * otherwise come from Stash's shared relay before the user's own server was ever asked.
+     * That relay stays the fallback, right after it. With their own Qobuz as well, Qobuz
+     * keeps the lead: it answers from their own account, and Stash's relay is reached only
+     * when that call fails. Configuration, not liveness, like [routingRows]: the order must
+     * not flip on one transient failure.
+     */
+    val ownTidalFirst: Flow<Boolean> =
+        combine(credentialStore.hasLogin, prefs.customLosslessEndpoint, prefs.bitchordEndpoint) { login, custom, tidal ->
+            ownTidalLeads(login, custom, tidal)
+        }
+
+    /**
+     * Whether the Tidal rung leads a request for [tier]: [ownTidalFirst], above CD only. Tidal
+     * has no quality setting and serves its best, usually 24-bit (2.5 to 5 times CD's data),
+     * while Qobuz asks for the tier. At CD (Save Data, mobile data by default, or a CD download
+     * setting) Qobuz keeps the lead, as it always had, and the user's server is the fallback.
+     */
+    suspend fun ownTidalFirstNow(tier: LosslessQualityTier): Boolean =
+        tier > LosslessQualityTier.CD && ownTidalFirst.first()
+
+    /**
      * The Settings › Audio ROUTING list — one row per lossless path, built here
      * from the same predicates the source and downloads read, so the screen cannot
      * disagree with what actually resolves. (It used to be a hardcoded
      * "Qobuz — active" row, true only while a token pool shipped.)
+     *
+     * In the order a song asks them ([com.stash.data.download.lossless.qbdlx.QbdlxFileUrlRouter],
+     * then the Tidal rung, or the Tidal rung first per [ownTidalFirst]): the screen draws
+     * each row as a `↳`, so the list reads as "then". It once listed the user's custom
+     * endpoint after Stash's relay, which it outranks. A leading Tidal row says it leads
+     * above CD only: the list can't follow the tier, which differs by network and between
+     * streams and downloads.
      *
      * Rows describe CONFIGURATION, not liveness, deliberately: relay health needs
      * the relay's `/v1/status`, which nothing serves yet (Plan B), and a connected
@@ -80,8 +114,16 @@ class LosslessAvailability @Inject constructor(
         credentialStore.connectedEmailFlow,
         config.relays,
         prefs.customLosslessEndpoint,
-    ) { hasLogin, email, relays, custom ->
+        prefs.bitchordEndpoint,
+    ) { hasLogin, email, relays, custom, tidal ->
+        val tidalFirst = ownTidalLeads(hasLogin, custom, tidal)
+        // Omitted entirely when unset, like the custom endpoint's row below. Never the
+        // address itself: a BitChord base can carry the server's access token as its path.
+        val tidalRow = tidal?.let {
+            RoutingRow("tidal", "Custom Tidal server", if (tidalFirst) "first above CD" else "configured", RoutingState.CONFIGURED)
+        }
         buildList {
+            // Listed first even when not connected: it is where a connected account would go.
             add(
                 RoutingRow(
                     id = "qobuz",
@@ -93,6 +135,12 @@ class LosslessAvailability @Inject constructor(
                     state = if (hasLogin) RoutingState.CONNECTED else RoutingState.NOT_CONFIGURED,
                 ),
             )
+            if (tidalFirst && tidalRow != null) add(tidalRow)
+            // Omitted entirely when unset — an empty "Custom endpoint — not configured"
+            // row is noise on the screen of everyone who will never set one.
+            if (custom != null) {
+                add(RoutingRow("custom", "Custom endpoint", "configured", RoutingState.CONFIGURED))
+            }
             add(
                 RoutingRow(
                     id = "relay",
@@ -101,12 +149,14 @@ class LosslessAvailability @Inject constructor(
                     state = if (relays.isNotEmpty()) RoutingState.CONFIGURED else RoutingState.NOT_CONFIGURED,
                 ),
             )
-            // Omitted entirely when unset — an empty "Custom endpoint — not configured"
-            // row is noise on the screen of everyone who will never set one.
-            if (custom != null) {
-                add(RoutingRow("custom", "Custom endpoint", "configured", RoutingState.CONFIGURED))
-            }
+            if (!tidalFirst && tidalRow != null) add(tidalRow)
         }
+    }
+
+    private companion object {
+        /** [ownTidalFirst]'s ownership rule, shared with [routingRows] so the list and the chains agree. */
+        fun ownTidalLeads(hasLogin: Boolean, customEndpoint: String?, tidalServer: String?): Boolean =
+            tidalServer != null && !hasLogin && customEndpoint == null
     }
 }
 

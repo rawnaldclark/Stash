@@ -15,6 +15,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -23,6 +24,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -207,6 +209,19 @@ class BitchordClientQuotaTest {
         userEndpoint = server.url("/user").toString().trimEnd('/')
         streamReply = { ok(FLAC) }
         assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+    }
+
+    /** Stash's relay going quiet is the owner's to fix, not something to skip the user's songs over. */
+    @Test fun `Stash's relay giving no answer is not paused like a user's own server`() = runBlocking {
+        // The match is cached first, so only /stream is asked below.
+        assertThat(client.lookup(query)).isInstanceOf(TidalLookup.Found::class.java)
+        client.httpClient = OkHttpClient.Builder().readTimeout(250, TimeUnit.MILLISECONDS).build()
+        streamReply = { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
+
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(client.isBusy()).isFalse()
+        assertThat(client.lookup(query)).isEqualTo(TidalLookup.Failed)
+        assertThat(streams.get()).isEqualTo(3)
     }
 
     private companion object {

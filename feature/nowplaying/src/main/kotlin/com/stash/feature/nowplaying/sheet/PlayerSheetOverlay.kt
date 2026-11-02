@@ -81,6 +81,8 @@ fun PlayerSheetOverlay(
     state: PlayerSheetState,
     onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
+    /** "Find a better match": open Failed Matches on this (just flagged) song, its finder searching. */
+    onFixMatch: (trackId: Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
@@ -126,6 +128,7 @@ fun PlayerSheetOverlay(
                     onDismiss = state::collapse,
                     onNavigateToArtist = onNavigateToArtist,
                     onNavigateToAlbum = onNavigateToAlbum,
+                    onFixMatch = onFixMatch,
                     viewModel = viewModel,
                     sheet = state,
                 )

@@ -48,7 +48,9 @@ interface CoverArtArchiveClient {
 class CoverArtArchiveClientImpl @Inject constructor(
     okHttpClient: OkHttpClient,
 ) : CoverArtArchiveClient {
-    // The archive redirects every listing to archive.org: 1-3 s measured (2026-10-24).
+    // The archive redirects every listing to archive.org: 1-3 s measured (2026-10-24), but 4-15 s
+    // for the listings that answered on a bad day (good kid, m.A.A.d city, 2026-10-31). A shorter
+    // limit cuts those off, and each retry is just as slow, so a listing that would come never does.
     private val http: OkHttpClient = okHttpClient.newBuilder()
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
@@ -102,7 +104,7 @@ class CoverArtArchiveClientImpl @Inject constructor(
 
     private companion object {
         const val BASE = "https://coverartarchive.org/"
-        const val CALL_TIMEOUT_SECONDS = 10L
+        const val CALL_TIMEOUT_SECONDS = 25L
         const val RETRIES = 2
         const val RETRY_MS = 1_000L
         const val TAG = "BackCover"

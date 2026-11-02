@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Artist page: the heading of the row of the artist's newest releases (albums, singles and EPs together, newest first), under Popular. -->
+    <string name="artist_latest_releases">Latest releases</string>
+    <!-- Artist page, Latest releases row: the kind of release, after its year on a card ("2021 • Album"). -->
+    <string name="artist_release_album">Album</string>
+    <!-- The kind of release, after its year on a card ("2021 • Single"): a single, one or two songs. -->
+    <string name="artist_release_single">Single</string>
+    <!-- The kind of release, after its year on a card ("2021 • EP"): an extended play, a short record of a few songs. -->
+    <string name="artist_release_ep">EP</string>
+    <!-- The kind of release, after its year on a card ("2021 • Mixtape"). -->
+    <string name="artist_release_mixtape">Mixtape</string>
+    <!-- The kind of release, after its year on a card ("2021 • Compilation"): a collection of earlier songs. -->
+    <string name="artist_release_compilation">Compilation</string>
+</resources>
