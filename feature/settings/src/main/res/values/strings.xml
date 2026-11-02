@@ -941,7 +941,7 @@
     <string name="settings_your_stash_section_devices">Devices</string>
     <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
     <string name="settings_your_stash_section_supporter">Supporter</string>
-    <string name="settings_your_stash_supporter_offer_subtitle">Gave on Ko-fi? Unlock it with your Ko-fi email.</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Gave $5 or more on Ko-fi? Unlock it with your Ko-fi email.</string>
     <string name="settings_your_stash_supporter_code_here">Your supporter code is on this phone</string>
     <string name="settings_your_stash_section_cloud">Cloud</string>
     <string name="settings_your_stash_cloud_connect_title">Connect your cloud storage</string>
