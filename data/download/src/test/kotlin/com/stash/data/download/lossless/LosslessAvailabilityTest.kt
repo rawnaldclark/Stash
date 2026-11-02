@@ -18,13 +18,17 @@ class LosslessAvailabilityTest {
     private val login = MutableStateFlow(false)
     private val configRelays = MutableStateFlow<List<RelayEntry>>(emptyList())
     private val custom = MutableStateFlow<String?>(null)
+    private val tidalServer = MutableStateFlow<String?>(null)
     private val loginEmail = MutableStateFlow<String?>(null)
     private val store: QbdlxCredentialStore = mockk {
         every { hasLogin } returns login
         every { connectedEmailFlow } returns loginEmail
     }
     private val config: LosslessConfigFetcher = mockk { every { relays } returns configRelays }
-    private val prefs: LosslessSourcePreferences = mockk { every { customLosslessEndpoint } returns custom }
+    private val prefs: LosslessSourcePreferences = mockk {
+        every { customLosslessEndpoint } returns custom
+        every { bitchordEndpoint } returns tidalServer
+    }
     private val relayClient: LosslessRelayClient = mockk()
     private var now = 1_000_000_000_000L
     private val quota = LosslessQuota.inMemory { now }
@@ -132,6 +136,62 @@ class LosslessAvailabilityTest {
         assertThat(rows().map { it.id }).doesNotContain("custom")
         custom.value = "https://mine.example"
         assertThat(row("custom").state).isEqualTo(RoutingState.CONFIGURED)
-        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "custom").inOrder()
+        // Before Stash lossless: QbdlxFileUrlRouter asks it first. The list used to say the reverse.
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay").inOrder()
+    }
+
+    @Test fun `with a login too, the custom endpoint still comes before Stash lossless`() = runTest {
+        login.value = true; custom.value = "https://mine.example"
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay").inOrder()
+    }
+
+    // ── The user's own Tidal server ─────────────────────────────────────────
+
+    @Test fun `no Tidal server - no Tidal row, and Qobuz leads`() = runTest {
+        assertThat(rows().map { it.id }).doesNotContain("tidal")
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
+    }
+
+    @Test fun `own Tidal server and no own Qobuz - it leads above CD, listed before Stash lossless`() = runTest {
+        tidalServer.value = "https://tidal.mine.example"
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isTrue()
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.MAX)).isTrue()
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "tidal", "relay").inOrder()
+        assertThat(row("tidal").label).isEqualTo("Custom Tidal server")
+        assertThat(row("tidal").state).isEqualTo(RoutingState.CONFIGURED)
+        // The list can't follow the tier (it differs by network, and between streams and
+        // downloads), so the row says where it leads.
+        assertThat(row("tidal").detail).isEqualTo("first above CD")
+        // Nothing of their own on the Qobuz side: that row still says so.
+        assertThat(row("qobuz").state).isEqualTo(RoutingState.NOT_CONFIGURED)
+    }
+
+    /** Tidal has no quality setting and serves its best: at CD, Qobuz asks for the tier the user picked. */
+    @Test fun `own Tidal server at CD quality - Qobuz keeps the lead`() = runTest {
+        tidalServer.value = "https://tidal.mine.example"
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.CD)).isFalse()
+    }
+
+    @Test fun `own Tidal server and own Qobuz login - Qobuz keeps the lead, Tidal after Stash lossless`() = runTest {
+        tidalServer.value = "https://tidal.mine.example"
+        login.value = true
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "relay", "tidal").inOrder()
+        assertThat(row("tidal").detail).isEqualTo("configured")
+    }
+
+    @Test fun `own Tidal server and a custom Qobuz endpoint - the endpoint keeps the lead`() = runTest {
+        tidalServer.value = "https://tidal.mine.example"
+        custom.value = "https://mine.example"
+        assertThat(a.ownTidalFirstNow(LosslessQualityTier.HI_RES)).isFalse()
+        assertThat(rows().map { it.id }).containsExactly("qobuz", "custom", "relay", "tidal").inOrder()
+    }
+
+    /** BitChord's own form carries the server's ACCESS_TOKEN as the path; Settings and diagnostics print rows. */
+    @Test fun `the Tidal row never shows the server address`() = runTest {
+        tidalServer.value = "https://tidal.mine.example/SECRET-ACCESS-TOKEN"
+        val shown = rows().toString()
+        assertThat(shown).doesNotContain("SECRET-ACCESS-TOKEN")
+        assertThat(shown).doesNotContain("tidal.mine.example")
     }
 }
