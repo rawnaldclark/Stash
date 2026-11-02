@@ -256,11 +256,11 @@ private fun SearchBar(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Command-hero field: a soft plum tonal pill — the loud violet outline is
+    // Command-hero field: a soft neutral tonal pill (plum until D9), the magnifier in the theme's
+    // accent (the playing album's colour); the loud violet outline is
     // retired; focus is signaled by the cursor + keyboard, not a border.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val tonal = plum.copy(alpha = if (dark) 0.22f else 0.10f)
+    val tonal = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.08f else 0.05f)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChanged,
@@ -278,7 +278,7 @@ private fun SearchBar(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = "Search",
-                tint = plum,
+                tint = MaterialTheme.colorScheme.primary,
             )
         },
         trailingIcon = {

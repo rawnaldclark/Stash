@@ -14,15 +14,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.stash.core.ui.theme.StashTextPrimary
 
 /**
  * A horizontal segmented control. Renders [options] as equal-width segments over a
- * faint track; the segment at [selectedIndex] gets a purple-tinted gradient fill.
+ * faint track; the segment at [selectedIndex] gets the theme's secondaryContainer (the playing
+ * album's colour as a solid wash, neutral grey with nothing playing; it was a fixed purple gradient
+ * until D9) under onSecondaryContainer text, which the scheme holds at 4.5:1 on it in every theme.
  * Tapping a segment invokes [onSelect] with its index. Pure presentation — the
  * caller owns selection state.
  */
@@ -53,11 +52,7 @@ fun SettingsSegmented(
                     .clip(RoundedCornerShape(8.dp))
                     .then(
                         if (active) {
-                            Modifier.background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF3A2D6B), Color(0xFF2A2150)),
-                                ),
-                            )
+                            Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
                         } else {
                             Modifier
                         },
@@ -69,11 +64,9 @@ fun SettingsSegmented(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
-                    // The active pill is always a dark purple gradient, so its label
-                    // must stay light in BOTH themes (onSurface would go dark — and
-                    // illegible — in light mode).
+                    // The active pill's own "on" colour: readable on it in both themes.
                     color = if (active) {
-                        StashTextPrimary
+                        MaterialTheme.colorScheme.onSecondaryContainer
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
