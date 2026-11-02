@@ -11,9 +11,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!--
-        Link Stash on the web's camera permission (scanning the pairing code) lives in src/debug/AndroidManifest.xml while the
-        feature is behind its build flag, so a release build asks for no camera. Move it here when the feature ships.
+        Link Stash on the web (Settings › Library & Storage): scanning the browser's pairing code with the in-app scanner.
+        Asked only when the scanner opens, never at start. The feature ships in release (WEB_LINK_ENABLED), so the
+        permission lives here; it used to be debug-only, which left release builds' scanner without a camera. Not
+        required, so Stash still installs on a phone without one.
     -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!--
         largeHeap: MITIGATION for the v0.9.73 OOM reports (#238/#239) — users
         exhaust the default 256MB Java heap ("<1% free after GC"). Doubles the
