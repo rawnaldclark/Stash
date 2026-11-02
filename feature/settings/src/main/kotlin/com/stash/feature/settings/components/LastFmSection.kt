@@ -51,6 +51,8 @@ fun LastFmAccountCard(
     loveEnabled: Boolean,
     onLoveToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    loveStatus: com.stash.core.data.social.LikeMirrorStatus? = null,
+    onLoveRetry: () -> Unit = {},
 ) {
     if (state == LastFmAuthState.NotConfigured) return
     val (statusText, tone) = when (state) {
@@ -74,6 +76,8 @@ fun LastFmAccountCard(
                     title = stringResource(R.string.settings_like_mirror_lastfm_title),
                     checked = loveEnabled,
                     onToggle = onLoveToggle,
+                    status = loveStatus,
+                    onRetry = onLoveRetry,
                 )
                 SettingsToggleRow(
                     title = stringResource(R.string.settings_lastfm_first_artist_only_title),

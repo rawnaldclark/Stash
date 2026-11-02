@@ -4,4 +4,5 @@
     <string name="resume_playback_short">Weiter</string>
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Verbindung zu %1$s fehlgeschlagen</string>
+    <string name="like_mirror_signed_out">Deine Likes erreichen %1$s nicht. Melde dich in den Einstellungen erneut an.</string>
 </resources>

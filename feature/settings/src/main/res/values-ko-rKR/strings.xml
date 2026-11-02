@@ -144,6 +144,15 @@
     <string name="settings_like_mirror_row_title">%1$s에도 좋아요 누르기</string>
     <string name="settings_like_mirror_lastfm_title">%1$s에도 좋아요 누르기</string>
     <string name="settings_like_mirror_row_subtitle">이제부터 Stash에서 좋아하는 노래</string>
+    <string name="settings_like_status_up_to_date">최신 상태</string>
+    <string name="settings_like_status_waiting">%1$d개 대기 중</string>
+    <string name="settings_like_status_offline">%1$d개 대기 중 · 연결 대기</string>
+    <string name="settings_like_status_retrying">%1$d개 대기 중 · 다시 시도 중</string>
+    <string name="settings_like_status_needs_you">마지막 오류: %1$s · 탭하여 다시 시도</string>
+    <string name="settings_like_error_signed_out">로그인 만료</string>
+    <string name="settings_like_error_rate_limited">요청이 너무 많음</string>
+    <string name="settings_like_error_refused">거부됨</string>
+    <string name="settings_like_error_offline">연결 없음</string>
     <string name="settings_listenbrainz_dialog_title">ListenBrainz 연결</string>
     <string name="settings_scrobbles_send_now">지금 보내기</string>
     <plurals name="settings_scrobbles_waiting">
@@ -155,7 +164,7 @@
     <string name="settings_disconnect_account_body">Stash가 이 휴대폰에서 %1$s 계정의 로그아웃을 진행하고 동기화를 중단합니다. 아직 다운로드 대기열에 있는 %1$s의 노래는 대기열에서 제거됩니다\n\n이미 다운로드한 노래는 라이브러리에 그대로 유지되며, 언제든지 다시 연결할 수 있습니다</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">%1$s에 미러링하시겠습니까?</string>
-    <string name="settings_like_mirror_warning_body">Stash에서 트랙에 좋아요를 누르면 %1$s에서도 해당 노래에 좋아요가 표시됩니다. 좋아요를 취소하면 %1$s의 좋아요도 함께 취소됩니다. 앞으로 새로 추가하는 좋아요만 동기화됩니다\n\n이 기능은 %1$s 웹 플레이어에서 사용하는 동일한 비공개 엔드포인트를 사용합니다 — 공식 API는 아닙니다. 언제든지 작동하지 않게 될 수 있으며, 드물게 비공식적인 접근으로 인해 계정에 제한이 가해질 수도 있습니다. 이 기능은 보조 계정이나 백업 계정에서만 활성화하는 것을 권장합니다</string>
+    <string name="settings_like_mirror_risk_body">Stash에서 곡에 하트를 누르면 %1$s에서도 좋아요가 표시되고, 하트를 취소하면 그 좋아요도 취소됩니다. 단, 원래 있던 좋아요는 절대 취소하지 않습니다. 앞으로 새로 추가하는 좋아요만 동기화됩니다.\n\n이 기능은 %1$s 웹 플레이어의 비공개 엔드포인트를 사용하며, 공식 API가 아닙니다. 언제든지 작동하지 않을 수 있으며, 드물게 비공식 접근으로 인해 계정이 제재될 수 있습니다.</string>
     <string name="settings_like_mirror_warning_confirm">이해했습니다</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->

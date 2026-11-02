@@ -107,6 +107,7 @@ class SettingsViewModelTest {
         lastFmRecommendationSource = mockk(relaxed = true),
         discordRpcCoordinator = mockk(relaxed = true),
         syncStateManager = com.stash.core.data.sync.SyncStateManager(),
+        likeCoordinator = mockk(relaxed = true),
     )
 
     // -- Display size (UI scale) ---------------------------------------------

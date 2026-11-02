@@ -105,6 +105,15 @@
     <string name="settings_like_mirror_row_title">Curtir também no %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Dar Love também no Last.fm</string>
     <string name="settings_like_mirror_row_subtitle">A partir de agora, as músicas que você marcar com um coração no Stash serão sincronizadas</string>
+    <string name="settings_like_status_up_to_date">Atualizado</string>
+    <string name="settings_like_status_waiting">Pendentes: %1$d</string>
+    <string name="settings_like_status_offline">Pendentes: %1$d · aguardando conexão</string>
+    <string name="settings_like_status_retrying">Pendentes: %1$d · tentando de novo</string>
+    <string name="settings_like_status_needs_you">Último erro: %1$s · toque para tentar de novo</string>
+    <string name="settings_like_error_signed_out">o login expirou</string>
+    <string name="settings_like_error_rate_limited">solicitações demais</string>
+    <string name="settings_like_error_refused">não aceito</string>
+    <string name="settings_like_error_offline">sem conexão</string>
     <string name="settings_listenbrainz_dialog_title">Conectar o ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Enviar agora</string>
     <plurals name="settings_scrobbles_waiting">
@@ -117,7 +126,7 @@
     <string name="settings_disconnect_account_body">O Stash desconecta sua conta de %1$s neste celular e interrompe a sincronização. As músicas de %1$s que ainda estão aguardando para ser baixadas são removidas da fila.\n\nAs músicas que você já baixou continuam na sua biblioteca, e você pode reconectar a conta quando quiser.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Sincronizar curtidas com %1$s?</string>
-    <string name="settings_like_mirror_warning_body">Ao marcar uma faixa com coração no Stash, você também vai curti-la no %1$s; ao remover o coração, a curtida lá também será removida. Só as curtidas adicionadas a partir de agora serão sincronizadas.\n\nIsso usa o mesmo endpoint privado usado pelo player web do %1$s — não uma API oficial. Pode parar de funcionar a qualquer momento e, raramente, o acesso não oficial pode sinalizar uma conta. Considere ativar esse recurso apenas em uma conta secundária ou de backup.</string>
+    <string name="settings_like_mirror_risk_body">Ao marcar uma música com coração no Stash, você também vai curti-la no %1$s; ao remover o coração, essa curtida é desfeita, mas nunca uma que já estava lá. Só as curtidas adicionadas a partir de agora são sincronizadas.\n\nIsso usa o endpoint privado do player web do %1$s, não uma API oficial. Pode parar de funcionar a qualquer momento e, raramente, o acesso não oficial pode sinalizar uma conta.</string>
     <string name="settings_like_mirror_warning_confirm">Eu entendo</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->
