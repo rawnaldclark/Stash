@@ -101,7 +101,7 @@ class StreamingQualityViewModelTest {
         }
     }
 
-    @Test fun `Save Data writes Settings' switch, then resolves the next song again`() = runTest(dispatcher) {
+    @Test fun `Data saver writes Settings' switch, then resolves the next song again`() = runTest(dispatcher) {
         viewModel.onSaveDataChanged(true)
         advanceUntilIdle() // the look-up waits for the taps to settle
         coVerifyOrder {

@@ -8,9 +8,8 @@
     <string name="np_quality_lossless_subtitle_active">Streams in FLAC</string>
     <string name="np_quality_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="np_quality_lossless_subtitle_no_source">No lossless source set up yet</string>
-    <string name="np_quality_save_data_title">Save Data</string>
-    <string name="np_quality_save_data_lossless_subtitle">CD quality on every network</string>
-    <string name="np_quality_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="np_quality_save_data_title">Data saver</string>
+    <string name="np_quality_data_saver_subtitle">Lower quality streams on mobile data</string>
     <string name="np_quality_prefer_tidal_aac_title">Prefer Tidal AAC while streaming</string>
     <string name="np_quality_prefer_tidal_aac_subtitle">Smaller streams when Tidal has the song</string>
     <string name="np_quality_allowance_note">FLAC and Tidal AAC both count toward today\'s Tidal &amp; Qobuz allowance. Lossless off saves it.</string>
