@@ -125,6 +125,49 @@ class SyncViewModelTest {
         Dispatchers.resetMain()
     }
 
+    // -- "synced N ago" counts from when the last sync really finished (2026-11-02) --------
+
+    private fun lastSyncAt(row: com.stash.core.data.db.entity.SyncHistoryEntity): Long? {
+        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(listOf(row))
+        return newVm().uiState.value.lastSyncFinishedAt
+    }
+
+    private val threeAm = java.time.Instant.parse("2026-11-02T03:00:00Z")
+
+    @Test
+    fun `a finished sync counts from its finish`() {
+        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 1, startedAt = threeAm, completedAt = threeAm.plusSeconds(20 * 60),
+            status = com.stash.core.model.SyncState.COMPLETED,
+        )
+        assertEquals(threeAm.plusSeconds(20 * 60).toEpochMilli(), lastSyncAt(row))
+    }
+
+    /**
+     * Auto-sync starts at 03:00 and the phone reboots part-way. The 09:00 launch closes the row
+     * as SyncHistoryDao.resetStaleSyncs does: FAILED, "Interrupted", ended at 09:00. Counting
+     * from that end would read "synced just now" at 09:00; it counts from 03:00.
+     */
+    @Test
+    fun `a sync the next launch closed as interrupted counts from its start`() {
+        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 2, startedAt = threeAm, completedAt = threeAm.plusSeconds(6 * 3600),
+            status = com.stash.core.model.SyncState.FAILED,
+            errorMessage = com.stash.core.data.sync.INTERRUPTED_ERROR_MARKER,
+        )
+        assertEquals(threeAm.toEpochMilli(), lastSyncAt(row))
+    }
+
+    @Test
+    fun `a sync with no end yet counts from its start, and none reads nothing`() {
+        val running = com.stash.core.data.db.entity.SyncHistoryEntity(
+            id = 3, startedAt = threeAm, status = com.stash.core.model.SyncState.DOWNLOADING,
+        )
+        assertEquals(threeAm.toEpochMilli(), lastSyncAt(running))
+        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(emptyList())
+        assertNull(newVm().uiState.value.lastSyncFinishedAt)
+    }
+
     @Test fun `requesting Spotify refresh from accumulate opens the dialog without changing mode`() = runTest {
         val vm = newVm()
         vm.onRequestSpotifyRefresh()
@@ -487,48 +530,5 @@ class SyncViewModelTest {
 
         coVerify { playlistDao.setSyncEnabledAndPin(42L, true, any()) }
         coVerify { musicRepository.setPlaylistDownload(42L, true) }
-    }
-
-    // -- "synced N ago" counts from when the last sync really finished (2026-11-02) --------
-
-    private fun lastSyncAt(row: com.stash.core.data.db.entity.SyncHistoryEntity): Long? {
-        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(listOf(row))
-        return newVm().uiState.value.lastSyncFinishedAt
-    }
-
-    private val threeAm = java.time.Instant.parse("2026-11-02T03:00:00Z")
-
-    @Test
-    fun `a finished sync counts from its finish`() {
-        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
-            id = 1, startedAt = threeAm, completedAt = threeAm.plusSeconds(20 * 60),
-            status = com.stash.core.model.SyncState.COMPLETED,
-        )
-        assertEquals(threeAm.plusSeconds(20 * 60).toEpochMilli(), lastSyncAt(row))
-    }
-
-    /**
-     * Auto-sync starts at 03:00 and the phone reboots part-way. The 09:00 launch closes the row
-     * as SyncHistoryDao.resetStaleSyncs does: FAILED, "Interrupted", ended at 09:00. Counting
-     * from that end would read "synced just now" at 09:00; it counts from 03:00.
-     */
-    @Test
-    fun `a sync the next launch closed as interrupted counts from its start`() {
-        val row = com.stash.core.data.db.entity.SyncHistoryEntity(
-            id = 2, startedAt = threeAm, completedAt = threeAm.plusSeconds(6 * 3600),
-            status = com.stash.core.model.SyncState.FAILED,
-            errorMessage = com.stash.core.data.sync.INTERRUPTED_ERROR_MARKER,
-        )
-        assertEquals(threeAm.toEpochMilli(), lastSyncAt(row))
-    }
-
-    @Test
-    fun `a sync with no end yet counts from its start, and none reads nothing`() {
-        val running = com.stash.core.data.db.entity.SyncHistoryEntity(
-            id = 3, startedAt = threeAm, status = com.stash.core.model.SyncState.DOWNLOADING,
-        )
-        assertEquals(threeAm.toEpochMilli(), lastSyncAt(running))
-        every { syncHistoryDao.getRecentSyncs(any()) } returns kotlinx.coroutines.flow.flowOf(emptyList())
-        assertNull(newVm().uiState.value.lastSyncFinishedAt)
     }
 }
