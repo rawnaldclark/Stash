@@ -249,13 +249,14 @@ private fun ArtistRow(rank: Int, a: RecordMixesTabViewModel.ArtistCard, onOpen: 
     Row(
         Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            // At least 56 dp, taller when a large font needs it: a fixed height cut the name and its hours
+            .heightIn(min = 56.dp)
             .clickable(onClick = if (a.mixId != null) onOpen else onPlay)
             .semantics {
                 contentDescription = label
                 role = Role.Button
             }
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -271,7 +272,7 @@ private fun ArtistRow(rank: Int, a: RecordMixesTabViewModel.ArtistCard, onOpen: 
             if (a.picture != null) AsyncImage(a.picture, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
         Column(Modifier.weight(1f)) {
-            Text(a.name, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = StashTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(a.name, style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold), color = StashTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(a.line, style = TextStyle(fontSize = 13.sp), color = StashTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {

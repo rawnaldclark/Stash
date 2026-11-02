@@ -15,7 +15,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.stash.core.common.TrackCanonical
+import com.stash.core.data.library.findSameSongByWords
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
@@ -350,22 +350,20 @@ class StashDiscoveryWorker @AssistedInject constructor(
             )
         }
 
-        // De-dup against the existing library by canonical title+artist
-        // match. Saves a redundant download when the user already has the
-        // track from another source. Only a row of the same version counts
-        // (SameSongRule's version check): the words are loose, so a downloaded
-        // "Song (Live)" must not stand in for a recommended "Song".
+        // De-dup against the existing library: ANY row that is this song by its words
+        // (SameSongRule: the same version, no SoundCloud upload), not only a downloaded one. Only
+        // downloaded rows used to count, so every rediscovery of a song the user streams but never
+        // downloaded filed another id-less stub (up to 12 rows for one song on the owner's phone).
+        // A downloaded copy is preferred, then a streamable one, oldest first; a row that is
+        // neither isn't taken, since the mix links only downloaded or streamable rows
+        // (getStreamableOrDoneTrackIdsForRecipe). A blank key ("(Intro)", no artist) names no song
+        // and matches nothing.
         val canonicalTitle = trackMatcher.canonicalTitle(entry.title)
         val canonicalArtist = trackMatcher.canonicalArtist(entry.artist)
-        // A blank key ("(Intro)", no artist) names no song, and would load every local import.
-        val existing = if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) {
-            null
-        } else {
-            trackDao.findAllDownloadedByCanonical(
-                canonicalTitle = canonicalTitle.lowercase(),
-                canonicalArtist = canonicalArtist.lowercase(),
-            ).firstOrNull { TrackCanonical.sameVersion(it.title, entry.title) }
-        }
+        val existing = trackDao.findSameSongByWords(entry.title, entry.artist, youtubeId = null, spotifyUri = null)
+            .filter { it.isDownloaded || it.isStreamable }
+            .sortedByDescending { it.isDownloaded } // stable: oldest first within each tier
+            .firstOrNull()
 
         val trackId = if (existing != null) {
             // Nothing to download — just link.
@@ -387,14 +385,9 @@ class StashDiscoveryWorker @AssistedInject constructor(
             // StashDiscoveryWorker's chain into the streaming engine /
             // player path, never by THIS row's insert). With both
             // `spotifyUri` and `youtubeId` NULL the UNIQUE indexes can't
-            // collide; the canonical-identity dedup above already absorbs
-            // the only realistic cross-source race (streaming engine
-            // inserting a row with matching canonical title+artist first,
-            // which `findAllDownloadedByCanonical` won't catch because
-            // streaming inserts aren't `is_downloaded = 1`). Broadening
-            // that lookup is a separate refactor — out of scope for the
-            // stream-only seam; the worst-case here is a duplicate stub,
-            // not a constraint violation.
+            // collide; the same-song lookup above takes any playable row of
+            // the song, a streamed one included, so the song gets at most
+            // one stub however often it is rediscovered.
             val stub = TrackEntity(
                 title = entry.title,
                 artist = entry.artist,

@@ -29,8 +29,8 @@ import com.stash.core.ui.theme.StashTheme
 
 /**
  * Compact status chip rendered in the Home top bar (between the Stash
- * wordmark and the GitHub-issue icon). Shows the current sync mode
- * — "Stream only" or "Download" — with a matching glyph, and routes taps to
+ * wordmark and the GitHub-issue icon). Shows the current mode
+ * — "Online" or "Offline" — with a matching glyph, and routes taps to
  * [onClick] so the host screen can pop the bottom sheet that holds the
  * picker proper.
  *
@@ -74,7 +74,7 @@ fun StreamingModeChip(
             modifier = Modifier.size(14.dp),
         )
         Text(
-            text = if (streamingEnabled) "Stream only" else "Download",
+            text = if (streamingEnabled) "Online" else "Offline",
             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
         )

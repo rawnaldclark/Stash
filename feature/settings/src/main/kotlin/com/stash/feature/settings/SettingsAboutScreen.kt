@@ -20,6 +20,9 @@ import com.stash.feature.settings.components.SettingsInfoRow
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsGroupCard
 
+/** Stash's source, where the GitHub star is. */
+internal const val STASH_GITHUB_URL = "https://github.com/rawnaldclark/Stash"
+
 /**
  * The About & Help spoke of the hub-and-spoke Settings redesign.
  *
@@ -92,6 +95,17 @@ fun SettingsAboutScreen(
             rows = listOf(
                 { SettingsInfoRow(label = stringResource(R.string.settings_version_label), value = installedVersion) },
                 { SettingsInfoRow(label = stringResource(R.string.settings_license_label), value = "GPL-3.0") },
+                {
+                    // Moved here from the Support card (2026-11), which now has one action: Donate.
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_about_star),
+                        subtitle = stringResource(R.string.settings_about_star_detail),
+                        onClick = {
+                            val open = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(STASH_GITHUB_URL))
+                            runCatching { context.startActivity(open) }
+                        },
+                    )
+                },
                 {
                     // Discogs' API terms ask for this notice wherever its data is used.
                     SettingsNavRow(

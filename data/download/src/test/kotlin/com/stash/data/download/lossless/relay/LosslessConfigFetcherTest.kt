@@ -7,7 +7,13 @@ import java.security.KeyPairGenerator
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -156,9 +162,109 @@ class LosslessConfigFetcherTest {
         assertThat(f.relays.value.map { it.base }).containsExactly("https://ok.example")
     }
 
-    @Test fun `a failed refresh schedules the short retry`() {
+    @Test fun `a good refresh waits 6 h, failures back off 15 min, 30 min, then hourly`() {
         val f = fetcher()
-        assertThat(f.nextDelayMs(false)).isEqualTo(15 * 60 * 1000L)
-        assertThat(f.nextDelayMs(true)).isEqualTo(6 * 60 * 60 * 1000L)
+        assertThat(f.nextDelayMs(0)).isEqualTo(6 * HOUR)
+        assertThat(f.nextDelayMs(1)).isEqualTo(15 * MINUTE)
+        assertThat(f.nextDelayMs(2)).isEqualTo(30 * MINUTE)
+        assertThat(f.nextDelayMs(3)).isEqualTo(60 * MINUTE)
+        assertThat(f.nextDelayMs(4)).isEqualTo(60 * MINUTE)
+        assertThat(f.nextDelayMs(1_000)).isEqualTo(60 * MINUTE) // no overflow on a long outage
+    }
+
+    // ── The refresh loop, on virtual time (the refresh itself is a stub that records when it ran) ──
+
+    /** A network the test switches on and off. */
+    private class FakeNetwork(online: Boolean, private val watchable: Boolean = true) : ConfigNetworkSignal {
+        val online = MutableStateFlow(online)
+        override fun isOnline() = online.value
+        override suspend fun awaitOnline(): Boolean {
+            if (!watchable) return false // no callback could be registered: returns at once
+            online.first { it }
+            return true
+        }
+    }
+
+    /** Starts [LosslessConfigFetcher.refreshLoop]; every attempt lands in the returned list as its virtual time. */
+    private fun TestScope.loop(network: FakeNetwork, result: () -> Boolean): List<Long> {
+        val attempts = mutableListOf<Long>()
+        val f = fetcher().also { it.network = network }
+        backgroundScope.launch {
+            f.refreshLoop {
+                attempts += testScheduler.currentTime
+                result()
+            }
+        }
+        runCurrent()
+        return attempts
+    }
+
+    @Test fun `offline at launch, nothing runs on a timer until the network is back, then it refreshes at once`() = runTest {
+        val network = FakeNetwork(online = false)
+        val attempts = loop(network) { true }
+
+        advanceTimeBy(24 * HOUR); runCurrent()
+        assertThat(attempts).isEmpty() // the old loop would have tried 96 times
+
+        network.online.value = true; runCurrent()
+        assertThat(attempts).containsExactly(24 * HOUR)
+    }
+
+    @Test fun `a good refresh comes back every 6 h`() = runTest {
+        val attempts = loop(FakeNetwork(online = true)) { true }
+
+        advanceTimeBy(12 * HOUR); runCurrent()
+        assertThat(attempts).containsExactly(0L, 6 * HOUR, 12 * HOUR).inOrder()
+    }
+
+    @Test fun `failures while online back off 15 min, 30 min, then hourly`() = runTest {
+        val attempts = loop(FakeNetwork(online = true)) { false }
+
+        advanceTimeBy(165 * MINUTE); runCurrent()
+        assertThat(attempts).containsExactly(0L, 15 * MINUTE, 45 * MINUTE, 105 * MINUTE, 165 * MINUTE).inOrder()
+    }
+
+    @Test fun `a failure and then the network gone, no more attempts until it is back`() = runTest {
+        val network = FakeNetwork(online = true)
+        val attempts = loop(network) { false }
+        assertThat(attempts).containsExactly(0L)
+
+        network.online.value = false
+        advanceTimeBy(10 * HOUR); runCurrent()
+        assertThat(attempts).containsExactly(0L) // the 15-min wake-up found no network and waited, no request
+
+        network.online.value = true; runCurrent()
+        assertThat(attempts).containsExactly(0L, 10 * HOUR).inOrder()
+    }
+
+    @Test fun `after waiting for the network the back-off starts over`() = runTest {
+        val network = FakeNetwork(online = true)
+        val attempts = loop(network) { false }
+        advanceTimeBy(45 * MINUTE); runCurrent() // fails at 0, 15 and 45 min: the next wait is an hour
+
+        network.online.value = false
+        advanceTimeBy(75 * MINUTE); runCurrent() // 2 h: the hourly wake-up came at 1 h 45 and found no network
+        network.online.value = true; runCurrent() // fails at once at 2 h
+        advanceTimeBy(15 * MINUTE); runCurrent()
+
+        assertThat(attempts).containsExactly(0L, 15 * MINUTE, 45 * MINUTE, 2 * HOUR, 2 * HOUR + 15 * MINUTE).inOrder()
+    }
+
+    /**
+     * No network callback could be registered (the per-app limit): awaitOnline returns at once without waiting. The
+     * failure count used to reset every time, so offline the loop retried every 15 min forever, as before this change.
+     */
+    @Test fun `when the network can't be watched, offline failures still back off to hourly`() = runTest {
+        val attempts = loop(FakeNetwork(online = false, watchable = false)) { false }
+        advanceTimeBy(4 * HOUR); runCurrent()
+
+        assertThat(attempts).containsExactly(
+            0L, 15 * MINUTE, 45 * MINUTE, 105 * MINUTE, 165 * MINUTE, 225 * MINUTE,
+        ).inOrder()
+    }
+
+    private companion object {
+        const val MINUTE = 60 * 1000L
+        const val HOUR = 60 * MINUTE
     }
 }

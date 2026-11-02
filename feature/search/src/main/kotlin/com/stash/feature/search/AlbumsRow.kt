@@ -31,6 +31,11 @@ import kotlinx.coroutines.delay
  * landed here), the rail scrolls that card into view and briefly rings it so
  * the user sees which release they came from. Null = normal rail, no scroll.
  * [SinglesRow] delegates here, so this logic serves both shelves.
+ *
+ * Once per arrival: [focusShown] says it has been shown, [onFocusShown] is told
+ * when it is. The caller keeps that flag, because this rail is composed afresh
+ * on Back from an album and when it scrolls off and back, and each time it
+ * would jump back to the card the user had already scrolled away from.
  */
 @Composable
 fun AlbumsRow(
@@ -38,16 +43,25 @@ fun AlbumsRow(
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
     focusIndex: Int? = null,
+    focusShown: Boolean = false,
+    onFocusShown: () -> Unit = {},
 ) {
     val rowState = rememberLazyListState()
     var highlighted by remember { mutableStateOf(false) }
+    // focusShown is no key: turning it on mid-ring would restart this and cut the ring short.
     LaunchedEffect(focusIndex, albums) {
         val i = focusIndex ?: return@LaunchedEffect
+        if (focusShown) return@LaunchedEffect
         if (i in albums.indices) {
             rowState.animateScrollToItem(i)
+            onFocusShown()
             highlighted = true
-            delay(1500)
-            highlighted = false
+            try {
+                delay(1500)
+            } finally {
+                // New albums mid-ring restart this, and the restart returns early: the ring must not stay on.
+                highlighted = false
+            }
         }
     }
     LazyRow(
