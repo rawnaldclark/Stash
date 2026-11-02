@@ -107,7 +107,7 @@ class FailedMatchesApproveVideoIdTest {
             downloadExecutor, fileOrganizer, qualityPrefs, trackDao,
             downloadQueueDao, swapCoordinator, blocklistGuard,
             mockk(relaxed = true) { every { acceptDownloadOrDelete(any()) } returns true },
-            trackIdentityEvents, albumMatchExecutor,
+            trackIdentityEvents, albumMatchExecutor, mockk(relaxed = true),
         )
     }
 
