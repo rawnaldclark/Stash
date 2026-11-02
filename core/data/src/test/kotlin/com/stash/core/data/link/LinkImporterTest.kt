@@ -113,6 +113,54 @@ class LinkImporterTest {
         assertEquals(2, members(saved).size)
     }
 
+    @Test fun `a YouTube Music link for an album synced from YouTube Music is that album, never a second copy`() = runTest {
+        // YouTube Music's own saved copy (sync names it by its browse id alone).
+        val synced = db.playlistDao().insert(
+            PlaylistEntity(name = "Discovery", source = MusicSource.YOUTUBE, sourceId = "MPREb_disc", type = PlaylistType.CUSTOM, isActive = true),
+        )
+        val album = LinkPreview(
+            kind = LinkKind.ALBUM, name = "Discovery", byline = "Daft Punk", coverUrl = null, service = "YouTube Music",
+            songs = listOf(song(1), song(2)), sourceId = "album:youtube:MPREb_disc",
+        )
+
+        assertEquals(synced, links.existing(album))
+        val added = links.add(album, download = true) { _, _ -> }
+
+        assertEquals(LinkAdded(synced, 0), added)
+        assertEquals(1, playlistCount())
+        // Download is that copy's download, not a second one.
+        coVerify(exactly = 1) { music.setPlaylistDownload(synced, true) }
+        coVerify(exactly = 1) { music.setPlaylistDownload(any(), any()) }
+    }
+
+    @Test fun `a Spotify link for an album saved from YouTube Music is that album, never a second copy or download`() = runTest {
+        val inRainbows = listOf("15 Step", "Bodysnatchers", "Nude", "Weird Fishes/Arpeggi", "All I Need", "Reckoner")
+        val saved = db.playlistDao().insert(
+            PlaylistEntity(name = "In Rainbows", source = MusicSource.BOTH, sourceId = "album:youtube:MPREb_rainbows", type = PlaylistType.CUSTOM, isActive = true),
+        )
+        inRainbows.forEachIndexed { i, title ->
+            val id = db.trackDao().insert(
+                TrackEntity(title = title, artist = "Radiohead", canonicalTitle = title.lowercase(), canonicalArtist = "radiohead"),
+            )
+            db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = saved, trackId = id, position = i))
+        }
+        fun spotify(id: String, titles: List<String>) = LinkPreview(
+            kind = LinkKind.ALBUM, name = "In Rainbows", byline = "Radiohead", coverUrl = null, service = "Spotify",
+            songs = titles.map { WireSong(title = it, artist = "Radiohead") }, sourceId = "album:spotify:$id",
+        )
+
+        assertEquals(saved, links.existing(spotify("7eyQ", inRainbows)))
+        val added = links.add(spotify("7eyQ", inRainbows), download = true) { _, _ -> }
+
+        assertEquals(LinkAdded(saved, 0), added)
+        assertEquals(1, playlistCount())
+        assertEquals(inRainbows.size, members(saved).size)
+        coVerify(exactly = 1) { music.setPlaylistDownload(saved, true) }
+        coVerify(exactly = 1) { music.setPlaylistDownload(any(), any()) }
+        // An album that only shares the name (the bonus disc) is another album.
+        assertEquals(null, links.existing(spotify("disc2", listOf("MK 1", "Down Is the New Up", "Go Slowly", "MK 2"))))
+    }
+
     @Test fun `download follows the switch`() = runTest {
         val off = links.add(playlist(1, 2), download = false) { _, _ -> }
         coVerify(exactly = 0) { music.setPlaylistDownload(any(), any()) }

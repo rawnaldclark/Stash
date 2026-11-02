@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -173,6 +174,8 @@ private fun DownloadRow(on: Boolean, enabled: Boolean, kind: LinkKind, onChange:
 private fun Actions(s: LinkImportUiState.Ready, onOpenPlaylist: (Long) -> Unit, onAdd: () -> Unit) {
     val progress = s.progress
     val added = s.added
+    // An album saved already (any service, any way): nothing to add, only to download.
+    val savedAlbum = s.existingId != null && s.preview.kind == LinkKind.ALBUM
     when {
         progress != null -> Column {
             val (done, total) = progress
@@ -192,7 +195,12 @@ private fun Actions(s: LinkImportUiState.Ready, onOpenPlaylist: (Long) -> Unit, 
                 Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (added.songsAdded > 0) "Added ${pluralize(added.songsAdded, "song")} to your library" else "Already all in your library",
+                    when {
+                        added.songsAdded > 0 -> "Added ${pluralize(added.songsAdded, "song")} to your library"
+                        savedAlbum && s.download -> "In your library already. Downloading"
+                        savedAlbum -> "In your library already"
+                        else -> "Already all in your library"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -206,16 +214,23 @@ private fun Actions(s: LinkImportUiState.Ready, onOpenPlaylist: (Long) -> Unit, 
             ) { Text("Open in your library") }
         }
         else -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
+            if (!savedAlbum || s.download) Button(
                 onClick = onAdd,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(vertical = 12.dp),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Icon(Icons.Default.LibraryAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(if (savedAlbum) Icons.Default.Download else Icons.Default.LibraryAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                // In the library already (pasted before): adding again brings only what it lacks.
-                Text(if (s.existingId != null && s.preview.kind != LinkKind.SONG) "Add what's new" else "Add to library")
+                // In the library already (pasted before): adding again brings only what it lacks. A saved album is
+                // never saved twice (LinkImporter.add): Download keeps the copy already here on the phone.
+                Text(
+                    when {
+                        savedAlbum -> "Download"
+                        s.existingId != null && s.preview.kind != LinkKind.SONG -> "Add what's new"
+                        else -> "Add to library"
+                    },
+                )
             }
             if (s.existingId != null) {
                 OutlinedButton(
