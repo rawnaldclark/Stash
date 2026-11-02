@@ -15,13 +15,17 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /**
- * The update sheet over the whole app: up when a newer release is found and Later wasn't tapped in the last day, or when
- * the listener asks (the notification, Settings).
+ * The update sheet over the whole app: up when a newer release is found that wasn't skipped and Later wasn't tapped in
+ * the last day, or when the listener asks (the notification, Settings). Back up by itself when an update the listener
+ * hid mid-download needs them: Android's one-time permission, or a failure.
  */
 @HiltViewModel
 class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : ViewModel() {
     val available: StateFlow<AvailableUpdate?> = updater.available
     val state: StateFlow<UpdateState> = updater.state
+
+    /** "0.9.122", for "You have 0.9.122". */
+    val installedVersion: String? get() = updater.installedVersion
 
     private val _visible = MutableStateFlow(false)
     val visible: StateFlow<Boolean> = _visible.asStateFlow()
@@ -31,6 +35,12 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
             updater.available.collect { u -> if (u != null && updater.shouldPrompt(u)) _visible.value = true }
         }
         viewModelScope.launch { updater.asks.drop(1).collect { _visible.value = updater.available.value != null } }
+        viewModelScope.launch {
+            updater.state.collect { s ->
+                val needsListener = s == UpdateState.NeedsPermission || s is UpdateState.Failed
+                if (needsListener && updater.available.value != null) _visible.value = true
+            }
+        }
     }
 
     fun update() = updater.update()
@@ -48,6 +58,17 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
             }
             else -> Unit
         }
+        _visible.value = false
+    }
+
+    /** Skip this version: never asked again for it by itself; the next version asks as usual. */
+    fun skip() {
+        updater.skip()
+        _visible.value = false
+    }
+
+    /** Hide the sheet while the update downloads or installs: it carries on, and the sheet comes back if it needs the listener. */
+    fun hide() {
         _visible.value = false
     }
 
