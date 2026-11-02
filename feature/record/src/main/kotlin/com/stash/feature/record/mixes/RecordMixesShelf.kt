@@ -120,7 +120,11 @@ private fun ShelfCard(card: RecordMixesShelfViewModel.Card, onClick: () -> Unit)
                 sub,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                // An era's artists ("Paper Moons, Evergreen & Artist") and "The songs you've played most, since 2018" both cut
+                // at two lines at the default font in a 120 dp card. Always three lines' room, so the rail doesn't grow when a
+                // card with a three-line one scrolls in.
+                minLines = 3,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }
