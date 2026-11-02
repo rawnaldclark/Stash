@@ -241,6 +241,13 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var losslessQuotaRefresher: com.stash.data.download.lossless.quota.LosslessQuotaRefresher
 
     /**
+     * Android's Battery Saver (D19). A cold start while it is on skips the warm-ups and catch-up
+     * passes below; they run at the next start without it, and the periodic jobs are left to Android.
+     */
+    @Inject
+    lateinit var batterySaver: com.stash.core.common.power.BatterySaver
+
+    /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
      * later share the latest report from Settings → Diagnostics. Installed
      * as the first thing after super.onCreate() so it catches errors from
@@ -407,7 +414,12 @@ class StashApplication : Application(), Configuration.Provider {
                 }
             },
         )
-        losslessConfigFetcher.start(applicationScope)
+        // Battery Saver at this cold start, read once: a start is one decision. While it is on, the
+        // warm-ups (yt-dlp, TLS) and the catch-up one-shots (enrichment, artist photos, followed mixes,
+        // update check) are skipped, and the lossless config is read from its cache (see below).
+        val saverAtStart = batterySaver.isOn.value
+        if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
+        startLosslessConfig()
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
@@ -508,7 +520,10 @@ class StashApplication : Application(), Configuration.Provider {
             // itself, inside a worker, where the one-off cost is invisible.
             // The latency this prewarm exists to hide is the first stream
             // resolve; streaming is always allowed, so gate on network only.
-            if (connectivityMonitor.isConnected()) {
+            //
+            // Not under Battery Saver either: a nightly download and a QuickJS extraction are the
+            // heaviest thing a cold start does, and downloads still freshen it themselves.
+            if (!saverAtStart && connectivityMonitor.isConnected()) {
                 ytDlpManager.ensureFreshened()
             }
         }
@@ -518,7 +533,8 @@ class StashApplication : Application(), Configuration.Provider {
         // network at all rather than on the streaming preference — offline
         // it is a guaranteed-to-fail request that wakes the radio.
         applicationScope.launch {
-            if (!connectivityMonitor.isConnected()) return@launch
+            // Battery Saver: the first search pays its own handshake instead.
+            if (saverAtStart || !connectivityMonitor.isConnected()) return@launch
             runCatching {
                 okHttpClient.newCall(
                     Request.Builder().url("https://music.youtube.com/").head().build(),
@@ -612,6 +628,9 @@ class StashApplication : Application(), Configuration.Provider {
             TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
             StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
             TrackInfoEnrichmentWorker.schedulePeriodic(this@StashApplication)
+            // Battery Saver: the one-shot enrichment pass below waits for a start without it (the
+            // periodic one above is Android's to defer).
+            if (saverAtStart) return@launch
             // First-launch one-shot so users with a fresh install don't
             // wait 24h for the first enrichment pass. KEEP policy means
             // a re-launch before the worker completes doesn't re-enqueue.
@@ -630,9 +649,10 @@ class StashApplication : Application(), Configuration.Provider {
         // for every artist on the Library Artists tab (see ArtistImageBackfillWorker
         // KDoc). KEEP policy means a re-launch before the worker completes
         // doesn't re-enqueue; re-arms after each sync via SyncFinalizeWorker.
-        ArtistImageBackfillWorker.enqueueOneTime(this)
+        // Battery Saver: this and the followed-mix check wait for a start without it.
+        if (!saverAtStart) ArtistImageBackfillWorker.enqueueOneTime(this)
         // Followed shared mixes: check on start, at most every 6 h (the worker gates per mix).
-        com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
+        if (!saverAtStart) com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
         // v0.9.11: kick a background sweep that fills in bit-depth +
         // sample-rate for tracks downloaded before the columns existed.
         // The flag is set immediately on enqueue (not after success) so
@@ -647,8 +667,9 @@ class StashApplication : Application(), Configuration.Provider {
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
-        // waiting up to 48 hours when Android Doze defers the fire.
-        UpdateCheckWorker.enqueueOneTimeCheck(this)
+        // waiting up to 48 hours when Android Doze defers the fire. Not under Battery Saver: the
+        // periodic check still runs, when Android lets it.
+        if (!saverAtStart) UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
         // The pin backfill reads sync_enabled as intent. Stale mix flags from
         // older releases are already gone: MIGRATION_50_51 clears them when the
@@ -726,6 +747,43 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { losslessSourcePreferences.migrateDownloadMode() }
                 .onSuccess { android.util.Log.i("StashApp", "download quality: $it") }
                 .onFailure { android.util.Log.w("StashApp", "download mode migration failed", it) }
+        }
+    }
+
+    /**
+     * The signed lossless config: the cached copy at once, then a fetch now and every 6 h.
+     *
+     * Under Battery Saver the fetch waits for Saver to turn off while the last SUCCESSFUL fetch is
+     * under [LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS] old and a cached copy is there to use; it runs
+     * at once with no cache (a first launch whose fetch failed), and at the latest when that success
+     * turns a day old, Saver or not: the relay key rotates through this config, so a phone that
+     * keeps Saver on all the time must still pick a new one up. See
+     * [com.stash.core.common.power.SaverDeferral.startWhenDue].
+     *
+     * All on [applicationScope] (IO): the first SharedPreferences read loads the file from disk.
+     */
+    private fun startLosslessConfig() {
+        applicationScope.launch {
+            val prefs = getSharedPreferences(BATTERY_SAVER_PREFS, MODE_PRIVATE)
+            // Stamped only by a refresh that applied a fresh, verified config: a failed attempt
+            // (offline, a captive portal) must never count as a recent fetch.
+            launch {
+                losslessConfigFetcher.refreshedAt.collect { at ->
+                    if (at > 0L) prefs.edit().putLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, at).apply()
+                }
+            }
+            val start = com.stash.core.common.power.SaverDeferral.startWhenDue(
+                saver = batterySaver,
+                lastSuccessMs = prefs.getLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, -1L).takeIf { it >= 0L },
+                nowMs = System::currentTimeMillis,
+                maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
+                loadCached = { losslessConfigFetcher.loadCached() },
+                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                startRefreshing = { losslessConfigFetcher.start(applicationScope) },
+            )
+            if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {
+                Log.i("StashStartup", "Battery Saver on: lossless config fetch started ($start)")
+            }
         }
     }
 
@@ -1331,6 +1389,13 @@ class StashApplication : Application(), Configuration.Provider {
          *      `album_artist` from the file path's artist folder.
          */
         private const val ALBUM_BACKFILL_VERSION = 2
+
+        /** What a cold start under Battery Saver remembers: when the lossless config last refreshed. */
+        private const val BATTERY_SAVER_PREFS = "stash_battery_saver"
+        private const val KEY_LOSSLESS_CONFIG_REFRESHED_AT = "lossless_config_refreshed_at"
+
+        /** Under Battery Saver the lossless config is fetched anyway once its last success is this old. */
+        private const val LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS = 24L * 60 * 60 * 1000
 
         /** Recognized audio file extensions that the codec-backfill writes back. */
         private val KNOWN_CODECS = setOf(

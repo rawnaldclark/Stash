@@ -118,6 +118,15 @@ class LosslessConfigFetcher @Inject constructor(
     /** `updated_at` (unix seconds) of the applied config; 0 until one is loaded. For the diagnostics bundle. */
     val updatedAt: StateFlow<Long> = _updatedAt.asStateFlow()
 
+    private val _refreshedAt = MutableStateFlow(0L)
+
+    /**
+     * Wall-clock time of this process's last [refresh] that applied a fresh, verified config; 0
+     * before one. Never moved by the cache or by a failed refresh: Battery Saver's deferral keys
+     * on it (StashApplication), so a failed fetch can't count as a recent one.
+     */
+    val refreshedAt: StateFlow<Long> = _refreshedAt.asStateFlow()
+
     private val installIdKey = stringPreferencesKey("install_id")
 
     /**
@@ -167,6 +176,7 @@ class LosslessConfigFetcher @Inject constructor(
         apply(fresh)
         ioCatching("cache write") { context.losslessRelayConfigDataStore.edit { it[jsonKey] = text } }
         Log.i(TAG, "lossless config applied: ${fresh.relays.size} relay(s)")
+        _refreshedAt.value = System.currentTimeMillis()
         true
     }
 

@@ -19,8 +19,7 @@ import androidx.compose.ui.platform.LocalContext
  * moment it is flipped, not when the screen is next opened. Watches the setting only while the
  * caller is composed.
  *
- * Its own file, so it merges cleanly beside #783 (feat/battery-saver-follow), which rewrites
- * [rememberReducedMotion]'s body to stand still under Battery Saver too.
+ * Stands still under Android's Battery Saver too ([LocalBatterySaverOn], #783), like [rememberReducedMotion].
  */
 @Composable
 fun rememberLiveReducedMotion(): Boolean {
@@ -44,9 +43,8 @@ fun rememberLiveReducedMotion(): Boolean {
         removeAnimations = readRemoveAnimations(resolver)
         onDispose { if (registered) resolver.unregisterContentObserver(observer) }
     }
-    // TODO(#783): stand still under Battery Saver too, as rememberReducedMotion does there. Whichever
-    //  of #780 / #783 merges second makes this line `return motionStill(removeAnimations, LocalBatterySaverOn.current)`.
-    return removeAnimations
+    // Under Battery Saver too, as rememberReducedMotion does (#783).
+    return motionStill(removeAnimations, LocalBatterySaverOn.current)
 }
 
 /** The system "Remove animations" switch right now (animator duration scale 0). */
