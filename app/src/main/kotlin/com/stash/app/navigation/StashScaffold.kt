@@ -166,6 +166,7 @@ fun StashScaffold(
     // at the player level so it follows the song whether or not Now Playing is open.
     val albumColorsViewModel: AlbumColorsViewModel = hiltViewModel()
     val albumColors by albumColorsViewModel.colors.collectAsStateWithLifecycle()
+    val albumColoursFollowSong by albumColorsViewModel.followSong.collectAsStateWithLifecycle()
 
     // The backdrop the bottom chrome frosts: the nav host, drawn under the bars.
     val hazeState = rememberHazeState()
@@ -306,6 +307,8 @@ fun StashScaffold(
             }
         }
     }
+    // The album colours wrap everything below, the posting and Drive hosts' sheets and dialogs included.
+    ProvideAlbumColours(albumColors, followSong = albumColoursFollowSong) {
 
     CommunityPostingHost(
         communityPosting,
@@ -317,7 +320,6 @@ fun StashScaffold(
     ) {
     // "Save to Google Drive" in every song, album and playlist menu while Drive is connected.
     CloudSaveHost {
-    ProvideAlbumColours(albumColors) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPlayerSheet provides playerSheet,

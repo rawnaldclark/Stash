@@ -10,4 +10,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AlbumColorsViewModel @Inject constructor(source: AlbumColorSource) : ViewModel() {
     val colors: StateFlow<AlbumColors> = source.colors
+
+    /** Album colours: follow the song (true) or Neutral (false); see [AlbumColorSource.followSong]. */
+    val followSong: StateFlow<Boolean> = source.followSong
 }
