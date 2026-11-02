@@ -1,9 +1,11 @@
 package com.stash.core.ui.ambient
 
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -16,6 +18,7 @@ import kotlin.random.Random
  * crossfade, never a repeat, and never a palette the user skipped past. Virtual time, so the
  * timings are exact.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ThemeAccentSettleTest {
 
     private fun solid(argb: Long) = IntArray(400) { argb.toInt() }
