@@ -14,9 +14,11 @@ import androidx.compose.runtime.remember
  * and the enriched one can put a newer release first: Sonic Youth's Latest releases opened on
  * "Hold That Tiger" (2025) with the Qobuz "Live in Berlin…" (2026) hidden to its left.
  *
- * A rail still at its start ([returnsToFirstCard]) goes back to card 0; one the user scrolled
- * keeps its card. Checked in a [SideEffect]: after the new cards are composed and before they're
- * laid out, so the position read is still the one on screen (as History keeps its row).
+ * A rail still at its start and at rest ([returnsToFirstCard]) goes back to card 0; one the user
+ * scrolled, nudged, or is swiping or flinging keeps its card (requestScrollToItem would snap it
+ * from under their finger, and cancel a fling). Checked in a [SideEffect]: after the new cards are
+ * composed and before they're laid out, so the position read is still the one on screen (as
+ * History keeps its row).
  *
  * @param firstKey the key of the rail's first card, null when it has none.
  * @param enabled false while something else places the rail (the Now Playing jump to an album).
@@ -28,15 +30,28 @@ internal fun ShowNewFirstCard(state: LazyListState, firstKey: Any?, enabled: Boo
     SideEffect {
         val previous = shownFirstKey[0]
         shownFirstKey[0] = firstKey
-        if (enabled && returnsToFirstCard(previous, firstKey, state.firstVisibleItemIndex)) {
-            state.requestScrollToItem(0)
-        }
+        val returns = returnsToFirstCard(
+            previousFirstKey = previous,
+            firstKey = firstKey,
+            firstVisibleIndex = state.firstVisibleItemIndex,
+            firstVisibleOffset = state.firstVisibleItemScrollOffset,
+            scrolling = state.isScrollInProgress,
+        )
+        if (enabled && returns) state.requestScrollToItem(0)
     }
 }
 
 /**
- * The rail's first card changed and the rail was at its start: its first card still (partly) in
- * view. Not on the first paint ([previousFirstKey] null), when there is no old card to stay on.
+ * The rail's first card changed and the rail was exactly at its start (its first card at
+ * [firstVisibleIndex] 0, [firstVisibleOffset] 0) and at rest ([scrolling] false). Not on the first
+ * paint ([previousFirstKey] null), when there is no old card to stay on.
  */
-internal fun returnsToFirstCard(previousFirstKey: Any?, firstKey: Any?, firstVisibleIndex: Int): Boolean =
-    previousFirstKey != null && firstKey != null && firstKey != previousFirstKey && firstVisibleIndex == 0
+internal fun returnsToFirstCard(
+    previousFirstKey: Any?,
+    firstKey: Any?,
+    firstVisibleIndex: Int,
+    firstVisibleOffset: Int,
+    scrolling: Boolean,
+): Boolean =
+    previousFirstKey != null && firstKey != null && firstKey != previousFirstKey &&
+        firstVisibleIndex == 0 && firstVisibleOffset == 0 && !scrolling
