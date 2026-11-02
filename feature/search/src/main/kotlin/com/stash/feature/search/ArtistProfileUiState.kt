@@ -15,7 +15,8 @@ import com.stash.data.ytmusic.model.TrackSummary
 data class HeroState(
     val name: String,
     val avatarUrl: String?,
-    val subscribersText: String?,
+    /** The count under the name ("1.7M monthly listeners"); see [monthlyListenersOf]. Null shows nothing. */
+    val monthlyListeners: Long? = null,
 )
 
 /**
