@@ -10,6 +10,8 @@ import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.findByYoutubeIdOrAlias
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.library.SameSongRule
 import com.stash.core.data.library.findLibraryCopy
 import com.stash.core.data.library.findReusableByWords
@@ -337,7 +339,7 @@ class SearchDownloadCoordinator @Inject constructor(
             // A search result usually has no library row yet: one is made (a stream-only row,
             // as a Now Playing download tap makes), so the wait is a real queue row the retry
             // sweep picks up. Otherwise "downloads after the reset" would be a promise nothing kept.
-            val trackId = trackDao.findByYoutubeId(track.videoId)?.id
+            val trackId = trackDao.findByYoutubeIdOrAlias(track.videoId)?.id
                 ?: musicRepository.ensureTrackPersisted(
                     track.toDomainStub(null).copy(source = com.stash.core.model.MusicSource.YOUTUBE),
                 )
@@ -667,7 +669,7 @@ class SearchDownloadCoordinator @Inject constructor(
      */
     private suspend fun tidalAacQuery(track: TrackItem): TrackQuery {
         val row = try {
-            trackDao.findByYoutubeId(track.videoId)
+            trackDao.findByYoutubeIdOrAlias(track.videoId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -798,7 +800,7 @@ class SearchDownloadCoordinator @Inject constructor(
      */
     private suspend fun stampEmbeddedAt(videoId: String): Long? {
         return runCatching {
-            val trackId = trackDao.findByYoutubeId(videoId)?.id ?: return null
+            val trackId = trackDao.findByYoutubeIdOrAlias(videoId)?.id ?: return null
             trackDao.setMetadataEmbeddedAt(trackId, System.currentTimeMillis())
             trackId
         }.onFailure { e ->
@@ -1016,6 +1018,10 @@ class SearchDownloadCoordinator @Inject constructor(
             youtubeId = track.videoId,
             explicit = track.explicit,
         )
+            // A video the user merged into another row (Possible duplicates) is that row's song,
+            // whatever its words: the row's file is this song's copy.
+            ?: trackDao.findByAlias(TrackAliasEntity.KIND_YOUTUBE_ID, track.videoId)
+                ?.takeIf { SameSongRule.holdsFile(it) && !it.matchFlagged }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -1033,7 +1039,8 @@ class SearchDownloadCoordinator @Inject constructor(
      * stopped at a same-song row with a file ([libraryCopyOf]), so one here landed meanwhile.
      */
     private suspend fun findReusableRow(track: TrackItem) =
-        trackDao.findByYoutubeId(track.videoId)
+        // A video a duplicate merge took away finds the row it went into (track_aliases).
+        trackDao.findByYoutubeIdOrAlias(track.videoId)
             ?: trackDao.findReusableByWords(
                 title = track.title,
                 artist = track.artist,

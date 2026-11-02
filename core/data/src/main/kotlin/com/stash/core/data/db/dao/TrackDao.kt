@@ -11,6 +11,7 @@ import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -910,6 +911,37 @@ interface TrackDao {
     /** Find a track by its YouTube video ID, or null if not found. */
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     suspend fun findByYoutubeId(youtubeId: String): TrackEntity?
+
+    /**
+     * The row a merge pointed the merged-away id [value] of [kind] at (`track_aliases`, schema 76),
+     * or null. Look the id up in its own column first: an alias only stands in for an id no row
+     * holds any more. See [findByYoutubeIdOrAlias] and its siblings.
+     */
+    @Query(
+        """
+        SELECT t.* FROM tracks t INNER JOIN track_aliases a ON a.track_id = t.id
+        WHERE a.kind = :kind AND a.value = :value
+        LIMIT 1
+        """,
+    )
+    suspend fun findByAlias(kind: String, value: String): TrackEntity?
+
+    @Query("SELECT * FROM track_aliases WHERE kind = :kind AND value IN (:values)")
+    suspend fun aliasRowsRaw(kind: String, values: List<String>): List<TrackAliasEntity>
+
+    /**
+     * For each of [trackIds] that a duplicate merge took away, the row it went into (schema 76,
+     * `track_aliases` kind `track_id`): two batched reads, chunked for the bind cap. Ids that were
+     * never merged away are absent from the map. What a saved queue's ids go through on a cold start.
+     */
+    suspend fun mergedIntoAll(trackIds: Collection<Long>): Map<Long, TrackEntity> {
+        if (trackIds.isEmpty()) return emptyMap()
+        val aliases = trackIds.map(Long::toString).distinct()
+            .chunkedForBind { aliasRowsRaw(TrackAliasEntity.KIND_TRACK_ID, it) }
+        if (aliases.isEmpty()) return emptyMap()
+        val rows = getByIds(aliases.map { it.trackId }.distinct()).associateBy { it.id }
+        return aliases.mapNotNull { alias -> rows[alias.trackId]?.let { alias.value.toLong() to it } }.toMap()
+    }
 
     @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
     suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?

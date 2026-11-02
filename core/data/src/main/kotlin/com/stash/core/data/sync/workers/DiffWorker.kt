@@ -19,6 +19,7 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.SameSongRule
 import com.stash.core.data.library.libraryCopiesOf
@@ -743,7 +744,16 @@ class DiffWorker @AssistedInject constructor(
         val soundCloudIsrcs = allowedSnapshots.filter { it.soundCloudId != null }.mapNotNull { it.isrc }
             .filter { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }.distinct()
         val isrcCandidates = soundCloudIsrcs.chunked(900).flatMap { trackDao.findByIsrcs(it) }
-        val candidates = (isrcCandidates + trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities) + soundCloudCandidates).distinctBy { it.id }
+        val direct = (isrcCandidates + trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities) + soundCloudCandidates).distinctBy { it.id }
+        // Ids a merge took away (track_aliases, schema 76): a merged row's other video or Spotify
+        // id finds the row it went into, so this sync never makes the merged duplicate again. The
+        // rows they point at join the candidates; the id's own column still wins below.
+        val duplicateDao = database.duplicateDao()
+        val spotifyAliases = duplicateDao.aliases(TrackAliasEntity.KIND_SPOTIFY_URI, spotifyUris)
+        val youtubeAliases = duplicateDao.aliases(TrackAliasEntity.KIND_YOUTUBE_ID, youtubeIds)
+        val directIds = direct.mapTo(HashSet()) { it.id }
+        val aliasTargets = (spotifyAliases + youtubeAliases).map { it.trackId }.distinct().filterNot { it in directIds }
+        val candidates = direct + trackDao.getByIds(aliasTargets)
         val candidateTracks = candidates.associate { candidate ->
             candidate.id to BatchTrack(candidate, isNew = false)
         }
@@ -771,6 +781,9 @@ class DiffWorker @AssistedInject constructor(
         }
 
         candidateTracks.values.forEach(::registerBatchTrack)
+        // After the rows' own ids, so a row that holds an id in its column always owns it.
+        for (alias in spotifyAliases) candidateTracks[alias.trackId]?.let { bySpotifyUri.putIfAbsent(alias.value, it) }
+        for (alias in youtubeAliases) candidateTracks[alias.trackId]?.let { byYoutubeId.putIfAbsent(alias.value, it) }
 
         // A canonical-title/artist match is only safe to reuse under
         // SameSongRule, the rule every path that finds a row by its words

@@ -2,6 +2,7 @@ package com.stash.core.data.social
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.getByIdOrMerged
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.LikePreferences
 import com.stash.core.data.social.spotify.SpotifyRateLimitException
@@ -128,7 +129,8 @@ class LikeCoordinator internal constructor(
         val mirrorSpotify = likePreferences.mirrorLikesSpotifyNow()
         val mirrorYt = likePreferences.mirrorLikesYtMusicNow()
         val mirrorLastFm = likePreferences.mirrorLikesLastFmNow()
-        var track = trackDao.getById(op.trackId)?.toDomain() ?: return
+        // A like queued before its row was merged into another (a duplicate) mirrors that row.
+        var track = trackDao.getByIdOrMerged(op.trackId)?.toDomain() ?: return
 
         // Cross-platform backfill (LIKE only): a heart should reach BOTH
         // enabled services even when the track was only known to one. If a

@@ -53,6 +53,9 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.core.net.toUri
 import com.stash.core.data.db.dao.fileUsedByAnotherTrack
+import com.stash.core.data.db.dao.findBySpotifyUriOrAlias
+import com.stash.core.data.db.dao.findByYoutubeIdOrAlias
+import com.stash.core.data.db.dao.findMergedInto
 
 /**
  * Default [MusicRepository] implementation backed by Room DAOs.
@@ -111,6 +114,10 @@ class MusicRepositoryImpl @Inject constructor(
         extraBufferCapacity = 64,
     )
     override val trackDeletions: SharedFlow<Long> = _trackDeletions.asSharedFlow()
+
+    override suspend fun announceTrackGone(trackId: Long) {
+        _trackDeletions.emit(trackId)
+    }
 
     /**
      * Deletes the audio file at [path]. Handles both app-internal paths
@@ -558,6 +565,12 @@ class MusicRepositoryImpl @Inject constructor(
                 backfillFrom(existing, track)
                 return track.id
             }
+            // A row merged into another (a duplicate the cleanup or the user merged) answers with
+            // the row it went into, so a queue item that still holds its id saves no new row.
+            trackDao.findMergedInto(track.id)?.let { survivor ->
+                backfillFrom(survivor, track)
+                return survivor.id
+            }
         }
 
         // Dedup by every UNIQUE key — youtube_id, then spotify_uri — before the
@@ -566,16 +579,17 @@ class MusicRepositoryImpl @Inject constructor(
         // now that insert ABORTs, an un-deduped spotify_uri would THROW, so a
         // Spotify track whose canonical identity drifted (feat./remaster tags)
         // must still resolve to its existing row by URI.
+        // A merged-away id (track_aliases) finds the row it was merged into.
         val youtubeId = track.youtubeId
         if (!youtubeId.isNullOrBlank()) {
-            trackDao.findByYoutubeId(youtubeId)?.let { existing ->
+            trackDao.findByYoutubeIdOrAlias(youtubeId)?.let { existing ->
                 backfillFrom(existing, track)
                 return existing.id
             }
         }
         val spotifyUri = track.spotifyUri
         if (!spotifyUri.isNullOrBlank()) {
-            trackDao.findBySpotifyUri(spotifyUri)?.let { existing ->
+            trackDao.findBySpotifyUriOrAlias(spotifyUri)?.let { existing ->
                 backfillFrom(existing, track)
                 return existing.id
             }
@@ -641,8 +655,8 @@ class MusicRepositoryImpl @Inject constructor(
                 isrc = t.isrc?.ifBlank { null },
             )
         }
-        val existing = incoming.youtubeId?.let { trackDao.findByYoutubeId(it) }
-            ?: incoming.spotifyUri?.let { trackDao.findBySpotifyUri(it) }
+        val existing = incoming.youtubeId?.let { trackDao.findByYoutubeIdOrAlias(it) }
+            ?: incoming.spotifyUri?.let { trackDao.findBySpotifyUriOrAlias(it) }
             ?: incoming.isrc?.let { trackDao.findByIsrc(it) }
         if (existing != null) {
             backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
