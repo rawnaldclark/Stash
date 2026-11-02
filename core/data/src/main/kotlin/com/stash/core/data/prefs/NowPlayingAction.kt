@@ -25,6 +25,11 @@ enum class NowPlayingAction {
     POST_TO_COMMUNITY,
     VIEW_ALBUM,
     PLAYBACK_SPEED,
+    /**
+     * Settings › Audio & Quality's streaming switches (Lossless, Save Data, Prefer Tidal AAC) in a
+     * sheet, to change them mid-listen without leaving the song (#716). Only while songs stream.
+     */
+    STREAM_QUALITY,
     DOWNLOAD,
     FLAG_WRONG_MATCH,
     ;

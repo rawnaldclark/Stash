@@ -292,6 +292,11 @@ fun NowPlayingScreen(
     val castConnection by castViewModel.connection.collectAsStateWithLifecycle()
     val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected
     var showCastSheet by remember { mutableStateOf(false) }
+    // Streaming quality (#716): Settings' streaming switches in a sheet, offered while songs stream.
+    val qualityViewModel: StreamingQualityViewModel = hiltViewModel()
+    val streams by qualityViewModel.streams.collectAsStateWithLifecycle()
+    var showQualitySheet by remember { mutableStateOf(false) }
+    val qualitySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
     // Where Next / Previous can go, for the art's swipe and its TalkBack actions: the queue's ends,
@@ -560,7 +565,7 @@ fun NowPlayingScreen(
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
     val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
     val isPreview = track?.soundCloudPreview == true && !isDownloaded
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview) {
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
@@ -571,6 +576,7 @@ fun NowPlayingScreen(
             isCloudSong = isCloudSong,
             isSoundCloudSong = isSoundCloudSong,
             isPreview = isPreview,
+            streams = streams,
         )
     }
     val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
@@ -620,6 +626,7 @@ fun NowPlayingScreen(
                 // Resolves and opens the actual remote album page.
                 NowPlayingAction.VIEW_ALBUM -> viewModel.onViewAlbumTapped()
                 NowPlayingAction.PLAYBACK_SPEED -> showSpeedSheet = true
+                NowPlayingAction.STREAM_QUALITY -> showQualitySheet = true
                 // The ⋮ menu's labelled "Download" / "Remove download" row.
                 NowPlayingAction.DOWNLOAD -> viewModel.toggleDownloadForCurrentTrack()
                 NowPlayingAction.FLAG_WRONG_MATCH -> showWrongMatchDialog = true
@@ -729,6 +736,21 @@ fun NowPlayingScreen(
             onDismiss = { showSpeedSheet = false },
             sheetState = speedSheetState,
         )
+    }
+
+    if (showQualitySheet) {
+        val quality by qualityViewModel.state.collectAsStateWithLifecycle()
+        // Read eagerly since Now Playing opened, so this is all but never null by the time it's tapped.
+        quality?.let { q ->
+            StreamingQualitySheet(
+                state = q,
+                onLosslessChange = qualityViewModel::onLosslessChanged,
+                onSaveDataChange = qualityViewModel::onSaveDataChanged,
+                onPreferTidalAacChange = qualityViewModel::onPreferTidalAacChanged,
+                onDismiss = { showQualitySheet = false },
+                sheetState = qualitySheetState,
+            )
+        }
     }
 
     if (showCustomSpeedDialog) {
