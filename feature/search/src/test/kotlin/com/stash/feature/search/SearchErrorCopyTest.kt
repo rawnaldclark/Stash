@@ -22,6 +22,12 @@ class SearchErrorCopyTest {
             .isEqualTo(SearchErrorCopy.OFFLINE)
     }
 
+    @Test fun `no error copy says offline, which is the mode's name`() {
+        for (copy in listOf(SearchErrorCopy.OFFLINE, SearchErrorCopy.SLOW, SearchErrorCopy.BUSY, SearchErrorCopy.NO_ANSWER)) {
+            assertThat(copy.lowercase()).doesNotContain("offline")
+        }
+    }
+
     @Test fun `a timeout says it was slow`() {
         assertThat(searchErrorMessage(java.net.SocketTimeoutException("timeout")))
             .isEqualTo(SearchErrorCopy.SLOW)

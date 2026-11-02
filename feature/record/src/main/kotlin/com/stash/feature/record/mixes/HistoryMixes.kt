@@ -84,8 +84,14 @@ object HistoryMixes {
     /** "This week, years ago": the days either side of today's date looked at, in every past year. */
     const val WEEK_SPAN_DAYS = 3
 
-    /** How many Home shows at once. */
-    const val HOME_MIXES = 3
+    /**
+     * How many Home shows at once: six (owner 2026-11-01: the mixes are what's abundant). The web's Home shows three
+     * ([WEB_HOME_MIXES]); the rule that picks them is the same.
+     */
+    const val HOME_MIXES = 6
+
+    /** How many the web's Home shows (mixes.ts `homePicks`): what the shared vectors were made with. */
+    const val WEB_HOME_MIXES = 3
 
     /** A mix for each of this many top artists (by time listened), and "How it started" across this many. */
     const val ARTIST_MIXES = 10

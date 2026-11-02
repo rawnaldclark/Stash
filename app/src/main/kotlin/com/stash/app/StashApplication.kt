@@ -34,6 +34,7 @@ import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
+import com.stash.core.data.sync.workers.StashMixRefreshStamp
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
@@ -523,11 +524,12 @@ class StashApplication : Application(), Configuration.Provider {
             // Guarded on its own (the scope's handler would only stop the
             // crash): a seed or retune write that fails must not also skip the
             // worker scheduling below on every launch.
+            var recipesRetuned = false
             try {
                 maybeReseedStashMixes()
                 StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
-                maybeRetuneStashDiscover()
-                maybeRetuneStashMixes()
+                // `or`, not `||`: both retunes always run.
+                recipesRetuned = maybeRetuneStashDiscover() or maybeRetuneStashMixes()
                 maybeRemoveRetiredBuiltinMixes()
                 maybeCleanupDiscoveryLibraryHits()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -541,10 +543,25 @@ class StashApplication : Application(), Configuration.Provider {
             // waiting for tomorrow's periodic cycle.
             runCatching { lastFmRecommendationSource.reconcile() }
                 .onFailure { Log.w("StashStartup", "lastfm recommendation reconcile failed", it) }
-            // Fire a one-shot refresh on first launch so mixes populate
-            // without waiting for the 24-hour periodic cycle. Subsequent
-            // one-shots are safe (unique-work policy = REPLACE).
-            StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
+            // A full one-shot refresh so mixes populate without waiting for the
+            // 24-hour periodic cycle, but at most about once a day: it calls
+            // Last.fm (personas, similar tracks) and drains discovery, and since
+            // idle-stop the process cold-starts several times a day. An empty
+            // mix (new install, reseed, a newly activated recipe) or a retune
+            // this launch is built now regardless. See StashMixRefreshStamp.
+            val mixNeedsBuilding = recipesRetuned || try {
+                stashMixRecipeDao.activeEmptyMixIds().isNotEmpty()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "empty-mix check failed; refreshing to be safe", e)
+                true
+            }
+            if (StashMixRefreshStamp(this@StashApplication).coldStartRefreshDue(mixNeedsBuilding)) {
+                StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
+            } else {
+                Log.i("StashStartup", "Stash Mix cold-start refresh skipped: a full refresh ran within the last 20 h")
+            }
             StashMixRefreshWorker.schedulePeriodic(this@StashApplication)
             val mode = downloadNetworkPreference.current()
             TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
@@ -862,31 +879,33 @@ class StashApplication : Application(), Configuration.Provider {
      * [STASH_DISCOVER_TUNING_VERSION] so each ratio/length change ships
      * exactly once per install. Fresh installs skip this because
      * [StashMixDefaults] already seeds with the new values.
+     *
+     * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
-    private suspend fun maybeRetuneStashDiscover() {
+    private suspend fun maybeRetuneStashDiscover(): Boolean {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("stash_discover_tuning_version", 0)
-        if (stored < STASH_DISCOVER_TUNING_VERSION) {
-            val updated = stashMixRecipeDao.retuneBuiltin(
-                name = "Stash Discover",
-                discoveryRatio = 1.0f,
-                freshnessWindowDays = 14,
-                targetLength = 50,
-                affinityBias = 0.0f,
-                seedStrategy = "TAG_GRAPH",
-                moodKeysCsv = "",
-                tagSampleDepth = 0,
+        if (stored >= STASH_DISCOVER_TUNING_VERSION) return false
+        val updated = stashMixRecipeDao.retuneBuiltin(
+            name = "Stash Discover",
+            discoveryRatio = 1.0f,
+            freshnessWindowDays = 14,
+            targetLength = 50,
+            affinityBias = 0.0f,
+            seedStrategy = "TAG_GRAPH",
+            moodKeysCsv = "",
+            tagSampleDepth = 0,
+        )
+        if (updated > 0) {
+            Log.i(
+                "StashMigration",
+                "Retuned Stash Discover to discovery_ratio=1.0 ($updated row)",
             )
-            if (updated > 0) {
-                Log.i(
-                    "StashMigration",
-                    "Retuned Stash Discover to discovery_ratio=1.0 ($updated row)",
-                )
-            }
-            prefs.edit()
-                .putInt("stash_discover_tuning_version", STASH_DISCOVER_TUNING_VERSION)
-                .apply()
         }
+        prefs.edit()
+            .putInt("stash_discover_tuning_version", STASH_DISCOVER_TUNING_VERSION)
+            .apply()
+        return true
     }
 
     /**
@@ -902,11 +921,13 @@ class StashApplication : Application(), Configuration.Provider {
      *   re-tuned and — like Deep Cuts — now seeds via the tag engine
      *   (RecipeTagResolver → TagPoolBuilder), falling back to the user's top genres
      *   for builtins with no explicit tags. Daily Discover stays ARTIST_SIMILAR.
+     *
+     * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
-    private suspend fun maybeRetuneStashMixes() {
+    private suspend fun maybeRetuneStashMixes(): Boolean {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
-        if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return
+        if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
         var totalUpdated = 0
         for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
@@ -929,6 +950,7 @@ class StashApplication : Application(), Configuration.Provider {
         prefs.edit()
             .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
+        return true
     }
 
     /**
@@ -1153,10 +1175,13 @@ class StashApplication : Application(), Configuration.Provider {
 
         /**
          * Bump whenever a parser change makes existing cached rows produce
-         * a worse UX than a fresh fetch. Current bump (v1) invalidates rows
-         * written before the 2026-04-17 Popular-shelf title-matching fix.
+         * a worse UX than a fresh fetch. v1 invalidated rows written before
+         * the 2026-04-17 Popular-shelf title-matching fix; v2 (2026-11-01)
+         * drops rows without the monthly listeners (YouTube's monthly
+         * audience, Spotify's monthly listeners), which would otherwise show
+         * no count for up to the 6-hour TTL.
          */
-        private const val ARTIST_CACHE_VERSION = 1
+        private const val ARTIST_CACHE_VERSION = 2
 
         /**
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of

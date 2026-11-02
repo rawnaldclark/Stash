@@ -405,6 +405,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * Gating the poll on `isPlaying` inside the flow fixes every collector at
      * once, whatever their scope — measured at 56 mAh/5h49m of cached-state
      * drain before the fix.
+     *
+     * [ListeningRecorder] now collects only while repeat-one is on, so with
+     * the screen off and repeat off nobody collects and the ticker doesn't
+     * run at all. A collector that arrives after such a gap must not start
+     * from the position of minutes ago (the recorder would read the jump to
+     * the real one as a repeat-one loop): `replayExpirationMillis = 0` drops
+     * the last value when the last collector leaves, and the restarted ticker
+     * emits the live position at once.
      */
     override val currentPosition: Flow<Long> = positionTicker(
         playerState = _playerState,
@@ -412,7 +420,7 @@ class PlayerRepositoryImpl @Inject constructor(
         readPositionMs = { controllerDeferred?.currentPosition ?: 0L },
     )
         .flowOn(Dispatchers.Main)
-        .shareIn(scope, SharingStarted.WhileSubscribed(), replay = 1)
+        .shareAsPositionTicker(scope)
 
     /** Cached [MediaController] instance; null until [ensureController] succeeds.
      * Internal as a test seam: gate/queue tests inject a mock controller here. */
@@ -546,6 +554,12 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private val prefetchInFlight: MutableSet<Long> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /**
+     * Bumped by [reresolveNextStream]. A prefetch whose resolve was in flight across a bump may
+     * hold the old quality's URL, so it resolves again rather than put that in the next slot.
+     */
+    @Volatile private var streamQualityChanges = 0
 
     private val cascadeGuard = StreamErrorCascadeGuard()
     private val _streamingHaltedEvents = MutableSharedFlow<StreamingHaltedEvent>(
@@ -686,7 +700,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 controller.shuffleModeEnabled,
             )
         }
-        _userMessages.tryEmit("No earlier song is available offline right now.")
+        // Not "offline": that's the mode's name (2026-11-01).
+        _userMessages.tryEmit("No earlier song can play right now.")
     }
 
     /**
@@ -853,7 +868,8 @@ class PlayerRepositoryImpl @Inject constructor(
                 when {
                     tracks[safeStart].isScannedSong -> SCANNED_FILE_MISSING_MESSAGE
                     !streamOk -> DOWNLOAD_MODE_MESSAGE
-                    else -> "That song isn't available offline right now."
+                    // Online, and the player refused it: confirmed to have nowhere to stream from.
+                    else -> "That song isn't available right now."
                 },
             )
             // Don't fall back to track 0 — bail rather than silently substitute.
@@ -1130,6 +1146,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // capped lossless source (verified on-device 2026-06-21). Claim the id; a racing call for
         // the same next-up returns immediately and lets the winner cache it.
         if (!prefetchInFlight.add(next.id)) return
+        val qualityChangesAtStart = streamQualityChanges
 
         val t0 = System.currentTimeMillis()
         Log.d("LATDIAG", "prefetch-next-start id=${next.id} youtubeId=${next.youtubeId}")
@@ -1151,6 +1168,13 @@ class PlayerRepositoryImpl @Inject constructor(
             return
         }
         prefetchInFlight.remove(next.id)
+        if (qualityChangesAtStart != streamQualityChanges) {
+            // The streaming quality changed while this resolved (reresolveNextStream found it in
+            // flight and left it to finish): its answer may be the old quality's. Ask again.
+            Log.d("LATDIAG", "prefetch-next-end id=${next.id} outcome=quality-changed; resolving again")
+            prefetchNextTrack()
+            return
+        }
         if (resolved == null) {
             Log.d("LATDIAG", "prefetch-next-end id=${next.id} dt=${System.currentTimeMillis() - t0}ms outcome=null")
             return
@@ -1167,6 +1191,39 @@ class PlayerRepositoryImpl @Inject constructor(
         // The URL is also in StreamUrlCache, so even an unswapped placeholder
         // opens instantly on a cache hit.
         refreshControllerMediaItem(controller, nextTimelineIndex, next, resolved)
+    }
+
+    /**
+     * The next song was resolved when this one started, under the old setting: its URL is
+     * cached, and usually in its slot too, so a quality change would only have reached the
+     * song after it. The slot goes back to a placeholder and the cached URL is dropped, then
+     * the prefetch resolves it again under the new setting. Where that prefetch stops short
+     * (a speculative resolve never asks the Tidal relay), the placeholder resolves when the
+     * song plays, still under the new setting. Either resolve also drops every other cached
+     * URL ([com.stash.core.media.streaming.StreamQualityPolicy] sees the change).
+     */
+    override suspend fun reresolveNextStream() {
+        if (listenTogetherOwnsQueue) return
+        val controller = controllerDeferred ?: return
+        val index = controller.nextMediaItemIndex
+        // No next song, or it is this one again (a one-song queue on repeat): a new source would restart it.
+        if (index !in 0 until controller.mediaItemCount || index == controller.currentMediaItemIndex) return
+        val item = controller.getMediaItemAt(index)
+        val nextId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID, -1L) ?: return
+        streamQualityChanges++
+        streamUrlCache.invalidate(nextId)
+        // Only a slot holding a resolved stream: a file, a placeholder or a cloud song is already right.
+        val scheme = item.localConfiguration?.uri?.scheme
+        val queued = currentQueueTracks.firstOrNull { it.id == nextId }
+        if ((scheme == "https" || scheme == "http") && queued != null) {
+            val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply { streamStampKeys.forEach(::remove) }
+            val placeholder = item.buildUpon()
+                .setUri(queued.toStreamPlaceholderMediaItem().localConfiguration?.uri)
+                .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())
+                .build()
+            replaceMediaItemKeepingShuffle(controller, index, placeholder)
+        }
+        prefetchNextTrack()
     }
 
     /**
@@ -1187,6 +1244,10 @@ class PlayerRepositoryImpl @Inject constructor(
         resolved: StreamUrl,
     ): Boolean {
         if (timelineIndex !in 0 until controller.mediaItemCount) return false
+        // Playback reached the slot while it resolved (a re-resolve late in a song, a short
+        // song), or it is the one playing (a one-song queue on repeat): a new source would
+        // restart it. The URL stays cached for the next time it is opened.
+        if (!isStillNextUp(controller.currentMediaItemIndex, controller.nextMediaItemIndex, timelineIndex)) return false
         val item = controller.getMediaItemAt(timelineIndex)
         val itemTrackId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: return false
         if (itemTrackId != next.id) return false
@@ -1238,8 +1299,7 @@ class PlayerRepositoryImpl @Inject constructor(
         if (item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) != next.id) return
         val fileItem = next.toMediaItem()
         val extras = Bundle(item.mediaMetadata.extras ?: Bundle()).apply {
-            listOf(EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN)
-                .forEach(::remove)
+            streamStampKeys.forEach(::remove)
             putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
         }
         val refreshed = item.buildUpon()
@@ -1862,7 +1922,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (target.isUnavailableForDisplay || !connectivity.isConnected()) {
             if (reportUnavailable) {
-                _userMessages.tryEmit("That song isn't available offline right now.")
+                _userMessages.tryEmit(FILE_MISSING_CANT_STREAM_MESSAGE)
             }
             return false
         }
@@ -3213,7 +3273,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 "silent-skip: offline + stream-only '$failingTitle' — end of queue, pausing",
             )
             controller.pause()
-            _userMessages.tryEmit("End of offline Mix")
+            _userMessages.tryEmit("No internet connection, and the rest of this queue isn't downloaded.")
         }
     }
 
@@ -3576,6 +3636,11 @@ class PlayerRepositoryImpl @Inject constructor(
     companion object {
         private const val TAG = "StashPlayer"
 
+        /** The extras that describe the stream a slot plays, for Now Playing's quality line. */
+        private val streamStampKeys = listOf(
+            EXTRA_STREAM_CODEC, EXTRA_STREAM_BIT_DEPTH, EXTRA_STREAM_SAMPLE_RATE, EXTRA_STREAM_BITRATE, EXTRA_STREAM_ORIGIN,
+        )
+
         /**
          * Separate tag for the Now Playing quality stamp so its (chatty,
          * per-state-refresh) diagnostics can be filtered independently of
@@ -3595,8 +3660,11 @@ class PlayerRepositoryImpl @Inject constructor(
         private const val PREFETCH_FRESH_THRESHOLD_MS = 60_000L
 
         /** Shown when an All Songs file can't be played because it isn't where the scan found it. */
-        /** Download mode refuses a song that isn't on the phone. */
-        internal const val DOWNLOAD_MODE_MESSAGE = "You're in Download mode. Switch to Stream only to play this."
+        /** Offline (Download mode in code) refuses a song that isn't on the phone. */
+        internal const val DOWNLOAD_MODE_MESSAGE = "Offline plays only your downloads. Switch to Online to play this."
+
+        /** A downloaded song whose file is gone or broken, and it can't stream instead (no connection, or nowhere to stream from). */
+        internal const val FILE_MISSING_CANT_STREAM_MESSAGE = "That song's file is missing and it can't stream right now."
 
         internal const val SCANNED_FILE_MISSING_MESSAGE =
             "That file isn't there anymore. Rescan your folders: Library, then the disk icon at the top."
@@ -3844,6 +3912,15 @@ internal fun positionTicker(
         }
     }
     .distinctUntilChanged()
+
+/**
+ * Shares one [positionTicker] among all collectors, running only while someone collects. A new collector gets the last
+ * position at once while others are collecting; after a gap with no collector it gets the live position instead (the
+ * restarted ticker's first emission), never the one from before the gap: `replayExpirationMillis = 0`. See
+ * [PlayerRepositoryImpl.currentPosition]. Top-level + `internal` for [PositionTickerTest].
+ */
+internal fun Flow<Long>.shareAsPositionTicker(scope: CoroutineScope): SharedFlow<Long> =
+    shareIn(scope, SharingStarted.WhileSubscribed(replayExpirationMillis = 0), replay = 1)
 
 /** Inverse of the existing `Int.toRepeatMode()` mapper — used only to
  *  restore Media3's repeat mode from a persisted [RepeatMode] on resume. */
