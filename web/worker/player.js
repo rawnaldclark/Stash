@@ -71,19 +71,23 @@ export async function mintTicket(key, sub, nowSeconds) {
 
 /** The player pages worth coming back to: a shared song (/t...), mix (/m/...), /play..., or Community (/community, /community/<id>). */
 const NEXT_PAGE = /^\/(t|m|play|community)([/?]|$)/;
+/** An encoded slash, backslash or dot: no real player path has one, and a later decode could turn it into a step. */
+const ENCODED_STEP = /%(2f|5c|2e)/i;
 
 /** A player path worth coming back to (NEXT_PAGE, on the player's own origin), or null. */
 export function playerNext(value) {
     if (typeof value !== "string" || value.length > MAX_NEXT || !NEXT_PAGE.test(value)) return null;
+    const path = value.split(/[?#]/, 1)[0];
+    if (ENCODED_STEP.test(path)) return null;
     let u;
     try {
         u = new URL(value, "https://player.invalid");
     } catch {
         return null;
     }
-    // A path only, kept exactly as written: a dot segment (/m/../x, %2e%2e), a backslash, or anything else the URL
-    // parser would rewrite changes the pathname, so it's refused. The query may hold anything (/t?t=Hello...).
-    if (u.origin !== "https://player.invalid" || u.pathname !== value.split(/[?#]/, 1)[0]) return null;
+    // A path only, kept exactly as written: a dot segment (/m/../x), a backslash, or anything else the URL parser
+    // would rewrite changes the pathname, so it's refused. The query may hold anything (/t?t=Hello...).
+    if (u.origin !== "https://player.invalid" || u.pathname !== path) return null;
     return value;
 }
 

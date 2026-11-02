@@ -371,18 +371,20 @@ test("a Community page comes along too: signed out on /community or a post, sign
     assert.equal(back.headers.get("location"), "/player?next=%2Fcommunity%2FCm12ab34");
 });
 
-test("next is a path on the player kept as written: no other site, no dot segments, no backslashes", async () => {
+test("next is a path on the player kept as written: no other site, no dot segments, no backslashes, no encoded steps", async () => {
     const { e, cookie } = await signedIn();
-    for (const next of ["/communityx", "/community-admin", "//evil.example/community", "https://evil.example/community", "/community\\..\\admin",
+    for (const next of ["/communityx", "/community-admin", "//evil.example/community", "https://evil.example/community", "/community/\\..\\admin",
         "/community/../admin", "/community/./x", "/community/%2e%2e/admin", "/community/%2E%2E", "/m/../admin", "/t/..", "/play/../../x",
-        "/community/a b", "/community/é"]) {
+        "/community/a b", "/community/é",
+        // Names the URL parser leaves alone, but a later decode could turn into a step: an encoded /, \ or dot.
+        "/community/..%2fadmin", "/community/%2e%2e%2fadmin", "/community/%5c..", "/m/x%2Fy", "/t/%2E"]) {
         assert.equal(playerNext(next), null, next);
         assert.equal(playerReturn(`/player?next=${encodeURIComponent(next)}`), null, next);
         const res = await open(e, cookie, `/player?next=${encodeURIComponent(next)}`);
         assert.equal(parseRedirect(res).before, `${PLAYER}/auth`, next);
     }
     // Dots are fine where they aren't a path segment: in a query (a song titled "Hello...") or inside a name.
-    for (const ok of ["/t?t=Hello...&a=Band", "/community?x=../y", "/community/", "/m/a.b"]) assert.equal(playerNext(ok), ok);
+    for (const ok of ["/t?t=Hello...&a=Band", "/community?x=../y", "/community?x=%2e%2e%2f", "/community/", "/m/a.b"]) assert.equal(playerNext(ok), ok);
 });
 
 test("only GET (and HEAD) mint a ticket", async () => {
