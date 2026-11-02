@@ -157,6 +157,33 @@ class PlaylistDaoSavedAlbumsTest {
         assertThat(dao.getById(album)!!.isActive).isTrue()
     }
 
+    @Test fun `a copy already on the phone, linked beside its song, counts as that song`() = runTest {
+        val album = playlist("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13")
+        track(1, "Waiting Room", downloaded = true)
+        track(2, "Bulldog Front")
+        track(3, "Bad Mouth")
+        listOf(1L, 2L, 3L).forEachIndexed { i, id -> link(album, id, position = i) }
+        // Download found Bulldog Front already on the phone as another row and linked it there.
+        track(20, "Bulldog Front", downloaded = true)
+        link(album, 20L, position = 1)
+        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = 3L, status = DownloadStatus.IN_PROGRESS))
+
+        val row = dao.observeSavedAlbums().first().single()
+        assertThat(row.trackCount).isEqualTo(3)
+        assertThat(row.downloadedCount).isEqualTo(2)
+        assertThat(row.downloadingCount).isEqualTo(1)
+        assertThat(dao.observeSavedAlbumSlots(album).first().map { it.trackId to it.position })
+            .containsExactly(1L to 0, 2L to 1, 20L to 1, 3L to 2)
+
+        // The last song lands: every song is on the phone, though song 2's own row never downloads.
+        db.trackDao().markAsDownloaded(3L, "/music/3.opus", 1L)
+        assertThat(dao.observeSavedAlbums().first().single().toSavedAlbum().onPhone).isTrue()
+        // A playlist that isn't an album has no slots.
+        val mine = playlist("Road trip", MusicSource.BOTH, "custom_1")
+        link(mine, 1L, position = 0)
+        assertThat(dao.observeSavedAlbumSlots(mine).first()).isEmpty()
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private suspend fun playlist(

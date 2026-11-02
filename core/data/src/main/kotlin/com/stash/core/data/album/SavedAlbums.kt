@@ -5,6 +5,7 @@ import com.stash.core.common.primaryArtist
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
+import com.stash.core.model.Track
 import java.text.Normalizer
 import java.util.Locale
 
@@ -210,6 +211,29 @@ object SavedAlbums {
         val name = nameKey(title, artist)
         val songs = songTitles.mapTo(HashSet()) { songKey(it) }
         return saved.firstOrNull { nameKey(it.title, it.artist) == name && sameSongs(songs, it.songKeys) }
+    }
+
+    /**
+     * A saved album's rows ([tracks], in album order), one per song: a song's own row and a copy
+     * of it linked beside it ([com.stash.core.data.db.dao.SavedAlbumSlot]) are one song, shown
+     * where the song sits, by the row on the phone when one is. Rows [slots] doesn't name, and
+     * every row of a playlist that isn't a saved album (no slots), stay as they are.
+     */
+    fun oneRowPerSong(tracks: List<Track>, slots: List<com.stash.core.data.db.dao.SavedAlbumSlot>): List<Track> {
+        if (slots.isEmpty()) return tracks
+        val slotOf = slots.associate { it.trackId to Triple(it.position, it.canonicalTitle, it.canonicalArtist) }
+        val rows = ArrayList<Track>(tracks.size)
+        val placeOf = HashMap<Triple<Int, String, String>, Int>()
+        for (track in tracks) {
+            val slot = slotOf[track.id]
+            val place = slot?.let { placeOf[it] }
+            when {
+                slot == null -> rows += track
+                place == null -> { placeOf[slot] = rows.size; rows += track }
+                track.isDownloaded && !rows[place].isDownloaded -> rows[place] = track
+            }
+        }
+        return rows
     }
 
     private val COMBINING_MARKS = Regex("\\p{Mn}+")

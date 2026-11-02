@@ -46,3 +46,17 @@ data class SavedAlbumRow(
     val artists: String?,
     val titles: String?,
 )
+
+/**
+ * One membership of a saved album with the song slot it fills ([PlaylistDao.observeSavedAlbumSlots]).
+ * A song already on the phone as another row is linked into the album beside the song's own row,
+ * at the song's position and with its canonical words (`insertDownloadsForPlaylist`, DiffWorker's
+ * copy links); both rows fill one slot, so the album lists the song once
+ * ([com.stash.core.data.album.SavedAlbums.oneRowPerSong]).
+ */
+data class SavedAlbumSlot(
+    val trackId: Long,
+    val position: Int,
+    val canonicalTitle: String,
+    val canonicalArtist: String,
+)

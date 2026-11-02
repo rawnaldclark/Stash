@@ -178,4 +178,32 @@ class SavedAlbumsTest {
         // Another album of the same name is not this one.
         assertThat(SavedAlbums.findSaved(listOf(spotify), listOf("album:qobuz:q"), "Repeater", "Fugazi", listOf("Other", "Songs"))).isNull()
     }
+
+    // ── One row per song ────────────────────────────────────────────────
+
+    @Test fun `a copy already on the phone, linked beside the song, is the song, shown where it sits`() {
+        // Download linked the phone's copy (id 20) of song 2 at song 2's place; song 2's own row stays.
+        val rows = listOf(song(1), song(2), song(20, downloaded = true), song(3))
+        val slots = listOf(slot(1, 0, "waiting room"), slot(2, 1, "bulldog front"), slot(20, 1, "bulldog front"), slot(3, 2, "bad mouth"))
+
+        assertThat(SavedAlbums.oneRowPerSong(rows, slots).map { it.id }).containsExactly(1L, 20L, 3L).inOrder()
+    }
+
+    @Test fun `two songs never become one, and a playlist that isn't an album keeps every row`() {
+        // Same place, other words: two songs (a tie in positions never hides one).
+        val rows = listOf(song(1), song(2))
+        assertThat(SavedAlbums.oneRowPerSong(rows, listOf(slot(1, 0, "burning"), slot(2, 0, "glue man"))).map { it.id })
+            .containsExactly(1L, 2L).inOrder()
+        // No slots: not a saved album.
+        assertThat(SavedAlbums.oneRowPerSong(rows, emptyList())).isEqualTo(rows)
+        // Neither copy on the phone: the song's own row (the first) stays.
+        assertThat(SavedAlbums.oneRowPerSong(rows, listOf(slot(1, 0, "burning"), slot(2, 0, "burning"))).map { it.id })
+            .containsExactly(1L)
+    }
+
+    private fun song(id: Long, downloaded: Boolean = false) =
+        com.stash.core.model.Track(id = id, title = "song $id", artist = "Fugazi", isDownloaded = downloaded)
+
+    private fun slot(trackId: Long, position: Int, title: String) =
+        com.stash.core.data.db.dao.SavedAlbumSlot(trackId, position, title, "fugazi")
 }

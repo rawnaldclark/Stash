@@ -500,8 +500,13 @@ class MusicRepositoryImpl @Inject constructor(
 
     // ── Playlist queries ────────────────────────────────────────────────
 
+    override fun getSongsByPlaylist(playlistId: Long): Flow<List<Track>> =
+        combine(getTracksByPlaylist(playlistId), playlistDao.observeSavedAlbumSlots(playlistId).distinctUntilChanged()) { tracks, slots ->
+            com.stash.core.data.album.SavedAlbums.oneRowPerSong(tracks, slots)
+        }.flowOn(Dispatchers.Default)
+
     override fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
-        combine(getTracksByPlaylist(playlistId), streamingPreference.enabled) { tracks, streamOnly ->
+        combine(getSongsByPlaylist(playlistId), streamingPreference.enabled) { tracks, streamOnly ->
             if (streamOnly) tracks else tracks.filter { it.isDownloaded }
         }
 

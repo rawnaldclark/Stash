@@ -91,6 +91,34 @@ class MusicRepositorySavedAlbumsTest {
         assertThat(repo().getPickablePlaylists().first().map { it.id }).containsExactly(mine)
     }
 
+    @Test fun `an album lists each song once after Download links a copy already on the phone`() = runTest {
+        val album = album("Repeater", MusicSource.BOTH, "album:qobuz:rep", fugazi, firstTrackId = 1)
+        // Download found two songs already on the phone as other rows and linked them where the songs sit.
+        listOf(2 to 101L, 4 to 102L).forEach { (position, copyId) ->
+            val title = fugazi[position]
+            db.trackDao().insert(
+                TrackEntity(
+                    id = copyId, title = title, artist = "Fugazi", canonicalTitle = title.lowercase(),
+                    canonicalArtist = "fugazi", isDownloaded = true, filePath = "/music/$copyId.opus",
+                ),
+            )
+            db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = album, trackId = copyId, position = position))
+        }
+
+        streamOnly.value = true
+        val online = repo().getShownTracksByPlaylist(album).first()
+        assertThat(online.map { it.title }).containsExactlyElementsIn(fugazi).inOrder()
+        assertThat(online.map { it.id }).containsExactly(1L, 2L, 101L, 4L, 102L).inOrder()
+        // Saves, syncs and download removal still see every row.
+        assertThat(repo().getTracksByPlaylist(album).first()).hasSize(7)
+
+        // The other three land: Download mode lists the album, its page every song once.
+        listOf(1L, 2L, 4L).forEach { db.trackDao().markAsDownloaded(it, "/music/$it.opus", 1L) }
+        streamOnly.value = false
+        assertThat(repo().getLibraryAlbums().first().map { it.playlistId }).containsExactly(album)
+        assertThat(repo().getShownTracksByPlaylist(album).first().map { it.title }).containsExactlyElementsIn(fugazi).inOrder()
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     /** A saved album holding [songs] in order, track ids from [firstTrackId]. */

@@ -1124,10 +1124,12 @@ interface PlaylistDao {
      * named ([SavedAlbumRow]). One row per saved copy; merging copies of one album and Download
      * mode's rule are [com.stash.core.data.album.SavedAlbums.forLibrary]'s.
      *
-     * Its songs are what the album page lists in Stream only ([TrackDao.getByPlaylist]): live
-     * memberships, blocked songs left out. A song is on the phone when `is_downloaded`, what
-     * Download mode lists ([com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]),
-     * and downloading while a download_queue row for it waits or runs.
+     * Its songs are what the album page lists in Stream only: live memberships, blocked songs left
+     * out, and a song counted once however many rows hold it ([SavedAlbumSlot]: a copy already on
+     * the phone is linked beside the song's own row when the album downloads). A song is on the
+     * phone when one of its rows is (`is_downloaded`, what Download mode lists,
+     * [com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]), and downloading
+     * when none is but one waits or runs in download_queue.
      *
      * The songs' artists and titles come in no set order (SQLite doesn't promise GROUP_CONCAT's):
      * they're only compared as a set. The album's order is the page's ([TrackDao.getByPlaylist]).
@@ -1136,17 +1138,17 @@ interface PlaylistDao {
         """
         SELECT p.id AS id, p.name AS name, p.source AS source, p.source_id AS sourceId,
                p.art_url AS artUrl, p.date_added AS dateAdded,
-               COUNT(m.track_id) AS trackCount,
+               COUNT(m.playlist_id) AS trackCount,
                COALESCE(SUM(m.on_phone), 0) AS downloadedCount,
-               COALESCE(SUM(m.queued), 0) AS downloadingCount,
+               COALESCE(SUM(CASE WHEN m.on_phone = 0 THEN m.queued ELSE 0 END), 0) AS downloadingCount,
                GROUP_CONCAT(m.artist, char(31)) AS artists,
                GROUP_CONCAT(m.title, char(31)) AS titles
         FROM playlists p
         LEFT JOIN (
-            SELECT pt.playlist_id AS playlist_id, pt.track_id AS track_id,
-                   t.artist AS artist, t.title AS title,
-                   (t.is_downloaded = 1) AS on_phone,
-                   (t.is_downloaded = 0 AND EXISTS (
+            SELECT pt.playlist_id AS playlist_id,
+                   MIN(t.artist) AS artist, MIN(t.title) AS title,
+                   MAX(t.is_downloaded = 1) AS on_phone,
+                   MAX(t.is_downloaded = 0 AND EXISTS (
                        SELECT 1 FROM download_queue dq
                        WHERE dq.track_id = t.id
                          AND dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
@@ -1163,6 +1165,8 @@ interface PlaylistDao {
                      OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
                      OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
               )
+            -- One row per song: its own row and a copy linked beside it fill one slot.
+            GROUP BY pt.playlist_id, pt.position, t.canonical_title, t.canonical_artist
         ) m ON m.playlist_id = p.id
         WHERE p.is_active = 1
           AND """ + SAVED_ALBUM + """
@@ -1171,6 +1175,25 @@ interface PlaylistDao {
         """
     )
     fun observeSavedAlbums(): Flow<List<SavedAlbumRow>>
+
+    /**
+     * [playlistId]'s live memberships with the song slot each fills, when it is a saved album
+     * ([SAVED_ALBUM]); empty for any other playlist. What collapses a saved album's copies to one
+     * row per song ([com.stash.core.data.album.SavedAlbums.oneRowPerSong]).
+     */
+    @Query(
+        """
+        SELECT pt.track_id AS trackId, pt.position AS position,
+               t.canonical_title AS canonicalTitle, t.canonical_artist AS canonicalArtist
+        FROM playlist_tracks pt
+        INNER JOIN playlists p ON p.id = pt.playlist_id
+        INNER JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND """ + SAVED_ALBUM + """
+        """
+    )
+    fun observeSavedAlbumSlots(playlistId: Long): Flow<List<SavedAlbumSlot>>
 
     /**
      * v0.9.23 — playlists the user can pick as a destination for

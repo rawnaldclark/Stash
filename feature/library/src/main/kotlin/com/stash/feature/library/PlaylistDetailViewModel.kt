@@ -171,9 +171,11 @@ class PlaylistDetailViewModel @Inject constructor(
      * This playlist's tracks, observed ONCE and shared by [downloadButton], [uiState] and
      * [buildState]. Each used to subscribe on its own: three Room observers, and three full
      * entity-to-Track conversions of a 5K-song Liked playlist on every `tracks` write (each
-     * finished download while it downloads).
+     * finished download while it downloads). Each song once ([MusicRepository.getSongsByPlaylist]):
+     * a saved album's copy of a song already on the phone is the song, so its Download button
+     * reaches "every song" instead of waiting on the song's own row forever.
      */
-    private val playlistTracks = musicRepository.getTracksByPlaylist(playlistId)
+    private val playlistTracks = musicRepository.getSongsByPlaylist(playlistId)
         .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     /** Non-null when this playlist is a followed mix (spec §6). */

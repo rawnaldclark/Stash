@@ -64,11 +64,19 @@ interface MusicRepository {
     fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>>
 
     /**
-     * The songs a playlist screen shows: all of [getTracksByPlaylist] in Stream only, only
+     * A playlist's songs, each once: [getTracksByPlaylist], except that a saved album lists a song
+     * once even when a copy already on the phone was linked beside the song's own row (the row on
+     * the phone wins; [com.stash.core.data.album.SavedAlbums.oneRowPerSong]). What its page lists
+     * and counts; saves, syncs and download removal keep [getTracksByPlaylist]'s every row.
+     */
+    fun getSongsByPlaylist(playlistId: Long): Flow<List<Track>> = getTracksByPlaylist(playlistId)
+
+    /**
+     * The songs a playlist screen shows: all of [getSongsByPlaylist] in Stream only, only
      * the downloaded ones in Download mode, which plays nothing else (owner, 2026-10-29).
      * For lists people see and play; counts, saves and syncs keep [getTracksByPlaylist].
      */
-    fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> = getTracksByPlaylist(playlistId)
+    fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> = getSongsByPlaylist(playlistId)
 
     /** Distinct artists with track counts and durations. */
     fun getAllArtists(): Flow<List<ArtistSummary>>
