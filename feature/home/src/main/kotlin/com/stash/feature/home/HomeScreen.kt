@@ -135,6 +135,7 @@ import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.ui.components.DiscoverHeroCard
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -1346,7 +1347,10 @@ private fun SupporterTicker(
 
 // \u2500\u2500 Qobuz discovery rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-/** Horizontal carousel of Qobuz albums (New Releases). Tap \u2192 album detail. */
+/**
+ * Horizontal carousel of albums (New Releases, Top Albums, New from your artists). Tap opens the
+ * album page. Its covers are [HomeRailCardSize], the same as the mix rails around it.
+ */
 @Composable
 private fun DiscoveryAlbumRow(
     title: String,
@@ -1370,6 +1374,7 @@ private fun DiscoveryAlbumRow(
                     thumbnailUrl = album.thumbnailUrl,
                     year = album.year,
                     isLossless = lossless,
+                    size = HomeRailCardSize,
                     onClick = { onOpen(album) },
                 )
             }
@@ -1407,6 +1412,7 @@ private fun DiscoveryPlaylistRow(
                     thumbnailUrl = playlist.thumbnailUrl,
                     year = null,
                     isLossless = true,
+                    size = HomeRailCardSize,
                     onClick = { onOpen(playlist.toAlbumNav()) },
                 )
             }

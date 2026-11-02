@@ -38,7 +38,8 @@ fun CardRail(
 
 /**
  * The cover (and width) of a Home rail card: the mix and playlist cards, Liked Songs and Recently
- * played, so every card rail on Home steps at one size. Was 140 dp.
+ * played, and the album rows ([AlbumSquareCard] in New Releases, Qobuz Playlists, Top Albums, New
+ * from your artists and Because you like), so every card rail on Home steps at one size. Was 140 dp.
  */
 val HomeRailCardSize = 120.dp
 

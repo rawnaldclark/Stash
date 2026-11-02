@@ -15,26 +15,32 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.ui.components.motion.pressScale
 
 /**
- * 140dp square album card with rounded thumbnail, title, and "year • artist" subtitle.
+ * Square album card with rounded thumbnail, title, and "year • artist" subtitle: 140 dp unless
+ * [size] says otherwise.
  *
- * Used in search results and on Artist Profile discography rails.
+ * Used in search results and on Artist Profile discography rails at the default size; Home's album
+ * rows pass [HomeRailCardSize] so they step with the mix rails beside them.
  *
  * @param title Album title shown on the first text row.
  * @param artist Artist name for the subtitle.
  * @param thumbnailUrl Optional cover art URL; passed through [ArtUrlUpgrader] which
- *   asks the CDN for 1024x1024. Coil downsamples to the 140dp render target — the
+ *   asks the CDN for 1024x1024. Coil downsamples to the [size] render target — the
  *   high-res request just guarantees crispness on high-DPI screens.
  * @param year Optional release year. When present the subtitle is `"$year • $artist"`,
  *   otherwise just the artist name.
  * @param modifier Optional layout modifier applied to the root column.
  * @param isLossless When true, overlays a small FLAC badge on the cover art
  *   (Premium Crisp quality signal). Defaults to false so existing callers are unaffected.
+ * @param size The cover's side and the card's width. 140 dp by default (Search, the artist page,
+ *   Library, the mood pages); Home's rows pass [HomeRailCardSize] (120 dp). Only the size changes:
+ *   corners, badge and text stay.
  * @param onClick Invoked on tap — typically opens the album detail screen.
  */
 @Composable
@@ -45,12 +51,13 @@ fun AlbumSquareCard(
     year: String?,
     modifier: Modifier = Modifier,
     isLossless: Boolean = false,
+    size: Dp = 140.dp,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
-            .width(140.dp)
+            .width(size)
             .pressScale(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
     ) {
@@ -59,7 +66,7 @@ fun AlbumSquareCard(
                 model = ArtUrlUpgrader.upgrade(thumbnailUrl),
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier.size(size).clip(RoundedCornerShape(8.dp)),
             )
             if (isLossless) {
                 // Bottom-right, translucent: the industry-standard corner for a
