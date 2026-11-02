@@ -284,7 +284,7 @@ private fun Highlights(highlights: List<ReleaseNotes.Note>, ink: Color) {
     GlassCard(Modifier.semantics { collectionInfo = CollectionInfo(highlights.size, 1) }) {
         highlights.forEachIndexed { i, note ->
             if (i > 0) Hairline()
-            NoteRow(note, ink, Modifier.semantics(mergeDescendants = true) { collectionItemInfo = CollectionItemInfo(i, 1, 0, 1) })
+            NoteRow(note, ink, compact = true, Modifier.semantics(mergeDescendants = true) { collectionItemInfo = CollectionItemInfo(i, 1, 0, 1) })
         }
     }
 }
@@ -338,7 +338,7 @@ private fun AllNotes(notes: ReleaseNotes, ink: Color, onOpenGitHub: () -> Unit) 
             GlassCard(Modifier.semantics { collectionInfo = CollectionInfo(section.notes.size, 1) }) {
                 section.notes.forEachIndexed { i, note ->
                     if (i > 0) Hairline()
-                    NoteRow(note, ink, Modifier.semantics(mergeDescendants = true) { collectionItemInfo = CollectionItemInfo(i, 1, 0, 1) })
+                    NoteRow(note, ink, compact = false, Modifier.semantics(mergeDescendants = true) { collectionItemInfo = CollectionItemInfo(i, 1, 0, 1) })
                 }
             }
         }
@@ -367,9 +367,13 @@ private fun AllNotes(notes: ReleaseNotes, ink: Color, onOpenGitHub: () -> Unit) 
     }
 }
 
-/** One change: a dot in the album's ink, its bold lead, its text, and the points under it. */
+/**
+ * One change: a dot in the album's ink, its bold lead, its text, and the points under it. [compact] (the highlights card,
+ * read at a glance): the text under a title in the small body size, as the Donate sheet's cards; the full notes, read
+ * through, keep the regular size.
+ */
 @Composable
-private fun NoteRow(note: ReleaseNotes.Note, ink: Color, modifier: Modifier = Modifier) {
+private fun NoteRow(note: ReleaseNotes.Note, ink: Color, compact: Boolean, modifier: Modifier = Modifier) {
     val type = MaterialTheme.typography
     val title = note.title
     val lead = if (title != null) type.titleSmall else type.bodyMedium
@@ -388,7 +392,7 @@ private fun NoteRow(note: ReleaseNotes.Note, ink: Color, modifier: Modifier = Mo
             if (title != null) {
                 Text(title, style = type.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                 if (note.body.isNotEmpty()) {
-                    Text(note.body, style = type.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(note.body, style = if (compact) type.bodySmall else type.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 Text(note.body, style = type.bodyMedium, color = MaterialTheme.colorScheme.onSurface)

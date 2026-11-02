@@ -138,6 +138,18 @@ class AppUpdaterTest {
     }
 
     @Test
+    fun `a check that changes only the notes or the apk reaches the open updater`() {
+        val updater = AppUpdater(context, OkHttpClient(), FakeSteps())
+        val other = File(context.filesDir, "other.apk").apply { writeBytes(ByteArray(10)) }
+        AppUpdater.store(context, AvailableUpdate("v0.9.1", "0.9.1", other.toURI().toString(), other.length(), "Edited notes."))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+
+        val now = updater.available.value!!
+        assertThat(now.notes).isEqualTo("Edited notes.")
+        assertThat(now.apkUrl).isEqualTo(other.toURI().toString())
+    }
+
+    @Test
     fun `the installed version is read for the sheet`() {
         assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).installedVersion).isEqualTo("0.9.0")
     }

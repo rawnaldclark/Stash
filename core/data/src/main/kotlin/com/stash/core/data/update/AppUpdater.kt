@@ -98,8 +98,9 @@ class AppUpdater internal constructor(
 
     // Held: SharedPreferences keeps its listeners weakly.
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        // The notes too: notes edited on GitHub after the release reach an open sheet at the next check.
-        if (key == KEY_TAG || key == KEY_NOTES || key == null) _available.value = read(prefs, context)
+        // Any part of the stored release, not only its tag: notes edited on GitHub after the release reach an open sheet
+        // at the next check, and so would a replaced APK.
+        if (key == null || key in RELEASE_KEYS) _available.value = read(prefs, context)
     }
 
     init {
@@ -363,6 +364,7 @@ class AppUpdater internal constructor(
         private const val KEY_LATER_TAG = "later_tag"
         private const val KEY_LATER_AT = "later_at"
         private const val KEY_SKIPPED_TAG = "skipped_tag"
+        private val RELEASE_KEYS = setOf(KEY_TAG, KEY_URL, KEY_SIZE, KEY_NOTES)
 
         fun isDebuggable(context: Context) = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
