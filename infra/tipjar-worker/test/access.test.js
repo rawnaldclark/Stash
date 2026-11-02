@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashEmail, monthKey, toUsdCents } from "../src/access.js";
+import { currencyOf, hashEmail, monthKey, toUsdCents } from "../src/access.js";
 import { hashEmail as scriptHash } from "../scripts/import-kofi-csv.mjs";
 
 // The same vectors are in web/worker/test/crypto.test.js: the tip jar, the import script and
@@ -33,4 +33,12 @@ test("toUsdCents: USD as is, others by the table, junk is null", () => {
 test("monthKey is the UTC month", () => {
     assert.equal(monthKey(new Date("2026-10-01T00:00:00Z")), "2026-10");
     assert.equal(monthKey(new Date("2026-09-30T23:59:59Z")), "2026-09");
+});
+
+test("currencyOf: trimmed and upper case; missing, empty or only spaces is USD", () => {
+    assert.equal(currencyOf(" eur "), "EUR");
+    for (const c of [undefined, null, "", "   ", "\t"]) assert.equal(currencyOf(c), "USD", JSON.stringify(c));
+    assert.equal(toUsdCents("3", "  "), 300);
+    assert.equal(toUsdCents(3, "USD"), 300, "a number amount");
+    assert.equal(toUsdCents("4.63", "EUR"), 500);
 });

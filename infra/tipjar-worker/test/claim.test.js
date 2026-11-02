@@ -865,3 +865,36 @@ test("start logs no amount, address or code for a below_entry email", async () =
     assert.match(logs, /below_entry email sent/);
     assert.ok(!/321|3\.21|ann@|example\.org/.test(logs), logs);
 });
+
+test("Ko-fi payments that add up to $5 with no access entry (the webhook race) get a code, not no_donation", async () => {
+    // Two payments whose webhooks each missed the other in KV's list(): both kept, neither wrote access:<hash>.
+    const e = claimEnv();
+    const h = await hashEmail(EMAIL, PEPPER);
+    for (const [id, cents] of [["tx-r1", 300], ["tx-r2", 200]]) {
+        const pay = { cents, at: "2026-11-03T10:00:00.000Z" };
+        await e.ACCESS_KV.put(`kofipay:${h}:${id}`, JSON.stringify(pay), { metadata: pay });
+    }
+    assert.equal(e.ACCESS_KV.map.has(`access:${h}`), false);
+    await logsOf(() => start(e));
+    const [mail] = claimMails(e);
+    assert.equal(mail.kind, "code");
+    const res = await verifyReq(e, mail.code);
+    assert.equal(res.status, 200);
+    assert.equal(e.ACCESS_KV.map.has(`access:${h}`), false, "the claim writes no access entry");
+});
+
+test("the same with a manual entry: Ko-fi payments of $5 or more get a code; a donor at $5 isn't held back by the no-donation cap", async () => {
+    const e = claimEnv();
+    const h = await asDonor(e, EMAIL, "manual");
+    const pay = { cents: 520, at: "2026-11-03T10:00:00.000Z" };
+    await e.ACCESS_KV.put(`kofipay:${h}:tx-big`, JSON.stringify(pay), { metadata: pay });
+    const realNow = clock.now;
+    try {
+        clock.now = () => Date.UTC(2026, 10, 3, 12, 5, 0);
+        for (let i = 0; i < LIMITS.noDonationPerHour; i++) await logsOf(() => start(e, `nobody${i}@example.org`, `198.51.100.${i}`));
+        await logsOf(() => start(e, EMAIL, "192.0.2.70"));
+    } finally {
+        clock.now = realNow;
+    }
+    assert.equal(claimMails(e).at(-1).kind, "code");
+});

@@ -122,8 +122,8 @@ export function dedupeId(payload) {
 /** "2026-10" for any moment in October 2026, UTC. */
 export const monthKey = (date) => date.toISOString().slice(0, 7);
 
-/** A payment's currency as the table names it: trimmed and upper case, USD when Ko-fi sends none. */
-export const currencyOf = (currency) => String(currency || "USD").trim().toUpperCase();
+/** A payment's currency as the table names it: trimmed and upper case, USD when Ko-fi sends none (or only spaces). */
+export const currencyOf = (currency) => String(currency ?? "").trim().toUpperCase() || "USD";
 
 /** An amount in a currency to US cents, or null for an unknown currency or a bad amount. */
 export function toUsdCents(amount, currency) {
@@ -164,14 +164,17 @@ export async function kofiTotalCents(kv, hash, except = null) {
  *   - otherwise this payment is kept as kofipay:<hash>:<transaction id> = { cents, at } (metadata too), and the
  *     email is let in once its kofipay entries add up to ENTRY_USD_CENTS. A Ko-fi retry writes the same key, and
  *     this payment is added by hand rather than read back, so a retry counts it once and a list() that hasn't
- *     caught up with the write still counts it.
+ *     caught up with the write still counts it. Without EMAIL_PEPPER nothing is kept (the hash would be a plain,
+ *     guessable SHA-256 of the email, and the website signs nobody in without the pepper anyway): only this payment
+ *     counts, and the log says so.
  * Under the entry nothing is granted and no welcome is sent, and an "approved" or "manual" entry is left exactly as
  * it was (only reaching the entry turns it into "kofi", as any donation did before). The supporters list and the
  * goal count every payment, as before.
  *
  * Known limit: two payments from one email whose webhooks land within KV's list() lag (up to a minute) may each
- * miss the other, so neither lets the email in. The next payment from that email adds all of them up; the owner can
- * also add the email by hand.
+ * miss the other, so neither lets the email in. The app's supporter claim still works for them (src/claim.js counts
+ * the kofipay entries itself). For the website, their next payment adds everything up and lets them in; to let them
+ * in sooner, the owner adds the email by hand on the admin page ("manual": the website only; the claim doesn't need it).
  *
  * [onNewAccess] (optional) is called with the normalised email right after an access entry is written for
  * an email that had none: the welcome email (src/welcome.js). Called at that point, not at the end, so a
@@ -200,12 +203,14 @@ export async function recordKofiSupport(env, payload, now = new Date(), { onNewA
             console.log(`access: currency ${JSON.stringify(currency.slice(0, 8))} isn't in the table, so the entry can't be checked: let in`);
         } else {
             let payKey = null;
-            if (cents !== null) {
+            if (!env.EMAIL_PEPPER) {
+                console.log("access: EMAIL_PEPPER isn't set, so no amount is kept: only this payment counts toward the entry");
+            } else if (cents !== null) {
                 payKey = KEYS.kofiPay(hash, id || crypto.randomUUID());
                 const pay = { cents, at };
                 await kv.put(payKey, JSON.stringify(pay), { metadata: pay });
             }
-            const total = (cents ?? 0) + (await kofiTotalCents(kv, hash, payKey));
+            const total = (cents ?? 0) + (env.EMAIL_PEPPER ? await kofiTotalCents(kv, hash, payKey) : 0);
             result.totalCents = total;
             letIn = total >= ENTRY_USD_CENTS;
             if (!letIn) console.log(`access: under the entry so far (${total} of ${ENTRY_USD_CENTS} US cents): not added yet`);

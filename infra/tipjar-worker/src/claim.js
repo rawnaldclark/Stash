@@ -8,10 +8,11 @@
  * Neither route says whether the address donated.
  *   - start: every valid, non-rate-limited request gets the same 202, and the whole lookup (access list, email,
  *     claim write) runs after the response (ctx.waitUntil), so its timing says nothing either. The email is what
- *     differs: a donor (ACCESS_KV access:<hash> with source "kofi", see isDonation) gets a 6-digit code, valid 10
- *     minutes. Anyone else is told it isn't unlocked yet and that $5 or more on Ko-fi (ENTRY_USD_CENTS, added up per
- *     email) unlocks unlimited lossless: an address with Ko-fi payments under the entry (kofipay:<hash>:*, see
- *     src/access.js) gets the "below_entry" email with its total so far, any other the "no_donation" one.
+ *     differs: a donor (ACCESS_KV access:<hash> with source "kofi", see isDonation, or Ko-fi payments kept under the
+ *     hash, kofipay:<hash>:*, that add up to the entry) gets a 6-digit code, valid 10 minutes. Anyone else is told it
+ *     isn't unlocked yet and that $5 or more on Ko-fi (ENTRY_USD_CENTS, added up per email) unlocks unlimited
+ *     lossless: an address with Ko-fi payments under the entry gets the "below_entry" email with its total so far,
+ *     any other the "no_donation" one.
  *   - verify: no pending claim, an expired one, a wrong code and a claim whose tries are used up all get the same
  *     401 {"error":"bad_code"}, after the same work (two HMACs, one D1 statement, one constant-time compare). An
  *     exhausted claim is deleted after the response.
@@ -80,7 +81,8 @@ export const clock = { now: () => Date.now() };
  * it only once an email's Ko-fi payments add up to the entry ($5, ENTRY_USD_CENTS); entries from before then are kept
  * whatever they gave. The website's entries are not donations: "approved" (an access request the owner accepted),
  * "manual" (added by hand on the admin page, with no amount behind it) and "open" (an open-window sign-up). A Ko-fi
- * donation that brings the email to the entry overwrites any of those with "kofi".
+ * donation that brings the email to the entry overwrites any of those with "kofi". (deliverClaim also counts Ko-fi
+ * payments that add up to the entry without an access entry; see there.)
  */
 export function isDonation(entry) {
     return !!entry && typeof entry === "object" && entry.source === "kofi";
@@ -284,12 +286,11 @@ async function sendClaimMail(env, message) {
 }
 
 /**
- * The email for an address that can't claim: "below_entry" with its total when it has Ko-fi payments under the
- * entry, else "no_donation". A mailer that doesn't know below_entry yet gets no_donation instead.
+ * The email for an address that can't claim: "below_entry" with its Ko-fi total so far ([cents], under the entry)
+ * when it has one, else "no_donation". A mailer that doesn't know below_entry yet gets no_donation instead.
  */
-async function sendNotUnlocked(env, email, hash) {
-    const cents = await kofiTotalCents(env.ACCESS_KV, hash);
-    if (cents > 0 && cents < ENTRY_USD_CENTS) {
+async function sendNotUnlocked(env, email, cents) {
+    if (cents > 0) {
         const below = await sendClaimMail(env, { email, kind: "below_entry", cents });
         if (!below.badKind) return below.sent;
     }
@@ -300,20 +301,26 @@ async function sendNotUnlocked(env, email, hash) {
  * Everything start does after its 202: look the address up; for a donor send a code and, once the mailer says
  * it's sent, store it as the pending claim; for anyone else send the not-unlocked email (sendNotUnlocked), within
  * the global cap. Resolves true when an email went out. Never rejects (it runs in waitUntil).
+ *
+ * A donor is a comped email, a "kofi" access entry (isDonation), or Ko-fi payments kept under the hash that add up to
+ * the entry. The last covers two payments whose webhooks landed close enough together that KV's list() lag hid each
+ * from the other, so neither wrote the access entry (src/access.js, recordKofiSupport): they paid $5 and can claim,
+ * even before their next payment puts them on the site's list.
  */
 export async function deliverClaim(env, email, hash, nowMs = clock.now()) {
     try {
         const nowS = Math.floor(nowMs / 1000);
         const comped = isComped(env, email);
         const entry = comped ? null : await env.ACCESS_KV.get(KEYS.access(hash), "json");
-        if (!comped && !isDonation(entry)) {
+        const cents = comped || isDonation(entry) ? null : await kofiTotalCents(env.ACCESS_KV, hash);
+        if (cents !== null && cents < ENTRY_USD_CENTS) {
             const window = Math.floor(nowS / WINDOW_S);
             const within = await countWithin(env.CLAIMS_DB, CLAIM_KEYS.noDonation(window), LIMITS.noDonationPerHour, (window + 1) * WINDOW_S + WINDOW_S);
             if (!within) {
                 console.log("claim: no_donation email skipped: hourly cap reached");
                 return false;
             }
-            return await sendNotUnlocked(env, email, hash);
+            return await sendNotUnlocked(env, email, cents);
         }
         const code = newCode();
         // Hashed before the send, so nothing but the store is left to do once the mailer answers.
