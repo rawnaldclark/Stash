@@ -59,6 +59,10 @@ class SyncViewModelTest {
     // restate its behaviour while hiding the flow the VM collects at init.
     private val syncLog = com.stash.core.data.sync.SyncLog()
     private val downloadQueueDao = mockk<com.stash.core.data.db.dao.DownloadQueueDao>(relaxed = true)
+    // A relaxed mock can't stand in for SharedFlow.collect (it returns Nothing); the Downloads row gets a real, silent flow.
+    private val downloadManager = mockk<com.stash.data.download.DownloadManager>(relaxed = true) {
+        every { progress } returns kotlinx.coroutines.flow.MutableSharedFlow()
+    }
     private val musicRepository = mockk<com.stash.core.data.repository.MusicRepository>(relaxed = true)
     private val blocklistGuard = mockk<com.stash.core.data.blocklist.BlocklistGuard>(relaxed = true)
     private val librarySizeHolder = mockk<com.stash.data.download.files.LibrarySizeHolder>(relaxed = true)
@@ -108,6 +112,7 @@ class SyncViewModelTest {
         streamingPreference = streamingPreference,
         lastFmRecommendationSource = mockk(relaxed = true),
         playerRepository = mockk(relaxed = true),
+        downloadManager = downloadManager,
     )
 
     @Before fun setUp() {

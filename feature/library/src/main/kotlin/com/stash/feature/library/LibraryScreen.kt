@@ -142,6 +142,8 @@ import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
 import com.stash.core.ui.components.bottomChromePadding
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.ui.res.stringResource
 import com.stash.feature.library.allsongs.AllSongsViewModel
 import com.stash.feature.library.allsongs.OnThisDeviceSelectionBar
 import com.stash.feature.library.allsongs.OnThisDeviceTab
@@ -172,6 +174,8 @@ fun LibraryScreen(
     onNavigateToAccounts: () -> Unit = {},
     /** "+" › Add from a link: the pasted Spotify / YouTube link's preview. */
     onOpenLink: (String) -> Unit = {},
+    /** "+" › Import a playlist file: the picked document's address, for the same preview a link opens. */
+    onOpenPlaylistFile: (String) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -320,6 +324,7 @@ fun LibraryScreen(
             onOpenSearch = onNavigateToSearch,
             onOpenAccounts = onNavigateToAccounts,
             onOpenLink = onOpenLink,
+            onOpenPlaylistFile = onOpenPlaylistFile,
             deviceContent = {
                 OnThisDeviceTab(
                     viewModel = deviceViewModel,
@@ -577,6 +582,7 @@ fun LibraryScreen(
 private fun LibraryContent(
     state: LibraryUiState,
     onOpenLink: (String) -> Unit = {},
+    onOpenPlaylistFile: (String) -> Unit = {},
     /** Field-facing query — updates this frame; see LibraryViewModel.searchQuery. */
     searchQuery: String,
     importState: com.stash.data.download.files.LocalImportState,
@@ -649,6 +655,12 @@ private fun LibraryContent(
             contract = androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
+        }
+        // "+" › Import a playlist file: one document, read once by the preview it opens (no lasting permission kept).
+        val playlistFilePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri: Uri? ->
+            if (uri != null) onOpenPlaylistFile(uri.toString())
         }
         // Opens already showing a query the ViewModel kept (back on this tab, or after a
         // rotation): a hidden field over a still-filtered list was a dead end.
@@ -746,7 +758,7 @@ private fun LibraryContent(
                     tint = chrome.accent,
                 )
             }
-            // "+": audio files from the phone, or a Spotify / YouTube link.
+            // "+": a Spotify / YouTube link, a playlist file another app exported, or audio files from the phone.
             Box {
                 var addMenu by remember { mutableStateOf(false) }
                 var pasteLink by remember { mutableStateOf(false) }
@@ -763,6 +775,11 @@ private fun LibraryContent(
                         text = { Text("Import audio files") },
                         leadingIcon = { Icon(Icons.Filled.AudioFile, contentDescription = null) },
                         onClick = { addMenu = false; importPicker.launch(arrayOf("audio/*")) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.library_import_playlist_file)) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
+                        onClick = { addMenu = false; playlistFilePicker.launch(PLAYLIST_FILE_TYPES) },
                     )
                 }
                 if (pasteLink) {
@@ -2687,6 +2704,24 @@ private fun AlbumArtwork(
         content()
     }
 }
+
+/**
+ * What "+" › Import a playlist file offers: the playlist types (M3U, PLS, XSPF, CSV, tab-separated, text), and every file as
+ * well, because phones and apps label an .m3u or a .csv differently (often just "application/octet-stream").
+ */
+private val PLAYLIST_FILE_TYPES = arrayOf(
+    "audio/x-mpegurl",
+    "audio/mpegurl",
+    "application/x-mpegurl",
+    "application/vnd.apple.mpegurl",
+    "audio/x-scpls",
+    "application/xspf+xml",
+    "text/csv",
+    "text/comma-separated-values",
+    "text/tab-separated-values",
+    "text/plain",
+    "*/*",
+)
 
 // ── Artist gradient helper ───────────────────────────────────────────────────
 
