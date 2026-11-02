@@ -1,6 +1,7 @@
 package com.stash.feature.library
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -32,6 +33,31 @@ class LibraryEmptyCopyTest {
     @Test fun `only a real filter has a label`() {
         assertNull(sourceFilterLabel(SourceFilter.ALL))
         assertEquals("YouTube", sourceFilterLabel(SourceFilter.YOUTUBE))
+    }
+
+    // ── The not-downloaded filter (was "Online" until the mode took that name) ──
+
+    @Test fun `the not-downloaded filter is never called Online, which is the mode's name`() {
+        assertEquals("Not downloaded", sourceFilterLabel(SourceFilter.ONLINE))
+        for (filter in SourceFilter.entries) {
+            assertNotEquals("Online", sourceFilterLabel(filter))
+            assertNotEquals("Offline", sourceFilterLabel(filter))
+        }
+    }
+
+    @Test fun `its chip and empty lines read as plain phrases`() {
+        assertEquals("Showing songs that aren't downloaded", activeFilterChipLabel(SourceFilter.ONLINE))
+        assertEquals("No songs in your library that aren't downloaded", noMatchMessage("songs", "", SourceFilter.ONLINE))
+        assertEquals(
+            "No songs that aren't downloaded match “beatles”",
+            noMatchMessage("songs", " beatles ", SourceFilter.ONLINE),
+        )
+    }
+
+    @Test fun `every other filter's chip names it`() {
+        assertNull(activeFilterChipLabel(SourceFilter.ALL))
+        assertEquals("Showing FLAC only", activeFilterChipLabel(SourceFilter.FLAC))
+        assertEquals("Showing Downloaded only", activeFilterChipLabel(SourceFilter.DOWNLOADED))
     }
 
     // ── A library with nothing downloaded ─────────────────────────────

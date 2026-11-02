@@ -28,7 +28,9 @@ class TrackActionsDelegateQueueActionsTest {
     private val playerRepository: com.stash.core.media.PlayerRepository = mockk(relaxed = true)
     private val musicRepository: com.stash.core.data.repository.MusicRepository = mockk(relaxed = true)
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard = mockk(relaxed = true)
-    private val trackDao: com.stash.core.data.db.dao.TrackDao = mockk(relaxed = true)
+    private val trackDao: com.stash.core.data.db.dao.TrackDao = mockk(relaxed = true) {
+        io.mockk.coEvery { findByAlias(any(), any()) } returns null
+    }
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference = mockk(relaxed = true)
 
     // Real flows, not relaxed stubs: bindToScope collects playerErrors, and a

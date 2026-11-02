@@ -4,4 +4,9 @@
     <string name="resume_playback_short">Resume</string>
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Couldn\'t connect to %1$s</string>
+    <!-- Once, after the one-time duplicate cleanup merged songs that were in the library twice. -->
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Tidied %d duplicate song</item>
+        <item quantity="other">Tidied %d duplicate songs</item>
+    </plurals>
 </resources>

@@ -107,6 +107,8 @@ fun StashScaffold(
     onDeepLinkConsumed: () -> Unit = {},
     startTab: StartTab = StartTab.HOME,
     losslessNotices: Flow<LosslessQuotaNotice> = emptyFlow(),
+    tidyNotices: Flow<Int?> = emptyFlow(),
+    onTidyNoticeShown: suspend () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -307,6 +309,22 @@ fun StashScaffold(
         }
     }
 
+    // The one-time duplicate cleanup merged songs that were in the library twice: say so once, on
+    // any screen. Marked shown after the snackbar goes, so a closed app shows it at the next open.
+    LaunchedEffect(lifecycleOwner, tidyNotices) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            tidyNotices.collect { n ->
+                if (n == null || n <= 0) return@collect
+                snackbarHostState.showSnackbar(
+                    message = context.resources.getQuantityString(com.stash.app.R.plurals.tidied_duplicates, n, n),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long,
+                )
+                onTidyNoticeShown()
+            }
+        }
+    }
+
     CommunityPostingHost(
         communityPosting,
         onSeeMyPosts = {
@@ -493,6 +511,17 @@ fun StashScaffold(
                     source = AlbumSource.YOUTUBE,
                 ),
             )
+        },
+        // "Find a better match": the song is flagged; the player collapses and Failed Matches
+        // opens on it, its finder searching. Back returns to where you were before the player.
+        // Flagged again with Failed Matches already open: that one is replaced, not stacked
+        // under a second (its view model clears, which stops a preview it was playing). Not
+        // launchSingleTop: the kept screen has already used its focus and would open nothing.
+        onFixMatch = { trackId ->
+            playerSheet.collapse()
+            navController.navigate(FailedMatchesRoute(focusTrackId = trackId)) {
+                popUpTo<FailedMatchesRoute> { inclusive = true }
+            }
         },
     )
 

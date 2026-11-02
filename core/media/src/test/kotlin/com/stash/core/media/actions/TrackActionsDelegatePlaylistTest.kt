@@ -23,7 +23,9 @@ class TrackActionsDelegatePlaylistTest {
 
     private val musicRepository: com.stash.core.data.repository.MusicRepository = mockk(relaxed = true)
     private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard = mockk(relaxed = true)
-    private val trackDao: com.stash.core.data.db.dao.TrackDao = mockk(relaxed = true)
+    private val trackDao: com.stash.core.data.db.dao.TrackDao = mockk(relaxed = true) {
+        io.mockk.coEvery { findByAlias(any(), any()) } returns null
+    }
 
     private val previewPlayer: PreviewPlayer = mockk(relaxed = true) {
         every { previewState } returns MutableStateFlow(PreviewState.Idle)

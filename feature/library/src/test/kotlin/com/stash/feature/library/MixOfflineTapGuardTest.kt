@@ -38,7 +38,7 @@ import org.mockito.kotlin.verifyBlocking
  *
  * Stream-only Mix tracks (isStreamable=true, isDownloaded=false) must NOT
  * enqueue when the device has no validated internet. Instead the VM emits a
- * "Online only — connect to play this track" message on [userMessages] so
+ * "No internet connection, and this song isn't downloaded." message on [userMessages] so
  * the screen shows a Snackbar. Downloaded tracks play normally even offline;
  * stream-only tracks play normally when online.
  *
@@ -87,7 +87,7 @@ class MixOfflineTapGuardTest {
         runCurrent()
 
         verifyBlocking(playerRepo, never()) { setQueue(any(), any(), any()) }
-        assertThat(messages).contains("Online only — connect to play this track")
+        assertThat(messages).contains("No internet connection, and this song isn't downloaded.")
 
         msgJob.cancel()
         uiJob.cancel()
@@ -127,7 +127,7 @@ class MixOfflineTapGuardTest {
         runCurrent()
 
         verifyBlocking(playerRepo) { setQueue(any(), any(), any()) }
-        assertThat(messages).doesNotContain("Online only — connect to play this track")
+        assertThat(messages).doesNotContain("No internet connection, and this song isn't downloaded.")
 
         msgJob.cancel()
         uiJob.cancel()
@@ -167,7 +167,7 @@ class MixOfflineTapGuardTest {
         runCurrent()
 
         verifyBlocking(playerRepo) { setQueue(any(), any(), any()) }
-        assertThat(messages).doesNotContain("Online only — connect to play this track")
+        assertThat(messages).doesNotContain("No internet connection, and this song isn't downloaded.")
 
         msgJob.cancel()
         uiJob.cancel()

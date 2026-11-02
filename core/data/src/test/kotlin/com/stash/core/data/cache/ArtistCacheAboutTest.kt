@@ -109,4 +109,43 @@ class ArtistCacheAboutTest {
         assertTrue(result is CachedProfile.Fresh)
         assertEquals(about, (result as CachedProfile.Fresh).profile.about)
     }
+
+    // Review on #770: a refresh whose Spotify part timed out swapped 1.7M for YouTube's 574K.
+
+    private val withSpotify = ArtistAbout(bio = "b", monthlyListeners = 1_734_567L, topTrackTitles = listOf("Teen Age Riot"))
+
+    /** A cold miss cached with [first], then a refresh past the TTL answering [second]: its Fresh profile. */
+    private suspend fun refreshed(first: ArtistAbout?, second: ArtistAbout?): ArtistProfile {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.getArtist(eq("UC1"))).thenReturn(mkProfile("UC1"))
+        var clock = 1_000L
+        var answer = first
+        val cache = ArtistCache(InMemoryDao(), api, now = { clock }, aboutEnricher = FakeEnricher { answer })
+        cache.get("UC1").first { it is CachedProfile.Fresh }
+        clock += 7 * 60 * 60 * 1000L // past the 6 h TTL
+        answer = second
+        return (cache.get("UC1").first { it is CachedProfile.Fresh } as CachedProfile.Fresh).profile
+    }
+
+    @Test
+    fun `a refresh without Spotify's count keeps the cached one`() = runTest {
+        val about = refreshed(withSpotify, ArtistAbout(bio = "new bio")).about!!
+        assertEquals(1_734_567L, about.monthlyListeners)
+        assertEquals(listOf("Teen Age Riot"), about.topTrackTitles)
+        // The rest of About is the refresh's own.
+        assertEquals("new bio", about.bio)
+    }
+
+    @Test
+    fun `a refresh with no About at all still keeps the count, and opens no section`() = runTest {
+        val about = refreshed(withSpotify, null).about!!
+        assertEquals(1_734_567L, about.monthlyListeners)
+        assertTrue(!about.hasSection)
+    }
+
+    @Test
+    fun `a refresh with its own Spotify count replaces the cached one`() = runTest {
+        val about = refreshed(withSpotify, ArtistAbout(bio = "b", monthlyListeners = 1_800_000L)).about!!
+        assertEquals(1_800_000L, about.monthlyListeners)
+    }
 }

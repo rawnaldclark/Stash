@@ -138,6 +138,10 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var losslessQuota: LosslessQuota
 
+    /** The one-time duplicate cleanup's "Tidied N duplicate songs", shown once by [StashScaffold]. */
+    @Inject
+    lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
+
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
      * failure: the sheet then shares the long link, so sharing still works.
@@ -221,7 +225,8 @@ class MainActivity : AppCompatActivity() {
         val initialThemeMode = themeSnapshot.getString(KEY_THEME_MODE, null)
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
             ?: ThemeMode.SYSTEM
-        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+        // Pure black is the default, so a first launch's first frame is black too, not a grey flash.
+        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, true)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -292,6 +297,8 @@ class MainActivity : AppCompatActivity() {
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
                         startTab = startTab,
                         losslessNotices = losslessQuota.noticeEvents,
+                        tidyNotices = duplicateCleanupState.pendingNotice,
+                        onTidyNoticeShown = duplicateCleanupState::noticeShown,
                     )
                 }
             }
