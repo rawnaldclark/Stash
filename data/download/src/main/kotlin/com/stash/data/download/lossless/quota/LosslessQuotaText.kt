@@ -12,7 +12,7 @@ import java.util.Date
 object LosslessQuotaText {
 
     /** Both heads-ups end with it. */
-    const val SUPPORTER_NUDGE = "Unlimited for supporters: any amount on Ko-fi"
+    const val SUPPORTER_NUDGE = "Unlimited for supporters: \$5 or more on Ko-fi"
 
     /** The snackbar action: opens Settings → Audio & Quality, where the supporter claim is. */
     const val NOTICE_ACTION = "Unlock"
