@@ -33,8 +33,9 @@ class WordmarkInkTest {
         val yellow = ambientPaletteFromPixels(solid(240, 220, 40))!!
         assertEquals("#fdf5b2", hex(wordmarkInk(yellow, light = false)))
         assertEquals("#4f412e", hex(wordmarkInk(yellow, light = true)))
-        assertEquals("#cebbfb", hex(wordmarkInk(AmbientPalette.Default, light = false)))
-        assertEquals("#3b2171", hex(wordmarkInk(AmbientPalette.Default, light = true)))
+        // The idle palette is neutral since D9: 60 % toward its grey inks.
+        assertEquals("#e8e8e8", hex(wordmarkInk(AmbientPalette.Default, light = false)))
+        assertEquals("#3a3149", hex(wordmarkInk(AmbientPalette.Default, light = true)))
     }
 
     @Test fun `a mood too dark for the dark bases steps back toward white`() {

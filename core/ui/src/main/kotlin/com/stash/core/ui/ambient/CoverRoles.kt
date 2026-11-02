@@ -11,9 +11,9 @@ import androidx.compose.ui.platform.LocalContext
 /**
  * The colour roles of the cover at [model] (a file path or URL) on the current ground, for a card
  * that wears its own cover's colour (the Discover hero) rather than the playing song's
- * ([LocalAlbumChrome]). The brand's roles until the cover has been read, and whenever it can't be;
- * a cover read before (it's in [PaletteCache]) starts in its own colour, so swiping back to a card
- * never flashes purple.
+ * ([LocalAlbumChrome]). The brand's (neutral) roles until the cover has been read, and whenever it
+ * can't be; a cover read before (it's in [PaletteCache]) starts in its own colour, so swiping back to
+ * a card never flashes grey.
  */
 @Composable
 fun rememberCoverRoles(model: String?, ground: Ground = currentGround()): AccentRoles {

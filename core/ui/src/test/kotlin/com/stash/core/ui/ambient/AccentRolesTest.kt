@@ -1,8 +1,6 @@
 package com.stash.core.ui.ambient
 
 import androidx.compose.ui.graphics.Color
-import com.stash.core.ui.theme.StashPurple
-import com.stash.core.ui.theme.StashPurpleDark
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -54,13 +52,13 @@ class AccentRolesTest {
 
     private fun minContrast(c: Color, over: List<Color>) = over.minOf { contrastRatio(c, it) }
 
-    /** R1, R3, R4, R5 for any palette; R2 for all but the brand on dark (see the brand test). */
+    /** R1 to R5 and R8 for any palette. */
     private fun assertRules(what: String, roles: AccentRoles, ground: Ground, checkOnAccent: Boolean = true) {
         val bases = ground.bases
         // R1: the accent stands out from every base.
         assertTrue("$what R1 accent ${hex(roles.accent)} ${minContrast(roles.accent, bases)}", minContrast(roles.accent, bases) >= 3.0)
         // R2: its ink is one of the two inks and reads on it.
-        assertTrue("$what R2 ink is white or #1a0b2e", roles.onAccent == Color.White || roles.onAccent == InkOnBright)
+        assertTrue("$what R2 ink is white or the near-black", roles.onAccent == Color.White || roles.onAccent == InkOnBright)
         if (checkOnAccent) {
             assertTrue(
                 "$what R2 onAccent on ${hex(roles.accent)}: ${contrastRatio(roles.onAccent, roles.accent)}",
@@ -80,6 +78,11 @@ class AccentRolesTest {
         assertTrue("$what R5 text on page tint", contrastRatio(ground.text, tinted) >= 7.0)
         assertTrue("$what R5 secondary on page tint", contrastRatio(ground.textSecondary, tinted) >= 4.5)
         if (ground == Ground.AMOLED) assertEquals("$what R5 AMOLED has no page tint", 0f, roles.pageTint.alpha)
+        // R8: the glow keeps the page's text readable over the background, AMOLED included.
+        val glowed = compositeOver(roles.glow, ground.background)
+        assertTrue("$what R8 text on glow", contrastRatio(ground.text, glowed) >= 7.0)
+        assertTrue("$what R8 secondary on glow", contrastRatio(ground.textSecondary, glowed) >= 4.5)
+        assertTrue("$what R8 glow is low alpha", roles.glow.alpha in 0f..ground.glowAlpha + EIGHT_BIT)
     }
 
     @Test fun `every swept cover meets R1 to R6 on every ground, and R7 is rare`() {
@@ -151,23 +154,35 @@ class AccentRolesTest {
         assertEquals(navy.mut, roles.mut)
     }
 
-    @Test fun `the brand wears the design system's primary and onPrimary`() {
-        val dark = AmbientPalette.Default.roles(Ground.DARK)
-        assertEquals(StashPurple, dark.accent)
-        assertEquals(Color.White, dark.onAccent)
-        assertEquals(StashPurple, AmbientPalette.Default.roles(Ground.AMOLED).accent)
-        val light = AmbientPalette.Default.roles(Ground.LIGHT)
-        assertEquals(StashPurpleDark, light.accent)
-        assertEquals(Color.White, light.onAccent)
-        // The ambient keeps the web's default purple, unlifted on light.
+    @Test fun `the idle (brand) palette is neutral, with no glow (D9)`() {
         for (ground in Ground.entries) {
             val r = brandRoles(ground)
+            // Every rule holds, R2 included: there is no brand carve-out any more.
+            assertRules("idle on $ground", r, ground)
+            listOf(r.accent, r.ink, r.dom, r.vib, r.mut).forEach {
+                assertTrue("idle $ground grey ${hex(it)}", it.toHsl()[1] <= 0.01)
+            }
+            assertEquals("idle $ground has no glow", 0f, r.glow.alpha)
+            // The ambient is the idle greys, unlifted on light (as the web leaves its default).
             assertEquals(AmbientPalette.Default.dom, r.dom)
             assertEquals(AmbientPalette.Default.vib, r.vib)
-            assertEquals(AmbientPalette.Default.mut, r.mut)
-            // White on #8b5cf6 is the theme's own pairing (4.23:1, a 24dp glyph); light holds 4.5.
-            assertRules("brand on $ground", r, ground, checkOnAccent = ground == Ground.LIGHT)
-            assertTrue("brand onAccent on $ground", contrastRatio(r.onAccent, r.accent) >= 4.2)
+            if (ground.isLight) {
+                assertEquals(Color.White, r.onAccent)
+                assertTrue("dark grey on light", r.accent.toHsl()[2] <= 0.35)
+            } else {
+                assertEquals(InkOnBright, r.onAccent)
+                assertTrue("near-white on dark", r.ink.toHsl()[2] >= 0.8)
+            }
+        }
+    }
+
+    @Test fun `a coloured cover glows in its own colour, on pure black too`() {
+        val red = ambientPaletteFromPixels(solid(Color(0xFFD32F2F)))!!
+        for (ground in Ground.entries) {
+            val g = red.roles(ground).glow
+            assertTrue("$ground glow is lit", g.alpha > 0.05f)
+            val dh = Math.abs(g.copy(alpha = 1f).toHsl()[0] - red.vib.toHsl()[0]).let { minOf(it, 360 - it) }
+            assertTrue("$ground glow keeps the cover's hue ($dh)", dh <= 6.0)
         }
     }
 
