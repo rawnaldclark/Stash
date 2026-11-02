@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.core.model.MusicSource
+import com.stash.core.ui.theme.LocalIsDarkTheme
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -79,7 +80,9 @@ fun SourceIndicator(
             }
         }
         if (source == MusicSource.LOCAL) {
-            Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+            // A fixed grey, unlike every other dot (green, red, orange, cyan): it used to be the theme's
+            // primary, which since D9 is the album colour (a green album read as Spotify, a red one as YouTube).
+            Box(Modifier.size(size).clip(CircleShape).background(if (LocalIsDarkTheme.current) LocalDotDark else LocalDotLight))
             if (showLabel) {
                 Text(
                     text = "Local",
@@ -101,6 +104,12 @@ fun SourceIndicator(
         }
     }
 }
+
+/** Local's dot on the dark themes: a light neutral grey (7:1 on black). */
+private val LocalDotDark = Color(0xFFA3A3A3)
+
+/** Local's dot on the light theme: a mid neutral grey (4.6:1 on white). */
+private val LocalDotLight = Color(0xFF757575)
 
 /** Gap between the dots and labels inside [SourceIndicator]. */
 internal val SourceIndicatorSpacing = 3.dp

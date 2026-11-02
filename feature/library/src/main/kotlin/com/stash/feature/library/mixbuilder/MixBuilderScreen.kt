@@ -237,9 +237,9 @@ fun MixBuilderScreen(
                 enabled = state.canSave,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
+                // The button's own ink (onPrimary): white was only right on the old purple.
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
                 ),
             ) {
                 Text(
