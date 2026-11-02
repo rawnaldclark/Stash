@@ -67,6 +67,13 @@ class DuplicateCleanupRehearsalTest {
                     "t.spotify_uri = '') AND t.source = 'YOUTUBE' AND EXISTS (SELECT 1 FROM discovery_queue d WHERE d.track_id = t.id " +
                     "AND d.status != 'FAILED') AND NOT EXISTS (SELECT 1 FROM playlist_tracks pt WHERE pt.track_id = t.id AND pt.removed_at IS NULL)",
             )}")
+            fun shape(p: DuplicatePair) = "${p.kind} keeper=${if (DuplicateRules.isStub(p.keeper)) "stub" else p.keeper.source}" +
+                "${if (DuplicateRules.holdsFile(p.keeper)) "+file" else ""} other=${if (DuplicateRules.isStub(p.other)) "stub" else p.other.source}" +
+                if (DuplicateRules.holdsFile(p.other)) "+file" else ""
+            after.groupingBy(::shape).eachCount().entries.sortedByDescending { it.value }
+                .forEach { println("REHEARSAL shape ${it.key} = ${it.value}") }
+            after.filter { it.kind == DuplicateKind.SAME_SONG }.take(15)
+                .forEach { println("REHEARSAL same ${shape(it)}: ${it.keeper.artist} - ${it.keeper.title} [${it.keeper.durationMs}] | ${it.other.title} [${it.other.durationMs}]") }
             after.take(25).forEach { println("REHEARSAL pair ${it.kind}: ${it.keeper.artist} - ${it.keeper.title} | ${it.other.title}") }
             val second = DuplicateCleanup(db, TrackMerger(db), DuplicateCleanupState.forContext(context), mockRunner()).run()
             println("REHEARSAL secondRun=$second")

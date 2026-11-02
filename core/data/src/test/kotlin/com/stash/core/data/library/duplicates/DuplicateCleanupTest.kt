@@ -97,6 +97,28 @@ class DuplicateCleanupTest {
         assertNotNull(f.link(mix, hand))
     }
 
+    @Test fun `two stubs of one song with no proper row become the more played one`() = runBlocking {
+        val first = f.stub()
+        val played = f.stub(plays = 3)
+        f.play(played)
+        val mixA = f.playlist("Daily Discover", type = PlaylistType.STASH_MIX)
+        val mixB = f.playlist("Slow Burn", type = PlaylistType.STASH_MIX)
+        f.member(mixA, first, position = 2)
+        f.member(mixB, played, position = 5)
+        val pool = f.discovered(first)
+        val other = f.stub(title = "Starting Over (Live)")
+        f.member(mixA, other, position = 3)
+
+        assertEquals(1, cleanup.run().merged)
+
+        assertNull(f.row(first))
+        assertEquals(3, f.row(played)!!.playCount)
+        assertEquals(2, f.link(mixA, played)!!.position)
+        assertEquals(5, f.link(mixB, played)!!.position)
+        assertEquals(played, f.count("SELECT track_id FROM discovery_queue WHERE id = $pool").toLong())
+        assertNotNull("another version stays its own row", f.row(other))
+    }
+
     @Test fun `an unused stub with no twin is deleted`() = runBlocking {
         val orphan = f.stub(title = "Never Heard")
 
