@@ -286,9 +286,6 @@ private fun StashNavGraph(
                 onNavigateToArtist = { artistName ->
                     navController.navigate(ArtistDetailRoute(artistName))
                 },
-                onNavigateToAlbum = { _, name, _, artistName ->
-                    navController.navigate(AlbumDetailRoute(name, artistName))
-                },
                 onNavigateToRemoteAlbum = { albumId, name, artUrl, artistName ->
                     navController.navigate(
                         SearchAlbumRoute(

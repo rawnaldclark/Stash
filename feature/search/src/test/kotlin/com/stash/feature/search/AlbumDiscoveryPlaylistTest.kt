@@ -90,7 +90,7 @@ class AlbumDiscoveryPlaylistTest {
         ytMusicApiClient = mock(),
         prefetcher = mock(),
         playerRepository = player,
-        musicRepository = musicRepo,
+        musicRepository = musicRepo.withSavedAlbums(),
         streamingPreference = mock(),
         delegate = stubDelegate(userPlaylists),
         losslessPrefetcher = mock(),
@@ -214,6 +214,20 @@ class AlbumDiscoveryPlaylistTest {
         val again = vm(cacheOf(playlist()), userPlaylists = listOf(pasted))
         advanceUntilIdle()
         assertTrue(again.isSaved.value)
+    }
+
+    /** "Download all" keeps an album (owner, 2026-11-02); a playlist page's songs stay songs. */
+    @Test
+    fun `Download all on a playlist saves no album`() = runTest {
+        val musicRepo = mock<MusicRepository>()
+        val vm = vm(cacheOf(playlist()), musicRepo = musicRepo)
+        advanceUntilIdle()
+
+        vm.onDownloadAllClicked()
+        vm.onDownloadAllConfirmed()
+        advanceUntilIdle()
+
+        verify(musicRepo, org.mockito.kotlin.never()).ensureCustomPlaylist(any(), any(), anyOrNull())
     }
 
     private companion object {

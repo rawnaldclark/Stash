@@ -112,7 +112,7 @@ class LibraryViewModelSourceFilterTest {
         on { getLibraryTracksIncludingOnline() } doReturn flowOf(allTracks)
         on { getAllPlaylists() } doReturn flowOf(emptyList())
         on { getAllArtists() } doReturn flowOf(emptyList())
-        on { getAllAlbums() } doReturn flowOf(emptyList())
+        on { getLibraryAlbums() } doReturn flowOf(emptyList())
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
     }

@@ -164,7 +164,6 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
-    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onNavigateToRemoteAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
     // An empty library's ways in (see LibraryEmptyState): the Sync tab, the Search tab, and
@@ -300,9 +299,9 @@ fun LibraryScreen(
             onDeleteArtist = viewModel::deleteArtist,
             onPlayAlbum = viewModel::playAlbum,
             onAddAlbumToQueue = viewModel::addAlbumToQueue,
-            onOpenAlbum = { album ->
-                onNavigateToAlbum(album.name, album.name, album.artUrl, album.artist)
-            },
+            onRemoveAlbum = viewModel::removeAlbum,
+            // A saved album opens its own page: every song, in album order.
+            onOpenAlbum = { album -> onNavigateToPlaylist(album.playlistId) },
             onStartImport = viewModel::startLocalImport,
             onCancelImport = viewModel::cancelLocalImport,
             onDismissImport = viewModel::dismissLocalImport,
@@ -594,7 +593,7 @@ private fun LibraryContent(
     onSearchQueryChanged: (String) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
     onSourceFilterChanged: (SourceFilter) -> Unit,
-    /** Artists and Albums' "In your library" choice (Stream only). */
+    /** Artists' "In your library" choice (Stream only). */
     onLibraryOnlyChanged: (Boolean) -> Unit = {},
     onTrackClick: (Track) -> Unit,
     onPlayNext: (Track) -> Unit,
@@ -617,8 +616,9 @@ private fun LibraryContent(
     onPlayArtist: (String) -> Unit,
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
-    onPlayAlbum: (String, String) -> Unit,
-    onAddAlbumToQueue: (String, String) -> Unit,
+    onPlayAlbum: (AlbumInfo) -> Unit,
+    onAddAlbumToQueue: (AlbumInfo) -> Unit,
+    onRemoveAlbum: (AlbumInfo) -> Unit = {},
     onOpenAlbum: (AlbumInfo) -> Unit,
     onStartImport: (List<Uri>) -> Unit,
     onCancelImport: () -> Unit,
@@ -830,12 +830,13 @@ private fun LibraryContent(
             clearSearch()
             onSourceFilterChanged(SourceFilter.ALL)
         }
-        // Artists and Albums: "Show everything" also drops "In your library".
+        // Artists: "Show everything" also drops "In your library".
         val clearSearchAndLibraryOnly: () -> Unit = {
             clearSearch()
             if (state.libraryOnly) onLibraryOnlyChanged(false)
         }
-        val artistsOrAlbums = state.activeTab == LibraryTab.ARTISTS || state.activeTab == LibraryTab.ALBUMS
+        // Albums lists saved albums, all in the library already: "In your library" is Artists' only.
+        val artistsTab = state.activeTab == LibraryTab.ARTISTS
 
         // -- Active source filter, on the tab it narrows. It's persisted and re-applied every
         // launch, and since the chip rows moved into the sheet nothing on screen showed it: a
@@ -847,8 +848,8 @@ private fun LibraryContent(
                 onClear = { onSourceFilterChanged(SourceFilter.ALL) },
             )
         }
-        // -- "In your library" on Artists and Albums, persisted the same way: shown while it narrows.
-        if (state.libraryOnly && artistsOrAlbums) {
+        // -- "In your library" on Artists, persisted the same way: shown while it narrows.
+        if (state.libraryOnly && artistsTab) {
             ActiveFilterChip(label = "Showing your library only", onClear = { onLibraryOnlyChanged(false) })
         }
 
@@ -884,7 +885,7 @@ private fun LibraryContent(
                 // Kept while it is the active filter, so it can be seen and cleared.
                 showCloudFilter = state.hasCloudSongs || state.sourceFilter == SourceFilter.CLOUD,
                 // Download lists only downloaded songs, all in the library already.
-                showLibraryOnly = state.streamingMode && artistsOrAlbums,
+                showLibraryOnly = state.streamingMode && artistsTab,
                 libraryOnly = state.libraryOnly,
                 onLibraryOnlySelected = onLibraryOnlyChanged,
                 // Scanned songs have no play counts.
@@ -1022,14 +1023,14 @@ private fun LibraryContent(
                     )
                     LibraryTab.ALBUMS -> AlbumsGrid(
                         albums = state.albums,
-                        singleTrackAlbums = state.singleTrackAlbums,
-                        anyServiceConnected = anyServiceConnected,
+                        emptyMessage = albumsEmptyMessage(downloadMode = !state.streamingMode),
                         onPlayAlbum = onPlayAlbum,
                         onAddAlbumToQueue = onAddAlbumToQueue,
+                        onRemoveAlbum = onRemoveAlbum,
                         onOpenAlbum = onOpenAlbum,
                         header = {},
                         noMatch = noMatchMessage("albums", state.searchQuery),
-                        onClearFilters = clearSearchAndLibraryOnly,
+                        onClearFilters = clearSearch,
                         alphabetical = alphabetical,
                     )
                     LibraryTab.DEVICE -> Unit // shown above, outside the pager
@@ -2441,14 +2442,20 @@ private fun ArtistsGrid(
 
 // ── Albums tab (2-column grid) ───────────────────────────────────────────────
 
+/**
+ * Library › Albums: saved albums only (owner, 2026-11-02), each card opening its own tracklist in
+ * album order. Cards are keyed by the saved album's row, so two albums sharing a title and artist
+ * can never collide (the #244 crash).
+ */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun AlbumsGrid(
     albums: List<AlbumInfo>,
-    singleTrackAlbums: List<AlbumInfo>,
-    anyServiceConnected: Boolean,
-    onPlayAlbum: (String, String) -> Unit,
-    onAddAlbumToQueue: (String, String) -> Unit,
+    /** What the tab says with no saved album to list ([albumsEmptyMessage]). */
+    emptyMessage: String,
+    onPlayAlbum: (AlbumInfo) -> Unit,
+    onAddAlbumToQueue: (AlbumInfo) -> Unit,
+    onRemoveAlbum: (AlbumInfo) -> Unit,
     onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
     /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
@@ -2457,23 +2464,16 @@ private fun AlbumsGrid(
     /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
     alphabetical: Boolean = false,
 ) {
-    if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
+    if (albums.isEmpty()) {
         Column {
             header()
-            EmptyTabMessage(
-                noMatch = noMatch,
-                fallback = if (anyServiceConnected) "Sync your library to see albums here"
-                else "Connect a service in Settings to see your albums",
-                onClear = onClearFilters,
-            )
+            EmptyTabMessage(noMatch = noMatch, fallback = emptyMessage, onClear = onClearFilters)
         }
         return
     }
 
     var selectedAlbum by remember { mutableStateOf<AlbumInfo?>(null) }
-    var showSingleTrack by remember { mutableStateOf(false) }
-
-    val displayList = if (showSingleTrack) albums + singleTrackAlbums else albums
+    var albumToRemove by remember { mutableStateOf<AlbumInfo?>(null) }
 
     val gridState = rememberLazyGridState()
     Box(Modifier.fillMaxSize()) {
@@ -2485,7 +2485,7 @@ private fun AlbumsGrid(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
-            items(displayList, key = { "${it.name}|${it.artist}" }) { album ->
+            items(albums, key = { it.playlistId }) { album ->
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
@@ -2496,13 +2496,10 @@ private fun AlbumsGrid(
                             onLongClick = { selectedAlbum = album },
                         ),
                 ) {
-                    // Album art: try local path, then remote URL, then fallback icon.
-                    // AlbumArtwork also falls back to the icon while a remote
-                    // image is loading or after it errors — a failed URL used to
-                    // render as an empty grey box.
-                    val artModel = album.artPath ?: album.artUrl
+                    // Album art: the remote URL, else the fallback icon. AlbumArtwork also falls
+                    // back to the icon while the image loads or after it errors.
                     AlbumArtwork(
-                        model = artModel,
+                        model = album.artUrl,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp)
@@ -2514,7 +2511,7 @@ private fun AlbumsGrid(
                                 .padding(8.dp)
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .clickable { onPlayAlbum(album.name, album.artist) },
+                                .clickable { onPlayAlbum(album) },
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                             shape = CircleShape,
                         ) {
@@ -2551,51 +2548,24 @@ private fun AlbumsGrid(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            }
-
-            // Collapsible section for single-track albums
-            if (singleTrackAlbums.isNotEmpty()) {
-                item(span = { GridItemSpan(2) }) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable { showSingleTrack = !showSingleTrack },
-                        color = StashTheme.extendedColors.glassBackground,
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, StashTheme.extendedColors.glassBorder,
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = if (showSingleTrack) "Hide single-track albums"
-                                else "${singleTrackAlbums.size} albums with 1 track",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                imageVector = if (showSingleTrack) Icons.Default.ExpandLess
-                                else Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    // Download mode, still downloading: how far it is (it plays what's on the phone).
+                    album.onPhoneCount?.let { onPhone ->
+                        Text(
+                            text = albumOnPhoneLine(onPhone, album.trackCount),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
         }
         VerticalScrollbar(
             state = gridState,
-            // Item 0 is the header; the "albums with 1 track" toggle after the grid shows no letter.
+            // Item 0 is the header.
             sectionLabel = if (alphabetical) {
-                alphabeticalSectionLabel(displayList, leadingItems = 1) { it.name }
+                alphabeticalSectionLabel(albums, leadingItems = 1) { it.name }
             } else {
                 null
             },
@@ -2639,7 +2609,7 @@ private fun AlbumsGrid(
                 icon = Icons.Default.PlayArrow,
                 label = "Play Album",
                 onClick = {
-                    onPlayAlbum(album.name, album.artist)
+                    onPlayAlbum(album)
                     selectedAlbum = null
                 },
             )
@@ -2647,7 +2617,7 @@ private fun AlbumsGrid(
                 icon = Icons.Default.PlaylistAdd,
                 label = com.stash.core.ui.components.playNextLabel(com.stash.core.ui.components.LocalListenTogetherRole.current, "Add to Queue"), // session: queue or suggest
                 onClick = {
-                    onAddAlbumToQueue(album.name, album.artist)
+                    onAddAlbumToQueue(album)
                     selectedAlbum = null
                 },
             )
@@ -2657,14 +2627,40 @@ private fun AlbumsGrid(
                     icon = Icons.Default.CloudUpload,
                     label = com.stash.core.ui.components.SAVE_TO_CLOUD_LABEL,
                     onClick = {
-                        save(com.stash.core.ui.components.CloudSaveTarget.Album(album.name, album.artist))
+                        save(com.stash.core.ui.components.CloudSaveTarget.Playlist(album.playlistId))
                         selectedAlbum = null
                     },
                 )
             }
+            // Saved albums left the Playlists tab, so taking one out of the library is here now.
+            BottomSheetActionRow(
+                icon = Icons.Default.RemoveCircleOutline,
+                label = "Remove from Library",
+                onClick = {
+                    albumToRemove = album
+                    selectedAlbum = null
+                },
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    albumToRemove?.let { album ->
+        AlertDialog(
+            onDismissRequest = { albumToRemove = null },
+            title = { Text("Remove \"${album.name}\"?") },
+            text = { Text("The album leaves your library. Its songs stay, and downloaded ones stay on your phone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRemoveAlbum(album)
+                        albumToRemove = null
+                    },
+                ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { albumToRemove = null }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -2844,11 +2840,16 @@ private fun EmptyTabMessage(message: String, onClear: (() -> Unit)? = null) {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            // A two-line message (Albums' how-to) wraps clear of the screen edges, centred.
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyLarge,
                 color = StashTheme.extendedColors.textTertiary,
+                textAlign = TextAlign.Center,
             )
             // Emptied by the user's own search/filter (see noMatchMessage): one tap undoes it.
             if (onClear != null) {
