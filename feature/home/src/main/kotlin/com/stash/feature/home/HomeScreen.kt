@@ -180,7 +180,7 @@ fun HomeScreen(
     yourListeningSection: @Composable () -> Unit = {},
     /** "Your record", from feature/record: the way into the record, or its invitation. */
     yourRecordSection: @Composable () -> Unit = {},
-    /** "From your record", from feature/record: three mixes only the record's years make; nothing without an import. */
+    /** "From your record", from feature/record: mixes only the record's years make, under its card; nothing without an import. */
     recordMixesSection: @Composable () -> Unit = {},
     /** A tile of "Moods & moments": the app opens its page of playlists. */
     onOpenMood: (com.stash.data.ytmusic.model.MoodTile) -> Unit = {},
@@ -380,7 +380,7 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Join on Crowdin, then request access",
+                                        text = "After getting access, contribute on Weblate",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -395,7 +395,7 @@ fun HomeScreen(
                             },
                             onClick = {
                                 showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
+                                runCatching { socialUriHandler.openUri(STASH_WEBSITE_URL) }
                             },
                         )
                         DropdownMenuItem(
@@ -1182,10 +1182,10 @@ private data class Supporter(
 // browser. Edit when the invite rotates.
 private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
 
-// Translation project on Crowdin. Tap → Crowdin project page.
-private const val STASH_CROWDIN_URL = "https://crowdin.com/project/stash-music-player"
+// Translation project on Weblate. Tap → Weblate project page.
+private const val STASH_WEBSITE_URL = "https://weblate.paraliyzed.net/projects/stash-music-app/"
 
-// Form to request translator access on Crowdin.
+// Form to request translator access on Weblate.
 private const val STASH_TRANSLATE_ACCESS_FORM_URL =
     "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform"
 
@@ -1206,6 +1206,22 @@ private val LEGACY_SUPPORTERS = listOf(
         message = "Awesome application! I hope continuous improvement and support",
     ),
 )
+
+/*
+ * The ticker's own type and spacing: ten percent bigger than labelMedium (Inter Medium
+ * 12 sp, 16 sp line, 0.5 sp tracking, Type.kt) and its old 10 dp padding (owner, 2026-11-01).
+ * Kept here so the shared label style everything else uses stays as it is.
+ */
+private val TickerFontSize = 13.2.sp
+private val TickerLineHeight = 17.6.sp
+private val TickerLetterSpacing = 0.55.sp
+private val TickerVerticalPadding = 11.dp
+
+/**
+ * Tape speed: 31 dp/s at first, 15 % quicker (owner, 2026-10-22), then 10 % more with the
+ * ten percent bigger type so it reads at the same pace (about 39.2 dp/s, 2026-11-01).
+ */
+private val TickerSpeedPerSec = 31.dp * 1.15f * 1.1f
 
 /**
  * Tip-jar ticker — dublab-style community marquee.
@@ -1280,8 +1296,16 @@ private fun SupporterTicker(
             withFrameMillis { nowMs = System.currentTimeMillis() }
         }
     }
-    // 15% quicker than the original 31 dp/s (owner, 2026-10-22).
-    val velocityPxPerSec = with(LocalDensity.current) { (31.dp * 1.15f).toPx() }
+    val velocityPxPerSec = with(LocalDensity.current) { TickerSpeedPerSec.toPx() }
+    // labelMedium's font and weight at the ticker's own size (see TickerFontSize).
+    val labelStyle = MaterialTheme.typography.labelMedium
+    val tickerStyle = remember(labelStyle) {
+        labelStyle.copy(
+            fontSize = TickerFontSize,
+            lineHeight = TickerLineHeight,
+            letterSpacing = TickerLetterSpacing,
+        )
+    }
     var tapeWidthPx by remember { mutableIntStateOf(0) }
 
     // Full-bleed strip: no card, no border, no leading icon — every pixel
@@ -1299,7 +1323,7 @@ private fun SupporterTicker(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 10.dp)
+                .padding(vertical = TickerVerticalPadding)
                 .clipToBounds(),
         ) {
             Row(
@@ -1311,7 +1335,7 @@ private fun SupporterTicker(
             ) {
                 Text(
                     text = line,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = tickerStyle,
                     maxLines = 1,
                     softWrap = false,
                     modifier = Modifier.onSizeChanged { tapeWidthPx = it.width },
@@ -1319,7 +1343,7 @@ private fun SupporterTicker(
                 // Second copy of the tape for a seamless wrap.
                 Text(
                     text = line,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = tickerStyle,
                     maxLines = 1,
                     softWrap = false,
                 )

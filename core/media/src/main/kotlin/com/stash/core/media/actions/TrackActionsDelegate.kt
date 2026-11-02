@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.media3.common.PlaybackException
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.findByYoutubeIdOrAlias
 import com.stash.core.data.library.SameSongRule
 import com.stash.core.data.library.findReusableByWords
 import com.stash.core.media.preview.PreviewPlayer
@@ -234,7 +235,7 @@ class TrackActionsDelegate @Inject constructor(
                         com.stash.core.media.StreamRoutingResult.CellularRefused ->
                             _userMessages.emit("Streaming on cellular is off in Settings.")
                         com.stash.core.media.StreamRoutingResult.NoConnectivity ->
-                            _userMessages.emit("You're offline — can't stream this track.")
+                            _userMessages.emit("No internet connection, and this song isn't downloaded.")
                         com.stash.core.media.StreamRoutingResult.DownloadMode ->
                             _userMessages.emit(com.stash.core.media.PlayerRepositoryImpl.DOWNLOAD_MODE_MESSAGE)
                     }
@@ -561,7 +562,7 @@ class TrackActionsDelegate @Inject constructor(
     suspend fun refreshDownloadedIds(videoIds: Collection<String>) {
         if (videoIds.isEmpty()) return
         val downloaded = videoIds.filter { id ->
-            trackDao.findByYoutubeId(id)?.isDownloaded == true
+            trackDao.findByYoutubeIdOrAlias(id)?.isDownloaded == true
         }.toSet()
         _downloadedIds.update { it + downloaded }
     }
@@ -638,7 +639,8 @@ class TrackActionsDelegate @Inject constructor(
             Log.d(TAG, "addToPlaylist refused blocked: ${item.artist} - ${item.title}")
             return null
         }
-        val existing = trackDao.findByYoutubeId(item.videoId)
+        // A video a duplicate merge took away finds the row it went into (track_aliases).
+        val existing = trackDao.findByYoutubeIdOrAlias(item.videoId)
             ?: trackDao.findReusableByWords(
                 title = item.title,
                 artist = item.artist,

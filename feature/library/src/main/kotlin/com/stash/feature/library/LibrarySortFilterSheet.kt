@@ -70,7 +70,8 @@ fun LibrarySortFilterSheet(
         if (showCloudFilter) add("Cloud" to SourceFilter.CLOUD)
         if (showAvailabilityFilter) {
             add("Downloaded" to SourceFilter.DOWNLOADED)
-            add("Online" to SourceFilter.ONLINE)
+            // Not "Online": that is the mode's name now (Online / Offline, 2026-11-01).
+            add("Not downloaded" to SourceFilter.ONLINE)
         }
     }
 

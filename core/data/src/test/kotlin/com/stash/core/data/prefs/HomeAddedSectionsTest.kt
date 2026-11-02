@@ -37,8 +37,14 @@ class HomeAddedSectionsTest {
             savedSections.take(at) + HomeSection.BECAUSE_YOU_LIKE + HomeSection.NEW_FROM_ARTISTS + HomeSection.MOODS + savedSections.drop(at),
             resolved,
         )
-        // the same on a reordered Home and before the reorder (Your listening was already placed)
-        assertEquals(resolved, effectiveHomeSectionOrder(savedBy0_9_122, promoted = true))
+        // Home shows the same, with the record's mixes under the card (they follow it wherever it is), on a reordered Home and
+        // before the reorder (Your listening was already placed)
+        val home = listOf(
+            HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING,
+            HomeSection.YOUR_PLAYLISTS, HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+        ) + savedSections.drop(at)
+        assertEquals(home, effectiveHomeSectionOrder(savedBy0_9_122, promoted = true))
+        assertEquals(home, effectiveHomeSectionOrder(savedBy0_9_122, promoted = false))
     }
 
     @Test
@@ -96,10 +102,12 @@ class HomeAddedSectionsTest {
     }
 
     @Test
-    fun `because you like leads the new shelves on a fresh install, under the record's mixes`() {
+    fun `because you like leads the new shelves on a fresh install, under your playlists`() {
         val order = resolveHomeSectionOrder(emptyList())
         assertEquals(order.indexOf(HomeSection.NEW_FROM_ARTISTS) - 1, order.indexOf(HomeSection.BECAUSE_YOU_LIKE))
-        assertEquals(order.indexOf(HomeSection.RECORD_MIXES) + 1, order.indexOf(HomeSection.BECAUSE_YOU_LIKE))
+        // The record's mixes sit directly under the card (owner 2026-11-01), so Your playlists is the section above the new ones
+        assertEquals(order.indexOf(HomeSection.YOUR_RECORD) + 1, order.indexOf(HomeSection.RECORD_MIXES))
+        assertEquals(order.indexOf(HomeSection.YOUR_PLAYLISTS) + 1, order.indexOf(HomeSection.BECAUSE_YOU_LIKE))
         assertTrue(HomeSection.BECAUSE_YOU_LIKE in DEFAULT_HOME_SECTIONS)
         assertEquals(HomeSection.BECAUSE_YOU_LIKE, HomeSection.fromKey("because_you_like"))
     }
@@ -138,6 +146,33 @@ class HomeAddedSectionsTest {
         // Discover first (every default order): it stays first
         assertEquals(HomeSection.DISCOVER, resolveHomeSectionOrder(emptyList()).first())
         assertEquals(HomeSection.DISCOVER, resolveHomeSectionOrder(savedBy0_9_122).first())
+    }
+
+    @Test
+    fun `on Home the record's mixes stay under the card and a new section stays under discover, both at once`() {
+        val added = listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS)
+        val catalogsFirst = listOf("new_releases", "qobuz_playlists", "top_albums", "discover") +
+            savedBy0_9_122.filter { it !in setOf("new_releases", "qobuz_playlists", "top_albums", "discover") }
+        val saves = listOf(
+            emptyList(),
+            savedBy0_9_122,
+            catalogsFirst,
+            // the mixes moved over Discover and the catalogs, the card well below
+            listOf("record_mixes", "top_albums", "discover", "radios", "your_record"),
+            // the card over Discover, its mixes missing, a catalog over Discover too
+            listOf("your_record", "new_releases", "discover", "radios"),
+        )
+        for (saved in saves) {
+            for (promoted in listOf(true, false)) {
+                val home = effectiveHomeSectionOrder(saved, promoted)
+                val discover = home.indexOf(HomeSection.DISCOVER)
+                assertEquals("$saved, promoted $promoted", HomeSection.RECORD_MIXES, home[home.indexOf(HomeSection.YOUR_RECORD) + 1])
+                for (section in added) {
+                    assertTrue("$section above Discover in $home", home.indexOf(section) > discover)
+                }
+                assertEquals("$saved, promoted $promoted", HomeSection.entries.size, home.toSet().size)
+            }
+        }
     }
 
     @Test

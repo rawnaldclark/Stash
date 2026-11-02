@@ -34,13 +34,13 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.PushPin
@@ -79,6 +79,9 @@ import androidx.compose.ui.unit.dp
 import com.stash.core.data.prefs.NowPlayingAction
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.ui.components.SheetOptionRow
+import com.stash.core.ui.icons.RadioGlyphState
+import com.stash.core.ui.icons.RadioSignal
+import com.stash.core.ui.icons.RadioSignalGlyph
 
 // ---------------------------------------------------------------------------
 // How each action looks
@@ -96,7 +99,16 @@ internal data class ActionVisualState(
     val castConnectingTo: String? = null,
     /** The speaker playing, while casting. */
     val castingTo: String? = null,
-)
+    /**
+     * A station on air may breathe: the player means to play (playWhenReady) and Now Playing is on
+     * screen (not parked under the mini player for its keep-warm span, where it costs no frames).
+     */
+    val radioPlaying: Boolean = false,
+) {
+    /** How the Signal glyph shows the station: still and ink, still and accent, or breathing. */
+    val radioGlyph: RadioGlyphState
+        get() = RadioGlyphState.of(onAir = radioActive, tuning = radioTuning, playing = radioPlaying)
+}
 
 /** An action's icon and label right now; [active] tints it with the album accent. */
 internal data class ActionVisual(val icon: ImageVector, val label: String, val active: Boolean = false)
@@ -118,7 +130,7 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
         active = s.castingTo != null,
     )
     NowPlayingAction.RADIO -> ActionVisual(
-        Icons.Default.Radio,
+        RadioSignal.Icon,
         when {
             s.radioTuning -> "Tuning radio"
             s.radioActive -> "Stop radio"
@@ -147,6 +159,8 @@ internal fun actionVisual(action: NowPlayingAction, s: ActionVisualState, pinned
         if (s.speed == 1f) "Playback speed" else "Playback speed · ${formatSpeed(s.speed)}",
         active = s.speed != 1f,
     )
+    // Opens the sheet with the streaming switches from Settings; the switches show their state.
+    NowPlayingAction.STREAM_QUALITY -> ActionVisual(Icons.Default.HighQuality, "Streaming quality")
     NowPlayingAction.DOWNLOAD -> ActionVisual(
         if (s.isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
         when {
@@ -170,6 +184,7 @@ internal fun editorLabel(action: NowPlayingAction): String = when (action) {
     NowPlayingAction.POST_TO_COMMUNITY -> "Post to Community"
     NowPlayingAction.VIEW_ALBUM -> "View Album"
     NowPlayingAction.PLAYBACK_SPEED -> "Playback speed"
+    NowPlayingAction.STREAM_QUALITY -> "Streaming quality"
     NowPlayingAction.DOWNLOAD -> "Download"
     NowPlayingAction.FLAG_WRONG_MATCH -> "Flag as Wrong Match"
 }
@@ -229,7 +244,7 @@ internal fun NowPlayingTopBar(
                 Box(Modifier.size(CAST_SLOT_DP.dp), contentAlignment = Alignment.Center) { castButton() }
                 return@forEach
             }
-            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
+            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, visualState.radioGlyph, onAction)
         }
 
         // ⋮ — always present AND always tappable. While a download is in flight and Download is
@@ -263,7 +278,7 @@ internal fun NowPlayingTopBar(
         }
 
         row.trailing.forEach { action ->
-            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
+            ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, visualState.radioGlyph, onAction)
         }
     }
 }
@@ -279,6 +294,7 @@ private fun ActionSlot(
     isDownloading: Boolean,
     radioTuning: Boolean,
     radioLock: Boolean,
+    radioGlyph: RadioGlyphState,
     onAction: (NowPlayingAction) -> Unit,
 ) {
     // The toggle fades over 250 ms; the accent itself is taken as it is, so the album colour's own
@@ -286,7 +302,8 @@ private fun ActionSlot(
     val active by animateFloatAsState(if (v.active) 1f else 0f, tween(250), label = "pin-tint")
     val tint = lerp(ink, accent, active)
     when (action) {
-        // The radar sweep spins around the icon while the station is being built.
+        // The radar sweep spins around the Signal glyph while the station is being built (searching for
+        // the signal); once it locks, the glyph's arcs take over and breathe while the station plays.
         NowPlayingAction.RADIO -> Box(Modifier.size(slot), contentAlignment = Alignment.Center) {
             com.stash.feature.nowplaying.ui.RadarSweep(
                 tuning = radioTuning,
@@ -294,7 +311,7 @@ private fun ActionSlot(
                 color = accent,
                 modifier = Modifier.matchParentSize(),
             )
-            TopBarIcon(v.icon, v.label, tint, slot) { if (!radioTuning) onAction(action) }
+            TopBarRadio(radioGlyph, v.label, tint, slot) { if (!radioTuning) onAction(action) }
         }
         NowPlayingAction.DOWNLOAD -> if (isDownloading) SlotSpinner(slot, ink) else {
             TopBarIcon(v.icon, v.label, tint, slot) { onAction(action) }
@@ -326,6 +343,30 @@ private fun TopBarIcon(
         contentAlignment = Alignment.Center,
     ) {
         Icon(imageVector = icon, contentDescription = description, tint = tint, modifier = Modifier.size(iconSize))
+    }
+}
+
+/** The radio pin: [TopBarIcon]'s slot and ripple around the live Signal glyph. */
+@Composable
+private fun TopBarRadio(
+    state: RadioGlyphState,
+    description: String,
+    tint: Color,
+    slot: Dp,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(slot)
+            .clickable(
+                interactionSource = null,
+                indication = ripple(bounded = false, radius = slot / 2),
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        RadioSignalGlyph(state = state, tint = tint, size = 24.dp, contentDescription = description)
     }
 }
 

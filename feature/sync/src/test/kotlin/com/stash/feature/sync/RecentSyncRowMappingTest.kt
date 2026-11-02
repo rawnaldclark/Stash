@@ -9,27 +9,27 @@ import org.junit.Test
 class RecentSyncRowMappingTest {
 
     @Test
-    fun `stream-only sync shows surfaced count and Stream only label`() {
+    fun `an Online sync shows surfaced count and the Online label`() {
         val row = SyncHistoryInfo(
             id = 1, startedAt = 0, completedAt = 1000, status = "COMPLETED",
             tracksDownloaded = 0, tracksFailed = 0, newTracksFound = 1578,
             playlistsChecked = 50, streamingMode = true,
             displayStatus = SyncDisplayStatus.Success,
         ).toRecentSyncRow(relativeTime = "35m ago")
-        assertEquals("Stream only", row.modeLabel)
+        assertEquals("Online", row.modeLabel)
         assertEquals(1578, row.added)
         assertEquals("surfaced", row.addedNoun)
     }
 
     @Test
-    fun `download sync shows downloaded count and Download label`() {
+    fun `an Offline sync shows downloaded count and the Offline label`() {
         val row = SyncHistoryInfo(
             id = 2, startedAt = 0, completedAt = 1000, status = "COMPLETED",
             tracksDownloaded = 340, tracksFailed = 0, newTracksFound = 400,
             playlistsChecked = 12, streamingMode = false,
             displayStatus = SyncDisplayStatus.Success,
         ).toRecentSyncRow(relativeTime = "1h ago")
-        assertEquals("Download", row.modeLabel)
+        assertEquals("Offline", row.modeLabel)
         assertEquals(340, row.added)
         assertEquals("downloaded", row.addedNoun)
     }
@@ -55,5 +55,56 @@ class RecentSyncRowMappingTest {
             displayStatus = SyncDisplayStatus.Cancelled,
         ).toRecentSyncRow(relativeTime = "2m ago")
         assertEquals(SyncRowStatus.CANCELLED, row.status)
+    }
+
+    // ── A playlist the sync couldn't read: the pill and the sentence (#747) ──
+
+    private fun completedRun(diagnostics: String?) = SyncHistoryInfo(
+        id = 5, startedAt = 0, completedAt = 1000, status = "COMPLETED",
+        tracksDownloaded = 0, tracksFailed = 0, newTracksFound = 3, playlistsChecked = 15,
+        streamingMode = true, diagnostics = diagnostics,
+        displayStatus = SyncDisplayStatus.Success,
+    ).toRecentSyncRow(relativeTime = "5m ago")
+
+    @Test
+    fun `a run that couldn't read a playlist names it for the pill and the sentence`() {
+        // As PlaylistFetchWorker records it.
+        val row = completedRun(
+            """[{"service":"SPOTIFY","step":"getDailyMixes","status":"SUCCESS","itemCount":2},""" +
+                """{"service":"SPOTIFY","step":"getUserPlaylists","status":"ERROR","itemCount":14,""" +
+                """"errorMessage":"couldn't read 1 playlist: My Playlist #11 (kept as it was)",""" +
+                """"unreadPlaylists":["My Playlist #11"],"unreadPlaylistCount":1}]""",
+        )
+        assertEquals(1, row.unreadCount)
+        assertEquals(listOf("My Playlist #11"), row.unreadNames)
+        assertEquals("still a healthy receipt: nothing was lost", SyncRowStatus.HEALTHY, row.status)
+    }
+
+    @Test
+    fun `a healthy run shows no pill and no sentence`() {
+        val row = completedRun(
+            """[{"service":"SPOTIFY","step":"getLikedSongs","status":"SUCCESS","itemCount":402},""" +
+                """{"service":"SPOTIFY","step":"getUserPlaylists","status":"SUCCESS","itemCount":15}]""",
+        )
+        assertEquals(0, row.unreadCount)
+        assertEquals(emptyList<String>(), row.unreadNames)
+    }
+
+    @Test
+    fun `a capped list of names still carries the true count`() {
+        val names = (1..20).joinToString(",") { "\"P$it\"" }
+        val row = completedRun(
+            """[{"service":"SPOTIFY","step":"getUserPlaylists","status":"ERROR",""" +
+                """"unreadPlaylists":[$names],"unreadPlaylistCount":25}]""",
+        )
+        assertEquals("the pill counts every one", 25, row.unreadCount)
+        assertEquals(20, row.unreadNames.size)
+    }
+
+    @Test
+    fun `steps that don't decode show no pill, and the row keeps them as they were`() {
+        val row = completedRun("not json")
+        assertEquals(0, row.unreadCount)
+        assertEquals("not json", row.diagnostics)
     }
 }

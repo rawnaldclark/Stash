@@ -82,7 +82,8 @@ class LosslessDiagnosticsContributor @Inject constructor(
         val download = !streamingPreference.current()
         val lossless = losslessPrefs.enabledNow()
         return buildString {
-            appendLine("Mode:               " + if (download) "Download (sync writes files)" else "Stream only (sync writes nothing)")
+            // The mode's on-screen names since 2026-11-01 (Download / Stream only before).
+            appendLine("Mode:               " + if (download) "Offline (sync writes files; only downloads play)" else "Online (sync writes nothing; everything plays)")
             appendLine("Lossless streaming: " + onOff(lossless))
             appendLine("Download quality:   " + when (losslessPrefs.downloadModeNow()) {
                 com.stash.core.model.DownloadMode.LOSSLESS -> "Lossless · ${losslessPrefs.qualityTierNow().displayLabel}"

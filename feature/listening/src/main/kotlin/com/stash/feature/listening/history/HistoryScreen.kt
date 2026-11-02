@@ -281,6 +281,7 @@ fun HistoryScreen(
                 track = track,
                 onPlayNext = { viewModel.playNext(it); optionsFor = null },
                 onAddToQueue = { viewModel.addToQueue(it); optionsFor = null },
+                onStartRadio = { viewModel.startRadio(it); optionsFor = null },
                 onSaveToPlaylist = { saveTrack = it; optionsFor = null },
                 onShare = { shareTrack = it; optionsFor = null },
                 onDismiss = { optionsFor = null },

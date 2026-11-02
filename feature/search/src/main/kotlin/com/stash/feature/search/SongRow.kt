@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
@@ -330,7 +329,7 @@ fun SearchTrackMenu(
             if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
                 DropdownMenuItem(
                     text = { Text("Start radio") },
-                    leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
+                    leadingIcon = { Icon(com.stash.core.ui.icons.RadioSignal.Icon, contentDescription = null) },
                     onClick = { menuOpen = false; onStartRadio() },
                 )
             }

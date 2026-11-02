@@ -11,6 +11,7 @@ import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -583,6 +584,15 @@ interface TrackDao {
     suspend fun clearMatchPick(trackId: Long)
 
     /**
+     * Records that the user picked this track's video themselves in Failed
+     * Matches ("find it yourself", #19), as [completeSwap] does for a swap:
+     * the FLAC sweep then leaves it out and a re-download gets exactly that
+     * video (#531).
+     */
+    @Query("UPDATE tracks SET match_picked_at = :pickedAt WHERE id = :trackId")
+    suspend fun markMatchPicked(trackId: Long, pickedAt: Long)
+
+    /**
      * How many tracks the library had downloaded and no longer has on disk.
      * On a restored backup this is the whole download collection: the rows
      * survive in the database, the audio does not.
@@ -901,6 +911,37 @@ interface TrackDao {
     /** Find a track by its YouTube video ID, or null if not found. */
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     suspend fun findByYoutubeId(youtubeId: String): TrackEntity?
+
+    /**
+     * The row a merge pointed the merged-away id [value] of [kind] at (`track_aliases`, schema 76),
+     * or null. Look the id up in its own column first: an alias only stands in for an id no row
+     * holds any more. See [findByYoutubeIdOrAlias] and its siblings.
+     */
+    @Query(
+        """
+        SELECT t.* FROM tracks t INNER JOIN track_aliases a ON a.track_id = t.id
+        WHERE a.kind = :kind AND a.value = :value
+        LIMIT 1
+        """,
+    )
+    suspend fun findByAlias(kind: String, value: String): TrackEntity?
+
+    @Query("SELECT * FROM track_aliases WHERE kind = :kind AND value IN (:values)")
+    suspend fun aliasRowsRaw(kind: String, values: List<String>): List<TrackAliasEntity>
+
+    /**
+     * For each of [trackIds] that a duplicate merge took away, the row it went into (schema 76,
+     * `track_aliases` kind `track_id`): two batched reads, chunked for the bind cap. Ids that were
+     * never merged away are absent from the map. What a saved queue's ids go through on a cold start.
+     */
+    suspend fun mergedIntoAll(trackIds: Collection<Long>): Map<Long, TrackEntity> {
+        if (trackIds.isEmpty()) return emptyMap()
+        val aliases = trackIds.map(Long::toString).distinct()
+            .chunkedForBind { aliasRowsRaw(TrackAliasEntity.KIND_TRACK_ID, it) }
+        if (aliases.isEmpty()) return emptyMap()
+        val rows = getByIds(aliases.map { it.trackId }.distinct()).associateBy { it.id }
+        return aliases.mapNotNull { alias -> rows[alias.trackId]?.let { alias.value.toLong() to it } }.toMap()
+    }
 
     @Query("SELECT * FROM tracks WHERE soundcloud_id = :soundCloudId LIMIT 1")
     suspend fun findBySoundCloudId(soundCloudId: String): TrackEntity?
@@ -1977,6 +2018,15 @@ interface TrackDao {
      * that gap the track looks orphaned. Folding it into this query keeps the
      * whole orphan check + delete atomic (see [deleteOrphanedDownloadedTracks]).
      *
+     * A song the user asked to download (a download_queue row with user_requested: Now
+     * Playing, library, album, artist, multi-select and radio downloads, Library & Storage's
+     * Re-download) is never swept either. Those downloads join no playlist (only Search's join
+     * Your Downloads), so to this query they look exactly like a song a mix rotated out, and
+     * Refresh deleted them (#273 made that reach every one-account library). Erring on the
+     * kept side: a Re-download of a mix song that later rotates out is kept too. The marker
+     * goes with Downloads › "Clear history"; linking these downloads to Your Downloads, as
+     * Search does, is the durable fix (#761).
+     *
      * Not public API on its own — call [deleteOrphanedDownloadedTracks], which
      * evaluates this predicate and deletes inside one transaction so a
      * concurrent re-link can't be raced.
@@ -1995,9 +2045,35 @@ interface TrackDao {
               SELECT dq.track_id FROM discovery_queue dq
               WHERE dq.track_id IS NOT NULL AND dq.status IN ('PENDING', 'DONE')
           )
+          AND t.id NOT IN (
+              SELECT q.track_id FROM download_queue q
+              WHERE q.track_id IS NOT NULL AND q.user_requested = 1
+          )
         """
     )
     suspend fun selectDeletableOrphans(): List<TrackEntity>
+
+    /**
+     * The downloaded songs [playlistId] is the last active playlist for, among those the
+     * orphan sweep could take ([selectDeletableOrphans]'s sources). Removing the playlist
+     * would leave them in none, and the sweep would delete them; see
+     * [com.stash.core.data.repository.MusicRepositoryImpl.removePlaylist].
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        JOIN playlist_tracks pt ON pt.track_id = t.id
+        WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL
+          AND t.is_downloaded = 1
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'CLOUD', 'SOUNDCLOUD')
+          AND t.soundcloud_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM playlist_tracks o
+              WHERE o.track_id = t.id AND o.playlist_id != :playlistId AND o.removed_at IS NULL
+          )
+        """
+    )
+    suspend fun downloadedSongsOnlyIn(playlistId: Long): List<Long>
 
     /**
      * Atomically re-evaluates the orphan predicate and deletes the matching
@@ -2891,6 +2967,58 @@ interface TrackDao {
         val wanted = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }.toHashSet()
         return wanted.map { it.first }.distinct()
             .chunkedForBind { findDownloadedByCanonicalTitlesRaw(it) }
+            .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
+    }
+
+    /**
+     * Data fix for the green-dot lie ([com.stash.core.data.library.TrackSourceRule]): rows saved
+     * from a YouTube stream as Spotify songs become YouTube songs. Only a row that says SPOTIFY, has
+     * **no** Spotify id and **has** a YouTube video id; a row with a Spotify id is never touched.
+     *
+     * A row in a Spotify playlist is left alone too, even one with no Spotify id: the Spotify sync's
+     * download step picks its playlists' rows by source, so relabelling one would stop its download
+     * for someone with only Spotify connected. A row in Stash's own Liked Songs (or any switched-on
+     * Stash playlist, source BOTH) is relabelled: the download step takes a YouTube song there with
+     * any service connected ([DownloadQueueDao]'s connected-source rule), so it still downloads.
+     * Idempotent and cheap, so it runs at every launch: a backup from before the fix, restored later,
+     * is fixed too.
+     *
+     * @return the number of rows relabelled.
+     */
+    @Query("""
+        UPDATE tracks SET source = 'YOUTUBE'
+        WHERE source = 'SPOTIFY'
+          AND (spotify_uri IS NULL OR TRIM(spotify_uri) = '')
+          AND youtube_id IS NOT NULL AND TRIM(youtube_id) != ''
+          AND soundcloud_id IS NULL
+          AND id NOT IN (
+              SELECT pt.track_id FROM playlist_tracks pt
+              INNER JOIN playlists p ON p.id = pt.playlist_id
+              WHERE p.source = 'SPOTIFY'
+          )
+    """)
+    suspend fun relabelYouTubeRowsClaimingSpotify(): Int
+
+    /** Every row with one of [canonicalTitles] that records a file: raw half of [findHoldingFileByCanonicalIdentities]. */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE canonical_title IN (:canonicalTitles)
+          AND (is_downloaded = 1 OR file_path IS NOT NULL)
+    """)
+    suspend fun findHoldingFileByCanonicalTitlesRaw(canonicalTitles: List<String>): List<TrackEntity>
+
+    /**
+     * Every row that records a file (downloaded, or a kept file being replaced) whose
+     * (canonical_title, canonical_artist) is one of [canonicalIdentities]: the candidates
+     * [com.stash.core.data.library.SameSongRule.isLibraryCopy] picks a sync's new songs' copies on
+     * the phone from, looked up once per playlist (the [findDownloadedByCanonicalIdentities]
+     * pattern: index-backed, chunked for the bind cap, blank identities skipped, none for an empty
+     * input).
+     */
+    suspend fun findHoldingFileByCanonicalIdentities(canonicalIdentities: List<Pair<String, String>>): List<TrackEntity> {
+        val wanted = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }.toHashSet()
+        return wanted.map { it.first }.distinct()
+            .chunkedForBind { findHoldingFileByCanonicalTitlesRaw(it) }
             .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
     }
 
