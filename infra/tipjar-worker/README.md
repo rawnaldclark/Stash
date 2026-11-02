@@ -186,15 +186,36 @@ own, `ACCESS_KV`, which the website Worker (`web/worker`) binds too; the
 website never sees `STASH_KV`. The webhook URL and the GET JSON above don't
 change.
 
-- **Early access.** The donor's email gets an `access:<hash>` entry, so they
-  can sign in to stashfm.app with it. Only the hash is stored, never the
-  email.
+- **Early access, at $5 or more, added up per email** (since 2026-11-02;
+  `ENTRY_USD_CENTS` in `src/access.js`). Once an email's Ko-fi payments add
+  up to US$5 it gets an `access:<hash>` entry, so they can sign in to
+  stashfm.app with it, and the welcome email. Only the hash is stored, never
+  the email.
+  - One-off donations and monthly payments both count, in any order.
+  - Other currencies count at `USD_PER_UNIT` (below). A currency missing
+    from that table can't be checked, so that donor is let in, and the log
+    says so.
+  - Under $5, the payment is kept as `kofipay:<hash>:<transaction id>`
+    (`{cents, at}`, also as metadata) and nothing is granted yet. The next
+    payment adds them all up with `list({prefix: "kofipay:<hash>:"})`, plus
+    itself (so a lagging `list()` or a Ko-fi retry can't miss or double it).
+    The log says `access: under the entry so far (300 of 500 US cents)`.
+  - **Everyone let in before 2026-11-02 keeps their place**, whatever they
+    gave: an email that already has a `kofi` entry stays in on any new
+    payment (only `lastAt` moves, as before) and keeps no amount. An
+    `approved` or `manual` entry is left exactly as it is until the email
+    reaches $5; then it becomes `kofi`, as any donation did before.
+  - Known limit: two payments from one email whose webhooks land within a
+    minute of each other (KV's `list()` lag) may each miss the other. The
+    next payment from that email adds everything up; or add them by hand.
+  - The supporters list (the app's ticker) and the goal still count every
+    payment, under $5 too.
 - **The monthly goal.** Each donation is its own entry,
   `goal:<YYYY-MM>:kofi:<transaction id>` (UTC month), with the amount in US
   cents in the key's metadata. The website adds up a month's entries. Other
   currencies are converted with the fixed, approximate table `USD_PER_UNIT`
   in `src/access.js`; a currency missing from it isn't counted (the donor
-  still gets access).
+  is still let in, as above).
 - **Retries.** Ko-fi resends a webhook that didn't get a 200, with the same
   ids. `kofitxn:<id>` (in `STASH_KV`, 60 days; the transaction id, or the
   message id if there's none) is `listed` once the supporter's own key is
@@ -258,7 +279,10 @@ early access, once, before launch:
    `npx wrangler kv bulk put <file> --binding ACCESS_KV --remote`
 4. Delete the JSON file and the CSV.
 
-Re-running is safe: each entry is rewritten with the same hash.
+Re-running is safe: each entry is rewritten with the same hash. The import
+doesn't read amounts, so it lets in every donor in the CSV, under $5 too.
+It was run once, before the $5 entry (2026-11-02), and everyone it added
+keeps their place; don't use it to add new donors (the webhook does that).
 
 ## Supporter claim
 
@@ -274,15 +298,19 @@ POST path is still the Ko-fi webhook and every GET path the list, as before.
 | `POST /claim/email/verify` `{"email","code"}` | `200 {"token"}` (the claim is consumed); `401 {"error":"bad_code"}` for every failure: wrong code, no pending claim, expired, tries used up (the claim is deleted after the 5th try); `400 bad_email / bad_request`; `429 {"error":"rate_limited"}` + `Retry-After` (burst limit, per IP or per address); `503 {"error":"not_configured"}`; `503 {"error":"unavailable"}` + `Retry-After` (`CLAIMS_DB` down) |
 
 - **Who counts as a donor:** an `access:<hash>` entry with `source: "kofi"`
-  (the webhook and the Ko-fi CSV import write it). The website's
+  (the webhook, at $5 or more added up per email, and the Ko-fi CSV import
+  write it; everyone from before the $5 entry keeps theirs). The website's
   `approved`, `manual` and `open` entries are early access, not donations,
   and get the no-donation email. A donor added by hand on the admin page
   can't claim until they donate (or are imported from the Ko-fi CSV).
 - **start never reveals donor status.** The answer is the same 202 either
   way, and the lookup, the claim write and the email all happen after the
   response (`waitUntil`). A donor's email holds a 6-digit code, valid 10
-  minutes; anyone else's says no donation was found for that address and
-  that any amount on Ko-fi (ko-fi.com/rawnald) unlocks unlimited lossless.
+  minutes. Anyone else's says it isn't unlocked yet and that $5 or more on
+  Ko-fi (ko-fi.com/rawnald) unlocks unlimited lossless, and donations add
+  up: an address with Ko-fi payments under $5 (`kofipay:<hash>:*`) gets the
+  `below_entry` email with its total so far, any other the `no_donation`
+  one. Both count against the no-donation cap.
   At most one email per accepted start (see the no-donation cap below).
 - **verify never reveals donor status either.** No pending claim, an
   expired one, a wrong code and used-up tries all answer the same
@@ -388,9 +416,17 @@ email fails (start still answers 202). Suggested copy:
   in the Stash app within 10 minutes. If you didn't ask for it, you can
   ignore this email."
 - `no_donation`: subject "Stash supporter: no donation found"; body "We
-  couldn't find a Ko-fi donation for this email address. Any amount on
-  Ko-fi (https://ko-fi.com/rawnald) unlocks unlimited lossless. Donate with
-  this same address, then try again in the Stash app."
+  couldn't find a Ko-fi donation for this email address. $5 or more on
+  Ko-fi (https://ko-fi.com/rawnald) unlocks unlimited lossless, and
+  donations add up. Donate with this same address, then try again in the
+  Stash app."
+- `below_entry` (`{"email","kind":"below_entry","cents":300}`, cents 1 to
+  499: the address's Ko-fi total so far, in US cents): subject "Stash
+  supporter: not unlocked yet"; body thanks them, says unlimited lossless
+  starts at $5 and how much this address has given so far, and how much
+  more unlocks it. A mailer that doesn't know this kind answers
+  `400 {"error":"bad_kind"}`, and the tip jar sends `no_donation` instead.
+  The exact copy is the mailer's (`mailer/EMAIL-COPY.md`).
 
 Its own per-address limit should use a key apart from the welcome's.
 
@@ -422,7 +458,8 @@ email hash above.
 
 | Key | Written by | Value | Kept |
 | --- | --- | --- | --- |
-| `access:<hash>` | tip jar webhook, the import script, the website's admin page, the website's open window | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}`; `by` is the maintainer who added it. An open-window sign-up (`web/worker/open.js`) is `{source: "open", at}` with the same in metadata; a Ko-fi donation overwrites it as a supporter | Until removed on the admin page |
+| `access:<hash>` | tip jar webhook, the import script, the website's admin page, the website's open window | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}`; `by` is the maintainer who added it. An open-window sign-up (`web/worker/open.js`) is `{source: "open", at}` with the same in metadata; a Ko-fi donation that brings the email to $5 overwrites it as a supporter | Until removed on the admin page |
+| `kofipay:<hash>:<id>` | tip jar webhook (since 2026-11-02) | One Ko-fi payment from an email not yet on the list as `kofi`, in US cents: `{cents, at}`, the same as metadata. Added up toward the $5 entry, and read by the claim for its `below_entry` email | Forever |
 | `goal:<YYYY-MM>:kofi:<id>` | tip jar webhook | One Ko-fi donation; metadata `{cents, source, at, orig?}` | Forever |
 | `goal:<YYYY-MM>:manual:<id>` | the website's admin page | One donation added by hand; metadata `{cents, source, at, by}` | Until removed on the admin page |
 | `meta:hashcheck` | tip jar webhook (when it changes), the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |
