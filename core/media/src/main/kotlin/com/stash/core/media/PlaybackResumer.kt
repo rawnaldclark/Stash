@@ -48,18 +48,34 @@ class PlaybackResumer @Inject constructor(
         if (saved.queueTrackIds.isEmpty()) return null
 
         // `IN` doesn't preserve order, so re-sort into the saved queue order.
-        // Tracks that no longer exist in the DB are silently dropped.
         val byId = trackDao.getByIds(saved.queueTrackIds).associateBy { it.id }
-        val ordered = saved.queueTrackIds.mapNotNull { byId[it] }
+        // A row a duplicate merge took away (schema 76) plays as the row it went into. Only the
+        // missing ids are looked up, in one batched read; a merged song already in the queue, or
+        // reached twice through merges, is not added again. Tracks gone for any other reason are
+        // dropped.
+        val missing = saved.queueTrackIds.filterNot { it in byId }
+        val mergedInto = if (missing.isEmpty()) emptyMap() else trackDao.mergedIntoAll(missing)
+        val ordered = ArrayList<TrackEntity>(saved.queueTrackIds.size)
+        val savedIndexOf = ArrayList<Int>(saved.queueTrackIds.size) // each entry's index in the saved queue
+        val mergedAdded = HashSet<Long>()
+        saved.queueTrackIds.forEachIndexed { index, id ->
+            val row = byId[id]
+                ?: mergedInto[id]?.takeIf { it.id !in byId && mergedAdded.add(it.id) }
+                ?: return@forEachIndexed
+            ordered += row
+            savedIndexOf += index
+        }
         if (ordered.isEmpty()) return null
 
-        // Prefer locating the saved current track by id (robust to dropped
-        // rows shifting positions); fall back to the saved index clamped
-        // into range if that track is gone. The saved index wins when it
-        // still holds that track: with the song queued twice, the first
-        // match resumed at the EARLIER copy and replayed everything between.
-        val startIndex = saved.queueIndex.takeIf { ordered.getOrNull(it)?.id == saved.trackId }
-            ?: ordered.indexOfFirst { it.id == saved.trackId }
+        // The song that was playing, under its current row id.
+        val currentId = if (saved.trackId in byId) saved.trackId else mergedInto[saved.trackId]?.id ?: saved.trackId
+
+        // Prefer the entry that sat at the saved index when it still holds that song: with the
+        // song queued twice, the first match resumed at the EARLIER copy and replayed everything
+        // between. Else locate it by id (robust to dropped rows shifting positions); else the
+        // saved index clamped into range.
+        val startIndex = savedIndexOf.indexOf(saved.queueIndex).takeIf { it >= 0 && ordered[it].id == currentId }
+            ?: ordered.indexOfFirst { it.id == currentId }
                 .let { if (it >= 0) it else saved.queueIndex.coerceIn(0, ordered.size - 1) }
 
         return ResumePlan(
@@ -69,7 +85,7 @@ class PlaybackResumer @Inject constructor(
             // gone the start is whatever now sits at its index (under shuffle a
             // walk index, so possibly anything): starting THAT song 3:40 in, or
             // auto-advancing past it when it is shorter, was the old result.
-            positionMs = if (ordered[startIndex].id == saved.trackId) saved.positionMs.coerceAtLeast(0) else 0L,
+            positionMs = if (ordered[startIndex].id == currentId) saved.positionMs.coerceAtLeast(0) else 0L,
             isShuffled = saved.isShuffled,
             repeatMode = saved.repeatMode,
             source = saved.source,

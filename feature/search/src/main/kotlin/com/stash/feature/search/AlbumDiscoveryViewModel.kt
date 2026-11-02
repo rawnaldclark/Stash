@@ -665,16 +665,17 @@ private fun firstCredited(artist: String): String = COLLAB_SEPARATOR.split(artis
 private fun matchKey(s: String): String = QobuzCandidateMatcher.normalize(foldForMatch(s))
 
 /** An album title as a match key, and whether an edition was set aside to get it. */
-private class TitleKey(val key: String, val dropsEdition: Boolean)
+internal class TitleKey(val key: String, val dropsEdition: Boolean)
 
 /**
  * An album title as a match key. [QobuzCandidateMatcher.normalize] drops every bracket
  * and everything after a "feat.", so "Loveless (Live)" and "Loveless feat. X (Live)"
  * would both equal "Loveless". Here a featured credit is cut only up to the next
  * bracket or " - " ([CREDIT]), and a bracketed or " - " part only drops out when it
- * names an edition ([isEdition]); its words stay in the key otherwise.
+ * names an edition ([isEdition]); its words stay in the key otherwise. The artist
+ * page's Latest releases row ([latestReleases]) tells a copy from a new release by it.
  */
-private fun albumTitleKey(title: String): TitleKey {
+internal fun albumTitleKey(title: String): TitleKey {
     var dropsEdition = false
     val creditsCut = CREDIT.replace(foldForMatch(title), " ")
     val bracketsSettled = BRACKETED.replace(creditsCut) { group ->
@@ -703,8 +704,11 @@ private fun isEdition(part: String): Boolean {
     return words.isNotEmpty() && words.all { it in EDITION_WORDS || NUMBERING.matches(it) }
 }
 
-/** Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04". */
-private fun yearsAgree(candidate: String?, wanted: String?): Boolean {
+/**
+ * Within a year of each other, or unknown on either side. Qobuz may send "1991-11-04".
+ * The artist page's Latest releases row ([latestReleases]) dates a copy by it too.
+ */
+internal fun yearsAgree(candidate: String?, wanted: String?): Boolean {
     val a = candidate?.let { YEAR.find(it) }?.value?.toInt() ?: return true
     val b = wanted?.let { YEAR.find(it) }?.value?.toInt() ?: return true
     return abs(a - b) <= 1

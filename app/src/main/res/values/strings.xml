@@ -18,4 +18,9 @@
     <!-- Sample song in the widget picker's preview -->
     <string name="widget_preview_title">Song title</string>
     <string name="widget_preview_artist">Artist</string>
+    <!-- Once, after the one-time duplicate cleanup merged songs that were in the library twice. -->
+    <plurals name="tidied_duplicates">
+        <item quantity="one">Tidied %d duplicate song</item>
+        <item quantity="other">Tidied %d duplicate songs</item>
+    </plurals>
 </resources>

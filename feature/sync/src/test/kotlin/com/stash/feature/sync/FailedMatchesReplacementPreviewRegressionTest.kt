@@ -152,6 +152,7 @@ class FailedMatchesReplacementPreviewRegressionTest {
             localFileOps = localFileOps,
             trackIdentityEvents = trackIdentityEvents,
             albumMatchExecutor = albumMatchExecutor,
+            ytMusicApi = mockk(relaxed = true),
         )
     }
 

@@ -59,11 +59,19 @@ import com.stash.feature.settings.R
 @Composable
 fun LibraryHealthScreen(
     onNavigateBack: () -> Unit,
+    onOpenPossibleDuplicates: () -> Unit = {},
     viewModel: LibraryHealthViewModel = hiltViewModel(),
     lyricsViewModel: LyricsFetchViewModel = hiltViewModel(),
     flacViewModel: FlacUpgradeViewModel = hiltViewModel(),
+    duplicatesViewModel: PossibleDuplicatesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val duplicates by duplicatesViewModel.state.collectAsStateWithLifecycle()
+    // Back from Possible duplicates: the count follows the merges made there.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        duplicatesViewModel.refresh()
+        onPauseOrDispose {}
+    }
     val lyricsStatus by lyricsViewModel.status.collectAsStateWithLifecycle()
     val flacState by flacViewModel.state.collectAsStateWithLifecycle()
 
@@ -123,6 +131,10 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(20.dp))
 
+        DuplicatesSection(state = duplicates, onReview = onOpenPossibleDuplicates)
+
+        Spacer(Modifier.height(20.dp))
+
         QualityInfoRefreshSection(onClick = viewModel::runQualityInfoBackfill)
 
         Spacer(Modifier.height(20.dp))
@@ -137,6 +149,41 @@ fun LibraryHealthScreen(
         )
 
         Spacer(Modifier.height(40.dp))
+    }
+}
+
+/**
+ * "Possible duplicates (N)": rows that may be one song, reviewed on their own screen; and what the
+ * one-time duplicate cleanup did, once it has run.
+ */
+@Composable
+private fun DuplicatesSection(state: PossibleDuplicatesState, onReview: () -> Unit) {
+    SectionHeader(title = stringResource(R.string.settings_library_health_section_duplicates))
+    GlassCard {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            val count = state.pairs.size
+            Text(
+                text = when {
+                    state.loading -> stringResource(R.string.settings_duplicates_title)
+                    count == 0 -> stringResource(R.string.settings_duplicates_none)
+                    else -> pluralStringResource(R.plurals.settings_duplicates_count, count, count)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.lastRun?.let { run ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = lastRunText(run),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (count > 0) {
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onReview) { Text(stringResource(R.string.settings_duplicates_review)) }
+            }
+        }
     }
 }
 

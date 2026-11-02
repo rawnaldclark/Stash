@@ -13,7 +13,10 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class MusicRepositoryExactPersistTest {
-    private val trackDao = mockk<TrackDao>(relaxed = true)
+    private val trackDao = mockk<TrackDao>(relaxed = true).also {
+        // No merged duplicates here: a relaxed mock would answer every alias lookup with a row.
+        coEvery { it.findByAlias(any(), any()) } returns null
+    }
     private val descriptor = SharedTrack("Avril 14th", "Aphex Twin", durationMs = 125_000, isrc = "GBBPW0100025", spotifyId = "sp1", youtubeId = "yt1")
 
     private val blocklistGuard = mockk<BlocklistGuard>(relaxed = true)

@@ -10,5 +10,4 @@
     <string name="shuffle_play">随机播放</string>
     <string name="resuming_channel_name">播放</string>
     <string name="resuming_notification_title">继续…</string>
-    <string name="cast_no_wifi">Can\'t cast: connect your phone to the same Wi-Fi as the speaker</string>
 </resources>
