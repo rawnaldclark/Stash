@@ -1,6 +1,5 @@
 package com.stash.feature.sync
 
-import android.text.format.DateUtils
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.auth.TokenManager
@@ -177,8 +176,12 @@ data class SyncUiState(
     val flaggedCount: Int = 0,
 
     // -- Hero card: last-sync metadata ----------------------------------------
-    /** Relative time string for the most recent sync, e.g. "2 hours ago". Empty if never synced. */
-    val lastSyncRelativeTime: String = "",
+    /**
+     * When the most recent sync finished ([syncedAt]: its start while it has no real end), or
+     * null if never synced. The screen words it ("synced 3 minutes ago") as it draws, against a clock that
+     * ticks while the tab is on screen: [rememberSyncedAgo].
+     */
+    val lastSyncFinishedAt: Long? = null,
     /** New tracks the most recent sync added, or null if never synced. */
     val lastSyncTrackCount: Int? = null,
     /** Short health label: "✓ healthy", "! partial", "× failed", or "". */
@@ -926,13 +929,6 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncHistoryDao.getRecentSyncs(limit = 1).collect { entities ->
                 val latest = entities.firstOrNull()?.toInfo()
-                val relativeTime = latest?.let {
-                    DateUtils.getRelativeTimeSpanString(
-                        it.startedAt,
-                        System.currentTimeMillis(),
-                        DateUtils.MINUTE_IN_MILLIS,
-                    ).toString()
-                } ?: ""
                 val healthLabel = when (latest?.displayStatus) {
                     null -> ""
                     SyncDisplayStatus.Success -> "✓"
@@ -956,7 +952,7 @@ class SyncViewModel @Inject constructor(
                 }
                 _uiState.update { state ->
                     state.copy(
-                        lastSyncRelativeTime = relativeTime,
+                        lastSyncFinishedAt = latest?.syncedAt(),
                         // What the sync FOUND, not what it downloaded. In Online
                         // mode nothing downloads, so tracksDownloaded is always 0
                         // and the headline read "0 tracks" after a run that added
