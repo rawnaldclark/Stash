@@ -98,7 +98,8 @@ class AppUpdater internal constructor(
 
     // Held: SharedPreferences keeps its listeners weakly.
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY_TAG || key == null) _available.value = read(prefs, context)
+        // The notes too: notes edited on GitHub after the release reach an open sheet at the next check.
+        if (key == KEY_TAG || key == KEY_NOTES || key == null) _available.value = read(prefs, context)
     }
 
     init {
@@ -107,9 +108,19 @@ class AppUpdater internal constructor(
         if (_available.value == null) scope.launch { File(context.cacheDir, DIR).deleteRecursively() }
     }
 
-    /** Whether the sheet should come up for [update] now: not put off with Later in the last day. */
-    fun shouldPrompt(update: AvailableUpdate, now: Long = System.currentTimeMillis()): Boolean =
-        AppUpdates.shouldPrompt(update.tag, prefs.getString(KEY_LATER_TAG, null), prefs.getLong(KEY_LATER_AT, 0L), now)
+    /** Whether the sheet should come up for [update] by itself now: not skipped, and not put off with Later in the last day. */
+    fun shouldPrompt(update: AvailableUpdate, now: Long = System.currentTimeMillis()): Boolean = AppUpdates.shouldPrompt(
+        update.tag,
+        prefs.getString(KEY_LATER_TAG, null),
+        prefs.getLong(KEY_LATER_AT, 0L),
+        now,
+        prefs.getString(KEY_SKIPPED_TAG, null),
+    )
+
+    /** The version installed now ("0.9.122"), for "You have 0.9.122"; null if Android won't say. */
+    val installedVersion: String? by lazy {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+    }
 
     private val _asks = MutableStateFlow(0)
     /** Counts the times the listener asked to see the update (the notification, Settings): the sheet opens on each. */
@@ -124,6 +135,15 @@ class AppUpdater internal constructor(
     fun later() {
         val tag = _available.value?.tag ?: return
         prefs.edit().putString(KEY_LATER_TAG, tag).putLong(KEY_LATER_AT, System.currentTimeMillis()).apply()
+    }
+
+    /**
+     * Skip this version: the sheet and the notification never come up for it by themselves again. The next version asks as
+     * usual, and Settings › Check for updates (or the notification, if one is up) still opens this one.
+     */
+    fun skip() {
+        val tag = _available.value?.tag ?: return
+        prefs.edit().putString(KEY_SKIPPED_TAG, tag).apply()
     }
 
     /** Update: download, check, install. A second tap while it runs does nothing. */
@@ -337,16 +357,19 @@ class AppUpdater internal constructor(
         private const val KEY_TAG = "available_tag"
         private const val KEY_URL = "available_url"
         private const val KEY_SIZE = "available_size"
-        private const val KEY_NOTES = "available_notes"
+        /** The notes as plain text, before 0.9.123: read only when the Markdown below isn't stored yet. */
+        private const val KEY_NOTES_PLAIN = "available_notes"
+        private const val KEY_NOTES = "available_notes_md"
         private const val KEY_LATER_TAG = "later_tag"
         private const val KEY_LATER_AT = "later_at"
-
+        private const val KEY_SKIPPED_TAG = "skipped_tag"
 
         fun isDebuggable(context: Context) = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
         /** [UpdateCheckWorker]: the newer release it found ([update]), or null when this app is up to date. */
         fun store(context: Context, update: AvailableUpdate?) {
             val edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            edit.remove(KEY_NOTES_PLAIN)
             if (update == null) {
                 edit.remove(KEY_TAG).remove(KEY_URL).remove(KEY_SIZE).remove(KEY_NOTES)
             } else {
@@ -357,6 +380,10 @@ class AppUpdater internal constructor(
             edit.apply()
         }
 
+        /** Whether the listener skipped [tag] ("Skip this version"): [UpdateCheckWorker] then posts no notification for it. */
+        fun isSkipped(context: Context, tag: String): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SKIPPED_TAG, null) == tag
+
         /** The stored release, if it is still newer than what is installed (it isn't once it has been installed). */
         private fun read(prefs: SharedPreferences, context: Context): AvailableUpdate? {
             val tag = prefs.getString(KEY_TAG, null) ?: return null
@@ -364,7 +391,8 @@ class AppUpdater internal constructor(
             val installed = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
                 ?: return null
             if (!UpdateCheckWorker.isNewerVersion(tag, installed)) return null
-            return AvailableUpdate(tag, tag.removePrefix("v").removePrefix("V"), url, prefs.getLong(KEY_SIZE, 0L), prefs.getString(KEY_NOTES, "").orEmpty())
+            val notes = prefs.getString(KEY_NOTES, null) ?: prefs.getString(KEY_NOTES_PLAIN, null).orEmpty()
+            return AvailableUpdate(tag, tag.removePrefix("v").removePrefix("V"), url, prefs.getLong(KEY_SIZE, 0L), notes)
         }
     }
 }

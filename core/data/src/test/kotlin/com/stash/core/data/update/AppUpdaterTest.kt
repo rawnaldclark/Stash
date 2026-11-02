@@ -112,6 +112,37 @@ class AppUpdaterTest {
     }
 
     @Test
+    fun `skip this version holds that release for good, the next one asks, and the worker hears of it`() {
+        val updater = AppUpdater(context, OkHttpClient(), FakeSteps())
+        val update = updater.available.value!!
+        updater.skip()
+
+        assertThat(updater.shouldPrompt(update, now = System.currentTimeMillis() + 30 * AppUpdates.ASK_AGAIN_MS)).isFalse()
+        assertThat(AppUpdater.isSkipped(context, "v0.9.1")).isTrue()
+        assertThat(AppUpdater.isSkipped(context, "v0.9.2")).isFalse()
+        val next = update.copy(tag = "v0.9.2", version = "0.9.2")
+        assertThat(updater.shouldPrompt(next)).isTrue()
+    }
+
+    @Test
+    fun `the notes are kept as written, and notes stored before them as plain text still read`() {
+        val md = "Headline.\n\n## What's new\n- **One.** Two."
+        AppUpdater.store(context, AvailableUpdate("v0.9.1", "0.9.1", apk.toURI().toString(), apk.length(), md))
+        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).available.value!!.notes).isEqualTo(md)
+
+        // An update stored by 0.9.122 (plain notes under the old key), then read by this version.
+        val prefs = context.getSharedPreferences(AppUpdater.PREFS, Context.MODE_PRIVATE)
+        prefs.edit().clear().putString("available_tag", "v0.9.1").putString("available_url", apk.toURI().toString())
+            .putString("available_notes", "What's new").commit()
+        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).available.value!!.notes).isEqualTo("What's new")
+    }
+
+    @Test
+    fun `the installed version is read for the sheet`() {
+        assertThat(AppUpdater(context, OkHttpClient(), FakeSteps()).installedVersion).isEqualTo("0.9.0")
+    }
+
+    @Test
     fun `a second tap while updating does nothing`() {
         val release = CountDownLatch(1)
         val steps = FakeSteps(onInstall = { release.await(5, TimeUnit.SECONDS) })

@@ -1,0 +1,16 @@
+{
+  "tag_name": "v0.9.114",
+  "name": "Stash v0.9.114 — Fix for noisy FLAC playback on Samsung phones",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/rawnaldclark/Stash/releases/tag/v0.9.114",
+  "published_at": "2026-10-12T05:47:24Z",
+  "body": "A quick fix for v0.9.113.\n\n## 🐛 Fixed\n- On some Samsung phones, CD-quality FLAC songs could play as loud noise. Fixed. Thanks to @ParaliyzedEvo for tracking it down and fixing it within the hour.\n\n## 📝 Good to know\n- Just update. There's no need to uninstall, restore a backup or sign in again.\n",
+  "assets": [
+    {
+      "name": "Stash.apk",
+      "size": 168881627,
+      "browser_download_url": "https://github.com/rawnaldclark/Stash/releases/download/v0.9.114/Stash.apk"
+    }
+  ]
+}

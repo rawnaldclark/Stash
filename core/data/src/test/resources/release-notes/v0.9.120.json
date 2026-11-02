@@ -1,0 +1,16 @@
+{
+  "tag_name": "v0.9.120",
+  "name": "Stash v0.9.120",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/rawnaldclark/Stash/releases/tag/v0.9.120",
+  "published_at": "2026-10-25T08:55:00Z",
+  "body": "Turn the album over: Now Playing now shows the back cover and the pages inside the album.\r\n\r\n## What's new\r\n\r\n- **Flip the cover.** Tap the album art on Now Playing to turn it over to the album's real back cover. While it's turned, swipe left or right to page through the inside: the booklet, the gatefold and the inner sleeve. Tap again to turn it back. Swiping to skip and double-tapping to seek work as before on the front.\r\n- **Look up close.** Pinch the cover, the back or any page and it lifts off the art to fill the screen. Pinch and drag to read the small print, then tap or press back to put it down.\r\n- **Cycle album art.** While Now Playing is open, the art slowly fades from the front to the back and through the inside pages, then round again. Touch the art to stay on a page. It's on for everyone; turn it off in **Settings → Appearance → Cycle album art**.\r\n- **Albums for every song.** Songs from Last.fm playlists and mixes often came in with no album, so they had no album page and no back cover. Stash now asks Last.fm which album each one is on, and fills in only the ones that were blank.\r\n- **Your whole listening history, for the web.** **Settings → Library & Storage → Stash on the web** can now include every play on this phone in the saved file, for Your record in the web player.\r\n\r\n## UX polish\r\n\r\n- The art for the next song is looked up while the current one plays, so the flip is usually ready the moment it starts.\r\n- Back covers and inside pages come from the Cover Art Archive, and from Discogs for albums the archive doesn't have. Pages from Discogs say \"Data provided by Discogs\" and link to the album there.\r\n- Deluxe editions, anniversary reissues and remasters find the original album's art.\r\n\r\n## Known limitations\r\n\r\n- Albums from smaller artists often have no back cover yet: nobody has scanned one into the Cover Art Archive or Discogs.\r\n- Discogs doesn't say which photo is the back, so Stash picks the likeliest one. Now and then the \"back\" is a gatefold's inside.\r\n\r\n---\r\n\r\n## Install\r\n\r\nDownload `Stash.apk` below and open it on your Android device. If you've got a previous Stash release installed, this upgrades in place — your library, sync history, and settings are preserved.\r\n\r\n**Requires:** Android 8.0 (API 26) or newer.\r\n\r\nSee the [README](https://github.com/rawnaldclark/Stash#install) for first-time setup.\r\n\r\n\r\n## What's Changed\r\n* Export your whole listening history for Your record on the web by @rawnaldclark in https://github.com/rawnaldclark/Stash/pull/693\r\n* Now Playing: flip the art to the album's back and inside pages by @rawnaldclark in https://github.com/rawnaldclark/Stash/pull/696\r\n\r\n\r\n**Full Changelog**: https://github.com/rawnaldclark/Stash/compare/v0.9.119...v0.9.120\r\n",
+  "assets": [
+    {
+      "name": "Stash.apk",
+      "size": 171057274,
+      "browser_download_url": "https://github.com/rawnaldclark/Stash/releases/download/v0.9.120/Stash.apk"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The update notification (UpdateCheckWorker): its title, under it the release's first line, then what a tap does. -->
+    <string name="update_notification_title">Stash %1$s is ready</string>
+    <string name="update_notification_tap_to_see">Tap to see what\'s new.</string>
+    <string name="update_notification_tap_to_download">Tap to get it from GitHub.</string>
+</resources>
