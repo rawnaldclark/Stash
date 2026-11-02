@@ -6,12 +6,10 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.album.toSavedAlbum
 import com.stash.core.data.db.StashDatabase
-import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
-import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.flow.first
@@ -88,22 +86,22 @@ class PlaylistDaoSavedAlbumsTest {
     @Test fun `an album's songs are counted as its page lists them`() = runTest {
         val album = playlist("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13")
         track(1, "Waiting Room", downloaded = true)
-        track(2, "Bulldog Front", downloaded = true)
-        track(3, "Bad Mouth")      // queued for download
-        track(4, "Burning")        // its download failed
-        track(5, "Give Me the Cure") // removed from the album
-        track(6, "Suggestion")     // blocked
+        track(2, "Bulldog Front", downloaded = true, explicit = true)
+        track(3, "Bad Mouth", explicit = false)
+        track(4, "Burning")
+        track(5, "Give Me the Cure", explicit = true) // removed from the album
+        track(6, "Suggestion", explicit = true)       // blocked
         listOf(1L, 2L, 3L, 4L, 5L, 6L).forEachIndexed { i, id -> link(album, id, position = i) }
         dao.softDeleteTrackFromPlaylist(album, 5L)
         db.trackBlocklistDao().insert(TrackBlocklistEntity(canonicalKey = "fugazi|suggestion", artist = "Fugazi", title = "Suggestion", blockedAt = 0L, blockedFrom = "OTHER"))
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = 3L, status = DownloadStatus.PENDING))
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = 4L, status = DownloadStatus.FAILED))
 
         val row = dao.observeSavedAlbums().first().single()
 
         assertThat(row.trackCount).isEqualTo(4)
         assertThat(row.downloadedCount).isEqualTo(2)
-        assertThat(row.downloadingCount).isEqualTo(1)
+        // Explicit songs it lists: the removed and the blocked one aside.
+        assertThat(row.explicitCount).isEqualTo(1)
+        assertThat(row.toSavedAlbum().explicit).isTrue()
     }
 
     @Test fun `an album lists its songs in album order, whatever order they arrived in`() = runTest {
@@ -124,13 +122,41 @@ class PlaylistDaoSavedAlbumsTest {
         assertThat(card.artist).isEqualTo("Fugazi")
     }
 
-    @Test fun `a song is in an album once, however often it is added`() = runTest {
+    @Test fun `an album reordered by hand before albums lost Edit order plays in album order again`() = runTest {
         val album = playlist("13 Songs", MusicSource.BOTH, "album:qobuz:13")
-        track(1, "Burning")
-        link(album, 1L, position = 0)
-        link(album, 1L, position = 7)
+        val mine = playlist("Road trip", MusicSource.BOTH, "custom_1")
+        track(1, "Waiting Room")
+        track(2, "Bulldog Front")
+        track(3, "Bad Mouth")
+        listOf(album, mine).forEach { pl -> listOf(1L, 2L, 3L).forEachIndexed { i, id -> link(pl, id, position = i) } }
+        // Edit order on both: Bad Mouth moved to the top.
+        listOf(album, mine).forEach { pl -> assertThat(db.playlistOrderDao().move(pl, 3L, beforeTrackId = 1L, afterTrackId = null)).isTrue() }
 
-        assertThat(dao.observeSavedAlbums().first().single().trackCount).isEqualTo(1)
+        val albumPage = db.trackDao().getByPlaylist(album, includeStreamable = true).first().map { it.id }
+        val playlistPage = db.trackDao().getByPlaylist(mine, includeStreamable = true).first().map { it.id }
+
+        assertThat(albumPage).containsExactly(1L, 2L, 3L).inOrder()
+        assertThat(db.playlistOrderDao().memberIdsInOrder(album)).containsExactly(1L, 2L, 3L).inOrder()
+        // A playlist keeps the listener's order.
+        assertThat(playlistPage).containsExactly(3L, 1L, 2L).inOrder()
+    }
+
+    // ── Home ────────────────────────────────────────────────────────────
+
+    @Test fun `the Sync tab switch never pins a saved album to Home`() = runTest {
+        val album = playlist("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13")
+        val synced = playlist("Nevermind", MusicSource.YOUTUBE, "MPREb_nevermind")
+        val mine = playlist("Road trip", MusicSource.BOTH, "custom_1")
+
+        listOf(album, synced, mine).forEach { dao.setSyncEnabledAndPin(it, enabled = true, now = 500L) }
+
+        assertThat(dao.getById(album)!!.pinnedToHomeAt).isNull()
+        assertThat(dao.getById(synced)!!.pinnedToHomeAt).isNull()
+        assertThat(dao.getById(album)!!.syncEnabled).isTrue()
+        // A playlist still goes on Home with its switch.
+        assertThat(dao.getById(mine)!!.pinnedToHomeAt).isNotNull()
+        assertThat(dao.observeIsSavedAlbum(album).first()).isTrue()
+        assertThat(dao.observeIsSavedAlbum(mine).first()).isFalse()
     }
 
     // ── Not a playlist ──────────────────────────────────────────────────
@@ -166,12 +192,10 @@ class PlaylistDaoSavedAlbumsTest {
         // Download found Bulldog Front already on the phone as another row and linked it there.
         track(20, "Bulldog Front", downloaded = true)
         link(album, 20L, position = 1)
-        db.downloadQueueDao().insert(DownloadQueueEntity(trackId = 3L, status = DownloadStatus.IN_PROGRESS))
 
         val row = dao.observeSavedAlbums().first().single()
         assertThat(row.trackCount).isEqualTo(3)
         assertThat(row.downloadedCount).isEqualTo(2)
-        assertThat(row.downloadingCount).isEqualTo(1)
         assertThat(dao.observeSavedAlbumSlots(album).first().map { it.trackId to it.position })
             .containsExactly(1L to 0, 2L to 1, 20L to 1, 3L to 2)
 
@@ -197,7 +221,7 @@ class PlaylistDaoSavedAlbumsTest {
         PlaylistEntity(name = name, source = source, sourceId = sourceId, type = type, isActive = active, syncEnabled = syncEnabled),
     )
 
-    private suspend fun track(id: Long, title: String, downloaded: Boolean = false, dateAdded: Long = id) {
+    private suspend fun track(id: Long, title: String, downloaded: Boolean = false, dateAdded: Long = id, explicit: Boolean? = null) {
         db.trackDao().insert(
             TrackEntity(
                 id = id,
@@ -209,6 +233,7 @@ class PlaylistDaoSavedAlbumsTest {
                 isDownloaded = downloaded,
                 filePath = if (downloaded) "/music/$id.opus" else null,
                 dateAdded = Instant.ofEpochMilli(dateAdded),
+                explicit = explicit,
             ),
         )
     }

@@ -500,10 +500,22 @@ class MusicRepositoryImpl @Inject constructor(
 
     // ── Playlist queries ────────────────────────────────────────────────
 
+    // Only a saved album reads its slots: any other playlist's page never runs that query.
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getSongsByPlaylist(playlistId: Long): Flow<List<Track>> =
-        combine(getTracksByPlaylist(playlistId), playlistDao.observeSavedAlbumSlots(playlistId).distinctUntilChanged()) { tracks, slots ->
-            com.stash.core.data.album.SavedAlbums.oneRowPerSong(tracks, slots)
-        }.flowOn(Dispatchers.Default)
+        playlistDao.observeIsSavedAlbum(playlistId).distinctUntilChanged().flatMapLatest { savedAlbum ->
+            if (!savedAlbum) {
+                getTracksByPlaylist(playlistId)
+            } else {
+                combine(getTracksByPlaylist(playlistId), playlistDao.observeSavedAlbumSlots(playlistId).distinctUntilChanged()) { tracks, slots ->
+                    com.stash.core.data.album.SavedAlbums.oneRowPerSong(tracks, slots)
+                }.flowOn(Dispatchers.Default)
+            }
+        }
+
+    override suspend fun hidePlaylist(playlistId: Long) {
+        playlistDao.setUserHidden(playlistId, true)
+    }
 
     override fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
         combine(getSongsByPlaylist(playlistId), streamingPreference.enabled) { tracks, streamOnly ->

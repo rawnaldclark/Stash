@@ -19,9 +19,11 @@ import java.util.Locale
  * @property artist        The act most of its songs credit first ([SavedAlbums.leadArtist]).
  * @property trackCount    Its songs the album page lists in Stream only (blocked songs left out).
  * @property downloadedCount Of those, the ones on this phone.
- * @property downloadingCount Of the rest, the ones waiting or running in the download queue.
+ * @property explicitCount Of those, the ones marked explicit: a clean edition has none.
  * @property songKeys      Its songs as [SavedAlbums.songKey]s, to tell a second copy of this album
  *                         from another album that shares its name ([SavedAlbums.sameAlbum]).
+ * @property copyIds       Every saved copy a Library card stands for ([SavedAlbums.forLibrary]), the
+ *                         shown one first: Remove takes them all. Just this row otherwise.
  */
 data class SavedAlbum(
     val playlistId: Long,
@@ -33,14 +35,15 @@ data class SavedAlbum(
     val dateAdded: Long,
     val trackCount: Int,
     val downloadedCount: Int,
-    val downloadingCount: Int,
+    val explicitCount: Int = 0,
     val songKeys: Set<String> = emptySet(),
+    val copyIds: List<Long> = listOf(playlistId),
 ) {
     /** Every song is on this phone: Download mode lists it. */
     val onPhone: Boolean get() = trackCount > 0 && downloadedCount >= trackCount
 
-    /** Not all on the phone yet, and the rest is downloading now: Download mode lists it with its progress. */
-    val downloading: Boolean get() = !onPhone && downloadingCount > 0
+    /** The explicit edition (a song of it is marked explicit), never the clean one. */
+    val explicit: Boolean get() = explicitCount > 0
 }
 
 /**
@@ -144,23 +147,31 @@ object SavedAlbums {
     }
 
     /**
-     * The copy a merged card stands for: the one on the phone, then one downloading, then the
-     * longest tracklist, then the most songs downloaded, then the newest.
+     * The copy a merged card stands for: the explicit edition over a clean one (owner: never the
+     * censored version), then the one on the phone, then the longest tracklist, then the most songs
+     * downloaded, then the newest.
      */
-    private val MOST_COMPLETE: Comparator<SavedAlbum> =
-        compareByDescending<SavedAlbum> { it.onPhone }
-            .thenByDescending { it.downloading }
+    private val PREFERRED: Comparator<SavedAlbum> =
+        compareByDescending<SavedAlbum> { it.explicit }
+            .thenByDescending { it.onPhone }
             .thenByDescending { it.trackCount }
             .thenByDescending { it.downloadedCount }
             .thenByDescending { it.dateAdded }
             .thenByDescending { it.playlistId }
 
+    /** One card per album, shown by its [PREFERRED] copy and carrying every copy ([SavedAlbum.copyIds]). */
+    fun oneCardPerAlbum(albums: List<SavedAlbum>): List<SavedAlbum> = copiesOfEachAlbum(albums).map { card(it, it) }
+
+    /** [shown]'s preferred copy, standing for all of [copies]. */
+    private fun card(copies: List<SavedAlbum>, shown: List<SavedAlbum>): SavedAlbum =
+        shown.sortedWith(PREFERRED).first().copy(copyIds = copies.sortedWith(PREFERRED).map { it.playlistId })
+
     /**
-     * One card per album: copies ([sameAlbum], followed through, so A~B and B~C are one) collapse
-     * to their most complete copy ([MOST_COMPLETE]). Keeps the order of each album's first copy.
+     * Each album's saved copies ([sameAlbum], followed through, so A~B and B~C are one), in the
+     * order of each album's first copy.
      */
-    fun oneCardPerAlbum(albums: List<SavedAlbum>): List<SavedAlbum> {
-        if (albums.size < 2) return albums
+    fun copiesOfEachAlbum(albums: List<SavedAlbum>): List<List<SavedAlbum>> {
+        if (albums.size < 2) return albums.map { listOf(it) }
         val parent = IntArray(albums.size) { it }
         fun root(i: Int): Int {
             var r = i
@@ -181,17 +192,20 @@ object SavedAlbums {
                     if (sameSongs(albums[ids[x]].songKeys, albums[ids[y]].songKeys)) join(ids[x], ids[y])
                 }
             }
-        return albums.indices.groupBy { root(it) }.values.map { group -> group.map { albums[it] }.sortedWith(MOST_COMPLETE).first() }
+        return albums.indices.groupBy { root(it) }.values.map { group -> group.map { albums[it] } }
     }
 
     /**
-     * Library › Albums: every saved album with songs, one card per album. Download mode (fully
-     * offline, 2026-10-29) lists an album once all its songs are on the phone, or while the rest
-     * is downloading (its card says how far it is); Stream only lists them all.
+     * Library › Albums: every saved album with songs, one card per album standing for all its
+     * copies ([SavedAlbum.copyIds]). Download mode (fully offline, 2026-10-29) lists an album only
+     * once every song of a copy is on the phone (owner, 2026-11-02), and shows that copy; Stream
+     * only lists them all.
      */
     fun forLibrary(albums: List<SavedAlbum>, streamOnly: Boolean): List<SavedAlbum> =
-        oneCardPerAlbum(albums.filter { it.trackCount > 0 })
-            .filter { streamOnly || it.onPhone || it.downloading }
+        copiesOfEachAlbum(albums).mapNotNull { copies ->
+            val shown = copies.filter { it.trackCount > 0 && (streamOnly || it.onPhone) }
+            if (shown.isEmpty()) null else card(copies, shown)
+        }
 
     /**
      * The saved copy of the album an album page shows, or null: saved under one of [sourceIds]
@@ -263,7 +277,7 @@ fun com.stash.core.data.db.dao.SavedAlbumRow.toSavedAlbum(): SavedAlbum {
         dateAdded = dateAdded,
         trackCount = trackCount,
         downloadedCount = downloadedCount,
-        downloadingCount = downloadingCount,
+        explicitCount = explicitCount,
         songKeys = songTitles.mapTo(LinkedHashSet()) { SavedAlbums.songKey(it) }.apply { remove("") },
     )
 }

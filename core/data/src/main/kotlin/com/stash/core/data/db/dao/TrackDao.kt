@@ -813,8 +813,9 @@ interface TrackDao {
      * emissions.
      *
      * A playlist the listener put into their own order (Edit order, [PlaylistOrderDao]) follows its ranks first;
-     * a song with no rank yet (arrived after the last move) comes after them, in the service's order. Keep this
-     * ORDER BY in step with [PlaylistOrderDao.memberIdsInOrder].
+     * a song with no rank yet (arrived after the last move) comes after them, in the service's order. A saved album
+     * ([SAVED_ALBUM]) always plays in album order, even one reordered before albums lost Edit order (2026-11-02).
+     * Keep this ORDER BY in step with [PlaylistOrderDao.memberIdsInOrder].
      */
     @Transaction
     @Query(
@@ -822,7 +823,7 @@ interface TrackDao {
         SELECT t.* FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
         INNER JOIN playlists p ON pt.playlist_id = p.id
-        LEFT JOIN playlist_order o ON o.playlist_id = pt.playlist_id
+        LEFT JOIN playlist_order o ON o.playlist_id = pt.playlist_id AND NOT """ + SAVED_ALBUM + """
         LEFT JOIN playlist_order_entries e ON e.playlist_id = pt.playlist_id AND e.track_id = pt.track_id
         LEFT JOIN track_blocklist bl
             ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)

@@ -98,11 +98,11 @@ class SavedAlbumsTest {
         sourceId: String = "album:qobuz:$id",
         songs: List<String> = thirteenSongs,
         downloaded: Int = 0,
-        downloading: Int = 0,
+        explicit: Int = 0,
         dateAdded: Long = id,
     ) = SavedAlbum(
         playlistId = id, title = title, artist = artist, artUrl = null, source = source, sourceId = sourceId,
-        dateAdded = dateAdded, trackCount = songs.size, downloadedCount = downloaded, downloadingCount = downloading,
+        dateAdded = dateAdded, trackCount = songs.size, downloadedCount = downloaded, explicitCount = explicit,
         songKeys = songs.mapTo(LinkedHashSet()) { SavedAlbums.songKey(it) },
     )
 
@@ -113,6 +113,22 @@ class SavedAlbumsTest {
         val cards = SavedAlbums.oneCardPerAlbum(listOf(qobuz, youtube))
 
         assertThat(cards.map { it.playlistId }).containsExactly(1L)
+        // The card stands for both copies, the shown one first: Remove takes them all.
+        assertThat(cards.single().copyIds).containsExactly(1L, 2L).inOrder()
+    }
+
+    @Test fun `the explicit edition is the card, never the clean one`() {
+        // The clean copy is newer, longer by nothing, and further downloaded: the explicit one still wins.
+        val explicit = album(1, sourceId = "album:qobuz:explicit", explicit = 3, dateAdded = 1)
+        val clean = album(2, sourceId = "album:qobuz:clean", downloaded = 5, dateAdded = 99)
+
+        assertThat(SavedAlbums.oneCardPerAlbum(listOf(clean, explicit)).single().playlistId).isEqualTo(1L)
+        assertThat(SavedAlbums.forLibrary(listOf(clean, explicit), streamOnly = true).single().playlistId).isEqualTo(1L)
+        // Offline plays only what's on the phone: the clean copy when it alone is complete there.
+        val cleanOnPhone = clean.copy(downloadedCount = 13)
+        assertThat(SavedAlbums.forLibrary(listOf(cleanOnPhone, explicit), streamOnly = false).single().playlistId).isEqualTo(2L)
+        assertThat(SavedAlbums.forLibrary(listOf(cleanOnPhone, explicit.copy(downloadedCount = 13)), streamOnly = false).single().playlistId)
+            .isEqualTo(1L)
     }
 
     @Test fun `a copy missing a song meets the full one, and the fuller copy wins`() {
@@ -139,26 +155,30 @@ class SavedAlbumsTest {
 
     // ── Download mode ───────────────────────────────────────────────────
 
-    @Test fun `Download mode lists an album once every song is on the phone, or while it downloads`() {
+    @Test fun `Download mode lists an album only once every song is on the phone`() {
         val complete = album(1, title = "Repeater", downloaded = 13)
         val half = album(2, title = "In on the Kill Taker", downloaded = 6)
-        val downloading = album(3, title = "Red Medicine", downloaded = 9, downloading = 4)
+        val almost = album(3, title = "Red Medicine", downloaded = 12)
         val empty = album(4, title = "Steady Diet", songs = emptyList())
 
-        val download = SavedAlbums.forLibrary(listOf(complete, half, downloading, empty), streamOnly = false)
-        val stream = SavedAlbums.forLibrary(listOf(complete, half, downloading, empty), streamOnly = true)
+        val download = SavedAlbums.forLibrary(listOf(complete, half, almost, empty), streamOnly = false)
+        val stream = SavedAlbums.forLibrary(listOf(complete, half, almost, empty), streamOnly = true)
 
-        assertThat(download.map { it.playlistId }).containsExactly(1L, 3L).inOrder()
-        assertThat(download.single { it.playlistId == 3L }.downloading).isTrue()
+        // Owner, 2026-11-02: Offline lists complete albums only, not one still downloading.
+        assertThat(download.map { it.playlistId }).containsExactly(1L)
         // Stream only lists every saved album with songs.
         assertThat(stream.map { it.playlistId }).containsExactly(1L, 2L, 3L).inOrder()
     }
 
-    @Test fun `in Download mode the downloaded copy keeps a merged album listed`() {
+    @Test fun `in Download mode the downloaded copy keeps a merged album listed, and Remove still sees both`() {
         val onPhone = album(1, source = MusicSource.YOUTUBE, sourceId = "MPREb_x", downloaded = 13, dateAdded = 1)
         val newer = album(2, sourceId = "album:qobuz:x", dateAdded = 100)
+        // An empty copy is never shown, but it is still a copy of this album.
+        val empty = album(3, sourceId = "album:youtube:MPREb_x", songs = emptyList())
 
-        assertThat(SavedAlbums.forLibrary(listOf(newer, onPhone), streamOnly = false).map { it.playlistId }).containsExactly(1L)
+        val card = SavedAlbums.forLibrary(listOf(newer, onPhone, empty), streamOnly = false).single()
+        assertThat(card.playlistId).isEqualTo(1L)
+        assertThat(card.copyIds).containsExactly(1L, 2L, 3L)
     }
 
     // ── The album page's "Saved" ────────────────────────────────────────

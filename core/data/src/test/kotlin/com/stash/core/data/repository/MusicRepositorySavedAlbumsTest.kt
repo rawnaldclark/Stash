@@ -29,7 +29,7 @@ import java.time.Instant
 /**
  * Library › Albums as the repository hands it to the tab (owner, 2026-11-02), over a real
  * database: saved albums only, one card for an album saved on two services, and in Download mode
- * (fully offline) only an album whose songs are all on the phone, or still downloading.
+ * (fully offline) only an album whose songs are all on the phone.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -78,9 +78,34 @@ class MusicRepositorySavedAlbumsTest {
         streamOnly.value = true
         val stream = repo().getLibraryAlbums().first()
 
-        assertThat(download.map { it.playlistId }).containsExactly(complete, downloading)
-        assertThat(download.single { it.playlistId == downloading }.downloading).isTrue()
+        // Owner, 2026-11-02: an album still downloading waits until it is complete.
+        assertThat(download.map { it.playlistId }).containsExactly(complete)
         assertThat(stream.map { it.playlistId }).containsExactly(complete, half, downloading)
+    }
+
+    @Test fun `a merged card carries both copies, and a hidden synced copy leaves the tab`() = runTest {
+        val synced = album("13 Songs", MusicSource.YOUTUBE, "MPREb_13", fugazi, firstTrackId = 1)
+        val saved = album("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13", fugazi, firstTrackId = 10, dateAdded = 99)
+
+        assertThat(repo().getLibraryAlbums().first().single().copyIds).containsExactly(synced, saved)
+
+        repo().hidePlaylist(synced)
+        val hidden = db.playlistDao().getById(synced)!!
+        assertThat(hidden.userHidden).isTrue()
+        assertThat(hidden.isActive).isFalse()
+        assertThat(repo().getLibraryAlbums().first().single().copyIds).containsExactly(saved)
+    }
+
+    @Test fun `a playlist's page lists every row, only an album's page folds copies`() = runTest {
+        val mine = db.playlistDao().insert(PlaylistEntity(name = "Road trip", source = MusicSource.BOTH, sourceId = "custom_1", type = PlaylistType.CUSTOM))
+        listOf(1L to "Waiting Room", 2L to "Waiting Room").forEach { (id, title) ->
+            db.trackDao().insert(TrackEntity(id = id, title = title, artist = "Fugazi", canonicalTitle = title.lowercase(), canonicalArtist = "fugazi"))
+        }
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = mine, trackId = 1L, position = 0))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = mine, trackId = 2L, position = 0))
+
+        // Not an album: its two rows stay two rows (the slot fold never runs).
+        assertThat(repo().getSongsByPlaylist(mine).first().map { it.id }).containsExactly(1L, 2L)
     }
 
     @Test fun `the Add to playlist list has no saved albums`() = runTest {

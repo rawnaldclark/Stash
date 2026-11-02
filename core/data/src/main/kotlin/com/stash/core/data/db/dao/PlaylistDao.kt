@@ -770,6 +770,8 @@ interface PlaylistDao {
             pinned_to_home_at = CASE
                 WHEN :enabled = 0 THEN NULL
                 WHEN type IN ('LIKED_SONGS', 'STASH_LIKED') THEN pinned_to_home_at
+                -- A saved album goes on Home only by hand, like a mix (2026-11-02).
+                WHEN EXISTS (SELECT 1 FROM playlists p WHERE p.id = :playlistId AND """ + SAVED_ALBUM + """) THEN pinned_to_home_at
                 ELSE COALESCE(pinned_to_home_at, :now)
             END
         WHERE id = :playlistId
@@ -1128,8 +1130,8 @@ interface PlaylistDao {
      * out, and a song counted once however many rows hold it ([SavedAlbumSlot]: a copy already on
      * the phone is linked beside the song's own row when the album downloads). A song is on the
      * phone when one of its rows is (`is_downloaded`, what Download mode lists,
-     * [com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]), and downloading
-     * when none is but one waits or runs in download_queue.
+     * [com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]), and explicit when
+     * one of its rows is marked so (a clean edition has no explicit song).
      *
      * The songs' artists and titles come in no set order (SQLite doesn't promise GROUP_CONCAT's):
      * they're only compared as a set. The album's order is the page's ([TrackDao.getByPlaylist]).
@@ -1140,7 +1142,7 @@ interface PlaylistDao {
                p.art_url AS artUrl, p.date_added AS dateAdded,
                COUNT(m.playlist_id) AS trackCount,
                COALESCE(SUM(m.on_phone), 0) AS downloadedCount,
-               COALESCE(SUM(CASE WHEN m.on_phone = 0 THEN m.queued ELSE 0 END), 0) AS downloadingCount,
+               COALESCE(SUM(m.is_explicit), 0) AS explicitCount,
                GROUP_CONCAT(m.artist, char(31)) AS artists,
                GROUP_CONCAT(m.title, char(31)) AS titles
         FROM playlists p
@@ -1148,11 +1150,7 @@ interface PlaylistDao {
             SELECT pt.playlist_id AS playlist_id,
                    MIN(t.artist) AS artist, MIN(t.title) AS title,
                    MAX(t.is_downloaded = 1) AS on_phone,
-                   MAX(t.is_downloaded = 0 AND EXISTS (
-                       SELECT 1 FROM download_queue dq
-                       WHERE dq.track_id = t.id
-                         AND dq.status IN ('PENDING', 'IN_PROGRESS', 'WAITING_FOR_LOSSLESS')
-                   )) AS queued
+                   MAX(t.explicit = 1) AS is_explicit
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
             INNER JOIN tracks t ON t.id = pt.track_id
@@ -1194,6 +1192,13 @@ interface PlaylistDao {
         """
     )
     fun observeSavedAlbumSlots(playlistId: Long): Flow<List<SavedAlbumSlot>>
+
+    /**
+     * Whether [playlistId] is a saved album ([SAVED_ALBUM]). Reads the playlists table only, so a
+     * song's write (a download landing) never re-runs it.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM playlists p WHERE p.id = :playlistId AND " + SAVED_ALBUM + ")")
+    fun observeIsSavedAlbum(playlistId: Long): Flow<Boolean>
 
     /**
      * v0.9.23 — playlists the user can pick as a destination for

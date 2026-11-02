@@ -72,6 +72,12 @@ interface MusicRepository {
     fun getSongsByPlaylist(playlistId: Long): Flow<List<Track>> = getTracksByPlaylist(playlistId)
 
     /**
+     * Takes a synced playlist (a saved album synced from YouTube Music) out of the library for good:
+     * hidden, so the next sync leaves it out instead of bringing it back. Its songs and downloads stay.
+     */
+    suspend fun hidePlaylist(playlistId: Long) {}
+
+    /**
      * The songs a playlist screen shows: all of [getSongsByPlaylist] in Stream only, only
      * the downloaded ones in Download mode, which plays nothing else (owner, 2026-10-29).
      * For lists people see and play; counts, saves and syncs keep [getTracksByPlaylist].
@@ -96,7 +102,7 @@ interface MusicRepository {
     /**
      * Library › Albums: saved albums only, one card per album, by
      * [com.stash.core.data.album.SavedAlbums.forLibrary]. Follows the Download switch: Stream only
-     * lists every saved album, Download mode one whose songs are all on the phone (or downloading).
+     * lists every saved album, Download mode only one whose songs are all on the phone (owner, 2026-11-02).
      */
     fun getLibraryAlbums(): Flow<List<com.stash.core.data.album.SavedAlbum>>
 
