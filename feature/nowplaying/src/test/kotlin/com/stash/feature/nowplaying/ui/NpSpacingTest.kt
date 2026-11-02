@@ -2,7 +2,6 @@ package com.stash.feature.nowplaying.ui
 
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
-import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -23,12 +22,12 @@ class NpSpacingTest {
     @Test
     fun `the defaults are the production values`() {
         val s = NpSpacing()
-        // The title and artist lines: Inter's natural line height, now applied; tracking 0 (bodyLarge's 0.5 before).
+        // The title and artist lines: master's line boxes, now applied explicitly; tracking 0 (bodyLarge's 0.5 before).
         assertEquals(22f, s.titleSize)
-        assertEquals(26.6f, s.titleLineHeight)
+        assertEquals(26.8f, s.titleLineHeight)
         assertEquals(0f, s.titleLetterSpacing)
         assertEquals(15f, s.artistSize)
-        assertEquals(17.9f, s.artistLineHeight)
+        assertEquals(24f, s.artistLineHeight)
         assertEquals(0f, s.artistLetterSpacing)
         // Everything else as the layout had it (StackRhythm, GapTop/Art/Bottom, UpNextLine, insets).
         assertEquals(20f, s.gapTop)
@@ -58,10 +57,10 @@ class NpSpacingTest {
         assertEquals(applied, s.artistStyle().lineHeightStyle)
         assertEquals(LineHeightStyle.Trim.None, s.titleStyle().lineHeightStyle?.trim)
         assertEquals(22f.sp, s.titleStyle().fontSize)
-        assertEquals(26.6f.sp, s.titleStyle().lineHeight)
+        assertEquals(26.8f.sp, s.titleStyle().lineHeight)
         assertEquals(0f.sp, s.titleStyle().letterSpacing)
         assertEquals(15f.sp, s.artistStyle().fontSize)
-        assertEquals(17.9f.sp, s.artistStyle().lineHeight)
+        assertEquals(24f.sp, s.artistStyle().lineHeight)
     }
 
     @Test
@@ -73,18 +72,21 @@ class NpSpacingTest {
     }
 
     @Test
-    fun `the default line heights are today's pixels on the Pixel 5 and the Pixel 6`() {
-        // Today each line is Inter's natural height: its ascent and descent (1984 / 494 of 2048),
-        // each rounded to a pixel. An applied line height is rounded up (LineHeightStyleSpan).
+    fun `the default line heights are master's line boxes on the Pixel 5 and the Pixel 6`() {
+        // Measured on the Pixel 5 against master: the title was Inter's natural line (its ascent
+        // and descent, 1984 / 494 of 2048, each rounded to a pixel: 74 px), and an applied line
+        // height lands on the nearest pixel (26.6 sp, 73.15 px, measured 73). The artist applied
+        // bodyLarge's 24 sp; the default keeps exactly that.
         fun naturalPx(sizeSp: Float, density: Float): Int {
             val px = sizeSp * density
             return (px * 1984f / 2048f).roundToInt() + (px * 494f / 2048f).roundToInt()
         }
         val s = NpSpacing()
+        assertEquals(74, naturalPx(s.titleSize, 2.75f))
         for (density in listOf(2.75f, 2.625f)) {
-            assertEquals("title at $density", naturalPx(s.titleSize, density), ceil(s.titleLineHeight * density).toInt())
-            assertEquals("artist at $density", naturalPx(s.artistSize, density), ceil(s.artistLineHeight * density).toInt())
+            assertEquals("title at $density", naturalPx(s.titleSize, density), (s.titleLineHeight * density).roundToInt())
         }
+        assertEquals("the artist keeps the theme's bodyLarge line height", 24f, s.artistLineHeight)
     }
 
     @Test

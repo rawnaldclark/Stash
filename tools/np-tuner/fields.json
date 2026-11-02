@@ -6,11 +6,11 @@
   "kotlinObject": "NpSpacingDefaults",
   "numbers": [
     { "key": "titleSize", "const": "TITLE_SIZE_SP", "unit": "sp", "default": 22, "min": 14, "max": 36, "step": 0.5, "group": "Title", "label": "Size" },
-    { "key": "titleLineHeight", "const": "TITLE_LINE_HEIGHT_SP", "unit": "sp", "default": 26.6, "min": 14, "max": 48, "step": 0.1, "group": "Title", "label": "Line height" },
+    { "key": "titleLineHeight", "const": "TITLE_LINE_HEIGHT_SP", "unit": "sp", "default": 26.8, "min": 14, "max": 48, "step": 0.1, "group": "Title", "label": "Line height" },
     { "key": "titleLetterSpacing", "const": "TITLE_LETTER_SPACING_SP", "unit": "sp", "default": 0, "min": -1, "max": 2, "step": 0.05, "group": "Title", "label": "Letter spacing" },
 
     { "key": "artistSize", "const": "ARTIST_SIZE_SP", "unit": "sp", "default": 15, "min": 10, "max": 24, "step": 0.5, "group": "Artist · album", "label": "Size" },
-    { "key": "artistLineHeight", "const": "ARTIST_LINE_HEIGHT_SP", "unit": "sp", "default": 17.9, "min": 10, "max": 36, "step": 0.1, "group": "Artist · album", "label": "Line height" },
+    { "key": "artistLineHeight", "const": "ARTIST_LINE_HEIGHT_SP", "unit": "sp", "default": 24, "min": 10, "max": 36, "step": 0.1, "group": "Artist · album", "label": "Line height" },
     { "key": "artistLetterSpacing", "const": "ARTIST_LETTER_SPACING_SP", "unit": "sp", "default": 0, "min": -1, "max": 2, "step": 0.05, "group": "Artist · album", "label": "Letter spacing" },
 
     { "key": "gapTop", "const": "GAP_TOP_DP", "unit": "dp", "default": 20, "min": 0, "max": 80, "step": 1, "group": "Around the art", "label": "Top bar → art" },

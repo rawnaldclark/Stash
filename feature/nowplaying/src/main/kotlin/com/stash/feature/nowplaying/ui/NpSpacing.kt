@@ -26,12 +26,14 @@ import kotlin.math.roundToInt
  * one (the comments inside are the tuner's groups, so nothing is lost). NpSpacingTest pins the
  * values, and NpTunerFieldsTest checks tools/np-tuner/fields.json against them.
  *
- * - Title and artist: size, line height and tracking. Both lines are one line, and Compose
- *   ignores a single line's line height under the default LineHeightStyle (Trim.Both): bodyLarge's
- *   24 sp never applied, each line was Inter's natural height (1.21 em). [npLineStyle] applies it
- *   (Trim.None), so the tuner's sliders move them. 26.6 / 17.9 sp are that natural height, picked
- *   to round to the same pixels on the Pixel 5 (2.75) and the Pixel 6 (2.625): nothing moves.
- *   Tracking is 0: it was bodyLarge's +0.5 sp, the one visible change here.
+ * - Title and artist: size, line height and tracking, the line height always applied
+ *   ([npLineStyle]). Measured on the Pixel 5 against master (2026-11-01): the title, one line
+ *   laid out without wrapping, ignored its inherited 24 sp and was Inter's natural line (74 px);
+ *   the artist line DID apply bodyLarge's 24 sp (66 px). 26.8 sp rounds to that natural line on
+ *   the Pixel 5 (2.75) and the Pixel 6 (2.625); 24 sp is the artist's own: the node bounds came
+ *   out identical to master's. Tracking is 0: it was bodyLarge's +0.5 sp, the one visible change.
+ *   The title row is at least 40 dp tall (the side button and the heart), so the title's line
+ *   height shows only past 40 sp, or on a row without them.
  * - Around the art: the three flexible gaps (top bar to art, art to title, controls to the
  *   bottom), at their full size; they shrink to their floors on a short screen.
  * - Stack: the fixed steps from the title down to the Up next line.
@@ -45,12 +47,12 @@ import kotlin.math.roundToInt
 internal object NpSpacingDefaults {
     // Title
     const val TITLE_SIZE_SP = 22f
-    const val TITLE_LINE_HEIGHT_SP = 26.6f
+    const val TITLE_LINE_HEIGHT_SP = 26.8f
     const val TITLE_LETTER_SPACING_SP = 0f
 
     // Artist · album
     const val ARTIST_SIZE_SP = 15f
-    const val ARTIST_LINE_HEIGHT_SP = 17.9f
+    const val ARTIST_LINE_HEIGHT_SP = 24f
     const val ARTIST_LETTER_SPACING_SP = 0f
 
     // Around the art
