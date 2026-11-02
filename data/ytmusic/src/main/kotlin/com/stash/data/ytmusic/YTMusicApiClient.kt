@@ -1103,11 +1103,15 @@ class YTMusicApiClient @Inject constructor(
      * The songs YouTube Music relates to [videoId] (its watch page's "Related" tab, "You might also like" first):
      * `next(videoId)`, then a browse of the tab found by its `MPTRt_` id ([RelatedResponseParser]). Works signed out;
      * signed in, the request carries the account like every other and the answer may be personal. Null when either
-     * call didn't answer; empty when the song has no Related tab.
+     * call didn't answer, and when the watch page has no Related tab: YouTube moving or renaming it would otherwise
+     * read as every song having no related songs, an answer Home would keep for the day. The tabs seen are logged.
      */
     suspend fun getRelatedSongs(videoId: String): List<TrackSummary>? {
         val next = innerTubeClient.next(videoId) ?: return null
-        val relatedId = RelatedResponseParser.relatedBrowseId(next) ?: return emptyList()
+        val relatedId = RelatedResponseParser.relatedBrowseId(next) ?: run {
+            Log.w(TAG, "no Related (${RelatedResponseParser.RELATED_PREFIX}) tab for $videoId among ${RelatedResponseParser.tabIds(next)}")
+            return null
+        }
         val related = innerTubeClient.browse(relatedId) ?: return null
         return RelatedResponseParser.songs(related)
     }

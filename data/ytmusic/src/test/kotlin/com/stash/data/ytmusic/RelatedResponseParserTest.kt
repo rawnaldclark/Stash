@@ -12,9 +12,12 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 
 /**
@@ -102,14 +105,20 @@ class RelatedResponseParserTest {
     }
 
     @Test
-    fun `no answer is null, a song without a related tab is empty`() = runTest {
+    fun `no answer is null, and so is a watch page without a related tab, never an empty answer`() = runTest {
         assertNull(YTMusicApiClient(mock()).getRelatedSongs("lYBUbBu4W08"))
         val inner = mock<InnerTubeClient>()
         val next = fixture("next_never_gonna.json")
+        val noRelated = withTabs(next) { tabs -> tabs.take(2) }
         runBlocking {
-            whenever(inner.next(eq("x"))).thenReturn(withTabs(next) { tabs -> tabs.take(2) })
+            whenever(inner.next(eq("x"))).thenReturn(noRelated)
         }
-        assertEquals(emptyList<Any>(), YTMusicApiClient(inner).getRelatedSongs("x"))
+        // YouTube moving the tab would otherwise read as no related songs for every seed, kept for the day
+        assertNull(YTMusicApiClient(inner).getRelatedSongs("x"))
+        verifyBlocking(inner, never()) { browse(any(), anyOrNull()) }
+        // What the log names: the tabs that were there
+        assertEquals(listOf("(none)", "MPLYt_dcYZhAh5urI-1"), RelatedResponseParser.tabIds(noRelated))
+        assertEquals(4, RelatedResponseParser.tabIds(next).size)
         // The related page itself not answering is null too: the shelf keeps what it had
         val noPage = mock<InnerTubeClient>()
         runBlocking { whenever(noPage.next(eq("lYBUbBu4W08"))).thenReturn(next) }

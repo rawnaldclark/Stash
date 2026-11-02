@@ -18,16 +18,20 @@ internal object RelatedResponseParser {
     const val RELATED_PREFIX = "MPTRt_"
 
     /** The Related page's browse id among a `next` response's tabs, or null when it has none. */
-    fun relatedBrowseId(next: JsonObject): String? {
-        val tabs = next.navigatePath(
+    fun relatedBrowseId(next: JsonObject): String? =
+        tabIds(next).firstOrNull { it.startsWith(RELATED_PREFIX) }
+
+    /**
+     * Each tab of a `next` response as its browse id, or `"(none)"` for a tab without one (Up next, Comments): what
+     * the log names when no tab is Related, so a moved or renamed tab shows up in a shared log.
+     */
+    fun tabIds(next: JsonObject): List<String> =
+        next.navigatePath(
             "contents", "singleColumnMusicWatchNextResultsRenderer", "tabbedRenderer",
             "watchNextTabbedResultsRenderer", "tabs",
-        )?.asArray() ?: return null
-        return tabs.firstNotNullOfOrNull { tab ->
-            tab.asObject()?.navigatePath("tabRenderer", "endpoint", "browseEndpoint", "browseId")?.asString()
-                ?.takeIf { it.startsWith(RELATED_PREFIX) }
+        )?.asArray().orEmpty().map { tab ->
+            tab.asObject()?.navigatePath("tabRenderer", "endpoint", "browseEndpoint", "browseId")?.asString() ?: "(none)"
         }
-    }
 
     /** Every song row on a Related page, carousel after carousel, each once (by videoId), in YouTube's order. */
     fun songs(related: JsonObject): List<TrackSummary> {
