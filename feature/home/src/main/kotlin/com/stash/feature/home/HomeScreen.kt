@@ -1216,19 +1216,9 @@ private val LEGACY_SUPPORTERS = listOf(
     ),
 )
 
-/*
- * The ticker's own type and spacing: ten percent bigger than labelMedium (Inter Medium
- * 12 sp, 16 sp line, 0.5 sp tracking, Type.kt) and its old 10 dp padding (owner, 2026-11-01).
- * Kept here so the shared label style everything else uses stays as it is.
- */
-private val TickerFontSize = 13.2.sp
-private val TickerLineHeight = 17.6.sp
-private val TickerLetterSpacing = 0.55.sp
-private val TickerVerticalPadding = 11.dp
-
 /**
- * Tape speed: 31 dp/s at first, 15 % quicker (owner, 2026-10-22), then 10 % more with the
- * ten percent bigger type so it reads at the same pace (about 39.2 dp/s, 2026-11-01).
+ * Tape speed: 31 dp/s at first, 15 % quicker (owner, 2026-10-22), then 10 % quicker again
+ * (owner, 2026-11-02: "+10 %" meant speed, not size; about 39.2 dp/s).
  */
 private val TickerSpeedPerSec = 31.dp * 1.15f * 1.1f
 
@@ -1308,15 +1298,6 @@ private fun SupporterTicker(
         }
     }
     val velocityPxPerSec = with(LocalDensity.current) { TickerSpeedPerSec.toPx() }
-    // labelMedium's font and weight at the ticker's own size (see TickerFontSize).
-    val labelStyle = MaterialTheme.typography.labelMedium
-    val tickerStyle = remember(labelStyle) {
-        labelStyle.copy(
-            fontSize = TickerFontSize,
-            lineHeight = TickerLineHeight,
-            letterSpacing = TickerLetterSpacing,
-        )
-    }
     var tapeWidthPx by remember { mutableIntStateOf(0) }
 
     // Full-bleed strip: no card, no border, no leading icon — every pixel
@@ -1334,7 +1315,7 @@ private fun SupporterTicker(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = TickerVerticalPadding)
+                .padding(vertical = 10.dp)
                 .clipToBounds(),
         ) {
             Row(
@@ -1346,7 +1327,7 @@ private fun SupporterTicker(
             ) {
                 Text(
                     text = line,
-                    style = tickerStyle,
+                    style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                     softWrap = false,
                     modifier = Modifier.onSizeChanged { tapeWidthPx = it.width },
@@ -1354,7 +1335,7 @@ private fun SupporterTicker(
                 // Second copy of the tape for a seamless wrap.
                 Text(
                     text = line,
-                    style = tickerStyle,
+                    style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                     softWrap = false,
                 )
