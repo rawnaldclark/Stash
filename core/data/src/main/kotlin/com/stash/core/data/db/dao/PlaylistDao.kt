@@ -766,6 +766,9 @@ interface PlaylistDao {
      * Mixes are exempt too, both ways (2026-11-02): on a mix the pin is its
      * Favorite (#686), which only the user sets. Switching a mix on used to
      * pin it, and v0.9.119 showed every one of those pins as a heart.
+     *
+     * Saved albums likewise ([SAVED_ALBUM], 2026-11-02): one goes on Home only
+     * by hand, and the switch leaves that pin alone either way.
      */
     @Query(
         """
@@ -773,10 +776,10 @@ interface PlaylistDao {
             sync_enabled = :enabled,
             pinned_to_home_at = CASE
                 WHEN type IN ('DAILY_MIX', 'STASH_MIX') THEN pinned_to_home_at
-                WHEN :enabled = 0 THEN NULL
-                WHEN type IN ('LIKED_SONGS', 'STASH_LIKED') THEN pinned_to_home_at
                 -- A saved album goes on Home only by hand, like a mix (2026-11-02).
                 WHEN EXISTS (SELECT 1 FROM playlists p WHERE p.id = :playlistId AND """ + SAVED_ALBUM + """) THEN pinned_to_home_at
+                WHEN :enabled = 0 THEN NULL
+                WHEN type IN ('LIKED_SONGS', 'STASH_LIKED') THEN pinned_to_home_at
                 ELSE COALESCE(pinned_to_home_at, :now)
             END
         WHERE id = :playlistId

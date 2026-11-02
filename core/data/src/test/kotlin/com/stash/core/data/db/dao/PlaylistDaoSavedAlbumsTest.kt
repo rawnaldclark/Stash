@@ -143,7 +143,7 @@ class PlaylistDaoSavedAlbumsTest {
 
     // ── Home ────────────────────────────────────────────────────────────
 
-    @Test fun `the Sync tab switch never pins a saved album to Home`() = runTest {
+    @Test fun `the Sync tab switch never pins or unpins a saved album`() = runTest {
         val album = playlist("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13")
         val synced = playlist("Nevermind", MusicSource.YOUTUBE, "MPREb_nevermind")
         val mine = playlist("Road trip", MusicSource.BOTH, "custom_1")
@@ -157,6 +157,13 @@ class PlaylistDaoSavedAlbumsTest {
         assertThat(dao.getById(mine)!!.pinnedToHomeAt).isNotNull()
         assertThat(dao.observeIsSavedAlbum(album).first()).isTrue()
         assertThat(dao.observeIsSavedAlbum(mine).first()).isFalse()
+
+        // Pinned by hand, it stays pinned when its switch goes off (as a mix's Favorite does).
+        dao.setPinnedToHome(album, 700L)
+        dao.setSyncEnabledAndPin(album, enabled = false, now = 900L)
+        assertThat(dao.getById(album)!!.pinnedToHomeAt).isEqualTo(700L)
+        dao.setSyncEnabledAndPin(mine, enabled = false, now = 900L)
+        assertThat(dao.getById(mine)!!.pinnedToHomeAt).isNull()
     }
 
     // ── Not a playlist ──────────────────────────────────────────────────
