@@ -311,11 +311,6 @@ fun StashScaffold(
         }
     }
 
-<<<<<<< HEAD
-    // Community (and any screen without its own host) shows its lines on this snackbar, above the bottom chrome.
-    val appSnackbar = rememberAppSnackbar(snackbarHostState)
-    CompositionLocalProvider(LocalAppSnackbar provides appSnackbar) {
-=======
     // The one-time duplicate cleanup merged songs that were in the library twice: say so once, on
     // any screen. Marked shown after the snackbar goes, so a closed app shows it at the next open.
     LaunchedEffect(lifecycleOwner, tidyNotices) {
@@ -332,7 +327,9 @@ fun StashScaffold(
         }
     }
 
->>>>>>> origin/master
+    // Community (and any screen without its own host) shows its lines on this snackbar, above the bottom chrome.
+    val appSnackbar = rememberAppSnackbar(snackbarHostState)
+    CompositionLocalProvider(LocalAppSnackbar provides appSnackbar) {
     CommunityPostingHost(
         communityPosting,
         onSeeMyPosts = {
