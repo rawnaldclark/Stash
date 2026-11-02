@@ -3,10 +3,12 @@ package com.stash.feature.settings.update
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.update.AppUpdater
 import com.stash.core.data.update.AvailableUpdate
+import com.stash.core.data.update.ReleaseNotes
 import com.stash.core.data.update.UpdateState
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,10 +130,45 @@ class UpdateViewModelTest {
         assertThat(vm.visible.value).isFalse()
     }
 
-    @Test fun `the notes are read off the main thread for the sheet`() {
-        val vm = UpdateViewModel(updater)
+    @Test fun `Settings About's light path asks only when a release is stored`() {
+        val about = UpdateAskViewModel(updater)
+        assertThat(about.ask()).isTrue()
+        verify(exactly = 1) { updater.ask() }
+
+        available.value = null
+        assertThat(about.ask()).isFalse()
+        verify(exactly = 1) { updater.ask() }
+    }
+
+    @Test fun `the notes are parsed off the main thread for the sheet`() {
+        // Main is this test's thread here (an unconfined test dispatcher): without flowOn the parse would run on it.
+        val main = Thread.currentThread()
+        val parsedOn = CopyOnWriteArrayList<Thread>()
+        val vm = UpdateViewModel(updater) { raw ->
+            parsedOn += Thread.currentThread()
+            ReleaseNotes.parse(raw)
+        }
+
         val notes = runBlocking { withTimeout(5_000) { vm.notes.first { it != null } } }!!
+
         assertThat(notes.headline).isEqualTo("Headline.")
         assertThat(notes.highlights.single().title).isEqualTo("One")
+        assertThat(parsedOn).isNotEmpty()
+        assertThat(parsedOn).doesNotContain(main)
+    }
+
+    @Test fun `an install waiting for Android's confirm brings a hidden sheet back, and Install now goes to the updater`() {
+        val vm = UpdateViewModel(updater)
+        vm.update()
+        vm.hide()
+        state.value = UpdateState.Installing
+        assertThat(vm.visible.value).isFalse()
+
+        // The confirm couldn't open in the background.
+        state.value = UpdateState.ReadyToInstall
+        assertThat(vm.visible.value).isTrue()
+
+        vm.installNow()
+        verify { updater.installNow() }
     }
 }

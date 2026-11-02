@@ -1,6 +1,11 @@
 package com.stash.core.data.update
 
+import android.app.Notification
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -35,7 +40,16 @@ class AppUpdaterTest {
         context.applicationInfo.flags = context.applicationInfo.flags or ApplicationInfo.FLAG_DEBUGGABLE
         apk = File(context.filesDir, "test-update.apk").apply { writeBytes(ByteArray(1_000) { it.toByte() }) }
         store(apk.length())
+        // The launcher activity the ready-to-install notification opens.
+        val main = ComponentName(context.packageName, "com.stash.app.MainActivity")
+        shadowOf(context.packageManager).addActivityIfNotPresent(main)
+        shadowOf(context.packageManager).addIntentFilterForActivity(
+            main,
+            IntentFilter(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) },
+        )
     }
+
+    private val notifications get() = shadowOf(context.getSystemService(NotificationManager::class.java)).allNotifications
 
     private fun store(size: Long, file: File = apk) =
         AppUpdater.store(context, AvailableUpdate("v0.9.1", "0.9.1", file.toURI().toString(), size, "notes"))
@@ -45,12 +59,26 @@ class AppUpdaterTest {
         val onInstall: (File) -> Unit = {},
     ) : AppUpdater.Steps {
         val installs = AtomicInteger()
+        val confirms = AtomicInteger()
+
+        /** Whether Android's confirm can open now: Stash in front (and the confirm still good). */
+        @Volatile var confirmOpens: Boolean = true
         override fun verify(apk: File): UpdateState.Failed.Reason? = null
         override fun canInstall() = allowed
         override fun install(apk: File) {
             installs.incrementAndGet()
             onInstall(apk)
         }
+        override fun confirm(confirm: Intent): Boolean {
+            if (!confirmOpens) return false
+            confirms.incrementAndGet()
+            return true
+        }
+    }
+
+    private fun awaitInstalls(steps: FakeSteps, n: Int) {
+        val until = System.currentTimeMillis() + 5_000
+        while (steps.installs.get() < n && System.currentTimeMillis() < until) Thread.sleep(10)
     }
 
     private fun AppUpdater.awaitState(predicate: (UpdateState) -> Boolean): UpdateState =
@@ -104,6 +132,64 @@ class AppUpdaterTest {
         updater.update()
         updater.awaitState { it == UpdateState.Installing }
         assertThat(steps.installs.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `a confirm Android won't show in the background waits as ready to install, and Install now opens it`() {
+        val steps = FakeSteps()
+        val updater = AppUpdater(context, OkHttpClient(), steps)
+        updater.update()
+        updater.awaitState { it == UpdateState.Installing }
+
+        // The installer's answer arrives while Stash is in the background: Android would drop the confirm silently.
+        steps.confirmOpens = false
+        updater.onConfirmNeeded(Intent("android.content.pm.action.CONFIRM_INSTALL"))
+
+        assertThat(updater.state.value).isEqualTo(UpdateState.ReadyToInstall)
+        val posted = notifications.single()
+        assertThat(posted.extras.getString(Notification.EXTRA_TITLE)).isEqualTo("Stash 0.9.1 is ready to install")
+        assertThat(posted.extras.getCharSequence(Notification.EXTRA_TEXT).toString()).isEqualTo("Tap to install it.")
+
+        // Back in front: Install now opens the held confirm, once, and the notification goes.
+        steps.confirmOpens = true
+        updater.installNow()
+        updater.installNow()
+        assertThat(steps.confirms.get()).isEqualTo(1)
+        assertThat(updater.state.value).isEqualTo(UpdateState.Installing)
+        assertThat(notifications).isEmpty()
+        assertThat(steps.installs.get()).isEqualTo(1)
+    }
+
+    @Test
+    fun `in front, the confirm opens at once and the update stays installing`() {
+        val steps = FakeSteps()
+        val updater = AppUpdater(context, OkHttpClient(), steps)
+        updater.update()
+        updater.awaitState { it == UpdateState.Installing }
+
+        updater.onConfirmNeeded(Intent("android.content.pm.action.CONFIRM_INSTALL"))
+
+        assertThat(steps.confirms.get()).isEqualTo(1)
+        assertThat(updater.state.value).isEqualTo(UpdateState.Installing)
+        assertThat(notifications).isEmpty()
+    }
+
+    @Test
+    fun `Install now stages the download again when the held confirm won't open, and no confirm at all fails`() {
+        val steps = FakeSteps()
+        val updater = AppUpdater(context, OkHttpClient(), steps)
+        updater.update()
+        updater.awaitState { it == UpdateState.Installing }
+        steps.confirmOpens = false
+        updater.onConfirmNeeded(Intent("android.content.pm.action.CONFIRM_INSTALL"))
+
+        updater.installNow() // the confirm still won't open (gone stale): install the kept APK again
+        awaitInstalls(steps, 2)
+        assertThat(steps.installs.get()).isEqualTo(2)
+        assertThat(updater.state.value).isEqualTo(UpdateState.Installing)
+
+        updater.onConfirmNeeded(null)
+        assertThat(updater.state.value).isEqualTo(UpdateState.Failed(UpdateState.Failed.Reason.INSTALL))
     }
 
     @Test

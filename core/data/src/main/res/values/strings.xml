@@ -4,4 +4,7 @@
     <string name="update_notification_title">Stash %1$s is ready</string>
     <string name="update_notification_tap_to_see">Tap to see what\'s new.</string>
     <string name="update_notification_tap_to_download">Tap to get it from GitHub.</string>
+    <!-- AppUpdater: downloaded while Stash was in the background, where Android won't show its install confirm. -->
+    <string name="update_ready_notification_title">Stash %1$s is ready to install</string>
+    <string name="update_ready_notification_text">Tap to install it.</string>
 </resources>

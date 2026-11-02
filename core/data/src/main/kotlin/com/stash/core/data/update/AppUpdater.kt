@@ -1,5 +1,6 @@
 package com.stash.core.data.update
 
+import android.app.ActivityManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,7 +13,11 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.pm.PackageInfoCompat
+import com.stash.core.data.R
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -43,6 +48,12 @@ sealed interface UpdateState {
 
     /** Handed to Android: its confirm is up (or, after the first update, it installs on its own). */
     data object Installing : UpdateState
+
+    /**
+     * Downloaded, checked and staged, waiting for the listener: Android's confirm couldn't open because Stash wasn't in
+     * front (Android 10+ blocks it silently). Install now opens it.
+     */
+    data object ReadyToInstall : UpdateState
 
     data class Failed(val reason: Reason) : UpdateState {
         enum class Reason {
@@ -77,17 +88,35 @@ class AppUpdater internal constructor(
         fun verify(apk: File): UpdateState.Failed.Reason?
         fun canInstall(): Boolean
         fun install(apk: File)
+
+        /** Opens Android's install [confirm] if Stash is in front; false when it can't be opened (in the background). */
+        fun confirm(confirm: Intent): Boolean
     }
 
     private val steps: Steps = testSteps ?: object : Steps {
         override fun verify(apk: File) = verifyApk(apk)
         override fun canInstall() = context.packageManager.canRequestPackageInstalls()
         override fun install(apk: File) = stageAndCommit(apk)
+        override fun confirm(confirm: Intent): Boolean {
+            // Android 10+ drops an activity start from the background without a word: don't try it there.
+            val me = ActivityManager.RunningAppProcessInfo().also(ActivityManager::getMyMemoryState)
+            if (me.importance > ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) return false
+            return try {
+                context.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "can't open the confirm: ${e.javaClass.simpleName}")
+                false
+            }
+        }
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+
+    /** Android's install confirm, held while it couldn't open ([UpdateState.ReadyToInstall]). */
+    private var heldConfirm: Intent? = null
 
     private val _available = MutableStateFlow(read(prefs, context))
     /** The newer release to offer, or null (none found, or this one installed since). */
@@ -186,6 +215,72 @@ class AppUpdater internal constructor(
         job = scope.launch { installOrFail(apk) }
     }
 
+    /**
+     * [UpdateInstallReceiver]: Android wants the listener to confirm the install. Its screen opens now when Stash is in
+     * front. From the background Android 10+ blocks it without a word, which used to leave "Installing…" for good: the
+     * confirm is held instead, the update is [UpdateState.ReadyToInstall] (the sheet comes back for it), and a notification
+     * says so. A missing confirm is an install that failed.
+     */
+    @Synchronized
+    fun onConfirmNeeded(confirm: Intent?) {
+        if (confirm == null) {
+            _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
+            return
+        }
+        if (steps.confirm(confirm)) return
+        heldConfirm = confirm
+        _state.value = UpdateState.ReadyToInstall
+        _available.value?.let(::notifyReadyToInstall)
+    }
+
+    /**
+     * Install now, from [UpdateState.ReadyToInstall]: Android's held confirm opens. If it can't (this process was
+     * restarted, or the confirm went stale), the downloaded APK is staged again.
+     */
+    @Synchronized
+    fun installNow() {
+        if (_state.value != UpdateState.ReadyToInstall) return
+        NotificationManagerCompat.from(context).cancel(SyncNotificationManager.NOTIFICATION_ID_UPDATE)
+        val confirm = heldConfirm
+        heldConfirm = null
+        _state.value = UpdateState.Installing
+        if (confirm != null && steps.confirm(confirm)) return
+        val apk = _available.value?.let(::apkFile)?.takeIf { it.exists() }
+        if (apk == null) {
+            _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
+            return
+        }
+        job = scope.launch { installOrFail(apk) }
+    }
+
+    /** "Stash 0.9.123 is ready to install", in place of the update's notification; a tap opens the sheet. */
+    private fun notifyReadyToInstall(update: AvailableUpdate) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?.putExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE, true)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            ?: return
+        val tap = PendingIntent.getActivity(
+            context,
+            REQUEST_READY_TO_INSTALL,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, SyncNotificationManager.CHANNEL_UPDATE)
+            .setContentTitle(context.getString(R.string.update_ready_notification_title, update.version))
+            .setContentText(context.getString(R.string.update_ready_notification_text))
+            .setSmallIcon(R.drawable.ic_stat_stash)
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build()
+        try {
+            manager.notify(SyncNotificationManager.NOTIFICATION_ID_UPDATE, notification)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "can't post the ready-to-install notification: no permission")
+        }
+    }
+
     /** A download or install under way (a confirm Android shows counts too). */
     private fun busy() = job?.isActive == true || _state.value == UpdateState.Installing
 
@@ -224,7 +319,7 @@ class AppUpdater internal constructor(
     /** [UpdateInstallReceiver]: the installer's answer. Public: called from another file (see the incremental-build note in #741). */
     fun onInstallResult(status: Int, message: String?) {
         when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit // the receiver opened Android's confirm
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit // the receiver hands that to onConfirmNeeded
             PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle // this process is replaced right after
             PackageInstaller.STATUS_FAILURE_ABORTED -> _state.value = UpdateState.Idle // the listener said no
             else -> {
@@ -325,6 +420,8 @@ class AppUpdater internal constructor(
     /** Stages [apk] in a [PackageInstaller] session and commits it ([UpdateInstallReceiver] hears the answer). */
     private fun stageAndCommit(apk: File) {
         val installer = context.packageManager.packageInstaller
+        // An earlier try's session (staged, its confirm never answered) would keep its copy of the APK: drop it.
+        installer.mySessions.forEach { runCatching { installer.abandonSession(it.sessionId) } }
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
             setSize(apk.length())
@@ -357,6 +454,7 @@ class AppUpdater internal constructor(
     companion object {
         private const val TAG = "AppUpdater"
         private const val DIR = "updates"
+        private const val REQUEST_READY_TO_INSTALL = 9004
 
         /** Shared with [UpdateCheckWorker], which writes the release it found. */
         const val PREFS = "update_check_prefs"

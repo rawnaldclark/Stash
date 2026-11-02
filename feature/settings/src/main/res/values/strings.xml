@@ -72,6 +72,8 @@
     <string name="update_sheet_progress">%1$d of %2$s</string>
     <string name="update_sheet_downloading_note">You can keep using Stash. The update installs when the download is done.</string>
     <string name="update_sheet_installing">Almost done. If Android asks, tap Update.</string>
+    <string name="update_sheet_ready">Downloaded and checked. Tap Install now, then Update when Android asks.</string>
+    <string name="update_sheet_install_now">Install now</string>
     <string name="update_sheet_permission_title">One more step, just this once</string>
     <string name="update_sheet_permission_step_1">Tap Open settings.</string>
     <string name="update_sheet_permission_step_2">Turn on “Allow from this source”.</string>

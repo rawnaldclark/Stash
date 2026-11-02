@@ -25,10 +25,19 @@ import kotlinx.coroutines.launch
  * The update sheet over the whole app: up by itself when a newer release is found that wasn't skipped and Later wasn't
  * tapped in the last day, or when the listener asks (the notification, Settings). Once Update now is tapped it never
  * comes up by itself again for that try, except when the update needs the listener: Android's one-time permission, or
- * a failure. Hide means hidden, through a return to the app or edited notes (review on #814).
+ * a failure, or an install waiting for a confirm Android wouldn't show in the background. Hide means hidden, through a
+ * return to the app or edited notes (review on #814).
+ *
+ * [parseNotes] is [ReleaseNotes.parse]; a test passes its own to see which thread it runs on.
  */
 @HiltViewModel
-class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : ViewModel() {
+class UpdateViewModel internal constructor(
+    private val updater: AppUpdater,
+    private val parseNotes: (String) -> ReleaseNotes,
+) : ViewModel() {
+
+    @Inject constructor(updater: AppUpdater) : this(updater, ReleaseNotes::parse)
+
     val available: StateFlow<AvailableUpdate?> = updater.available
     val state: StateFlow<UpdateState> = updater.state
 
@@ -39,7 +48,7 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
     val notes: StateFlow<ReleaseNotes?> = updater.available
         .map { it?.notes }
         .distinctUntilChanged()
-        .map { raw -> raw?.let(ReleaseNotes::parse) }
+        .map { raw -> raw?.let(parseNotes) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -56,7 +65,7 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
         viewModelScope.launch { updater.asks.drop(1).collect { _visible.value = updater.available.value != null } }
         viewModelScope.launch {
             updater.state.collect { s ->
-                val needsListener = s == UpdateState.NeedsPermission || s is UpdateState.Failed
+                val needsListener = s == UpdateState.NeedsPermission || s == UpdateState.ReadyToInstall || s is UpdateState.Failed
                 if (needsListener && updater.available.value != null) _visible.value = true
             }
         }
@@ -70,12 +79,16 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
 
     fun update() = updater.update()
 
+    /** Install now: the update downloaded while Stash was in the background goes to Android's confirm. */
+    fun installNow() = updater.installNow()
+
     /** Open the sheet now (the update notification, Settings › About). */
     fun ask() = updater.ask()
 
     /**
      * Later, or the sheet swiped away: before Update now, after a failure, or at Android's permission step, ask again
-     * tomorrow and start over then (a downloaded APK is kept for it). Mid-download or installing, closing it just hides it.
+     * tomorrow and start over then (a downloaded APK is kept for it). Mid-download, installing or ready to install, closing
+ * it just hides it (the notification, or Settings › Check for updates, brings it back).
      */
     fun dismiss() {
         when (updater.state.value) {
@@ -115,5 +128,19 @@ class UpdateViewModel @Inject constructor(private val updater: AppUpdater) : Vie
     fun retry() {
         updater.reset()
         updater.update()
+    }
+}
+
+/**
+ * Settings › About's way to the update sheet after its check: only [ask]. The sheet itself (its notes, its collectors)
+ * lives in the scaffold's [UpdateViewModel]; a second one here parsed and collected for nothing (review on #814).
+ */
+@HiltViewModel
+class UpdateAskViewModel @Inject constructor(private val updater: AppUpdater) : ViewModel() {
+    /** Open the update sheet when the check found and stored a release. False when there is none to show. */
+    fun ask(): Boolean {
+        if (updater.available.value == null) return false
+        updater.ask()
+        return true
     }
 }

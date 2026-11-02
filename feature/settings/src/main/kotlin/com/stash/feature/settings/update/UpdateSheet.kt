@@ -119,6 +119,7 @@ fun UpdateSheetHost(viewModel: UpdateViewModel = hiltViewModel()) {
             state = state,
             actions = UpdateSheetActions(
                 update = viewModel::update,
+                installNow = viewModel::installNow,
                 later = closing(viewModel::dismiss),
                 skip = closing(viewModel::skip),
                 hide = closing(viewModel::hide),
@@ -136,6 +137,7 @@ fun UpdateSheetHost(viewModel: UpdateViewModel = hiltViewModel()) {
 /** What the sheet's buttons do. */
 internal class UpdateSheetActions(
     val update: () -> Unit,
+    val installNow: () -> Unit,
     val later: () -> Unit,
     val skip: () -> Unit,
     val hide: () -> Unit,

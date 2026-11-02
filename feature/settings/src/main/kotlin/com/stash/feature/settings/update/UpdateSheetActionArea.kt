@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -77,6 +78,16 @@ internal fun ActionArea(update: AvailableUpdate, state: UpdateState, colours: Sh
             PermissionSteps(colours.ink)
             PrimaryButton(Icons.Rounded.Settings, stringResource(R.string.update_sheet_open_settings), colours, actions.openSettings)
             // A way out that isn't Android's settings: ask again tomorrow, the download kept for then.
+            QuietButton(stringResource(R.string.update_sheet_later), actions.later, Modifier.fillMaxWidth())
+        }
+        UpdateState.ReadyToInstall -> {
+            // Downloaded while Stash was in the background, where Android won't show its confirm.
+            Text(
+                stringResource(R.string.update_sheet_ready),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PrimaryButton(Icons.Rounded.SystemUpdate, stringResource(R.string.update_sheet_install_now), colours, actions.installNow)
             QuietButton(stringResource(R.string.update_sheet_later), actions.later, Modifier.fillMaxWidth())
         }
         UpdateState.Installing -> {
