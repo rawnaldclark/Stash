@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -19,6 +20,9 @@ import com.stash.data.ytmusic.model.AlbumSummary
  * The same rail as [AlbumsRow] (12dp edges, 8dp between cards), so the rows line up
  * card for card. A tap hands back the release exactly as its shelf holds it, so it
  * opens the album page the way those rows do.
+ *
+ * Opens on its newest card even when that one arrives a moment late ([ShowNewFirstCard]):
+ * the enriched profile's Qobuz albums often put a newer release in front.
  */
 @Composable
 fun LatestReleasesRow(
@@ -26,7 +30,10 @@ fun LatestReleasesRow(
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val rowState = rememberLazyListState()
+    ShowNewFirstCard(rowState, firstKey = releases.firstOrNull()?.album?.id)
     LazyRow(
+        state = rowState,
         modifier = modifier,
         contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
