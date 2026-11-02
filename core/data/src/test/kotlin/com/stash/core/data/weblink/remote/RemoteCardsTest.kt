@@ -65,7 +65,7 @@ class RemoteCardsTest {
         assertThat(RemoteCards.pick(listOf(older, paused), 5_000)!!.device).isEqualTo("d_Firefox000001")
     }
 
-    @Test fun `a seek bar only when the browser can seek a song of known length; no volume slider when it can't set one`() {
+    @Test fun `a seek bar only when the browser can seek a song of known length, no volume slider when it can't set one`() {
         assertThat(RemoteCards.pick(listOf(browser(st = state(canSeek = false))), 1_000)!!.canSeek).isFalse()
         assertThat(RemoteCards.pick(listOf(browser(st = state(duration = 0))), 1_000)!!.canSeek).isFalse()
         assertThat(RemoteCards.pick(listOf(browser(st = state(volume = null))), 1_000)!!.volume).isNull()

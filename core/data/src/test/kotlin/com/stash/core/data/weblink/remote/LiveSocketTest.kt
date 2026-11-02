@@ -26,6 +26,13 @@ class LiveSocketTest {
     private val http = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** A server end that answers the client's close, as the Worker does, so the server shuts down at once. */
+    private object EchoClose : WebSocketListener() {
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
+    }
+
     @After fun tearDown() {
         scope.cancel()
         server.shutdown()
@@ -67,7 +74,7 @@ class LiveSocketTest {
 
     @Test fun `a drop (a server error at the upgrade) reconnects`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(503))
-        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+        server.enqueue(MockResponse().withWebSocketUpgrade(EchoClose))
         val socket = LiveSocket(http, server.url("/v1/spaces/s_x/ws").toString(), "{}", scope)
         val events = withTimeout(10_000) { socket.events.take(2).toList() }
         assertThat(events).containsExactly(LiveEvent.Dropped, LiveEvent.Open).inOrder()

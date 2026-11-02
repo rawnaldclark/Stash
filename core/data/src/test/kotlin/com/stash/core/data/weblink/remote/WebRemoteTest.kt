@@ -101,7 +101,7 @@ class WebRemoteTest {
         assertThat(conn.closed).isTrue()
     }
 
-    @Test fun `a verified browser's state becomes the card; a stranger's, a misplaced one and a garbled one are not taken`() = runTest {
+    @Test fun `a verified browser's state becomes the card, a stranger's, a misplaced one and a garbled one are not taken`() = runTest {
         linked()
         val r = remote()
         r.start()

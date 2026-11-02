@@ -1,6 +1,7 @@
 package com.stash.core.data.weblink.remote
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.stash.core.data.weblink.SyncVectors
 import com.stash.core.data.weblink.handoff.HandoffWireException
 import kotlinx.serialization.json.Json
@@ -46,21 +47,21 @@ class RemoteVectorsTest {
             }
             val r = c["read"]!!.jsonObject
             val s = RemoteWire.readState(doc)
-            assertThat(s.sid).named(name).isEqualTo(r.s("sid"))
-            assertThat(s.needsGesture).named(name).isEqualTo(r["needsGesture"]!!.jsonPrimitive.booleanOrNull)
-            assertThat(s.playing).named(name).isEqualTo(r["playing"]!!.jsonPrimitive.booleanOrNull)
-            assertThat(s.positionMs).named(name).isEqualTo(r["positionMs"]!!.jsonPrimitive.longOrNull)
-            assertThat(s.durationMs).named(name).isEqualTo(r["durationMs"]!!.jsonPrimitive.longOrNull)
-            assertThat(s.rate).named(name).isEqualTo(r["rate"]!!.jsonPrimitive.doubleOrNull)
-            assertThat(s.volume).named(name).isEqualTo(r["volume"].numOrNull())
-            assertThat(s.canSeek).named(name).isEqualTo(r["canSeek"]!!.jsonPrimitive.booleanOrNull)
-            assertThat(s.title).named(name).isEqualTo(r["title"].strOrNull())
-            assertThat(s.artist).named(name).isEqualTo(r["artist"].strOrNull())
-            assertThat(s.art).named(name).isEqualTo(r["art"].strOrNull())
+            assertWithMessage(name).that(s.sid).isEqualTo(r.s("sid"))
+            assertWithMessage(name).that(s.needsGesture).isEqualTo(r["needsGesture"]!!.jsonPrimitive.booleanOrNull)
+            assertWithMessage(name).that(s.playing).isEqualTo(r["playing"]!!.jsonPrimitive.booleanOrNull)
+            assertWithMessage(name).that(s.positionMs).isEqualTo(r["positionMs"]!!.jsonPrimitive.longOrNull)
+            assertWithMessage(name).that(s.durationMs).isEqualTo(r["durationMs"]!!.jsonPrimitive.longOrNull)
+            assertWithMessage(name).that(s.rate).isEqualTo(r["rate"]!!.jsonPrimitive.doubleOrNull)
+            assertWithMessage(name).that(s.volume).isEqualTo(r["volume"].numOrNull())
+            assertWithMessage(name).that(s.canSeek).isEqualTo(r["canSeek"]!!.jsonPrimitive.booleanOrNull)
+            assertWithMessage(name).that(s.title).isEqualTo(r["title"].strOrNull())
+            assertWithMessage(name).that(s.artist).isEqualTo(r["artist"].strOrNull())
+            assertWithMessage(name).that(s.art).isEqualTo(r["art"].strOrNull())
         }
     }
 
-    @Test fun `commands read as the vectors say; an unknown one is ignored, a bad one refused`() {
+    @Test fun `commands read as the vectors say, an unknown one is ignored, a bad one refused`() {
         for (c in v["cmds"]!!.jsonArray.map { it.jsonObject }) {
             val name = c.s("name")
             val doc = c["doc"].toString()
@@ -72,17 +73,17 @@ class RemoteVectorsTest {
             val r = c["read"]!!
             val got = RemoteWire.readCmd(doc)
             if (r is JsonNull) {
-                assertThat(got).named(name).isNull()
+                assertWithMessage(name).that(got).isNull()
                 continue
             }
             val o = r.jsonObject
-            assertThat(got).named(name).isNotNull()
-            assertThat(got!!.sid).named(name).isEqualTo(o.s("sid"))
-            assertThat(got.n).named(name).isEqualTo(o["n"]!!.jsonPrimitive.longOrNull)
-            assertThat(got.command.wire).named(name).isEqualTo(o.s("cmd"))
+            assertWithMessage(name).that(got).isNotNull()
+            assertWithMessage(name).that(got!!.sid).isEqualTo(o.s("sid"))
+            assertWithMessage(name).that(got.n).isEqualTo(o["n"]!!.jsonPrimitive.longOrNull)
+            assertWithMessage(name).that(got.command.wire).isEqualTo(o.s("cmd"))
             when (val x = got.command) {
-                is RemoteCommand.Seek -> assertThat(x.positionMs).named(name).isEqualTo(o["positionMs"]!!.jsonPrimitive.longOrNull)
-                is RemoteCommand.Volume -> assertThat(x.volume).named(name).isEqualTo(o["volume"].numOrNull())
+                is RemoteCommand.Seek -> assertWithMessage(name).that(x.positionMs).isEqualTo(o["positionMs"]!!.jsonPrimitive.longOrNull)
+                is RemoteCommand.Volume -> assertWithMessage(name).that(x.volume).isEqualTo(o["volume"].numOrNull())
                 else -> Unit
             }
         }
@@ -113,7 +114,7 @@ class RemoteVectorsTest {
             read()
             fail("$name: expected a refusal")
         } catch (e: HandoffWireException) {
-            assertThat(e.newer).named(name).isEqualTo(error == "newer")
+            assertWithMessage(name).that(e.newer).isEqualTo(error == "newer")
         }
     }
 
