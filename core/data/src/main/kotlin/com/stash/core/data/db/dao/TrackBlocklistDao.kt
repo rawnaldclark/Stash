@@ -56,6 +56,10 @@ interface TrackBlocklistDao {
     @Query("SELECT canonical_key FROM track_blocklist")
     suspend fun getAllKeys(): List<String>
 
+    /** Every blocked YouTube video id: a song blocked under other words is still blocked by its video. */
+    @Query("SELECT youtube_id FROM track_blocklist WHERE youtube_id IS NOT NULL AND youtube_id != ''")
+    suspend fun getAllYoutubeIds(): List<String>
+
     @Query("SELECT * FROM track_blocklist ORDER BY blocked_at DESC")
     fun observeAll(): Flow<List<TrackBlocklistEntity>>
 

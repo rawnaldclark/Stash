@@ -62,6 +62,25 @@ class DatabaseBackupMergeTest {
         assertEquals(MusicSource.SOUNDCLOUD, live.trackDao().findBySoundCloudId("456")?.source)
     }
 
+    /** A backup made before a merge in Possible duplicates: its copy under the merged-away id finds the kept row. */
+    @Test fun `merge finds merged ids`() = runTest {
+        val kept = live.trackDao().insert(track("Song", spotifyUri = "spotify:track:kept"))
+        live.duplicateDao().putAliases(
+            listOf(
+                com.stash.core.data.db.entity.TrackAliasEntity(
+                    com.stash.core.data.db.entity.TrackAliasEntity.KIND_SPOTIFY_URI, "spotify:track:gone", kept, 0L,
+                ),
+            ),
+        )
+        val uri = buildBackupZip { backup ->
+            backup.trackDao().insert(track("Song (2011 Remaster)", spotifyUri = "spotify:track:gone"))
+        }
+
+        assertTrue(manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE).isSuccess)
+
+        assertEquals("the merged duplicate is not brought back", listOf(kept), live.trackDao().getAllForIntegrityScan().map { it.id })
+    }
+
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var tmpDir: File
     private lateinit var live: StashDatabase

@@ -33,7 +33,7 @@ import okhttp3.Request
  * Quality rows say or whether the relay is even reachable from their network:
  *
  *  - the mode and the quality settings (Download / Stream only, Lossless + tier,
- *    Save Data, stream on cellular)
+ *    Data saver, stream on cellular)
  *  - the routing rows exactly as Settings renders them ([LosslessAvailability]),
  *    minus the account email
  *  - the applied relay config (how many relays, `updated_at`) and, per relay,
@@ -82,14 +82,15 @@ class LosslessDiagnosticsContributor @Inject constructor(
         val download = !streamingPreference.current()
         val lossless = losslessPrefs.enabledNow()
         return buildString {
-            appendLine("Mode:               " + if (download) "Download (sync writes files)" else "Stream only (sync writes nothing)")
+            // The mode's on-screen names since 2026-11-01 (Download / Stream only before).
+            appendLine("Mode:               " + if (download) "Offline (sync writes files; only downloads play)" else "Online (sync writes nothing; everything plays)")
             appendLine("Lossless streaming: " + onOff(lossless))
             appendLine("Download quality:   " + when (losslessPrefs.downloadModeNow()) {
                 com.stash.core.model.DownloadMode.LOSSLESS -> "Lossless · ${losslessPrefs.qualityTierNow().displayLabel}"
                 com.stash.core.model.DownloadMode.AAC -> "AAC 320"
                 com.stash.core.model.DownloadMode.OPUS -> "Opus"
             } + " · lossy fallback " + onOff(losslessPrefs.youtubeFallbackEnabledNow()))
-            appendLine("Save Data:          " + onOff(streamingQuality.saveDataNow()))
+            appendLine("Data saver:         " + onOff(streamingQuality.saveDataNow()) + " (metered networks only)")
             append("Stream on cellular: " + onOff(streamingPreference.streamOnCellular.first()))
         }
     }

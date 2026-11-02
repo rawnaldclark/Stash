@@ -152,6 +152,21 @@
     <string name="sync_auto_sync_at">At %1$s</string>
     <string name="sync_auto_sync_at_wifi">At %1$s · Wi-Fi</string>
     <string name="sync_history_row">History, blocked songs, undo</string>
+    <!-- The Downloads row above Auto-sync: its trailing text is the counts joined with " · ". -->
+    <string name="sync_downloads_row">Downloads</string>
+    <string name="sync_downloads_none">None running</string>
+    <plurals name="sync_downloads_downloading">
+        <item quantity="one">%d downloading</item>
+        <item quantity="other">%d downloading</item>
+    </plurals>
+    <plurals name="sync_downloads_waiting">
+        <item quantity="one">%d waiting</item>
+        <item quantity="other">%d waiting</item>
+    </plurals>
+    <plurals name="sync_downloads_failed">
+        <item quantity="one">%d failed</item>
+        <item quantity="other">%d failed</item>
+    </plurals>
     <string name="sync_accounts_row">Accounts</string>
 
     <!-- Sync tab overhaul: syncing -->
@@ -159,16 +174,30 @@
     <string name="sync_syncing_body">Play anything that\'s landed. You can leave this screen.</string>
     <string name="sync_stop">Stop</string>
 
-    <!-- Sync tab overhaul: Download mode -->
+    <!-- Sync tab overhaul: Offline (the Download switch in code) -->
     <string name="sync_download_title">On this phone</string>
     <string name="sync_download_choose">Choose what to save</string>
-    <string name="sync_download_note">Download mode plays your downloads and hides anything that\'s not downloaded.</string>
+    <string name="sync_download_note">Offline plays only your downloads and hides the rest. Sync and downloads still use the network.</string>
     <string name="sync_download_none">Nothing saved yet.</string>
     <string name="sync_saved_cd">Saved</string>
 
     <!-- Sync tab overhaul: History screen -->
     <string name="sync_history_title">History</string>
     <string name="sync_history_mixes_section">Your playlists</string>
+    <!-- A recent sync that couldn't read some playlists' songs, each left as it was. In the detail, %2$s is their names. -->
+    <plurals name="sync_history_not_read">
+        <item quantity="one">%d playlist not read</item>
+        <item quantity="other">%d playlists not read</item>
+    </plurals>
+    <plurals name="sync_history_not_read_detail">
+        <item quantity="one">Couldn\'t read %1$d playlist: %2$s (kept as it was)</item>
+        <item quantity="other">Couldn\'t read %1$d playlists: %2$s (kept as they were)</item>
+    </plurals>
+    <!-- The names above when there are more than five: "A, B, C, D, E and 3 more". -->
+    <plurals name="sync_history_and_more">
+        <item quantity="one">%1$s and %2$d more</item>
+        <item quantity="other">%1$s and %2$d more</item>
+    </plurals>
 
     <!-- Sync tab overhaul: an account's playlists -->
     <string name="sync_manage_all_in_library">All in your library</string>
@@ -193,4 +222,24 @@
     <string name="sync_in_library">In your library</string>
     <string name="sync_in_library_on">In your library</string>
     <string name="sync_in_library_off">Not in your library</string>
+
+    <!-- Failed Matches: find it yourself (#19) -->
+    <string name="failed_matches_find_hint">Tap a song to find it yourself.</string>
+    <string name="failed_matches_find_label">Find it yourself</string>
+    <string name="failed_matches_find_label_or">Or find it yourself</string>
+    <string name="failed_matches_find_placeholder">Artist and song</string>
+    <string name="failed_matches_find_clear">Clear search</string>
+    <string name="failed_matches_find_searching">Searching…</string>
+    <string name="failed_matches_find_searching_youtube">Searching all of YouTube…</string>
+    <string name="failed_matches_find_nothing">Nothing found. Try other words.</string>
+    <string name="failed_matches_find_failed">Couldn\'t search right now. Check your connection, then try again.</string>
+    <string name="failed_matches_find_song">Song</string>
+    <string name="failed_matches_find_video">Video</string>
+    <!-- Song or Video · its length, e.g. "Video · 4:12" -->
+    <string name="failed_matches_find_detail">%1$s · %2$s</string>
+    <string name="failed_matches_find_preview">Preview this version</string>
+    <string name="failed_matches_find_stop_preview">Stop preview</string>
+    <string name="failed_matches_find_use">Use this version</string>
+    <!-- Dismiss dialog: artist, title -->
+    <string name="failed_matches_dismiss_body">\'%1$s — %2$s\' won\'t be downloaded during future syncs. To pick the right version instead, tap the song and find it yourself.</string>
 </resources>

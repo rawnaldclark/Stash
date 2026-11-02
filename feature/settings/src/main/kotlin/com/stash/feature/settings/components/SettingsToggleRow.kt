@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
  * Tapping anywhere on the row toggles the switch. Mirrors the row shape used by
  * the other account sub-settings for visual consistency. Pure presentation — the caller
  * owns all state.
+ *
+ * [supporting] goes under the subtitle, in the same column (a status line). Anything
+ * clickable in it takes its own taps, so it never toggles the switch.
  */
 @Composable
 fun SettingsToggleRow(
@@ -33,6 +36,7 @@ fun SettingsToggleRow(
     enabled: Boolean = true,
     titleTrailing: (@Composable () -> Unit)? = null,
     subtitleColor: Color = Color.Unspecified,
+    supporting: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -61,6 +65,7 @@ fun SettingsToggleRow(
                     color = subtitleColor.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant },
                 )
             }
+            supporting?.invoke()
         }
         Spacer(modifier = Modifier.width(8.dp))
         com.stash.core.ui.components.StashSwitch(

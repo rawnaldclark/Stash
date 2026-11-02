@@ -87,6 +87,41 @@ class HomeViewModelTest {
         assertThat(state.heroBuilding).isFalse()
     }
 
+    @Test
+    fun `daily discover's songs are published for home's other shelves while its hero shows`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 2)
+        val songs = listOf(Track(id = 1L, title = "Africa", artist = "Toto"), Track(id = 2L, title = "Take On Me", artist = "a-ha"))
+        val shown = com.stash.core.data.home.HomeShownSongs()
+        val vm = buildVm(playlists = listOf(daily), builtinIds = listOf(7L), heroTracks = songs, shownSongs = shown)
+        runCurrent()
+        val keys = setOf(
+            com.stash.core.data.home.BecauseYouLike.songKey("Africa", "Toto"),
+            com.stash.core.data.home.BecauseYouLike.songKey("Take On Me", "a-ha"),
+        )
+        assertThat(shown.keys.value[com.stash.core.data.home.HomeShownSongs.DAILY_DISCOVER]).isEqualTo(keys)
+        // Minimized, the hero isn't on Home: its songs are free for the other shelves again
+        vm.setHeroMinimized(true)
+        runCurrent()
+        assertThat(shown.keys.value[com.stash.core.data.home.HomeShownSongs.DAILY_DISCOVER]).isEmpty()
+        vm.setHeroMinimized(false)
+        runCurrent()
+        assertThat(shown.keys.value[com.stash.core.data.home.HomeShownSongs.DAILY_DISCOVER]).isEqualTo(keys)
+    }
+
+    @Test
+    fun `with discover hidden, daily discover's songs aren't held back`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 1)
+        val shown = com.stash.core.data.home.HomeShownSongs()
+        buildVm(
+            playlists = listOf(daily), builtinIds = listOf(7L),
+            heroTracks = listOf(Track(id = 1L, title = "Africa", artist = "Toto")),
+            shownSongs = shown,
+            visibleSections = com.stash.core.data.prefs.HomeSection.entries - com.stash.core.data.prefs.HomeSection.DISCOVER,
+        )
+        runCurrent()
+        assertThat(shown.keys.value[com.stash.core.data.home.HomeShownSongs.DAILY_DISCOVER].orEmpty()).isEmpty()
+    }
+
     /**
      * Fresh install: Home subscribes before the first mix refresh writes Daily
      * Discover's playlist_id. The builtin ids were read once, so the hero never
@@ -386,6 +421,8 @@ class HomeViewModelTest {
         recipes: kotlinx.coroutines.flow.Flow<List<StashMixRecipeEntity>>? = null,
         /** Non-failed discovery rows per recipe (builtin recipes get ids 1, 2, … from [builtinIds]). */
         discoveryCounts: List<com.stash.core.data.db.dao.DiscoveryQueueDao.RecipeDiscoveryCount> = emptyList(),
+        shownSongs: com.stash.core.data.home.HomeShownSongs = com.stash.core.data.home.HomeShownSongs(),
+        visibleSections: List<com.stash.core.data.prefs.HomeSection> = com.stash.core.data.prefs.HomeSection.entries.toList(),
     ): HomeViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
@@ -465,7 +502,7 @@ class HomeViewModelTest {
                 on { unplayedFirst } doReturn flowOf(false)
             },
             homeSectionsPreference = mock {
-                on { visibleSections } doReturn flowOf(com.stash.core.data.prefs.HomeSection.entries.toList())
+                on { this.visibleSections } doReturn flowOf(visibleSections)
                 // Feeds likedCardFlow — an unstubbed (null) flow NPEs the
                 // uiState pairing combine and every test hangs, not fails.
                 on { showLikedOnHome } doReturn flowOf(likedCardEnabled)
@@ -476,6 +513,7 @@ class HomeViewModelTest {
             losslessAvailability = mock {
                 on { this.anyUserOwned } doReturn flowOf(anyUserOwned)
             },
+            shownSongs = shownSongs,
             context = mock(),
         )
     }

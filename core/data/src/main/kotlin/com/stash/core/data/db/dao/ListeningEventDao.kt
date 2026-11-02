@@ -113,11 +113,17 @@ interface ListeningEventDao {
      * ([com.stash.core.data.prefs.YouTubeHistoryPreference.sendPlaysSince]):
      * every play ever recorded has `yt_scrobbled = 0`, so without it turning
      * the feature on sent the whole listening history.
+     *
+     * A play from another device is owed only when the mirror wrote it so on
+     * purpose: `scrobbled = 1` (that device scrobbled it to Last.fm itself) with
+     * `yt_scrobbled = 0` (a browser's live play under an hour old, sent through
+     * this phone: RoomMirrorLibrary.addPlays). Every other writer of such rows
+     * sets both, and a row left at the defaults (both 0) is never sent.
      */
     @Query(
         """
         SELECT * FROM listening_events
-        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
+        WHERE yt_scrobbled = 0 AND (origin_device IS NULL OR scrobbled = 1) AND started_at >= :sinceMs
         ORDER BY started_at ASC
         LIMIT :limit
         """
@@ -141,12 +147,13 @@ interface ListeningEventDao {
 
     /**
      * Count of unscrobbled-to-YT events since the opt-in instant [sinceMs] (see
-     * [pendingYtScrobbles]). Drives the Settings health badge.
+     * [pendingYtScrobbles], whose rule for other devices' plays it shares).
+     * Drives the Settings health badge.
      */
     @Query(
         """
         SELECT COUNT(*) FROM listening_events
-        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
+        WHERE yt_scrobbled = 0 AND (origin_device IS NULL OR scrobbled = 1) AND started_at >= :sinceMs
         """
     )
     fun pendingYtScrobbleCount(sinceMs: Long): Flow<Int>
@@ -308,4 +315,30 @@ interface ListeningEventDao {
         """
     )
     suspend fun getTopTracksByLocalPlays(sinceEpochMs: Long, limit: Int): List<TrackArtistTitle>
+
+    /** A play's song and start, for Home's "Because you like" seed scores (this phone's plays only). */
+    data class PlayStamp(val trackId: Long, val startedAt: Long)
+
+    /** This phone's plays since [sinceMs], each its song and start: Home's "Because you like" seeds weigh them by age. */
+    @Query(
+        "SELECT track_id AS trackId, started_at AS startedAt FROM listening_events " +
+            "WHERE started_at >= :sinceMs AND origin_device IS NULL",
+    )
+    suspend fun playStampsSince(sinceMs: Long): List<PlayStamp>
+
+    /** The newest listen's id (0 with none): where Home's "Because you like" starts counting plays after a build. */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
+    suspend fun lastEventId(): Long
+
+    /** This phone's listens after [afterId] that played through (crossed the completion mark): full plays. */
+    @Query("SELECT COUNT(*) FROM listening_events WHERE id > :afterId AND completed_at IS NOT NULL AND origin_device IS NULL")
+    suspend fun countFullPlaysAfter(afterId: Long): Int
+
+    /**
+     * Which of [trackIds] have been heard: a listen of any length, on any device. Home's "Because you like" counts a
+     * song as one you know only then (a library song never played is still new to you). Keep [trackIds] under
+     * SQLite's bind limit (the caller chunks).
+     */
+    @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
+    suspend fun heardAmong(trackIds: List<Long>): List<Long>
 }

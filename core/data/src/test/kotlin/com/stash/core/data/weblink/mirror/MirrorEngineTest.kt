@@ -6,6 +6,7 @@ import com.stash.core.data.weblink.FakeSyncServer
 import com.stash.core.data.weblink.InMemoryWebLinkStore
 import com.stash.core.data.weblink.PairingSession
 import com.stash.core.data.weblink.PairingState
+import com.stash.core.data.weblink.SyncCrypto
 import com.stash.core.data.weblink.SyncErrorCode
 import com.stash.core.data.weblink.SyncResult
 import com.stash.core.data.weblink.WebLinkRepository
@@ -36,7 +37,14 @@ class MirrorEngineTest {
     private val lib = FakeMirrorLibrary()
     private val records = InMemoryMirrorStore()
     private var minted = 0
-    private val engine = MirrorEngine(server, store, repo, records, lib, { clock }, { "m_Phone%011d".format(++minted) })
+
+    /**
+     * The most one pushed batch seals to: the app's part, unless a test sets [SMALL_PART] before the engine is first used. Filling
+     * the app's 768,000 bytes takes 20,000 songs of random words, and the engine's run is real CPU on Dispatchers.IO, never the
+     * test scheduler: L-N5 at that size took 44 s on an idle PC and over 60 s on a loaded CI runner, past runTest's timeout.
+     */
+    private var partBytes = SyncCrypto.PART_BYTES
+    private val engine by lazy { MirrorEngine(server, store, repo, records, lib, { clock }, { "m_Phone%011d".format(++minted) }, partBytes) }
     private lateinit var web: WebSide
     private val me: String get() = store.id!!.deviceId
 
@@ -191,6 +199,119 @@ class MirrorEngineTest {
         assertThat(likeOps(me).filter { !it.on }.map { it.s.title }).isEmpty()
     }
 
+    // ------------------------------------------------------------------ a browser's likes and plays, sent on through the phone
+
+    @Test fun `a first merge sends nothing on to the services, a browser's live like and unlike do`() = runTest {
+        link()
+        likesMirroring() // Combine took the browser's B and C: never sent on
+        run()
+        assertThat(lib.likedTitles()).containsExactly("A", "B", "C")
+        assertThat(lib.sentOn).isEmpty()
+
+        web.post(MirrorOp.Like(song("D"), true, web.at()))
+        run()
+        assertThat(lib.sentOn).containsExactly("D" to true)
+        web.wall = server.serverNow + 60_000
+        web.post(MirrorOp.Like(song("D"), false, web.at()))
+        run()
+        assertThat(lib.sentOn).containsExactly("D" to true, "D" to false).inOrder()
+
+        // A heart made here goes out to the browser only: it already went on through LikeCoordinator when it was made
+        lib.like(song("E"))
+        run()
+        assertThat(lib.sentOn.map { it.first }).doesNotContain("E")
+    }
+
+    @Test fun `phone first - the browser's first merge arrives as ordinary ops and none of it goes on`() = runTest {
+        link()
+        engine.configure(MirrorChange(dirs = mapOf(Kind.LIKES to Dir.BOTH))) // the phone joins at once, waiting for no one
+        val since = web.config()!!.likes.since
+        // The browser's first merge: its likes from before the link, split over two pushes, the joined mark in the last
+        web.post(MirrorOp.Like(song("Old 1"), true, web.at()), MirrorOp.Like(song("Old 2"), true, web.at()))
+        web.post(MirrorOp.Like(song("Old 3"), true, web.at()), MirrorOp.Joined(Kind.LIKES, since))
+        run()
+        assertThat(lib.likedTitles()).containsAtLeast("Old 1", "Old 2", "Old 3")
+        assertThat(lib.sentOn).isEmpty()
+
+        // After it, a heart on the web goes on
+        web.post(MirrorOp.Like(song("New"), true, web.at()))
+        run()
+        assertThat(lib.sentOn).containsExactly("New" to true)
+    }
+
+    @Test fun `a push that changes more than 5 likes at once is a bulk change, never sent on, even split in parts`() = runTest {
+        link()
+        likesMirroring()
+        // A Spotify-export import on the web: one push, one stamp
+        val import = web.at()
+        web.post(*(1..6).map { MirrorOp.Like(song("Imported $it"), true, import) }.toTypedArray())
+        // A push of the same stamp read in two batches (the parts of a split push): 3 + 3
+        val split = web.at()
+        web.post(*(1..3).map { MirrorOp.Like(song("Part A $it"), true, split) }.toTypedArray())
+        web.post(*(1..3).map { MirrorOp.Like(song("Part B $it"), true, split) }.toTypedArray())
+        // Five hearts in one push are still hearts
+        val hearts = web.at()
+        web.post(*(1..5).map { MirrorOp.Like(song("Heart $it"), true, hearts) }.toTypedArray())
+        run()
+
+        assertThat(lib.likedTitles()).containsAtLeast("Imported 6", "Part B 3", "Heart 5")
+        assertThat(lib.sentOn.map { it.first }).containsExactly("Heart 1", "Heart 2", "Heart 3", "Heart 4", "Heart 5")
+    }
+
+    @Test fun `one run sends on only the newest 20 of a browser's like changes, the rest stay likes here`() = runTest {
+        link()
+        likesMirroring()
+        val all = (1..25).map { "Heart $it" }
+        all.chunked(5).forEach { push -> web.post(*push.map { MirrorOp.Like(song(it), true, web.at()) }.toTypedArray()) }
+        run()
+        assertThat(lib.likedTitles()).containsAtLeastElementsIn(all)
+        assertThat(lib.sentOn.map { it.first }).containsExactlyElementsIn(all.drop(5)).inOrder()
+
+        // The next run has room again
+        web.post(MirrorOp.Like(song("Next"), true, web.at()))
+        run()
+        assertThat(lib.sentOn).hasSize(MirrorEngine.MAX_LIKES_ONWARD + 1)
+        assertThat(lib.sentOn.last()).isEqualTo("Next" to true)
+    }
+
+    @Test fun `a like and an unlike of the same song in one run send nothing`() = runTest {
+        link()
+        likesMirroring()
+        web.post(MirrorOp.Like(song("Changed mind"), true, web.at()))
+        web.post(MirrorOp.Like(song("Changed mind"), false, web.at()))
+        run()
+        assertThat(lib.likedTitles()).doesNotContain("Changed mind")
+        assertThat(lib.sentOn).isEmpty()
+    }
+
+    @Test fun `a browser's plays read live may go on to YouTube history, never the ones a first merge brings`() = runTest {
+        link()
+        web.configure(plays = Dir.BOTH)
+        val since = web.head
+        web.post(MirrorOp.Play(song("Before"), 2_000), MirrorOp.Joined(Kind.PLAYS, since))
+        run()
+        assertThat(lib.plays.map { it.s.title }).contains("Before")
+        assertThat(lib.livePlays).isEmpty()
+
+        web.post(MirrorOp.Play(song("Live"), 3_000))
+        run()
+        assertThat(lib.livePlays).containsExactly("Live")
+    }
+
+    @Test fun `phone first - the plays a browser's first merge sends are not live`() = runTest {
+        link()
+        engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYS to Dir.BOTH)))
+        val since = web.config()!!.plays.since
+        web.post(MirrorOp.Play(song("Its old play"), 2_000), MirrorOp.Joined(Kind.PLAYS, since))
+        run()
+        assertThat(lib.plays.map { it.s.title }).contains("Its old play")
+        assertThat(lib.livePlays).isEmpty()
+
+        web.post(MirrorOp.Play(song("Live"), 3_000))
+        run()
+        assertThat(lib.livePlays).containsExactly("Live")
+    }
+
     @Test fun `a playlist song the phone can't hold isn't sent back as removed`() = runTest {
         link()
         lib.unholdable += "Ghost"
@@ -327,9 +448,10 @@ class MirrorEngineTest {
     }
 
     @Test fun `S1 - a push cut short after its first batch never re-sends that batch`() = runTest {
+        partBytes = SMALL_PART
         link()
         likesMirroring()
-        val n = 20_000
+        val n = SMALL_PART_SONGS
         val rnd = java.util.Random(7)
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
@@ -427,6 +549,7 @@ class MirrorEngineTest {
     }
 
     @Test fun `L-N5 - Use this phone's, a push cut short after its first batch, then the retry sends the rest unheld once`() = runTest {
+        partBytes = SMALL_PART
         link()
         lib.like(song("Mine"))
         web.configure(likes = Dir.BOTH)
@@ -434,7 +557,7 @@ class MirrorEngineTest {
         val rnd = java.util.Random(11)
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
-        val n = 20_000
+        val n = SMALL_PART_SONGS
         web.post(*(0 until n).map { MirrorOp.Like(song(word(), word()), true, web.at()) }.toTypedArray(), MirrorOp.Joined(Kind.LIKES, since))
         run()
         val q = engine.status.value.question!!
@@ -825,5 +948,14 @@ class MirrorEngineTest {
         link()
         server.failNext("logAfter", SyncResult.Error(409, SyncErrorCode.ROTATION_DUE))
         assertThat(run()).isEqualTo(MirrorRun.Done) // a key change in the middle is settled and the run goes again
+    }
+
+    private companion object {
+        /**
+         * A tenth of the app's part, filled by a tenth of the songs ([SMALL_PART_SONGS] of random 24-letter words): a push of
+         * them is cut into the same batches as 20,000 songs in a real part, with a tenth of the work.
+         */
+        const val SMALL_PART = SyncCrypto.PART_BYTES / 10
+        const val SMALL_PART_SONGS = 2_000
     }
 }

@@ -2,7 +2,13 @@ package com.stash.core.data.sync
 
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.auth.TokenManager
+import com.stash.core.auth.model.AuthService
+import com.stash.core.data.db.dao.PlaylistDao
+import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -17,6 +23,8 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class SyncPreferencesManagerTest {
     private lateinit var mgr: SyncPreferencesManager
+    private val tokenManager = mockk<TokenManager>()
+    private val playlistDao = mockk<PlaylistDao>()
 
     @Before fun setUp() {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -25,7 +33,20 @@ class SyncPreferencesManagerTest {
         // an in-memory cache that survives the delete — so clear() the live
         // store so each test genuinely starts from an empty store.
         runBlocking { ctx.syncPrefsDataStore.edit { it.clear() } }
-        mgr = SyncPreferencesManager(ctx)
+        // Both accounts signed in unless a test says otherwise: every mode counts.
+        signedIn(spotify = true, youtube = true)
+        playlistsHere(spotify = false, youtube = false)
+        mgr = SyncPreferencesManager(ctx, tokenManager, playlistDao)
+    }
+
+    private fun signedIn(spotify: Boolean, youtube: Boolean) {
+        coEvery { tokenManager.isAuthenticated(AuthService.SPOTIFY) } returns spotify
+        coEvery { tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns youtube
+    }
+
+    private fun playlistsHere(spotify: Boolean, youtube: Boolean) {
+        coEvery { playlistDao.hasLibraryPlaylists(MusicSource.SPOTIFY) } returns spotify
+        coEvery { playlistDao.hasLibraryPlaylists(MusicSource.YOUTUBE) } returns youtube
     }
 
     @Test fun `default mode is ACCUMULATE for both sources on a fresh store`() = runTest {
@@ -63,6 +84,70 @@ class SyncPreferencesManagerTest {
     @Test fun `anyAccumulate true when one source accumulates`() = runTest {
         mgr.setSpotifySyncMode(SyncMode.REFRESH)
         mgr.setYoutubeSyncMode(SyncMode.ACCUMULATE)
+        assertTrue(mgr.anyAccumulate())
+    }
+
+    // #273: an account never connected has no switch on screen, so its default
+    // Accumulate must not stop a one-service library's Refresh from deleting.
+
+    @Test fun `a YouTube-only library in Refresh is cleaned, Spotify never connected`() = runTest {
+        signedIn(spotify = false, youtube = true)
+        playlistsHere(spotify = false, youtube = true)
+        mgr.setYoutubeSyncMode(SyncMode.REFRESH)
+        // Spotify stays on its untouched default, Accumulate.
+        assertEquals(SyncMode.ACCUMULATE, mgr.spotifySyncMode.first())
+
+        assertFalse(mgr.anyAccumulate())
+    }
+
+    @Test fun `a Spotify-only library in Refresh is cleaned, YouTube never connected`() = runTest {
+        signedIn(spotify = true, youtube = false)
+        mgr.setSpotifySyncMode(SyncMode.REFRESH)
+
+        assertFalse(mgr.anyAccumulate())
+    }
+
+    @Test fun `a one-service library still in Accumulate keeps everything`() = runTest {
+        signedIn(spotify = false, youtube = true)
+
+        assertTrue(mgr.anyAccumulate())
+    }
+
+    @Test fun `a disconnected account whose playlists remain still blocks while it accumulates`() = runTest {
+        signedIn(spotify = false, youtube = true)
+        playlistsHere(spotify = true, youtube = true)
+        mgr.setYoutubeSyncMode(SyncMode.REFRESH)
+
+        assertTrue(mgr.anyAccumulate())
+    }
+
+    @Test fun `a disconnected account whose playlists remain counts its Refresh too`() = runTest {
+        signedIn(spotify = false, youtube = true)
+        playlistsHere(spotify = true, youtube = true)
+        mgr.setSpotifySyncMode(SyncMode.REFRESH)
+        mgr.setYoutubeSyncMode(SyncMode.REFRESH)
+
+        assertFalse(mgr.anyAccumulate())
+    }
+
+    @Test fun `with no account counting nothing is deleted, whatever the modes say`() = runTest {
+        // No sign-in and no playlists: SoundCloud-only, local files only, or a fresh install.
+        signedIn(spotify = false, youtube = false)
+        mgr.setSpotifySyncMode(SyncMode.REFRESH)
+        mgr.setYoutubeSyncMode(SyncMode.REFRESH)
+
+        assertTrue(mgr.anyAccumulate())
+    }
+
+    // A token that can't be decrypted reads as signed out (EncryptedTokenStore returns null), so
+    // that account counts only by its playlists: the disconnected cases above. What can throw is
+    // the read itself, here the playlists query (a database error).
+    @Test fun `when the playlists can't be read nothing is deleted`() = runTest {
+        signedIn(spotify = false, youtube = true)
+        coEvery { playlistDao.hasLibraryPlaylists(MusicSource.SPOTIFY) } throws android.database.sqlite.SQLiteException("disk I/O error")
+        mgr.setSpotifySyncMode(SyncMode.REFRESH)
+        mgr.setYoutubeSyncMode(SyncMode.REFRESH)
+
         assertTrue(mgr.anyAccumulate())
     }
 

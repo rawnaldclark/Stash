@@ -76,6 +76,9 @@ class ListeningRecorderSkipTest {
         fun setState(state: PlayerState) { stateFlow.value = state }
         fun setPosition(positionMs: Long) { positionFlow.value = positionMs }
 
+        /** How many collectors the position ticker has now: each one keeps the real ticker polling. */
+        val positionCollectors: Int get() = positionFlow.subscriptionCount.value
+
         override suspend fun play() = Unit
         override suspend fun pause() = Unit
         override suspend fun skipNext() = Unit
@@ -756,5 +759,83 @@ class ListeningRecorderSkipTest {
         coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
         assertEquals(1, initialChildren.count { it.isCancelled })
         recorderScope.cancel()
+    }
+
+    @Test
+    fun `the position ticker is collected only while repeat-one is on`() = runTest {
+        // The recorder lives as long as the process; collecting the 250 ms ticker always kept it polling through every
+        // song played with the screen off. Repeat-one is the only time a position can start a new play.
+        val playing = PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.OFF, positionMs = 0)
+        val playerRepo = FakePlayerRepository(playing)
+        ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = passthroughMusicRepository(),
+            listeningEventDao = mockk(relaxed = true),
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = mockk(relaxed = true),
+            listenSinks = mockk(relaxed = true),
+            scope = backgroundScope,
+            nowMs = { testScheduler.currentTime },
+        ).start()
+        runCurrent()
+        assertEquals(0, playerRepo.positionCollectors)
+
+        playerRepo.setState(playing.copy(repeatMode = RepeatMode.ALL))
+        runCurrent()
+        assertEquals(0, playerRepo.positionCollectors)
+
+        playerRepo.setState(playing.copy(repeatMode = RepeatMode.ONE))
+        runCurrent()
+        assertEquals(1, playerRepo.positionCollectors)
+
+        playerRepo.setState(playing.copy(repeatMode = RepeatMode.OFF))
+        runCurrent()
+        assertEquals(0, playerRepo.positionCollectors)
+    }
+
+    @Test
+    fun `repeat-one switched off and on again starts from where the song is and still counts the next loop`() = runTest {
+        val repeatOne = PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0)
+        val playerRepo = FakePlayerRepository(repeatOne)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
+        ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = passthroughMusicRepository(),
+            listeningEventDao = listeningDao,
+            trackSkipEventDao = mockk(relaxed = true),
+            scrobbler = scrobbler,
+            listenSinks = mockk(relaxed = true),
+            scope = backgroundScope,
+            nowMs = { testScheduler.currentTime },
+        ).start()
+        runCurrent()
+        playerRepo.setPosition(100_000L) // seen while repeat-one is on
+        runCurrent()
+
+        // Repeat goes off; unwatched, the song moves on and is sent back to the start ("previous").
+        playerRepo.setState(repeatOne.copy(repeatMode = RepeatMode.OFF))
+        runCurrent()
+        playerRepo.setPosition(150_000L)
+        playerRepo.setPosition(2_000L)
+        runCurrent()
+        // Repeat-one comes back. 100 s (last seen) -> 2 s happened with repeat off: not a loop, no new play.
+        playerRepo.setState(repeatOne)
+        runCurrent()
+        coVerify(exactly = 1) { scrobbler.notifyNowPlaying(any(), any(), any()) }
+
+        advanceTimeBy(95_000)
+        runCurrent()
+        coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
+
+        // A real loop afterwards still starts a new play, which counts once it is heard.
+        playerRepo.setPosition(170_000L)
+        runCurrent()
+        playerRepo.setPosition(300L)
+        runCurrent()
+        coVerify(exactly = 2) { scrobbler.notifyNowPlaying(any(), any(), any()) }
+        advanceTimeBy(95_000)
+        runCurrent()
+        coVerify(exactly = 2) { listeningDao.recordCompletedListen(any()) }
     }
 }

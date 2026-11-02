@@ -1,7 +1,6 @@
 package com.stash.feature.listening.stats
 
 import com.stash.core.common.foldCase
-import com.stash.core.common.matchesArtistCredits
 import com.stash.core.common.primaryArtist
 import com.stash.core.data.db.dao.DayCount
 import com.stash.core.data.db.dao.HourCount
@@ -13,6 +12,7 @@ import com.stash.core.data.genre.ArtistGenreKey
 import com.stash.core.data.genre.ArtistWeight
 import com.stash.core.data.listening.DayRange
 import com.stash.core.data.listening.ListeningRange
+import com.stash.core.data.listening.MainArtists
 import kotlin.math.roundToInt
 
 /**
@@ -154,34 +154,14 @@ internal object ListeningInsights {
 
     // ── Grouping the top lists ──────────────────────────────────────────
 
-    /** The list key of an artist: one per main act, folded like `equals(ignoreCase = true)`. */
-    fun artistKey(name: String): String = foldCase(name.primaryArtist().trim())
+    /** The list key of an artist: one per main act, folded like `equals(ignoreCase = true)` ([MainArtists.key]). */
+    fun artistKey(name: String): String = MainArtists.key(name)
 
     /** The list key of an album: its title and main act, folded (SQLite's LOWER folds ASCII only). */
     fun albumKey(album: String, artist: String): String = foldCase(album.trim()) + "|" + artistKey(artist)
 
-    /**
-     * Top artists by main act: "Drake, Future" counts for Drake, as the Library's Artists tab and
-     * artist pages group. Plays, songs and time add up; the cover and spelling are the busiest
-     * credit's. A main act its own credit doesn't name ("Earth" from "Earth, Wind & Fire,
-     * Chicago") or a blank one is left out, as the Library does: its artist page would be empty.
-     * Most played first, then the one heard last.
-     */
-    fun byMainArtist(rows: List<TopArtistRow>): List<TopArtistRow> =
-        rows.groupBy { artistKey(it.artist) }
-            .mapNotNull { (_, group) ->
-                val lead = group.maxWith(compareBy<TopArtistRow> { it.plays }.thenBy { it.lastPlayedAt })
-                val name = lead.artist.primaryArtist().trim()
-                if (name.isEmpty() || group.none { matchesArtistCredits(it.artist, "", name) }) return@mapNotNull null
-                lead.copy(
-                    artist = name,
-                    plays = group.sumOf { it.plays },
-                    songs = group.sumOf { it.songs },
-                    lastPlayedAt = group.maxOf { it.lastPlayedAt },
-                    listenedMs = group.sumOf { it.listenedMs },
-                )
-            }
-            .sortedWith(compareByDescending<TopArtistRow> { it.plays }.thenByDescending { it.lastPlayedAt })
+    /** Top artists by main act ([MainArtists.byMainArtist], shared with Home's "New from your artists"). */
+    fun byMainArtist(rows: List<TopArtistRow>): List<TopArtistRow> = MainArtists.byMainArtist(rows)
 
     /**
      * The weights top genres are computed from: each RAW artist credit's listening time (the

@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
@@ -243,6 +244,34 @@ interface PlaylistDao {
      * Route through [com.stash.core.data.db.chunkedForBind]; a library-sized
      * playlist id list overflows SQLite's bind cap unchunked.
      */
+    /**
+     * The live memberships of [trackIds] in switched-on, active playlists other than Stash Mixes:
+     * where the sync's requeue finds each song it skips, so it can link the song's copy there
+     * ([com.stash.core.data.library.LibraryReconciliationUseCase]).
+     */
+    @Query("""
+        SELECT pt.* FROM playlist_tracks pt
+        INNER JOIN playlists p ON p.id = pt.playlist_id
+        WHERE pt.track_id IN (:trackIds)
+          AND pt.removed_at IS NULL
+          AND p.sync_enabled = 1
+          AND p.is_active = 1
+          AND p.type != 'STASH_MIX'
+    """)
+    suspend fun getSyncedMembershipsRaw(trackIds: List<Long>): List<PlaylistTrackCrossRef>
+
+    /** [getSyncedMembershipsRaw], chunked for SQLite's bind cap. */
+    suspend fun getSyncedMemberships(trackIds: List<Long>): List<PlaylistTrackCrossRef> =
+        trackIds.chunkedForBind { getSyncedMembershipsRaw(it) }
+
+    /**
+     * Inserts links that are absent and leaves any existing one as it is: a copy already in the
+     * playlist keeps its place, and one the user took out (a removal mark written meanwhile
+     * included) stays out. For a song's copy linked where the song sits.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCrossRefsIfAbsent(crossRefs: List<PlaylistTrackCrossRef>)
+
     @Query("SELECT * FROM playlist_tracks WHERE playlist_id IN (:playlistIds)")
     suspend fun getCrossRefsForPlaylists(playlistIds: List<Long>): List<PlaylistTrackCrossRef>
 
@@ -552,6 +581,30 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET last_synced = :timestamp WHERE id = :playlistId")
     suspend fun updateLastSynced(playlistId: Long, timestamp: Long)
 
+    // ── Like mirroring: "is it liked on Spotify already?" ────────────────
+
+    /**
+     * When the synced Spotify Liked Songs was last read (epoch millis), or null when it never was. A Liked Songs snapshot
+     * carries no revision, so every sync re-diffs it and moves this ([com.stash.core.data.sync.workers.DiffWorker]).
+     */
+    @Query("SELECT MAX(last_synced) FROM playlists WHERE type = 'LIKED_SONGS' AND source = 'SPOTIFY'")
+    suspend fun spotifyLikedSongsLastSynced(): Long?
+
+    /** Whether the synced Spotify Liked Songs holds the song: its row, or any row with the same Spotify URI. */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN playlists p ON p.id = pt.playlist_id
+            INNER JOIN tracks t ON t.id = pt.track_id
+            WHERE p.type = 'LIKED_SONGS' AND p.source = 'SPOTIFY'
+              AND pt.removed_at IS NULL
+              AND (pt.track_id = :trackId OR (:spotifyUri IS NOT NULL AND t.spotify_uri = :spotifyUri))
+        )
+        """
+    )
+    suspend fun isInSpotifyLikedSongs(trackId: Long, spotifyUri: String?): Boolean
+
     // ── Snapshot queries ─────────────────────────────────────────────────
 
     /** Retrieve the snapshot ID for a playlist, used for change detection. */
@@ -838,6 +891,14 @@ interface PlaylistDao {
             name ASC
     """)
     fun getYouTubePlaylistsForPreferences(): Flow<List<PlaylistEntity>>
+
+    /**
+     * Whether any of [source]'s playlists are still in the library: the rows the
+     * Sync screens list for it (the two queries above). Keeps a disconnected
+     * account's Refresh/Accumulate counting while its songs are here (#273).
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM playlists WHERE source = :source AND (is_active = 1 OR user_hidden = 1))")
+    suspend fun hasLibraryPlaylists(source: MusicSource): Boolean
 
     /** The followed mix's "Download this mix" switch (spec §6): sync_enabled only, no Home pin. */
     @Query("UPDATE playlists SET sync_enabled = :enabled WHERE id = :playlistId")

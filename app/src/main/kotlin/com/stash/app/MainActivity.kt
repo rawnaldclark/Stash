@@ -51,6 +51,7 @@ import com.stash.data.download.lossless.quota.LosslessQuota
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
+import com.stash.core.data.social.serviceName
 import com.stash.core.media.PlayerRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -134,9 +135,17 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var likeCoordinator: LikeCoordinator
 
+    /** Android's Battery Saver: the UI's continuous loops stand still while it is on (D19). */
+    @Inject
+    lateinit var batterySaver: com.stash.core.common.power.BatterySaver
+
     /** The daily lossless allowance: its once-a-day heads-ups (50 left, limit reached) snackbar in [StashScaffold]. */
     @Inject
     lateinit var losslessQuota: LosslessQuota
+
+    /** The one-time duplicate cleanup's "Tidied N duplicate songs", shown once by [StashScaffold]. */
+    @Inject
+    lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
 
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
@@ -221,7 +230,8 @@ class MainActivity : AppCompatActivity() {
         val initialThemeMode = themeSnapshot.getString(KEY_THEME_MODE, null)
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
             ?: ThemeMode.SYSTEM
-        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+        // Pure black is the default, so a first launch's first frame is black too, not a grey flash.
+        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, true)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -274,15 +284,19 @@ class MainActivity : AppCompatActivity() {
                         playerRepository.userMessages,
                         halts.drop(halts.replayCache.size)
                             .map { "Streaming is failing — try a downloaded track or check your connection" },
-                        likeCoordinator.mirrorFailures,
+                        // A service stopped taking this phone's sign-in: the likes wait, and Settings says so under
+                        // the switch; this says it once, now, so a background heart's failure doesn't go unseen.
+                        likeCoordinator.mirrorFailures.map { context.getString(R.string.like_mirror_signed_out, it.serviceName) },
                     ).collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
             // restored back stack always sits on the graph it was saved with.
             val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
+            val batterySaverOn by batterySaver.isOn.collectAsState()
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(
+                    com.stash.core.ui.ambient.LocalBatterySaverOn provides batterySaverOn,
                     LocalUiScaleMax provides UiScale.maxFor(unscaledSmallestWidthDp),
                     LocalListenTogetherRole provides role,
                     LocalCreateTrackLink provides createTrackLink,
@@ -292,6 +306,8 @@ class MainActivity : AppCompatActivity() {
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
                         startTab = startTab,
                         losslessNotices = losslessQuota.noticeEvents,
+                        tidyNotices = duplicateCleanupState.pendingNotice,
+                        onTidyNoticeShown = duplicateCleanupState::noticeShown,
                     )
                 }
             }

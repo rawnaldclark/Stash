@@ -9,6 +9,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -97,6 +98,8 @@ class PlaylistDetailViewModel @Inject constructor(
     private val sharedMixRepository: com.stash.core.data.share.SharedMixRepository,
     private val downloadQueueDao: DownloadQueueDao,
     private val orderDao: com.stash.core.data.db.dao.PlaylistOrderDao,
+    /** Start radio from a song's menu (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     /** The playlist ID extracted from the navigation route arguments. */
@@ -358,7 +361,7 @@ class PlaylistDetailViewModel @Inject constructor(
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
                 if (!connectivityMonitor.isConnected()) {
-                    _userMessages.tryEmit("Online only — connect to play this track")
+                    _userMessages.tryEmit("No internet connection, and this song isn't downloaded.")
                     return@launch
                 }
             }
@@ -428,6 +431,12 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _userMessages.tryEmit(it) } }
+    }
+
     /**
      * Appends [track] to the end of the current playback queue.
      */
@@ -454,9 +463,12 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun queueDownload(trackId: Long) {
         viewModelScope.launch {
-            val queued = musicRepository.queueDownload(trackId)
             _userMessages.tryEmit(
-                if (queued) "Queued for download." else "Couldn't queue download.",
+                when (musicRepository.requestDownload(trackId)) {
+                    DownloadRequestResult.QUEUED -> "Queued for download."
+                    DownloadRequestResult.ALREADY_ON_PHONE -> "Already on your phone."
+                    DownloadRequestResult.NOT_QUEUED -> "Couldn't queue download."
+                },
             )
         }
     }

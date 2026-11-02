@@ -1,2 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources></resources>
+<resources>    <string name="like_mirror_signed_out">आपके लाइक %1$s तक नहीं पहुँच पा रहे। सेटिंग्स में फिर से साइन इन करें।</string>
+</resources>

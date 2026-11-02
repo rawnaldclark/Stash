@@ -57,7 +57,9 @@ class SearchDownloadCoordinatorDeferTest {
     private val cacheKeyFactory: CacheKeyFactory = mockk(relaxed = true)
     private val downloadExecutor: DownloadExecutor = mockk(relaxed = true)
     private val trackFinalizer: TrackFinalizer = mockk(relaxed = true)
-    private val trackDao: TrackDao = mockk(relaxed = true)
+    private val trackDao: TrackDao = mockk(relaxed = true) {
+        io.mockk.coEvery { findByAlias(any(), any()) } returns null
+    }
     private val musicRepository: MusicRepository = mockk(relaxed = true)
     private val blocklistGuard: BlocklistGuard = mockk(relaxed = true)
     private val context: Context = mockk(relaxed = true)

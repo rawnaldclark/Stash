@@ -105,6 +105,15 @@
     <string name="settings_like_mirror_row_title">Auch auf %1$s „Gefällt mir“ geben</string>
     <string name="settings_like_mirror_lastfm_title">Auch auf Last.fm lieben</string>
     <string name="settings_like_mirror_row_subtitle">Songs, die du ab jetzt in Stash mit einem Herz markierst, werden gespiegelt</string>
+    <string name="settings_like_status_up_to_date">Auf dem neuesten Stand</string>
+    <string name="settings_like_status_waiting">Ausstehend: %1$d</string>
+    <string name="settings_like_status_offline">Ausstehend: %1$d · wartet auf Verbindung</string>
+    <string name="settings_like_status_retrying">Ausstehend: %1$d · neuer Versuch folgt</string>
+    <string name="settings_like_status_needs_you">Letzter Fehler: %1$s · zum Wiederholen tippen</string>
+    <string name="settings_like_error_signed_out">Anmeldung abgelaufen</string>
+    <string name="settings_like_error_rate_limited">zu viele Anfragen</string>
+    <string name="settings_like_error_refused">nicht angenommen</string>
+    <string name="settings_like_error_offline">keine Verbindung</string>
     <string name="settings_listenbrainz_dialog_title">ListenBrainz verbinden</string>
     <string name="settings_scrobbles_send_now">Jetzt senden</string>
     <plurals name="settings_scrobbles_waiting">
@@ -117,7 +126,7 @@
     <string name="settings_disconnect_account_body">Stash meldet dich auf diesem Telefon bei %1$s ab und beendet die Synchronisierung. Songs von %1$s, deren Download noch aussteht, werden aus der Warteschlange entfernt.\n\nBereits heruntergeladene Songs bleiben in deiner Bibliothek, und du kannst die Verbindung jederzeit wiederherstellen.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">„Gefällt mir“-Angaben zu %1$s spiegeln?</string>
-    <string name="settings_like_mirror_warning_body">Wenn du einen Song in Stash mit einem Herz markierst, wird er auch auf %1$s mit „Gefällt mir“ markiert. Entfernst du das Herz, wird auch das „Gefällt mir“ dort entfernt. Nur Likes, die du ab jetzt hinzufügst, werden übernommen.\n\nDies nutzt denselben privaten Endpunkt wie der Webplayer von %1$s – keine offizielle API. Er kann jederzeit nicht mehr funktionieren, und in seltenen Fällen kann ein inoffizieller Zugriff dazu führen, dass ein Konto als verdächtig eingestuft wird. Aktiviere diese Funktion am besten nur für ein Zweit- oder Ersatzkonto.</string>
+    <string name="settings_like_mirror_risk_body">Wenn du einen Song in Stash mit einem Herz markierst, wird er auch auf %1$s mit „Gefällt mir“ markiert. Entfernst du das Herz, wird dieses „Gefällt mir“ wieder entfernt, aber nie eines, das schon vorher da war. Nur Likes, die du ab jetzt hinzufügst, werden übernommen.\n\nDies nutzt den privaten Endpunkt des Webplayers von %1$s, keine offizielle API. Er kann jederzeit nicht mehr funktionieren, und in seltenen Fällen kann ein inoffizieller Zugriff dazu führen, dass ein Konto markiert wird.</string>
     <string name="settings_like_mirror_warning_confirm">Ich verstehe</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->
@@ -219,7 +228,6 @@
     <string name="settings_youtube_quality_title">YouTube-Qualität</string>
     <string name="settings_download_quality_rates_desc">Legt die unten aufgeführten Raten für YouTube-Downloads fest. Für JioSaavn gelten 96 kbit/s bei „Niedrig“ und „Normal“, 160 bei „Hoch“ sowie 320 bei „Beste“ und „Max“.</string>
     <string name="settings_save_data_title">Datensparen</string>
-    <string name="settings_save_data_subtitle">Niedrigste JioSaavn- und YouTube-Qualität</string>
     <string name="settings_lossless_title">Verlustfrei</string>
     <string name="settings_lossless_subtitle_off">Aus: Songs werden von JioSaavn oder YouTube abgespielt</string>
     <string name="settings_lossless_subtitle_no_source">Noch keine verlustfreie Quelle eingerichtet</string>
@@ -252,7 +260,6 @@
     <string name="settings_streaming_section">Streaming</string>
     <string name="settings_on_wifi">Über WLAN</string>
     <string name="settings_on_cellular">Über Mobilfunk</string>
-    <string name="settings_save_data_lossless_subtitle">CD-Qualität in jedem Netzwerk</string>
     <string name="settings_prefer_cloud_copies_title">Meine Cloud-Kopien zuerst abspielen</string>
     <string name="settings_prefer_cloud_copies_subtitle">Deine verlustfreien Dateien im Cloud-Speicher, vor Qobuz oder Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Tidal-AAC beim Streaming bevorzugen</string>
@@ -330,8 +337,6 @@
     <string name="settings_lossless_routing_header">SIGNALWEG</string>
     <string name="settings_lossless_routing_footer">Verlustfreies Audio stammt aus den oben genannten Quellen. Wird dort nichts gefunden, wird zuerst JioSaavn versucht, bevor auf YouTube zurückgegriffen wird; während der Wiedergabe wird „via YT“ angezeigt.</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Nur streamen</string>
-    <string name="settings_mode_download">Download</string>
     <string name="settings_stream_on_cellular_title">Über Mobilfunk streamen</string>
     <string name="settings_stream_on_cellular_desc">Nutzt mobile Daten</string>
     <string name="settings_stream_via_youtube_title">Über YouTube streamen</string>

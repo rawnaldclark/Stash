@@ -3,4 +3,5 @@
     <string name="app_name">Stash</string>
     <string name="resume_playback_short">Wznów</string>
     <string name="resume_playback_long">Wznów odtwarzanie</string>
+    <string name="like_mirror_signed_out">Twoje polubienia nie docierają do %1$s. Zaloguj się ponownie w Ustawieniach.</string>
 </resources>

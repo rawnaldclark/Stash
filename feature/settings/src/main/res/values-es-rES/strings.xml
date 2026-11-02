@@ -105,6 +105,15 @@
     <string name="settings_like_mirror_row_title">Dar Me gusta también en %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Dar Love también en Last.fm</string>
     <string name="settings_like_mirror_row_subtitle">A partir de ahora, las canciones que marques con un corazón en Stash se reflejarán</string>
+    <string name="settings_like_status_up_to_date">Al día</string>
+    <string name="settings_like_status_waiting">Pendientes: %1$d</string>
+    <string name="settings_like_status_offline">Pendientes: %1$d · esperando conexión</string>
+    <string name="settings_like_status_retrying">Pendientes: %1$d · reintentando</string>
+    <string name="settings_like_status_needs_you">Último error: %1$s · toca para reintentar</string>
+    <string name="settings_like_error_signed_out">la sesión caducó</string>
+    <string name="settings_like_error_rate_limited">demasiadas solicitudes</string>
+    <string name="settings_like_error_refused">no aceptado</string>
+    <string name="settings_like_error_offline">sin conexión</string>
     <string name="settings_listenbrainz_dialog_title">Conectar ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Enviar ahora</string>
     <plurals name="settings_scrobbles_waiting">
@@ -117,7 +126,7 @@
     <string name="settings_disconnect_account_body">Stash cierra la sesión de %1$s en este teléfono y deja de sincronizarlo. Las canciones de %1$s que aún están pendientes de descarga se eliminan de la cola.\n\nLas canciones que ya descargaste permanecen en tu biblioteca y puedes reconectar cuando quieras.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">¿Reflejar Me gusta en %1$s?</string>
-    <string name="settings_like_mirror_warning_body">Marcar con un corazón una pista en Stash también le dará un Me gusta en %1$s, y quitar el corazón eliminará ese Me gusta allí también. Solo se reflejarán los Me gusta que añadas a partir de ahora.\n\nEsto usa el mismo endpoint privado que usa el reproductor web de %1$s —no es una API oficial. Puede dejar de funcionar en cualquier momento y, en raras ocasiones, el acceso no oficial puede hacer que una cuenta sea marcada como sospechosa. Considera activarlo solo en una cuenta secundaria o de respaldo.</string>
+    <string name="settings_like_mirror_risk_body">Marcar con un corazón una canción en Stash también le dará un Me gusta en %1$s, y quitar el corazón retirará ese Me gusta, pero nunca uno que ya estuviera allí. Solo se reflejarán los Me gusta que añadas a partir de ahora.\n\nEsto usa el endpoint privado del reproductor web de %1$s, no una API oficial. Puede dejar de funcionar en cualquier momento y, en raras ocasiones, el acceso no oficial puede hacer que una cuenta sea marcada.</string>
     <string name="settings_like_mirror_warning_confirm">Entiendo</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->
@@ -219,7 +228,6 @@
     <string name="settings_youtube_quality_title">Calidad de YouTube</string>
     <string name="settings_download_quality_rates_desc">Configura las descargas de YouTube con las tasas que aparecen abajo, y las de JioSaavn a 96 kbps en Bajo y Normal, 160 en Alto, 320 en Mejor y Máximo.</string>
     <string name="settings_save_data_title">Ahorro de datos</string>
-    <string name="settings_save_data_subtitle">La calidad más baja de JioSaavn y YouTube</string>
     <string name="settings_lossless_title">Sin pérdida</string>
     <string name="settings_lossless_subtitle_off">Desactivado: las canciones se reproducen desde JioSaavn o YouTube</string>
     <string name="settings_lossless_subtitle_no_source">Aún no hay fuente sin pérdida configurada</string>
@@ -252,7 +260,6 @@
     <string name="settings_streaming_section">Transmisión</string>
     <string name="settings_on_wifi">En Wi‑Fi</string>
     <string name="settings_on_cellular">En datos móviles</string>
-    <string name="settings_save_data_lossless_subtitle">Calidad de CD en todas las redes</string>
     <string name="settings_prefer_cloud_copies_title">Reproducir primero mis copias en la nube</string>
     <string name="settings_prefer_cloud_copies_subtitle">Tus archivos sin pérdida en el almacenamiento en la nube, antes que Qobuz o Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Preferir AAC de Tidal durante el streaming</string>
@@ -330,8 +337,6 @@
     <string name="settings_lossless_routing_header">ENRUTAMIENTO</string>
     <string name="settings_lossless_routing_footer">El audio sin pérdida proviene de las fuentes anteriores. En caso de fallo, primero se prueba JioSaavn antes de recurrir a YouTube; durante la reproducción se muestra como \"via YT\".</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Solo streaming</string>
-    <string name="settings_mode_download">Descarga</string>
     <string name="settings_stream_on_cellular_title">Reproducir con datos móviles</string>
     <string name="settings_stream_on_cellular_desc">Usa datos móviles</string>
     <string name="settings_stream_via_youtube_title">Reproducir a través de YouTube</string>

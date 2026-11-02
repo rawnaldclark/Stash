@@ -11,3 +11,15 @@ files:
     translation: /feature/sync/src/main/res/values-%android_code%/strings.xml
   - source: /feature/record/src/main/res/values/strings.xml
     translation: /feature/record/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/community/src/main/res/values/strings.xml
+    translation: /feature/community/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/listening/src/main/res/values/strings.xml
+    translation: /feature/listening/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/nowplaying/src/main/res/values/strings.xml
+    translation: /feature/nowplaying/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/library/src/main/res/values/strings.xml
+    translation: /feature/library/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/search/src/main/res/values/strings.xml
+    translation: /feature/search/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/home/src/main/res/values/strings.xml
+    translation: /feature/home/src/main/res/values-%android_code%/strings.xml

@@ -24,19 +24,29 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class ArtistDetailRoute(val artistName: String)
 @Serializable data class AlbumDetailRoute(val albumName: String, val artistName: String)
 @Serializable data class LikedSongsDetailRoute(val source: String? = null)
-@Serializable data object FailedMatchesRoute
+/**
+ * Sync → Failed Matches. [focusTrackId]: the song to open "find it yourself" on, set by Now
+ * Playing's "Find a better match" (the song was just flagged); null from the Sync tab.
+ */
+@Serializable data class FailedMatchesRoute(val focusTrackId: Long? = null)
 @Serializable data object FailedDownloadsRoute
 @Serializable data object DownloadManagementRoute
 @Serializable data object BlockedSongsRoute
 @Serializable data object EqualizerRoute
 @Serializable data object LibraryHealthRoute
+@Serializable data object PossibleDuplicatesRoute
 @Serializable data object SquidWtfCaptchaRoute
 @Serializable data object DiagnosticsPreviewRoute
 @Serializable data object SettingsPlaybackRoute
 @Serializable data object SettingsAudioQualityRoute
 @Serializable data object SettingsLosslessSourcesRoute
-@Serializable data object SettingsAccountsRoute
-@Serializable data object SettingsLibraryStorageRoute
+/** Settings › Accounts & Sync; [cloud]: opened from Your Stash's Cloud rows, Cloud storage is scrolled into view. */
+@Serializable data class SettingsAccountsRoute(val cloud: Boolean = false)
+/**
+ * Settings › Library & Storage; [backup]: opened from Your Stash's Backups rows, the name of the
+ * [com.stash.feature.settings.weblink.BackupShortcut] to start there.
+ */
+@Serializable data class SettingsLibraryStorageRoute(val backup: String? = null)
 @Serializable data object SettingsAppearanceRoute
 @Serializable data object SettingsHomeLayoutRoute
 @Serializable data object SettingsAboutRoute
@@ -45,8 +55,13 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data class SharedTrackRoute(val link: String)
 /** A pasted or shared Spotify / YouTube link ([com.stash.core.data.link.MusicLinks]): its preview and Add to library. */
 @Serializable data class LinkImportRoute(val link: String)
+/** Library "+" › Import a playlist file: the picked document's content address, read into the same preview a link opens. */
+@Serializable data class PlaylistFileRoute(val file: String)
 @Serializable data class ListenJoinRoute(val code: String)
-/** Settings › Library & Storage › Link Stash on the web; [link] is a pairing link opened from outside (spec 2026-10-10 link-sync §2.2). */
+/**
+ * Settings › Library & Storage › Your Stash, the link's page (it was "Link Stash on the web"; owner decision D21); [link] is a
+ * pairing link opened from outside (spec 2026-10-10 link-sync §2.2).
+ */
 @Serializable data class WebLinkRoute(val link: String? = null)
 // Community's routes. StashNavHost pops them while Community is off: a new one must join that check.
 /** Community's See all (spec 2026-09-26 §3); [mine] opens it on Mine (after a live_limit). */
@@ -132,6 +147,13 @@ data class SearchAlbumRoute(
 /** "See all" Qobuz-playlist browse, filtered by the [genre] chip label ("All" = none). */
 @Serializable
 data class PlaylistBrowseRoute(val genre: String = "All")
+
+/**
+ * A mood's page from Home's "Moods & moments": YouTube Music's playlists for the tile named [title], opened with its
+ * [params] (`MoodViewModel` reads both by these property names).
+ */
+@Serializable
+data class MoodRoute(val title: String, val params: String)
 
 /** "See all" browse of one Home mix rail; [rail] is a [MixRail] name. */
 @Serializable

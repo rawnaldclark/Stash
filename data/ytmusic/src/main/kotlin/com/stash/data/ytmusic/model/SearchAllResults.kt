@@ -60,18 +60,24 @@ data class ArtistSummary(
     val avatarUrl: String?,
 )
 
-/** Which catalog an album entry came from. Drives AlbumCache routing + play path. */
+/**
+ * Which catalog an album entry came from. Drives AlbumCache routing + play path. [YOUTUBE_PLAYLIST] is a YouTube
+ * Music playlist (`VL…`, Home's Moods & moments) shown on the album page: its songs carry videoIds like an album's,
+ * but each keeps its own album and artist.
+ */
 @Serializable
-enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
+enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST, YOUTUBE_PLAYLIST }
 
 /**
  * Minimal album identity for horizontal album rows and discography grids.
  *
- * [releaseType] is YouTube's label from a search result ("Album", "Single",
- * "EP"...), null where the source doesn't say. #481: a single that shares an
- * album's title is a different release. [trackCount] is how many tracks the
- * release has where the source lists it (Qobuz's rows do, and send no release
- * type, so it is how a Qobuz single is told from an album); null otherwise.
+ * [releaseType] is YouTube's label from a search result or an artist page's
+ * card ("Album", "Single", "EP"...), null where the source doesn't say (the
+ * artist page's Albums carousel gives the year alone). #481: a single that
+ * shares an album's title is a different release. [trackCount] is how many
+ * tracks the release has where the source lists it (Qobuz's rows do, and send
+ * no release type, so it is how a Qobuz single is told from an album); null
+ * otherwise.
  */
 @Serializable
 data class AlbumSummary(
@@ -133,10 +139,22 @@ data class ArtistProfile(
     val id: String,
     val name: String,
     val avatarUrl: String?,
+    /**
+     * The YouTube channel's subscriber count, as YouTube writes it ("290K"). Never shown: it is a
+     * different, smaller number than the monthly listeners people compare (Sonic Youth: 290K
+     * subscribers, 574K monthly audience, 1.7M on Spotify). Still parsed and cached so a blob this
+     * build writes keeps decoding in an older build, whose model requires the field.
+     */
     val subscribersText: String?,
     val popular: List<TrackSummary>,
     val albums: List<AlbumSummary>,
     val singles: List<AlbumSummary>,
     val related: List<ArtistSummary>,
     val about: ArtistAbout? = null,
+    /**
+     * YouTube's monthly audience for the channel (the header's `monthlyListenerCount`, "574K
+     * monthly audience"), as a number. The artist page's listener count when Spotify has none.
+     * Null when YouTube sends none, and in profiles cached before this field existed.
+     */
+    val monthlyAudience: Long? = null,
 )

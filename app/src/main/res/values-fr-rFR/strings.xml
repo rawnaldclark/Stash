@@ -4,4 +4,5 @@
     <string name="resume_playback_short">Reprise</string>
     <string name="resume_playback_long">Reprendre la lecture</string>
     <string name="cast_connect_failed">Impossible de se connecter à %1$s</string>
+    <string name="like_mirror_signed_out">Vos J’aime n’arrivent pas sur %1$s. Reconnectez-vous dans les Paramètres.</string>
 </resources>

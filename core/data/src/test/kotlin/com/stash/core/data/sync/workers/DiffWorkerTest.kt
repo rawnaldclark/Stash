@@ -1090,6 +1090,43 @@ class DiffWorkerTest {
         )
     }
 
+    @Test
+    fun `Spotify Liked Songs note a complete fetch for like mirroring, and a partial one clears it`() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val fetch = com.stash.core.data.social.SpotifyLikedSongsFetch(
+            androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "like_mirror.preferences_pb")
+            },
+        )
+        try {
+            db.playlistDao().insert(
+                PlaylistEntity(
+                    name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "spotify_liked_songs",
+                    type = PlaylistType.LIKED_SONGS, syncEnabled = true,
+                )
+            )
+            fun fetched(partial: Boolean) {
+                val snapshot = RemotePlaylistSnapshotEntity(
+                    id = 4L, syncId = 1L, source = MusicSource.SPOTIFY, sourcePlaylistId = "spotify_liked_songs",
+                    playlistName = "Liked Songs", playlistType = PlaylistType.LIKED_SONGS, partial = partial,
+                )
+                coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(snapshot)
+                coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns emptyList()
+            }
+
+            fetched(partial = false)
+            assertTrue(buildWorker(likedSongsFetch = fetch).doWork() is androidx.work.ListenableWorker.Result.Success)
+            assertTrue("a complete fetch is noted", fetch.completeAt() != null)
+
+            // The playlist's last-synced time moves on this one too; the note doesn't vouch for it
+            fetched(partial = true)
+            assertTrue(buildWorker(likedSongsFetch = fetch).doWork() is androidx.work.ListenableWorker.Result.Success)
+            assertNull("a partial fetch clears it", fetch.completeAt())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private suspend fun syncLikedPlaylistArt(existingArt: String?, snapshotArt: String?): String? {
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
@@ -1502,6 +1539,7 @@ class DiffWorkerTest {
     private fun buildWorker(
         canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),
         soundCloudAccounts: com.stash.core.auth.soundcloud.SoundCloudAccountManager? = null,
+        likedSongsFetch: com.stash.core.data.social.SpotifyLikedSongsFetch? = null,
     ): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
@@ -1529,6 +1567,7 @@ class DiffWorkerTest {
                 syncLog = com.stash.core.data.sync.SyncLog(),
                 canonicalRecompute = canonicalRecompute,
                 soundCloudAccounts = soundCloudAccounts,
+                likedSongsFetch = likedSongsFetch,
             )
         })
         .build()

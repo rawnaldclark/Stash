@@ -1,2 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources></resources>
+<resources>    <string name="like_mirror_signed_out">پسندهای شما به %1$s نمی‌رسند. در تنظیمات دوباره وارد آن شوید.</string>
+</resources>

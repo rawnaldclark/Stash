@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The wide widget in the picker before Android 12: card, cover, two text lines, play disc, next. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="56dp"
+    android:viewportWidth="250"
+    android:viewportHeight="56">
+    <path android:fillColor="@color/widget_surface"
+        android:pathData="M16,0H234A16,16 0 0 1 250,16V40A16,16 0 0 1 234,56H16A16,16 0 0 1 0,40V16A16,16 0 0 1 16,0Z" />
+    <path android:fillColor="@color/widget_placeholder_background"
+        android:pathData="M16,8H40A8,8 0 0 1 48,16V40A8,8 0 0 1 40,48H16A8,8 0 0 1 8,40V16A8,8 0 0 1 16,8Z" />
+    <path android:fillColor="@color/widget_on_surface"
+        android:pathData="M63,17H143A3,3 0 0 1 143,23H63A3,3 0 0 1 63,17Z" />
+    <path android:fillColor="@color/widget_on_surface_variant"
+        android:pathData="M63,31H111A3,3 0 0 1 111,37H63A3,3 0 0 1 63,31Z" />
+    <path android:fillColor="@color/widget_accent"
+        android:pathData="M194,28m-20,0a20,20 0 1 1 40,0a20,20 0 1 1 -40,0" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M189,20V36L201,28Z" />
+    <path android:fillColor="@color/widget_on_surface"
+        android:pathData="M224,34L232.5,28L224,22ZM234,22V34H236V22Z" />
+</vector>

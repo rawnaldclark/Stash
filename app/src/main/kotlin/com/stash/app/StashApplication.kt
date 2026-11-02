@@ -34,6 +34,7 @@ import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
+import com.stash.core.data.sync.workers.StashMixRefreshStamp
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.data.sync.workers.ArtistGenreWorker
 import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
@@ -45,11 +46,17 @@ import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
 import com.stash.feature.settings.RestoredFolderHandoff
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -64,6 +71,10 @@ import javax.inject.Inject
  * WorkManager is removed in AndroidManifest.xml so that this manual
  * configuration takes effect.
  */
+/** Pause before re-reading the Data saver switch after an error: this times the try, up to [DATA_SAVER_RETRY_MAX_STEPS]. */
+private const val DATA_SAVER_RETRY_STEP_MS = 5_000L
+private const val DATA_SAVER_RETRY_MAX_STEPS = 12L
+
 @HiltAndroidApp
 class StashApplication : Application(), Configuration.Provider {
 
@@ -157,6 +168,9 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var streamingQualityPreferences: com.stash.data.download.prefs.StreamingQualityPreferences
 
     @Inject
+    lateinit var dataSaverBackgroundWork: com.stash.core.data.sync.workers.DataSaverBackgroundWork
+
+    @Inject
     lateinit var connectivityMonitor: com.stash.core.media.streaming.ConnectivityMonitor
 
     @Inject
@@ -196,6 +210,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var handoffOffers: com.stash.core.media.handoff.HandoffOffers
 
+    /** Link Stash on the web: this phone as a remote for a linked browser (link-sync spec §6.7). */
+    @Inject
+    lateinit var webRemote: com.stash.core.data.weblink.remote.WebRemote
+
     @Inject
     lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
 
@@ -221,6 +239,13 @@ class StashApplication : Application(), Configuration.Provider {
     /** Reads the daily lossless allowance once on a cold start when the stored one is from a previous day. */
     @Inject
     lateinit var losslessQuotaRefresher: com.stash.data.download.lossless.quota.LosslessQuotaRefresher
+
+    /**
+     * Android's Battery Saver (D19). A cold start while it is on skips the warm-ups and catch-up
+     * passes below; they run at the next start without it, and the periodic jobs are left to Android.
+     */
+    @Inject
+    lateinit var batterySaver: com.stash.core.common.power.BatterySaver
 
     /**
      * Writes uncaught exceptions to `cacheDir/crashes/` so the user can
@@ -250,6 +275,10 @@ class StashApplication : Application(), Configuration.Provider {
     /** Gate for the one-time canonical re-key after schema 55, see [maybeEnqueueCanonicalRecompute]. */
     @Inject
     lateinit var canonicalRecomputeState: com.stash.core.data.library.CanonicalRecomputeState
+
+    /** Gate for the one-time duplicate cleanup after schema 76, see [maybeEnqueueDuplicateCleanup]. */
+    @Inject
+    lateinit var duplicateCleanupState: com.stash.core.data.library.duplicates.DuplicateCleanupState
 
     /** Only to cancel a lyrics upgrade the retired automatic pass queued before an update. */
     @Inject
@@ -283,6 +312,28 @@ class StashApplication : Application(), Configuration.Provider {
             Log.e("StashStartup", "startup task failed; continuing without it", t)
         },
     )
+
+    /**
+     * The Data saver mirror ([com.stash.core.data.prefs.DataSaverSnapshot]) put in step with the
+     * stored switch, for the startup work that reads it for its network constraint. On the first
+     * start after an update (no mirror yet) or after a restore it is stale, and the collector that
+     * keeps it in step runs on its own schedule: work queued first got "any connection" with the
+     * switch on. Every startup enqueue that reads the mirror awaits this. A switch that won't read
+     * leaves the mirror as it is.
+     */
+    private val dataSaverMirrored: Deferred<Unit> by lazy {
+        applicationScope.async {
+            val on = try {
+                streamingQualityPreferences.saveDataNow()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "Data saver switch unreadable at start; the mirror stays as it is", e)
+                return@async
+            }
+            dataSaverBackgroundWork.onSwitch(on)
+        }
+    }
 
     /**
      * Supply the custom [Configuration] that tells WorkManager to use the
@@ -341,6 +392,8 @@ class StashApplication : Application(), Configuration.Provider {
                     webLinkInbox.onForeground()
                     // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
                     mirrorSignal.onForeground()
+                    // ...and the phone as a remote for a linked browser: its live socket, only while in the foreground (§6.7).
+                    webRemote.onForeground()
                     // ...and an open Recap story carries its song on.
                     recapAudio.onAppForeground()
                 }
@@ -353,13 +406,20 @@ class StashApplication : Application(), Configuration.Provider {
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
                     // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
                     handoffPublisher.onBackground()
+                    // No remote socket in the background (no battery, no server time).
+                    webRemote.onBackground()
                     // An open Recap story's song pauses; the story itself stays open (a share to
                     // Instagram or the lock screen is not a close, so the music isn't given back).
                     recapAudio.onAppBackground()
                 }
             },
         )
-        losslessConfigFetcher.start(applicationScope)
+        // Battery Saver at this cold start, read once: a start is one decision. While it is on, the
+        // warm-ups (yt-dlp, TLS) and the catch-up one-shots (enrichment, artist photos, followed mixes,
+        // update check) are skipped, and the lossless config is read from its cache (see below).
+        val saverAtStart = batterySaver.isOn.value
+        if (saverAtStart) Log.i("StashStartup", "Battery Saver on: cold-start warm-ups skipped")
+        startLosslessConfig()
         losslessQuotaRefresher.start(applicationScope)
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
@@ -460,7 +520,10 @@ class StashApplication : Application(), Configuration.Provider {
             // itself, inside a worker, where the one-off cost is invisible.
             // The latency this prewarm exists to hide is the first stream
             // resolve; streaming is always allowed, so gate on network only.
-            if (connectivityMonitor.isConnected()) {
+            //
+            // Not under Battery Saver either: a nightly download and a QuickJS extraction are the
+            // heaviest thing a cold start does, and downloads still freshen it themselves.
+            if (!saverAtStart && connectivityMonitor.isConnected()) {
                 ytDlpManager.ensureFreshened()
             }
         }
@@ -470,7 +533,8 @@ class StashApplication : Application(), Configuration.Provider {
         // network at all rather than on the streaming preference — offline
         // it is a guaranteed-to-fail request that wakes the radio.
         applicationScope.launch {
-            if (!connectivityMonitor.isConnected()) return@launch
+            // Battery Saver: the first search pays its own handshake instead.
+            if (saverAtStart || !connectivityMonitor.isConnected()) return@launch
             runCatching {
                 okHttpClient.newCall(
                     Request.Builder().url("https://music.youtube.com/").head().build(),
@@ -508,6 +572,8 @@ class StashApplication : Application(), Configuration.Provider {
         // first toggle), the built-in recipes/playlists stay inactive,
         // and Home/Library don't surface them.
         applicationScope.launch {
+            // Before anything below reads the Data saver mirror for a constraint.
+            dataSaverMirrored.await()
             val stashMixesEnabled = stashMixPreference.current()
             if (!stashMixesEnabled) {
                 // Best-effort cancel of any periodic work left over from an
@@ -519,11 +585,12 @@ class StashApplication : Application(), Configuration.Provider {
             // Guarded on its own (the scope's handler would only stop the
             // crash): a seed or retune write that fails must not also skip the
             // worker scheduling below on every launch.
+            var recipesRetuned = false
             try {
                 maybeReseedStashMixes()
                 StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
-                maybeRetuneStashDiscover()
-                maybeRetuneStashMixes()
+                // `or`, not `||`: both retunes always run.
+                recipesRetuned = maybeRetuneStashDiscover() or maybeRetuneStashMixes()
                 maybeRemoveRetiredBuiltinMixes()
                 maybeCleanupDiscoveryLibraryHits()
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -537,36 +604,55 @@ class StashApplication : Application(), Configuration.Provider {
             // waiting for tomorrow's periodic cycle.
             runCatching { lastFmRecommendationSource.reconcile() }
                 .onFailure { Log.w("StashStartup", "lastfm recommendation reconcile failed", it) }
-            // Fire a one-shot refresh on first launch so mixes populate
-            // without waiting for the 24-hour periodic cycle. Subsequent
-            // one-shots are safe (unique-work policy = REPLACE).
-            StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
+            // A full one-shot refresh so mixes populate without waiting for the
+            // 24-hour periodic cycle, but at most about once a day: it calls
+            // Last.fm (personas, similar tracks) and drains discovery, and since
+            // idle-stop the process cold-starts several times a day. An empty
+            // mix (new install, reseed, a newly activated recipe) or a retune
+            // this launch is built now regardless. See StashMixRefreshStamp.
+            val mixNeedsBuilding = recipesRetuned || try {
+                stashMixRecipeDao.activeEmptyMixIds().isNotEmpty()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "empty-mix check failed; refreshing to be safe", e)
+                true
+            }
+            if (StashMixRefreshStamp(this@StashApplication).coldStartRefreshDue(mixNeedsBuilding)) {
+                StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
+            } else {
+                Log.i("StashStartup", "Stash Mix cold-start refresh skipped: a full refresh ran within the last 20 h")
+            }
             StashMixRefreshWorker.schedulePeriodic(this@StashApplication)
             val mode = downloadNetworkPreference.current()
             TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
             StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
             TrackInfoEnrichmentWorker.schedulePeriodic(this@StashApplication)
+            // Battery Saver: the one-shot enrichment pass below waits for a start without it (the
+            // periodic one above is Android's to defer).
+            if (saverAtStart) return@launch
             // First-launch one-shot so users with a fresh install don't
             // wait 24h for the first enrichment pass. KEEP policy means
             // a re-launch before the worker completes doesn't re-enqueue.
-            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                "stash_track_info_enrichment_oneshot",
-                androidx.work.ExistingWorkPolicy.KEEP,
-                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
-            )
+            TrackInfoEnrichmentWorker.enqueueFirstRun(this@StashApplication)
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced
         // no thumbnail (see ArtBackfillWorker KDoc). KEEP policy means the
         // worker is a no-op on every subsequent launch once it completes.
-        ArtBackfillWorker.enqueueOneTime(this)
+        // After the Data saver mirror is in step: its constraint reads it.
+        applicationScope.launch {
+            dataSaverMirrored.await()
+            ArtBackfillWorker.enqueueOneTime(this@StashApplication)
+        }
         // First-launch artist-photo backfill: resolves the official avatar
         // for every artist on the Library Artists tab (see ArtistImageBackfillWorker
         // KDoc). KEEP policy means a re-launch before the worker completes
         // doesn't re-enqueue; re-arms after each sync via SyncFinalizeWorker.
-        ArtistImageBackfillWorker.enqueueOneTime(this)
+        // Battery Saver: this and the followed-mix check wait for a start without it.
+        if (!saverAtStart) ArtistImageBackfillWorker.enqueueOneTime(this)
         // Followed shared mixes: check on start, at most every 6 h (the worker gates per mix).
-        com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
+        if (!saverAtStart) com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
         // v0.9.11: kick a background sweep that fills in bit-depth +
         // sample-rate for tracks downloaded before the columns existed.
         // The flag is set immediately on enqueue (not after success) so
@@ -577,11 +663,13 @@ class StashApplication : Application(), Configuration.Provider {
         maybeEnqueueQualityBackfill()
         maybeEnqueueBlocklistIntegrity()
         applicationScope.launch { maybeEnqueueCanonicalRecompute() }
+        applicationScope.launch { maybeEnqueueDuplicateCleanup() }
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
-        // waiting up to 48 hours when Android Doze defers the fire.
-        UpdateCheckWorker.enqueueOneTimeCheck(this)
+        // waiting up to 48 hours when Android Doze defers the fire. Not under Battery Saver: the
+        // periodic check still runs, when Android lets it.
+        if (!saverAtStart) UpdateCheckWorker.enqueueOneTimeCheck(this)
         applicationScope.launch { maybeInvalidateArtistCache() }
         // The pin backfill reads sync_enabled as intent. Stale mix flags from
         // older releases are already gone: MIGRATION_50_51 clears them when the
@@ -591,11 +679,26 @@ class StashApplication : Application(), Configuration.Provider {
         applicationScope.launch { maybeBackfillCodecsFromExtension() }
         applicationScope.launch { maybeBackfillTrackAlbums() }
         applicationScope.launch { maybePurgeRetiredSourceArtifacts() }
+        applicationScope.launch { relabelYouTubeRowsClaimingSpotify() }
         // One-shot: seed the streaming Wi-Fi quality tier from the user's
         // current download tier on first run, so existing users' streaming
         // quality inherits their download choice instead of silently changing.
         // migrateIfNeeded() is internally idempotent (no-op after first run).
         applicationScope.launch { streamingQualityPreferences.migrateIfNeeded() }
+        // Data saver: mirror the switch for the callers that can't suspend (worker constraints,
+        // picture sizes) and re-schedule the art/metadata workers whenever it flips. For the app's
+        // lifetime: a read error re-subscribes after a pause instead of ending the collection, so
+        // one DataStore hiccup can't leave the mirror stuck for the session (onSwitch never throws).
+        applicationScope.launch {
+            streamingQualityPreferences.saveData
+                .distinctUntilChanged()
+                .retryWhen { cause, attempt ->
+                    Log.w("StashStartup", "Data saver switch unreadable (try ${attempt + 1}); reading it again", cause)
+                    delay(DATA_SAVER_RETRY_STEP_MS * (attempt + 1).coerceAtMost(DATA_SAVER_RETRY_MAX_STEPS))
+                    true
+                }
+                .collect { dataSaverBackgroundWork.onSwitch(it) }
+        }
         // Auto-enqueue the v0.9.35 metadata backfill once per version.
         // Idempotent (re-installing the same binary does not re-enqueue).
         applicationScope.launch {
@@ -644,6 +747,43 @@ class StashApplication : Application(), Configuration.Provider {
             runCatching { losslessSourcePreferences.migrateDownloadMode() }
                 .onSuccess { android.util.Log.i("StashApp", "download quality: $it") }
                 .onFailure { android.util.Log.w("StashApp", "download mode migration failed", it) }
+        }
+    }
+
+    /**
+     * The signed lossless config: the cached copy at once, then a fetch now and every 6 h.
+     *
+     * Under Battery Saver the fetch waits for Saver to turn off while the last SUCCESSFUL fetch is
+     * under [LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS] old and a cached copy is there to use; it runs
+     * at once with no cache (a first launch whose fetch failed), and at the latest when that success
+     * turns a day old, Saver or not: the relay key rotates through this config, so a phone that
+     * keeps Saver on all the time must still pick a new one up. See
+     * [com.stash.core.common.power.SaverDeferral.startWhenDue].
+     *
+     * All on [applicationScope] (IO): the first SharedPreferences read loads the file from disk.
+     */
+    private fun startLosslessConfig() {
+        applicationScope.launch {
+            val prefs = getSharedPreferences(BATTERY_SAVER_PREFS, MODE_PRIVATE)
+            // Stamped only by a refresh that applied a fresh, verified config: a failed attempt
+            // (offline, a captive portal) must never count as a recent fetch.
+            launch {
+                losslessConfigFetcher.refreshedAt.collect { at ->
+                    if (at > 0L) prefs.edit().putLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, at).apply()
+                }
+            }
+            val start = com.stash.core.common.power.SaverDeferral.startWhenDue(
+                saver = batterySaver,
+                lastSuccessMs = prefs.getLong(KEY_LOSSLESS_CONFIG_REFRESHED_AT, -1L).takeIf { it >= 0L },
+                nowMs = System::currentTimeMillis,
+                maxAgeMs = LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS,
+                loadCached = { losslessConfigFetcher.loadCached() },
+                hasCached = { losslessConfigFetcher.relays.value.isNotEmpty() },
+                startRefreshing = { losslessConfigFetcher.start(applicationScope) },
+            )
+            if (start != com.stash.core.common.power.SaverDeferral.Start.SAVER_OFF_AT_START) {
+                Log.i("StashStartup", "Battery Saver on: lossless config fetch started ($start)")
+            }
         }
     }
 
@@ -856,31 +996,33 @@ class StashApplication : Application(), Configuration.Provider {
      * [STASH_DISCOVER_TUNING_VERSION] so each ratio/length change ships
      * exactly once per install. Fresh installs skip this because
      * [StashMixDefaults] already seeds with the new values.
+     *
+     * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
-    private suspend fun maybeRetuneStashDiscover() {
+    private suspend fun maybeRetuneStashDiscover(): Boolean {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("stash_discover_tuning_version", 0)
-        if (stored < STASH_DISCOVER_TUNING_VERSION) {
-            val updated = stashMixRecipeDao.retuneBuiltin(
-                name = "Stash Discover",
-                discoveryRatio = 1.0f,
-                freshnessWindowDays = 14,
-                targetLength = 50,
-                affinityBias = 0.0f,
-                seedStrategy = "TAG_GRAPH",
-                moodKeysCsv = "",
-                tagSampleDepth = 0,
+        if (stored >= STASH_DISCOVER_TUNING_VERSION) return false
+        val updated = stashMixRecipeDao.retuneBuiltin(
+            name = "Stash Discover",
+            discoveryRatio = 1.0f,
+            freshnessWindowDays = 14,
+            targetLength = 50,
+            affinityBias = 0.0f,
+            seedStrategy = "TAG_GRAPH",
+            moodKeysCsv = "",
+            tagSampleDepth = 0,
+        )
+        if (updated > 0) {
+            Log.i(
+                "StashMigration",
+                "Retuned Stash Discover to discovery_ratio=1.0 ($updated row)",
             )
-            if (updated > 0) {
-                Log.i(
-                    "StashMigration",
-                    "Retuned Stash Discover to discovery_ratio=1.0 ($updated row)",
-                )
-            }
-            prefs.edit()
-                .putInt("stash_discover_tuning_version", STASH_DISCOVER_TUNING_VERSION)
-                .apply()
         }
+        prefs.edit()
+            .putInt("stash_discover_tuning_version", STASH_DISCOVER_TUNING_VERSION)
+            .apply()
+        return true
     }
 
     /**
@@ -896,11 +1038,13 @@ class StashApplication : Application(), Configuration.Provider {
      *   re-tuned and — like Deep Cuts — now seeds via the tag engine
      *   (RecipeTagResolver → TagPoolBuilder), falling back to the user's top genres
      *   for builtins with no explicit tags. Daily Discover stays ARTIST_SIMILAR.
+     *
+     * @return true when a retune ran this launch, so the cold start rebuilds the mixes now.
      */
-    private suspend fun maybeRetuneStashMixes() {
+    private suspend fun maybeRetuneStashMixes(): Boolean {
         val prefs = getSharedPreferences("stash_migrations", MODE_PRIVATE)
         val stored = prefs.getInt("stash_mix_recipe_tuning_version", 0)
-        if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return
+        if (stored >= STASH_MIX_RECIPE_TUNING_VERSION) return false
 
         var totalUpdated = 0
         for (recipe in StashMixDefaults.ALL.filter { it.isBuiltin }) {
@@ -923,6 +1067,7 @@ class StashApplication : Application(), Configuration.Provider {
         prefs.edit()
             .putInt("stash_mix_recipe_tuning_version", STASH_MIX_RECIPE_TUNING_VERSION)
             .apply()
+        return true
     }
 
     /**
@@ -1006,6 +1151,30 @@ class StashApplication : Application(), Configuration.Provider {
             val pinned = playlistDao.pinSyncedPlaylists(System.currentTimeMillis())
             Log.i("StashMigration", "maybePinSyncedPlaylists: pinned $pinned already-synced playlist(s) to Home")
             prefs.edit().putInt("synced_playlists_pin_version", SYNCED_PLAYLISTS_PIN_VERSION).apply()
+        }
+    }
+
+    /**
+     * Data fix for the green-dot lie: a YouTube stream that a like or a listen saved as a Spotify
+     * song (Now Playing rebuilt every stream as one) becomes a YouTube song. Only rows that say
+     * Spotify with no Spotify id and a YouTube video id, outside every Spotify playlist
+     * ([TrackDao.relabelYouTubeRowsClaimingSpotify]); liked rows included, since a YouTube song in
+     * Liked Songs downloads with any service connected. A row with a Spotify id is never touched,
+     * and nothing is deleted.
+     *
+     * At every launch, not once: the UPDATE is idempotent and cheap (one pass over `tracks`; new
+     * rows are saved right through TrackSourceRule, so after the first run it finds only a row that
+     * left the Spotify playlist that spared it), and a backup from before this fix, restored later,
+     * is fixed too. A failure is logged and left for the next launch.
+     */
+    private suspend fun relabelYouTubeRowsClaimingSpotify() {
+        try {
+            val relabelled = trackDao.relabelYouTubeRowsClaimingSpotify()
+            if (relabelled > 0) Log.i("StashMigration", "relabelYouTubeRowsClaimingSpotify: $relabelled YouTube row(s) no longer marked Spotify")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("StashMigration", "relabelYouTubeRowsClaimingSpotify failed; the next launch tries again", e)
         }
     }
 
@@ -1094,6 +1263,24 @@ class StashApplication : Application(), Configuration.Provider {
         }
     }
 
+    /**
+     * Schema 76: the one-time duplicate cleanup ([com.stash.core.data.library.duplicates.DuplicateCleanup]):
+     * id-less stubs merged into the row of their song, unused ones removed, two-file cases left for
+     * Library Health → Possible duplicates; never a file deleted. Enqueued on every start until it
+     * has run once (a restored older backup re-arms it), then this is a single DataStore read. The
+     * worker waits while a sync or a mix refresh runs.
+     */
+    private suspend fun maybeEnqueueDuplicateCleanup() {
+        runCatching {
+            if (com.stash.core.data.sync.workers.DuplicateCleanupWorker.enqueueIfPending(this, duplicateCleanupState)) {
+                Log.i("StashMigration", "maybeEnqueueDuplicateCleanup: enqueued the one-time duplicate cleanup")
+            }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "duplicate cleanup enqueue failed", it)
+        }
+    }
+
     companion object {
         /**
          * Never-again gate for the one-shot lyrics miss-stamp repair. NOT
@@ -1105,10 +1292,13 @@ class StashApplication : Application(), Configuration.Provider {
 
         /**
          * Bump whenever a parser change makes existing cached rows produce
-         * a worse UX than a fresh fetch. Current bump (v1) invalidates rows
-         * written before the 2026-04-17 Popular-shelf title-matching fix.
+         * a worse UX than a fresh fetch. v1 invalidated rows written before
+         * the 2026-04-17 Popular-shelf title-matching fix; v2 (2026-11-01)
+         * drops rows without the monthly listeners (YouTube's monthly
+         * audience, Spotify's monthly listeners), which would otherwise show
+         * no count for up to the 6-hour TTL.
          */
-        private const val ARTIST_CACHE_VERSION = 1
+        private const val ARTIST_CACHE_VERSION = 2
 
         /**
          * Bump to re-run [maybePurgeRetiredSourceArtifacts] (one-shot cleanup of
@@ -1199,6 +1389,13 @@ class StashApplication : Application(), Configuration.Provider {
          *      `album_artist` from the file path's artist folder.
          */
         private const val ALBUM_BACKFILL_VERSION = 2
+
+        /** What a cold start under Battery Saver remembers: when the lossless config last refreshed. */
+        private const val BATTERY_SAVER_PREFS = "stash_battery_saver"
+        private const val KEY_LOSSLESS_CONFIG_REFRESHED_AT = "lossless_config_refreshed_at"
+
+        /** Under Battery Saver the lossless config is fetched anyway once its last success is this old. */
+        private const val LOSSLESS_CONFIG_MAX_AGE_UNDER_SAVER_MS = 24L * 60 * 60 * 1000
 
         /** Recognized audio file extensions that the codec-backfill writes back. */
         private val KNOWN_CODECS = setOf(

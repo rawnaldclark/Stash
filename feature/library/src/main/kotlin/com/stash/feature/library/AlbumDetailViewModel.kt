@@ -3,6 +3,7 @@ package com.stash.feature.library
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.repository.DownloadRequestResult
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.media.PlayerRepository
@@ -61,6 +62,8 @@ class AlbumDetailViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
     private val connectivityMonitor: ConnectivityMonitor,
+    /** Start radio from a song's menu (null in tests that don't need it). */
+    private val radioStarter: com.stash.core.media.RadioStarter? = null,
 ) : ViewModel() {
 
     /** The album name extracted from the navigation route arguments. */
@@ -194,6 +197,12 @@ class AlbumDetailViewModel @Inject constructor(
         }
     }
 
+    /** Start radio on a song's menu: a song radio seeded from [track], as every other song menu starts. */
+    fun startRadio(track: Track) {
+        val starter = radioStarter ?: return
+        viewModelScope.launch { starter.fromSong(track)?.let { _userMessages.tryEmit(it) } }
+    }
+
     /** Appends [track] to the end of the current playback queue. */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
@@ -298,8 +307,12 @@ class AlbumDetailViewModel @Inject constructor(
     /** Queue a single track for download (album-detail ⋮ menu). */
     fun queueDownload(trackId: Long) {
         viewModelScope.launch {
-            musicRepository.queueDownload(trackId)
-            _userMessages.tryEmit("Queued for download.")
+            // Unchanged for a song that couldn't be queued (as before); a song already on the
+            // phone as another row says so instead of claiming a download.
+            val result = musicRepository.requestDownload(trackId)
+            _userMessages.tryEmit(
+                if (result == DownloadRequestResult.ALREADY_ON_PHONE) "Already on your phone." else "Queued for download.",
+            )
         }
     }
 

@@ -27,7 +27,8 @@ class JioSaavnResolver @Inject constructor(
     /**
      * @param kbps the variant to fetch: 96, 160 or 320. No default on purpose:
      *   every caller answers to a user setting (downloads [toJioSaavnKbps],
-     *   streaming Save Data), so none may fall back to 320 silently.
+     *   streaming Data saver through `StreamQualityPolicy.lossyQuality`: 160 with
+     *   Lossless on, 96 with it off), so none may fall back to 320 silently.
      */
     suspend fun resolve(query: TrackQuery, kbps: Int, bypassRateLimit: Boolean = false): SourceResult? {
         val label = "${query.artist} - ${query.title}"

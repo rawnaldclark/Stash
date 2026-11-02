@@ -105,6 +105,15 @@
     <string name="settings_like_mirror_row_title">Curtir também no %1$s</string>
     <string name="settings_like_mirror_lastfm_title">Dar Love também no Last.fm</string>
     <string name="settings_like_mirror_row_subtitle">A partir de agora, as músicas que você marcar com um coração no Stash serão sincronizadas</string>
+    <string name="settings_like_status_up_to_date">Atualizado</string>
+    <string name="settings_like_status_waiting">Pendentes: %1$d</string>
+    <string name="settings_like_status_offline">Pendentes: %1$d · aguardando conexão</string>
+    <string name="settings_like_status_retrying">Pendentes: %1$d · tentando de novo</string>
+    <string name="settings_like_status_needs_you">Último erro: %1$s · toque para tentar de novo</string>
+    <string name="settings_like_error_signed_out">o login expirou</string>
+    <string name="settings_like_error_rate_limited">solicitações demais</string>
+    <string name="settings_like_error_refused">não aceito</string>
+    <string name="settings_like_error_offline">sem conexão</string>
     <string name="settings_listenbrainz_dialog_title">Conectar o ListenBrainz</string>
     <string name="settings_scrobbles_send_now">Enviar agora</string>
     <plurals name="settings_scrobbles_waiting">
@@ -117,7 +126,7 @@
     <string name="settings_disconnect_account_body">O Stash desconecta sua conta de %1$s neste celular e interrompe a sincronização. As músicas de %1$s que ainda estão aguardando para ser baixadas são removidas da fila.\n\nAs músicas que você já baixou continuam na sua biblioteca, e você pode reconectar a conta quando quiser.</string>
     <!-- Settings > Accounts > LikeMirrorWarningDialog -->
     <string name="settings_like_mirror_warning_title">Sincronizar curtidas com %1$s?</string>
-    <string name="settings_like_mirror_warning_body">Ao marcar uma faixa com coração no Stash, você também vai curti-la no %1$s; ao remover o coração, a curtida lá também será removida. Só as curtidas adicionadas a partir de agora serão sincronizadas.\n\nIsso usa o mesmo endpoint privado usado pelo player web do %1$s — não uma API oficial. Pode parar de funcionar a qualquer momento e, raramente, o acesso não oficial pode sinalizar uma conta. Considere ativar esse recurso apenas em uma conta secundária ou de backup.</string>
+    <string name="settings_like_mirror_risk_body">Ao marcar uma música com coração no Stash, você também vai curti-la no %1$s; ao remover o coração, essa curtida é desfeita, mas nunca uma que já estava lá. Só as curtidas adicionadas a partir de agora são sincronizadas.\n\nIsso usa o endpoint privado do player web do %1$s, não uma API oficial. Pode parar de funcionar a qualquer momento e, raramente, o acesso não oficial pode sinalizar uma conta.</string>
     <string name="settings_like_mirror_warning_confirm">Eu entendo</string>
     <!-- Settings > Accounts > YouTubeHistorySyncSection -->
     <!-- Settings > Accounts > YouTubeProfileSheet -->
@@ -219,7 +228,6 @@
     <string name="settings_youtube_quality_title">Qualidade YouTube</string>
     <string name="settings_download_quality_rates_desc">Define as taxas de download do YouTube conforme abaixo e as do JioSaavn em 96 kbps nas opções Baixo e Normal, 160 em Alto e 320 em Melhor e Máx.</string>
     <string name="settings_save_data_title">Economizar dados</string>
-    <string name="settings_save_data_subtitle">Qualidade mais baixa do JioSaavn e do YouTube</string>
     <string name="settings_lossless_title">Sem perdas</string>
     <string name="settings_lossless_subtitle_off">Desativado: as músicas tocam do JioSaavn ou do YouTube</string>
     <string name="settings_lossless_subtitle_no_source">Ainda não há fonte sem perdas configurada</string>
@@ -252,7 +260,6 @@
     <string name="settings_streaming_section">Transmissão</string>
     <string name="settings_on_wifi">Em Wi-Fi</string>
     <string name="settings_on_cellular">Na rede móvel</string>
-    <string name="settings_save_data_lossless_subtitle">Qualidade de CD em todas as redes</string>
     <string name="settings_prefer_cloud_copies_title">Reproduzir primeiro minhas cópias na nuvem</string>
     <string name="settings_prefer_cloud_copies_subtitle">Seus arquivos sem perdas no armazenamento em nuvem, antes do Qobuz ou do Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Preferir AAC do Tidal durante o streaming</string>
@@ -330,8 +337,6 @@
     <string name="settings_lossless_routing_header">ROTEAMENTO</string>
     <string name="settings_lossless_routing_footer">O áudio sem perdas vem das fontes acima. Se uma faixa não for encontrada, o app tenta o JioSaavn antes de recorrer ao YouTube; durante a reprodução, essa origem aparece como \"via YT\".</string>
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Somente transmissão</string>
-    <string name="settings_mode_download">Download</string>
     <string name="settings_stream_on_cellular_title">Transmitir usando dados móveis</string>
     <string name="settings_stream_on_cellular_desc">Usa dados móveis</string>
     <string name="settings_stream_via_youtube_title">Transmitir pelo YouTube</string>

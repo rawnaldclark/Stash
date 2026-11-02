@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Artist page (feature/search). -->
+    <!-- Under the artist's name. %1$s: the count, already short ("1.7M", "574K"). Monthly listeners
+         are the people who played the artist in the last 28 days; the source is not named.
+         Translators: the plural is chosen by the number as shown (1.7M picks the form for 1700000,
+         574K the form for 574000), so languages with few/many forms (Russian, Polish, Czech...)
+         get the form their grammar uses after a rounded "млн" / "tys."; please fill every form. -->
+    <plurals name="artist_monthly_listeners">
+        <item quantity="one">%1$s monthly listener</item>
+        <item quantity="other">%1$s monthly listeners</item>
+    </plurals>
+    <!-- Artist page: the heading of the row of the artist's newest releases (albums, singles and EPs together, newest first), under Popular. -->
+    <string name="artist_latest_releases">Latest releases</string>
+    <!-- Artist page, Latest releases row: the kind of release, after its year on a card ("2021 • Album"). -->
+    <string name="artist_release_album">Album</string>
+    <!-- The kind of release, after its year on a card ("2021 • Single"): a single, one or two songs. -->
+    <string name="artist_release_single">Single</string>
+    <!-- The kind of release, after its year on a card ("2021 • EP"): an extended play, a short record of a few songs. -->
+    <string name="artist_release_ep">EP</string>
+    <!-- The kind of release, after its year on a card ("2021 • Mixtape"). -->
+    <string name="artist_release_mixtape">Mixtape</string>
+    <!-- The kind of release, after its year on a card ("2021 • Compilation"): a collection of earlier songs. -->
+    <string name="artist_release_compilation">Compilation</string>
+</resources>

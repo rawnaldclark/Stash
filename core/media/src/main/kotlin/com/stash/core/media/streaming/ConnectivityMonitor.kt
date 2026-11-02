@@ -2,8 +2,14 @@ package com.stash.core.media.streaming
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import com.stash.core.common.MeteredNetwork
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,10 +37,9 @@ import javax.inject.Singleton
  * `getNetworkCapabilities()` call is cheap enough that adding a Flow
  * abstraction would be over-engineering for v1.
  *
- * No `NetworkCallback` subscription here — connectivity state is only
- * sampled at decision time. Future Task: register a callback so the
- * Now Playing screen can surface "lost connection while streaming"
- * before ExoPlayer's read fails.
+ * Connectivity is sampled at decision time. The one callback is
+ * [meteredChanges], for Data saver: a stream link saved on Wi-Fi must be
+ * dropped the moment the phone moves to mobile data, not at the next tap.
  */
 @Singleton
 class ConnectivityMonitor @Inject constructor(
@@ -61,4 +66,27 @@ class ConnectivityMonitor @Inject constructor(
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
     }
+
+    /**
+     * True iff the active network is metered: mobile data, or a Wi-Fi hotspot marked metered.
+     * What Data saver keys on ([StreamQualityPolicy]); the transport ([isCellular]) would read a
+     * phone tethered to another phone's hotspot as Wi-Fi. With no active network, the last answer
+     * seen (see [com.stash.core.common.isActiveNetworkMetered]): a dropout on mobile data stays metered.
+     */
+    fun isMetered(): Boolean = com.stash.core.common.isActiveNetworkMetered(context)
+
+    /**
+     * The default network's meteredness, each time it changes (a default-network callback, so Wi-Fi
+     * to mobile data is seen when it happens, not at the next tap). A lost network emits nothing: a
+     * dropout keeps the last answer. Registered while collected.
+     */
+    fun meteredChanges(): Flow<Boolean> = callbackFlow {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                trySend(MeteredNetwork.read(MeteredNetwork.isMetered(caps)))
+            }
+        }
+        val registered = runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess
+        awaitClose { if (registered) runCatching { cm.unregisterNetworkCallback(callback) } }
+    }.distinctUntilChanged()
 }

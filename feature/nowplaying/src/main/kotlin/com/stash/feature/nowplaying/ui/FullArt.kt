@@ -84,8 +84,10 @@ import com.stash.core.ui.theme.StashDarkColorScheme
 import com.stash.core.ui.theme.StashExtendedColorsDark
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -123,6 +125,18 @@ private const val RESYNC_MS = 700L
 
 /** The most pages drawn at once: the one showing and the ones still fading out under it. */
 private const val MAX_SHOWN = 3
+
+/**
+ * With the loops still (Remove animations, or Battery Saver) nothing pans or fades, so the clock
+ * ticks this often instead of every frame: a page's cut lands within half a second of its time. A
+ * page turned by hand, a new song's front or a page just loaded wakes it at once
+ * ([FullArtState.wake]).
+ */
+internal const val STILL_TICK_MS = 500L
+
+/** The longest step the clocks take in one tick: a frame's hiccup, or a still tick running late. */
+private const val MAX_STEP_MS = 100L
+private const val STILL_MAX_STEP_MS = 2 * STILL_TICK_MS
 
 /**
  * Just after a song changes the player can still report the last one's position for a tick: for
@@ -194,6 +208,9 @@ internal class FullArtState {
 
     /** [pending] is a new song's front: it fades in over [SONG_FADE_MS]. */
     private var pendingIsNewSong = false
+
+    /** Wakes a still frame loop ([awaitWake]) at once: a page is pending, or one just loaded. */
+    private val wakeups = Channel<Unit>(Channel.CONFLATED)
     private var reported = -1
 
     /** Set from the layer on each composition: what a page turned by hand turns through. */
@@ -227,6 +244,7 @@ internal class FullArtState {
         offset = 0
         pending = pageFor(0)
         pendingIsNewSong = true
+        wake()
     }
 
     /** A page turned by hand ([step] 1 the next, -1 the one before): the pages go on from it. */
@@ -237,13 +255,28 @@ internal class FullArtState {
         offset = (next - schedule.pageAt(segment.coerceAtLeast(0))).mod(pages.size)
         pending = pages[next]
         pendingIsNewSong = false
+        wake()
+    }
+
+    /** Something for the frame loop to do now (a page pending or loaded): a still loop ticks at once. */
+    fun wake() {
+        wakeups.trySend(Unit)
+    }
+
+    /**
+     * The still frame loop's pause between ticks: [ms], or less when [wake]d. A page turned by hand
+     * (or a new song's front) then cuts in at once rather than up to [STILL_TICK_MS] later.
+     */
+    suspend fun awaitWake(ms: Long) {
+        withTimeoutOrNull(ms) { wakeups.receive() }
     }
 
     /** One frame: the clocks move, and the page the song has reached comes in once it's loaded. */
     fun tick(now: Long, position: Long, playing: Boolean, failed: Set<String>, still: Boolean) {
-        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, 100L)
+        val dt = if (lastFrameMs == 0L) 0L else (now - lastFrameMs).coerceIn(0L, if (still) STILL_MAX_STEP_MS else MAX_STEP_MS)
         lastFrameMs = now
-        frameMs = now
+        // Still, the art neither pans nor fades: nothing to redraw per tick (a cut redraws by itself).
+        if (!still) frameMs = now
         if (playing) playMs += dt
         // The last song's position, still reported a moment after the change, is passed over.
         val believed = now >= settleUntilMs || position < NEW_SONG_START_MS
@@ -370,7 +403,11 @@ internal fun FullArtLayer(
     solidBlend: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // Growing out and the art's fade are one-shot transitions: they snap only with "Remove
+    // animations". The cycle (the frame loop, pans and page fades) is a loop: it also stands still
+    // under Battery Saver.
     val reducedMotion = rememberNpReducedMotion()
+    val loopsStill = rememberNpLoopsStill()
     val target = active && visible && pages.isNotEmpty()
     LaunchedEffect(target, visible, reducedMotion, state.ready) {
         when {
@@ -420,13 +457,15 @@ internal fun FullArtLayer(
             state.newSong(withFrameMillis { it })
         }
     }
-    // The frame loop: while it's out and in sight.
-    LaunchedEffect(running) {
+    // The frame loop: while it's out and in sight. With motion still it ticks every STILL_TICK_MS
+    // rather than every frame: the pages only cut, so nothing needs the display's refresh rate.
+    LaunchedEffect(running, loopsStill) {
         if (!running) return@LaunchedEffect
         while (true) {
             withFrameMillis { now ->
-                state.tick(now, currentPosition(), currentPlaying, failed.keys, reducedMotion)
+                state.tick(now, currentPosition(), currentPlaying, failed.keys, loopsStill)
             }
+            if (loopsStill) state.awaitWake(STILL_TICK_MS)
         }
     }
 
@@ -440,7 +479,11 @@ internal fun FullArtLayer(
     }
     wanted.forEach { page ->
         key(page.key) {
-            PageLoader(page, onLoaded = { loaded[page.key] = it }, onFailed = { failed[page.key] = true })
+            PageLoader(
+                page,
+                onLoaded = { loaded[page.key] = it; state.wake() },
+                onFailed = { failed[page.key] = true; state.wake() },
+            )
             DisposableEffect(page.key) { onDispose { loaded.remove(page.key) } }
         }
     }
@@ -475,7 +518,7 @@ internal fun FullArtLayer(
                     val now = state.fadeMs
                     state.shown.forEachIndexed { index, shown ->
                         val page = loaded[shown.page.key] ?: return@forEachIndexed
-                        val alpha = fadeAlpha(index, now, shown, reducedMotion)
+                        val alpha = fadeAlpha(index, now, shown, loopsStill)
                         if (alpha <= 0f) return@forEachIndexed
                         if (solidBlend) {
                             drawRect(page.solid, alpha = alpha)
@@ -515,17 +558,17 @@ internal fun FullArtLayer(
                     clipPath(clip) {
                         state.shown.forEachIndexed { index, shown ->
                             val page = loaded[shown.page.key] ?: return@forEachIndexed
-                            val alpha = fadeAlpha(index, now, shown, reducedMotion)
+                            val alpha = fadeAlpha(index, now, shown, loopsStill)
                             if (alpha <= 0f) return@forEachIndexed
                             val w = page.image.width.toFloat()
                             val h = page.image.height.toFloat()
                             val square = coverCrop(w, h, from.width, from.height).translate(from.topLeft)
                             val panned = panCrop(
                                 w, h, full.width, full.height,
-                                elapsedS = if (reducedMotion) 0f else (state.playMs - shown.atPlayMs) / 1000f,
+                                elapsedS = if (loopsStill) 0f else (state.playMs - shown.atPlayMs) / 1000f,
                                 direction = shown.direction,
                                 holdS = state.schedule.holdMs / 1000f,
-                                speedPxPerS = if (reducedMotion) 0f else panSpeedPx,
+                                speedPxPerS = if (loopsStill) 0f else panSpeedPx,
                                 zoom = extraZoom,
                             )
                             drawPage(page.image, lerpRect(square, panned, t), alpha)

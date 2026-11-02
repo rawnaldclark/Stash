@@ -4,4 +4,5 @@
     <string name="resume_playback_short">Возобновить</string>
     <string name="resume_playback_long">Возобновить воспроизведение</string>
     <string name="cast_connect_failed">Не удалось подключиться к %1$s</string>
+    <string name="like_mirror_signed_out">Ваши лайки не доходят до %1$s. Войдите снова в настройках.</string>
 </resources>
