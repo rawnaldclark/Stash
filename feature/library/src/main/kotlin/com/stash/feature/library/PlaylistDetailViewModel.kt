@@ -358,7 +358,7 @@ class PlaylistDetailViewModel @Inject constructor(
             val tapped = uiState.value.tracks.firstOrNull { it.id == trackId }
             if (tapped != null && tapped.isStreamable && !tapped.isDownloaded) {
                 if (!connectivityMonitor.isConnected()) {
-                    _userMessages.tryEmit("Online only — connect to play this track")
+                    _userMessages.tryEmit("No internet connection, and this song isn't downloaded.")
                     return@launch
                 }
             }

@@ -117,9 +117,14 @@ fun SyncHistoryScreen(
 
             // Each account's own playlists and Liked: Refresh mirrors a song removed there,
             // Accumulate keeps it. Mixes have their own Stack switch on the account's page.
-            if (uiState.spotifyConnected || uiState.youTubeConnected) {
+            // A switch shows exactly while its mode counts for deleting downloads: signed in,
+            // or the account's playlists still here (SyncPreferencesManager.anyAccumulate).
+            // A mode that counted with no switch on screen kept Refresh from ever deleting (#273).
+            val spotifyCounts = uiState.spotifyConnected || uiState.spotifyPlaylists.isNotEmpty()
+            val youTubeCounts = uiState.youTubeConnected || uiState.youTubePlaylists.isNotEmpty()
+            if (spotifyCounts || youTubeCounts) {
                 item(key = "mixes_label") { SyncSectionLabel(stringResource(R.string.sync_history_mixes_section)) }
-                if (uiState.spotifyConnected) {
+                if (spotifyCounts) {
                     item(key = "spotify_mode") {
                         MixModeCard(name = "Spotify") {
                             SyncModeChipRow(
@@ -131,7 +136,7 @@ fun SyncHistoryScreen(
                         }
                     }
                 }
-                if (uiState.youTubeConnected) {
+                if (youTubeCounts) {
                     item(key = "youtube_mode") {
                         MixModeCard(name = "YouTube Music") {
                             SyncModeChipRow(

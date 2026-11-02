@@ -4,11 +4,14 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.prefs.HomeSection
+import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.feature.record.art.ArtSong
 import com.stash.feature.record.art.RecordArt
 import com.stash.feature.record.imports.ImportInfo
 import com.stash.feature.record.imports.ImportState
 import com.stash.feature.record.imports.RecordImports
+import com.stash.feature.record.mixes.RecordShelfPicks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +33,8 @@ import javax.inject.Inject
  * Home's Your record card ([YourRecordSection]): the record's own numbers ([RecordCardSource], read only when the history
  * changes) and the import's state ([RecordImports]) as [RecordCard]'s state, and the sleeve's and the row's covers, looked up
  * once per set of albums and artists and shown as each batch lands. "Press your record" hidden with its × stays hidden on this
- * phone until Settings brings it back (HomeCard.svelte's `dismissed`); Settings › Home layout hides the whole section.
+ * phone until Settings brings it back (HomeCard.svelte's `dismissed`); Settings › Home layout hides the whole section, and so
+ * does the record card's long press ([hideCard]), leaving the record's mixes on Home.
  */
 @HiltViewModel
 class YourRecordViewModel @Inject constructor(
@@ -38,6 +42,8 @@ class YourRecordViewModel @Inject constructor(
     private val art: RecordArt,
     private val imports: RecordImports,
     taste: com.stash.feature.record.taste.RecordTaste,
+    private val homeSections: HomeSectionsPreference,
+    shelfPicks: RecordShelfPicks,
 ) : ViewModel() {
     init {
         // Home opened: the taste again, at most once a local day (ui/spotify/shared.ts `dailyRefresh`)
@@ -91,6 +97,34 @@ class YourRecordViewModel @Inject constructor(
     private var coversJob: Job? = null
 
     fun hideInvite() = imports.hideInvite()
+
+    /**
+     * Whether Home shows mixes from the record under the card ([mixesStay]): the card's menu says they stay only when they do.
+     * False until known, so the menu never promises mixes there may not be.
+     */
+    val mixesOnHome: StateFlow<Boolean> = combine(homeSections.hidden, shelfPicks.hasPicks, imports.info) { hidden, picks, info ->
+        mixesStay(hidden, picks, imported = info.record != null)
+    }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * The card's long press › Hide this card: Home's Your record section hidden, exactly as its switch in Settings › Home
+     * layout does (which brings it back). Its mixes are their own section and stay, in the card's place; nothing of the record
+     * itself is touched (that's Settings › Your record › Remove your record, never this).
+     */
+    fun hideCard() {
+        viewModelScope.launch {
+            try {
+                homeSections.setHidden(HomeSection.YOUR_RECORD, hide = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The card stays; Settings › Home layout can still hide it
+                Log.w(TAG, "hiding the card failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
 
     /** Get started, How it works, Open, Review: the import sheet. */
     fun openImport() = imports.openSheet()
@@ -152,3 +186,11 @@ class YourRecordViewModel @Inject constructor(
         const val TAG = "YourRecord"
     }
 }
+
+/**
+ * Whether hiding the card leaves mixes from the record on Home: "From your record" isn't switched off, and its shelf has
+ * mixes ([shelfHasPicks], as it last made them). Until the shelf has made them once (null), an import stands in: the card
+ * also shows with no import, from this phone's own plays alone, and those make no mixes.
+ */
+internal fun mixesStay(hidden: Set<HomeSection>, shelfHasPicks: Boolean?, imported: Boolean): Boolean =
+    HomeSection.RECORD_MIXES !in hidden && (shelfHasPicks ?: imported)

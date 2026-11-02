@@ -413,6 +413,7 @@ class ArtistProfileViewModel @Inject constructor(
                 monthlyListeners = listeners ?: currentHero.monthlyListeners,
             ),
             popular = profile.popular,
+            latest = latestReleases(profile.albums, profile.singles),
             albums = profile.albums,
             singles = profile.singles,
             related = profile.related,
