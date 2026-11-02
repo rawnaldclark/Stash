@@ -43,6 +43,8 @@ class CommunityViewModel @Inject constructor(
         val message: String? = null,
         /** Play all / Shuffle is opening the first posts; cleared once music starts. */
         val startingChart: Boolean = false,
+        /** A pull-to-refresh is loading; cleared when the list it asked for answers, either way. */
+        val refreshing: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState(posts = repository.lastHome))
@@ -81,7 +83,9 @@ class CommunityViewModel @Inject constructor(
             // When it was asked, not answered: a vote made during a slow load then counts as newer.
             val asked = clock()
             val result = when (tab) {
-                Tab.HOME -> repository.feed(CommunityRepository.HOME_SIZE)
+                // Home reads the whole list too: its #1 is this week's top by votes (topChart), which the Worker's
+                // first five ("hot": votes plus age) needn't hold.
+                Tab.HOME -> repository.feed(CommunityRepository.ALL_SIZE)
                 Tab.ALL -> repository.feed(CommunityRepository.ALL_SIZE)
                 Tab.MINE -> repository.mine()
             }
@@ -94,11 +98,19 @@ class CommunityViewModel @Inject constructor(
             _state.update { s ->
                 when {
                     s.tab != tab -> s
-                    posts != null -> s.copy(posts = posts, failed = false)
-                    else -> s.copy(failed = s.posts == null)
+                    posts != null -> s.copy(posts = posts, failed = false, refreshing = false)
+                    // A pulled refresh that failed over a list still on screen says so; a quiet reload (Home coming back) doesn't.
+                    s.refreshing && s.posts != null -> s.copy(refreshing = false, message = communityMessage(result))
+                    else -> s.copy(failed = s.posts == null, refreshing = false)
                 }
             }
         }
+    }
+
+    /** Pull-to-refresh: reloads the list on screen, keeping it there until the new one arrives. */
+    fun refresh() {
+        _state.update { it.copy(refreshing = true) }
+        show(_state.value.tab)
     }
 
     /** Your own posts can't be voted on; one request per post is out at a time, and a tap meanwhile is sent after it. */
@@ -131,9 +143,9 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
-    /** Play all / Shuffle on the All list: a taste of the top posts (see [CommunityChartPlayer]). */
-    fun playChart(shuffle: Boolean) {
-        val posts = _state.value.posts?.takeIf { it.isNotEmpty() } ?: return
+    /** Play all / Shuffle on Top: a taste of [posts], the chart in the order shown (see [CommunityChartPlayer]). */
+    fun playChart(shuffle: Boolean, posts: List<CommunityPost>) {
+        if (posts.isEmpty()) return
         if (chart?.isActive == true) return
         _state.update { it.copy(startingChart = true) }
         chart = viewModelScope.launch {

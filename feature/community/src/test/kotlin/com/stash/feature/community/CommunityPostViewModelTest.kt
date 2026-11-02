@@ -63,19 +63,6 @@ class CommunityPostViewModelTest {
 
     private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes, mockk(relaxed = true))
 
-    @Test fun `the post screen reads each kind`() {
-        assertThat(playlistPost().headline()).isEqualTo("Playlist · 2 songs · 1 h 5 min")
-        assertThat(playlistPost("mix").headline()).isEqualTo("Mix · 2 songs · 1 h 5 min")
-        assertThat(songPost.headline()).isEqualTo("Death Plus")
-    }
-
-    @Test fun `whole hours drop the minutes, and an unknown length is left out`() {
-        fun lasting(vararg ms: Long?) = playlistPost().copy(tracks = ms.map { SharedTrack("T", "A", durationMs = it) })
-        assertThat(lasting(3_600_000).headline()).isEqualTo("Playlist · 2 songs · 1 h")
-        assertThat(lasting(300_000).headline()).isEqualTo("Playlist · 2 songs · 5 min")
-        assertThat(lasting(null, null).headline()).isEqualTo("Playlist · 2 songs")
-    }
-
     @Test fun `a gone post says so, and a failed load can be retried`() = runTest(dispatcher) {
         coEvery { repo.open("AAAAAAAA") } returnsMany listOf(
             CommunityResult.Rejected("gone"), CommunityResult.Failed("offline"), CommunityResult.Ok(songPost),

@@ -3,6 +3,7 @@ package com.stash.feature.settings.cloud
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.db.dao.CloudFolderWithCount
@@ -71,11 +72,18 @@ data class PendingCloudDisconnect(val accountId: Long, val provider: CloudProvid
  * Settings for cloud storage libraries (Dropbox, OneDrive, Google Drive): the account cards under Accounts and
  * the Cloud folders section under Library & Storage share this ViewModel. Everything is hidden
  * when the build has no provider key ([available] false).
+ *
+ * Each screen has its own instance, and a sign-in's result ([CloudLibrary.authEvents]) reaches
+ * them all. Only the instance whose [connect] started the sign-in acts on it (says how it went,
+ * opens a new account's folder picker): the others would otherwise pop a picker later, when
+ * their screen comes back, and browse the drive unseen meanwhile. Which provider it is waiting
+ * for is kept in [savedState], so it survives Android killing Stash while the browser is in front.
  */
 @HiltViewModel
 class CloudStorageViewModel @Inject constructor(
     private val cloud: CloudLibrary,
     private val uploads: CloudUploads,
+    private val savedState: SavedStateHandle,
 ) : ViewModel() {
 
     val available: Boolean = cloud.isAvailable
@@ -113,6 +121,8 @@ class CloudStorageViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             cloud.authEvents.collect { event ->
+                if (!startedHere(event)) return@collect
+                savedState.remove<String>(KEY_SIGNING_IN)
                 when (event) {
                     is CloudAuthEvent.Connected -> {
                         _messages.tryEmit("${event.provider.displayName} connected as ${event.displayName}.")
@@ -158,8 +168,25 @@ class CloudStorageViewModel @Inject constructor(
     }
 
     fun connect(activityContext: Context, provider: CloudProvider) {
+        savedState[KEY_SIGNING_IN] = provider.id
         runCatching { cloud.connect(activityContext, provider) }
-            .onFailure { _messages.tryEmit("Couldn't open the ${provider.displayName} sign-in.") }
+            .onFailure {
+                savedState.remove<String>(KEY_SIGNING_IN)
+                _messages.tryEmit("Couldn't open the ${provider.displayName} sign-in.")
+            }
+    }
+
+    /**
+     * True when [event] ends the sign-in this instance's [connect] started: one is waiting, and the
+     * event names that provider (a failure that can't tell which provider counts too).
+     */
+    private fun startedHere(event: CloudAuthEvent): Boolean {
+        val waiting = savedState.get<String>(KEY_SIGNING_IN) ?: return false
+        val provider = when (event) {
+            is CloudAuthEvent.Connected -> event.provider
+            is CloudAuthEvent.Failed -> event.provider ?: return true
+        }
+        return provider.id == waiting
     }
 
     fun requestDisconnect(account: CloudAccount) {
@@ -270,6 +297,11 @@ class CloudStorageViewModel @Inject constructor(
             cloud.rescanAll()
             _messages.tryEmit("Checking your cloud folders for changes.")
         }
+    }
+
+    private companion object {
+        /** The provider id this instance's [connect] is waiting on, in its saved state. */
+        const val KEY_SIGNING_IN = "cloud.signingIn"
     }
 
     private fun load(folderId: String?) {

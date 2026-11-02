@@ -30,7 +30,7 @@ data class SettingsUiState(
     val audioQuality: QualityTier = QualityTier.MAX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     /** Pure-black (AMOLED) backgrounds whenever the effective theme is dark. */
-    val amoledDark: Boolean = false,
+    val amoledDark: Boolean = true,
     /**
      * Network + power conditions under which Stash runs background
      * downloads (Stash Discover, tag enrichment). Changing this in
@@ -102,8 +102,8 @@ data class SettingsUiState(
      */
     val streamingCellularTier: LosslessQualityTier = LosslessQualityTier.CD,
     /**
-     * Master "Save Data" override for streaming. When true, callers force
-     * CD on every network regardless of the per-transport tiers. Backed by
+     * "Data saver": on mobile data (a metered network) lower quality streams,
+     * smaller pictures, no prefetch; Wi-Fi untouched. Backed by
      * [com.stash.data.download.prefs.StreamingQualityPreferences.saveData].
      */
     val streamingSaveData: Boolean = false,

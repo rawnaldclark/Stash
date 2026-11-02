@@ -18,7 +18,10 @@ export async function sha256Hex(s) {
     return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Constant-time comparison of two equal-length hex strings. */
+/**
+ * Constant-time comparison of two strings (hex digests here, the proxy key in http.js): the time depends on their
+ * length, never on where they differ. Different lengths return false at once.
+ */
 export function sameHex(a, b) {
     if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
     let diff = 0;

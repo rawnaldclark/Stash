@@ -206,7 +206,7 @@ internal fun InstrumentalBreakNotes(
     modifier: Modifier = Modifier,
     alignment: Alignment.Horizontal = Alignment.Start,
 ) {
-    val still = rememberNpReducedMotion()
+    val still = rememberNpLoopsStill()
     // Only a live, moving row runs a transition: a song's other breaks cost nothing per frame.
     val breath: State<Float>? = if (live && !still) {
         rememberInfiniteTransition(label = "break-breath").animateFloat(

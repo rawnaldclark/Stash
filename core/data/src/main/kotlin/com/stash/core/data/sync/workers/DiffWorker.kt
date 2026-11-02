@@ -19,8 +19,10 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
+import com.stash.core.data.db.entity.TrackAliasEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.libraryCopiesOf
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
@@ -744,7 +746,16 @@ class DiffWorker @AssistedInject constructor(
         val soundCloudIsrcs = allowedSnapshots.filter { it.soundCloudId != null }.mapNotNull { it.isrc }
             .filter { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }.distinct()
         val isrcCandidates = soundCloudIsrcs.chunked(900).flatMap { trackDao.findByIsrcs(it) }
-        val candidates = (isrcCandidates + trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities) + soundCloudCandidates).distinctBy { it.id }
+        val direct = (isrcCandidates + trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities) + soundCloudCandidates).distinctBy { it.id }
+        // Ids a merge took away (track_aliases, schema 76): a merged row's other video or Spotify
+        // id finds the row it went into, so this sync never makes the merged duplicate again. The
+        // rows they point at join the candidates; the id's own column still wins below.
+        val duplicateDao = database.duplicateDao()
+        val spotifyAliases = duplicateDao.aliases(TrackAliasEntity.KIND_SPOTIFY_URI, spotifyUris)
+        val youtubeAliases = duplicateDao.aliases(TrackAliasEntity.KIND_YOUTUBE_ID, youtubeIds)
+        val directIds = direct.mapTo(HashSet()) { it.id }
+        val aliasTargets = (spotifyAliases + youtubeAliases).map { it.trackId }.distinct().filterNot { it in directIds }
+        val candidates = direct + trackDao.getByIds(aliasTargets)
         val candidateTracks = candidates.associate { candidate ->
             candidate.id to BatchTrack(candidate, isNew = false)
         }
@@ -772,6 +783,9 @@ class DiffWorker @AssistedInject constructor(
         }
 
         candidateTracks.values.forEach(::registerBatchTrack)
+        // After the rows' own ids, so a row that holds an id in its column always owns it.
+        for (alias in spotifyAliases) candidateTracks[alias.trackId]?.let { bySpotifyUri.putIfAbsent(alias.value, it) }
+        for (alias in youtubeAliases) candidateTracks[alias.trackId]?.let { byYoutubeId.putIfAbsent(alias.value, it) }
 
         // A canonical-title/artist match is only safe to reuse under
         // SameSongRule, the rule every path that finds a row by its words
@@ -948,10 +962,41 @@ class DiffWorker @AssistedInject constructor(
         // track of every rotating mix was queued (#368: "it downloads 6000+ from
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
+        var linkedCopies = 0
+        // Copies of new songs already on the phone, by copy id: written after [crossRefsToInsert]
+        // and insert-if-absent, so they never move or revive a link that is already there.
+        val copyLinks = linkedMapOf<Long, PlaylistTrackCrossRef>()
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
+            // A new song already on the phone as another row (cause 4 of the duplicates: a Spotify
+            // row downloaded under one video while this YouTube playlist holds another upload, so
+            // the ids keep them two rows) is not downloaded again: its copy is linked here, where
+            // the song sits, and the new row keeps its own ids for the next sync. The link is
+            // insert-if-absent ([copyLinks]): a copy already in this playlist keeps its place, and
+            // one the user took out (a removal mark written while this sync ran included) is not
+            // linked back; the song is still not downloaded twice. The shared check every download
+            // path asks (SameSongRule.isLibraryCopy), its candidates read once per playlist.
+            val copies = trackDao.libraryCopiesOf(
+                newTracks.filterNot { it.entity.soundCloudPreview }
+                    .map { it.entity.copy(id = checkNotNull(it.persistedId)) },
+            )
+            val firstPositionOf = newOccurrences.groupBy({ it.first }, { it.second.position })
+                .mapValues { (_, positions) -> positions.min() }
             for (batchTrack in newTracks) {
                 if (batchTrack.entity.soundCloudPreview) continue // A preview is never queued for download.
                 val trackId = checkNotNull(batchTrack.persistedId)
+                val copy = copies[trackId]
+                if (copy != null) {
+                    copyLinks.putIfAbsent(
+                        copy.id,
+                        PlaylistTrackCrossRef(
+                            playlistId = localPlaylist.id,
+                            trackId = copy.id,
+                            position = firstPositionOf[batchTrack] ?: 0,
+                        ),
+                    )
+                    linkedCopies++
+                    continue
+                }
                 downloadEntries.add(
                     DownloadQueueEntity(
                         trackId = trackId,
@@ -1041,6 +1086,9 @@ class DiffWorker @AssistedInject constructor(
         if (crossRefsToInsert.isNotEmpty()) {
             playlistDao.insertAllCrossRefs(crossRefsToInsert.values.toList())
         }
+        if (copyLinks.isNotEmpty()) {
+            playlistDao.insertCrossRefsIfAbsent(copyLinks.values.toList())
+        }
         if (downloadEntries.isNotEmpty()) {
             downloadQueueDao.insertAll(downloadEntries)
         }
@@ -1052,7 +1100,7 @@ class DiffWorker @AssistedInject constructor(
                 TAG,
                 "Playlist '${playlistSnapshot.playlistName}' (id=${localPlaylist.id}): " +
                     "$newTrackCount new track(s), streamingMode=$streamingMode, " +
-                    "downloadsQueued=${downloadEntries.size}",
+                    "downloadsQueued=${downloadEntries.size}, alreadyOnPhone=$linkedCopies",
             )
         }
 

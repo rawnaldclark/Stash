@@ -8,6 +8,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import com.stash.core.data.prefs.DataSaver
 import com.stash.core.model.TrackItem
 import com.stash.data.download.preview.PreviewUrlExtractor
 import javax.inject.Inject
@@ -21,6 +22,9 @@ import javax.inject.Singleton
  * `ytdlp:videoId` — so a preview→download flow finalises from cache
  * without re-fetching.
  *
+ * Where Data saver applies (the switch on, a metered network) neither: YouTube's
+ * lowest audio only, cached as `ytdlp-low:videoId`.
+ *
  * Confidence threshold for lossless acceptance is 0.65 (vs sync's 0.5)
  * because search-tab matches lack ISRC and reliable duration; we want
  * tighter title+artist agreement to avoid wrong-version downloads.
@@ -32,8 +36,20 @@ class SearchPreviewMediaSource @Inject constructor(
     private val previewCache: SimpleCache,
     private val httpDataSourceFactory: HttpDataSource.Factory,
     private val cacheKeyFactory: TrackKeyCacheKeyFactory,
+    private val dataSaver: DataSaver,
 ) {
     suspend fun create(track: TrackItem): MediaSource {
+        // Data saver on mobile data: a preview is a taste, so the low tier, as streams get it.
+        // No lossless lookup (a FLAC preview is the biggest thing this could fetch) and YouTube's
+        // lowest audio, under its own cache key: a key shared with the full-quality file would
+        // splice two encodings' bytes in the cache.
+        if (dataSaver.appliesNow()) {
+            Log.d(TAG, "preview low tier ${track.videoId} (Data saver on a metered network)")
+            return buildCachedSource(
+                upstreamUrl = previewUrlExtractor.extractStreamUrl(track.videoId, lowestQuality = true),
+                cacheKey = "ytdlp-low:${track.videoId}",
+            )
+        }
         val match = prefetcher.lookup(track)
         // A DASH match (Tidal) is a manifest this progressive cached source cannot play.
         return if (match != null && !match.isDash && match.confidence >= MIN_SEARCH_CONFIDENCE) {

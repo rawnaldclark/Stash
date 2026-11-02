@@ -199,8 +199,13 @@ fun SettingsLibraryStorageScreen(
     onBack: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Link Stash on the web (spec 2026-10-10 link-sync §2.1); null while the feature is switched off (release builds). */
-    onNavigateToWebLink: (() -> Unit)? = null,
+    /**
+     * Your Stash, the link's page (spec 2026-10-10 link-sync §2.1, where it was "Link Stash on the web"; owner decision D21);
+     * null while the link is switched off in this build.
+     */
+    onNavigateToYourStash: (() -> Unit)? = null,
+    /** Opened from Your Stash's Backups: that existing action starts once on arrival (the export choice, or the file picker). */
+    backupShortcut: com.stash.feature.settings.weblink.BackupShortcut? = null,
     /** Your record, full screen (its Settings rows open it once something was imported); null where it can't be opened. */
     onOpenRecord: (() -> Unit)? = null,
     /** Your record's Last.fm rows (feature:record's, handed over by the app so Settings needs no dependency on it). */
@@ -288,6 +293,18 @@ fun SettingsLibraryStorageScreen(
             ActivityResultContracts.OpenDocument(),
         ) { uri -> if (uri != null) viewModel.onImportDatabase(uri) }
 
+        // Your Stash's Backups rows land here with their action already started, once: not again after a rotation, or
+        // when Back returns to this page.
+        var backupShortcutDone by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(backupShortcut) {
+            if (backupShortcut == null || backupShortcutDone) return@LaunchedEffect
+            backupShortcutDone = true
+            when (backupShortcut) {
+                com.stash.feature.settings.weblink.BackupShortcut.BACK_UP -> showExportScopeDialog = true
+                com.stash.feature.settings.weblink.BackupShortcut.RESTORE -> importLauncher.launch(BACKUP_FILE_TYPES)
+            }
+        }
+
         // -- Discovery: Stash Mixes, when its background work may run, Qobuz on Home --
         var showNetworkSheet by rememberSaveable { mutableStateOf(false) }
         SettingsSectionLabel(stringResource(R.string.settings_discovery_section))
@@ -361,12 +378,12 @@ fun SettingsLibraryStorageScreen(
                 onClick = { showListeningHistory = true },
             )
         }
-        if (onNavigateToWebLink != null) {
+        if (onNavigateToYourStash != null) {
             libraryRows += {
                 SettingsNavRow(
-                    title = stringResource(R.string.settings_web_link_nav_title),
-                    subtitle = stringResource(R.string.settings_web_link_nav_subtitle),
-                    onClick = onNavigateToWebLink,
+                    title = stringResource(R.string.settings_your_stash_title),
+                    subtitle = stringResource(R.string.settings_your_stash_nav_subtitle),
+                    onClick = onNavigateToYourStash,
                 )
             }
         }
@@ -780,7 +797,7 @@ fun SettingsLibraryStorageScreen(
                 {
                     SettingsNavRow(
                         title = stringResource(R.string.settings_storage_import_backup_button),
-                        onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                        onClick = { importLauncher.launch(BACKUP_FILE_TYPES) },
                     )
                 },
                 {
@@ -800,6 +817,9 @@ fun SettingsLibraryStorageScreen(
         )
     }
 }
+
+/** What the backup file picker offers: a Stash backup is a zip, which some file providers label loosely. */
+private val BACKUP_FILE_TYPES = arrayOf("application/zip", "application/octet-stream", "*/*")
 
 /** A read-only line in a settings card: a label and its value. */
 @Composable

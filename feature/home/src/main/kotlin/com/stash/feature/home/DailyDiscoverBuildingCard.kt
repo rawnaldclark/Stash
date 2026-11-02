@@ -13,7 +13,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.ambient.Ground
 import com.stash.core.ui.ambient.brandRoles
-import com.stash.core.ui.ambient.rememberReducedMotion
+import com.stash.core.ui.ambient.rememberLoopsStill
 import com.stash.core.ui.components.DiscoverHeroCoverShape
 import com.stash.core.ui.components.DiscoverHeroCoverSize
 import com.stash.core.ui.components.DiscoverHeroFrame
@@ -30,11 +30,11 @@ import com.stash.core.ui.theme.StashTheme
  * The real hero replaces it in place when the first tracks land.
  *
  * Not clickable: there is nothing to open or play yet. TalkBack reads it as
- * one item. The shimmer holds still with animations turned off.
+ * one item. The shimmer holds still with animations turned off, or under Battery Saver.
  */
 @Composable
 internal fun DailyDiscoverBuildingCard(modifier: Modifier = Modifier) {
-    val reducedMotion = rememberReducedMotion()
+    val reducedMotion = rememberLoopsStill() // a loop: Battery Saver stills it too
     DiscoverHeroFrame(
         roles = brandRoles(Ground.DARK),
         backdrop = null,

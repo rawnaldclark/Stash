@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home's "Your listening" section. English only for now; the module's translations come in their own pass. -->
+    <string name="listening_title">Your listening</string>
+    <string name="listening_open">Open Your listening</string>
+
+    <!-- The week card: "Last 7 days", the time, then plays / songs / streak as a number over its word. -->
+    <string name="listening_week_eyebrow">Last 7 days</string>
+    <!-- Before an estimated time: "about 4 h 12 min". -->
+    <string name="listening_about">about</string>
+    <string name="listening_week_nothing">Nothing in the last 7 days</string>
+    <!-- TalkBack, the whole card: "Last 7 days, about 4 h 12 min listened. 142 plays, 38 songs, 5-day streak. Opens your listening." -->
+    <string name="listening_week_spoken">Last 7 days, %1$s listened. %2$s. Opens your listening.</string>
+
+    <!-- The word under a number on the week card and the stats tiles. -->
+    <plurals name="listening_stat_plays">
+        <item quantity="one">play</item>
+        <item quantity="other">plays</item>
+    </plurals>
+    <plurals name="listening_stat_songs">
+        <item quantity="one">song</item>
+        <item quantity="other">songs</item>
+    </plurals>
+    <plurals name="listening_stat_artists">
+        <item quantity="one">artist</item>
+        <item quantity="other">artists</item>
+    </plurals>
+    <!-- Under the streak's number: "1" + "day streak", "5" + "days streak" (owner wording). -->
+    <plurals name="listening_stat_streak">
+        <item quantity="one">day streak</item>
+        <item quantity="other">days streak</item>
+    </plurals>
+
+    <!-- The doors under the week card. -->
+    <string name="listening_door_top">Top songs</string>
+    <!-- After "Top songs ·": the range the door counts (the Recap card above counts a calendar month). -->
+    <string name="listening_door_top_range">30 days</string>
+    <!-- The Top songs door when nothing was heard in the last 30 days. -->
+    <string name="listening_door_top_none">Nothing in 30 days</string>
+    <!-- TalkBack: "Top songs, last 30 days. Number 1: Under the Bridge." -->
+    <string name="listening_door_top_spoken">Top songs, last 30 days. Number 1: %1$s.</string>
+    <string name="listening_door_top_none_spoken">Top songs, last 30 days. Nothing yet.</string>
+    <string name="listening_door_history">History</string>
+    <!-- The History door's line: history paused in Settings. -->
+    <string name="listening_history_paused">Paused</string>
+    <!-- The History door's line: listens today. -->
+    <plurals name="listening_history_today">
+        <item quantity="one">%d play today</item>
+        <item quantity="other">%d plays today</item>
+    </plurals>
+    <!-- The History door's line with nothing today: "Last played 3 days ago", "Last played yesterday". -->
+    <string name="listening_history_last_played">Last played %1$s</string>
+    <!-- TalkBack: "History, 22 plays today." -->
+    <string name="listening_door_history_spoken">History, %1$s.</string>
+</resources>

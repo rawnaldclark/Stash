@@ -2,6 +2,8 @@ package com.stash.core.media.service
 
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.findByYoutubeIdOrAlias
+import com.stash.core.data.db.dao.getByIdOrMerged
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.canonicalWordsForSave
 import com.stash.core.data.library.findReusableByWords
@@ -38,12 +40,13 @@ class LikeTargetResolver @Inject constructor(
         // same name by its words): the caller's failure path rolls the heart back.
         check(!isScannedTrackId(candidateId)) { "An All Songs file can't be liked" }
 
-        // Real Room PK already? Cheap exit.
-        if (candidateId > 0L && trackDao.getById(candidateId) != null) return candidateId
+        // Real Room PK already? Cheap exit. A row merged into another (a duplicate) answers with
+        // the row it went into, so the heart never lands on a deleted row or files a new one.
+        if (candidateId > 0L) trackDao.getByIdOrMerged(candidateId)?.let { return it.id }
 
-        // YouTube id is the most reliable secondary identity.
+        // YouTube id is the most reliable secondary identity; a merged-away video finds its song.
         if (!youtubeId.isNullOrBlank()) {
-            trackDao.findByYoutubeId(youtubeId)?.let { return it.id }
+            trackDao.findByYoutubeIdOrAlias(youtubeId)?.let { return it.id }
         }
 
         // By words only under SameSongRule: a like on "Song (Live)" or on another

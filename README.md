@@ -280,7 +280,7 @@ Can't donate? A star, a bug report or telling a friend helps just as much.
 
 **Code:** pull requests welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has how to build it and a map of the code. For anything big, open an issue first so we can talk it through.
 
-**Translations:** want Stash in your language? Join the [Crowdin project](https://crowdin.com/project/stash-music-player) and [ask for translator access here](https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform).
+**Translations:** want Stash in your language? [Ask for translator access here](https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform) and then access the Weblate Project [here](https://weblate.paraliyzed.net/projects/stash-music-app/).
 
 **Security:** found a hole? Please follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 

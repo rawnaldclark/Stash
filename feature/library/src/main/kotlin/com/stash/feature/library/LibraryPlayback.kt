@@ -18,7 +18,7 @@ internal fun playableNow(tracks: List<Track>, online: Boolean): List<Track> =
 internal fun Track.isOnPhone(): Boolean = filePath != null
 
 /** A tap on one song that needs a connection, made offline. */
-internal const val SONG_NEEDS_CONNECTION = "This song isn't downloaded. Connect to play it."
+internal const val SONG_NEEDS_CONNECTION = "No internet connection, and this song isn't downloaded."
 
 /** Play or Shuffle on an artist, offline, when none of their listed songs is downloaded. */
 internal const val ARTIST_NEEDS_CONNECTION = "None of this artist's songs are downloaded. Connect to play them."

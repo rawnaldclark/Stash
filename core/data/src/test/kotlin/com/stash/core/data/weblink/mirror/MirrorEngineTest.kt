@@ -6,6 +6,7 @@ import com.stash.core.data.weblink.FakeSyncServer
 import com.stash.core.data.weblink.InMemoryWebLinkStore
 import com.stash.core.data.weblink.PairingSession
 import com.stash.core.data.weblink.PairingState
+import com.stash.core.data.weblink.SyncCrypto
 import com.stash.core.data.weblink.SyncErrorCode
 import com.stash.core.data.weblink.SyncResult
 import com.stash.core.data.weblink.WebLinkRepository
@@ -36,7 +37,14 @@ class MirrorEngineTest {
     private val lib = FakeMirrorLibrary()
     private val records = InMemoryMirrorStore()
     private var minted = 0
-    private val engine = MirrorEngine(server, store, repo, records, lib, { clock }, { "m_Phone%011d".format(++minted) })
+
+    /**
+     * The most one pushed batch seals to: the app's part, unless a test sets [SMALL_PART] before the engine is first used. Filling
+     * the app's 768,000 bytes takes 20,000 songs of random words, and the engine's run is real CPU on Dispatchers.IO, never the
+     * test scheduler: L-N5 at that size took 44 s on an idle PC and over 60 s on a loaded CI runner, past runTest's timeout.
+     */
+    private var partBytes = SyncCrypto.PART_BYTES
+    private val engine by lazy { MirrorEngine(server, store, repo, records, lib, { clock }, { "m_Phone%011d".format(++minted) }, partBytes) }
     private lateinit var web: WebSide
     private val me: String get() = store.id!!.deviceId
 
@@ -440,9 +448,10 @@ class MirrorEngineTest {
     }
 
     @Test fun `S1 - a push cut short after its first batch never re-sends that batch`() = runTest {
+        partBytes = SMALL_PART
         link()
         likesMirroring()
-        val n = 20_000
+        val n = SMALL_PART_SONGS
         val rnd = java.util.Random(7)
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
@@ -540,6 +549,7 @@ class MirrorEngineTest {
     }
 
     @Test fun `L-N5 - Use this phone's, a push cut short after its first batch, then the retry sends the rest unheld once`() = runTest {
+        partBytes = SMALL_PART
         link()
         lib.like(song("Mine"))
         web.configure(likes = Dir.BOTH)
@@ -547,7 +557,7 @@ class MirrorEngineTest {
         val rnd = java.util.Random(11)
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         fun word() = (1..24).map { chars[rnd.nextInt(62)] }.joinToString("")
-        val n = 20_000
+        val n = SMALL_PART_SONGS
         web.post(*(0 until n).map { MirrorOp.Like(song(word(), word()), true, web.at()) }.toTypedArray(), MirrorOp.Joined(Kind.LIKES, since))
         run()
         val q = engine.status.value.question!!
@@ -938,5 +948,14 @@ class MirrorEngineTest {
         link()
         server.failNext("logAfter", SyncResult.Error(409, SyncErrorCode.ROTATION_DUE))
         assertThat(run()).isEqualTo(MirrorRun.Done) // a key change in the middle is settled and the run goes again
+    }
+
+    private companion object {
+        /**
+         * A tenth of the app's part, filled by a tenth of the songs ([SMALL_PART_SONGS] of random 24-letter words): a push of
+         * them is cut into the same batches as 20,000 songs in a real part, with a tenth of the work.
+         */
+        const val SMALL_PART = SyncCrypto.PART_BYTES / 10
+        const val SMALL_PART_SONGS = 2_000
     }
 }

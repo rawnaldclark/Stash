@@ -131,6 +131,12 @@ class MirrorEngine internal constructor(
     private val lib: MirrorLibrary,
     private val clock: () -> Long,
     private val mintId: () -> String,
+    /**
+     * The most one pushed batch may seal to: [SyncCrypto.PART_BYTES] in the app (the [Inject] constructor never passes it). A
+     * test seam, as [com.stash.core.data.weblink.inbox.WebLinkInbox] has: a test that needs a push cut into batches can use a
+     * smaller part and a fraction of the songs, rather than the 20,000 it takes to fill a real one.
+     */
+    private val partBytes: Int = SyncCrypto.PART_BYTES,
 ) {
     @Inject constructor(api: SyncApi, store: WebLinkStore, repo: WebLinkRepository, records: MirrorStore, lib: MirrorLibrary) :
         this(api, store, repo, records, lib, System::currentTimeMillis, ::mintMirrorId)
@@ -1194,15 +1200,15 @@ class MirrorEngine internal constructor(
     }
 
     /**
-     * Seals and posts [ops], in as many batches as one part each needs (768,000 bytes of gzip). After each batch lands, [landed]
-     * moves the base by that batch and the state is saved (review S1).
+     * Seals and posts [ops], in as many batches as one part each needs ([partBytes]: 768,000 bytes of gzip). After each batch
+     * lands, [landed] moves the base by that batch and the state is saved (review S1).
      */
     private suspend fun send(c: Ctx, ops: List<MirrorOp>, landed: (List<MirrorOp>) -> Unit) {
         val key = dataKey(c, c.sp.epoch) ?: throw Settle()
         val batches = mutableListOf<Pair<List<MirrorOp>, SyncEnvelope>>()
         fun cut(part: List<MirrorOp>) {
             val env = SyncCrypto.seal(key, c.sp.spaceId, c.sp.epoch, SyncCrypto.Place.LOG, MirrorWire.opsJson(c.me, part))
-            if (env.c.length.toLong() * 3 / 4 - 16 <= SyncCrypto.PART_BYTES || part.size < 2) {
+            if (env.c.length.toLong() * 3 / 4 - 16 <= partBytes || part.size < 2) {
                 batches += part to env
                 return
             }

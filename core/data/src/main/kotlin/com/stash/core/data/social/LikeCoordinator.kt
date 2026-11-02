@@ -2,6 +2,7 @@ package com.stash.core.data.social
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.getByIdOrMerged
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.prefs.LikePreferences
 import com.stash.core.data.social.spotify.SpotifyRateLimitException
@@ -245,7 +246,8 @@ class LikeCoordinator internal constructor(
     private class Fired(val results: Map<Destination, Result<Unit>>, val called: Boolean)
 
     private suspend fun fire(trackId: Long, liked: Boolean, destinations: Set<Destination>): Fired {
-        var track = trackDao.getById(trackId)?.toDomain() ?: return Fired(emptyMap(), called = false)
+        // A like queued before its row was merged into another (a duplicate) mirrors that row.
+        var track = trackDao.getByIdOrMerged(trackId)?.toDomain() ?: return Fired(emptyMap(), called = false)
 
         // Cross-platform backfill (LIKE only): a heart should reach BOTH enabled services even when the track was only known
         // to one, so a missing Spotify URI / YouTube id is resolved (search + confidence gate + persist). Skipped on unlike:

@@ -7,6 +7,7 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.stash.core.common.DataSaverArtCap
+import com.stash.core.data.prefs.DataSaverSnapshot
 import com.stash.core.ui.util.ArtSizeInterceptor
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -23,7 +24,8 @@ import okio.Path.Companion.toOkioPath
  *  - [ArtSizeInterceptor]: a cover drawn bigger than its stored URL (Now
  *    Playing, above all) asks its host for a big enough variant, and draws the
  *    stored URL when that fails or turns out smaller; rows are untouched. No
- *    variant above 1200px while Data Saver restricts a metered network.
+ *    variant above 1200px on a metered network while Android's Data Saver
+ *    restricts the app or Stash's own Data saver switch is on.
  */
 object CoilConfiguration {
     fun build(context: PlatformContext, okHttp: OkHttpClient): ImageLoader =
@@ -40,7 +42,11 @@ object CoilConfiguration {
                     .build()
             }
             .components {
-                add(ArtSizeInterceptor(maxVariantPx = DataSaverArtCap(context)))
+                add(
+                    ArtSizeInterceptor(
+                        maxVariantPx = DataSaverArtCap(context) { DataSaverSnapshot.isOn(context) },
+                    ),
+                )
                 add(OkHttpNetworkFetcherFactory(callFactory = { okHttp }))
             }
             .crossfade(false) // hero does its own crossfade

@@ -68,14 +68,14 @@ import com.stash.data.cloud.upload.UploadStatus
 import com.stash.core.ui.R as UiR
 
 /** Brand accents, as the Discord card does inline. */
-private fun accentOf(provider: CloudProvider): Color = when (provider) {
+internal fun accentOf(provider: CloudProvider): Color = when (provider) {
     CloudProvider.DROPBOX -> Color(0xFF0061FE)
     CloudProvider.ONEDRIVE -> Color(0xFF0078D4)
     CloudProvider.GOOGLE_DRIVE -> Color(0xFF1FA463)
 }
 
 @DrawableRes
-private fun logoOf(provider: CloudProvider): Int = when (provider) {
+internal fun logoOf(provider: CloudProvider): Int = when (provider) {
     CloudProvider.DROPBOX -> UiR.drawable.ic_brand_dropbox
     CloudProvider.ONEDRIVE -> UiR.drawable.ic_brand_onedrive
     CloudProvider.GOOGLE_DRIVE -> UiR.drawable.ic_brand_google_drive

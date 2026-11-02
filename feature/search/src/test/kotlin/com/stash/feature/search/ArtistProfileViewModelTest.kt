@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.prefs.DataSaver
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -12,6 +13,7 @@ import com.stash.core.media.preview.PreviewState
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
@@ -78,6 +80,8 @@ class ArtistProfileViewModelTest {
         albumCache: AlbumCache = mock(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
+        spotifyConnected: Boolean = true,
+        dataSaver: DataSaver = DataSaver.Off,
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -94,6 +98,16 @@ class ArtistProfileViewModelTest {
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
+        tokenManager = mock {
+            on { spotifyAuthState } doReturn MutableStateFlow(
+                if (spotifyConnected) {
+                    com.stash.core.auth.model.AuthState.Connected(com.stash.core.auth.model.UserInfo("u", "User"))
+                } else {
+                    com.stash.core.auth.model.AuthState.NotConnected
+                },
+            ).asStateFlow()
+        },
+        dataSaver = dataSaver,
     )
 
     /**
@@ -146,6 +160,34 @@ class ArtistProfileViewModelTest {
         verify(pf).prefetch(eq(listOf("v1", "v2")))
     }
 
+    /** Data saver on mobile data: About drops its photo row (the single photo stays); on Wi-Fi it shows. */
+    @Test
+    fun `the photo gallery waits for Wi-Fi under Data saver`() = runTest {
+        val about = ArtistAbout(bio = "Bio", gallery = listOf("https://img/1.jpg", "https://img/2.jpg"))
+        val profile = ArtistProfile(
+            id = "UC1",
+            name = "A",
+            avatarUrl = null,
+            subscribersText = null,
+            popular = emptyList(),
+            albums = emptyList(),
+            singles = emptyList(),
+            related = emptyList(),
+            about = about,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+
+        val onMobile = vmWith(cache, dataSaver = DataSaver(switchOn = { true }, metered = { true }))
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), onMobile.uiState.value.about?.gallery)
+        assertEquals("Bio", onMobile.uiState.value.about?.bio)
+
+        val onWifi = vmWith(cache, dataSaver = DataSaver(switchOn = { true }, metered = { false }))
+        advanceUntilIdle()
+        assertEquals(about.gallery, onWifi.uiState.value.about?.gallery)
+    }
+
     @Test
     fun `a profile with a blank name does not blank the hero painted from nav args`() = runTest {
         // Header didn't parse but shelves did: the hero the user tapped
@@ -167,6 +209,24 @@ class ArtistProfileViewModelTest {
         assertEquals("LocalName", vm.uiState.value.hero.name)
         assertEquals("u", vm.uiState.value.hero.avatarUrl)
         assertTrue(vm.uiState.value.status is ArtistProfileStatus.Fresh)
+    }
+
+    @Test
+    fun `the Latest releases row is built from the profile's albums and singles`() = runTest {
+        val album = AlbumSummary("MPREa", "Album", "", null, "2020", releaseType = "Album")
+        val single = AlbumSummary("MPREs", "Single", "", null, "2023", releaseType = "Single")
+        val profile = ArtistProfile(
+            id = "UC1", name = "A", avatarUrl = null, subscribersText = null,
+            popular = emptyList(), albums = listOf(album), singles = listOf(single), related = emptyList(),
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val vm = vmWith(cache)
+        advanceUntilIdle()
+        assertEquals(listOf(single, album), vm.uiState.value.latest.map { it.album })
+        // The shelves themselves are untouched by it.
+        assertEquals(listOf(album), vm.uiState.value.albums)
+        assertEquals(listOf(single), vm.uiState.value.singles)
     }
 
     @Test
@@ -250,6 +310,115 @@ class ArtistProfileViewModelTest {
         assertTrue(vm.uiState.value.status is ArtistProfileStatus.Fresh)
         verify(cache).get(eq("UC1"), eq(false))
         verify(cache).get(eq("UC1"), eq(true))
+    }
+
+    @Test
+    fun `the listener count waits for Spotify on a first visit, then shows its number`() = runTest {
+        // Cold miss: YouTube's profile paints first (its 574K monthly audience), then the enriched
+        // profile with Spotify's 1.7M. The hero must never show 574K and swap it for 1.7M.
+        val yt = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = listOf(t("v1").copy(title = "Teen Age Riot")),
+            albums = emptyList(), singles = emptyList(), related = emptyList(),
+            monthlyAudience = 574_000L,
+        )
+        val enriched = yt.copy(about = spotifyAbout())
+        val gate = CompletableDeferred<Unit>()
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(
+            flow {
+                emit(CachedProfile.Partial(yt))
+                gate.await()
+                emit(CachedProfile.Fresh(enriched))
+            },
+        )
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals("Sonic Youth", vm.uiState.value.hero.name)
+        assertEquals(null, vm.uiState.value.hero.monthlyListeners)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1_734_567L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
+    fun `without Spotify the enriched profile shows YouTube's monthly audience, never subscribers`() = runTest {
+        val yt = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+            monthlyAudience = 574_000L,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(
+            flowOf(CachedProfile.Partial(yt), CachedProfile.Fresh(yt.copy(about = null))),
+        )
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals(574_000L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
+    fun `signed out of Spotify, YouTube's number shows with the first paint`() = runTest {
+        // Nothing to wait for: the number shows at once, as the subscriber count used to.
+        val yt = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = emptyList(), albums = emptyList(), singles = emptyList(), related = emptyList(),
+            monthlyAudience = 574_000L,
+        )
+        val gate = CompletableDeferred<Unit>()
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(
+            flow {
+                emit(CachedProfile.Partial(yt))
+                gate.await()
+                emit(CachedProfile.Fresh(yt))
+            },
+        )
+        val vm = vmWith(cache = cache, spotifyConnected = false)
+        advanceUntilIdle()
+        assertEquals(574_000L, vm.uiState.value.hero.monthlyListeners)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(574_000L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    @Test
+    fun `signed out of Spotify, a Spotify number left in the cache is not shown`() = runTest {
+        val cached = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = listOf(t("v1").copy(title = "Teen Age Riot")),
+            albums = emptyList(), singles = emptyList(), related = emptyList(),
+            about = spotifyAbout(),
+            monthlyAudience = 574_000L,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(cached)))
+        val vm = vmWith(cache = cache, spotifyConnected = false)
+        advanceUntilIdle()
+        assertEquals(574_000L, vm.uiState.value.hero.monthlyListeners)
+    }
+
+    private fun spotifyAbout() = com.stash.data.ytmusic.model.ArtistAbout(
+        bio = "b",
+        monthlyListeners = 1_734_567L,
+        topTrackTitles = listOf("Teen Age Riot", "Kool Thing"),
+    )
+
+    @Test
+    fun `a cached profile shows its count at once`() = runTest {
+        val cached = ArtistProfile(
+            id = "UC1", name = "Sonic Youth", avatarUrl = null, subscribersText = "290K",
+            popular = listOf(t("v1").copy(title = "Teen Age Riot")),
+            albums = emptyList(), singles = emptyList(), related = emptyList(),
+            about = spotifyAbout(),
+            monthlyAudience = 574_000L,
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(cached)))
+        val vm = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals(1_734_567L, vm.uiState.value.hero.monthlyListeners)
     }
 
     @Test

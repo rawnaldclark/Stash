@@ -143,4 +143,130 @@ class SameSongRuleTest {
         row("Lift Me Up")
         assertNull(find("Lift Off"))
     }
+
+    // ── findLibraryCopy: the one "already on your phone" check every download path shares ──
+
+    /** A row with a length, for the copy checks (the rows above have none). */
+    private suspend fun copyRow(
+        title: String,
+        lengthMs: Long,
+        youtubeId: String? = null,
+        spotifyUri: String? = null,
+        file: String? = null,
+        soundCloudId: String? = null,
+        explicit: Boolean? = null,
+        flagged: Boolean = false,
+    ): Long = dao.insert(
+        TrackEntity(
+            title = title, artist = "A & B", durationMs = lengthMs, youtubeId = youtubeId, spotifyUri = spotifyUri,
+            soundCloudId = soundCloudId, filePath = file, isDownloaded = file != null,
+            canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist("A & B"),
+            explicit = explicit, matchFlagged = flagged,
+        ),
+    )
+
+    private suspend fun copyOf(
+        title: String,
+        lengthMs: Long,
+        youtubeId: String? = null,
+        soundCloudId: String? = null,
+        exclude: Long? = null,
+        explicit: Boolean? = null,
+    ) = dao.findLibraryCopy(
+        title, "B & A", lengthMs,
+        youtubeId = youtubeId, soundCloudId = soundCloudId, excludeTrackId = exclude, explicit = explicit,
+    )?.id
+
+    @Test fun `a song downloaded under another video, or from Spotify, is the phone's copy, ids don't count`() = runTest {
+        val copy = copyRow("Song", 304_000L, youtubeId = "video000001", spotifyUri = "spotify:track:1", file = "/m/song.flac")
+        // Another upload of the song, from a YouTube playlist: its row could never take the copy's (ids disagree),
+        // but its audio is the same song, so it is not downloaded again.
+        assertEquals(copy, copyOf("Song", 305_000L, youtubeId = "video000002"))
+        // An id-less discovery stub of the song.
+        assertEquals(copy, copyOf("Song (Official Audio)", 304_000L))
+    }
+
+    @Test fun `the same video's row with a file is the copy, whatever its words`() = runTest {
+        val sameVideo = copyRow("Song - Remastered 2011 (Live at the BBC)", 1_000L, youtubeId = "video000001", file = "/m/x.opus")
+        assertEquals(sameVideo, copyOf("Song", 300_000L, youtubeId = "video000001"))
+    }
+
+    @Test fun `a row without a file is no copy`() = runTest {
+        copyRow("Song", 304_000L, youtubeId = "video000001")
+        assertNull(copyOf("Song", 304_000L))
+        assertNull(copyOf("Song", 304_000L, youtubeId = "video000001"))
+    }
+
+    @Test fun `another version or a clearly different length is another song`() = runTest {
+        copyRow("Song", 180_000L, file = "/m/song.flac")
+        assertNull("live is another version", copyOf("Song (Live)", 180_000L))
+        assertNull("8 minutes is not the 3-minute song", copyOf("Song", 480_000L))
+        assertEquals("within 10 s is the song", true, copyOf("Song", 189_000L) != null)
+    }
+
+    @Test fun `lengths agree within 10 s or 5 percent, or when either is unknown`() {
+        assertEquals(true, SameSongRule.lengthsAgree(304_000L, 314_000L))
+        assertEquals(false, SameSongRule.lengthsAgree(180_000L, 190_001L))
+        assertEquals(true, SameSongRule.lengthsAgree(600_000L, 629_000L)) // 5 % of 10 min = 30 s
+        assertEquals(true, SameSongRule.lengthsAgree(0L, 629_000L))
+        assertEquals(true, SameSongRule.lengthsAgree(300_000L, 0L))
+    }
+
+    @Test fun `a song is never its own copy`() = runTest {
+        val kept = copyRow("Song", 304_000L, file = "/m/song.flac")
+        assertNull(copyOf("Song", 304_000L, exclude = kept))
+    }
+
+    @Test fun `a SoundCloud upload is never matched by words`() = runTest {
+        copyRow("Song", 304_000L, file = "/m/song.flac")
+        assertNull(copyOf("Song", 304_000L, soundCloudId = "123"))
+    }
+
+    @Test fun `a downloaded SoundCloud upload is no copy of a song by words`() = runTest {
+        copyRow("Song", 304_000L, soundCloudId = "456", file = "/m/sc.mp3")
+        assertNull(copyOf("Song", 304_000L))
+    }
+
+    @Test fun `an explicit and a clean copy are two songs, unknown on either side agrees`() = runTest {
+        val explicitCopy = copyRow("Song", 200_000L, file = "/m/explicit.flac", explicit = true)
+        assertNull("the clean edit is not the explicit song", copyOf("Song (Clean)", 200_000L, explicit = false))
+        assertEquals(explicitCopy, copyOf("Song", 200_000L, explicit = true))
+        assertEquals("unknown agrees", explicitCopy, copyOf("Song", 200_000L, explicit = null))
+    }
+
+    @Test fun `a clean copy is not the explicit song, an unflagged copy agrees with either`() = runTest {
+        copyRow("Song", 200_000L, file = "/m/clean.flac", explicit = false)
+        assertNull(copyOf("Song", 200_000L, explicit = true))
+        dao.insert(
+            TrackEntity(
+                title = "Other", artist = "A & B", durationMs = 200_000L, filePath = "/m/other.flac", isDownloaded = true,
+                canonicalTitle = TrackCanonical.title("Other"), canonicalArtist = TrackCanonical.artist("A & B"),
+            ),
+        )
+        assertEquals("a copy with no flag agrees with an explicit song", true, copyOf("Other", 200_000L, explicit = true) != null)
+    }
+
+    @Test fun `a COLORS show or a version named in its own words is another take`() = runTest {
+        // Found by its words (brackets are dropped from the key), and the library's own rule calls it
+        // the same version; only the matcher's stricter words tell the takes apart.
+        assertEquals(TrackCanonical.title("Until Morning"), TrackCanonical.title("Until Morning (A COLORS SHOW)"))
+        assertEquals(true, TrackCanonical.sameVersion("Until Morning", "Until Morning (A COLORS SHOW)"))
+
+        val studio = copyRow("Until Morning", 200_000L, file = "/m/studio.flac")
+        assertNull("a COLORS show is a live take", copyOf("Until Morning (A COLORS SHOW)", 200_000L))
+        assertNull("a performance is a live take", copyOf("Until Morning (Live Performance)", 200_000L))
+        assertNull("a version named in its own words", copyOf("Until Morning (Australian Version)", 200_000L))
+        assertEquals("presentation tags are still the song", studio, copyOf("Until Morning (Official Audio)", 200_000L))
+    }
+
+    @Test fun `the studio song is no copy of a COLORS show on the phone`() = runTest {
+        copyRow("Until Morning (A COLORS SHOW)", 200_000L, file = "/m/colors.flac")
+        assertNull(copyOf("Until Morning", 200_000L))
+    }
+
+    @Test fun `a copy flagged as a wrong match is no copy, by words or by its video`() = runTest {
+        copyRow("Song", 200_000L, youtubeId = "video000001", file = "/m/wrong.flac", flagged = true)
+        assertNull("by words", copyOf("Song", 200_000L))
+        assertNull("by the same video", copyOf("Song", 200_000L, youtubeId = "video000001"))
+    }
 }

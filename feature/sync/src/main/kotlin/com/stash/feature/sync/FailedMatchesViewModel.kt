@@ -26,12 +26,15 @@ import com.stash.data.download.prefs.toYtDlpArgs
 import com.stash.data.download.preview.NoFastStreamException
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.download.ytdlp.YtDlpSearchResult
+import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.SearchResultSection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +52,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
@@ -133,6 +137,8 @@ data class FailedMatchesUiState(
  * - **Resync**: re-searches YouTube for each unmatched track via [HybridSearchExecutor].
  * - **Approve**: downloads an approved candidate (download -> organize -> update DB).
  * - **Preview**: audio preview for rejected match candidates via [PreviewPlayer].
+ * - **Find it yourself** (#19): the listener searches for a song, and the result
+ *   they pick goes through the same preview and approve/swap as a resync candidate.
  * - **Dismiss**: permanently removes a track from future sync retry attempts.
  */
 @HiltViewModel
@@ -151,6 +157,7 @@ class FailedMatchesViewModel @Inject constructor(
     private val localFileOps: com.stash.core.data.files.LocalFileOps,
     private val trackIdentityEvents: TrackIdentityEvents,
     private val albumMatchExecutor: AlbumMatchExecutor,
+    private val ytMusicApi: YTMusicApiClient,
 ) : ViewModel() {
 
     companion object {
@@ -167,6 +174,23 @@ class FailedMatchesViewModel @Inject constructor(
 
         private const val PREVIEW_FAILURE_MESSAGE =
             "Couldn't load that preview. Try again, or approve to hear the full track."
+
+        /**
+         * How many results "find it yourself" asks all of YouTube for, listed
+         * after YouTube Music's own. yt-dlp answers a whole results page in one
+         * request either way; this keeps the list short enough to scan.
+         */
+        private const val MANUAL_YOUTUBE_RESULTS = 10
+
+        /**
+         * How long [openFinderFor] waits for the song to reach the lists. Now Playing saves the
+         * flag before it opens this screen, so Room's first answer already has it; this only
+         * bounds a song that never arrives, which then opens nothing.
+         */
+        internal const val FOCUS_WAIT_MS = 5_000L
+
+        /** Said when [openFinderFor]'s song never reached the lists. */
+        internal const val FOCUS_NOT_FOUND_MESSAGE = "Couldn't find that song in Failed matches"
 
         private val BRACKETED = Regex("""[\(\[][^)\]]*[\)\]]""")
         private val NOT_A_WORD = Regex("""[^\p{L}\p{N}]+""")
@@ -237,6 +261,21 @@ class FailedMatchesViewModel @Inject constructor(
      * candidate for a one-tap retry (#531). Main-thread only.
      */
     private val _pendingSwaps = MutableStateFlow<Map<Long, ResyncCandidate>>(emptyMap())
+
+    private val _manualSearch = MutableStateFlow<ManualSearch?>(null)
+
+    /**
+     * "Find it yourself" (#19): the search open under one song's row, or null.
+     * Its own flow, outside [uiState]: it changes on every answer while the
+     * rest of the screen stays put. The box's text lives in the screen (typing
+     * never waits on a flow); this holds the words last searched for.
+     */
+    val manualSearch: StateFlow<ManualSearch?> = _manualSearch.asStateFlow()
+
+    private var manualSearchJob: Job? = null
+
+    /** Advanced by every search and close, so a late answer to an older search is dropped. */
+    private var manualSearchGeneration = 0L
 
     /**
      * Cache of pre-extracted stream URLs, keyed by videoId.
@@ -604,8 +643,13 @@ class FailedMatchesViewModel @Inject constructor(
      * @param trackId      Primary key of the track in the tracks table.
      * @param queueEntryId Row ID of the download_queue entry to mark completed.
      * @param candidate    The [ResyncCandidate] the user approved.
+     * @param userPicked   The listener found this video themselves ("find it
+     *   yourself"): recorded as their pick, as an approved swap is, so the FLAC
+     *   sweep and a re-download keep it instead of redoing the artist/title
+     *   lookup (#531). An automatic match approved here isn't recorded so; a
+     *   swap records both.
      */
-    fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate) {
+    fun approveMatch(trackId: Long, queueEntryId: Long, candidate: ResyncCandidate, userPicked: Boolean = false) {
         viewModelScope.launch {
             // The candidate's id names the temp file and the yt-dlp URL below and
             // is written to the track. It came from a search answer, so one
@@ -636,6 +680,7 @@ class FailedMatchesViewModel @Inject constructor(
             try {
                 // Immediately mark as completed — row disappears from reactive Flow
                 trackDao.updateYoutubeId(trackId, candidate.videoId)
+                if (userPicked) trackDao.markMatchPicked(trackId, System.currentTimeMillis())
                 downloadQueueDao.updateStatus(
                     id = queueEntryId,
                     status = DownloadStatus.COMPLETED,
@@ -929,6 +974,209 @@ class FailedMatchesViewModel @Inject constructor(
                 musicRepository.dismissMatch(track.trackId)
             }
         }
+    }
+
+    // -- Find it yourself (#19) ---------------------------------------------
+
+    /**
+     * Opens "find it yourself" under [trackId]'s row, its box filled with the
+     * song's artist and title and searched straight away, or closes it when it
+     * is already open there. One is open at a time: opening another song's
+     * closes this one.
+     */
+    fun toggleManualSearch(trackId: Long, artist: String, title: String) {
+        val wasOpenHere = _manualSearch.value?.trackId == trackId
+        closeManualSearch()
+        if (!wasOpenHere) startManualSearch(trackId, manualSearchQuery(artist, title))
+    }
+
+    /**
+     * Opens "find it yourself" under [trackId]'s row, searched for its artist and title: the
+     * jump from Now Playing's "Find a better match" (the screen's `focusTrackId`). The song was
+     * flagged a moment before this screen opened, so this waits for it to reach one of the lists
+     * (the flagged one, usually), for at most [FOCUS_WAIT_MS]; a song that never arrives opens
+     * nothing and says so ([FOCUS_NOT_FOUND_MESSAGE]). Unlike [toggleManualSearch], it never closes or takes over an open finder: one
+     * open by then is the listener's own (this screen opened with none).
+     */
+    fun openFinderFor(trackId: Long) {
+        focusJob?.cancel()
+        focusJob = viewModelScope.launch {
+            val state = withTimeoutOrNull(FOCUS_WAIT_MS) {
+                uiState.first { s ->
+                    !s.isLoading &&
+                        (s.flaggedTracks.any { it.trackId == trackId } || s.tracks.any { it.trackId == trackId })
+                }
+            } ?: run {
+                Log.w(TAG, "find it yourself: trackId=$trackId never reached Failed Matches; nothing opened")
+                // Said, not just logged: the listener came here for this song.
+                _userMessages.trySend(FOCUS_NOT_FOUND_MESSAGE)
+                return@launch
+            }
+            if (_manualSearch.value != null) return@launch
+            // A song in both lists at once is the flagged one, as in pickManualMatch.
+            val flagged = state.flaggedTracks.firstOrNull { it.trackId == trackId }
+            val (artist, title) = if (flagged != null) {
+                flagged.artist to flagged.title
+            } else {
+                state.tracks.first { it.trackId == trackId }.let { it.artist to it.title }
+            }
+            startManualSearch(trackId, manualSearchQuery(artist, title))
+        }
+    }
+
+    /** The wait in [openFinderFor]; a newer jump replaces it. */
+    private var focusJob: Job? = null
+
+    /** Searches for [query] in the open finder (the keyboard's Search key). Again for the same words retries. */
+    fun searchManually(query: String) {
+        val trackId = _manualSearch.value?.trackId ?: return
+        startManualSearch(trackId, query)
+    }
+
+    /**
+     * Picks [candidate] for the song the finder is open under, through exactly
+     * what the row's own check mark does for an automatic match: [approveSwap]
+     * for a flagged song (it has a file to replace), [approveMatch] for an
+     * unmatched one. Then the finder closes.
+     */
+    fun pickManualMatch(candidate: ResyncCandidate) {
+        val trackId = _manualSearch.value?.trackId ?: return
+        val state = uiState.value
+        // A song in both lists at once is the flagged one, as in resync.
+        val flagged = state.flaggedTracks.firstOrNull { it.trackId == trackId }
+        val unmatched = state.tracks.firstOrNull { it.trackId == trackId }
+        when {
+            flagged != null -> approveSwap(flagged, candidate)
+            unmatched != null -> approveMatch(unmatched.trackId, unmatched.id, candidate, userPicked = true)
+            else -> Log.w(TAG, "find it yourself: trackId=$trackId left the list before the pick")
+        }
+        closeManualSearch()
+    }
+
+    /** Closes the finder, stopping its search and any preview of one of its results. */
+    fun closeManualSearch() {
+        val open = _manualSearch.value ?: return
+        manualSearchJob?.cancel()
+        manualSearchJob = null
+        ++manualSearchGeneration
+        _manualSearch.value = null
+        stopPreviewIfAmong(open.results)
+    }
+
+    /**
+     * Stops a preview of one of [results], whose rows (stop buttons included)
+     * are leaving the screen: the finder closing, or a new search replacing
+     * them. Left alone, it would play to the end with nothing to stop it. Not
+     * when the video is also a song's automatic match: that row's own stop
+     * button stays.
+     */
+    private fun stopPreviewIfAmong(results: List<ManualMatch>) {
+        val previewing = activePreviewVideoId
+            ?: (previewState.value as? PreviewState.Playing)?.videoId
+            ?: return
+        if (_resyncCandidates.value.values.any { it.videoId == previewing }) return
+        if (results.any { it.candidate.videoId == previewing }) stopPreview()
+    }
+
+    /**
+     * Searches YouTube Music the way the Search tab does and all of YouTube
+     * (yt-dlp) at once. YouTube Music answers in a fraction of a second and its
+     * rows show then; a yt-dlp run takes seconds, so its rows are added under
+     * them when they come. A flagged song is never offered its current video:
+     * that is the one the listener said is wrong. Nor is any song offered a
+     * video another song already has (see [ownedByOtherTracks]).
+     */
+    private fun startManualSearch(trackId: Long, query: String) {
+        manualSearchJob?.cancel()
+        // The rows on screen give way to this search's (none, for an empty box).
+        _manualSearch.value?.let { stopPreviewIfAmong(it.results) }
+        val generation = ++manualSearchGeneration
+        val words = query.trim()
+        if (words.isEmpty()) {
+            _manualSearch.value = ManualSearch(trackId = trackId, query = query)
+            return
+        }
+        val exclude = uiState.value.flaggedTracks.firstOrNull { it.trackId == trackId }?.currentYoutubeId
+        _manualSearch.value = ManualSearch(
+            trackId = trackId,
+            query = query,
+            searchingMusic = true,
+            searchingYouTube = true,
+        )
+        manualSearchJob = viewModelScope.launch {
+            val youTube = async { searchAllOfYouTube(words) }
+            val music = searchYouTubeMusic(words)
+            val musicRows = manualSearchMatches(music.orEmpty(), emptyList(), exclude)
+            val musicOwned = ownedByOtherTracks(trackId, musicRows)
+            updateManualSearch(generation) {
+                it.copy(
+                    results = musicRows.filterNot { row -> row.candidate.videoId in musicOwned },
+                    searchingMusic = false,
+                )
+            }
+            val videos = youTube.await()
+            val allRows = manualSearchMatches(music.orEmpty(), videos, exclude)
+            // YouTube Music's rows were checked above; the same answer for them
+            // keeps the rows on screen where they are.
+            val owned = musicOwned + ownedByOtherTracks(trackId, allRows.drop(musicRows.size))
+            updateManualSearch(generation) {
+                it.copy(
+                    results = allRows.filterNot { row -> row.candidate.videoId in owned },
+                    searchingYouTube = false,
+                    failed = music == null && videos.isEmpty(),
+                )
+            }
+        }
+    }
+
+    /**
+     * The videos in [rows] another song already has. tracks.youtube_id is
+     * UNIQUE, so picking one could only fail with "already linked" once the
+     * finder had closed, its words gone (#531; resync leaves them out too).
+     * A failed lookup leaves nothing out: approve still checks.
+     */
+    private suspend fun ownedByOtherTracks(trackId: Long, rows: List<ManualMatch>): Set<String> {
+        if (rows.isEmpty()) return emptySet()
+        return try {
+            musicRepository.findByYoutubeIds(rows.map { it.candidate.videoId })
+                .filter { it.id != trackId }
+                .mapNotNullTo(HashSet()) { it.youtubeId }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "find it yourself: couldn't check which videos other songs have: ${e.message}")
+            emptySet()
+        }
+    }
+
+    /** The Search tab's own search; null when YouTube Music didn't answer. */
+    private suspend fun searchYouTubeMusic(query: String): List<SearchResultSection>? = try {
+        ytMusicApi.searchAll(query).sections
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "find it yourself: YouTube Music didn't answer for '$query': ${e.message}")
+        null
+    }
+
+    /**
+     * All of YouTube, for what YouTube Music doesn't carry. Never throws but
+     * for cancellation: a failure inside this async would cancel the YouTube
+     * Music half with it.
+     */
+    private suspend fun searchAllOfYouTube(query: String): List<YtDlpSearchResult> = try {
+        searchExecutor.searchYtDlpDirect(query, maxResults = MANUAL_YOUTUBE_RESULTS)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "find it yourself: YouTube search failed for '$query': ${e.message}")
+        emptyList()
+    }
+
+    /** Applies [change] unless a newer search or a close came since [generation]'s search started. */
+    private inline fun updateManualSearch(generation: Long, change: (ManualSearch) -> ManualSearch) {
+        if (generation != manualSearchGeneration) return
+        _manualSearch.update { open -> open?.let(change) }
     }
 
     // -- Audio preview ------------------------------------------------------

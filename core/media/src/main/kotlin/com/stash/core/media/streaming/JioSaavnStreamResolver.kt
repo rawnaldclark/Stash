@@ -10,7 +10,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Adapts the shared JioSaavn AAC resolver to the player stream contract:
- * 320 kbps, or 96 under Save Data.
+ * 320 kbps, or 160 / 96 where Data saver applies ([LossyQuality]).
  */
 @Singleton
 class JioSaavnStreamResolver @Inject constructor(
@@ -27,9 +27,9 @@ class JioSaavnStreamResolver @Inject constructor(
                     durationMs = track.durationMs.takeIf { it > 0 },
                     explicit = track.explicit,
                 ).forLibrarySource(track.source, track.musicVideoType, hasVideoId = !track.youtubeId.isNullOrBlank()),
-                // Save Data streams JioSaavn's lowest variant, as it does YouTube's
-                // lowest audio. Read through the policy so a flip clears cached URLs.
-                kbps = if (qualityPolicy.saveData()) 96 else 320,
+                // 320, or less where Data saver applies (see LossyQuality). Read through the
+                // policy so a flip of the switch or the network clears cached URLs.
+                kbps = qualityPolicy.lossyQuality().jioSaavnKbps,
                 bypassRateLimit = false,
             )?.let { result ->
                 StreamUrl(
