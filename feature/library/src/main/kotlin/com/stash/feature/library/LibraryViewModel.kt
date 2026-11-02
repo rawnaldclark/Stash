@@ -296,6 +296,10 @@ class LibraryViewModel @Inject constructor(
                 else -> tracks.filterNot { it.id in hidden }
             }
         }
+            // Every write to the tables the query reads (a mix's membership, a cover, a worker's
+            // stamp) re-runs it, and most leave the songs as they were: an equal list stops here
+            // instead of re-filtering, re-sorting and redrawing an 80k-song library each time.
+            .distinctUntilChanged()
 
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
@@ -349,9 +353,20 @@ class LibraryViewModel @Inject constructor(
      * redo the credit index; and only when the DAO rows actually change (every tracks write
      * re-runs the query, a play count included).
      */
-    private val artistCards: Flow<List<ArtistInfo>> = musicRepository.getAllArtists()
-        .distinctUntilChanged()
-        .map { buildArtistCards(it) }
+    private val artistCards: Flow<List<ArtistInfo>> = combine(
+        musicRepository.getAllArtists()
+            .distinctUntilChanged()
+            .map { buildArtistCards(it) },
+        artistImageDao.observeAll().distinctUntilChanged(),
+    ) { cards, images ->
+        // Overlay real artist photos (ArtistImageBackfillWorker output) keyed
+        // by the SAME primary-artist name the Artists tab groups by. Artists
+        // without a photo keep photoUrl = null → UI falls back to artUrl.
+        // Here rather than at the end of uiState, where every emission (each
+        // player event, each library write) re-mapped every card.
+        val photoByName = images.associate { it.artistName to it.imageUrl }
+        cards.map { it.copy(photoUrl = photoByName[it.name]) }
+    }
         .flowOn(Dispatchers.Default)
 
     /**
@@ -445,7 +460,9 @@ class LibraryViewModel @Inject constructor(
 
         // -- Apply sort order --
         val sortedTracks = when (controls.sortOrder) {
-            SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
+            // Already newest first: both library queries ORDER BY date_added DESC, and the filters
+            // above keep that order. Sorting 80k songs again on every emission was pure churn.
+            SortOrder.RECENT -> filteredTracks
             SortOrder.ALPHABETICAL -> filteredTracks.sortedWith(compareBy(alphabeticalOrder) { it.title })
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
             SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
@@ -507,10 +524,14 @@ class LibraryViewModel @Inject constructor(
             librarySongCount = allTracks.size,
             hasCloudSongs = allTracks.any { it.source == MusicSource.CLOUD },
         )
-    }.combine(playerRepository.playerState) { libraryState, playerState ->
+    }.combine(
+        // Only the playing song's id: the whole PlayerState changes on every player event (a
+        // pause, a buffering flap, a queue edit), and each one re-ran the stages below.
+        playerRepository.playerState.map { it.currentTrack?.id }.distinctUntilChanged(),
+    ) { libraryState, playingId ->
         // Overlay the currently-playing track ID so the UI can highlight it.
         libraryState.copy(
-            currentlyPlayingTrackId = playerState.currentTrack?.id,
+            currentlyPlayingTrackId = playingId,
         )
     }.combine(
         combine(
@@ -521,16 +542,6 @@ class LibraryViewModel @Inject constructor(
         // The repository applies "In your library" to the artist and album rows in Stream only
         // (MusicRepositoryImpl.libraryScope); this only tells the sheet and the chip.
         libraryState.copy(streamingMode = streaming, libraryOnly = streaming && inLibraryOnly)
-    }.combine(artistImageDao.observeAll()) { libraryState, images ->
-        // Overlay real artist photos (ArtistImageBackfillWorker output) keyed
-        // by the SAME primary-artist name the Artists tab groups by. Artists
-        // without a photo keep photoUrl = null → UI falls back to artUrl.
-        val photoByName = images.associate { it.artistName to it.imageUrl }
-        libraryState.copy(
-            artists = libraryState.artists.map { it.copy(photoUrl = photoByName[it.name]) },
-            singleTrackArtists = libraryState.singleTrackArtists
-                .map { it.copy(photoUrl = photoByName[it.name]) },
-        )
     }
         // The whole filter+sort+lowercase pipeline above re-runs on every
         // keystroke AND every Room invalidation; on a >1k-track library that
@@ -580,6 +591,17 @@ class LibraryViewModel @Inject constructor(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val likedTracks: StateFlow<List<Track>> =
+        // Read while the Liked tab is open only: Library collects this on every tab, and each write
+        // to the liked lists re-read, merged and sorted every liked song (12k in one library) for a
+        // tab nobody was looking at. Off it nothing is emitted, so the last list stays until the
+        // tab opens again and the fresh one replaces it (no empty flash).
+        _controls.map { it.activeTab == LibraryTab.LIKED }.distinctUntilChanged().flatMapLatest { onLiked ->
+            if (!onLiked) kotlinx.coroutines.flow.emptyFlow() else likedTracksSource
+        }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val likedTracksSource: Flow<List<Track>> =
         combine(stashLikedFlow, externalLikedFlow, _likedFilter) { stash, external, filter ->
             when (filter) {
                 LikedFilter.ALL -> stash + external
@@ -609,7 +631,6 @@ class LibraryViewModel @Inject constructor(
             // Same rationale as uiState: dedupe + search filtering is pure
             // list work — keep it off Main.
             .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Play the liked list starting at [track] (offline-aware, like the detail screen). */
     fun playLiked(track: Track) {
