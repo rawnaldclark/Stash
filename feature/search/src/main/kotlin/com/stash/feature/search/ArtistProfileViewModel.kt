@@ -9,6 +9,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.prefs.DataSaver
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -19,6 +20,7 @@ import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSource
+import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -72,6 +74,10 @@ class ArtistProfileViewModel @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     val delegate: TrackActionsDelegate,
     val losslessPrefetcher: LosslessUrlPrefetcher,
+    /** Whether Spotify is signed in: its monthly listeners count only then (see [monthlyListenersOf]). */
+    private val tokenManager: com.stash.core.auth.TokenManager,
+    /** Data saver: the photo gallery waits for Wi-Fi. Never applies in hand-built tests. */
+    private val dataSaver: DataSaver = DataSaver.Off,
 ) : ViewModel() {
 
     private val artistId: String = requireNotNull(savedStateHandle["artistId"]) {
@@ -86,7 +92,7 @@ class ArtistProfileViewModel @Inject constructor(
             hero = HeroState(
                 name = initialName,
                 avatarUrl = initialAvatar,
-                subscribersText = null,
+                monthlyListeners = null,
             ),
             status = ArtistProfileStatus.Loading,
             focusAlbum = initialFocusAlbum,
@@ -200,6 +206,7 @@ class ArtistProfileViewModel @Inject constructor(
                         profile = cached.profile,
                         status = ArtistProfileStatus.Fresh,
                         t0 = t0,
+                        enriched = false,
                     )
                     is CachedProfile.Fresh -> apply(
                         profile = cached.profile,
@@ -382,28 +389,40 @@ class ArtistProfileViewModel @Inject constructor(
     /**
      * Fold a freshly-arrived profile into the UI state and kick the preview
      * prefetcher on the first non-empty Popular list we see.
+     *
+     * [enriched] is false for a cold miss's first paint ([CachedProfile.Partial]):
+     * the YouTube profile before Spotify has answered. With Spotify signed in, its
+     * listener count is held back, so the hero never shows YouTube's number and then
+     * swaps it for Spotify's a moment later; the enriched profile that follows sets
+     * it. Without Spotify there is nothing to wait for: YouTube's number shows at
+     * once (review on #770), as the subscriber count used to.
      */
     private fun apply(
         profile: ArtistProfile,
         status: ArtistProfileStatus,
         t0: Long,
+        enriched: Boolean = true,
     ) {
         // A profile whose header didn't parse must not blank the hero the
         // nav args (or an earlier, good emission) already painted — fall
         // back to what is on screen for any field the profile lacks.
         val currentHero = _uiState.value.hero
+        val spotifyConnected =
+            tokenManager.spotifyAuthState.value is com.stash.core.auth.model.AuthState.Connected
+        val listeners = if (enriched || !spotifyConnected) monthlyListenersOf(profile, spotifyConnected) else null
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name.ifBlank { currentHero.name },
                 avatarUrl = profile.avatarUrl ?: currentHero.avatarUrl,
-                subscribersText = profile.subscribersText ?: currentHero.subscribersText,
+                monthlyListeners = listeners ?: currentHero.monthlyListeners,
             ),
             popular = profile.popular,
+            latest = latestReleases(profile.albums, profile.singles),
             albums = profile.albums,
             singles = profile.singles,
             related = profile.related,
             status = status,
-            about = profile.about,
+            about = profile.about?.let(::withoutGalleryUnderDataSaver),
         )
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
@@ -418,6 +437,14 @@ class ArtistProfileViewModel @Inject constructor(
             "ArtistProfile paint after ${SystemClock.elapsedRealtime() - t0}ms (status=$status)"
         }
     }
+
+    /**
+     * Data saver on mobile data: About without its photo row (several full-size Spotify photos the
+     * user didn't ask for). It falls back to the single photo, as for an artist with no gallery, and
+     * the row is back the next time the page is opened on Wi-Fi.
+     */
+    private fun withoutGalleryUnderDataSaver(about: ArtistAbout): ArtistAbout =
+        if (about.gallery.isNotEmpty() && dataSaver.appliesNow()) about.copy(gallery = emptyList()) else about
 
     override fun onCleared() {
         super.onCleared()

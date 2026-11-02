@@ -79,7 +79,7 @@
     <string name="settings_search_no_results">No settings found for \"%1$s\"</string>
     <string name="settings_search_placeholder">Search settings</string>
     <string name="settings_search_clear">Clear search</string>
-    <string name="settings_search_stream_or_download">Stream or download</string>
+    <string name="settings_search_online_or_offline">Online or offline</string>
     <string name="settings_search_sync_your_likes">Sync your likes</string>
 
     <!-- Settings > Support Banner -->
@@ -96,6 +96,21 @@
     <string name="settings_donate_upi">UPI (India)</string>
     <string name="settings_donate_upi_hint">UPI is for supporters in India.</string>
     <string name="settings_support_star">Star</string>
+    <!-- The Support card (2026-11): one line under "Support Stash", beside the two makers' pictures. -->
+    <string name="settings_support_tagline">Free, no ads. Made by two people.</string>
+    <!-- The month's goal, as stashfm.app shows it: "$168 of $200 this month". -->
+    <string name="settings_support_goal">%1$s of %2$s this month</string>
+    <!-- The supporter perk, one line; tapping it opens the Ko-fi claim (Lossless sources). -->
+    <string name="settings_support_perk">Supporters get unlimited Tidal &amp; Qobuz lossless</string>
+    <!-- TalkBack: what tapping the perk line does. -->
+    <string name="settings_support_perk_open">Unlock it with your Ko-fi email</string>
+    <!-- A supporter's card: thanks and their status instead of the ask. -->
+    <string name="settings_support_thanks_title">Thank you for supporting Stash</string>
+    <string name="settings_support_thanks_line">You\'re a supporter: unlimited Tidal &amp; Qobuz is on.</string>
+    <string name="settings_support_donate_again">Donate again</string>
+    <!-- Settings › About: the GitHub star moved here from the Support card. -->
+    <string name="settings_about_star">Star Stash on GitHub</string>
+    <string name="settings_about_star_detail">github.com/rawnaldclark/Stash</string>
 
     <!-- Settings > Accounts & Sync -->
     <string name="settings_accounts_connections_section">Connections</string>
@@ -203,7 +218,7 @@
     <string name="settings_yt_sync_retry">Retry YouTube sync</string>
     <string name="settings_yt_status_up_to_date">Up to date</string>
     <string name="settings_yt_status_pending">%1$d pending</string>
-    <string name="settings_yt_status_pending_offline">%1$d pending · offline</string>
+    <string name="settings_yt_status_pending_offline">%1$d pending · YouTube Music can\'t be reached</string>
     <string name="settings_yt_status_auth_failed">YT Music connection lost — reconnect</string>
     <string name="settings_yt_status_protocol_broken">Disabled due to errors — will re-enable in next update</string>
     <string name="settings_yt_status_disabled">Off</string>
@@ -340,8 +355,8 @@
     <string name="settings_flac_quality_title">FLAC quality</string>
     <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
-    <string name="settings_save_data_title">Save Data</string>
-    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="settings_save_data_title">Data saver</string>
+    <string name="settings_data_saver_subtitle">On mobile data and metered Wi-Fi: lower quality streams, smaller pictures, no prefetch. Downloads unaffected.</string>
     <string name="settings_lossless_title">Lossless</string>
     <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
@@ -374,7 +389,6 @@
     <string name="settings_streaming_section">Streaming</string>
     <string name="settings_on_wifi">On Wi-Fi</string>
     <string name="settings_on_cellular">On cellular</string>
-    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
     <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
     <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
@@ -458,8 +472,9 @@
     <string name="settings_lossless_routing_footer">Lossless comes from the sources above. Misses try JioSaavn before falling back to YouTube, shown as \"via YT\" while it plays.</string>
 
     <!-- Settings > Playback -->
-    <string name="settings_mode_stream_only">Stream only</string>
-    <string name="settings_mode_download">Download</string>
+    <!-- The one mode switch. Online: everything plays, and songs that aren't downloaded stream. Offline: only downloaded songs play (Sync still downloads over the network). -->
+    <string name="settings_mode_online">Online</string>
+    <string name="settings_mode_offline">Offline</string>
     <string name="settings_stream_on_cellular_title">Stream on cellular</string>
     <string name="settings_stream_on_cellular_desc">Uses mobile data</string>
     <string name="settings_stream_via_youtube_title">Stream via YouTube</string>
@@ -780,6 +795,31 @@
     <string name="settings_library_health_section_flac_upgrades">FLAC upgrades</string>
     <string name="settings_library_health_flac_upgrades_desc">Look for lossless versions of downloaded tracks that aren\'t FLAC yet. Keeps running in the background. To run this after every sync, turn it on in Audio &amp; Quality.</string>
     <string name="settings_library_health_check_upgrades_button">Check for upgrades</string>
+    <string name="settings_library_health_section_duplicates">Duplicates</string>
+    <plurals name="settings_duplicates_count">
+        <item quantity="one">%d possible duplicate: two rows that may be one song.</item>
+        <item quantity="other">%d possible duplicates: pairs of rows that may be one song.</item>
+    </plurals>
+    <string name="settings_duplicates_none">No possible duplicates.</string>
+    <string name="settings_duplicates_last_run">Tidied on %1$s: %2$d merged, %3$d unused mix songs removed.</string>
+    <string name="settings_duplicates_review">Review</string>
+    <string name="settings_duplicates_title">Possible duplicates</string>
+    <string name="settings_duplicates_desc">Pairs of rows that may be one song. Merge keeps the one you tick, with both rows\' playlists, plays and likes. Not a duplicate hides the pair for good.</string>
+    <string name="settings_duplicates_kind_same_song">The same song</string>
+    <string name="settings_duplicates_kind_two_uploads">Two uploads or listings of one song</string>
+    <string name="settings_duplicates_kind_two_files">The same song, on your phone twice</string>
+    <string name="settings_duplicates_kind_version_words">Same title and length, different version words</string>
+    <string name="settings_duplicates_merge">Merge</string>
+    <string name="settings_duplicates_not_duplicate">Not a duplicate</string>
+    <string name="settings_duplicates_confirm_title">Remove the extra copy?</string>
+    <string name="settings_duplicates_confirm_text">Both are on your phone. Merging keeps “%1$s” and deletes the other file (%2$s).</string>
+    <string name="settings_duplicates_confirm_yes">Merge and remove</string>
+    <string name="settings_duplicates_cancel">Cancel</string>
+    <string name="settings_duplicates_merged">Merged.</string>
+    <string name="settings_duplicates_merged_file_removed">Merged. The extra copy was removed.</string>
+    <string name="settings_duplicates_not_merged">Couldn\'t merge these two.</string>
+    <string name="settings_duplicates_kept_file_missing">The copy you\'re keeping isn\'t on your phone any more. Keep the other one.</string>
+    <string name="settings_duplicates_dismissed">Won\'t be shown again.</string>
     <string name="settings_library_health_section_lyrics">Lyrics</string>
     <string name="settings_library_health_fetch_lyrics_title">Fetch lyrics</string>
     <string name="settings_library_health_fetch_lyrics_queued_desc">Queued, waiting for a suitable connection. Tap to start now on any network.</string>
@@ -874,6 +914,28 @@
     <string name="settings_web_link_rename_dialog_title">Rename</string>
     <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
     <string name="settings_web_link_rename_other_hint">This name stays on this phone.</string>
+
+    <!-- Settings > Library & Storage > Your Stash: the link's page, which also gathers supporter status, cloud and backups -->
+    <string name="settings_your_stash_title">Your Stash</string>
+    <string name="settings_your_stash_nav_subtitle">Link the web player, see your devices, supporter status, cloud and backups</string>
+    <string name="settings_your_stash_posture">Your Stash is your devices. No account, no email. What your phone and browsers share with each other is encrypted before it leaves them.</string>
+    <string name="settings_your_stash_section_devices">Devices</string>
+    <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
+    <string name="settings_your_stash_section_supporter">Supporter</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Gave on Ko-fi? Unlock it with your Ko-fi email.</string>
+    <string name="settings_your_stash_supporter_code_here">Your supporter code is on this phone</string>
+    <string name="settings_your_stash_section_cloud">Cloud</string>
+    <string name="settings_your_stash_cloud_connect_title">Connect your cloud storage</string>
+    <string name="settings_your_stash_cloud_signed_out">Signed out on this phone: reconnect</string>
+    <string name="settings_your_stash_section_backups">Backups</string>
+    <string name="settings_your_stash_section_coming">What\'s coming</string>
+    <string name="settings_your_stash_coming_passkey_title">Recover with a passkey</string>
+    <string name="settings_your_stash_coming_passkey_desc">Lose your phone and a passkey brings Your Stash back. Still no email, no password.</string>
+    <string name="settings_your_stash_coming_backup_title">Nightly encrypted backup</string>
+    <string name="settings_your_stash_coming_backup_desc">Your library and settings, backed up each night and encrypted on your phone first, so only you can read them.</string>
+    <string name="settings_your_stash_coming_restore_title">Restore on a new phone</string>
+    <string name="settings_your_stash_coming_restore_desc">Your library, likes and settings on a new phone. Sign-ins stay behind.</string>
+    <string name="settings_your_stash_coming_note">Planned, not built yet. No dates.</string>
 
     <!-- Settings > Link Stash on the Web > Mirror -->
     <string name="settings_mirror_dir_off">Off</string>

@@ -82,6 +82,7 @@ class SearchDownloadCoordinatorAacDecisionTest {
     }
     private val downloadQueueDao: com.stash.core.data.db.dao.DownloadQueueDao = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true) {
+        io.mockk.coEvery { findByAlias(any(), any()) } returns null
         coEvery { markAsDownloaded(any(), any(), any(), any(), any(), any()) } returns 1
     }
     private val context: Context = mockk(relaxed = true) {

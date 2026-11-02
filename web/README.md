@@ -215,6 +215,7 @@ in `worker/index.js`.
 | `POST /signout` | Clears the cookie (the button is in the home page's footer) |
 | `GET` and `POST /admin` | Requests, the access list and the goal, behind Cloudflare Access |
 | `GET /player` | Signed in with early access: a 2-minute ticket and a redirect to the web player (below) |
+| `GET /goal.json` | This month's goal as data, `{ "raised_cents": 16800, "goal_cents": 20000, "month": "2026-11" }`, from the same KV keys as the page's bar. Public (CORS `*`, no cookie), kept 10 minutes at the edge; a 503 nobody caches when KV can't be read. The app's Support card reads it at most once a day (`worker/goal-json.js`) |
 
 Which paths reach the Worker at all is `assets.run_worker_first` in `wrangler.jsonc`. With
 `not_found_handling` set, a browser navigation (a form post too) to a path with no file never reaches
@@ -322,8 +323,9 @@ not the access list's hash, so the player holds nothing that can be matched to e
 `SESSION_SECRET` changes everyone's `sub`, and signs everyone out of the site anyway). Signed out, `/player`
 goes to the sign-in page (`/access`), and signing in comes back to `/player` (the forms carry a hidden `next`
 that can only ever be `/player`). Signed in but taken off the list, it goes to `/`. A shared song or mix
-link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...` and is passed on as
-`PLAYER_URL/auth?next=...`; any other `next` is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
+link on the player arrives as `/player?next=/t/...`, `/m/...` or `/play...`, and a Community page as
+`/community...` (the list, or `/community/<id>`); each is passed on as `PLAYER_URL/auth?next=...`. Any other
+`next`, or one whose path the URL parser would rewrite (`..`, a backslash) or that holds an encoded slash, backslash or dot (`%2f`, `%5c`, `%2e`), is dropped. Without a valid `PLAYER_URL` or key, `/player` is a
 503 that names neither (the log, `wrangler tail`, says which).
 
 **The ticket key.** In the player repo (`stash-web/player`), `npm run keys` prints a key pair (nothing is

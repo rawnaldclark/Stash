@@ -70,9 +70,13 @@
     </plurals>
     <!-- Refresh Mode Dialog & Chips -->
     <string name="sync_switch_to_refresh_title">새로 고침으로 전환하시겠습니까?</string>
+    <string name="sync_switch_to_refresh_body">새로고침을 설정하면 동기화할 때마다 새로운 트랙을 가져옵니다 — 여기에는 매일 자동 생성되는 믹스, 주간 음악 추천 및 기타 주기적으로 바뀌는 재생목록이 포함됩니다. 재생목록에서 제외된 트랙은 믹스에서 제거되며, 라이브러리를 깔끔하게 유지하기 위해 해당 트랙의 다운로드 파일도 삭제됩니다. 모든 소스가 새로고침으로 설정된 경우에만 정리 작업이 실행됩니다 — 하나라도 계속 누적하는 소스가 있다면 트랙이 삭제되지 않습니다. 직접 추가한 트랙은 그대로 유지됩니다</string>
     <string name="sync_switch_to_refresh_confirm">새로고침으로 전환</string>
+    <string name="sync_mix_mode_title">믹스 동기화 모드</string>
     <string name="sync_mode_refresh">새로고침</string>
     <string name="sync_mode_accumulate">누적</string>
+    <string name="sync_mode_refresh_desc">믹스는 동기화할 때마다 새로운 트랙으로 업데이트됩니다</string>
+    <string name="sync_mode_accumulate_desc">새 트랙이 이전 트랙 위에 쌓입니다</string>
     <!-- Last.fm Recommendations Toggle -->
     <string name="sync_recommended_tracks_title">추천 트랙</string>
     <string name="sync_lastfm_recommended_enabled_desc">Last.fm 추천 재생목록이 최신 상태로 유지됩니다</string>

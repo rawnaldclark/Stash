@@ -53,9 +53,9 @@ class ThemePreferencesManager @Inject constructor(
 
     private val amoledKey = booleanPreferencesKey("amoled_dark")
 
-    /** Emits the pure-black (AMOLED) dark preference, defaulting to false. */
+    /** Emits the pure-black (AMOLED) dark preference. On by default since 0.9.123 (the owner's setup). */
     override val amoledDark: Flow<Boolean> = context.themeDataStore.data.map { prefs ->
-        prefs[amoledKey] ?: false
+        prefs[amoledKey] ?: true
     }
 
     /** Persists the pure-black dark preference. */

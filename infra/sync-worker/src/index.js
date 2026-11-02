@@ -1,7 +1,8 @@
 /**
  * stash-sync: links Stash for Android with Stash on the web (spec docs/superpowers/specs/2026-10-10-link-sync-handoff-design.md §6).
  * Pairing slots (PairSlot) and sync spaces (SyncSpace) are Durable Objects; this Worker only routes, checks shapes,
- * sizes, rate limits and who may call what, and hashes device tokens before they reach an object.
+ * sizes, rate limits and who may call what, and hashes device tokens before they reach an object, except a live socket's: its
+ * token comes in the socket's first frame, which goes straight to the space's object (src/live.js hashes it there).
  *
  * Callers: the phone directly, the browser only through the player Worker (play.stashfm.app's /api/sync/*), which adds
  * `X-Stash-Player-Key` (the PLAYER_KEY secret), `X-Stash-Client-IP` and `X-Stash-Session`. Routes marked "player" refuse
@@ -11,6 +12,7 @@
 import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
 import { cleanBox, cleanDevice, isDeviceId, isNewSpaceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
 import { spaceIpKind } from "./quota.js";
+import { VIA_PLAYER } from "./live.js";
 
 export { SyncSpace } from "./sync-space.js";
 export { PairSlot } from "./pair-slot.js";
@@ -28,6 +30,7 @@ export default {
             console.error(e); // visible in `wrangler tail`; never logs bodies or tokens
             res = fail(503, "unavailable", "Can't reach Stash right now. Try again in a minute.", { "Retry-After": "2" });
         }
+        if (res.status === 101) return res; // a live socket's upgrade goes back exactly as the object made it
         res.headers.set("X-Stash-Server-Time", String(Date.now()));
         return res;
     },
@@ -262,7 +265,17 @@ export async function handle(request, env, _ctx) {
         const [, spaceId, rest] = m;
         if (!isSpaceId(spaceId)) return notFound();
         const segments = rest ? rest.slice(1).split("/") : [];
-        if (segments.length === 1 && segments[0] === "ws") return notFound(); // reserved for live control (spec §6.7)
+        if (segments.length === 1 && segments[0] === "ws") {
+            // Live control (spec §6.7, src/live.js): the socket says hello with its device and token as its first frame (a
+            // browser's WebSocket can't send Authorization), checked by the space's object like any member call.
+            if (method !== "GET") return methodNotAllowed("GET");
+            if ((request.headers.get("upgrade") ?? "").toLowerCase() !== "websocket") return fail(426, "bad_request", "Open a WebSocket", { Upgrade: "websocket" });
+            const over = await limited(env.API_RL, ip);
+            if (over) return over;
+            const up = new Request("https://do.internal/ws", request);
+            up.headers.set(VIA_PLAYER, player ? "1" : "0"); // overwritten, never taken from the caller
+            return env.SPACES.get(env.SPACES.idFromName(spaceId)).fetch(up);
+        }
         const route = spaceRoute(segments, method);
         if (!route) return notFound();
         if (route.allow) return methodNotAllowed(route.allow);

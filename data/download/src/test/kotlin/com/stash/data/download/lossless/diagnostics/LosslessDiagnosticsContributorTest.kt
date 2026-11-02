@@ -65,10 +65,10 @@ class LosslessDiagnosticsContributorTest {
 
     @Test fun `reports the mode and the quality settings in plain words`() = runTest {
         val s = contributor().section()
-        assertThat(s).contains("Mode:               Download (sync writes files)")
+        assertThat(s).contains("Mode:               Offline (sync writes files; only downloads play)")
         assertThat(s).contains("Lossless streaming: on")
         assertThat(s).contains("Download quality:   Lossless · Hi-Res (24-bit/96 kHz) · lossy fallback off")
-        assertThat(s).contains("Save Data:          off")
+        assertThat(s).contains("Data saver:         off (metered networks only)")
         assertThat(s).contains("Stream on cellular: on")
     }
 
@@ -77,6 +77,20 @@ class LosslessDiagnosticsContributorTest {
         assertThat(s).contains("Your Qobuz account: connected")
         assertThat(s).doesNotContain("alice@example.com")
         assertThat(s).contains("Stash lossless: configured")
+    }
+
+    /** Settings' order is the order a song asks them; the bundle must not tell a different story. */
+    @Test fun `routing keeps Settings' order - an own Tidal server ahead of Stash lossless`() = runTest {
+        every { availability.routingRows } returns flowOf(
+            listOf(
+                RoutingRow("qobuz", "Your Qobuz account", "not connected", RoutingState.NOT_CONFIGURED),
+                RoutingRow("tidal", "Custom Tidal server", "first above CD", RoutingState.CONFIGURED),
+                RoutingRow("relay", "Stash lossless", "configured", RoutingState.CONFIGURED),
+            ),
+        )
+        val s = contributor().section()
+        assertThat(s).contains("Custom Tidal server: first above CD")
+        assertThat(s.indexOf("Custom Tidal server")).isLessThan(s.indexOf("Stash lossless"))
     }
 
     @Test fun `relays are listed by host with their cooldown and the config timestamp`() = runTest {

@@ -43,6 +43,10 @@ class ThemeUiScaleTest {
         assertEquals(1.6f, preference.uiScale.first())
     }
 
+    @Test fun `pure black is on until someone turns it off`() = runTest {
+        assertEquals(true, preference.amoledDark.first())
+    }
+
     @Test fun `the synchronous read is the launch snapshot, defaulting to 1`() {
         assertEquals(1f, preference.uiScaleNow)
 

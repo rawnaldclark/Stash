@@ -11,9 +11,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!--
-        Link Stash on the web's camera permission (scanning the pairing code) lives in src/debug/AndroidManifest.xml while the
-        feature is behind its build flag, so a release build asks for no camera. Move it here when the feature ships.
+        Link Stash on the web (Settings › Library & Storage): scanning the browser's pairing code with the in-app scanner.
+        Asked only when the scanner opens, never at start. The feature ships in release (WEB_LINK_ENABLED), so the
+        permission lives here; it used to be debug-only, which left release builds' scanner without a camera. Not
+        required, so Stash still installs on a phone without one.
     -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!--
         largeHeap: MITIGATION for the v0.9.73 OOM reports (#238/#239) — users
         exhaust the default 256MB Java heap ("<1% free after GC"). Doubles the
@@ -195,6 +199,38 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+            Home screen widget (Glance): one widget, two entries in the picker (wide 4x1 and square 2x2),
+            each with its own preview. Exported for the system's APPWIDGET_UPDATE; no update period, the
+            playback service pushes every change.
+        -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_now_playing_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.NowPlayingSquareWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_now_playing_square_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_square_info" />
+        </receiver>
+        <!-- The widget's Pause and Next while playing (WidgetKeyRelay). Only the app's own widget sends to it. -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetKeyReceiver"
+            android:exported="false" />
 
         <!--
             Disable the default WorkManager Jetpack Startup initializer so that

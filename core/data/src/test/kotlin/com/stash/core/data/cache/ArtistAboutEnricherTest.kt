@@ -7,7 +7,10 @@ import com.stash.core.data.musicbrainz.MusicBrainzClient
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyArtistVisuals
 import com.stash.data.ytmusic.model.SocialLink
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -32,13 +35,21 @@ class ArtistAboutEnricherTest {
         mbSearch: JsonObject? = null,
         visuals: SpotifyArtistVisuals? = null,
         visualsStall: Boolean = false,
+        /** How long MusicBrainz takes to answer (it can take 1–7 s). */
+        mbDelayMs: Long = 0L,
+        /** MusicBrainz's call blocks: it can't be cancelled, as OkHttp's execute() can't. */
+        mbBlocks: Boolean = false,
     ): RealArtistAboutEnricher {
         val lastFm = mock<LastFmApiClient> {
             onBlocking { getArtistInfo(any()) } doReturn Result.success(info)
         }
+        suspend fun slowMb() {
+            if (mbDelayMs <= 0L) return
+            if (mbBlocks) withContext(NonCancellable) { delay(mbDelayMs) } else delay(mbDelayMs)
+        }
         val mb = object : MusicBrainzClient {
-            override suspend fun lookupUrlRels(mbid: String) = mbLookup
-            override suspend fun searchByName(name: String) = mbSearch
+            override suspend fun lookupUrlRels(mbid: String) = mbLookup.also { slowMb() }
+            override suspend fun searchByName(name: String) = mbSearch.also { slowMb() }
             override suspend fun searchRecordingsByIsrc(isrc: String): JsonObject? = null
             override suspend fun searchReleaseGroups(artist: String, album: String): JsonObject? = null
             override suspend fun browseReleases(releaseGroupId: String): JsonObject? = null
@@ -71,6 +82,16 @@ class ArtistAboutEnricherTest {
         ).enrich("A")
         assertThat(about!!.bio).isNull()
         assertThat(about.socials).isNotEmpty()
+    }
+
+    @Test fun `Spotify's monthly listeners reach About, even when nothing else was found`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = null, mbid = null),
+            visuals = SpotifyArtistVisuals(gallery = emptyList(), headerUrl = null, monthlyListeners = 1_734_567L),
+        ).enrich("Sonic Youth")
+        assertThat(about!!.monthlyListeners).isEqualTo(1_734_567L)
+        // The hero shows the count; About itself has nothing, so the section stays hidden.
+        assertThat(about.hasSection).isFalse()
     }
 
     @Test fun `nothing found returns null`() = runTest {
@@ -111,5 +132,51 @@ class ArtistAboutEnricherTest {
         assertThat(about.gallery).isEmpty()
         // Within the 4 s ArtistCache gives the whole enrich.
         assertThat(currentTime).isLessThan(4_000)
+    }
+
+    // Review on #770: a slow MusicBrainz overran ArtistCache's 4 s and the whole About went,
+    // Spotify's listener count with it.
+
+    private val spotifyCount = SpotifyArtistVisuals(
+        gallery = emptyList(), headerUrl = null, monthlyListeners = 1_734_567L, topTrackTitles = listOf("Teen Age Riot"),
+    )
+
+    @Test fun `a slow MusicBrainz costs the links, never Spotify's count or the bio`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = "m1"),
+            mbLookup = relsPayload("social network" to "https://instagram.com/a"),
+            visuals = spotifyCount,
+            mbDelayMs = 7_000L,
+        ).enrich("Sonic Youth")
+        assertThat(about!!.monthlyListeners).isEqualTo(1_734_567L)
+        assertThat(about.topTrackTitles).containsExactly("Teen Age Riot")
+        // Last.fm had answered before the bound: its bio is kept.
+        assertThat(about.bio).isEqualTo("b")
+        assertThat(about.socials).isEmpty()
+        assertThat(currentTime).isEqualTo(RealArtistAboutEnricher.TEXT_TIMEOUT_MS)
+    }
+
+    @Test fun `a MusicBrainz call that can't be cancelled is not waited for`() = runTest {
+        // OkHttp's execute() ignores cancellation: a timeout around it would wait the 7 s out.
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = "m1"),
+            mbLookup = relsPayload("social network" to "https://instagram.com/a"),
+            visuals = spotifyCount,
+            mbDelayMs = 7_000L,
+            mbBlocks = true,
+        ).enrich("Sonic Youth")
+        assertThat(about!!.monthlyListeners).isEqualTo(1_734_567L)
+        assertThat(currentTime).isLessThan(4_000)
+    }
+
+    @Test fun `a MusicBrainz that answers in time keeps its links`() = runTest {
+        val about = enricher(
+            info = LastFmArtistInfo(bio = "b", mbid = "m1"),
+            mbLookup = relsPayload("social network" to "https://instagram.com/a"),
+            visuals = spotifyCount,
+            mbDelayMs = 2_000L,
+        ).enrich("Sonic Youth")
+        assertThat(about!!.socials).containsExactly(SocialLink("instagram", "https://instagram.com/a"))
+        assertThat(about.monthlyListeners).isEqualTo(1_734_567L)
     }
 }

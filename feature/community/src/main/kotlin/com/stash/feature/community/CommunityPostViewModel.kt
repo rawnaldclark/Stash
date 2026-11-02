@@ -24,18 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** "Playlist · 42 songs · 2 h 11 min", "Mix · 34 songs", or a song's artist (spec 2026-09-26 §3 The post screen). */
-internal fun CommunityPost.headline(): String {
-    if (kind == "song") return track?.artist ?: artist.orEmpty()
-    val minutes = tracks.sumOf { it.durationMs ?: 0L } / 60_000
-    val length = when {
-        minutes <= 0 -> null
-        minutes < 60 -> "$minutes min"
-        else -> "${minutes / 60} h" + if (minutes % 60 > 0) " ${minutes % 60} min" else ""
-    }
-    return listOfNotNull(kindLabel(kind), songs(count), length).joinToString(" · ")
-}
-
 /** A playlist or mix post as the shared-mix document that Play and Save a copy already take. */
 internal fun CommunityPost.toDocument() = SharedMixDocument(name = title, sharedBy = name, covers = covers, tracks = tracks)
 
