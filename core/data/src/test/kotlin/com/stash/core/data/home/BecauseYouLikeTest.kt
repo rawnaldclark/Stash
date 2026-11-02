@@ -110,7 +110,7 @@ class BecauseYouLikeTest {
     @Test
     fun `a row is the related songs, not the seed's other performances, two per artist, each once`() {
         assertEquals(23, related.size)
-        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }, exclude = emptySet()).single()
+        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }).single()
         assertEquals(rick, row.seed)
         assertEquals(BecauseYouLike.CARDS, row.songs.size)
         assertEquals("Don't Dream It's Over", row.songs.first().title)
@@ -127,11 +127,11 @@ class BecauseYouLikeTest {
     @Test
     fun `about three quarters are songs you don't have`() {
         // Say you have every song on the page: a row of them would be no discovery
-        val all = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { true }, exclude = emptySet())
+        val all = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { true })
         assertEquals(emptyList<BecauseRow>(), all)
         // You have the first eight: the row is the new ones, with a few known ones among them
         val known = related.take(8).map { it.videoId }.toSet()
-        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { it.videoId in known }, exclude = emptySet()).single()
+        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { it.videoId in known }).single()
         val knownInRow = row.songs.count { it.videoId in known }
         assertTrue(knownInRow <= BecauseYouLike.CARDS / 4)
         assertTrue(knownInRow * 3 <= row.songs.size - knownInRow)
@@ -146,7 +146,6 @@ class BecauseYouLikeTest {
             listOf(rick, other, third),
             mapOf(rick.videoId to related, other.videoId to related, third.videoId to related.take(14)),
             known = { false },
-            exclude = emptySet(),
         )
         // The second row gets what the first left; the third, only songs already shown, is dropped
         assertEquals(listOf(rick, other), rows.map { it.seed })
@@ -158,16 +157,37 @@ class BecauseYouLikeTest {
     }
 
     @Test
-    fun `daily discover's songs are left out`() {
+    fun `daily discover's songs leave the rows while it shows, as the record's mixes' do`() {
+        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }).single()
+        assertEquals("Don't Dream It's Over", row.songs.first().title)
+        // Published by Home's hero (HomeShownSongs.DAILY_DISCOVER) and taken out when the rows are shown
         val dailyDiscover = setOf(BecauseYouLike.songKey("Don't Dream It's Over", "Crowded House"), BecauseYouLike.songKey("Africa", "Toto"))
-        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }, exclude = dailyDiscover).single()
-        assertTrue(row.songs.none { it.title == "Don't Dream It's Over" || it.title == "Africa" })
-        assertEquals("Danger Zone (From \"Top Gun\" Original Soundtrack)", row.songs.first().title)
+        val shown = BecauseYouLike.without(listOf(row), dailyDiscover).single()
+        assertTrue(shown.songs.none { it.title == "Don't Dream It's Over" || it.title == "Africa" })
+        assertEquals(row.songs.filter { it.title != "Don't Dream It's Over" && it.title != "Africa" }, shown.songs)
+    }
+
+    @Test
+    fun `a seed's other versions are left out, never another act's song that starts with its title`() {
+        fun song(id: String, title: String, artist: String) = TrackSummary(id, title, artist, null, 200.0, null, musicVideoType = "ATV")
+        val love = BecauseSeed("vLove", "LOVE. (feat. Zacari)", "Kendrick Lamar", null)
+        val page = listOf(
+            song("a", "LOVE. (Live)", "Kendrick Lamar"), // a version tail
+            song("b", "Love - Remastered 2011", "Somebody Else"), // the same title under a tail, by anyone
+            song("c", "Love", "A Cover Band"), // a cover of the title
+            song("d", "LOVE. FEEL.", "Kendrick Lamar"), // longer, by the seed's own act
+            song("e", "Love Story", "Taylor Swift"), // another act's song that starts with "Love": stays
+            song("f", "Lovers Rock", "TV Girl"),
+            song("g", "Lover, You Should've Come Over", "Jeff Buckley"),
+            song("h", "Loveless", "Lo Moon"),
+        )
+        val row = BecauseYouLike.rows(listOf(love), mapOf(love.videoId to page), known = { false }).single()
+        assertEquals(listOf("Love Story", "Lovers Rock", "Lover, You Should've Come Over", "Loveless"), row.songs.map { it.title })
     }
 
     @Test
     fun `the record's mixes on home take their songs out of the rows, a row left short goes`() {
-        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }, exclude = emptySet()).single()
+        val row = BecauseYouLike.rows(listOf(rick), mapOf(rick.videoId to related), known = { false }).single()
         val shown = setOf(BecauseYouLike.songKey(row.songs[0].title, row.songs[0].artist))
         assertEquals(row.songs.drop(1), BecauseYouLike.without(listOf(row), shown).single().songs)
         val most = row.songs.drop(3).map { BecauseYouLike.songKey(it.title, it.artist) }.toSet()

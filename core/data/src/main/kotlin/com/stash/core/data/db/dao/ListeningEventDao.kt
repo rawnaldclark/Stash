@@ -326,4 +326,12 @@ interface ListeningEventDao {
     /** This phone's listens after [afterId] that played through (crossed the completion mark): full plays. */
     @Query("SELECT COUNT(*) FROM listening_events WHERE id > :afterId AND completed_at IS NOT NULL AND origin_device IS NULL")
     suspend fun countFullPlaysAfter(afterId: Long): Int
+
+    /**
+     * Which of [trackIds] have been heard: a listen of any length, on any device. Home's "Because you like" counts a
+     * song as one you know only then (a library song never played is still new to you). Keep [trackIds] under
+     * SQLite's bind limit (the caller chunks).
+     */
+    @Query("SELECT DISTINCT track_id FROM listening_events WHERE track_id IN (:trackIds)")
+    suspend fun heardAmong(trackIds: List<Long>): List<Long>
 }

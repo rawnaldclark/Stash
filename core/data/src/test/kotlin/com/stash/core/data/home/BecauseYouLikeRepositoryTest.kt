@@ -47,18 +47,23 @@ class BecauseYouLikeRepositoryTest {
         val skipped = mutableListOf<Pair<Long, Long>>()
         val library = mutableMapOf<Long, BecauseSeed?>()
         var knownIds = emptySet<String>()
-        var daily = emptySet<String>()
+        var blockedIds = emptySet<String>()
+        var blocklistReads = 0
+        var historyReads = 0
         var eventId = 0L
         var fullPlaysSince = mutableListOf<Long>()
         var skipIds = mutableListOf<Long>()
 
-        override suspend fun plays(sinceMs: Long) = plays.filter { it.second >= sinceMs }
+        override suspend fun plays(sinceMs: Long) = plays.filter { it.second >= sinceMs }.also { historyReads++ }
         override suspend fun likes(limit: Int) = liked.take(limit)
         override suspend fun tired(minSkips: Int, sinceMs: Long) =
             skipped.filter { it.second >= sinceMs }.groupingBy { it.first }.eachCount().filterValues { it >= minSkips }.keys
         override suspend fun seeds(trackIds: List<Long>) = trackIds.mapNotNull { id -> library[id]?.let { id to it } }.toMap()
         override suspend fun known(songs: List<TrackSummary>) = knownIds
-        override suspend fun dailyDiscover() = daily
+        override suspend fun blocked(songs: List<TrackSummary>): Set<String> {
+            blocklistReads++
+            return songs.filter { it.videoId in blockedIds }.mapTo(HashSet()) { it.videoId }
+        }
         override suspend fun lastEventId() = eventId
         override suspend fun lastSkipId() = skipIds.maxOrNull() ?: 0L
         override suspend fun fullPlaysAfter(eventId: Long) = fullPlaysSince.count { it > eventId }
@@ -216,19 +221,19 @@ class BecauseYouLikeRepositoryTest {
     }
 
     @Test
-    fun `fewer than half the seeds answering doesn't stamp the day, and never empties the rows`() = runTest {
+    fun `fewer than half the seeds answering doesn't stamp the day, and keeps the rows Home has`() = runTest {
         val first = repo().shelf()
+        assertTrue(first.isNotEmpty())
         today++
-        // Two of three seeds' pages don't answer: the one that did makes a row, but the day isn't stamped
+        // Two of three seeds' pages don't answer: the one that did would make one row; Home keeps its rows, unstamped
         silent += setOf("v2", "v3")
-        val short = repo().shelf()
-        assertTrue(short.isNotEmpty())
+        assertEquals(first, repo().shelf())
         assertTrue(file()!!.day != today)
         assertTrue(file()!!.failedAt > 0)
-        // None answering at all keeps the rows Home had
+        // None answering at all keeps them too
         now += BecauseYouLikeRepository.RETRY_MS
         silent += "v1"
-        assertEquals(short, repo().shelf())
+        assertEquals(first, repo().shelf())
         // Two of three answering is enough: stamped
         now += BecauseYouLikeRepository.RETRY_MS
         silent.clear()
@@ -236,29 +241,58 @@ class BecauseYouLikeRepositoryTest {
         repo().shelf()
         assertEquals(today, file()!!.day)
         assertEquals(0L, file()!!.failedAt)
-        assertTrue(first.isNotEmpty())
     }
 
     @Test
-    fun `with nothing to seed from there are no rows, no file and no request`() = runTest {
+    fun `a short first build shows what it got, unstamped`() = runTest {
+        // Nothing saved yet: one seed's row is better than none, and the next try (after the wait) builds again
+        silent += setOf("v2", "v3")
+        val short = repo().shelf()
+        assertTrue(short.isNotEmpty())
+        assertEquals(-1L, file()!!.day)
+        assertTrue(file()!!.failedAt > 0)
+    }
+
+    @Test
+    fun `a blocked song is never a card, and the blocklist is read once a build`() = runTest {
+        val open = repo().shelf().flatMap { it.songs }
+        // Block two of the first row's songs; the next day's build leaves them out
+        history.blockedIds = open.take(2).mapTo(HashSet()) { it.videoId }
+        history.blocklistReads = 0
+        today++
+        val rows = repo().shelf()
+        assertTrue(rows.isNotEmpty())
+        assertTrue(rows.flatMap { it.songs }.none { it.videoId in history.blockedIds })
+        assertEquals(1, history.blocklistReads)
+    }
+
+    @Test
+    fun `with nothing to seed from there are no rows and no request, and the empty day is kept`() = runTest {
         repo().shelf()
         assertTrue(file() != null)
         // The history was cleared: the rows, built from it, go
         val empty = FakeHistory()
         calls.clear()
-        val rows = BecauseYouLikeRepository(HomeShelfStore(folder.root), empty, { today + 1 }, { now }, { calls += it; related }, { Random(1) }).shelf()
-        assertEquals(emptyList<BecauseRow>(), rows)
+        val repo = BecauseYouLikeRepository(HomeShelfStore(folder.root), empty, { today + 1 }, { now }, { calls += it; related }, { Random(1) })
+        assertEquals(emptyList<BecauseRow>(), repo.shelf())
         assertEquals(emptyList<String>(), calls)
-        assertEquals(null, file())
+        assertEquals(emptyList<BecauseRow>(), file()!!.rows)
+        assertEquals(today + 1, file()!!.day)
+        // Looked at again the same day: the saved empty day, the history not read again
+        val reads = empty.historyReads
+        assertEquals(emptyList<BecauseRow>(), repo.shelf())
+        assertEquals(reads, empty.historyReads)
+        // Four songs played through: a build again
+        repeat(4) { empty.play(9, now) }
+        repo.shelf()
+        assertEquals(reads + 1, empty.historyReads)
     }
 
     @Test
-    fun `daily discover's songs and the songs you have are mostly left out`() = runTest {
-        history.daily = setOf(BecauseYouLike.songKey("Don't Dream It's Over", "Crowded House"))
+    fun `songs you've heard are at most a quarter of a row`() = runTest {
         history.knownIds = related.take(10).map { it.videoId }.toSet()
         val rows = repo().shelf()
-        val songs = rows.flatMap { it.songs }
-        assertTrue(songs.none { it.title == "Don't Dream It's Over" })
+        assertTrue(rows.isNotEmpty())
         for (row in rows) {
             val known = row.songs.count { it.videoId in history.knownIds }
             assertTrue(known * 3 <= row.songs.size - known)

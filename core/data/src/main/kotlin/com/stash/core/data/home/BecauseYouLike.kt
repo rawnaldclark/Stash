@@ -105,33 +105,31 @@ object BecauseYouLike {
 
     /**
      * The rows, seed by seed: each the seed's [related] songs that are songs (YouTube's `ATV`, never a video), never a
-     * seed again (not the song, nor its other performances, in any row), not in [exclude] (Daily Discover's songs, as
-     * [songKey]s), and not already in an earlier row (a song shows only in the first row that has it), each once, at
-     * most [PER_ARTIST] per artist. About three quarters are songs you don't have ([known] false): known ones are at
-     * most a quarter of [cards] and at most a third as many as the new ones, so a row is never mostly songs you have.
-     * YouTube's order stands within a row. A row left with fewer than [MIN_CARDS] is dropped.
+     * seed again (not the song, nor its other performances, in any row: [isSeedAgain]), and not already in an earlier
+     * row (a song shows only in the first row that has it), each once, at most [PER_ARTIST] per artist. About three
+     * quarters are songs you haven't heard ([known] false): heard ones are at most a quarter of [cards] and at most a
+     * third as many as the new ones, so a row is never mostly songs you know. YouTube's order stands within a row. A
+     * row left with fewer than [MIN_CARDS] is dropped. What other Home shelves show (Daily Discover, the record's
+     * mixes) is taken out when the rows are shown ([without]), so a shelf that changes after the build is followed.
      */
     fun rows(
         seeds: List<BecauseSeed>,
         related: Map<String, List<TrackSummary>>,
         known: (TrackSummary) -> Boolean,
-        exclude: Set<String>,
         cards: Int = CARDS,
     ): List<BecauseRow> {
-        val used = HashSet<String>(exclude)
+        val used = HashSet<String>()
         seeds.forEach { used += songKey(it.title, it.artist) }
         val familiarCap = cards / 4
-        // No seed is a card, nor its other performances (remastered, covered, translated), in any row
-        val seedTitles = seeds.map { TrackCanonical.title(it.title) }.filter { it.isNotBlank() }
+        val seedTitles = seeds.map { SeedTitle(TrackCanonical.version(it.title).base, artistKey(it.artist)) }.filter { it.base.isNotBlank() }
         return seeds.mapNotNull { seed ->
             val perArtist = HashMap<String, Int>()
             // A song YouTube lists twice (the album cut and the soundtrack cut) shows once
             val inRow = HashSet<String>()
             val eligible = related[seed.videoId].orEmpty().filter { song ->
-                val title = TrackCanonical.title(song.title)
                 song.musicVideoType == "ATV" &&
                     song.videoId != seed.videoId &&
-                    seedTitles.none { title == it || title.startsWith("$it ") } &&
+                    !isSeedAgain(song, seedTitles) &&
                     songKey(song.title, song.artist) !in used &&
                     inRow.add(songKey(song.title, song.artist))
             }.filter { song ->
@@ -167,6 +165,22 @@ object BecauseYouLike {
                 if (songs.size < MIN_CARDS) null else row.copy(songs = songs)
             }
         }
+
+    /** A seed's title without its version tail ([TrackCanonical.version]), and its main act. */
+    private data class SeedTitle(val base: String, val artist: String)
+
+    /**
+     * Whether [song] is one of the seeds again: the same song under a version tail ("(2022 Remaster)", "(Japanese
+     * Version)", " - Live") by anyone, a cover with the same title included; or, by the seed's own act, a longer
+     * title that starts with the seed's ("Love" then "Love Me"). Another act's song that only starts with the seed's
+     * title stays: "Love Story" is no performance of "Love".
+     */
+    private fun isSeedAgain(song: TrackSummary, seeds: List<SeedTitle>): Boolean {
+        val base = TrackCanonical.version(song.title).base
+        if (base.isBlank()) return false
+        val artist = artistKey(song.artist)
+        return seeds.any { seed -> base == seed.base || (artist == seed.artist && base.startsWith(seed.base + " ")) }
+    }
 
     /** A song's identity across Home's shelves: its main act and title, both in their loose canonical form. */
     fun songKey(title: String, artist: String): String = artistKey(artist) + "|" + TrackCanonical.title(title)

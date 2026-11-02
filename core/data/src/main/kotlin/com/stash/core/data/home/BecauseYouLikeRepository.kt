@@ -2,11 +2,12 @@ package com.stash.core.data.home
 
 import android.util.Log
 import com.stash.core.common.TrackCanonical
+import com.stash.core.data.blocklist.BlocklistKey
 import com.stash.core.data.db.dao.ListeningEventDao
-import com.stash.core.data.db.dao.PlaylistDao
-import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
+import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CancellationException
@@ -14,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -28,6 +28,7 @@ import kotlin.random.Random
  * What "Because you like" saves ([HomeShelfStore]): the rows, the day they were built (-1 before a build enough
  * seeds answered), the newest listen and skip they had seen, so the next look can tell whether you've listened
  * enough since to build them again, and when a build last fell short (the next waits [BecauseYouLikeRepository.RETRY_MS]).
+ * With nothing to seed from, the rows are empty and the day stamped all the same.
  */
 @Serializable
 internal data class BecauseFile(
@@ -52,11 +53,14 @@ interface BecauseHistory {
     /** [trackIds] as seeds, those with a YouTube video only. */
     suspend fun seeds(trackIds: List<Long>): Map<Long, BecauseSeed>
 
-    /** The videoIds of [songs] you have already (a library song with that video, or with the same words). */
+    /**
+     * The videoIds of [songs] you've heard: a library song with that video, or with the same words, that has a listen
+     * in the history. A song only sitting in the library (synced, never played) is still new to you.
+     */
     suspend fun known(songs: List<TrackSummary>): Set<String>
 
-    /** Today's Daily Discover, as [BecauseYouLike.songKey]s: its songs aren't repeated. */
-    suspend fun dailyDiscover(): Set<String>
+    /** The videoIds of [songs] on the blocklist, by their words ([BlocklistKey]) or by their video: never a card. */
+    suspend fun blocked(songs: List<TrackSummary>): Set<String>
 
     suspend fun lastEventId(): Long
     suspend fun lastSkipId(): Long
@@ -71,9 +75,14 @@ interface BecauseHistory {
  * look of a new day, or once you've played [REBUILD_PLAYS] songs through or skipped [REBUILD_SKIPS] since the last
  * build: two counts against the newest ids the build saw, never a timer.
  *
- * Fail-soft: a build stamps the day (and the counts) only when at least half the seeds' pages answered; one that
- * fell short never replaces rows with none, and the next build waits [RETRY_MS] (Home's resume doesn't refire the
- * requests on every return). With nothing to seed from there are no rows, no file and no request.
+ * Fail-soft: a build stamps the day (and the counts) only when at least half the seeds' pages answered (a watch page
+ * without its Related tab counts as no answer). One that fell short keeps the rows Home has (never three replaced by
+ * one), shows what it got only when there were none, and the next build waits [RETRY_MS] (Home's resume doesn't
+ * refire the requests on every return). With nothing to seed from there are no rows and no request, and the empty
+ * day is saved, so Home's looks don't read the history again until a new day or enough listening.
+ *
+ * Blocked songs never become cards (one read of the blocklist a build), and songs another Home shelf shows (Daily
+ * Discover, the record's mixes) are taken out when the rows are shown ([BecauseYouLike.without], [HomeShownSongs]).
  */
 @Singleton
 class BecauseYouLikeRepository internal constructor(
@@ -134,24 +143,30 @@ class BecauseYouLikeRepository internal constructor(
         val candidates = best.mapNotNull { (id, score) -> seedsById[id]?.let { SeedCandidate(id, it, score) } }
         val seeds = BecauseYouLike.pickSeeds(candidates, random()).map { it.seed }
         if (seeds.isEmpty()) {
-            // Nothing to seed from (a new install, or the history was cleared): no rows, and nothing of it kept
-            store.delete(FILE)
+            // Nothing to seed from (a new install, or the history was cleared): no rows and no request, the empty day
+            // saved so each look at Home doesn't read the history again; a new day or enough listening builds again
+            store.write(FILE, BecauseFile.serializer(), BecauseFile(day, lastEvent, lastSkip, emptyList()))
             return emptyList()
         }
-        val pages = coroutineScope {
+        val answered = coroutineScope {
             seeds.map { seed -> async { seed.videoId to relatedOf(seed) } }.awaitAll()
         }.filter { it.second != null }.associate { it.first to it.second!! }
+        // A blocked song is never a card (a tap would make it a library song again): the blocklist read once a build
+        val blocked = answered.values.flatten().let { if (it.isEmpty()) emptySet() else history.blocked(it) }
+        val pages = if (blocked.isEmpty()) answered else answered.mapValues { (_, songs) -> songs.filter { it.videoId !in blocked } }
         val enough = pages.size * 2 >= seeds.size
         val songs = pages.values.flatten()
         val known = if (songs.isEmpty()) emptySet() else history.known(songs)
-        val built = if (pages.isEmpty()) {
-            emptyList()
-        } else {
-            BecauseYouLike.rows(seeds, pages, known = { it.videoId in known }, exclude = history.dailyDiscover())
+        val built = if (pages.isEmpty()) emptyList() else BecauseYouLike.rows(seeds, pages, known = { it.videoId in known })
+        // A short build never replaces the rows Home has (one row for three), and a partial one never empties them
+        val keepSaved = !saved?.rows.isNullOrEmpty() && (!enough || (built.isEmpty() && pages.size < seeds.size))
+        val rows = if (keepSaved) saved!!.rows else built
+        val shortNote = when {
+            enough -> ""
+            keepSaved -> ", short: not stamped, keeping the ${rows.size} saved"
+            else -> ", short: not stamped"
         }
-        // A build some seeds didn't answer never replaces rows with none
-        val rows = if (built.isEmpty() && pages.size < seeds.size && !saved?.rows.isNullOrEmpty()) saved!!.rows else built
-        Log.d(TAG, "built ${rows.size} rows from ${seeds.size} seeds (${pages.size} answered)${if (enough) "" else ", short: not stamped"}")
+        Log.d(TAG, "built ${built.size} rows from ${seeds.size} seeds (${pages.size} answered, ${blocked.size} blocked songs left out)$shortNote")
         val file = if (enough) {
             BecauseFile(day, lastEvent, lastSkip, rows)
         } else {
@@ -189,13 +204,13 @@ class BecauseYouLikeRepository internal constructor(
     }
 }
 
-/** [BecauseHistory] from Room: read-only queries on listening events, skips, tracks and Daily Discover. */
+/** [BecauseHistory] from Room: read-only queries on listening events, skips, tracks and the blocklist. */
 class RoomBecauseHistory @Inject constructor(
     private val listeningEventDao: ListeningEventDao,
     private val skipDao: TrackSkipEventDao,
     private val trackDao: TrackDao,
-    private val recipeDao: StashMixRecipeDao,
-    private val playlistDao: PlaylistDao,
+    private val blocklistDao: TrackBlocklistDao,
+    private val matcher: TrackMatcher,
 ) : BecauseHistory {
 
     override suspend fun plays(sinceMs: Long): List<Pair<Long, Long>> =
@@ -214,17 +229,29 @@ class RoomBecauseHistory @Inject constructor(
     override suspend fun known(songs: List<TrackSummary>): Set<String> {
         val identities = songs.map { TrackCanonical.title(it.title) to TrackCanonical.artist(it.artist) }
         // The Spotify side of the lookup is never wanted: a never-matching value keeps its IN () non-empty
-        val rows = trackDao.findExistingForBatch(listOf(NO_SPOTIFY_URI), songs.map { it.videoId }.distinct(), identities)
-        val videoIds = rows.mapNotNullTo(HashSet()) { it.youtubeId }
-        val words = rows.mapTo(HashSet()) { it.canonicalTitle to it.canonicalArtist }
+        val inLibrary = trackDao.findExistingForBatch(listOf(NO_SPOTIFY_URI), songs.map { it.videoId }.distinct(), identities)
+        if (inLibrary.isEmpty()) return emptySet()
+        // Known means heard: a library row with a listen (any of a song's rows, its duplicates included)
+        val heardIds = inLibrary.map { it.id }.distinct().chunked(MAX_BIND).flatMapTo(HashSet()) { listeningEventDao.heardAmong(it) }
+        val heard = inLibrary.filter { it.id in heardIds }
+        val videoIds = heard.mapNotNullTo(HashSet()) { it.youtubeId }
+        val words = heard.mapTo(HashSet()) { it.canonicalTitle to it.canonicalArtist }
         return songs.filter { it.videoId in videoIds || (TrackCanonical.title(it.title) to TrackCanonical.artist(it.artist)) in words }
             .mapTo(HashSet()) { it.videoId }
     }
 
-    override suspend fun dailyDiscover(): Set<String> {
-        // Home's hero reads the same: the first built-in recipe's playlist (HomeViewModel)
-        val playlistId = recipeDao.observeAll().first().filter { it.isBuiltin }.minByOrNull { it.id }?.playlistId ?: return emptySet()
-        return playlistDao.getTracksForPlaylist(playlistId).mapTo(HashSet()) { BecauseYouLike.songKey(it.title, it.artist) }
+    override suspend fun blocked(songs: List<TrackSummary>): Set<String> {
+        val keys = blocklistDao.getAllKeys().toHashSet()
+        val videoIds = blocklistDao.getAllYoutubeIds().toHashSet()
+        if (keys.isEmpty() && videoIds.isEmpty()) return emptySet()
+        return songs.filter { song ->
+            song.videoId in videoIds || run {
+                // Words that name nothing ("(Intro)", no artist) key no song: they would block every such title
+                val title = matcher.canonicalTitle(song.title)
+                val artist = matcher.canonicalArtist(song.artist)
+                !TrackCanonical.isBlankKey(title, artist) && BlocklistKey.of(song.artist, song.title, matcher) in keys
+            }
+        }.mapTo(HashSet()) { it.videoId }
     }
 
     override suspend fun lastEventId(): Long = listeningEventDao.lastEventId()
@@ -234,5 +261,8 @@ class RoomBecauseHistory @Inject constructor(
 
     private companion object {
         const val NO_SPOTIFY_URI = "\u0000__stash_never_match__"
+
+        /** Ids per `IN (...)`, under SQLite's bind limit. */
+        const val MAX_BIND = 900
     }
 }
