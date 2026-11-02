@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,7 +56,6 @@ private const val KOFI_URL = com.stash.feature.settings.components.DonateLinks.K
 @Composable
 internal fun SupporterSection(viewModel: SupporterViewModel = hiltViewModel()) {
     val row by viewModel.row.collectAsStateWithLifecycle()
-    val claim by viewModel.claim.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf(false) }
 
     when (val r = row) {
@@ -95,10 +95,23 @@ internal fun SupporterSection(viewModel: SupporterViewModel = hiltViewModel()) {
         }
     }
 
+    SupporterClaim(viewModel, row, open, onClose = { open = false })
+}
+
+/**
+ * The claim sheet while [open] and [row] offers it. It closes itself once the relays confirm (the
+ * row has flipped by then), and every close starts the next open fresh. Shared by Lossless sources
+ * ([SupporterSection]) and Your Stash, which each draw their own row and own [open].
+ */
+@Composable
+internal fun SupporterClaim(viewModel: SupporterViewModel, row: SupporterRow, open: Boolean, onClose: () -> Unit) {
+    val claim by viewModel.claim.collectAsStateWithLifecycle()
+    val close by rememberUpdatedState(onClose)
+
     // The relays confirmed: close (the row has already flipped).
     LaunchedEffect(claim.done) {
         if (claim.done) {
-            open = false
+            close()
             viewModel.reset()
         }
     }
@@ -106,14 +119,14 @@ internal fun SupporterSection(viewModel: SupporterViewModel = hiltViewModel()) {
     if (open && row is SupporterRow.Offer) {
         SupporterClaimSheet(
             ui = claim,
-            hasToken = (row as SupporterRow.Offer).hasToken,
+            hasToken = row.hasToken,
             onSendCode = viewModel::sendCode,
             onResendCode = viewModel::resendCode,
             onUnlock = viewModel::unlock,
             onStartOver = viewModel::startOver,
             onRemoveCode = viewModel::removeCode,
             onDismiss = {
-                open = false
+                close()
                 viewModel.reset()
             },
         )
