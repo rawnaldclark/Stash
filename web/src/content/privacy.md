@@ -14,6 +14,7 @@
 #   early-access emails hashed with a     EMAIL_PEPPER, required: the site's sign-in refuses to run without
 #   secret ("pepper")                     it (missingForGate in web/worker/index.js), and the import too
 #   sign-in codes: 8 digits, 10 minutes   eightDigitCode, web/worker/crypto.js; CODE_TTL_S, web/worker/codes.js
+#   on the list once donations reach $5   ENTRY_USD_CENTS, infra/tipjar-worker/src/access.js
 #   stash_signin lasts 30 minutes         SIGNIN_SECONDS, web/worker/session.js
 #   cloud check twice a day (app)         CloudScanWorker 12 h, data/cloud/.../scan/CloudScanWorker.kt
 #   cloud check at most every 3 h (web)   scanIfDue, the web player's src/lib/cloud/service.ts
@@ -23,7 +24,7 @@
 # Google's OAuth verification links to /privacy#cloud-storage. Don't rename it.
 #
 # Shown as "Last updated" on the page. Change it whenever this file changes.
-updated: 2026-10-20
+updated: 2026-11-02
 ---
 
 ## The short version
@@ -207,7 +208,7 @@ Shared song pages, at `stashfm.app/t` and at the share Worker's first address, c
 
 The Stash web player is in early access, and you sign in to it here: people who have supported Stash are on the list as a thank-you, and anyone else can ask to be added. Now and then it's opened to everyone for a limited time, and the home page says until when. This is only about the web player; the website itself and the app need no sign-in.
 
-- **The access list** holds a scrambled form of each email address (a hash), never the address itself, with where it came from (Ko-fi, an approved request, or added by hand) and when. A plain hash can't be turned back into an address, but anyone holding a copy of the list could check whether an address they already know is on it. So the hash is keyed with a secret (a "pepper") that only the project's Workers hold, and without that secret the list can't be checked that way. Ko-fi's notice of each donation includes the donor's email, and the project's tip jar Worker puts that email's hash on the list. Past Ko-fi supporters are added the same way, from Ko-fi's records. GitHub Sponsors and PayPal supporters are added by hand. When a maintainer adds you or approves your request, the list also notes which maintainer did it (their address, not yours) and when.
+- **The access list** holds a scrambled form of each email address (a hash), never the address itself, with where it came from (Ko-fi, an approved request, or added by hand) and when. A plain hash can't be turned back into an address, but anyone holding a copy of the list could check whether an address they already know is on it. So the hash is keyed with a secret (a "pepper") that only the project's Workers hold, and without that secret the list can't be checked that way. Ko-fi's notice of each donation includes the donor's email. To add up an email's donations, the project's tip jar Worker keeps each one's amount under that email's keyed hash, and once they reach $5 it puts the hash on the list. Past Ko-fi supporters were added from Ko-fi's records. GitHub Sponsors and PayPal supporters are added by hand. When a maintainer adds you or approves your request, the list also notes which maintainer did it (their address, not yours) and when.
 - **Open windows**: while the web player is open to everyone, anyone can ask for a code, and signing in keeps the same keyed hash of your email, with the time, as an open-window sign-up. It's kept apart from the access list, and it stays after the window closes until a maintainer either adds it to the list (noting which maintainer did it) or removes it. While a window is open, the site also counts how many codes it sends each day to addresses that aren't on the list, as a plain number, to cap them.
 - **Signing in**: you type your email, and if it's on the list (or a window is open), an 8-digit code is emailed to you from `access@stashfm.app`. The code is sent through Cloudflare's Email Service, which handles your address to deliver it, and it's in the email's body, not its subject. It only works in the browser where you asked for it, so nobody else can use it, or use it up with wrong guesses. The page says the same thing whether or not your email is on the list, so it doesn't tell anyone who has access. Only scrambled forms of your codes are kept, each for 10 minutes, along with how many codes went to that email in the last hour (by its hash), to stop floods. Your IP address is used for rate limits and isn't stored.
 - **The cookies**: asking for a code sets `stash_signin`, a random id that ties the code to that browser. It holds nothing about you, is sent only to stashfm.app's sign-in pages, and lasts 30 minutes; signing in deletes it. Signing in sets `stash_access`, which holds the hash of your email and an expiry date, signed so it can't be forged, and is sent only to stashfm.app. A session lasts 90 days unless you're taken off the list, which ends it within a few minutes. Signing out, at the bottom of the home page, deletes it from that browser. The site sets no other cookies.
