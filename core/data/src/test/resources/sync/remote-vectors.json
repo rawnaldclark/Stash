@@ -1,0 +1,56 @@
+{
+  "about": "sync-v1 section 5.7 (remote control): the stash-remote-state and stash-remote-cmd documents read and written back, and their places. Hand-written; both implementations must pass them unchanged. Copy rule: docs/sync-v1.md section 9.",
+  "places": {
+    "state": { "from": "d_W1nd0wsChr0me01", "place": "remote:d_W1nd0wsChr0me01" },
+    "cmd": { "from": "d_P1xel5Ph0ne0001", "to": "d_W1nd0wsChr0me01", "place": "remote-cmd:d_P1xel5Ph0ne0001:d_W1nd0wsChr0me01" }
+  },
+  "states": [
+    {
+      "name": "playing, every field",
+      "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "needsGesture": false, "playing": true, "positionMs": 83250, "durationMs": 214000, "rate": 1, "volume": 0.62, "canSeek": true, "song": { "title": "Midnight City", "artist": "M83", "album": "Hurry Up, We're Dreaming", "durationMs": 243960, "artwork": [{ "url": "https://i.scdn.co/image/ab67616d0000b273b3d5c5a1", "width": 640, "height": 640 }] } },
+      "read": { "sid": "Zk3mQ9xL2pRt", "needsGesture": false, "playing": true, "positionMs": 83250, "durationMs": 214000, "rate": 1, "volume": 0.62, "canSeek": true, "title": "Midnight City", "artist": "M83", "art": "https://i.scdn.co/image/ab67616d0000b273b3d5c5a1" }
+    },
+    {
+      "name": "a reload before any click: a restored song, play would be refused",
+      "doc": { "kind": "stash-remote-state", "v": 1, "sid": "a1B2c3D4e5F6", "needsGesture": true, "playing": false, "positionMs": 0, "durationMs": 180000, "volume": 1, "canSeek": true, "song": { "title": "Roygbiv", "artist": "Boards of Canada" } },
+      "read": { "sid": "a1B2c3D4e5F6", "needsGesture": true, "playing": false, "positionMs": 0, "durationMs": 180000, "rate": 1, "volume": 1, "canSeek": true, "title": "Roygbiv", "artist": "Boards of Canada", "art": null }
+    },
+    {
+      "name": "nothing loaded; optional fields absent; unknown fields ignored",
+      "doc": { "kind": "stash-remote-state", "v": 1, "sid": "nothingHere01", "playing": false, "positionMs": 0, "queueLength": 0, "later": { "x": 1 } },
+      "read": { "sid": "nothingHere01", "needsGesture": false, "playing": false, "positionMs": 0, "durationMs": 0, "rate": 1, "volume": null, "canSeek": false, "title": null, "artist": null, "art": null }
+    },
+    {
+      "name": "a volume out of range is clamped; an http cover is not a cover; a bad rate is 1",
+      "doc": { "kind": "stash-remote-state", "v": 1, "sid": "clampMe12345", "playing": true, "positionMs": 5, "durationMs": 10, "volume": 1.7, "rate": -2, "canSeek": true, "song": { "title": "A", "artist": "B", "artwork": [{ "url": "http://example.com/a.jpg" }] } },
+      "read": { "sid": "clampMe12345", "needsGesture": false, "playing": true, "positionMs": 5, "durationMs": 10, "rate": 1, "volume": 1, "canSeek": true, "title": "A", "artist": "B", "art": null }
+    },
+    { "name": "a newer version", "doc": { "kind": "stash-remote-state", "v": 2, "sid": "newerVersion", "playing": true, "positionMs": 0 }, "error": "newer" },
+    { "name": "another kind", "doc": { "kind": "stash-now", "v": 1, "playing": true, "positionMs": 0, "index": 0 }, "error": "bad" },
+    { "name": "no sid", "doc": { "kind": "stash-remote-state", "v": 1, "playing": true, "positionMs": 0 }, "error": "bad" },
+    { "name": "a sid that isn't one", "doc": { "kind": "stash-remote-state", "v": 1, "sid": "has space!!", "playing": true, "positionMs": 0 }, "error": "bad" },
+    { "name": "playing is not a boolean", "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "playing": "yes", "positionMs": 0 }, "error": "bad" },
+    { "name": "a negative position", "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "playing": true, "positionMs": -1 }, "error": "bad" },
+    { "name": "a fractional position", "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "playing": true, "positionMs": 1.5 }, "error": "bad" }
+  ],
+  "cmds": [
+    { "name": "play", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 1, "cmd": "play" }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 1, "cmd": "play" } },
+    { "name": "pause", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 2, "cmd": "pause" }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 2, "cmd": "pause" } },
+    { "name": "next", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 3, "cmd": "next" }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 3, "cmd": "next" } },
+    { "name": "prev", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 4, "cmd": "prev" }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 4, "cmd": "prev" } },
+    { "name": "seek", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 5, "cmd": "seek", "positionMs": 151000 }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 5, "cmd": "seek", "positionMs": 151000 } },
+    { "name": "volume", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 6, "cmd": "volume", "volume": 0.35 }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 6, "cmd": "volume", "volume": 0.35 } },
+    { "name": "a volume out of range is clamped", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 7, "cmd": "volume", "volume": -0.5 }, "read": { "sid": "Zk3mQ9xL2pRt", "n": 7, "cmd": "volume", "volume": 0 } },
+    { "name": "a command this reader doesn't know is ignored, not an error", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 8, "cmd": "jump", "index": 3 }, "read": null },
+    { "name": "seek without a position", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 9, "cmd": "seek" }, "error": "bad" },
+    { "name": "volume that isn't a number", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 10, "cmd": "volume", "volume": "loud" }, "error": "bad" },
+    { "name": "n below 1", "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 0, "cmd": "play" }, "error": "bad" },
+    { "name": "a newer version", "doc": { "kind": "stash-remote-cmd", "v": 2, "sid": "Zk3mQ9xL2pRt", "n": 1, "cmd": "play" }, "error": "newer" },
+    { "name": "another kind", "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "playing": true, "positionMs": 0 }, "error": "bad" }
+  ],
+  "writes": [
+    { "name": "the state a browser writes for a playing song", "in": { "sid": "Zk3mQ9xL2pRt", "needsGesture": false, "playing": true, "positionMs": 83250.7, "durationMs": 214000, "rate": 1, "volume": 0.62, "canSeek": true, "song": { "title": "Midnight City", "artist": "M83" } }, "doc": { "kind": "stash-remote-state", "v": 1, "sid": "Zk3mQ9xL2pRt", "needsGesture": false, "playing": true, "positionMs": 83250, "durationMs": 214000, "rate": 1, "volume": 0.62, "canSeek": true, "song": { "title": "Midnight City", "artist": "M83" } } },
+    { "name": "the command a phone writes for a seek", "in": { "sid": "Zk3mQ9xL2pRt", "n": 5, "cmd": "seek", "positionMs": 151000 }, "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 5, "cmd": "seek", "positionMs": 151000 } },
+    { "name": "the command a phone writes for play (no extra fields)", "in": { "sid": "Zk3mQ9xL2pRt", "n": 1, "cmd": "play" }, "doc": { "kind": "stash-remote-cmd", "v": 1, "sid": "Zk3mQ9xL2pRt", "n": 1, "cmd": "play" } }
+  ]
+}

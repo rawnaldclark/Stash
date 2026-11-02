@@ -27,6 +27,8 @@ abstract class WebLinkModule {
 
     @Binds abstract fun bindHandoffChannel(impl: HandoffSync): HandoffChannel
 
+    @Binds abstract fun bindLiveConnector(impl: com.stash.core.data.weblink.remote.OkHttpLiveConnector): com.stash.core.data.weblink.remote.LiveConnector
+
     @Binds abstract fun bindMirrorStore(impl: com.stash.core.data.weblink.mirror.FileMirrorStore): com.stash.core.data.weblink.mirror.MirrorStore
 
     @Binds abstract fun bindMirrorScheduler(impl: com.stash.core.data.weblink.mirror.WorkManagerMirrorScheduler): com.stash.core.data.weblink.mirror.MirrorScheduler
