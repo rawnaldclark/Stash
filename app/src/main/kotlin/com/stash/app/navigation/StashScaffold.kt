@@ -81,6 +81,8 @@ import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.ProvideAlbumChrome
 import com.stash.core.ui.components.LocalBottomChromeInset
+import com.stash.core.ui.components.LocalAppSnackbar
+import com.stash.core.ui.components.rememberAppSnackbar
 import com.stash.core.ui.components.LocalChromeHazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -117,6 +119,8 @@ fun StashScaffold(
     val immersive = navBackStackEntry?.destination?.let { it.hasRoute<RecapRoute>() || it.hasRoute<YourRecordRoute>() } == true
     // The artist page draws its header photo under the status bar; it keeps the bottom chrome.
     val bleedTop = immersive || navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
+    // "Playing on Chrome" (link-sync spec §6.7, the phone as a remote for a linked browser) shows on Home and Library.
+    val remoteHere = navBackStackEntry?.destination?.let { it.hasRoute<HomeRoute>() || it.hasRoute<LibraryRoute>() } == true
 
     // The player: mini player <-> Now Playing as one finger-driven sheet.
     val playerSheet = rememberPlayerSheetState()
@@ -325,6 +329,9 @@ fun StashScaffold(
         }
     }
 
+    // Community (and any screen without its own host) shows its lines on this snackbar, above the bottom chrome.
+    val appSnackbar = rememberAppSnackbar(snackbarHostState)
+    CompositionLocalProvider(LocalAppSnackbar provides appSnackbar) {
     CommunityPostingHost(
         communityPosting,
         onSeeMyPosts = {
@@ -394,7 +401,12 @@ fun StashScaffold(
                                     }
                                 },
                         ) {
-                            com.stash.feature.nowplaying.handoff.HandoffCard()
+                            Column {
+                                // A linked browser this phone can control: its remote card takes the place of the
+                                // "Continue from" card (one card per browser; it comes back when the browser stops).
+                                val remoteShown = if (remoteHere) com.stash.feature.nowplaying.remote.RemoteCardHost() else false
+                                if (!remoteShown) com.stash.feature.nowplaying.handoff.HandoffCard()
+                            }
                         }
                         // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a
                         // dialog, shown once per send, never over the open player.
@@ -553,12 +565,13 @@ fun StashScaffold(
     RecordImportHost(
         onOpenRecord = { navController.openRecord() },
         // Last.fm not connected: the app's own sign-in, on Accounts & Sync
-        onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
+        onConnectLastfm = { navController.navigate(SettingsAccountsRoute()) { launchSingleTop = true } },
     )
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
         PlayerQueueSheet(onDismiss = { showQueue = false })
+    }
     }
     }
     }

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home's Community section and the See all page -->
+    <string name="community_title">Community</string>
+    <string name="community_see_all">See all</string>
+    <string name="community_back">Back</string>
+    <!-- The See all page's button that opens the posting picker -->
+    <string name="community_post">Post</string>
+    <!-- See all's three lists -->
+    <string name="community_segment_top">Top this week</string>
+    <!-- The Top list when fewer than 5 posts went up this week, so it shows every live post by votes -->
+    <string name="community_segment_top_all">Top</string>
+    <string name="community_segment_new">New</string>
+    <string name="community_segment_mine">Your posts</string>
+    <!-- Over the most voted post, on Home and on See all -->
+    <string name="community_hero_eyebrow">#1 this week</string>
+    <!-- Over the most voted post when the list reaches past this week (fewer than 5 posts in it) -->
+    <string name="community_hero_eyebrow_all">#1</string>
+    <!-- Home: the last card of the rail, which opens the posting picker -->
+    <string name="community_share_card_title">Share yours</string>
+    <string name="community_share_card_body">A song or playlist</string>
+
+    <!-- What a post is -->
+    <string name="community_kind_playlist">Playlist</string>
+    <string name="community_kind_mix">Mix</string>
+    <string name="community_kind_song">Song</string>
+    <plurals name="community_songs">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+
+    <!-- How long ago a post went up: short in lists ("5m"), spelled out for TalkBack and on a post's page -->
+    <string name="community_age_just_now">just now</string>
+    <string name="community_age_minutes_short">%dm</string>
+    <string name="community_age_hours_short">%dh</string>
+    <string name="community_age_days_short">%dd</string>
+    <plurals name="community_age_minutes">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="community_age_hours">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
+    <plurals name="community_age_days">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
+
+    <!-- Your posts: a post leaves Community 30 days after it went up -->
+    <plurals name="community_leaves_in">
+        <item quantity="one">Leaves in %d day</item>
+        <item quantity="other">Leaves in %d days</item>
+    </plurals>
+    <string name="community_leaves_today">Leaves today</string>
+    <string name="community_hidden">Hidden by votes</string>
+    <!-- A short tag on your own post in a list -->
+    <string name="community_you">YOU</string>
+
+    <!-- The vote pill -->
+    <string name="community_vote_up">Vote up</string>
+    <string name="community_vote_down">Vote down</string>
+    <plurals name="community_votes">
+        <item quantity="one">%d vote</item>
+        <item quantity="other">%d votes</item>
+    </plurals>
+
+    <!-- See all: a taste of the chart -->
+    <string name="community_play_all">Play all</string>
+    <string name="community_shuffle">Shuffle</string>
+
+    <!-- Empty, error -->
+    <string name="community_empty_title">Nothing posted this week yet</string>
+    <string name="community_empty_body">Share a song or playlist you love.</string>
+    <string name="community_empty_action">Be the first</string>
+    <string name="community_new_empty_title">Nothing new yet</string>
+    <string name="community_mine_empty_title">You have no posts up</string>
+    <string name="community_mine_empty_body">A post stays up for 30 days.</string>
+    <string name="community_mine_empty_action">Share something</string>
+    <string name="community_error_title">Couldn\'t load Community</string>
+    <string name="community_error_body">Check your connection and try again.</string>
+    <string name="community_retry">Retry</string>
+
+    <!-- A post's page -->
+    <string name="community_post_gone">This post is no longer available</string>
+    <string name="community_more_options">More options</string>
+    <string name="community_take_down_menu">Take down my post</string>
+    <string name="community_take_down_title">Take down this post?</string>
+    <string name="community_take_down_body">It leaves Community for everyone.</string>
+    <string name="community_take_down_body_today">It leaves Community for everyone. It still counts toward today\'s two posts.</string>
+    <string name="community_take_down">Take down</string>
+    <string name="community_cancel">Cancel</string>
+    <string name="community_taken_down">Post taken down</string>
+    <!-- After posting, from the confirm sheet -->
+    <string name="community_posted">Posted to Community</string>
+    <!-- "Posted by Maya · 3 days ago" -->
+    <string name="community_posted_by">Posted by %1$s · %2$s</string>
+    <string name="community_play">Play</string>
+    <string name="community_like">Like</string>
+    <string name="community_liked">Liked</string>
+    <string name="community_save_copy">Save a copy</string>
+    <!-- Under a playlist post's buttons: %s is the poster's name -->
+    <string name="community_as_posted">As posted. %s\'s later changes don\'t show here.</string>
+    <string name="community_more_from">More from Community</string>
+    <!-- A playlist post's length -->
+    <string name="community_length_minutes">%d min</string>
+    <string name="community_length_hours">%d h</string>
+    <string name="community_length_hours_minutes">%1$d h %2$d min</string>
+</resources>

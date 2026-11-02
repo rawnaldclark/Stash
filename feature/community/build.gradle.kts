@@ -8,6 +8,8 @@ android {
         unitTests {
             // android.util.Log in ViewModels returns defaults instead of throwing "not mocked".
             isReturnDefaultValues = true
+            // CommunityTextTest reads the module's real strings and plurals under Robolectric.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -22,4 +24,6 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

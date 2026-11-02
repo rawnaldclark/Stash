@@ -40,8 +40,13 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 @Serializable data object SettingsPlaybackRoute
 @Serializable data object SettingsAudioQualityRoute
 @Serializable data object SettingsLosslessSourcesRoute
-@Serializable data object SettingsAccountsRoute
-@Serializable data object SettingsLibraryStorageRoute
+/** Settings › Accounts & Sync; [cloud]: opened from Your Stash's Cloud rows, Cloud storage is scrolled into view. */
+@Serializable data class SettingsAccountsRoute(val cloud: Boolean = false)
+/**
+ * Settings › Library & Storage; [backup]: opened from Your Stash's Backups rows, the name of the
+ * [com.stash.feature.settings.weblink.BackupShortcut] to start there.
+ */
+@Serializable data class SettingsLibraryStorageRoute(val backup: String? = null)
 @Serializable data object SettingsAppearanceRoute
 @Serializable data object SettingsHomeLayoutRoute
 @Serializable data object SettingsAboutRoute
@@ -53,7 +58,10 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
 /** Library "+" › Import a playlist file: the picked document's content address, read into the same preview a link opens. */
 @Serializable data class PlaylistFileRoute(val file: String)
 @Serializable data class ListenJoinRoute(val code: String)
-/** Settings › Library & Storage › Link Stash on the web; [link] is a pairing link opened from outside (spec 2026-10-10 link-sync §2.2). */
+/**
+ * Settings › Library & Storage › Your Stash, the link's page (it was "Link Stash on the web"; owner decision D21); [link] is a
+ * pairing link opened from outside (spec 2026-10-10 link-sync §2.2).
+ */
 @Serializable data class WebLinkRoute(val link: String? = null)
 // Community's routes. StashNavHost pops them while Community is off: a new one must join that check.
 /** Community's See all (spec 2026-09-26 §3); [mine] opens it on Mine (after a live_limit). */

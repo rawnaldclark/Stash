@@ -661,6 +661,13 @@ class NowPlayingViewModelRadioTest {
         every { mirrorFailures } returns MutableSharedFlow()
     }
 
+    /** Resolves the shared radio failure lines (core:media's strings, the Library's too). */
+    private val appContext: Context = mockk(relaxed = true) {
+        every { getString(com.stash.core.media.R.string.radio_failed_player_not_ready) } returns "not ready"
+        every { getString(com.stash.core.media.R.string.radio_failed_no_station) } returns "no station"
+        every { getString(com.stash.core.media.R.string.radio_failed_download_mode) } returns "download mode"
+    }
+
     /** VM with a youtubeId-bearing track already playing. */
     private fun playingVm(): NowPlayingViewModel {
         playerStateFlow.value = playerStateFlow.value.copy(
@@ -675,7 +682,7 @@ class NowPlayingViewModelRadioTest {
             lyricsPreference = mockk(relaxed = true),
             nowPlayingPreference = mockk(relaxed = true),
             lyricsSidecarWriter = mockk(relaxed = true),
-            appContext = mockk(relaxed = true),
+            appContext = appContext,
             sleepTimerController = mockk(relaxed = true),
             ytMusicApiClient = mockk(relaxed = true),
         )
@@ -691,13 +698,19 @@ class NowPlayingViewModelRadioTest {
                     RadioStartResult.PlayerNotReady
                 vm.startRadioFromCurrent()
                 advanceUntilIdle()
-                assertEquals("Player is still starting — try again.", awaitItem())
+                assertEquals("not ready", awaitItem())
 
                 coEvery { playerRepository.startRadio(any(), any()) } returns
                     RadioStartResult.NoStation
                 vm.startRadioFromCurrent()
                 advanceUntilIdle()
-                assertEquals("Couldn't find similar tracks for this song.", awaitItem())
+                assertEquals("no station", awaitItem())
+
+                coEvery { playerRepository.startRadio(any(), any()) } returns
+                    RadioStartResult.DownloadMode
+                vm.startRadioFromCurrent()
+                advanceUntilIdle()
+                assertEquals("download mode", awaitItem())
 
                 coEvery { playerRepository.startRadio(any(), any()) } returns
                     RadioStartResult.Started

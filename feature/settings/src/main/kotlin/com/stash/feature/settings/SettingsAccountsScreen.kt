@@ -1,5 +1,9 @@
 package com.stash.feature.settings
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -9,6 +13,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
@@ -22,6 +29,7 @@ import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.LastFmAccountCard
 import com.stash.feature.settings.components.LikeMirrorToggleRow
 import com.stash.feature.settings.components.ListenBrainzAccountCard
+import com.stash.feature.settings.components.SettingsGroupGap
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 
@@ -36,10 +44,15 @@ import com.stash.feature.settings.components.SettingsSectionLabel
 fun SettingsAccountsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opened from Your Stash's Cloud rows: Cloud storage, last on the page, is scrolled into view once on arrival. */
+    focusCloud: Boolean = false,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    // Your Stash's scroll to Cloud storage happens once. Kept up here, before the sign-in screens
+    // below return early: inside the page it was dropped while one showed, and fired again after.
+    var cloudFocused by rememberSaveable { mutableStateOf(false) }
     // The last sync's verdict on each stored sign-in: an expired card leads with
     // Reconnect (the Sync tab's "Re-authenticate" lands here).
     val authExpiry by viewModel.authExpiry.collectAsStateWithLifecycle()
@@ -391,9 +404,26 @@ fun SettingsAccountsScreen(
         )
 
         // Dropbox / OneDrive / Google Drive: the user's own music in their cloud
-        // storage. Hidden in a build without provider keys.
-        com.stash.feature.settings.cloud.CloudAccountsSection(
-            viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
-        )
+        // storage. Hidden in a build without provider keys. One column, spaced as
+        // the page is, so Your Stash can bring the whole section into view.
+        val cloudSection = remember { BringIntoViewRequester() }
+        Column(
+            modifier = Modifier.bringIntoViewRequester(cloudSection),
+            verticalArrangement = Arrangement.spacedBy(SettingsGroupGap),
+        ) {
+            com.stash.feature.settings.cloud.CloudAccountsSection(
+                viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+            )
+        }
+        if (focusCloud) {
+            // Once: not again after a rotation, a sign-in screen, or when Back returns here.
+            LaunchedEffect(Unit) {
+                if (cloudFocused) return@LaunchedEffect
+                cloudFocused = true
+                // A frame first, so the cards above are laid out and the scroll lands on the section.
+                withFrameNanos { }
+                cloudSection.bringIntoView()
+            }
+        }
     }
 }

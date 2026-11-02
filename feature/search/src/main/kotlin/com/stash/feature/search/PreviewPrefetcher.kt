@@ -2,6 +2,8 @@ package com.stash.feature.search
 
 import android.util.Log
 import androidx.compose.foundation.lazy.LazyListState
+import com.stash.core.common.power.BatterySaver
+import com.stash.core.data.prefs.DataSaver
 import com.stash.data.download.preview.PreviewUrlCache
 import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.ytmusic.model.TrackSummary
@@ -41,6 +43,16 @@ class PreviewPrefetcher(
     private val previewUrlCache: MutableMap<String, String>,
     private val scope: CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    /**
+     * Android's Battery Saver (D19): nothing is warmed while it is on, each preview is looked up
+     * when tapped. Never on in hand-built tests.
+     */
+    private val batterySaver: BatterySaver = BatterySaver.Off,
+    /**
+     * Data saver applies right now (the switch on, a metered network): nothing is warmed then,
+     * each preview is looked up when tapped. Never, in hand-built tests.
+     */
+    private val dataSaverApplies: () -> Boolean = { false },
 ) {
 
     /**
@@ -50,8 +62,8 @@ class PreviewPrefetcher(
      * that reads the cache.
      */
     @Inject
-    constructor(extractor: PreviewUrlExtractor, cache: PreviewUrlCache) :
-        this(extractor, cache.asMutableMap)
+    constructor(extractor: PreviewUrlExtractor, cache: PreviewUrlCache, batterySaver: BatterySaver, dataSaver: DataSaver) :
+        this(extractor, cache.asMutableMap, batterySaver = batterySaver, dataSaverApplies = dataSaver::appliesNow)
 
     private val jobs = mutableListOf<Job>()
 
@@ -63,6 +75,10 @@ class PreviewPrefetcher(
      * structured-concurrency cancellation still propagates correctly.
      */
     fun prefetch(videoIds: List<String>) {
+        // Speculative: a player call and a tail probe per row (an artist's Popular rows, an album's
+        // first tracks, search results), most never played. Under Battery Saver, or on mobile data
+        // under Data saver, the tap's own lookup is enough.
+        if (batterySaver.isOn.value || dataSaverApplies()) return
         videoIds
             .filter { it !in previewUrlCache }
             .forEach { id ->

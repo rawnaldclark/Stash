@@ -364,8 +364,8 @@
     <string name="settings_flac_quality_title">FLAC quality</string>
     <string name="settings_youtube_quality_title">YouTube quality</string>
     <string name="settings_download_quality_rates_desc">Sets YouTube downloads at the rates below, and JioSaavn at 96 kbps on Low and Normal, 160 on High, 320 on Best and Max.</string>
-    <string name="settings_save_data_title">Save Data</string>
-    <string name="settings_save_data_subtitle">Lowest JioSaavn and YouTube quality</string>
+    <string name="settings_save_data_title">Data saver</string>
+    <string name="settings_data_saver_subtitle">On mobile data and metered Wi-Fi: lower quality streams, smaller pictures, no prefetch. Downloads unaffected.</string>
     <string name="settings_lossless_title">Lossless</string>
     <string name="settings_lossless_subtitle_off">Off: songs play from JioSaavn or YouTube</string>
     <string name="settings_lossless_subtitle_no_source">No lossless source set up yet</string>
@@ -398,7 +398,6 @@
     <string name="settings_streaming_section">Streaming</string>
     <string name="settings_on_wifi">On Wi-Fi</string>
     <string name="settings_on_cellular">On cellular</string>
-    <string name="settings_save_data_lossless_subtitle">CD quality on every network</string>
     <string name="settings_prefer_cloud_copies_title">Play my cloud copies first</string>
     <string name="settings_prefer_cloud_copies_subtitle">Your lossless files in cloud storage, before Qobuz or Tidal</string>
     <string name="settings_prefer_tidal_aac_streaming_title">Prefer Tidal AAC while streaming</string>
@@ -498,6 +497,10 @@
     <string name="settings_autoplay_radio_desc">A radio keeps playing when the queue ends</string>
     <string name="settings_crossfade_title">Crossfade</string>
     <string name="settings_crossfade_desc">Blend into the next song. Skips still cut.</string>
+    <!-- Settings > Playback, last line. Stash follows Android's Battery Saver on its own; there is no Stash switch for it. -->
+    <string name="settings_battery_saver_note">When Battery Saver is on, Stash pauses its looping animations and background prefetching.</string>
+    <!-- Settings search: the name the Battery Saver note is found by. -->
+    <string name="settings_search_battery_saver">Battery Saver</string>
     <string name="settings_crossfade_duration_label">Duration</string>
     <plurals name="settings_crossfade_duration_seconds">
         <item quantity="one">%d sec</item>
@@ -920,6 +923,28 @@
     <string name="settings_web_link_rename_dialog_title">Rename</string>
     <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
     <string name="settings_web_link_rename_other_hint">This name stays on this phone.</string>
+
+    <!-- Settings > Library & Storage > Your Stash: the link's page, which also gathers supporter status, cloud and backups -->
+    <string name="settings_your_stash_title">Your Stash</string>
+    <string name="settings_your_stash_nav_subtitle">Link the web player, see your devices, supporter status, cloud and backups</string>
+    <string name="settings_your_stash_posture">Your Stash is your devices. No account, no email. What your phone and browsers share with each other is encrypted before it leaves them.</string>
+    <string name="settings_your_stash_section_devices">Devices</string>
+    <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
+    <string name="settings_your_stash_section_supporter">Supporter</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Gave on Ko-fi? Unlock it with your Ko-fi email.</string>
+    <string name="settings_your_stash_supporter_code_here">Your supporter code is on this phone</string>
+    <string name="settings_your_stash_section_cloud">Cloud</string>
+    <string name="settings_your_stash_cloud_connect_title">Connect your cloud storage</string>
+    <string name="settings_your_stash_cloud_signed_out">Signed out on this phone: reconnect</string>
+    <string name="settings_your_stash_section_backups">Backups</string>
+    <string name="settings_your_stash_section_coming">What\'s coming</string>
+    <string name="settings_your_stash_coming_passkey_title">Recover with a passkey</string>
+    <string name="settings_your_stash_coming_passkey_desc">Lose your phone and a passkey brings Your Stash back. Still no email, no password.</string>
+    <string name="settings_your_stash_coming_backup_title">Nightly encrypted backup</string>
+    <string name="settings_your_stash_coming_backup_desc">Your library and settings, backed up each night and encrypted on your phone first, so only you can read them.</string>
+    <string name="settings_your_stash_coming_restore_title">Restore on a new phone</string>
+    <string name="settings_your_stash_coming_restore_desc">Your library, likes and settings on a new phone. Sign-ins stay behind.</string>
+    <string name="settings_your_stash_coming_note">Planned, not built yet. No dates.</string>
 
     <!-- Settings > Link Stash on the Web > Mirror -->
     <string name="settings_mirror_dir_off">Off</string>

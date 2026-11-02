@@ -73,7 +73,10 @@ class StreamSourceRegistryTest {
     private fun registryPreferringAac(tidal: TidalStreamResolver, prefer: Boolean) = StreamSourceRegistry(
         kennyy, qobuz, qbdlx, jiosaavn, youtube, streamingPreference,
         LosslessSourceHealth(), losslessPrefs, Dispatchers.IO, log, tidal, null,
-        mockk<StreamQualityPolicy> { coEvery { preferTidalAac() } returns prefer },
+        mockk<StreamQualityPolicy> {
+            coEvery { preferTidalAac() } returns prefer
+            coEvery { dataSaverApplies() } returns false
+        },
     )
 
     private fun aacStream() = StreamUrl(
@@ -481,7 +484,7 @@ class StreamSourceRegistryTest {
     /**
      * The Lossless switch governs streaming too (2026-09-05): off means no FLAC anywhere,
      * so the chain skips the lossless sources and streams YouTube. Downloads read the same
-     * switch; a user who wants less than FLAC turns it off, and Save Data trims from there.
+     * switch; a user who wants less than FLAC turns it off, and Data saver trims from there on mobile data.
      */
     @Test
     fun lossless_off_skips_qbdlx_and_streams_youtube() = runTest {
@@ -809,6 +812,7 @@ class StreamSourceRegistryTest {
         tidal: TidalStreamResolver,
         tier: LosslessQualityTier = LosslessQualityTier.HI_RES,
         tidalAac: Boolean = true,
+        dataSaver: Boolean = false,
     ): StreamSourceRegistry {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { losslessPrefs.tidalAacFallbackNow() } returns tidalAac
@@ -833,6 +837,7 @@ class StreamSourceRegistryTest {
                 coEvery { streamingTier() } returns tier
                 coEvery { preferTidalAac() } returns false
                 coEvery { preferCloudCopies() } returns false
+                coEvery { dataSaverApplies() } returns dataSaver
             },
             availability = availability,
         )
@@ -847,6 +852,25 @@ class StreamSourceRegistryTest {
         val result = registryWithOwnTidal(tidal).resolve(stubTrack())
 
         assertThat(result!!.origin).isEqualTo("tidal")
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+    }
+
+    /** #774 x #751: the own server would lead, but Data saver applies, so no lossless rung is asked at all (no FLAC on a metered network). */
+    @Test
+    fun `own Tidal server first - where Data saver applies neither it nor qbdlx is asked`() = runTest {
+        coEvery { qbdlx.resolve(any()) } returns stubStreamUrl("qbdlx")
+        coEvery { jiosaavn.resolve(any()) } returns null
+        coEvery { youtube.resolve(any(), any()) } returns stubStreamUrl("youtube")
+        val tidal: TidalStreamResolver = mockk {
+            coEvery { resolveLossless(any()) } returns stubStreamUrl("tidal")
+            coEvery { resolve(any()) } returns stubStreamUrl("tidal")
+        }
+
+        val result = registryWithOwnTidal(tidal, dataSaver = true).resolve(stubTrack())
+
+        assertThat(result!!.origin).isEqualTo("youtube")
+        coVerify(exactly = 0) { tidal.resolveLossless(any()) }
+        coVerify(exactly = 0) { tidal.resolve(any()) }
         coVerify(exactly = 0) { qbdlx.resolve(any()) }
     }
 

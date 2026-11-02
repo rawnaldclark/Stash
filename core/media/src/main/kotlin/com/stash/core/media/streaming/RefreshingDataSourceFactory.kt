@@ -109,7 +109,7 @@ class RefreshingDataSource(
 
         val fresh = refresh(dead) ?: throw dead
         if (!sameUrlFileParams(spec.uri.toString(), fresh.url)) {
-            // Another itag or length (Save Data toggled, another client's format
+            // Another itag or length (Data saver toggled or the network changed, another client's format
             // list): not the file the extractor and the cache key belong to.
             Log.w(TAG, "refresh for track $trackId returned a different file; failing the load")
             throw dead

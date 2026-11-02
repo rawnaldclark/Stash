@@ -1,5 +1,6 @@
 package com.stash.core.media.streaming
 
+import com.stash.core.data.prefs.DataSaver
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,6 +18,15 @@ internal fun usableLifetimeMs(ttlMs: Long): Long = ttlMs - minOf(MAX_EXPIRY_MARG
 
 /** Longest margin [usableLifetimeMs] keeps: about the length of a song. */
 private const val MAX_EXPIRY_MARGIN_MS = 5 * 60_000L
+
+/**
+ * A lossless link: FLAC or ALAC from a relay (a Tidal hi-res manifest included), or the user's own
+ * cloud file. What Data saver keeps off a metered network ([StreamUrlCache.get]). Tidal's AAC,
+ * JioSaavn, YouTube, SoundCloud and a Qobuz MP3 are lossy.
+ */
+internal fun StreamUrl.isLosslessLink(): Boolean =
+    codec.equals("flac", ignoreCase = true) || codec.equals("alac", ignoreCase = true) ||
+        (bitsPerSample ?: 0) > 0 || origin == CloudCopyFinder.ORIGIN
 
 /**
  * Bounded, monotonic-TTL cache for resolved stream URLs, keyed by track id.
@@ -51,14 +61,29 @@ private const val MAX_EXPIRY_MARGIN_MS = 5 * 60_000L
  * [LinkedHashMap], which gives both the LRU recency update on read and
  * atomic per-key reads/writes.
  *
+ * 3. **No lossless link under Data saver.** [get] won't hand out a lossless
+ *    link ([isLosslessLink]) while Data saver is in effect (the switch is on
+ *    and the network is metered, [DataSaver.appliesNow]); it drops it and the
+ *    caller resolves again, under the Data saver chain. Every reader comes
+ *    through here (a tap, the look-ahead, the placeholder's resolve at play,
+ *    the DASH routing), so a FLAC link saved on Wi-Fi, or by a resolve that
+ *    started on Wi-Fi and finished after the phone moved to mobile data,
+ *    never plays on mobile data. [StreamQualityPolicy] also clears the whole
+ *    cache the moment the network or the switch changes the decision.
+ *
  * The [nowMsProvider] / [elapsedMsProvider] seams exist so tests can drive
  * both clocks deterministically without `Thread.sleep`. They're
  * `internal var` so test code can swap them without going through the
- * constructor — keeping the constructor parameter-free avoids Hilt's
- * "multiple @Inject constructors" error that Kotlin default values trigger.
+ * constructor. Tests build it with no Data saver through the internal
+ * no-argument constructor.
  */
 @Singleton
-class StreamUrlCache @Inject constructor() {
+class StreamUrlCache @Inject constructor(
+    private val dataSaver: DataSaver,
+) {
+    /** No Data saver: for tests and hand-built graphs. */
+    internal constructor() : this(DataSaver.Off)
+
     /** Wall clock — used ONCE per entry, at insert, to derive its TTL. */
     internal var nowMsProvider: () -> Long = System::currentTimeMillis
 
@@ -86,14 +111,23 @@ class StreamUrlCache @Inject constructor() {
     /**
      * The entry, until its usable lifetime ([usableLifetimeMs]) runs out. Stale entries are evicted.
      */
-    fun get(trackId: Long): StreamUrl? = synchronized(lock) {
-        val entry = cache[trackId] ?: return null
-        if (elapsedMsProvider() < entry.expiryElapsedMs) {
-            entry.url
-        } else {
-            cache.remove(trackId)
-            null
+    fun get(trackId: Long): StreamUrl? {
+        val url = synchronized(lock) {
+            val entry = cache[trackId] ?: return null
+            if (elapsedMsProvider() < entry.expiryElapsedMs) {
+                entry.url
+            } else {
+                cache.remove(trackId)
+                return null
+            }
         }
+        // Outside the lock: appliesNow asks the system for the network. Only a lossless entry
+        // pays for that question, and it is dropped only if a newer put hasn't replaced it.
+        if (url.isLosslessLink() && dataSaver.appliesNow()) {
+            synchronized(lock) { if (cache[trackId]?.url === url) cache.remove(trackId) }
+            return null
+        }
+        return url
     }
 
     fun put(trackId: Long, url: StreamUrl) {
@@ -117,7 +151,7 @@ class StreamUrlCache @Inject constructor() {
     /**
      * Drop every entry. Entries are keyed by track id alone, so a URL minted for one
      * streaming tier would otherwise be served for up to its TTL after the effective
-     * tier changed — see [StreamQualityPolicy.streamingTier], the one caller.
+     * tier changed. [StreamQualityPolicy], the one caller, clears it when its decision changes.
      */
     fun clear() {
         synchronized(lock) { cache.clear() }

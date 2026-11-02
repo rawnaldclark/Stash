@@ -120,6 +120,9 @@ class NowPlayingViewModel @Inject constructor(
     // The album back covers the art flips to. Hilt binds the Cover Art Archive lookup; tests leave
     // the default, which knows none.
     private val backCovers: AlbumBackCovers = AlbumBackCovers.None,
+    // Data saver: the back cover / inside pages / Discogs look-up waits for Wi-Fi. Tests leave the
+    // default, which never applies.
+    private val dataSaver: com.stash.core.data.prefs.DataSaver = com.stash.core.data.prefs.DataSaver.Off,
 ) : ViewModel() {
 
     /**
@@ -409,13 +412,12 @@ class NowPlayingViewModel @Inject constructor(
         }
     }
 
-    /** User-facing hint for a non-Started radio result; null for Started. */
-    private fun radioFailureMessage(result: RadioStartResult): String? = when (result) {
-        RadioStartResult.Started -> null
-        RadioStartResult.PlayerNotReady -> "Player is still starting — try again."
-        RadioStartResult.NoStation -> "Couldn't find similar tracks for this song."
-        RadioStartResult.DownloadMode -> "Radio streams. Switch to Online to start one."
-    }
+    /**
+     * User-facing hint for a non-Started radio result; null for Started. The same lines the Library's
+     * Start radio shows ([com.stash.core.media.RadioStarter.failureMessage]): one set of strings.
+     */
+    private fun radioFailureMessage(result: RadioStartResult): String? =
+        com.stash.core.media.RadioStarter.failureMessage(result)?.let { appContext.getString(it) }
 
     /** Stop the active radio station. */
     fun stopRadio() = playerRepository.stopRadio()
@@ -721,7 +723,8 @@ class NowPlayingViewModel @Inject constructor(
      * Looks the playing album's back cover and inside pages up, and fetches the back's image, while
      * the app is in the foreground, after the lyrics prefetch's [PREFETCH_DWELL_MS]: so the flip is
      * ready by the time Now Playing opens, a skip through a queue looks nothing up, and nothing runs
-     * with the screen off. Once per album: the answer is stored, the image disk-cached, and a skip
+     * with the screen off, nor on mobile data under Data saver. Once per album: the answer is
+     * stored, the image disk-cached, and a skip
      * to another album cancels the walk (a cancellation is not a failure, so the album isn't held
      * back). The back is stored as soon as it is found, before the walk for the inside ends, so its
      * image is fetched then.
@@ -732,7 +735,12 @@ class NowPlayingViewModel @Inject constructor(
                 .distinctUntilChanged { old, new -> old.first?.key == new.first?.key && old.second == new.second }
                 .collectLatest { (album, foreground) ->
                     if (!foreground || album == null) return@collectLatest
+                    // Data saver on mobile data: the Cover Art Archive and Discogs scans (1200px,
+                    // and the inside pages "Cycle album art" turns through) wait for Wi-Fi. The
+                    // next album, or the app coming back to the foreground, asks again, so an
+                    // album that starts on Wi-Fi gets its flip as before.
                     delay(PREFETCH_DWELL_MS)
+                    if (dataSaver.appliesNow()) return@collectLatest
                     coroutineScope {
                         val fetchBack = launch {
                             fetchBackImage(backCovers.observe(album).mapNotNull { it?.back }.first())

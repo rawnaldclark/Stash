@@ -106,6 +106,30 @@ class LosslessConfigFetcherTest {
         assertThat(f.relays.value.map { it.base }).containsExactly("https://a.example", "https://b.example").inOrder()
     }
 
+    @Test fun `refreshedAt moves only when a refresh applies a fresh config`() = runTest {
+        val f = fetcher()
+        // A tampered body: refused, so it is not a refresh.
+        val evil = body.replace("a.example", "evil.example")
+        server.enqueue(MockResponse().setBody(evil)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.refreshedAt.value).isEqualTo(0L)
+
+        server.enqueue(MockResponse().setBody(body)); server.enqueue(MockResponse().setBody(sign(body.toByteArray())))
+        val before = System.currentTimeMillis()
+        assertThat(f.refresh()).isTrue()
+        val stamped = f.refreshedAt.value
+        assertThat(stamped).isAtLeast(before)
+
+        // Loading the cache never sets one; the network failing afterwards keeps the stamp.
+        val cold = fetcher()
+        cold.loadCached()
+        assertThat(cold.relays.value).isNotEmpty()
+        assertThat(cold.refreshedAt.value).isEqualTo(0L)
+        server.shutdown()
+        assertThat(f.refresh()).isFalse()
+        assertThat(f.refreshedAt.value).isEqualTo(stamped)
+    }
+
     @Test fun `disabled when url or key is blank`() = runTest {
         val f = fetcher().also { it.publicKeyB64 = "" }
         assertThat(f.enabled).isFalse()

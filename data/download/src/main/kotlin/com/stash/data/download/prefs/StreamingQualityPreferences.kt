@@ -31,8 +31,13 @@ internal val Context.streamingQualityDataStore: DataStore<Preferences> by prefer
  *
  *  - [wifiTier] / [cellularTier] — tier requested when streaming on the
  *    respective transport. Cellular defaults to CD (the data-saving floor).
- *  - [saveData] — master override; when true, callers should force CD on
- *    every network. The override itself lives in StreamQualityPolicy.
+ *  - [saveData] — "Data saver" (Settings and Now Playing). On a METERED network
+ *    only: no FLAC (lossy at about a sixth of CD) with Lossless on, the lowest
+ *    lossy quality with it off, smaller pictures, no look-ahead, background
+ *    art/metadata work held for Wi-Fi. What it does lives in StreamQualityPolicy
+ *    (streaming) and `com.stash.core.data.prefs.DataSaver` (the rest, through
+ *    a synchronous mirror the app keeps in step with this flow). The key keeps
+ *    its old name, `streaming_save_data`: existing choices carry over.
  *  - [preferTidalAac] — opt-in (default off): streaming asks Tidal for its
  *    320 kbps AAC before Qobuz, to save data. Downloads ignore it.
  *

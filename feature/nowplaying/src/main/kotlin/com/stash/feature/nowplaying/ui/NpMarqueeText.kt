@@ -1,6 +1,5 @@
 package com.stash.feature.nowplaying.ui
 
-import android.provider.Settings
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.material3.Text
@@ -14,7 +13,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,7 +23,7 @@ import androidx.compose.ui.unit.dp
  *
  * The scroll waits [MARQUEE_DELAY_MS] before each pass, and while the text overflows its
  * trailing edge fades out so the cut reads as deliberate. With animations off (the system's
- * reduced-motion setting) it ellipsizes instead of moving.
+ * reduced-motion setting, or Battery Saver) it ellipsizes instead of moving.
  *
  * Nothing here recomposes per frame: the marquee runs in layout and draw, and the overflow
  * check reads plain fields written during measure, not snapshot state. The caller passes
@@ -38,7 +36,7 @@ internal fun NpMarqueeText(
     color: Color,
     modifier: Modifier = Modifier,
 ) {
-    if (rememberNpReducedMotion()) {
+    if (rememberNpLoopsStill()) {
         Text(text = text, style = style, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = modifier)
         return
     }
@@ -94,18 +92,21 @@ private class MarqueeWidths {
     var content = 0
 }
 
-/** The system "animator duration scale" set to off (Remove animations): the reduced-motion case. */
+/**
+ * The reduced-motion case, for one-shot transitions (the flip, swipe-to-skip, full art growing
+ * out): the system's "Remove animations" only, the same answer as the rest of the app. They keep
+ * animating under Battery Saver.
+ */
 @Composable
-internal fun rememberNpReducedMotion(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    return remember(resolver) {
-        try {
-            Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        } catch (_: Exception) {
-            false
-        }
-    }
-}
+internal fun rememberNpReducedMotion(): Boolean = com.stash.core.ui.ambient.rememberReducedMotion()
+
+/**
+ * Now Playing's continuous loops (the title marquee, the full-art cycle, lyric springs and breaks)
+ * stand still: "Remove animations", or Android's Battery Saver. See
+ * [com.stash.core.ui.ambient.rememberLoopsStill].
+ */
+@Composable
+internal fun rememberNpLoopsStill(): Boolean = com.stash.core.ui.ambient.rememberLoopsStill()
 
 /** A beat to read the start before it moves, and again before each repeat. */
 private const val MARQUEE_DELAY_MS = 3_800

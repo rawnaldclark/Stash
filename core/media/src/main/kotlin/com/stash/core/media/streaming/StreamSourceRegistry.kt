@@ -42,6 +42,9 @@ import javax.inject.Singleton
  *      up ([LosslessAvailability.ownTidalFirst]), goes ahead of 1 instead above CD
  *      quality (FLAC only), and is asked again for its AAC after 1, when "Tidal AAC
  *      when no FLAC" is on.
+ *   Where Data saver applies ([StreamQualityPolicy.dataSaverApplies]: the switch on, a metered
+ *   network) neither rung, nor a cloud copy, is asked: no FLAC on mobile data. Rung 0 stays when
+ *   opted into; JioSaavn and YouTube serve at [StreamQualityPolicy.lossyQuality].
  *   While the day's Tidal & Qobuz allowance is spent ([LosslessQuota]) neither relay rung
  *   asks the owner's relays for anything: qbdlx skips them (a user's own account still
  *   serves), and Tidal asks for neither FLAC nor AAC, since AAC counts toward the same
@@ -132,6 +135,8 @@ class StreamSourceRegistry internal constructor(
     private suspend fun cloudCopy(track: TrackEntity): StreamUrl? {
         val finder = cloudCopies ?: return null
         if (qualityPolicy?.preferCloudCopies() != true || !losslessPrefs.enabledNow()) return null
+        // A cloud copy is a lossless file too: where Data saver applies, it waits for Wi-Fi.
+        if (qualityPolicy?.dataSaverApplies() == true) return null
         val copy = finder.find(track.title, track.artist, track.durationMs) ?: return null
         return StreamUrl(
             url = copy.cloudUri,
@@ -282,6 +287,11 @@ class StreamSourceRegistry internal constructor(
         // leave the chain and the track streams from the lossy rungs. It outranks the
         // force-source test toggles: a stale force pref must not override a user choice.
         val lossless = losslessPrefs.enabledNow()
+        // Data saver on a metered network (StreamQualityPolicy): no FLAC. The lossless relay rungs
+        // leave the chain and the song streams from the lossy rungs at the policy's LossyQuality,
+        // as with Lossless off. On unmetered Wi-Fi this is false and nothing below changes.
+        val dataSaver = qualityPolicy?.dataSaverApplies() == true
+        val losslessRungs = lossless && !dataSaver
         // "Prefer Tidal AAC while streaming" (Settings › Audio & Quality, off by default). Read
         // through the policy on every resolve, so a flip also drops the cached URLs of the
         // other kind. Off: the chain below is exactly what it was before the setting existed.
@@ -327,6 +337,8 @@ class StreamSourceRegistry internal constructor(
                 // a miss, busy pool, spent day or error falls straight on to the lossless rungs
                 // below with no wait. Its own in-flight key and miss stamp in BitchordClient, so it never
                 // hides the Tidal FLAC lookup further down (or the other way round).
+                // Kept where Data saver applies: AAC 320 is not FLAC, and the user who turned
+                // this on chose to spend the daily allowance on it (Data saver alone never does).
                 val tidalAacRung = tidal
                 if (preferTidalAac && allowYtDlp && lossless && tidalAacRung != null) {
                     // Speculative: like the Tidal rung, never make the relay search for a
@@ -341,9 +353,9 @@ class StreamSourceRegistry internal constructor(
 
                 // Tidal through a BitChord server: the user's own, or Stash's from the
                 // signed config. Same gates as qbdlx (foreground only, Lossless switch
-                // on): it spends a Tidal account. Off (returns null at once) when no
+                // on, Data saver not applying): it spends a Tidal account. Off (returns null at once) when no
                 // server is configured.
-                val tidalRung = tidal?.takeIf { allowYtDlp && lossless }
+                val tidalRung = tidal?.takeIf { allowYtDlp && losslessRungs }
                 // The user's own server, with none of their own Qobuz set up, goes
                 // BEFORE qbdlx, whose file URL would otherwise come from Stash's shared
                 // relay before their server was ever asked; qbdlx stays the fallback
@@ -364,7 +376,7 @@ class StreamSourceRegistry internal constructor(
                 // never the speculative background fill.
                 // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
                 // / relay); no build gate.
-                if (allowYtDlp && lossless && !skipQobuz) {
+                if (allowYtDlp && losslessRungs && !skipQobuz) {
                     add("qbdlx" to qbdlx::resolve)
                 }
                 if (tidalRung != null && ownTidalFirst) {
@@ -382,7 +394,8 @@ class StreamSourceRegistry internal constructor(
                         add("tidal" to { t: TrackEntity -> tidalRung.resolve(t) })
                     }
                 }
-                // AAC 320 fallback (96 under Save Data). Foreground/next-up only: a
+                // AAC fallback at the policy's LossyQuality (320; 160 or 96 where Data saver
+                // applies). Foreground/next-up only: a
                 // speculative full-queue fill must not turn into one metadata
                 // search + media probe per track. Any miss/outage continues to
                 // the existing YouTube fallback below.
@@ -408,7 +421,8 @@ class StreamSourceRegistry internal constructor(
             TAG,
             "chain for ${track.id}: [${resolvers.joinToString(",") { it.first }}] " +
                 "allowYouTube=$allowYouTube allowYtDlp=$allowYtDlp lossless=$lossless" +
-                if (preferTidalAac) " preferTidalAac=true" else "",
+                (if (preferTidalAac) " preferTidalAac=true" else "") +
+                if (dataSaver) " dataSaver=metered" else "",
         )
 
         // P3 (2026-09-06): the YouTube fast lane (one InnerTube round trip and a
