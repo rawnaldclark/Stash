@@ -90,14 +90,19 @@ internal object ReleaseNotesParser {
     /** The most of one line read. */
     const val MAX_LINE = 2_000
 
-    /** The most lines read before GitHub's part. */
+    /**
+     * The most lines read, every one counted (blank, fenced, table and dropped lines too), whether or not GitHub's part
+     * comes first. Of the hidden block's lines, the same.
+     */
     const val MAX_LINES = 400
 
     /** The most one note, one point under it, or the headline grows to from its wrapped lines. */
     const val MAX_NOTE = 4_000
 
     fun parse(markdown: String): ReleaseNotes {
-        val text = markdown.take(MAX_BODY).replace("\r\n", "\n").replace('\r', '\n')
+        // Every line break `.` won't cross becomes a plain one first (U+2028, U+2029, U+0085, and \v and \f on Android's
+        // ICU): left inside a line, `(.*)$` couldn't reach the end and rescanned from each position (#814, second review).
+        val text = LINE_BREAKS.replace(markdown.take(MAX_BODY).replace("\r\n", "\n"), "\n")
         val (visible, comments) = splitComments(text)
         val block = comments.firstNotNullOfOrNull { c -> APP_BLOCK_START.find(c)?.let { appBlock(c.substring(it.range.last + 1)) } }
         val lines = userLines(visible)
@@ -219,8 +224,7 @@ internal object ReleaseNotesParser {
     fun userLines(text: String): List<Line> {
         val out = mutableListOf<Line>()
         var fence = false
-        for (raw in text.split('\n')) {
-            if (out.size >= MAX_LINES) break
+        for (raw in text.splitToSequence('\n').take(MAX_LINES)) {
             val line = raw.replace("\t", "    ").take(MAX_LINE).trimEnd()
             if (FENCE.matches(line)) {
                 fence = !fence
@@ -427,6 +431,9 @@ internal object ReleaseNotesParser {
     // Each pattern is linear in its text (#814 review): a run is taken whole (`*+`, `++`: no giving back to try again),
     // a scan stops at the next opener of its kind, and a match can start only at the start of a run of blanks
     // (`(?<!\s)`). Checked against long runs of every mark these patterns read.
+
+    /** A lone \r, \v, \f, U+0085, U+2028 or U+2029: each read as a line break. */
+    private val LINE_BREAKS = Regex("""[\r\u000B\u000C\u0085  ]""")
 
     /** The start of the hidden block, inside a comment: "stash-app" or "app", then a colon or a blank. */
     private val APP_BLOCK_START = Regex("""^\s*+(?:stash-app|app)(?:\s*+:|\s)""", RegexOption.IGNORE_CASE)

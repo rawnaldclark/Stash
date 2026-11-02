@@ -279,6 +279,13 @@ class ReleaseNotesTest {
         assertThat(n.sections.single().notes.map { it.body }).containsExactly("One.", "Two in C#.").inOrder()
     }
 
+    @Test
+    fun `Unicode line breaks read as line breaks`() {
+        val n = ReleaseNotes.parse("Headline.  ## Bug fixes - One.\u0085- Two.\u000B- Three.")
+        assertThat(n.headline).isEqualTo("Headline.")
+        assertThat(n.sections.single().notes.map { it.body }).containsExactly("One.", "Two.", "Three.").inOrder()
+    }
+
     // ── Bounded work (review on #814) ──────────────────────────────────────
 
     /**
@@ -299,18 +306,21 @@ class ReleaseNotesTest {
             append("- **Lead.** text (#1").append(blanks).append("x\n")
             append("- note by @a").append(tabs).append("in").append(tabs).append("x\n")
             append("- (thanks ").append("@a ".repeat(700)).append("\n")
-            append("Wow").append("!".repeat(1_000)).append(" Next").append(".".repeat(1_000)).append(" Then.\n")
+            append("Wow").append("!".repeat(600)).append(" Next").append(".".repeat(600)).append(" Then.\n")
+            // Line breaks `.` won't cross (#814, second review): one in a long note made `(.*)$` rescan it.
+            append("- **").append("_".repeat(1_000)).append(' ').append("_".repeat(1_000)).append('\u0085')
+                .append("_".repeat(1_000)).append(" \u000B\u000C x\n")
             repeat(65) { append("<picture><img src=a></picture> ") }
             append("\n")
             repeat(65) { append("<picture><img src=a></picture> ") }
             append("x\n")
             repeat(260) { append("![a](b) ") }
             append("![\n")
-            append("[a](".repeat(520)).append('\n')
-            append("<picture".repeat(260)).append('\n')
-            append("`".repeat(2_100)).append('\n')
-            append("**a".repeat(700)).append('\n')
-            append("-".repeat(2_100)).append('\n')
+            append("[a](".repeat(300)).append('\n')
+            append("<picture".repeat(150)).append('\n')
+            append("`".repeat(1_200)).append('\n')
+            append("**a".repeat(400)).append('\n')
+            append("-".repeat(1_200)).append('\n')
             append("# ").append("#".repeat(2_100)).append(" x\n\n")
         }
         assertThat(part.length).isLessThan(ReleaseNotesParser.MAX_BODY)
