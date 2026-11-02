@@ -352,7 +352,12 @@ fun SessionSheet(
             seenSession = true
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = StashTheme.extendedColors.elevatedSurface) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = StashTheme.extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
+    ) {
         when (state) {
             is ListenTogetherState.InRoom -> RoomContent(state, onAnswer, onMakeHost, onEditQueue, onCopyLink, onShare, onLeave, onEnd)
             else -> Column(

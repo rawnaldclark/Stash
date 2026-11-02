@@ -98,6 +98,8 @@ internal fun CastSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(extendedColors.elevatedSurface),
     ) {
         // Scrolls, so a long speaker list (30+ Cast devices on one network) can be reached (#367).
         Column(

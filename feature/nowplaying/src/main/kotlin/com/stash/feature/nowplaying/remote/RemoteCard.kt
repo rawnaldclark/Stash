@@ -208,6 +208,8 @@ private fun RemoteSheet(card: RemoteCard, viewModel: RemoteViewModel, onDismiss:
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = extended.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(extended.elevatedSurface),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {

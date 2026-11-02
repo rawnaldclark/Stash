@@ -45,6 +45,8 @@ internal fun StreamingQualitySheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = com.stash.core.ui.theme.StashTheme.extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(com.stash.core.ui.theme.StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 36.dp)) {
             Text(

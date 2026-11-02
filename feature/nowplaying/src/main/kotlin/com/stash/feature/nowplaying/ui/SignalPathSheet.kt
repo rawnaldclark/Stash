@@ -95,6 +95,8 @@ fun SignalPathSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = StashTheme.extendedColors.elevatedSurface,
+        // Its bars follow the sheet, not Material's grey content colour: no white strip in dark.
+        properties = com.stash.core.ui.components.sheetBarsFollow(StashTheme.extendedColors.elevatedSurface),
     ) {
         Column(
             modifier = Modifier
