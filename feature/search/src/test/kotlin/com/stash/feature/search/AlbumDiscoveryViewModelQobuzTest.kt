@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -90,6 +91,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         player: PlayerRepository = mock(),
         musicRepo: MusicRepository = mock(),
         delegate: TrackActionsDelegate = stubDelegate(),
+        savedAlbums: List<com.stash.core.data.album.SavedAlbum> = emptyList(),
         yt: YTMusicApiClient = mock(),
         title: String = "T",
         artist: String = "A",
@@ -111,7 +113,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         ytMusicApiClient = yt,
         prefetcher = prefetcher,
         playerRepository = player,
-        musicRepository = musicRepo,
+        musicRepository = musicRepo.withSavedAlbums(savedAlbums),
         streamingPreference = mock(),
         delegate = delegate,
         losslessPrefetcher = mock(),
@@ -301,37 +303,28 @@ class AlbumDiscoveryViewModelQobuzTest {
     }
 
     @Test fun `a YouTube copy already in the library shows as saved after the switch`() = runTest {
-        val delegate = stubDelegate(
-            userPlaylists = listOf(
-                Playlist(id = 77L, name = "Loveless", source = MusicSource.BOTH, sourceId = "album:youtube:MPREb_yt"),
-            ),
-        )
         val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), delegate = delegate,
+            AlbumSource.QOBUZ, notSoldHereCache(), savedAlbums = listOf(savedAlbum(77L, "album:youtube:MPREb_yt")),
             yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
         )
         advanceUntilIdle()
 
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
     }
 
     /** Saved from Qobuz earlier (another country, a VPN): still "Saved", and Save doesn't file it twice. */
     @Test fun `an album saved from Qobuz still shows as saved after the switch, and isn't saved twice`() = runTest {
         val musicRepo = mock<MusicRepository>()
-        val delegate = stubDelegate(
-            userPlaylists = listOf(
-                Playlist(id = 77L, name = "Loveless", source = MusicSource.BOTH, sourceId = "album:qobuz:123"),
-            ),
-        )
         val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), musicRepo = musicRepo, delegate = delegate,
+            AlbumSource.QOBUZ, notSoldHereCache(), musicRepo = musicRepo,
+            savedAlbums = listOf(savedAlbum(77L, "album:qobuz:123")),
             yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
         )
         advanceUntilIdle()
 
         // The screen did switch: the YouTube copy is what's showing.
         assertEquals(listOf("yv1", "yv2"), vm.uiState.value.tracks.map { it.videoId })
-        assertTrue(vm.isSaved.value)
+        assertTrue(vm.isSaved.first { it })
         vm.userMessages.test {
             vm.saveAlbum()
             advanceUntilIdle()

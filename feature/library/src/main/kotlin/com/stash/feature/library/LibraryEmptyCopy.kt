@@ -82,3 +82,15 @@ internal fun emptyLibraryPrompt(anyServiceConnected: Boolean): EmptyLibraryPromp
             connectFirst = true,
         )
     }
+
+/**
+ * What Library › Albums says with no album to list. Albums lists saved albums only (owner,
+ * 2026-11-02), so it says how one gets there. In Download mode (fully offline) an album is listed
+ * once all its songs are on the phone, which is the likelier reason it's empty there.
+ */
+internal fun albumsEmptyMessage(downloadMode: Boolean): String =
+    if (downloadMode) {
+        "Albums show here once every song is on your phone. Save an album and download it, or switch to Online to see them all."
+    } else {
+        "Albums you save show here, every song in order. Tap Save on any album, or sync your saved albums from YouTube Music."
+    }

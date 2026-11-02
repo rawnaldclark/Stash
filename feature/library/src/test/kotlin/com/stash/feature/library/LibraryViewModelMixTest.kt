@@ -81,7 +81,7 @@ class LibraryViewModelMixTest {
             on { getLibraryTracksIncludingOnline() } doReturn flowOf(emptyList())
             on { getAllPlaylists() } doReturn flowOf(emptyList())
             on { getAllArtists() } doReturn flowOf(emptyList())
-            on { getAllAlbums() } doReturn flowOf(emptyList())
+            on { getLibraryAlbums() } doReturn flowOf(emptyList())
             on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
             on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
             on { getTracksByPlaylist(77L) } doReturn flowOf(tracks)
@@ -119,7 +119,7 @@ class LibraryViewModelMixTest {
         on { getLibraryTracksIncludingOnline() } doReturn flowOf(emptyList())
         on { getAllPlaylists() } doReturn flowOf(playlists)
         on { getAllArtists() } doReturn flowOf(emptyList())
-        on { getAllAlbums() } doReturn flowOf(emptyList())
+        on { getLibraryAlbums() } doReturn flowOf(emptyList())
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
         on { getRecentlyAdded(any()) } doReturn flowOf(emptyList())
     }

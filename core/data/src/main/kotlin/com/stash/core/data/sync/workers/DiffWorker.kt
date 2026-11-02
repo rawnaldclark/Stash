@@ -66,8 +66,16 @@ internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = 
  * pinned playlist would sit on Home with nothing on the phone, so it waits for
  * its Save switch like before.
  */
-internal fun pinOnDiscovery(type: PlaylistType, streamingMode: Boolean, pinNewPlaylists: Boolean): Boolean =
-    pinNewPlaylists && streamingMode && type == PlaylistType.CUSTOM
+internal fun pinOnDiscovery(
+    type: PlaylistType,
+    streamingMode: Boolean,
+    pinNewPlaylists: Boolean,
+    source: MusicSource,
+    sourceId: String,
+): Boolean =
+    pinNewPlaylists && streamingMode && type == PlaylistType.CUSTOM &&
+        // A saved album lives in Library › Albums: 300 synced albums would flood Your playlists.
+        !com.stash.core.data.album.SavedAlbums.isSavedAlbum(type, source, sourceId)
 
 /**
  * The type to re-write onto an existing playlist row, or null to leave it.
@@ -627,7 +635,7 @@ class DiffWorker @AssistedInject constructor(
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
             syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
-            pinnedToHomeAt = if (pinOnDiscovery(snapshot.playlistType, streamingMode, pinNewPlaylists)) {
+            pinnedToHomeAt = if (pinOnDiscovery(snapshot.playlistType, streamingMode, pinNewPlaylists, snapshot.source, snapshot.sourcePlaylistId)) {
                 System.currentTimeMillis()
             } else {
                 null

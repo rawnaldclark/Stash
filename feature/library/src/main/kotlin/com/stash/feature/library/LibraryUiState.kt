@@ -6,9 +6,9 @@ import com.stash.core.model.Track
 /**
  * UI state for the Library screen.
  *
- * Artists and albums are split into multi-track (primary) and single-track
- * (collapsed) lists so the UI can show the main library prominently and
- * hide the noise from daily-mix one-off entries behind an expandable section.
+ * Artists are split into multi-track (primary) and single-track (collapsed) lists so the UI can
+ * show the main library prominently and hide the noise from daily-mix one-off entries behind an
+ * expandable section. Albums are saved albums only, so they need no such split.
  */
 data class LibraryUiState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
@@ -26,10 +26,8 @@ data class LibraryUiState(
     /** Artists with exactly 1 track, collapsed by default. */
     val singleTrackArtists: List<ArtistInfo> = emptyList(),
 
-    /** Albums with 2+ tracks, sorted by track count descending. */
+    /** Saved albums only, one card per album (see [AlbumInfo]). */
     val albums: List<AlbumInfo> = emptyList(),
-    /** Albums with exactly 1 track, collapsed by default. */
-    val singleTrackAlbums: List<AlbumInfo> = emptyList(),
 
     val isLoading: Boolean = true,
     val spotifyConnected: Boolean = false,
@@ -46,8 +44,9 @@ data class LibraryUiState(
     val streamingMode: Boolean = false,
 
     /**
-     * Stream only's "In your library" choice for Artists and Albums: they, their counts and the
-     * pages they open list only the songs Songs lists. Always false in Download, which ignores it.
+     * Stream only's "In your library" choice for Artists: they, their counts and the pages they
+     * open list only the songs Songs lists. Always false in Download, which ignores it. (Albums
+     * are saved albums, all in the library already.)
      */
     val libraryOnly: Boolean = false,
 )
@@ -97,16 +96,21 @@ data class ArtistInfo(
 )
 
 /**
- * @property name       Album title.
- * @property artist     Primary artist on the album.
- * @property trackCount Number of tracks in this album.
- * @property artPath    Local file path to album artwork, or null.
- * @property artUrl     Remote artwork URL, or null.
+ * One Library › Albums card: a saved album ([com.stash.core.data.album.SavedAlbum]), never songs
+ * grouped by their album text. Keyed by [playlistId], the saved album's own row: its page lists
+ * every song in album order.
+ *
+ * @property artist      The act most of its songs credit first.
+ * @property trackCount  Its songs.
+ * @property dateAdded   When it was saved (epoch millis): Recently added sorts by it.
+ * @property copyIds     Every saved copy of the album (the one shown first): Remove takes them all.
  */
 data class AlbumInfo(
+    val playlistId: Long,
     val name: String,
     val artist: String,
     val trackCount: Int,
-    val artPath: String? = null,
     val artUrl: String? = null,
+    val dateAdded: Long = 0L,
+    val copyIds: List<Long> = listOf(playlistId),
 )

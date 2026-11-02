@@ -187,7 +187,7 @@ class PlaylistDetailViewModelTest {
         // Each used to subscribe on its own: three Room observers and three full conversions of
         // the playlist per tracks write.
         val music = musicRepoMock().stub {
-            on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
+            on { getSongsByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
         }
@@ -198,14 +198,16 @@ class PlaylistDetailViewModelTest {
         advanceTimeBy(1_000)
         runCurrent()
 
-        verify(music, org.mockito.kotlin.times(1)).getTracksByPlaylist(1L)
+        verify(music, org.mockito.kotlin.times(1)).getSongsByPlaylist(1L)
+        // The list is that query too, not a second build of it (review on #815).
+        verify(music, org.mockito.kotlin.never()).getShownTracksByPlaylist(any())
         assertEquals(listOf(1L, 2L), vm.uiState.value.tracks.map { it.id })
         assertEquals(DownloadButtonState(on = true, downloaded = 1, total = 2), vm.downloadButton.value)
     }
 
     @Test fun `the counts cover the whole playlist while a search filter is active`() = runTest {
         val music = musicRepoMock().stub {
-            on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
+            on { getSongsByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
         }
@@ -296,7 +298,7 @@ class PlaylistDetailViewModelTest {
     ): DownloadButtonState? {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
-            on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            on { getSongsByPlaylist(any()) } doReturn flowOf(tracks)
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
         }
         val vm = buildVm(
@@ -320,7 +322,7 @@ class PlaylistDetailViewModelTest {
     ): Pair<Boolean, String> {
         val music = musicRepoMock().stub {
             onBlocking { getPlaylistWithTracks(1L) } doReturn playlist
-            on { getTracksByPlaylist(any()) } doReturn flowOf(tracks)
+            on { getSongsByPlaylist(any()) } doReturn flowOf(tracks)
             on { getShownTracksByPlaylist(any()) } doReturn flowOf(tracks)
         }
         val vm = buildVm(musicRepository = music)
@@ -596,7 +598,7 @@ class PlaylistDetailViewModelTest {
     }
 
     private fun musicRepoMock(): MusicRepository = mock {
-        on { getTracksByPlaylist(any()) } doReturn flowOf(emptyList())
+        on { getSongsByPlaylist(any()) } doReturn flowOf(emptyList())
         on { getShownTracksByPlaylist(any()) } doReturn flowOf(emptyList())
         on { observePlaylist(any()) } doReturn flowOf(null)
         on { getUserCreatedPlaylists() } doReturn flowOf(emptyList())
