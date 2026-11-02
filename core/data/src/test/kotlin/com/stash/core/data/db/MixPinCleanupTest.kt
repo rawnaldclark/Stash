@@ -107,7 +107,7 @@ class MixPinCleanupTest {
         assertEquals(CUTOFF + 1, pinOf(kept))
     }
 
-    @Test fun `the cutoff is v0_9_119's publish time`() {
+    @Test fun `the cutoff is the publish time of v0_9_119`() {
         // GitHub release v0.9.119: published_at 2026-10-23T11:51:53Z.
         assertEquals(java.time.Instant.parse("2026-10-23T11:51:53Z").toEpochMilli(), CUTOFF)
     }
