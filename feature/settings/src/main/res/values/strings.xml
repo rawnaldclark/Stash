@@ -912,6 +912,28 @@
     <string name="settings_web_link_rename_me_hint">Your linked devices see this name.</string>
     <string name="settings_web_link_rename_other_hint">This name stays on this phone.</string>
 
+    <!-- Settings > Library & Storage > Your Stash: the link's page, which also gathers supporter status, cloud and backups -->
+    <string name="settings_your_stash_title">Your Stash</string>
+    <string name="settings_your_stash_nav_subtitle">Link the web player, see your devices, supporter status, cloud and backups</string>
+    <string name="settings_your_stash_posture">Your Stash is your devices. No account, no email. What your phone and browsers share with each other is encrypted before it leaves them.</string>
+    <string name="settings_your_stash_section_devices">Devices</string>
+    <string name="settings_your_stash_no_browser_yet">No browser linked yet</string>
+    <string name="settings_your_stash_section_supporter">Supporter</string>
+    <string name="settings_your_stash_supporter_offer_subtitle">Gave on Ko-fi? Unlock it with your Ko-fi email.</string>
+    <string name="settings_your_stash_supporter_code_here">Your supporter code is on this phone</string>
+    <string name="settings_your_stash_section_cloud">Cloud</string>
+    <string name="settings_your_stash_cloud_connect_title">Connect your cloud storage</string>
+    <string name="settings_your_stash_cloud_signed_out">Signed out on this phone: reconnect</string>
+    <string name="settings_your_stash_section_backups">Backups</string>
+    <string name="settings_your_stash_section_coming">What\'s coming</string>
+    <string name="settings_your_stash_coming_passkey_title">Recover with a passkey</string>
+    <string name="settings_your_stash_coming_passkey_desc">Lose your phone and a passkey brings Your Stash back. Still no email, no password.</string>
+    <string name="settings_your_stash_coming_backup_title">Nightly encrypted backup</string>
+    <string name="settings_your_stash_coming_backup_desc">Your library and settings, backed up each night and encrypted on your phone first, so only you can read them.</string>
+    <string name="settings_your_stash_coming_restore_title">Restore on a new phone</string>
+    <string name="settings_your_stash_coming_restore_desc">Your library, likes and settings on a new phone. Sign-ins stay behind.</string>
+    <string name="settings_your_stash_coming_note">Planned, not built yet. No dates.</string>
+
     <!-- Settings > Link Stash on the Web > Mirror -->
     <string name="settings_mirror_dir_off">Off</string>
     <string name="settings_mirror_dir_both">Both ways</string>

@@ -57,6 +57,8 @@ fun SettingsHubScreen(
     onOpenUrl: (String) -> Unit,
     onOpenLosslessSources: () -> Unit,
     onOpenEqualizer: () -> Unit,
+    /** Library & Storage › Your Stash, for a search hit; null when the link is switched off in this build. */
+    onOpenYourStash: (() -> Unit)? = null,
     onOpenHomeLayout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -88,7 +90,7 @@ fun SettingsHubScreen(
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular, otherAccounts)
 
     var searchQuery by remember { mutableStateOf("") }
-    val searchIndex = remember(context) { settingsSearchIndex(context) }
+    val searchIndex = remember(context) { searchableIndex(settingsSearchIndex(context), yourStash = onOpenYourStash != null) }
     val pageTitles = remember(context) {
         mapOf(
             SettingsPage.PLAYBACK to context.getString(R.string.settings_playback_title),
@@ -99,6 +101,8 @@ fun SettingsHubScreen(
                 " › " + context.getString(R.string.settings_equalizer_title),
             SettingsPage.ACCOUNTS to context.getString(R.string.settings_accounts_sync_title),
             SettingsPage.LIBRARY to context.getString(R.string.settings_library_storage_title),
+            SettingsPage.YOUR_STASH to context.getString(R.string.settings_library_storage_title) +
+                " › " + context.getString(R.string.settings_your_stash_title),
             SettingsPage.APPEARANCE to context.getString(R.string.settings_appearance_title),
             SettingsPage.HOME_LAYOUT to context.getString(R.string.settings_appearance_title) +
                 " › " + context.getString(R.string.settings_home_layout_section),
@@ -115,6 +119,7 @@ fun SettingsHubScreen(
         SettingsPage.EQUALIZER -> onOpenEqualizer()
         SettingsPage.ACCOUNTS -> onOpenAccounts()
         SettingsPage.LIBRARY -> onOpenLibraryStorage()
+        SettingsPage.YOUR_STASH -> onOpenYourStash?.invoke()
         SettingsPage.APPEARANCE -> onOpenAppearance()
         SettingsPage.HOME_LAYOUT -> onOpenHomeLayout()
         SettingsPage.ABOUT -> onOpenAbout()
@@ -123,7 +128,7 @@ fun SettingsHubScreen(
         SettingsPage.PLAYBACK -> Icons.Rounded.PlayArrow
         SettingsPage.AUDIO, SettingsPage.LOSSLESS_SOURCES, SettingsPage.EQUALIZER -> Icons.Rounded.GraphicEq
         SettingsPage.ACCOUNTS -> Icons.Rounded.Person
-        SettingsPage.LIBRARY -> Icons.Rounded.FolderOpen
+        SettingsPage.LIBRARY, SettingsPage.YOUR_STASH -> Icons.Rounded.FolderOpen
         SettingsPage.APPEARANCE, SettingsPage.HOME_LAYOUT -> Icons.Rounded.Palette
         SettingsPage.ABOUT -> Icons.Rounded.Info
     }

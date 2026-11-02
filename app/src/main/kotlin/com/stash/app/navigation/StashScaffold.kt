@@ -558,7 +558,7 @@ fun StashScaffold(
     RecordImportHost(
         onOpenRecord = { navController.openRecord() },
         // Last.fm not connected: the app's own sign-in, on Accounts & Sync
-        onConnectLastfm = { navController.navigate(SettingsAccountsRoute) { launchSingleTop = true } },
+        onConnectLastfm = { navController.navigate(SettingsAccountsRoute()) { launchSingleTop = true } },
     )
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
