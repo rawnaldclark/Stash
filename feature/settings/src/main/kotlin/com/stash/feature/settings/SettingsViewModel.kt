@@ -1609,11 +1609,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Settings › Appearance › Album colours: follow the song (the default) or stay neutral. */
-    val albumColours: StateFlow<com.stash.core.model.AlbumColourMode> = themePreference.albumColours.stateIn(
+    /**
+     * Settings › Appearance › Album colours: follow the song (the default) or stay neutral. Null until
+     * the stored choice arrives, so the screen never shows "Follow the song" to a Neutral user first.
+     */
+    val albumColours: StateFlow<com.stash.core.model.AlbumColourMode?> = themePreference.albumColours.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        com.stash.core.model.AlbumColourMode.FOLLOW_SONG,
+        null,
     )
 
     /** Persists the Album colours choice; the whole app's accent follows within one crossfade. */

@@ -19,9 +19,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * A horizontal segmented control. Renders [options] as equal-width segments over a
- * faint track; the segment at [selectedIndex] gets the theme's secondaryContainer (the playing
- * album's colour as a solid wash, neutral grey with nothing playing; it was a fixed purple gradient
- * until D9) under onSecondaryContainer text, which the scheme holds at 4.5:1 on it in every theme.
+ * faint track; the segment at [selectedIndex] is filled in the theme's primary (the playing album's
+ * colour, neutral with nothing playing; it was a fixed purple gradient until D9) under onPrimary,
+ * which the scheme holds at 4.5:1 on it, and the fill stands well clear of the track in every theme.
  * Tapping a segment invokes [onSelect] with its index. Pure presentation — the
  * caller owns selection state.
  */
@@ -52,7 +52,7 @@ fun SettingsSegmented(
                     .clip(RoundedCornerShape(8.dp))
                     .then(
                         if (active) {
-                            Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                            Modifier.background(MaterialTheme.colorScheme.primary)
                         } else {
                             Modifier
                         },
@@ -66,7 +66,7 @@ fun SettingsSegmented(
                     style = MaterialTheme.typography.labelLarge,
                     // The active pill's own "on" colour: readable on it in both themes.
                     color = if (active) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
+                        MaterialTheme.colorScheme.onPrimary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

@@ -41,8 +41,8 @@ import androidx.compose.ui.graphics.Color
  * @param size         Legacy parameter retained on the API for call-site
  *                     compatibility. Not currently applied to the pill — see
  *                     the description above.
- * @param tint         Optional override for the text color. Default is
- *                     `onTertiaryContainer` from the theme.
+ * @param tint         Optional override for the text color. Default is the
+ *                     badge's own ink ([badgeColors]: a fixed rose, never the album colour).
  * @param compact      When true, show the format name only (`FLAC`), dropping
  *                     the Hi-Res qualifier. Track rows use this when the full
  *                     pill would squeeze the title (see [decideTrackRowFit]).
@@ -64,13 +64,14 @@ fun FlacBadge(
     Surface(
         // A compact pill still reads in full to TalkBack ("FLAC 24/44"), not as its shortened text.
         modifier = if (compact) modifier.clearAndSetSemantics { contentDescription = fullText } else modifier,
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        // A fixed rose: the scheme's tertiary container follows the album since D9, a quality badge must not.
+        color = com.stash.core.ui.theme.badgeColors().container,
         shape = RoundedCornerShape(4.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = tint ?: MaterialTheme.colorScheme.onTertiaryContainer,
+            color = tint ?: com.stash.core.ui.theme.badgeColors().content,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }

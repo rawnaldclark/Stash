@@ -120,8 +120,10 @@ fun SettingsAppearanceScreen(
                 )
             }
         }
-        // D9 (2026-11-01): the app's accent is the playing album's colour, or neutral.
-        theme += {
+        // D9 (2026-11-01): the app's accent is the playing album's colour, or neutral. Shown once the
+        // stored choice has arrived (a moment), never a guessed one first.
+        val albumColoursMode = albumColours
+        if (albumColoursMode != null) theme += {
             LabeledSegmented(
                 title = stringResource(R.string.settings_album_colours_title),
                 subtitle = stringResource(R.string.settings_album_colours_subtitle),
@@ -129,7 +131,7 @@ fun SettingsAppearanceScreen(
                     stringResource(R.string.settings_album_colours_follow),
                     stringResource(R.string.settings_album_colours_neutral),
                 ), // AlbumColourMode order
-                selectedIndex = albumColours.ordinal,
+                selectedIndex = albumColoursMode.ordinal,
                 onSelect = { viewModel.onAlbumColoursChanged(AlbumColourMode.entries[it]) },
             )
         }
