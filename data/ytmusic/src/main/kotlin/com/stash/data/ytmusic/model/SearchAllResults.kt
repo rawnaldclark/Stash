@@ -60,9 +60,13 @@ data class ArtistSummary(
     val avatarUrl: String?,
 )
 
-/** Which catalog an album entry came from. Drives AlbumCache routing + play path. */
+/**
+ * Which catalog an album entry came from. Drives AlbumCache routing + play path. [YOUTUBE_PLAYLIST] is a YouTube
+ * Music playlist (`VL…`, Home's Moods & moments) shown on the album page: its songs carry videoIds like an album's,
+ * but each keeps its own album and artist.
+ */
 @Serializable
-enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST }
+enum class AlbumSource { YOUTUBE, QOBUZ, QOBUZ_PLAYLIST, YOUTUBE_PLAYLIST }
 
 /**
  * Minimal album identity for horizontal album rows and discography grids.

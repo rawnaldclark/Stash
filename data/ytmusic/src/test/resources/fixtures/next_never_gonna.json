@@ -1,0 +1,674 @@
+{
+ "contents": {
+  "singleColumnMusicWatchNextResultsRenderer": {
+   "tabbedRenderer": {
+    "watchNextTabbedResultsRenderer": {
+     "tabs": [
+      {
+       "tabRenderer": {
+        "title": "Up next",
+        "content": {
+         "musicQueueRenderer": {
+          "content": {
+           "playlistPanelRenderer": {
+            "contents": [
+             {
+              "playlistPanelVideoRenderer": {
+               "title": {
+                "runs": [
+                 {
+                  "text": "Never Gonna Give You Up"
+                 }
+                ]
+               },
+               "longBylineText": {
+                "runs": [
+                 {
+                  "text": "Rick Astley",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "UCwZEU0wAwIyZb4x5G_KJp2w",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "Whenever You Need Somebody",
+                  "navigationEndpoint": {
+                   "browseEndpoint": {
+                    "browseId": "MPREb_dcYZhAh5urI",
+                    "browseEndpointContextSupportedConfigs": {
+                     "browseEndpointContextMusicConfig": {
+                      "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                     }
+                    }
+                   }
+                  }
+                 },
+                 {
+                  "text": " • "
+                 },
+                 {
+                  "text": "1987"
+                 }
+                ]
+               },
+               "thumbnail": {
+                "thumbnails": [
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w60-h60-l90-rj",
+                  "width": 60,
+                  "height": 60
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w120-h120-l90-rj",
+                  "width": 120,
+                  "height": 120
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w180-h180-l90-rj",
+                  "width": 180,
+                  "height": 180
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w226-h226-l90-rj",
+                  "width": 226,
+                  "height": 226
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w302-h302-l90-rj",
+                  "width": 302,
+                  "height": 302
+                 },
+                 {
+                  "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w544-h544-l90-rj",
+                  "width": 544,
+                  "height": 544
+                 }
+                ]
+               },
+               "lengthText": {
+                "runs": [
+                 {
+                  "text": "3:34"
+                 }
+                ],
+                "accessibility": {}
+               },
+               "selected": true,
+               "navigationEndpoint": {
+                "watchEndpoint": {
+                 "videoId": "lYBUbBu4W08",
+                 "params": "OAHyAQIIAeoEC2xZQlViQnU0VzA4",
+                 "watchEndpointMusicSupportedConfigs": {
+                  "watchEndpointMusicConfig": {
+                   "hasPersistentPlaylistPanel": true,
+                   "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                  }
+                 }
+                }
+               },
+               "videoId": "lYBUbBu4W08",
+               "shortBylineText": {
+                "runs": [
+                 {
+                  "text": "Rick Astley"
+                 }
+                ]
+               },
+               "canReorder": true,
+               "queueNavigationEndpoint": {
+                "queueAddEndpoint": {
+                 "queueTarget": {
+                  "videoId": "lYBUbBu4W08"
+                 },
+                 "queueInsertPosition": "INSERT_AT_END",
+                 "params": "Q0FJJTNE"
+                }
+               }
+              }
+             },
+             {
+              "automixPreviewVideoRenderer": {
+               "content": {
+                "automixPlaylistVideoRenderer": {
+                 "navigationEndpoint": {
+                  "watchPlaylistEndpoint": {
+                   "playlistId": "RDAMVMlYBUbBu4W08",
+                   "params": "wAEB8gECeAHqBAtsWUJVYkJ1NFcwOA%3D%3D"
+                  }
+                 },
+                 "automixMode": "AUTOMIX_MODE_DEFAULT_ON"
+                }
+               }
+              }
+             }
+            ],
+            "isInfinite": false,
+            "shuffleToggleButton": {
+             "toggleButtonRenderer": {
+              "defaultIcon": {
+               "iconType": "MUSIC_SHUFFLE"
+              },
+              "defaultServiceEndpoint": {
+               "watchPlaylistEndpoint": {
+                "params": "wAEB8gECKAE%3D"
+               }
+              },
+              "toggledIcon": {
+               "iconType": "MUSIC_SHUFFLE"
+              },
+              "toggledServiceEndpoint": {
+               "watchPlaylistEndpoint": {
+                "params": "wAEB"
+               }
+              }
+             }
+            }
+           }
+          },
+          "hack": true,
+          "musicQueueConfig": {},
+          "header": {
+           "musicQueueHeaderRenderer": {
+            "title": {
+             "runs": [
+              {
+               "text": "Playing from"
+              }
+             ]
+            },
+            "subtitle": {
+             "runs": [
+              {
+               "text": "Never Gonna Give You Up Mix"
+              }
+             ]
+            },
+            "buttons": [
+             {
+              "chipCloudChipRenderer": {
+               "style": {
+                "styleType": "STYLE_TRANSPARENT"
+               },
+               "text": {
+                "runs": [
+                 {
+                  "text": "Save"
+                 }
+                ]
+               },
+               "navigationEndpoint": {
+                "modalEndpoint": {
+                 "modal": {
+                  "modalWithTitleAndButtonRenderer": {
+                   "title": {
+                    "runs": [
+                     {
+                      "text": "Save this for later"
+                     }
+                    ]
+                   },
+                   "content": {
+                    "runs": [
+                     {
+                      "text": "Make playlists and share them after signing in"
+                     }
+                    ]
+                   },
+                   "button": {
+                    "buttonRenderer": {
+                     "style": "STYLE_BLUE_TEXT",
+                     "isDisabled": false,
+                     "text": {
+                      "runs": [
+                       {
+                        "text": "Sign in"
+                       }
+                      ]
+                     },
+                     "navigationEndpoint": {
+                      "signInEndpoint": {
+                       "hack": true
+                      }
+                     }
+                    }
+                   }
+                  }
+                 }
+                },
+                "saveQueueToPlaylistCommand": {}
+               },
+               "icon": {
+                "iconType": "ADD_TO_PLAYLIST"
+               },
+               "isSelected": false,
+               "uniqueId": "Save"
+              }
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      },
+      {
+       "tabRenderer": {
+        "endpoint": {
+         "browseEndpoint": {
+          "browseId": "MPLYt_dcYZhAh5urI-1",
+          "browseEndpointContextSupportedConfigs": {
+           "browseEndpointContextMusicConfig": {
+            "pageType": "MUSIC_PAGE_TYPE_TRACK_LYRICS"
+           }
+          }
+         }
+        },
+        "title": "Lyrics"
+       }
+      },
+      {
+       "tabRenderer": {
+        "title": "Comments",
+        "content": {
+         "sectionListRenderer": {
+          "continuations": [
+           {
+            "reloadContinuationData": {
+             "continuation": "Eg0SC2xZQlViQnU0VzA4GAYyHCINIgtsWUJVYkJ1NFcwOEILbFlCVWJCdTRXMDhqC2xZQlViQnU0VzA4"
+            }
+           }
+          ],
+          "targetId": "lYBUbBu4W08"
+         }
+        }
+       }
+      },
+      {
+       "tabRenderer": {
+        "endpoint": {
+         "browseEndpoint": {
+          "browseId": "MPTRt_dcYZhAh5urI-1",
+          "browseEndpointContextSupportedConfigs": {
+           "browseEndpointContextMusicConfig": {
+            "pageType": "MUSIC_PAGE_TYPE_TRACK_RELATED"
+           }
+          }
+         }
+        },
+        "title": "Related"
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ "currentVideoEndpoint": {
+  "watchEndpoint": {
+   "videoId": "lYBUbBu4W08",
+   "playerParams": "0gcJCQ4Bg6NKuzgg",
+   "ustreamerConfig": "GgIIBQ=="
+  }
+ },
+ "playerOverlays": {
+  "playerOverlayRenderer": {
+   "actions": [
+    {
+     "likeButtonRenderer": {
+      "target": {
+       "videoId": "lYBUbBu4W08"
+      },
+      "likeStatus": "INDIFFERENT",
+      "likesAllowed": true,
+      "dislikeNavigationEndpoint": {
+       "modalEndpoint": {
+        "modal": {
+         "modalWithTitleAndButtonRenderer": {
+          "title": {
+           "runs": [
+            {
+             "text": "Not a fan?"
+            }
+           ]
+          },
+          "content": {
+           "runs": [
+            {
+             "text": "Improve your recommendations after signing in"
+            }
+           ]
+          },
+          "button": {
+           "buttonRenderer": {
+            "style": "STYLE_BLUE_TEXT",
+            "isDisabled": false,
+            "text": {
+             "runs": [
+              {
+               "text": "Sign in"
+              }
+             ]
+            },
+            "navigationEndpoint": {
+             "signInEndpoint": {
+              "hack": true
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      },
+      "likeCommand": {
+       "modalEndpoint": {
+        "modal": {
+         "modalWithTitleAndButtonRenderer": {
+          "title": {
+           "runs": [
+            {
+             "text": "Like this song"
+            }
+           ]
+          },
+          "content": {
+           "runs": [
+            {
+             "text": "Improve recommendations and save music after signing in"
+            }
+           ]
+          },
+          "button": {
+           "buttonRenderer": {
+            "style": "STYLE_BLUE_TEXT",
+            "isDisabled": false,
+            "text": {
+             "runs": [
+              {
+               "text": "Sign in"
+              }
+             ]
+            },
+            "navigationEndpoint": {
+             "signInEndpoint": {
+              "hack": true
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   ],
+   "browserMediaSession": {
+    "browserMediaSessionRenderer": {
+     "album": {
+      "runs": [
+       {
+        "text": "Whenever You Need Somebody"
+       }
+      ]
+     },
+     "thumbnailDetails": {
+      "thumbnails": [
+       {
+        "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w60-h60-l90-rj",
+        "width": 60,
+        "height": 60
+       },
+       {
+        "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w120-h120-l90-rj",
+        "width": 120,
+        "height": 120
+       },
+       {
+        "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w226-h226-l90-rj",
+        "width": 226,
+        "height": 226
+       },
+       {
+        "url": "https://yt3.googleusercontent.com/eC9DfRcYSk4FE-fvDCJSu_4xsKdVMKxwmFTYFZwP8OqB7R4TKxAjKoR-Kp1lXeRi2WddPFYulSte4eW-=w544-h544-l90-rj",
+        "width": 544,
+        "height": 544
+       }
+      ]
+     }
+    }
+   }
+  }
+ },
+ "videoReporting": {
+  "reportFormModalRenderer": {
+   "optionsSupportedRenderers": {
+    "optionsRenderer": {
+     "items": [
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Sexual content"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQASyYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Violent or repulsive content"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQATaYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Hateful or abusive content"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQARSYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Harassment or bullying"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQARGYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Harmful or dangerous acts"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQAQ2YAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Misinformation"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQAUGYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Child abuse"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQAQyYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Legal issue"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQAUWYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Promotes terrorism"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQATWYAQGoAQM%3D"
+         }
+        }
+       }
+      },
+      {
+       "optionSelectableItemRenderer": {
+        "text": {
+         "runs": [
+          {
+           "text": "Spam or misleading"
+          }
+         ]
+        },
+        "submitEndpoint": {
+         "flagEndpoint": {
+          "flagAction": "EAciDwoLbFlCVWJCdTRXMDhQBTILbFlCVWJCdTRXMDiQATGYAQGoAQM%3D"
+         }
+        }
+       }
+      }
+     ]
+    }
+   },
+   "title": {
+    "runs": [
+     {
+      "text": "Report video"
+     }
+    ]
+   },
+   "submitButton": {
+    "buttonRenderer": {
+     "style": "STYLE_BRAND",
+     "isDisabled": true,
+     "text": {
+      "runs": [
+       {
+        "text": "Report"
+       }
+      ]
+     }
+    }
+   },
+   "cancelButton": {
+    "buttonRenderer": {
+     "style": "STYLE_TEXT",
+     "isDisabled": false,
+     "text": {
+      "runs": [
+       {
+        "text": "Cancel"
+       }
+      ]
+     }
+    }
+   },
+   "footer": {
+    "runs": [
+     {
+      "text": "If you are the copyright owner of this video and believe it has been uploaded without your permission, please follow "
+     },
+     {
+      "text": "these directions",
+      "navigationEndpoint": {
+       "urlEndpoint": {
+        "url": "//support.google.com/youtube/answer/2807622?hl=en"
+       }
+      }
+     },
+     {
+      "text": " to submit a copyright infringement notice."
+     }
+    ]
+   }
+  }
+ },
+ "queueContextParams": "CAEaEVJEQU1WTWxZQlViQnU0VzA4IISJsdTg5pcDMgtsWUJVYkJ1NFcwOEoLbFlCVWJCdTRXMDhQAFoECAAQAXgB"
+}

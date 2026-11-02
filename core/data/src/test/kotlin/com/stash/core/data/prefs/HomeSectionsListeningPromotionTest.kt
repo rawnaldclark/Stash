@@ -40,14 +40,16 @@ class HomeSectionsListeningPromotionTest {
         }
         val pref = HomeSectionsPreference(context)
         val order = pref.order.first()
-        // Discover stays on top; Your record, its mixes and Your listening go directly under it.
+        // Discover stays on top; Your record, its mixes and Your listening go directly under it, Because you like,
+        // New from your artists and Moods & moments above the catalogs.
         assertEquals(
             listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING),
             order.take(4),
         )
         assertEquals(
             listOf(
-                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
+                HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
             ),
             order.drop(4),
@@ -133,10 +135,14 @@ class HomeSectionsListeningPromotionTest {
             it[hiddenKey] = "your_record"
         }
         val pref = HomeSectionsPreference(context)
-        // The mixes show where the card was (Community stays off: its own switch)
+        // The mixes show where the card was (Community stays off: its own switch); the shelves added since this was saved go
+        // right above the catalogs
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES),
-            pref.visibleSections.first().take(5),
+            listOf(
+                HomeSection.DISCOVER, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
+            ),
+            pref.visibleSections.first().take(8),
         )
         // Hidden stays hidden: nothing is rewritten on read
         assertEquals(setOf(HomeSection.YOUR_RECORD), pref.hidden.first())

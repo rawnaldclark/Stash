@@ -33,6 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.home.HomeShownSongs
 import com.stash.core.ui.components.CardRail
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
@@ -153,10 +154,16 @@ class RecordMixesShelfViewModel @Inject constructor(
     private val mixes: RecordMixes,
     private val art: RecordArt,
     taste: RecordTaste,
+    private val shownSongs: HomeShownSongs,
     private val shelfPicks: RecordShelfPicks,
 ) : ViewModel() {
     init {
         taste.daily()
+    }
+
+    override fun onCleared() {
+        // Home's shelf is gone: "Because you like" may show these songs again
+        shownSongs.publish(HomeShownSongs.RECORD_MIXES, emptyList())
     }
 
     /** A mix's card: its id, words, how many songs (the line when it has none) and the squares of its tile. */
@@ -185,6 +192,8 @@ class RecordMixesShelfViewModel @Inject constructor(
                     return@channelFlow
                 }
                 val picks = now?.picks.orEmpty()
+                // Home's "Because you like" rows leave out what these cards hold
+                shownSongs.publish(HomeShownSongs.RECORD_MIXES, picks.flatMap { m -> m.items.map { it.title to it.artist } })
                 // A card made again keeps the covers it had (the same songs), until its own come
                 val covers = picks.map { m ->
                     val had = lastCovers[m.id]?.takeIf { it.first == m.items.map { s -> s.key } }?.second

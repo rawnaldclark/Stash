@@ -21,3 +21,5 @@ files:
     translation: /feature/library/src/main/res/values-%android_code%/strings.xml
   - source: /feature/search/src/main/res/values/strings.xml
     translation: /feature/search/src/main/res/values-%android_code%/strings.xml
+  - source: /feature/home/src/main/res/values/strings.xml
+    translation: /feature/home/src/main/res/values-%android_code%/strings.xml

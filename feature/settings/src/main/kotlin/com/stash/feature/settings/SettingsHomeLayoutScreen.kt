@@ -195,6 +195,9 @@ private fun HomeSection.displayLabel(): String = when (this) {
     HomeSection.YOUR_LISTENING -> stringResource(R.string.settings_home_section_your_listening)
     HomeSection.YOUR_RECORD -> stringResource(R.string.settings_home_section_your_record)
     HomeSection.RECORD_MIXES -> stringResource(R.string.settings_home_section_record_mixes)
+    HomeSection.NEW_FROM_ARTISTS -> stringResource(R.string.settings_home_section_new_from_artists)
+    HomeSection.MOODS -> stringResource(R.string.settings_home_section_moods)
+    HomeSection.BECAUSE_YOU_LIKE -> stringResource(R.string.settings_home_section_because_you_like)
 }
 
 /** The line under a section's name, for the sections that need one. */
@@ -204,6 +207,9 @@ private fun HomeSection.subtitle(): String? = when (this) {
     HomeSection.YOUR_LISTENING -> stringResource(R.string.settings_home_section_listening_desc)
     HomeSection.YOUR_RECORD -> stringResource(R.string.settings_home_section_record_desc)
     HomeSection.RECORD_MIXES -> stringResource(R.string.settings_home_section_record_mixes_desc)
+    HomeSection.NEW_FROM_ARTISTS -> stringResource(R.string.settings_home_section_new_from_artists_desc)
+    HomeSection.MOODS -> stringResource(R.string.settings_home_section_moods_desc)
+    HomeSection.BECAUSE_YOU_LIKE -> stringResource(R.string.settings_home_section_because_you_like_desc)
     else -> null
 }
 

@@ -118,7 +118,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.home.shelves.HomeShelvesViewModel
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
@@ -179,7 +182,10 @@ fun HomeScreen(
     yourRecordSection: @Composable () -> Unit = {},
     /** "From your record", from feature/record: mixes only the record's years make, under its card; nothing without an import. */
     recordMixesSection: @Composable () -> Unit = {},
+    /** A tile of "Moods & moments": the app opens its page of playlists. */
+    onOpenMood: (com.stash.data.ytmusic.model.MoodTile) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+    shelvesViewModel: HomeShelvesViewModel = hiltViewModel(),
 ) {
     // Long-pressed Stash mix whose action sheet is open (null = closed).
     var actionSheetMixId by remember { mutableStateOf<Long?>(null) }
@@ -195,6 +201,12 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
+    // Home's own streaming shelves (New from your artists, Moods & moments): built once a day, empty in Offline mode.
+    val shelves by shelvesViewModel.state.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(shelvesViewModel) {
+        shelvesViewModel.onResume()
+        onPauseOrDispose {}
+    }
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
     // truth; the chip itself early-returns to nothing while the build-
@@ -708,6 +720,35 @@ fun HomeScreen(
                 HomeSection.YOUR_LISTENING -> item(key = "section_your_listening") { yourListeningSection() }
                 HomeSection.YOUR_RECORD -> item(key = "section_your_record") { yourRecordSection() }
                 HomeSection.RECORD_MIXES -> item(key = "section_record_mixes") { recordMixesSection() }
+                HomeSection.NEW_FROM_ARTISTS -> if (shelves.newFromArtists.isNotEmpty()) {
+                    item(key = "section_new_from_artists") {
+                        // YouTube Music releases: they open on the album page, and carry no FLAC mark (Qobuz's rows do)
+                        DiscoveryAlbumRow(
+                            title = stringResource(R.string.home_new_from_artists),
+                            albums = shelves.newFromArtists,
+                            onOpen = onNavigateToAlbum,
+                            lossless = false,
+                        )
+                    }
+                }
+                HomeSection.MOODS -> if (shelves.moods.isNotEmpty()) {
+                    item(key = "section_moods") {
+                        com.stash.feature.home.shelves.MoodTilesShelf(
+                            title = stringResource(R.string.home_moods),
+                            tiles = shelves.moods,
+                            onOpen = onOpenMood,
+                        )
+                    }
+                }
+                HomeSection.BECAUSE_YOU_LIKE -> if (shelves.becauseYouLike.isNotEmpty()) {
+                    item(key = "section_because_you_like") {
+                        // Streamed songs, mostly ones you don't have: a tap plays the row from that song
+                        com.stash.feature.home.shelves.BecauseYouLikeRows(
+                            rows = shelves.becauseYouLike,
+                            onPlay = shelvesViewModel::playRow,
+                        )
+                    }
+                }
             }
         }
 
@@ -1322,6 +1363,8 @@ private fun DiscoveryAlbumRow(
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
     topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
+    /** Qobuz's catalog rows are lossless; YouTube Music's releases ("New from your artists") are not marked. */
+    lossless: Boolean = true,
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
@@ -1336,7 +1379,7 @@ private fun DiscoveryAlbumRow(
                     artist = album.artist,
                     thumbnailUrl = album.thumbnailUrl,
                     year = album.year,
-                    isLossless = true,
+                    isLossless = lossless,
                     onClick = { onOpen(album) },
                 )
             }

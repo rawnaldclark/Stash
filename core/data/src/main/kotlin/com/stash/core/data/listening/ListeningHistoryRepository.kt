@@ -13,6 +13,8 @@ import com.stash.core.data.db.dao.ObsessionRow
 import com.stash.core.data.db.dao.TopAlbumRow
 import com.stash.core.data.db.dao.TopArtistRow
 import com.stash.core.data.db.dao.TopTrackRow
+import com.stash.core.data.home.BecauseYouLikeRepository
+import com.stash.core.data.home.HomeShelfStore
 import kotlinx.coroutines.flow.Flow
 import java.time.ZoneId
 import javax.inject.Inject
@@ -40,11 +42,24 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
     private val zone: () -> ZoneId,
     /** Clears the per-artist genre cache with the history ([deleteAll]). */
     private val clearArtistGenres: suspend () -> Unit = {},
+    /** Clears Home's saved shelves with the history ([deleteAll]): they were built from it. */
+    private val clearHomeShelves: suspend () -> Unit = {},
+    /**
+     * Drops Home's "Because you like" with any listen, day or range deleted: its rows name a song you played, maybe
+     * the one deleted. The artist-level shelves stay (other days still use those artists), as the genre cache does.
+     */
+    private val forgetSongShelf: suspend () -> Unit = {},
 ) {
 
     @Inject
-    constructor(dao: ListeningHistoryDao, artistGenreDao: ArtistGenreDao) :
-        this(dao, System::currentTimeMillis, { ZoneId.systemDefault() }, { artistGenreDao.deleteAll() })
+    constructor(dao: ListeningHistoryDao, artistGenreDao: ArtistGenreDao, homeShelves: HomeShelfStore) : this(
+        dao,
+        System::currentTimeMillis,
+        { ZoneId.systemDefault() },
+        { artistGenreDao.deleteAll() },
+        { homeShelves.clear() },
+        { homeShelves.delete(BecauseYouLikeRepository.FILE) },
+    )
 
     /** Today's epoch-day where the phone is now. */
     fun today(): Long = ListeningDay.today(nowMs(), zone())
@@ -140,19 +155,23 @@ class ListeningHistoryRepository @VisibleForTesting internal constructor(
 
     // ── Privacy (this phone only) ────────────────────────────────────
 
-    suspend fun deleteListen(eventId: Long): Int = dao.deleteEvent(eventId)
+    suspend fun deleteListen(eventId: Long): Int = dao.deleteEvent(eventId).also { if (it > 0) forgetSongShelf() }
 
-    suspend fun deleteDay(day: Long): Int = dao.deleteDay(day)
+    suspend fun deleteDay(day: Long): Int = dao.deleteDay(day).also { if (it > 0) forgetSongShelf() }
 
-    suspend fun deleteRange(range: DayRange): Int = dao.deleteBetween(range.fromDay, range.toDay)
+    suspend fun deleteRange(range: DayRange): Int =
+        dao.deleteBetween(range.fromDay, range.toDay).also { if (it > 0) forgetSongShelf() }
 
     /**
      * Clears every listen, and the genre cache with it: its artist names are a list of what was
-     * listened to. (A day or range delete leaves the cache: other days still use those artists.)
+     * listened to. Home's saved shelves go too ("New from your artists" names your artists, "Because
+     * you like" your songs). (A listen, day or range delete leaves the genre cache and the artist-level
+     * shelves, as other days still use those artists, and drops only "Because you like".)
      */
     suspend fun deleteAll(): Int {
         val deleted = dao.deleteAll()
         clearArtistGenres()
+        clearHomeShelves()
         return deleted
     }
 

@@ -11,10 +11,12 @@ class HomeSectionOrderTest {
 
     @Test
     fun `empty saved order yields the default layout`() {
-        // The enum's order, with Your record directly under Discover (as the web's card sits) and its mixes directly under it
+        // The enum's order, with Your record directly under Discover (as the web's card sits) and its mixes directly under it,
+        // and the shelves added since right above the catalogs (ADDED_SECTION_ANCHORS)
         assertEquals(
             listOf(
                 HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_PLAYLISTS,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MADE_FOR_YOU,
                 HomeSection.RADIOS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
             ),
@@ -34,6 +36,8 @@ class HomeSectionOrderTest {
                 // Discover was pinned on top before it was a section: it goes to the front, Your record and its mixes under it.
                 HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES,
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.MOOD_DECADES,
+                // added after this arrangement was saved: right above the catalogs
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
                 HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
                 // appended: added after this arrangement was saved.
                 HomeSection.YOUR_PLAYLISTS, HomeSection.COMMUNITY, HomeSection.YOUR_LISTENING,
@@ -48,7 +52,7 @@ class HomeSectionOrderTest {
         assertEquals(
             listOf(
                 HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES,
-                HomeSection.RADIOS, HomeSection.TOP_ALBUMS,
+                HomeSection.RADIOS, HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.TOP_ALBUMS,
                 // appended in default order:
                 HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
@@ -67,7 +71,10 @@ class HomeSectionOrderTest {
         assertEquals(HomeSection.YOUR_RECORD, result[1])
         assertEquals(HomeSection.RECORD_MIXES, result[2])
         assertEquals(HomeSection.RADIOS, result[3])
-        assertEquals(HomeSection.NEW_RELEASES, result[4])
+        assertEquals(HomeSection.BECAUSE_YOU_LIKE, result[4])
+        assertEquals(HomeSection.NEW_FROM_ARTISTS, result[5])
+        assertEquals(HomeSection.MOODS, result[6])
+        assertEquals(HomeSection.NEW_RELEASES, result[7])
     }
 
     @Test
@@ -83,8 +90,11 @@ class HomeSectionOrderTest {
     fun `a saved order from before discover existed puts discover at the front`() {
         val saved = listOf("radios", "new_releases")
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.RADIOS, HomeSection.NEW_RELEASES),
-            resolveHomeSectionOrder(saved).take(5),
+            listOf(
+                HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.RADIOS,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
+            ),
+            resolveHomeSectionOrder(saved).take(8),
         )
     }
 
@@ -106,10 +116,13 @@ class HomeSectionOrderTest {
         assertEquals(HomeSection.YOUR_RECORD, resolved[1])
         assertEquals(HomeSection.RECORD_MIXES, resolved[2])
         assertEquals(HomeSection.MADE_FOR_YOU, resolved[3])
-        assertEquals(HomeSection.NEW_RELEASES, resolved[4])
+        assertEquals(HomeSection.BECAUSE_YOU_LIKE, resolved[4])
+        assertEquals(HomeSection.NEW_FROM_ARTISTS, resolved[5])
+        assertEquals(HomeSection.MOODS, resolved[6])
+        assertEquals(HomeSection.NEW_RELEASES, resolved[7])
         // New-in-an-update section can't be hidden by a stale pref: appended.
         assertTrue(HomeSection.YOUR_PLAYLISTS in resolved)
-        assertTrue(resolved.indexOf(HomeSection.YOUR_PLAYLISTS) >= 5)
+        assertTrue(resolved.indexOf(HomeSection.YOUR_PLAYLISTS) >= 8)
     }
 
     @Test
@@ -119,8 +132,11 @@ class HomeSectionOrderTest {
         // the saved order.
         val savedBeforeTheUpdate = listOf("your_playlists", "new_releases", "qobuz_playlists", "top_albums", "made_for_you", "radios", "mood_decades")
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING) +
-                savedBeforeTheUpdate.mapNotNull(HomeSection::fromKey),
+            listOf(
+                HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS,
+                // added after this arrangement was saved: right above the catalogs
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+            ) + savedBeforeTheUpdate.drop(1).mapNotNull(HomeSection::fromKey),
             visibleHomeSections(effectiveHomeSectionOrder(savedBeforeTheUpdate, promoted = false), emptySet(), communityOn = false),
         )
         // Home before the preference loads, and the preference's fallback when it can't be read.
@@ -162,7 +178,13 @@ class HomeSectionOrderTest {
         )
         val resolved = resolveHomeSectionOrder(saved)
         assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES), resolved.take(3))
-        assertEquals(saved.mapNotNull(HomeSection::fromKey), resolved.drop(3).dropLast(1))
+        // the saved arrangement as it was, with the shelves added since right above the catalogs
+        assertEquals(
+            saved.take(4).mapNotNull(HomeSection::fromKey) +
+                listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS) +
+                saved.drop(4).mapNotNull(HomeSection::fromKey),
+            resolved.drop(3).dropLast(1),
+        )
         assertEquals(HomeSection.YOUR_LISTENING, resolved.last())
         // New in the update, it shows (Home itself waits for the first listen).
         assertTrue(HomeSection.YOUR_LISTENING in visibleHomeSections(resolved, emptySet(), communityOn = true))
@@ -245,8 +267,10 @@ class HomeSectionOrderTest {
         )
         val resolved = resolveHomeSectionOrder(saved)
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS) +
-                saved.drop(3).mapNotNull(HomeSection::fromKey),
+            listOf(
+                HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+            ) + saved.drop(3).mapNotNull(HomeSection::fromKey),
             resolved,
         )
         // a reordered Home (promotion over) keeps it there too
@@ -282,16 +306,23 @@ class HomeSectionOrderTest {
             "made_for_you", "radios", "mood_decades", "community",
         )
         val resolved = resolveHomeSectionOrder(saved)
-        assertEquals(saved.take(2).mapNotNull(HomeSection::fromKey) + HomeSection.RECORD_MIXES + saved.drop(2).mapNotNull(HomeSection::fromKey), resolved)
+        // the mixes under the card; the shelves added since (missing here too) right above the catalogs
+        assertEquals(
+            saved.take(2).mapNotNull(HomeSection::fromKey) + HomeSection.RECORD_MIXES + saved.subList(2, 4).mapNotNull(HomeSection::fromKey) +
+                HomeSection.BECAUSE_YOU_LIKE + HomeSection.NEW_FROM_ARTISTS + HomeSection.MOODS + saved.drop(4).mapNotNull(HomeSection::fromKey),
+            resolved,
+        )
         assertEquals(resolved, effectiveHomeSectionOrder(saved, promoted = true))
-        // the card moved down by hand: the mixes go under it there, not above the catalogs
+        // the card moved down by hand: the mixes go under it there, not above the catalogs (where the shelves added since go,
+        // above the first of them, Top albums here)
         val moved = listOf("discover", "made_for_you", "top_albums", "radios", "your_record", "new_releases", "qobuz_playlists")
         assertEquals(
             listOf(
-                HomeSection.DISCOVER, HomeSection.MADE_FOR_YOU, HomeSection.TOP_ALBUMS, HomeSection.RADIOS,
-                HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.NEW_RELEASES,
+                HomeSection.DISCOVER, HomeSection.MADE_FOR_YOU,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+                HomeSection.TOP_ALBUMS, HomeSection.RADIOS, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.NEW_RELEASES,
             ),
-            effectiveHomeSectionOrder(moved, promoted = true).take(7),
+            effectiveHomeSectionOrder(moved, promoted = true).take(10),
         )
         // shown by default
         assertTrue(HomeSection.RECORD_MIXES in DEFAULT_HOME_SECTIONS)
@@ -353,11 +384,14 @@ class HomeSectionOrderTest {
     @Test
     fun `moving the card moves its mixes with it`() {
         val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
-        // Discover, Your record, From your record, Your playlists, …
+        // Discover, Your record, From your record, Your playlists, Because you like, …
         val down = movedHomeSectionOrder(order, HomeSection.YOUR_RECORD, up = false)!!
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.YOUR_PLAYLISTS, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.NEW_RELEASES),
-            down.take(5),
+            listOf(
+                HomeSection.DISCOVER, HomeSection.YOUR_PLAYLISTS, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
+            ),
+            down.take(8),
         )
         val up = movedHomeSectionOrder(order, HomeSection.YOUR_RECORD, up = true)!!
         assertEquals(
@@ -398,17 +432,19 @@ class HomeSectionOrderTest {
     @Test
     fun `hiding the card keeps the mixes, in the card's place`() {
         val order = effectiveHomeSectionOrder(listOf("discover", "radios", "your_record", "top_albums"), promoted = true)
+        // (the shelves added since this order was saved sit right above Top albums, the first catalog in it)
+        val added = listOf(HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS)
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.RADIOS, HomeSection.RECORD_MIXES, HomeSection.TOP_ALBUMS),
-            visibleHomeSections(order, setOf(HomeSection.YOUR_RECORD), communityOn = false).take(4),
+            listOf(HomeSection.DISCOVER, HomeSection.RADIOS, HomeSection.RECORD_MIXES) + added + HomeSection.TOP_ALBUMS,
+            visibleHomeSections(order, setOf(HomeSection.YOUR_RECORD), communityOn = false).take(7),
         )
         // the mixes hidden: the card alone; both hidden: neither, and both keep their place in the order
         assertEquals(
-            listOf(HomeSection.DISCOVER, HomeSection.RADIOS, HomeSection.YOUR_RECORD, HomeSection.TOP_ALBUMS),
-            visibleHomeSections(order, setOf(HomeSection.RECORD_MIXES), communityOn = false).take(4),
+            listOf(HomeSection.DISCOVER, HomeSection.RADIOS, HomeSection.YOUR_RECORD) + added + HomeSection.TOP_ALBUMS,
+            visibleHomeSections(order, setOf(HomeSection.RECORD_MIXES), communityOn = false).take(7),
         )
         val neither = visibleHomeSections(order, setOf(HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES), communityOn = false)
-        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.RADIOS, HomeSection.TOP_ALBUMS), neither.take(3))
+        assertEquals(listOf(HomeSection.DISCOVER, HomeSection.RADIOS) + added + HomeSection.TOP_ALBUMS, neither.take(6))
         assertTrue(HomeSection.RECORD_MIXES in order)
     }
 
