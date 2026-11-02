@@ -184,6 +184,30 @@ class MusicRepositoryEnsureTrackPersistedTest {
         assertEquals(12L, id)
     }
 
+    /**
+     * The green-dot lie: Now Playing rebuilt every stream as a Spotify song (the default), and a
+     * like or a listen then saved a YouTube stream as a green Spotify row. A song with a video id
+     * and no Spotify id is saved as a YouTube song; a real Spotify song stays Spotify's.
+     */
+    @Test fun `a YouTube stream rebuilt as a Spotify song is saved as a YouTube song`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
+        coEvery { trackDao.insert(any()) } returns 9L
+        val videoId = "Ikn6Z2fxMs4"
+
+        buildRepo(trackDao).ensureTrackPersisted(
+            Track(id = videoId.hashCode().toLong(), title = "Starting Over", artist = "LSD", youtubeId = videoId, source = MusicSource.SPOTIFY),
+        )
+        buildRepo(trackDao).ensureTrackPersisted(
+            Track(title = "Synced", artist = "LSD", spotifyUri = "spotify:track:1", youtubeId = "video000002", source = MusicSource.SPOTIFY),
+        )
+
+        coVerify(exactly = 1) { trackDao.insert(match { it.youtubeId == videoId && it.source == MusicSource.YOUTUBE }) }
+        coVerify(exactly = 1) { trackDao.insert(match { it.spotifyUri == "spotify:track:1" && it.source == MusicSource.SPOTIFY }) }
+    }
+
     private fun buildRepo(
         trackDao: TrackDao,
         blocklistGuard: BlocklistGuard = mockk(relaxed = true),

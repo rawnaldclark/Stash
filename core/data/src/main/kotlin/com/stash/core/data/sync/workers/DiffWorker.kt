@@ -21,6 +21,7 @@ import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.libraryCopiesOf
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
@@ -946,10 +947,41 @@ class DiffWorker @AssistedInject constructor(
         // track of every rotating mix was queued (#368: "it downloads 6000+ from
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
+        var linkedCopies = 0
+        // Copies of new songs already on the phone, by copy id: written after [crossRefsToInsert]
+        // and insert-if-absent, so they never move or revive a link that is already there.
+        val copyLinks = linkedMapOf<Long, PlaylistTrackCrossRef>()
         if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
+            // A new song already on the phone as another row (cause 4 of the duplicates: a Spotify
+            // row downloaded under one video while this YouTube playlist holds another upload, so
+            // the ids keep them two rows) is not downloaded again: its copy is linked here, where
+            // the song sits, and the new row keeps its own ids for the next sync. The link is
+            // insert-if-absent ([copyLinks]): a copy already in this playlist keeps its place, and
+            // one the user took out (a removal mark written while this sync ran included) is not
+            // linked back; the song is still not downloaded twice. The shared check every download
+            // path asks (SameSongRule.isLibraryCopy), its candidates read once per playlist.
+            val copies = trackDao.libraryCopiesOf(
+                newTracks.filterNot { it.entity.soundCloudPreview }
+                    .map { it.entity.copy(id = checkNotNull(it.persistedId)) },
+            )
+            val firstPositionOf = newOccurrences.groupBy({ it.first }, { it.second.position })
+                .mapValues { (_, positions) -> positions.min() }
             for (batchTrack in newTracks) {
                 if (batchTrack.entity.soundCloudPreview) continue // A preview is never queued for download.
                 val trackId = checkNotNull(batchTrack.persistedId)
+                val copy = copies[trackId]
+                if (copy != null) {
+                    copyLinks.putIfAbsent(
+                        copy.id,
+                        PlaylistTrackCrossRef(
+                            playlistId = localPlaylist.id,
+                            trackId = copy.id,
+                            position = firstPositionOf[batchTrack] ?: 0,
+                        ),
+                    )
+                    linkedCopies++
+                    continue
+                }
                 downloadEntries.add(
                     DownloadQueueEntity(
                         trackId = trackId,
@@ -1039,6 +1071,9 @@ class DiffWorker @AssistedInject constructor(
         if (crossRefsToInsert.isNotEmpty()) {
             playlistDao.insertAllCrossRefs(crossRefsToInsert.values.toList())
         }
+        if (copyLinks.isNotEmpty()) {
+            playlistDao.insertCrossRefsIfAbsent(copyLinks.values.toList())
+        }
         if (downloadEntries.isNotEmpty()) {
             downloadQueueDao.insertAll(downloadEntries)
         }
@@ -1050,7 +1085,7 @@ class DiffWorker @AssistedInject constructor(
                 TAG,
                 "Playlist '${playlistSnapshot.playlistName}' (id=${localPlaylist.id}): " +
                     "$newTrackCount new track(s), streamingMode=$streamingMode, " +
-                    "downloadsQueued=${downloadEntries.size}",
+                    "downloadsQueued=${downloadEntries.size}, alreadyOnPhone=$linkedCopies",
             )
         }
 

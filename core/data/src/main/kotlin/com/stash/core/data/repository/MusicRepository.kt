@@ -250,6 +250,15 @@ interface MusicRepository {
      */
     suspend fun queueDownload(trackId: Long): Boolean
 
+    /**
+     * [queueDownload] that says what happened, for a tap that tells the user:
+     * [DownloadRequestResult.ALREADY_ON_PHONE] when another row of the song
+     * already holds its audio ([com.stash.core.data.library.findLibraryCopy]),
+     * so nothing is downloaded a second time. [queueDownload] is
+     * `requestDownload(trackId) == QUEUED`.
+     */
+    suspend fun requestDownload(trackId: Long): DownloadRequestResult
+
     /** Why [trackId]'s download waits in the queue (its row keeps it), or null when it doesn't. */
     suspend fun downloadWaitReason(trackId: Long): com.stash.core.model.DownloadWaitReason?
 
@@ -536,4 +545,16 @@ interface MusicRepository {
      * "mix streamable rows into Library" model that was reverted.
      */
     suspend fun applyStreamingMode(enabled: Boolean)
+}
+
+/** What [MusicRepository.requestDownload] did with a tap on Download. */
+enum class DownloadRequestResult {
+    /** A download was queued (or one already running was left to finish). */
+    QUEUED,
+
+    /** The song is already on the phone as another row: nothing was downloaded. */
+    ALREADY_ON_PHONE,
+
+    /** Nothing queued: the row is missing, already downloaded, or a SoundCloud preview. */
+    NOT_QUEUED,
 }
