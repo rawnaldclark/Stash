@@ -2,6 +2,7 @@ package com.stash.feature.settings.cloud
 
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelStore
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.model.CloudProvider
 import com.stash.data.cloud.CloudLibrary
@@ -50,7 +51,7 @@ class CloudStorageViewModelSignInTest {
     private fun connected(provider: CloudProvider = CloudProvider.DROPBOX, isNew: Boolean = true) =
         CloudAuthEvent.Connected(provider, accountId = 7, displayName = "Ray", isNew = isNew)
 
-    @Test fun `two instances, one connects: only that one browses the new account`() {
+    @Test fun `two instances and one connects, only that one browses the new account`() {
         val accounts = vm()
         val library = vm()
         accounts.connect(activity, CloudProvider.DROPBOX)
@@ -98,9 +99,14 @@ class CloudStorageViewModelSignInTest {
 
     @Test fun `the wait survives Stash being killed while the browser is in front`() {
         val saved = SavedStateHandle()
-        vm(saved).connect(activity, CloudProvider.DROPBOX)
+        val store = ViewModelStore()
+        val first = vm(saved)
+        store.put("cloud", first)
+        first.connect(activity, CloudProvider.DROPBOX)
+        // Android destroys the screen while the browser is in front: the old instance stops listening.
+        store.clear()
 
-        // A new instance on the same saved state: what Android hands back after recreating the screen.
+        // A new instance on the saved state Android hands back when the screen is recreated.
         val recreated = vm(saved)
         events.tryEmit(connected())
 
