@@ -120,7 +120,7 @@ class PlaylistDaoSavedAlbumsTest {
         val card = dao.observeSavedAlbums().first().single().toSavedAlbum()
 
         assertThat(page).containsExactly("Waiting Room", "Bulldog Front", "Bad Mouth").inOrder()
-        assertThat(card.songKeys).containsExactly("waiting room", "bulldog front", "bad mouth").inOrder()
+        assertThat(card.songKeys).containsExactly("waiting room", "bulldog front", "bad mouth")
         assertThat(card.artist).isEqualTo("Fugazi")
     }
 

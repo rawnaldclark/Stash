@@ -30,7 +30,7 @@ const val SAVED_ALBUM_LIST_SEPARATOR = '\u001F'
  * @property trackCount       Its songs.
  * @property downloadedCount  Of those, the ones on this phone (`is_downloaded`, what Download mode lists).
  * @property downloadingCount Of the rest, those waiting or running in the download queue.
- * @property artists          Its songs' artists, in album order, joined by [SAVED_ALBUM_LIST_SEPARATOR].
+ * @property artists          Its songs' artists, in no set order, joined by [SAVED_ALBUM_LIST_SEPARATOR].
  * @property titles           Its songs' titles, the same way.
  */
 data class SavedAlbumRow(

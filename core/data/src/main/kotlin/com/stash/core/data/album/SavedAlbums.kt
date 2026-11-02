@@ -110,13 +110,17 @@ object SavedAlbums {
     fun songKey(title: String): String = fold(TrackCanonical.title(title).substringBefore(" - "))
 
     /**
-     * The act an album is by: the one most of its songs credit first (ties go to the earliest
-     * song). Stash stores no album artist for a saved album, so its songs say.
+     * The act an album is by: the one most of its songs credit first (a tie goes to the first act
+     * A to Z). Stash stores no album artist for a saved album, so its songs say. The songs' order
+     * plays no part, so the card (songs from [com.stash.core.data.db.dao.PlaylistDao.observeSavedAlbums],
+     * in no set order) and the album page (songs in album order) name the same act.
      */
     fun leadArtist(songArtists: List<String>): String {
-        val counts = LinkedHashMap<String, Int>()
+        val counts = HashMap<String, Int>()
         songArtists.map { it.primaryArtist().trim() }.filter { it.isNotEmpty() }.forEach { counts[it] = (counts[it] ?: 0) + 1 }
-        return counts.maxByOrNull { it.value }?.key.orEmpty()
+        return counts.entries
+            .minWithOrNull(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.key }.thenBy { it.key })
+            ?.key.orEmpty()
     }
 
     /**

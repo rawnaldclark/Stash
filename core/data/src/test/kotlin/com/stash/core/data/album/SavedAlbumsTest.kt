@@ -77,8 +77,9 @@ class SavedAlbumsTest {
     @Test fun `an album is by the act most of its songs credit first`() {
         assertThat(SavedAlbums.leadArtist(listOf("Metro Boomin, Future", "Metro Boomin, Travis Scott", "Don Toliver")))
             .isEqualTo("Metro Boomin")
-        // A tie goes to the earliest song.
-        assertThat(SavedAlbums.leadArtist(listOf("A", "B"))).isEqualTo("A")
+        // A tie goes to the first act A to Z, whatever order the songs come in.
+        assertThat(SavedAlbums.leadArtist(listOf("Fugazi", "Ian MacKaye"))).isEqualTo("Fugazi")
+        assertThat(SavedAlbums.leadArtist(listOf("Ian MacKaye", "Fugazi"))).isEqualTo("Fugazi")
         assertThat(SavedAlbums.leadArtist(emptyList())).isEmpty()
     }
 

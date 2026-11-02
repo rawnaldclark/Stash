@@ -1121,16 +1121,16 @@ interface PlaylistDao {
 
     /**
      * Library › Albums' rows: every active saved album ([SAVED_ALBUM]) with its songs counted and
-     * listed in album order ([SavedAlbumRow]). One row per saved copy; merging copies of one album
-     * and Download mode's rule are [com.stash.core.data.album.SavedAlbums.forLibrary]'s.
+     * named ([SavedAlbumRow]). One row per saved copy; merging copies of one album and Download
+     * mode's rule are [com.stash.core.data.album.SavedAlbums.forLibrary]'s.
      *
      * Its songs are what the album page lists in Stream only ([TrackDao.getByPlaylist]): live
      * memberships, blocked songs left out. A song is on the phone when `is_downloaded`, what
      * Download mode lists ([com.stash.core.data.repository.MusicRepository.getShownTracksByPlaylist]),
      * and downloading while a download_queue row for it waits or runs.
      *
-     * The inner query reads only saved albums' memberships, in position order, so each album's
-     * artists and titles come out in album order.
+     * The songs' artists and titles come in no set order (SQLite doesn't promise GROUP_CONCAT's):
+     * they're only compared as a set. The album's order is the page's ([TrackDao.getByPlaylist]).
      */
     @Query(
         """
@@ -1163,7 +1163,6 @@ interface PlaylistDao {
                      OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
                      OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
               )
-            ORDER BY pt.playlist_id, pt.position, pt.added_at, t.id
         ) m ON m.playlist_id = p.id
         WHERE p.is_active = 1
           AND """ + SAVED_ALBUM + """
