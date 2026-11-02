@@ -143,6 +143,27 @@ class ArtistGenreDaoTest {
         shelvesDir.deleteRecursively()
     }
 
+    @Test fun `deleting listens drops Because you like and keeps the artist-level shelves`() = runTest {
+        listened("Drake", plays = 2)
+        val shelvesDir = kotlin.io.path.createTempDirectory("home_shelves").toFile()
+        val shelves = com.stash.core.data.home.HomeShelfStore(shelvesDir)
+        val text = kotlinx.serialization.serializer<String>()
+        shelves.write("new_from_artists", text, "Drake")
+        shelves.write("because_you_like", text, "Song 1")
+        // The repository as Hilt builds it.
+        val history = com.stash.core.data.listening.ListeningHistoryRepository(db.listeningHistoryDao(), dao, shelves)
+
+        // A delete that deletes nothing leaves it
+        assertEquals(0, history.deleteDay(0))
+        assertEquals("Song 1", shelves.read("because_you_like", text))
+        // A range (as a day or one listen would): "Because you like" named a song played, maybe this one
+        assertEquals(2, history.deleteRange(com.stash.core.data.listening.DayRange(0, 1_000_000)))
+        assertNull(shelves.read("because_you_like", text))
+        // New from your artists and the genre cache are artist-level: other days still use those artists
+        assertEquals("Drake", shelves.read("new_from_artists", text))
+        shelvesDir.deleteRecursively()
+    }
+
     @Test fun `an untaggable artist waits its retry age`() = runTest {
         listened("Fresh Miss", plays = 1)
         listened("Old Miss", plays = 1)
