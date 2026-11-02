@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.util.Log
+import com.stash.core.data.prefs.ThemePreference
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.AlbumColourMode
 import com.stash.core.ui.ambient.AlbumColors
 import com.stash.core.ui.ambient.AmbientPalette
 import com.stash.core.ui.ambient.PaletteCache
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -39,7 +42,8 @@ import javax.inject.Singleton
  * colour from any screen. The scaffold publishes it through `ProvideAlbumChrome`.
  *
  * While a new cover is being read the previous palette stays (no flash of the default); a song with
- * no cover gets the Stash-purple default, a black-and-white one a neutral grey. Covers are read
+ * no cover gets the neutral default, a black-and-white one a neutral grey. With Settings › Appearance ›
+ * Album colours on Neutral the palette is the neutral default whatever plays, and no cover is read. Covers are read
  * through the shared [PaletteCache], so a cover heard before costs nothing. A cover that fails to load (offline,
  * a tunnel at the song change) shows the default and is read again a few times, each only after
  * the network comes back or a play/pause, so the chrome catches up without polling. Work runs only
@@ -50,11 +54,28 @@ import javax.inject.Singleton
 class AlbumColorSource @Inject constructor(
     @ApplicationContext private val context: Context,
     private val playerRepository: PlayerRepository,
+    private val themePreference: ThemePreference,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The palette the app wears: the current cover's while Album colours follows the song, the
+     * neutral default while it is Neutral (the covers are then not read at all).
+     */
+    private val palette: Flow<AmbientPalette> = themePreference.albumColours
+        // An unreadable store keeps the default (follow the song) rather than ending the colours.
+        .catch { e ->
+            Log.w(TAG, "album colour: Album colours unreadable; following the song", e)
+            emit(AlbumColourMode.FOLLOW_SONG)
+        }
+        .distinctUntilChanged()
+        .flatMapLatest { mode ->
+            if (mode == AlbumColourMode.NEUTRAL) flowOf(AmbientPalette.Default) else coverPalette()
+        }
+        .distinctUntilChanged()
+
     /** The cover's palette, re-read only when the artwork itself changes (not on every player tick). */
-    private val palette: Flow<AmbientPalette> = playerRepository.playerState
+    private fun coverPalette(): Flow<AmbientPalette> = playerRepository.playerState
         .map { state -> state.currentTrack?.let { it.albumArtPath ?: it.albumArtUrl } }
         .distinctUntilChanged()
         .flatMapLatest { model ->

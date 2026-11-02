@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.stash.core.model.AlbumColourMode
 import com.stash.core.model.ThemeMode
 import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -62,6 +63,21 @@ class ThemePreferencesManager @Inject constructor(
     override suspend fun setAmoledDark(enabled: Boolean) {
         context.themeDataStore.edit { prefs ->
             prefs[amoledKey] = enabled
+        }
+    }
+
+    private val albumColoursKey = stringPreferencesKey("album_colours")
+
+    /** Emits the Album colours choice, defaulting to [AlbumColourMode.FOLLOW_SONG]; deduped (theme writes re-emit). */
+    override val albumColours: Flow<AlbumColourMode> = context.themeDataStore.data.map { prefs ->
+        prefs[albumColoursKey]?.let { name -> AlbumColourMode.entries.firstOrNull { it.name == name } }
+            ?: AlbumColourMode.FOLLOW_SONG
+    }.distinctUntilChanged()
+
+    /** Persists the Album colours choice by name. */
+    override suspend fun setAlbumColours(mode: AlbumColourMode) {
+        context.themeDataStore.edit { prefs ->
+            prefs[albumColoursKey] = mode.name
         }
     }
 

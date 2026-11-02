@@ -1,5 +1,6 @@
 package com.stash.core.data.prefs
 
+import com.stash.core.model.AlbumColourMode
 import com.stash.core.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 
@@ -26,6 +27,15 @@ interface ThemePreference {
 
     /** Persists the pure-black dark preference. */
     suspend fun setAmoledDark(enabled: Boolean)
+
+    /**
+     * Settings › Appearance › Album colours: whether the app wears the playing song's colours
+     * ([AlbumColourMode.FOLLOW_SONG], the default) or stays neutral.
+     */
+    val albumColours: Flow<AlbumColourMode>
+
+    /** Persists the Album colours choice. */
+    suspend fun setAlbumColours(mode: AlbumColourMode)
 
     /**
      * Settings › Appearance › Display size: the app-wide UI scale the user chose, on the
