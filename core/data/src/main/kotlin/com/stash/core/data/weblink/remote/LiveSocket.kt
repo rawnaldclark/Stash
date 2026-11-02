@@ -36,8 +36,9 @@ sealed interface LiveEvent {
     data object Dropped : LiveEvent
 
     /**
-     * Final: removed (`4401`), refused (`4403`), replaced by a newer socket of this phone (`4409`), or the upgrade itself refused
-     * (an HTTP 401/403/404/426: e.g. a Worker without live control yet). No reconnect until the next foreground.
+     * Final: removed (`4401`), refused (`4403`), replaced by a newer socket of this phone (`4409`), out of today's reads (`4429`),
+     * or the upgrade itself refused (an HTTP 401/403/404/426: e.g. a Worker without live control yet). No reconnect until the next
+     * foreground.
      */
     data class Closed(val code: Int) : LiveEvent
 }
@@ -56,8 +57,9 @@ fun interface LiveConnector {
 
 @Singleton
 class OkHttpLiveConnector @Inject constructor(okHttpClient: OkHttpClient) : LiveConnector {
-    // A socket sits quiet between pings; the shared client's read timeout would kill it.
-    private val client = okHttpClient.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
+    // A socket sits quiet between pings; the shared client's read timeout would kill it. Protocol pings every 20 s (as Listen
+    // Together's RoomClient) find a dead connection (a network switch, a NAT that forgot it) and fail it, so it reconnects.
+    private val client = okHttpClient.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
 
     override fun connect(url: String, hello: String, scope: CoroutineScope): LiveConnection = LiveSocket(client, url, hello, scope)
 }
@@ -129,7 +131,7 @@ internal class LiveSocket(
                     pinger = scope.launch {
                         while (isActive) {
                             delay(PING_MS)
-                            webSocket.send("ping")
+                            if (!webSocket.send("ping")) break // closing or closed: its close ends this socket's turn
                         }
                     }
                 }
@@ -168,8 +170,11 @@ internal class LiveSocket(
         private const val HEALTHY_AFTER_MS = 5_000L
         private val BACKOFF_MS = listOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L, 30_000L)
 
-        /** Removed, refused, replaced: reconnecting would be refused again (or fight the newer socket). */
-        val FINAL = setOf(4401, 4403, 4409)
+        /**
+         * Removed, refused, replaced, out of today's reads: reconnecting would be refused again (or fight the newer socket); 4429
+         * would otherwise retry every 30 s all day.
+         */
+        val FINAL = setOf(4401, 4403, 4409, 4429)
 
         /** Upgrade answers that won't change by retrying: no such route (not deployed yet), unauthorized, forbidden, not a socket. */
         val REFUSED = setOf(401, 403, 404, 426)

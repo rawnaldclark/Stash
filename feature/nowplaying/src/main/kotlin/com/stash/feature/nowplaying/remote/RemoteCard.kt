@@ -2,6 +2,7 @@ package com.stash.feature.nowplaying.remote
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -73,14 +74,17 @@ import kotlinx.coroutines.delay
  * advertises itself (its tab open, "Let my phone control this browser" on). Cover, title, where it plays, ▶/⏸ and ⏭; a tap opens
  * the remote sheet with the seek bar, the volume and ⏮ ⏯ ⏭. A tab nobody clicked yet says "Click the Stash tab once in Chrome".
  *
- * @return whether a card is showing (the scaffold leaves out the handoff card then: one card per browser).
+ * @return whether a card is showing, or still leaving (the scaffold leaves out the handoff card until it is gone: one card per
+ *   browser, and never two drawn over each other during the exit animation).
  */
 @Composable
 fun RemoteCardHost(modifier: Modifier = Modifier, viewModel: RemoteViewModel = hiltViewModel()): Boolean {
     val card by viewModel.card.collectAsStateWithLifecycle()
     var sheet by remember { mutableStateOf(false) }
+    val visible = remember { MutableTransitionState(false) }
+    visible.targetState = card != null
     Column(modifier) {
-        AnimatedVisibility(visible = card != null, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+        AnimatedVisibility(visibleState = visible, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             val shown = remember { HoldLast<RemoteCard>() }.update(card) ?: return@AnimatedVisibility
             MiniRemote(shown, onOpen = { sheet = true }, onPlayPause = { viewModel.playPause(shown) }, onNext = viewModel::next)
         }
@@ -88,7 +92,7 @@ fun RemoteCardHost(modifier: Modifier = Modifier, viewModel: RemoteViewModel = h
     val c = card
     if (sheet && c != null) RemoteSheet(c, viewModel, onDismiss = { sheet = false })
     LaunchedEffect(c == null) { if (c == null) sheet = false } // the browser went away: so does its sheet
-    return c != null
+    return visible.currentState || visible.targetState
 }
 
 private class HoldLast<T : Any> {

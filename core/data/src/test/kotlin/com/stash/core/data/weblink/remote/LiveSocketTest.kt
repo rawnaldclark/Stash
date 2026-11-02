@@ -62,6 +62,22 @@ class LiveSocketTest {
         socket.close()
     }
 
+    @Test fun `out of today's reads (4429) is final for this foreground, not a retry every 30 s`() = runBlocking {
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    webSocket.close(4429, "daily_limit")
+                }
+            }),
+        )
+        val socket = LiveSocket(http, server.url("/v1/spaces/s_x/ws").toString(), "{}", scope)
+        val events = withTimeout(10_000) { socket.events.take(2).toList() }
+        assertThat(events).containsExactly(LiveEvent.Open, LiveEvent.Closed(4429)).inOrder()
+        Thread.sleep(1_500) // longer than the first backoff
+        assertThat(server.requestCount).isEqualTo(1)
+        socket.close()
+    }
+
     @Test fun `an upgrade the Worker refuses (404 before live control is deployed) is final, not a retry loop`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":{"code":"not_found","message":"No such route"}}"""))
         val socket = LiveSocket(http, server.url("/v1/spaces/s_x/ws").toString(), "{}", scope)

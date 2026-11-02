@@ -19,10 +19,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -46,8 +48,10 @@ import kotlinx.serialization.json.put
  *   key at `remote:<browser>`, taken only from browsers whose label this phone verified (its roster). A browser that goes quiet for
  *   a minute is treated as gone ([RemoteCards.STALE_MS]).
  * - **What it says**: commands sealed at `remote-cmd:<this phone>:<browser>`, naming the browser's session (`sid`) with an
- *   increasing number, so a command can't be replayed or land in a later session. The card moves at once ([RemoteCards.optimistic]);
- *   the browser's next state confirms it.
+ *   increasing number, so a command can't be replayed or land in a later session. They go out one at a time in the order they
+ *   were tapped, and each session's numbers start at the wall clock in ms, so after the background or a restart (when this phone
+ *   has forgotten its numbers) the browser still sees them rise. The card moves at once ([RemoteCards.optimistic]); the browser's
+ *   next state confirms it.
  * - **Keys**: `epoch` (a rotation) or an `epoch` / `rotation_due` error lets [WebLinkRepository.refresh] catch up; `4401` (this
  *   phone was removed) lets it find out and forget the link.
  */
@@ -59,12 +63,22 @@ class WebRemote internal constructor(
     private val connector: LiveConnector,
     private val scope: CoroutineScope,
     private val clock: () -> Long,
+    private val wallClock: () -> Long,
     private val tickMs: Long,
 ) {
     @Inject constructor(store: WebLinkStore, repo: WebLinkRepository, config: WebLinkConfig, connector: LiveConnector) :
-        this(store, repo, config, connector, CoroutineScope(SupervisorJob() + Dispatchers.IO), { SystemClock.elapsedRealtime() }, TICK_MS)
+        this(store, repo, config, connector, CoroutineScope(SupervisorJob() + Dispatchers.IO), { SystemClock.elapsedRealtime() }, System::currentTimeMillis, TICK_MS)
 
     private val lock = Mutex()
+    /** Taking a number, sealing and sending are one step: commands reach the socket in the order of their numbers. */
+    private val sendLock = Mutex()
+    /** Taps, in the order they happened (each [send] used to start its own coroutine, which could overtake another). */
+    private val outbox = Channel<RemoteCommand>(Channel.UNLIMITED)
+    /**
+     * Whether a socket should be open: set by [onForeground] / [onBackground], acted on by one collector, the latest value
+     * winning (a background right after a foreground can't leave a socket open behind a slower start). Null: neither yet.
+     */
+    private val wanted = MutableStateFlow<Boolean?>(null)
     private var conn: LiveConnection? = null
     private var jobs: List<Job> = emptyList()
     private var me = ""
@@ -79,15 +93,28 @@ class WebRemote internal constructor(
     /** The browser the card shows, or null (none advertises, none is fresh, or the app is in the background). */
     val card: StateFlow<RemoteCard?> = _card.asStateFlow()
 
+    init {
+        scope.launch {
+            wanted.collectLatest { w ->
+                when (w) {
+                    true -> start()
+                    false -> stop()
+                    null -> Unit
+                }
+            }
+        }
+        scope.launch { for (c in outbox) sendNow(c) }
+    }
+
     /** The app came to the foreground (ProcessLifecycleOwner ON_START). */
     fun onForeground() {
         if (!config.enabled) return
-        scope.launch { start() }
+        wanted.value = true
     }
 
     /** The app went to the background: the socket closes and the card goes. */
     fun onBackground() {
-        scope.launch { stop() }
+        wanted.value = false
     }
 
     internal suspend fun start() = lock.withLock {
@@ -131,29 +158,31 @@ class WebRemote internal constructor(
         publish()
     }
 
-    /** Sends [command] to the browser on the card (if any) and moves the card at once. */
+    /** Sends [command] to the browser on the card (if any) and moves the card at once. Taps go out in the order they happened. */
     fun send(command: RemoteCommand) {
-        scope.launch { sendNow(command) }
+        outbox.trySend(command)
     }
 
-    internal suspend fun sendNow(command: RemoteCommand): Boolean {
-        val target = _card.value?.device ?: return false
-        val c = conn ?: return false
-        val b = browsers.value[target] ?: return false
+    internal suspend fun sendNow(command: RemoteCommand): Boolean = sendLock.withLock {
+        val target = _card.value?.device ?: return@withLock false
+        val c = conn ?: return@withLock false
+        val b = browsers.value[target] ?: return@withLock false
         val env = guard(null) {
             val sp = store.space() ?: return@guard null
-            val n = sent.merge(b.state.sid, 1L, Long::plus)!!
-            SyncCrypto.seal(dataKey(sp, sp.epoch) ?: return@guard null, sp.spaceId, sp.epoch, RemoteWire.cmdPlace(me, target), RemoteWire.cmdJson(RemoteCmd(b.state.sid, n, command)))
-        } ?: return false
+            val key = dataKey(sp, sp.epoch) ?: return@guard null
+            // Higher than this session's last, and than anything sent before this phone forgot its numbers (background, restart).
+            val n = sent.compute(b.state.sid) { _, last -> maxOf((last ?: 0L) + 1, wallClock()) }!!
+            SyncCrypto.seal(key, sp.spaceId, sp.epoch, RemoteWire.cmdPlace(me, target), RemoteWire.cmdJson(RemoteCmd(b.state.sid, n, command)))
+        } ?: return@withLock false
         val frame = buildJsonObject {
             put("t", "cmd")
             put("to", target)
             put("env", SyncJson.encodeToJsonElement(SyncEnvelope.serializer(), env))
         }.toString()
-        if (!c.send(frame)) return false
+        if (!c.send(frame)) return@withLock false
         browsers.update { all -> all[target]?.let { all + (target to RemoteCards.optimistic(it, command, clock())) } ?: all }
         publish()
-        return true
+        true
     }
 
     // ---------------------------------------------------------------------------------------- frames

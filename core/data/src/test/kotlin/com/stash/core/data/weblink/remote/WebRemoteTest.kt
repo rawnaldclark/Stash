@@ -12,8 +12,13 @@ import com.stash.core.data.weblink.WebLinkRepository
 import com.stash.core.data.weblink.store.LinkedSpace
 import com.stash.core.data.weblink.store.RosterEntry
 import java.security.interfaces.ECPublicKey
+import java.util.Collections
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.TestScope
@@ -35,6 +40,8 @@ class WebRemoteTest {
     private val config = WebLinkConfig("http://127.0.0.1:8795", true)
     private val connector = FakeConnector()
     private var clock = 1_000L
+    /** The wall clock the command numbers start from (0: numbers are 1, 2, 3...). */
+    private var wall = 0L
     private val k = SyncCrypto.randomBytes(32)
     private val spaceId = "s_" + Base64Url.encode(SyncCrypto.randomBytes(16))
     private val key = SyncCrypto.dataKey(k, spaceId)
@@ -42,7 +49,7 @@ class WebRemoteTest {
     private class FakeConn : LiveConnection {
         val ch = Channel<LiveEvent>(Channel.UNLIMITED)
         override val events: Flow<LiveEvent> = ch.receiveAsFlow()
-        val sent = mutableListOf<String>()
+        val sent: MutableList<String> = Collections.synchronizedList(mutableListOf())
         var closed = false
         override fun send(text: String): Boolean = (!closed).also { if (it) sent += text }
         override fun close() {
@@ -62,7 +69,22 @@ class WebRemoteTest {
         store.saveRoster(browsers.map { (id, name) -> RosterEntry(id, "web", name, SyncCrypto.rawPublicKey(SyncCrypto.newKeyPair().public as ECPublicKey)) })
     }
 
-    private fun TestScope.remote() = WebRemote(store, repo, config, connector, backgroundScope, { clock }, WebRemote.TICK_MS)
+    private fun TestScope.remote() = WebRemote(store, repo, config, connector, backgroundScope, { clock }, { wall }, WebRemote.TICK_MS)
+
+    /** The commands this phone put on its socket, opened as the browser opens them, in socket order. */
+    private fun sentCmds(c: FakeConn = conn): List<RemoteCmd> {
+        val me = store.id!!.deviceId
+        return c.sent.toList().map { Json.parseToJsonElement(it).jsonObject }.filter { it["t"]!!.jsonPrimitive.content == "cmd" }.map {
+            val env = SyncJson.decodeFromJsonElement(SyncEnvelope.serializer(), it["env"]!!)
+            RemoteWire.readCmd(SyncCrypto.open(key, spaceId, RemoteWire.cmdPlace(me, it["to"]!!.jsonPrimitive.content), env))!!
+        }
+    }
+
+    /** The browser's replay guard (web remote.ts CommandGuard): a command runs once, in its session, numbered above the last. */
+    private class Guard(var sid: String) {
+        var last = 0L
+        fun accept(c: RemoteCmd): Boolean = (c.sid == sid && c.n > last).also { if (it) last = c.n }
+    }
 
     private fun stateDoc(playing: Boolean = true, needsGesture: Boolean = false, sid: String = SID, title: String = "Midnight City") =
         """{"kind":"stash-remote-state","v":1,"sid":"$sid","needsGesture":$needsGesture,"playing":$playing,"positionMs":60000,"durationMs":240000,"volume":0.6,"canSeek":true,"song":{"title":"$title","artist":"M83","artwork":[{"url":"https://i.scdn.co/a.jpg"}]}}"""
@@ -216,6 +238,83 @@ class WebRemoteTest {
         runCurrent()
         assertThat(r.card.value!!.device).isEqualTo(FIREFOX)
         assertThat(r.card.value!!.status).isEqualTo("Paused on Firefox on Mac")
+    }
+
+    @Test fun `8 commands, background, foreground, the 9th is still accepted by a browser that kept its session`() = runTest {
+        linked()
+        wall = 1_793_600_000_000L
+        val r = remote()
+        r.start()
+        conn.ch.send(stateFrame())
+        runCurrent()
+        repeat(8) { assertThat(r.sendNow(RemoteCommand.Seek(it * 1000L))).isTrue() }
+        val guard = Guard(SID)
+        assertThat(sentCmds().map(guard::accept)).containsExactly(true, true, true, true, true, true, true, true)
+        r.stop() // the background: this phone forgets its numbers
+        wall += 4_000
+        r.start()
+        conn.ch.send(stateFrame()) // an older browser that keeps its session when the phone comes back
+        runCurrent()
+        assertThat(r.sendNow(RemoteCommand.Pause)).isTrue()
+        val ninth = sentCmds().single()
+        assertThat(ninth.sid).isEqualTo(SID)
+        assertThat(guard.accept(ninth)).isTrue()
+        // And after a restart (a new process, the same browser session): the same.
+        val again = remote()
+        again.start()
+        conn.ch.send(stateFrame())
+        runCurrent()
+        wall += 1
+        assertThat(again.sendNow(RemoteCommand.Play)).isTrue()
+        assertThat(guard.accept(sentCmds().single())).isTrue()
+    }
+
+    @Test fun `commands sent at the same time reach the socket in the order of their numbers`() = runTest {
+        linked()
+        val r = remote()
+        r.start()
+        conn.ch.send(stateFrame())
+        runCurrent()
+        withContext(Dispatchers.Default) {
+            (1..40).map { i -> async { r.sendNow(RemoteCommand.Volume(i / 40.0)) } }.awaitAll()
+        }
+        val ns = sentCmds().map { it.n }
+        assertThat(ns).hasSize(40)
+        assertThat(ns).isInStrictOrder()
+    }
+
+    @Test fun `taps go out in the order they happened`() = runTest {
+        linked()
+        val r = remote()
+        r.start()
+        conn.ch.send(stateFrame())
+        runCurrent()
+        r.send(RemoteCommand.Pause)
+        r.send(RemoteCommand.Seek(10_000))
+        r.send(RemoteCommand.Volume(0.3))
+        r.send(RemoteCommand.Next)
+        runCurrent()
+        assertThat(sentCmds().map { it.command })
+            .containsExactly(RemoteCommand.Pause, RemoteCommand.Seek(10_000), RemoteCommand.Volume(0.3), RemoteCommand.Next).inOrder()
+        assertThat(sentCmds().map { it.n }).isInStrictOrder()
+    }
+
+    @Test fun `the latest of foreground and background wins, so a quick background never leaves a socket open`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        r.onBackground()
+        runCurrent()
+        assertThat(connector.opened.all { it.third.closed }).isTrue()
+        r.onForeground()
+        runCurrent()
+        assertThat(connector.opened.count { !it.third.closed }).isEqualTo(1)
+        r.onBackground()
+        r.onForeground()
+        r.onBackground()
+        runCurrent()
+        assertThat(connector.opened.all { it.third.closed }).isTrue()
+        assertThat(r.card.value).isNull()
     }
 
     private companion object {
