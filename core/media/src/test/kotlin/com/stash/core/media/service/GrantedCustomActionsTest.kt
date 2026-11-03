@@ -41,4 +41,12 @@ class GrantedCustomActionsTest {
         assertThat(grantedCustomActions(privileged = false))
             .doesNotContain(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
     }
+
+    /** It keeps the player's shuffle order as the timeline: only the app's own big queue may ask. */
+    @Test fun `only the app itself can ask to keep the timeline order`() {
+        assertThat(grantedCustomActions(privileged = true, ownApp = true))
+            .contains(StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER)
+        assertThat(grantedCustomActions(privileged = true, ownApp = false))
+            .doesNotContain(StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER)
+    }
 }

@@ -93,6 +93,15 @@ fun QueueBottomSheet(
     queue: List<Track>,
     currentIndex: Int,
     accentColor: Color,
+    /**
+     * A queue too big for the player: its songs before and after the [queue] window (see
+     * [com.stash.core.model.PlayerState.queueSongsBefore]). The header counts the whole queue, and
+     * the list ends with how many more follow. [orderPosition] is the playing song's place in it
+     * ([com.stash.core.model.PlayerState.queuePosition]), -1 for a queue held whole.
+     */
+    songsBefore: Int = 0,
+    songsAfter: Int = 0,
+    orderPosition: Int = -1,
     source: PlaybackSource = PlaybackSource.Unknown,
     /** #468: with shuffle on the rows are in play order and cannot be dragged (see below). */
     isShuffleEnabled: Boolean = false,
@@ -169,8 +178,9 @@ fun QueueBottomSheet(
                 .navigationBarsPadding(),
         ) {
             QueueHeader(
-                trackCount = queue.size,
-                currentIndex = currentIndex,
+                trackCount = songsBefore + queue.size + songsAfter,
+                // A big queue's own count: after a repeat-all wrap no song is "before" the window.
+                currentIndex = if (orderPosition >= 0) orderPosition else songsBefore + currentIndex,
                 sourceLabel = source.displayLabel,
                 showDragHint = !isShuffleEnabled,
                 onClose = onDismiss,
@@ -508,6 +518,17 @@ fun QueueBottomSheet(
                         }
                     }
                 }
+                // A big queue: the player holds a window of it; the rest comes as it plays.
+                if (songsAfter > 0) {
+                    item(key = "more-after") {
+                        Text(
+                            text = moreSongsLabel(songsAfter),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 12.dp),
+                        )
+                    }
+                }
             }
 
             if (localQueue.isEmpty()) {
@@ -518,7 +539,7 @@ fun QueueBottomSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "No upcoming tracks",
+                        text = if (songsAfter > 0) moreSongsLabel(songsAfter) else "No upcoming tracks",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -714,3 +735,7 @@ internal fun autoScrollStep(
         else -> 0f
     }
 }
+
+/** "And 72,000 more songs": the rest of a big queue, after the rows the sheet lists. */
+internal fun moreSongsLabel(count: Int): String =
+    "And ${java.text.NumberFormat.getIntegerInstance().format(count)} more ${if (count == 1) "song" else "songs"}"

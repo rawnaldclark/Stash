@@ -102,4 +102,18 @@ class AutoBrowseQueueTest {
         assertEquals(0, plan.tracks.size)
         assertEquals(0, plan.startIndex)
     }
+
+    @Test
+    fun `queuePlan of a list bigger than the player holds is the window around the tapped track`() {
+        val tracks = (1L..12_000L).map { track(it) }
+        val plan = AutoBrowseQueue.queuePlan(tracks, tappedTrackId = 6_000L)
+        assertEquals(com.stash.core.media.QUEUE_WINDOW_SIZE, plan.tracks.size)
+        assertEquals(6_000L, plan.tracks[plan.startIndex].id)
+        assertEquals(com.stash.core.media.QUEUE_WINDOW_BEHIND, plan.startIndex)
+        // Near the end the window still holds a full QUEUE_WINDOW_SIZE.
+        val late = AutoBrowseQueue.queuePlan(tracks, tappedTrackId = 11_990L)
+        assertEquals(com.stash.core.media.QUEUE_WINDOW_SIZE, late.tracks.size)
+        assertEquals(11_990L, late.tracks[late.startIndex].id)
+        assertEquals(12_000L, late.tracks.last().id)
+    }
 }

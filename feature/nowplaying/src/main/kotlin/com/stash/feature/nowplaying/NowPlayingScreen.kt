@@ -321,8 +321,8 @@ fun NowPlayingScreen(
     // wrapped by repeat-all. In a room the host's skips go to the room, which decides (its Up next,
     // its radio, a restart), so both stay on there; a listener has no art gestures at all.
     val repeatAll = uiState.repeatMode == RepeatMode.ALL
-    val canSwipeNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
-    val canSwipePrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+    val canSwipeNext = room != null || hasNextInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
+    val canSwipePrevious = room != null || hasPreviousInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
     // The Session sheet: people, Up next, suggestions, invite, leave (design 2026-09-25).
     var showSession by remember { mutableStateOf(false) }
     var confirmEndTogether by remember { mutableStateOf(false) }
@@ -429,6 +429,9 @@ fun NowPlayingScreen(
         QueueBottomSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
+            songsBefore = uiState.queueSongsBefore,
+            songsAfter = uiState.queueSongsAfter,
+            orderPosition = uiState.queuePosition,
             accentColor = chrome.ink,
             source = uiState.source,
             isShuffleEnabled = uiState.shuffleEnabled,

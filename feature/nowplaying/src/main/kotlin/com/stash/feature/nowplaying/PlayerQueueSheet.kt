@@ -58,6 +58,9 @@ fun PlayerQueueSheet(
         QueueBottomSheet(
             queue = uiState.queue,
             currentIndex = uiState.currentIndex,
+            songsBefore = uiState.queueSongsBefore,
+            songsAfter = uiState.queueSongsAfter,
+            orderPosition = uiState.queuePosition,
             // The song's text ink: Now Playing's accent, contrast-safe on the sheet in both themes.
             accentColor = LocalAlbumChrome.current.ink,
             source = uiState.source,

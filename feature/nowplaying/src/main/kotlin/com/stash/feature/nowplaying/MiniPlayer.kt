@@ -156,8 +156,8 @@ fun MiniPlayer(
         // A listener can't skip the room's song; a host's skips go to the room, which decides.
         val isListener = LocalListenTogetherRole.current == ListenTogetherRole.LISTENER
         val repeatAll = uiState.repeatMode == RepeatMode.ALL
-        val canNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
-        val canPrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+        val canNext = room != null || hasNextInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
+        val canPrevious = room != null || hasPreviousInQueue(uiState.queueSongsBefore + uiState.queue.size + uiState.queueSongsAfter, uiState.queueSongsBefore + uiState.currentIndex, repeatAll)
         val swipe = rememberSwipeToSkip(
             trackKey = track?.let { it.id to uiState.currentIndex },
             enabled = track != null && !isListener,
