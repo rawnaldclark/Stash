@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -247,6 +248,48 @@ class MoodsRepositoryTest {
         assertEquals(2, most)
         assertEquals(listOf("p1", "p2"), pageReads.sorted())
         assertEquals(listOf(listOf(cover("p1")), listOf(cover("p2")), null, null), covers)
+    }
+
+    @Test
+    fun `a tile opened while its covers are being read takes that read's page - one download, not two`() = runTest {
+        repo().grids()
+        val gate = CompletableDeferred<Unit>()
+        val repo = repo(io = StandardTestDispatcher(testScheduler), fetchPage = { params, _ ->
+            pageReads += params
+            gate.await()
+            pageAnswer
+        })
+        val coverRead = async { repo.covers("p1", "Chill") }
+        runCurrent()
+        // The tile tapped while its covers are on their way
+        val opened = async { repo.page("p1", "Chill") }
+        runCurrent()
+        assertEquals(listOf("p1"), pageReads)
+        gate.complete(Unit)
+        assertEquals(pageAnswer, opened.await())
+        assertEquals(listOf(cover("A"), cover("B")), coverRead.await())
+        assertEquals(listOf("p1"), pageReads)
+    }
+
+    @Test
+    fun `a read given up doesn't take the tile opened after it down with it - that one reads the page itself`() = runTest {
+        repo().grids()
+        val gate = CompletableDeferred<Unit>()
+        val repo = repo(io = StandardTestDispatcher(testScheduler), fetchPage = { params, _ ->
+            pageReads += params
+            gate.await()
+            pageAnswer
+        })
+        val coverRead = launch { repo.covers("p1", "Chill") }
+        runCurrent()
+        val opened = async { repo.page("p1", "Chill") }
+        runCurrent()
+        // Offline, or Search left: the cover read stops, and the opened tile reads on its own
+        coverRead.cancel()
+        runCurrent()
+        assertEquals(listOf("p1", "p1"), pageReads)
+        gate.complete(Unit)
+        assertEquals(pageAnswer, opened.await())
     }
 
     @Test

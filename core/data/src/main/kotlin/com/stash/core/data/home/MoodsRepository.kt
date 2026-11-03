@@ -47,8 +47,8 @@ internal data class MoodCoversFile(val covers: Map<String, MoodCover> = emptyMap
  * Search's "Moods & moments" and "Genres": YouTube Music's two grids (Chill, Focus, Workout...; Pop, Rock,
  * Hip-hop...), each tile opening a page of YouTube's own songs, playlists and albums for it. Works signed out, so
  * it gives a brand-new Search tab something to play two taps away. Both grids come from one browse of
- * `FEmusic_moods_and_genres`, read once a day and saved; a tile's page is read when it's opened (one browse) and kept
- * in memory for [PAGE_TTL_MS].
+ * `FEmusic_moods_and_genres`, read once a day and saved; a tile's page is read when it's opened (one browse, shared by
+ * whoever asks for it meanwhile) and kept in memory for [PAGE_TTL_MS].
  *
  * Fail-soft: no answer keeps the saved tiles, and the next read waits [RETRY_MS] (Search's resume doesn't refire it
  * on every return). An answer without a grid (a reworded page) keeps that grid's saved tiles, stamped for the day so
@@ -86,6 +86,9 @@ class MoodsRepository internal constructor(
     private val pages = object : LinkedHashMap<String, Pair<Long, MoodPage>>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, MoodPage>>?): Boolean = size > PAGES_KEPT
     }
+
+    /** One lock per page, by params: see [page]. */
+    private val pageLocks = HashMap<String, Mutex>()
 
     /** Serialises the covers file; [coverEntries] holds the copy read from it. */
     private val coversMutex = Mutex()
@@ -131,15 +134,28 @@ class MoodsRepository internal constructor(
      * when YouTube didn't answer, so the screen can offer a retry. A page read here also refreshes the tile's covers.
      */
     suspend fun page(params: String, title: String): MoodPage {
-        synchronized(pages) { pages[params] }?.let { (at, page) -> if (now() - at < PAGE_TTL_MS) return page }
-        val page = withContext(io) { fetchPage(params, title) }
-            ?: throw IOException("YouTube Music didn't return the page of '$title'")
-        if (page.shelves.isNotEmpty()) {
-            synchronized(pages) { pages[params] = now() to page }
-            saveCovers(params, page.coverUrls(COVERS_PER_TILE).map(::coverUrl))
+        keptPage(params)?.let { return it }
+        // One read per page at a time: a tile opened while its covers are being read waits for that read and takes
+        // its answer, rather than downloading the same 2.4 to 2.9 MB again. If the read it waited on was given up
+        // (Offline, the screen left), it reads the page itself.
+        return pageLock(params).withLock {
+            keptPage(params)?.let { return@withLock it }
+            val page = withContext(io) { fetchPage(params, title) }
+                ?: throw IOException("YouTube Music didn't return the page of '$title'")
+            if (page.shelves.isNotEmpty()) {
+                synchronized(pages) { pages[params] = now() to page }
+                saveCovers(params, page.coverUrls(COVERS_PER_TILE).map(::coverUrl))
+            }
+            page
         }
-        return page
     }
+
+    /** [params]' page when read under [PAGE_TTL_MS] ago, else null. */
+    private fun keptPage(params: String): MoodPage? =
+        synchronized(pages) { pages[params] }?.takeIf { (at, _) -> now() - at < PAGE_TTL_MS }?.second
+
+    /** The lock one page's reads take turns on (a few dozen tiles, so they're simply kept). */
+    private fun pageLock(params: String): Mutex = synchronized(pageLocks) { pageLocks.getOrPut(params) { Mutex() } }
 
     /** Every tile's saved covers, whatever their age: what the tiles paint at once. */
     suspend fun savedCovers(): Map<String, List<String>> = withContext(io) {
