@@ -206,9 +206,10 @@ fun ManagePlaylistsScreen(
                                 color = MaterialTheme.colorScheme.onBackground,
                             )
                         }
-                        // Saves what's in the library; one taken out stays out.
+                        // Saves what's in the library; one taken out stays out. Playlists and albums
+                        // alike (an album's Save is its page's Download, as a playlist's is).
                         val unsaved = shown.filter { !it.userHidden && !it.saved(streamOnly) }
-                        if (tab == ManageTab.PLAYLISTS && unsaved.isNotEmpty()) {
+                        if ((tab == ManageTab.PLAYLISTS || tab == ManageTab.ALBUMS) && unsaved.isNotEmpty()) {
                             TextButton(onClick = {
                                 unsaved.forEach { viewModel.onSavePlaylist(it.id, true) }
                             }) { Text(stringResource(R.string.sync_manage_save_all)) }
