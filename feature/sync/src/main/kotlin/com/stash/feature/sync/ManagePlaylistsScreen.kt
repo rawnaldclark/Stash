@@ -70,7 +70,27 @@ import com.stash.feature.sync.components.SaveCircle
 import com.stash.feature.sync.components.SyncAmbientBackdrop
 
 /** Which of an account's lists is showing. */
-private enum class ManageTab { PLAYLISTS, MIXES, LIKED }
+private enum class ManageTab { PLAYLISTS, ALBUMS, MIXES, LIKED }
+
+/**
+ * One account's rows, split the way its page shows them. A saved album
+ * ([com.stash.core.data.album.SavedAlbums]: Spotify's synced saved albums, YouTube Music's) is a
+ * release, not a playlist: it goes under Albums, never among the playlists (item 5, 2026-11-02),
+ * and keeps its Save circle and its place in "taken out" there.
+ */
+internal data class ManageLists(
+    val playlists: List<SyncPlaylistRow>,
+    val albums: List<SyncPlaylistRow>,
+    val mixes: List<SyncPlaylistRow>,
+    val liked: List<SyncPlaylistRow>,
+)
+
+internal fun manageLists(rows: List<SyncPlaylistRow>): ManageLists = ManageLists(
+    playlists = rows.filter { it.isOwnPlaylist() },
+    albums = rows.filter { it.album },
+    mixes = rows.filter { !it.album && it.type == PlaylistType.DAILY_MIX },
+    liked = rows.filter { !it.album && it.type == PlaylistType.LIKED_SONGS },
+)
 
 /**
  * One account's playlists, mixes and liked songs, every one with its cover and
@@ -116,9 +136,9 @@ fun ManagePlaylistsScreen(
     }
 
     val rows = uiState.playlistRows().filter { it.source == source }
-    val liked = rows.filter { it.type == PlaylistType.LIKED_SONGS }
-    val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
-    val playlists = rows.filter { it.type != PlaylistType.DAILY_MIX && it.type != PlaylistType.LIKED_SONGS }
+    val (playlists, albums, mixes, liked) = manageLists(rows)
+    // Spotify's tab is always there: its switch decides whether saved albums sync at all.
+    val showAlbumsTab = source == SyncSource.SPOTIFY || albums.isNotEmpty()
     val name = when (source) { SyncSource.SPOTIFY -> "Spotify"; SyncSource.SOUNDCLOUD -> "SoundCloud"; else -> "YouTube Music" }
     val brand = if (source == SyncSource.SOUNDCLOUD) androidx.compose.ui.graphics.Color(0xFFFF5500) else if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
@@ -131,6 +151,7 @@ fun ManagePlaylistsScreen(
     fun matches(row: SyncPlaylistRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
     val shown = when (tab) {
         ManageTab.PLAYLISTS -> playlists
+        ManageTab.ALBUMS -> albums
         ManageTab.MIXES -> mixes
         ManageTab.LIKED -> liked
     }.filter(::matches)
@@ -214,6 +235,13 @@ fun ManagePlaylistsScreen(
                         selected = tab == ManageTab.PLAYLISTS,
                         onClick = { tab = ManageTab.PLAYLISTS },
                     )
+                    if (showAlbumsTab) {
+                        TabPill(
+                            label = stringResource(R.string.sync_manage_tab_albums, albums.size),
+                            selected = tab == ManageTab.ALBUMS,
+                            onClick = { tab = ManageTab.ALBUMS },
+                        )
+                    }
                     TabPill(
                         label = stringResource(R.string.sync_manage_tab_mixes, mixes.size),
                         selected = tab == ManageTab.MIXES,
@@ -277,6 +305,15 @@ fun ManagePlaylistsScreen(
                             modifier = Modifier.padding(bottom = 6.dp),
                         )
                     }
+                }
+            }
+            // Shown before the first album arrives, so saved albums can be kept out from the start.
+            if (tab == ManageTab.ALBUMS && source == SyncSource.SPOTIFY) {
+                item(key = "albums-sync") {
+                    SyncSavedAlbumsRow(
+                        enabled = uiState.syncSpotifySavedAlbums,
+                        onChange = viewModel::onSyncSpotifySavedAlbumsChanged,
+                    )
                 }
             }
             if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
@@ -542,6 +579,38 @@ private fun DiscoverMixesRow(
                 } else {
                     "Off — no new mixes are added, and syncs run shorter"
                 },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = enabled,
+            onCheckedChange = onChange,
+        )
+    }
+}
+
+/** Spotify's saved albums on or off for sync; on by default (SyncPreferencesManager.syncSpotifySavedAlbums). */
+@Composable
+private fun SyncSavedAlbumsRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.sync_saved_albums_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(if (enabled) R.string.sync_saved_albums_on else R.string.sync_saved_albums_off),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

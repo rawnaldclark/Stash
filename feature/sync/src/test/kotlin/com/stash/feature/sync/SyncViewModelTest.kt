@@ -75,6 +75,7 @@ class SyncViewModelTest {
         every { prefs.spotifySyncMode } returns emptyFlow()
         every { prefs.youtubeSyncMode } returns emptyFlow()
         every { prefs.youtubeLikedStudioOnly } returns emptyFlow()
+        every { prefs.syncSpotifySavedAlbums } returns emptyFlow()
         every { prefs.syncDays } returns emptyFlow()
         every { tokenManager.spotifyAuthState } returns MutableStateFlow(AuthState.NotConnected)
         every { tokenManager.youTubeAuthState } returns MutableStateFlow(AuthState.NotConnected)
@@ -123,6 +124,35 @@ class SyncViewModelTest {
 
     @After fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    // -- Spotify saved albums (item 5, 2026-11-02) --------------------------------------------
+
+    private fun spotifyRow(id: Long, sourceId: String) = com.stash.core.data.db.entity.PlaylistEntity(
+        id = id, name = "Row $id", source = MusicSource.SPOTIFY, sourceId = sourceId,
+        type = com.stash.core.model.PlaylistType.CUSTOM,
+    )
+
+    @Test
+    fun `a synced saved album is marked as an album, a playlist is not`() {
+        every { playlistDao.getSpotifyPlaylistsForPreferences() } returns kotlinx.coroutines.flow.flowOf(
+            listOf(spotifyRow(1, "album:spotify:FakeAlb1xxxxxxxxxxxxxx"), spotifyRow(2, "FakePlaylist1xxxxxxxxx")),
+        )
+
+        val rows = newVm().uiState.value.spotifyPlaylists
+
+        assertEquals(listOf(true, false), rows.map { it.album })
+    }
+
+    @Test
+    fun `the saved albums switch shows the setting and writes it`() {
+        every { prefs.syncSpotifySavedAlbums } returns MutableStateFlow(false)
+        val vm = newVm()
+        assertEquals(false, vm.uiState.value.syncSpotifySavedAlbums)
+
+        vm.onSyncSpotifySavedAlbumsChanged(true)
+
+        io.mockk.coVerify { prefs.setSyncSpotifySavedAlbums(true) }
     }
 
     // -- "synced N ago" counts from when the last sync really finished (2026-11-02) --------

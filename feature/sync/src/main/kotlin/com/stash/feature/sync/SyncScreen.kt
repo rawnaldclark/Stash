@@ -149,7 +149,9 @@ fun SyncScreen(
     // The user's own playlists lead the art; mixes fill in when there are few.
     val arts = remember(rows, streamingMode) {
         val pool = if (!streamingMode && savedRows.isNotEmpty()) savedRows else rows
-        (pool.filter { it.type == PlaylistType.CUSTOM } + pool.filter { it.type != PlaylistType.CUSTOM })
+        // Saved albums fill in after the playlists, as mixes do.
+        val lead: (SyncPlaylistRow) -> Boolean = { it.type == PlaylistType.CUSTOM && !it.album }
+        (pool.filter(lead) + pool.filterNot(lead))
             .mapNotNull { it.artUrl }
             .distinct()
     }
@@ -373,6 +375,8 @@ internal data class SyncPlaylistRow(
     /** A mix that can stack, and whether it does. */
     val stackable: Boolean = false,
     val stackSongs: Boolean = false,
+    /** A saved album: the account page lists it under Albums, and it never counts as a playlist. */
+    val album: Boolean = false,
 ) {
     /**
      * Kept on this phone: its Save switch, or, in Download mode, switched on for
@@ -384,11 +388,11 @@ internal data class SyncPlaylistRow(
 
 internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
     spotifyPlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SPOTIFY, it.userHidden, it.dateAdded, it.stackable, it.stackSongs, it.album)
     } + soundCloudPlaylists.map {
         SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.SOUNDCLOUD, it.userHidden, it.dateAdded)
     } + youTubePlaylists.map {
-        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded, it.stackable, it.stackSongs)
+        SyncPlaylistRow(it.id, it.name, it.trackCount, it.type, it.syncEnabled, it.keepOffline, it.artUrl, SyncSource.YOUTUBE, it.userHidden, it.dateAdded, it.stackable, it.stackSongs, it.album)
     }
 
 /**
@@ -398,9 +402,9 @@ internal fun SyncUiState.playlistRows(): List<SyncPlaylistRow> =
  */
 internal fun List<SyncPlaylistRow>.newestFirst(): List<SyncPlaylistRow> = sortedByDescending { it.addedAt }
 
-/** "Mixes" is a service's own algorithmic playlists; everything else but Liked is the user's. */
+/** "Mixes" is a service's own algorithmic playlists; everything else but Liked and saved albums is the user's. */
 private fun SyncPlaylistRow.isMix() = type == PlaylistType.DAILY_MIX
-private fun SyncPlaylistRow.isOwnPlaylist() = type != PlaylistType.DAILY_MIX && type != PlaylistType.LIKED_SONGS
+internal fun SyncPlaylistRow.isOwnPlaylist() = !album && type != PlaylistType.DAILY_MIX && type != PlaylistType.LIKED_SONGS
 
 @Composable
 private fun librarySummary(uiState: SyncUiState, rows: List<SyncPlaylistRow>): String {
@@ -799,7 +803,9 @@ private fun AccountCards(
             val mine = rows.filter { it.source == source }
             val playlists = mine.count { it.isOwnPlaylist() }
             val mixes = mine.count { it.isMix() }
-            val arts = mine.newestFirst()
+            // Its playlists' and mixes' covers: saved albums have their own tab, and hundreds of
+            // them would push every playlist out of the card.
+            val arts = mine.filterNot { it.album }.newestFirst()
                 .mapNotNull { it.artUrl }
                 .distinct()
                 .take(4)
