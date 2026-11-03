@@ -182,7 +182,7 @@ class DiffWorkerSpotifySavedAlbumsTest {
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
     }
 
-    @Test fun `a switched-off YouTube Music album keeps Download mode's skip: it carries no stamp`() = runBlocking {
+    @Test fun `a switched-off YouTube Music album keeps Download mode's skip, as it carries no stamp`() = runBlocking {
         val syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
         val youTube = db.playlistDao().insert(
             PlaylistEntity(name = "Other Album", source = MusicSource.YOUTUBE, sourceId = "MPREb_fake", type = PlaylistType.CUSTOM),

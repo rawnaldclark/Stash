@@ -219,7 +219,7 @@ class SpotifySavedAlbumsFetcherTest {
         assertNull(snapshot.snapshotId)
     }
 
-    @Test fun `a read cut short writes nothing: a new album waits for a whole read`() = runTest {
+    @Test fun `a read cut short writes nothing, and a new album waits for a whole read`() = runTest {
         listing(listOf(album(1)))
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One", complete = false, walkedAll = false)
 
@@ -323,7 +323,7 @@ class SpotifySavedAlbumsFetcherTest {
         assertTrue(db.playlistDao().getById(pasted)!!.isActive)
     }
 
-    @Test fun `a pasted album the listener removed stays out: never read, written or brought back`() = runTest {
+    @Test fun `a pasted album the listener removed stays out, never read, written or brought back`() = runTest {
         // Remove hides a pasted Spotify album (SavedAlbums.removeHides) rather than freeing its key.
         val removed = row(key(1), source = MusicSource.BOTH, name = "Album 1")
         db.playlistDao().setUserHidden(removed, true)
