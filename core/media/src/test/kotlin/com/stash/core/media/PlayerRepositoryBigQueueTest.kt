@@ -458,6 +458,185 @@ class PlayerRepositoryBigQueueTest {
         assertThat(fake.ids().last()).isGreaterThan(600L)
     }
 
+    /** What the position saves left: the window, slot for slot, as the restore will read it. */
+    private fun saveTheWindow() {
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = fake.currentId(), positionMs = 0L, queueIndex = fake.cur, queueTrackIds = fake.ids(),
+            isShuffled = fake.shuffle, repeatMode = RepeatMode.OFF, source = com.stash.core.model.PlaybackSource.Library,
+        )
+    }
+
+    /** The service idle-stopped and a new, empty one is connected: the window waits, unconfirmed. */
+    private suspend fun stopAndReconnectToANewService() {
+        repo.onSessionAliveChanged(false)
+        fake.newService()
+        repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller)
+    }
+
+    private fun lastKeepRequest(): Boolean =
+        fake.customCommands.last { it.first == StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER }
+            .second.getBoolean(StashPlaybackService.EXTRA_KEEP_TIMELINE_ORDER)
+
+    @Test
+    fun `a queue the user starts while the window waits wins, even the same 500 songs`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val same = repo.queueWindow!!.windowIds().map(::track)
+        stopAndReconnectToANewService()
+
+        // A playlist of exactly the window's songs: not a restore, so not the old window.
+        repo.setQueue(same, startIndex = 50)
+
+        assertThat(repo.queueWindow).isNull()
+        assertThat(lastKeepRequest()).isFalse()
+        assertThat(fake.ids()).isEqualTo(same.map { it.id })
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(0)
+    }
+
+    @Test
+    fun `a big queue the user starts while the window waits replaces it`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val frozen = repo.queueWindow!!
+        stopAndReconnectToANewService()
+
+        repo.setQueue(library(3_000), startIndex = 5)
+
+        assertThat(repo.queueWindow).isNotSameInstanceAs(frozen)
+        assertThat(repo.queueWindow!!.total).isEqualTo(3_000)
+        assertThat(fake.currentId()).isEqualTo(6L)
+        assertThat(lastKeepRequest()).isTrue()
+    }
+
+    @Test
+    fun `a restore that isn't the window ends window mode and tells the service`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        // The last save lagged: one song short of the window.
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = fake.currentId(), positionMs = 0L, queueIndex = fake.cur, queueTrackIds = fake.ids().dropLast(1),
+            isShuffled = false, repeatMode = RepeatMode.OFF, source = com.stash.core.model.PlaybackSource.Library,
+        )
+        stopAndReconnectToANewService()
+
+        assertThat(repo.loadRestoredQueue()).isTrue()
+
+        assertThat(repo.queueWindow).isNull()
+        assertThat(lastKeepRequest()).isFalse()
+        assertThat(fake.items).hasSize(QUEUE_WINDOW_SIZE - 1)
+    }
+
+    @Test
+    fun `Add to queue on the waiting window's paused song takes the whole order back and goes after it`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val window = repo.queueWindow!!
+        saveTheWindow()
+        stopAndReconnectToANewService()
+
+        assertThat(repo.addToQueue(track(9_999L))).isTrue()
+
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(window.total).isEqualTo(2_001)
+        assertThat(window.idAtPosition(2_000)).isEqualTo(9_999L) // after all 2,000, not after the 500
+        assertThat(fake.ids()).doesNotContain(9_999L)
+        assertThat(fake.ids()).isEqualTo(window.windowIds().toList())
+        assertThat(fake.keepsTimelineOrder).isTrue()
+    }
+
+    @Test
+    fun `Play next on the waiting window's paused song takes the whole order back and goes right after it`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val window = repo.queueWindow!!
+        saveTheWindow()
+        stopAndReconnectToANewService()
+
+        assertThat(repo.addNext(track(8_888L))).isTrue()
+
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(window.total).isEqualTo(2_001)
+        assertThat(fake.currentId()).isEqualTo(701L)
+        assertThat(fake.ids()[fake.cur + 1]).isEqualTo(8_888L)
+        assertThat(fake.ids()).isEqualTo(window.windowIds().toList())
+    }
+
+    @Test
+    fun `a song deleted while the window waits with no controller leaves it, and the restore still takes it back`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val window = repo.queueWindow!!
+        saveTheWindow() // with song 720 in it
+        repo.onSessionAliveChanged(false) // no controller from here
+
+        repo.evictFromQueue(setOf(720L))
+        assertThat(window.total).isEqualTo(1_999)
+
+        // Song 720 is gone from the library: the restore reads back the other 499.
+        coEvery { trackDao.getByIds(any()) } answers {
+            firstArg<List<Long>>().filter { it != 720L }.map { TrackEntity(id = it, title = "T$it", artist = "A", isStreamable = true) }
+        }
+        fake.newService()
+        repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller)
+        assertThat(repo.loadRestoredQueue()).isTrue()
+
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(fake.ids()).doesNotContain(720L)
+        assertThat(fake.ids()).isEqualTo(window.windowIds().toList())
+        assertThat(fake.keepsTimelineOrder).isTrue()
+    }
+
+    @Test
+    fun `a song deleted while the reshuffle reads its songs leaves the order, and the reshuffle redoes it`() = runTest {
+        repo.setQueue(library(3_000), startIndex = 10)
+        val window = repo.queueWindow!!
+        var deletedDuringRead = false
+        coEvery { trackDao.getByIds(any()) } answers {
+            // The eviction lands while the reshuffle is on IO: in place, on the window it started from.
+            if (!deletedDuringRead) {
+                deletedDuringRead = true
+                window.removeIds(setOf(2_500L))
+            }
+            firstArg<List<Long>>().map { TrackEntity(id = it, title = "T$it", artist = "A", isStreamable = true) }
+        }
+        fake.shuffle = true
+
+        repo.rewindowForShuffle()
+
+        assertThat(deletedDuringRead).isTrue()
+        val shuffled = repo.queueWindow!!
+        assertThat(shuffled.isShuffled).isTrue()
+        assertThat(shuffled.total).isEqualTo(2_999)
+        assertThat((0 until shuffled.total).none { shuffled.idAtPosition(it) == 2_500L }).isTrue()
+        assertThat(fake.ids()).isEqualTo(shuffled.windowIds().toList())
+    }
+
+    @Test
+    fun `a reshuffle that gave up is tried again with the next state`() = runTest {
+        repo.setQueue(library(3_000), startIndex = 10)
+        var playbackMoves = true
+        coEvery { trackDao.getByIds(any()) } answers {
+            if (playbackMoves) fake.cur += 1 // every read sees playback move on: each pass starts again
+            firstArg<List<Long>>().map { TrackEntity(id = it, title = "T$it", artist = "A", isStreamable = true) }
+        }
+        fake.shuffle = true
+        repo.rewindowForShuffle()
+        assertThat(repo.queueWindow!!.isShuffled).isFalse() // it gave up
+
+        playbackMoves = false
+        repo.updateState(controller)
+
+        awaitMain { repo.queueWindow?.isShuffled == true }
+        assertThat(repo.queueWindow!!.total).isEqualTo(3_000)
+        assertThat(fake.ids()).isEqualTo(repo.queueWindow!!.windowIds().toList())
+        assertThat(fake.walksTimelineOrder()).isTrue()
+    }
+
     @Test
     fun `a reshuffle asks again to keep the timeline order`() = runTest {
         repo.setQueue(library(3_000), startIndex = 10)
