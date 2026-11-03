@@ -1,5 +1,6 @@
 package com.stash.core.data.update
 
+import android.app.ActivityManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,7 +13,13 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.pm.PackageInfoCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.stash.core.data.R
+import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -41,8 +48,14 @@ sealed interface UpdateState {
     /** Android needs "Install unknown apps" allowed for Stash first (once). */
     data object NeedsPermission : UpdateState
 
-    /** Handed to Android: its confirm is up (or, after the first update, it installs on its own). */
+    /** Handed to Android: the APK is being staged, or Android's confirm is up. */
     data object Installing : UpdateState
+
+    /**
+     * Downloaded, checked and staged, waiting for the listener: Android's confirm couldn't open because Stash wasn't in
+     * front (Android 10+ blocks it silently). Install now opens it.
+     */
+    data object ReadyToInstall : UpdateState
 
     data class Failed(val reason: Reason) : UpdateState {
         enum class Reason {
@@ -60,9 +73,10 @@ sealed interface UpdateState {
 /**
  * In-app updates (release plan: "prompt + one tap"). [UpdateCheckWorker] finds a newer release on GitHub and [store]s it;
  * the update sheet offers it; Update downloads the release's APK, checks it is this app, newer, and signed with the same key,
- * and installs it with [PackageInstaller]. Android asks the listener to confirm (an app from outside a store can't update
- * itself silently the first time), and once Stash has installed an update it is the installer of record, so on Android 12+
- * later updates need no confirm.
+ * and installs it with [PackageInstaller]. Android asks the listener to confirm every update: the session asks for no
+ * confirm (Android 12+), but Android grants that only to an installer that declares UPDATE_PACKAGES_WITHOUT_USER_ACTION,
+ * and Stash's manifest doesn't. Results are matched to the session they belong to: an earlier session, abandoned when the
+ * APK is staged again, answers too.
  */
 @Singleton
 class AppUpdater internal constructor(
@@ -76,18 +90,57 @@ class AppUpdater internal constructor(
     internal interface Steps {
         fun verify(apk: File): UpdateState.Failed.Reason?
         fun canInstall(): Boolean
-        fun install(apk: File)
+
+        /** Drops Stash's earlier sessions and copies [apk] into a new one; its id. */
+        fun stage(apk: File): Int
+
+        /** Hands the staged session to Android ([UpdateInstallReceiver] hears the answer). */
+        fun commit(sessionId: Int)
+
+        /** Whether the session is still there for its confirm (Android drops one after a while, or at a reboot). */
+        fun isStaged(sessionId: Int): Boolean
+
+        /** Opens Android's install [confirm] if Stash is in front; false when it can't be opened (in the background). */
+        fun confirm(confirm: Intent): Boolean
     }
 
     private val steps: Steps = testSteps ?: object : Steps {
         override fun verify(apk: File) = verifyApk(apk)
         override fun canInstall() = context.packageManager.canRequestPackageInstalls()
-        override fun install(apk: File) = stageAndCommit(apk)
+        override fun stage(apk: File) = stageSession(apk)
+        override fun commit(sessionId: Int) = commitSession(sessionId)
+        override fun isStaged(sessionId: Int) = context.packageManager.packageInstaller.getSessionInfo(sessionId) != null
+        override fun confirm(confirm: Intent): Boolean {
+            // Android 10+ drops an activity start from the background without a word: don't try it there. A Stash screen
+            // must be started: the process alone counts as foreground while another app in front is bound to its player.
+            if (!ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return false
+            val me = ActivityManager.RunningAppProcessInfo().also(ActivityManager::getMyMemoryState)
+            if (me.importance > ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) return false
+            return try {
+                context.startActivity(Intent(confirm).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "can't open the confirm: ${e.javaClass.simpleName}")
+                false
+            }
+        }
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+
+    /**
+     * The session of the APK being installed now, set before its commit (its answer can come before the commit returns);
+     * null while staging, so an earlier session's answer, sent when it is abandoned, is never taken for this one's.
+     */
+    @Volatile private var session: Int? = null
+
+    /** Android's install confirm, held while it couldn't open ([UpdateState.ReadyToInstall]). */
+    private var heldConfirm: Intent? = null
+
+    /** Whether "ready to install" is up: it replaced the update's notification, and goes when the install ends. */
+    private var readyNotified = false
 
     private val _available = MutableStateFlow(read(prefs, context))
     /** The newer release to offer, or null (none found, or this one installed since). */
@@ -98,7 +151,18 @@ class AppUpdater internal constructor(
 
     // Held: SharedPreferences keeps its listeners weakly.
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY_TAG || key == null) _available.value = read(prefs, context)
+        // Any part of the stored release, not only its tag: notes edited on GitHub after the release reach an open sheet
+        // at the next check, and so would a replaced APK.
+        if (key == null || key in RELEASE_KEYS) reload()
+    }
+
+    @Synchronized
+    private fun reload() {
+        val before = _available.value?.tag
+        _available.value = read(prefs, context)
+        // A newer release (or none) while the older one waits for Install now: the sheet would name the newer one and
+        // install the older. Drop the held confirm; Update now gets the newer one.
+        if (_available.value?.tag != before && _state.value == UpdateState.ReadyToInstall) toIdle()
     }
 
     init {
@@ -107,9 +171,19 @@ class AppUpdater internal constructor(
         if (_available.value == null) scope.launch { File(context.cacheDir, DIR).deleteRecursively() }
     }
 
-    /** Whether the sheet should come up for [update] now: not put off with Later in the last day. */
-    fun shouldPrompt(update: AvailableUpdate, now: Long = System.currentTimeMillis()): Boolean =
-        AppUpdates.shouldPrompt(update.tag, prefs.getString(KEY_LATER_TAG, null), prefs.getLong(KEY_LATER_AT, 0L), now)
+    /** Whether the sheet should come up for [update] by itself now: not skipped, and not put off with Later in the last day. */
+    fun shouldPrompt(update: AvailableUpdate, now: Long = System.currentTimeMillis()): Boolean = AppUpdates.shouldPrompt(
+        update.tag,
+        prefs.getString(KEY_LATER_TAG, null),
+        prefs.getLong(KEY_LATER_AT, 0L),
+        now,
+        prefs.getString(KEY_SKIPPED_TAG, null),
+    )
+
+    /** The version installed now ("0.9.122"), for "You have 0.9.122"; null if Android won't say. */
+    val installedVersion: String? by lazy {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+    }
 
     private val _asks = MutableStateFlow(0)
     /** Counts the times the listener asked to see the update (the notification, Settings): the sheet opens on each. */
@@ -126,11 +200,22 @@ class AppUpdater internal constructor(
         prefs.edit().putString(KEY_LATER_TAG, tag).putLong(KEY_LATER_AT, System.currentTimeMillis()).apply()
     }
 
+    /**
+     * Skip this version: the sheet and the notification never come up for it by themselves again. The next version asks as
+     * usual, and Settings › Check for updates (or the notification, if one is up) still opens this one.
+     */
+    fun skip() {
+        val tag = _available.value?.tag ?: return
+        prefs.edit().putString(KEY_SKIPPED_TAG, tag).apply()
+    }
+
     /** Update: download, check, install. A second tap while it runs does nothing. */
     @Synchronized
     fun update() {
         val update = _available.value ?: return
         if (busy()) return
+        heldConfirm = null // from ready to install: staged again below
+        cancelReadyNotification()
         _state.value = UpdateState.Downloading(0f) // busy from this call on, before the job starts
         job = scope.launch {
             val apk = try {
@@ -165,6 +250,104 @@ class AppUpdater internal constructor(
         job = scope.launch { installOrFail(apk) }
     }
 
+    /**
+     * [UpdateInstallReceiver]: Android wants the listener to confirm the install. Its screen opens now when Stash is in
+     * front. From the background Android 10+ blocks it without a word, which used to leave "Installing…" for good: the
+     * confirm is held instead, the update is [UpdateState.ReadyToInstall] (the sheet comes back for it), and a notification
+     * says so. A missing confirm is an install that failed. An earlier session's [sessionId] is ignored.
+     */
+    @Synchronized
+    fun onConfirmNeeded(sessionId: Int, confirm: Intent?) {
+        if (!isCurrent(sessionId, PackageInstaller.STATUS_PENDING_USER_ACTION)) return
+        if (confirm == null) {
+            _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
+            return
+        }
+        if (steps.confirm(confirm)) return
+        heldConfirm = confirm
+        _state.value = UpdateState.ReadyToInstall
+        _available.value?.let(::notifyReadyToInstall)
+    }
+
+    /**
+     * Install now, from [UpdateState.ReadyToInstall]: Android's held confirm opens. If its session is gone (Android
+     * dropped it), or the confirm won't open, the downloaded APK is checked and staged again.
+     */
+    @Synchronized
+    fun installNow() {
+        if (_state.value != UpdateState.ReadyToInstall) return
+        cancelReadyNotification()
+        val confirm = heldConfirm
+        heldConfirm = null
+        _state.value = UpdateState.Installing
+        // A confirm whose session is gone still opens, and Android's installer then closes with no answer at all.
+        val staged = session?.let(steps::isStaged) == true
+        if (confirm != null && staged && steps.confirm(confirm)) return
+        val apk = _available.value?.let(::apkFile)?.takeIf { it.exists() }
+        if (apk == null) {
+            _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
+            return
+        }
+        job = scope.launch {
+            // Checked again: the file has sat in the cache since it was checked.
+            steps.verify(apk)?.let { reason ->
+                apk.delete()
+                _state.value = UpdateState.Failed(reason)
+                return@launch
+            }
+            installOrFail(apk)
+        }
+    }
+
+    /** Back to the start: no held confirm, and no "ready to install" left up. */
+    private fun toIdle() {
+        heldConfirm = null
+        cancelReadyNotification()
+        _state.value = UpdateState.Idle
+    }
+
+    private fun cancelReadyNotification() {
+        if (!readyNotified) return
+        readyNotified = false
+        NotificationManagerCompat.from(context).cancel(SyncNotificationManager.NOTIFICATION_ID_UPDATE)
+    }
+
+    /** Whether [sessionId] is the session being installed now; an earlier one's answer is logged and dropped. */
+    private fun isCurrent(sessionId: Int, status: Int): Boolean {
+        if (sessionId == session) return true
+        Log.i(TAG, "status $status for session $sessionId, not the current one ($session): ignored")
+        return false
+    }
+
+    /** "Stash 0.9.123 is ready to install", in place of the update's notification; a tap opens the sheet. */
+    private fun notifyReadyToInstall(update: AvailableUpdate) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        val open = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?.putExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATE, true)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            ?: return
+        val tap = PendingIntent.getActivity(
+            context,
+            REQUEST_READY_TO_INSTALL,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, SyncNotificationManager.CHANNEL_UPDATE)
+            .setContentTitle(context.getString(R.string.update_ready_notification_title, update.version))
+            .setContentText(context.getString(R.string.update_ready_notification_text))
+            .setSmallIcon(R.drawable.ic_stat_stash)
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build()
+        try {
+            manager.notify(SyncNotificationManager.NOTIFICATION_ID_UPDATE, notification)
+            readyNotified = true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "can't post the ready-to-install notification: no permission")
+        }
+    }
+
     /** A download or install under way (a confirm Android shows counts too). */
     private fun busy() = job?.isActive == true || _state.value == UpdateState.Installing
 
@@ -175,11 +358,16 @@ class AppUpdater internal constructor(
             return
         }
         _state.value = UpdateState.Installing
+        // Staging abandons the earlier sessions, and each answers "aborted": none of them is this install.
+        session = null
         try {
-            steps.install(apk)
+            val id = steps.stage(apk)
+            session = id
+            steps.commit(id)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            session = null // abandoned: its "aborted" mustn't hide the failure
             Log.w(TAG, "install failed: ${e.javaClass.simpleName}: ${e.message}")
             _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
         }
@@ -190,18 +378,30 @@ class AppUpdater internal constructor(
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    /** The sheet was closed after a failure: start over next time. */
+    /**
+     * The sheet was closed after a failure or at Android's permission step (Later): start over next time. A downloaded APK
+     * stays, so that next Update now installs it without downloading again.
+     */
+    @Synchronized
     fun reset() {
-        if (_state.value is UpdateState.Failed) _state.value = UpdateState.Idle
+        val s = _state.value
+        if (s is UpdateState.Failed || s == UpdateState.NeedsPermission) toIdle()
     }
 
-    /** [UpdateInstallReceiver]: the installer's answer. Public: called from another file (see the incremental-build note in #741). */
-    fun onInstallResult(status: Int, message: String?) {
+    /**
+     * [UpdateInstallReceiver]: the installer's answer for [sessionId]; only the current session's counts. Public: called
+     * from another file (see the incremental-build note in #741).
+     */
+    @Synchronized
+    fun onInstallResult(sessionId: Int, status: Int, message: String?) {
+        if (!isCurrent(sessionId, status)) return
         when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit // the receiver opened Android's confirm
-            PackageInstaller.STATUS_SUCCESS -> _state.value = UpdateState.Idle // this process is replaced right after
-            PackageInstaller.STATUS_FAILURE_ABORTED -> _state.value = UpdateState.Idle // the listener said no
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> Unit // the receiver hands that to onConfirmNeeded
+            PackageInstaller.STATUS_SUCCESS -> toIdle() // this process is replaced right after
+            PackageInstaller.STATUS_FAILURE_ABORTED -> toIdle() // the listener said no (or Android dropped the session)
             else -> {
+                heldConfirm = null
+                cancelReadyNotification()
                 Log.w(TAG, "install failed: $status $message")
                 _state.value = UpdateState.Failed(UpdateState.Failed.Reason.INSTALL)
             }
@@ -296,13 +496,17 @@ class AppUpdater internal constructor(
         return sigs.mapTo(HashSet()) { sig -> sha.digest(sig.toByteArray()).joinToString("") { "%02x".format(it) } }
     }
 
-    /** Stages [apk] in a [PackageInstaller] session and commits it ([UpdateInstallReceiver] hears the answer). */
-    private fun stageAndCommit(apk: File) {
+    /** Copies [apk] into a new [PackageInstaller] session, after dropping Stash's earlier ones; the session's id. */
+    private fun stageSession(apk: File): Int {
         val installer = context.packageManager.packageInstaller
+        // An earlier try's session (staged, its confirm never answered) would keep its copy of the APK: drop it. Each
+        // dropped session that was committed answers "aborted" to its own callback.
+        installer.mySessions.forEach { runCatching { installer.abandonSession(it.sessionId) } }
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
             setSize(apk.length())
-            // Once Stash installed itself, Android 12+ lets its next updates through without a confirm.
+            // Asks Android 12+ for no confirm. Android grants it only to an installer that declares
+            // UPDATE_PACKAGES_WITHOUT_USER_ACTION (Stash doesn't), so each update still has its confirm.
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val sessionId = installer.createSession(params)
@@ -312,6 +516,20 @@ class AppUpdater internal constructor(
                     apk.inputStream().use { it.copyTo(out) }
                     session.fsync(out)
                 }
+            }
+        } catch (e: Exception) {
+            // Staging failed: the session's copy of the APK mustn't stay on the phone.
+            runCatching { installer.abandonSession(sessionId) }
+            throw e
+        }
+        return sessionId
+    }
+
+    /** Commits the staged session ([UpdateInstallReceiver] hears the answer, with its id). */
+    private fun commitSession(sessionId: Int) {
+        val installer = context.packageManager.packageInstaller
+        try {
+            installer.openSession(sessionId).use { session ->
                 val callback = PendingIntent.getBroadcast(
                     context,
                     sessionId,
@@ -322,7 +540,7 @@ class AppUpdater internal constructor(
                 session.commit(callback.intentSender)
             }
         } catch (e: Exception) {
-            // Staging failed: the session's copy of the APK mustn't stay on the phone.
+            // The commit failed: the session's copy of the APK mustn't stay on the phone.
             runCatching { installer.abandonSession(sessionId) }
             throw e
         }
@@ -331,22 +549,27 @@ class AppUpdater internal constructor(
     companion object {
         private const val TAG = "AppUpdater"
         private const val DIR = "updates"
+        private const val REQUEST_READY_TO_INSTALL = 9004
 
         /** Shared with [UpdateCheckWorker], which writes the release it found. */
         const val PREFS = "update_check_prefs"
         private const val KEY_TAG = "available_tag"
         private const val KEY_URL = "available_url"
         private const val KEY_SIZE = "available_size"
-        private const val KEY_NOTES = "available_notes"
+        /** The notes as plain text, before 0.9.123: read only when the Markdown below isn't stored yet. */
+        private const val KEY_NOTES_PLAIN = "available_notes"
+        private const val KEY_NOTES = "available_notes_md"
         private const val KEY_LATER_TAG = "later_tag"
         private const val KEY_LATER_AT = "later_at"
-
+        private const val KEY_SKIPPED_TAG = "skipped_tag"
+        private val RELEASE_KEYS = setOf(KEY_TAG, KEY_URL, KEY_SIZE, KEY_NOTES)
 
         fun isDebuggable(context: Context) = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
         /** [UpdateCheckWorker]: the newer release it found ([update]), or null when this app is up to date. */
         fun store(context: Context, update: AvailableUpdate?) {
             val edit = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            edit.remove(KEY_NOTES_PLAIN)
             if (update == null) {
                 edit.remove(KEY_TAG).remove(KEY_URL).remove(KEY_SIZE).remove(KEY_NOTES)
             } else {
@@ -357,6 +580,10 @@ class AppUpdater internal constructor(
             edit.apply()
         }
 
+        /** Whether the listener skipped [tag] ("Skip this version"): [UpdateCheckWorker] then posts no notification for it. */
+        fun isSkipped(context: Context, tag: String): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SKIPPED_TAG, null) == tag
+
         /** The stored release, if it is still newer than what is installed (it isn't once it has been installed). */
         private fun read(prefs: SharedPreferences, context: Context): AvailableUpdate? {
             val tag = prefs.getString(KEY_TAG, null) ?: return null
@@ -364,7 +591,8 @@ class AppUpdater internal constructor(
             val installed = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
                 ?: return null
             if (!UpdateCheckWorker.isNewerVersion(tag, installed)) return null
-            return AvailableUpdate(tag, tag.removePrefix("v").removePrefix("V"), url, prefs.getLong(KEY_SIZE, 0L), prefs.getString(KEY_NOTES, "").orEmpty())
+            val notes = prefs.getString(KEY_NOTES, null) ?: prefs.getString(KEY_NOTES_PLAIN, null).orEmpty()
+            return AvailableUpdate(tag, tag.removePrefix("v").removePrefix("V"), url, prefs.getLong(KEY_SIZE, 0L), notes)
         }
     }
 }

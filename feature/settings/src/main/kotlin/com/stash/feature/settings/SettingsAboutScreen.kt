@@ -62,7 +62,7 @@ fun SettingsAboutScreen(
         // work and say what it concluded.
         var checking by remember { mutableStateOf(false) }
         // A check that finds an update opens the update sheet (over the app, held by the scaffold).
-        val updates: com.stash.feature.settings.update.UpdateViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+        val updates: com.stash.feature.settings.update.UpdateAskViewModel = androidx.hilt.navigation.compose.hiltViewModel()
         LaunchedEffect(context) {
             WorkManager.getInstance(context)
                 .getWorkInfosForUniqueWorkFlow(UpdateCheckWorker.UNIQUE_ONE_SHOT_NAME)
@@ -75,10 +75,7 @@ fun SettingsAboutScreen(
                     checking = false
                     val outcome = info.outputData.getString(UpdateCheckWorker.KEY_OUTCOME)
                     val tag = info.outputData.getString(UpdateCheckWorker.KEY_LATEST_TAG)
-                    if (outcome == UpdateCheckWorker.OUTCOME_UPDATE_AVAILABLE && updates.available.value != null) {
-                        updates.ask()
-                        return@collect
-                    }
+                    if (outcome == UpdateCheckWorker.OUTCOME_UPDATE_AVAILABLE && updates.ask()) return@collect
                     val message = when (outcome) {
                         UpdateCheckWorker.OUTCOME_UP_TO_DATE ->
                             context.getString(R.string.settings_update_on_latest, installedVersion)

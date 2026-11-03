@@ -45,21 +45,46 @@
     <string name="settings_about_section">About</string>
     <string name="settings_update_on_latest">You\'re on the latest version (%1$s)</string>
     <string name="settings_update_available">Update available: %1$s</string>
-    <string name="update_sheet_title">Stash %1$s is ready</string>
-    <string name="update_sheet_whats_new">What\'s new</string>
+    <!-- The update sheet (UpdateSheet.kt). Header: "Update available", "Stash 0.9.123", "You have 0.9.122 · 174 MB". -->
+    <string name="update_sheet_eyebrow">Update available</string>
+    <string name="update_sheet_title">Stash %1$s</string>
+    <string name="update_sheet_you_have">You have %1$s</string>
+    <!-- Under the highlights: what else is in the notes, e.g. "+4 new · 4 improvements · 10 fixes", opening them all. -->
+    <string name="update_sheet_more_new">+%1$d new</string>
+    <plurals name="update_sheet_improvements">
+        <item quantity="one">%1$d improvement</item>
+        <item quantity="other">%1$d improvements</item>
+    </plurals>
+    <plurals name="update_sheet_fixes">
+        <item quantity="one">%1$d fix</item>
+        <item quantity="other">%1$d fixes</item>
+    </plurals>
+    <string name="update_sheet_all_notes">See all the notes</string>
+    <string name="update_sheet_notes_on_github">Full notes on GitHub</string>
     <string name="update_sheet_update_now">Update now</string>
     <string name="update_sheet_later">Later</string>
+    <string name="update_sheet_skip">Skip this version</string>
+    <string name="update_sheet_hide">Hide</string>
+    <string name="update_sheet_close">Close</string>
     <string name="update_sheet_downloading">Downloading…</string>
     <string name="update_sheet_downloading_pct">Downloading… %1$d%%</string>
-    <string name="update_sheet_installing">Installing… Android asks you to confirm.</string>
-    <string name="update_sheet_permission">Android needs your OK to install updates from Stash. Turn on “Allow from this source”, then come back. You only do this once.</string>
+    <!-- "82 of 174 MB": the megabytes downloaded so far, then the whole size. -->
+    <string name="update_sheet_progress">%1$d of %2$s</string>
+    <string name="update_sheet_downloading_note">You can keep using Stash. The update installs when the download is done.</string>
+    <string name="update_sheet_installing">Almost done. If Android asks, tap Update.</string>
+    <string name="update_sheet_ready">Downloaded and checked. Tap Install now, then Update when Android asks.</string>
+    <string name="update_sheet_install_now">Install now</string>
+    <string name="update_sheet_permission_title">One more step, just this once</string>
+    <string name="update_sheet_permission_step_1">Tap Open settings.</string>
+    <string name="update_sheet_permission_step_2">Turn on “Allow from this source”.</string>
+    <string name="update_sheet_permission_step_3">Come back here. The update carries on.</string>
     <string name="update_sheet_open_settings">Open settings</string>
     <string name="update_sheet_try_again">Try again</string>
-    <string name="update_sheet_github">Get it from GitHub</string>
+    <string name="update_sheet_github">Download from GitHub</string>
     <string name="update_failed_not_an_update">This download isn\'t a Stash update, so nothing was installed.</string>
     <string name="update_failed_already_newer">You already have this version or a newer one.</string>
-    <string name="update_failed_download">Couldn\'t download the update. Check your connection and try again.</string>
-    <string name="update_failed_install">Android couldn\'t install the update. Try again, or get it from GitHub.</string>
+    <string name="update_failed_download">The download stopped. Check your connection and try again.</string>
+    <string name="update_failed_install">Android couldn\'t install the update. Try again, or download it from GitHub.</string>
     <string name="settings_update_see_releases">see Releases</string>
     <string name="settings_update_check_failed">Couldn\'t check for updates — try again later</string>
     <string name="settings_version_label">Version</string>

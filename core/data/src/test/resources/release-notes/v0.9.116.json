@@ -1,0 +1,16 @@
+{
+  "tag_name": "v0.9.116",
+  "name": "Stash v0.9.116 — Tidal fix",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/rawnaldclark/Stash/releases/tag/v0.9.116",
+  "published_at": "2026-10-16T01:24:06Z",
+  "body": "Tidal fix.\n\n- Stash now asks Tidal far less often, which keeps Tidal working more reliably for everyone.\n\n---\n\n## Install\n\nDownload `Stash.apk` below and open it on your Android device. If you've got a previous Stash release installed, this upgrades in place — your library, sync history, and settings are preserved.\n\n**Requires:** Android 8.0 (API 26) or newer.\n\nSee the [README](https://github.com/rawnaldclark/Stash#installation) for first-time setup.\n\n\n## What's Changed\n* fix(tidal): cut app-to-relay request volume (cache, busy backoff, dedupe, sweep cap) by @rawnaldclark in https://github.com/rawnaldclark/Stash/pull/604\n\n\n**Full Changelog**: https://github.com/rawnaldclark/Stash/compare/v0.9.115...v0.9.116",
+  "assets": [
+    {
+      "name": "Stash.apk",
+      "size": 169079007,
+      "browser_download_url": "https://github.com/rawnaldclark/Stash/releases/download/v0.9.116/Stash.apk"
+    }
+  ]
+}

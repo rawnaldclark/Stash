@@ -13,13 +13,15 @@ class AppUpdatesTest {
            "body":"## What's new\r\n- **Paste links** from [Spotify](https://x)\r\n\r\n\r\n\r\n- Sync tab","assets":[$assets]}"""
 
     @Test
-    fun `a release gives its tag, apk, size and plain notes`() {
+    fun `a release gives its tag, apk, size, notes as written and its page`() {
         val u = AppUpdates.parseRelease(release())!!
         assertEquals("v0.9.122", u.tag)
         assertEquals("0.9.122", u.version)
         assertEquals("https://github.com/rawnaldclark/Stash/releases/download/v0.9.122/Stash.apk", u.apkUrl)
         assertEquals(171_411_798L, u.sizeBytes)
-        assertEquals("What's new\n• Paste links from Spotify\n\n• Sync tab", u.notes)
+        // As written, line ends made plain: ReleaseNotes reads them for the sheet.
+        assertEquals("## What's new\n- **Paste links** from [Spotify](https://x)\n\n\n\n- Sync tab", u.notes)
+        assertEquals("https://github.com/rawnaldclark/Stash/releases/tag/v0.9.122", u.pageUrl)
     }
 
     @Test
@@ -39,6 +41,14 @@ class AppUpdatesTest {
         assertTrue(AppUpdates.shouldPrompt("v3", laterTag = "v2", laterAt = 1_000, now = 1_001))
         // A clock set back: ask rather than stay quiet for good.
         assertTrue(AppUpdates.shouldPrompt("v2", laterTag = "v2", laterAt = 5_000, now = 1_000))
+    }
+
+    @Test
+    fun `a skipped release never asks by itself, and the next one does`() {
+        val day = AppUpdates.ASK_AGAIN_MS
+        assertFalse(AppUpdates.shouldPrompt("v2", laterTag = null, laterAt = 0, now = 10, skippedTag = "v2"))
+        assertFalse(AppUpdates.shouldPrompt("v2", laterTag = "v2", laterAt = 0, now = 10 * day, skippedTag = "v2"))
+        assertTrue(AppUpdates.shouldPrompt("v3", laterTag = null, laterAt = 0, now = 10, skippedTag = "v2"))
     }
 
     @Test

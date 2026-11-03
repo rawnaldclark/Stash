@@ -16,9 +16,12 @@ data class AvailableUpdate(
     /** The release's APK (its `browser_download_url`). */
     val apkUrl: String,
     val sizeBytes: Long,
-    /** The release notes, as plain text. */
+    /** The release notes as written (GitHub's Markdown body): [ReleaseNotes.parse] reads the user's part of them. */
     val notes: String,
-)
+) {
+    /** The release's page on GitHub, for "Full notes on GitHub" and "Download from GitHub". */
+    val pageUrl: String get() = AppUpdates.releasePage(tag)
+}
 
 /** Reading a GitHub release, and when to ask. Pure, so it can be tested off-device. */
 object AppUpdates {
@@ -45,35 +48,22 @@ object AppUpdates {
             version = tag.removePrefix("v").removePrefix("V"),
             apkUrl = apk.str("browser_download_url")!!,
             sizeBytes = (apk["size"] as? JsonPrimitive)?.longOrNull ?: 0L,
-            notes = plainNotes(root.str("body").orEmpty()),
+            notes = root.str("body").orEmpty().replace("\r\n", "\n"),
         )
     }
 
     /**
-     * Whether to show the sheet for [tag] now: never shown for it, or Later was more than [ASK_AGAIN_MS] ago. A newer
-     * release than the one put off asks at once.
+     * Whether to show the sheet for [tag] by itself now: not skipped ([skippedTag], "Skip this version"), and never put off,
+     * or Later was more than [ASK_AGAIN_MS] ago. A newer release than the one put off or skipped asks at once.
      */
-    fun shouldPrompt(tag: String, laterTag: String?, laterAt: Long, now: Long): Boolean =
-        tag != laterTag || now - laterAt >= ASK_AGAIN_MS || now < laterAt
+    fun shouldPrompt(tag: String, laterTag: String?, laterAt: Long, now: Long, skippedTag: String? = null): Boolean =
+        tag != skippedTag && (tag != laterTag || now - laterAt >= ASK_AGAIN_MS || now < laterAt)
 
-    /**
-     * Release notes for reading in the app: Markdown marks taken off ("## What's new" → "What's new", "**Paste**" →
-     * "Paste", "- item" → "• item", `[text](url)` → "text"), blank runs folded, HTML comments dropped.
-     */
-    fun plainNotes(md: String): String = md
-        .replace("\r\n", "\n")
-        .replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
-        .lines()
-        .joinToString("\n") { line ->
-            line.trimEnd()
-                .replace(Regex("^#{1,6}\\s+"), "")
-                .replace(Regex("^\\s*[-*]\\s+"), "• ")
-                .replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")
-                .replace("**", "")
-                .replace("`", "")
-        }
-        .replace(Regex("\n{3,}"), "\n\n")
-        .trim()
+    /** [tag]'s release page on GitHub. */
+    fun releasePage(tag: String): String = "$RELEASES/tag/${tag.trim()}"
+
+    /** The release page for every release, when the tag isn't known. */
+    const val RELEASES = "https://github.com/rawnaldclark/Stash/releases"
 
     /** "171 MB". */
     fun sizeLabel(bytes: Long): String = if (bytes <= 0) "" else "${(bytes + 500_000) / 1_000_000} MB"

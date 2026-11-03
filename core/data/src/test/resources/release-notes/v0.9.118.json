@@ -1,0 +1,16 @@
+{
+  "tag_name": "v0.9.118",
+  "name": "Stash v0.9.118 — Your music, in the cloud",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/rawnaldclark/Stash/releases/tag/v0.9.118",
+  "published_at": "2026-10-21T14:03:30Z",
+  "body": "## Your music, in the cloud\n\nSettings › Accounts & Sync › **Cloud storage**: connect **Dropbox**, **OneDrive** or **Google Drive** and play the music you keep there.\n- Dropbox and OneDrive: pick your music folders and Stash keeps them up to date.\n- Google Drive: pick the songs you want in Stash.\n- Cloud songs play, download and show up in your library like everything else. Library gets a Cloud filter.\n- Sign-in and your files go straight between your phone and the cloud service. Stash's servers never see them.\n\n**Save to Google Drive.** With Google Drive connected, the menu on any downloaded song, album or playlist has **Save to Google Drive**. Or turn on **Back up my downloads** under Cloud storage and new downloads are copied there on their own.\n\n## More lossless from Tidal\n\n- Tidal now plays and downloads full CD-quality FLAC for songs it has in lossless. Many of these used to come through as AAC.\n- New: Settings › Audio & Quality › **Prefer Tidal AAC while streaming**. Streams Tidal's AAC instead of FLAC when Tidal has the song, to save data. Downloads aren't affected.\n- The daily Tidal & Qobuz allowance is now 300 songs a day, so there's more to go around for everyone.\n\n## Lyrics\n\n- Long lines now wrap onto the next line instead of shrinking to fit. Thanks @mvanhorn!\n- More songs get word-by-word lyrics, from a new source. Thanks @ParaliyzedEvo!\n- Stash no longer works through your whole library looking for lyrics in the background. It looks them up for the songs you play and download. Want it to check everything? Settings › Playback › Lyrics › **Re-check library for word-synced lyrics**. It runs slowly on Wi-Fi and you can stop it any time.\n\n## Fixes\n\n- **Your queue comes back** after Stash has been closed for a while, including radio stations and songs started from an artist or album page.\n- **Now Playing:** tap the quality line to see which service is playing the song (Qobuz or Tidal). \"Resampled\" now shows there instead of on the main screen.\n- Stash makes far fewer background requests to Last.fm.\n",
+  "assets": [
+    {
+      "name": "Stash.apk",
+      "size": 170860962,
+      "browser_download_url": "https://github.com/rawnaldclark/Stash/releases/download/v0.9.118/Stash.apk"
+    }
+  ]
+}

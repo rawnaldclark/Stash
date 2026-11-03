@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stash's notification icon: the launcher's vinyl record as one flat shape (Android draws a status-bar icon from its
+  alpha only). Concentric circles filled even-odd: the record, a groove, the label, and the spindle hole. The record's
+  radius is 10, inside the 20 dp live area of a 24 dp status-bar icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M2,12a10,10 0,1 0,20,0a10,10 0,1 0,-20,0z M4,12a8,8 0,1 0,16,0a8,8 0,1 0,-16,0z M4.9,12a7.1,7.1 0,1 0,14.2,0a7.1,7.1 0,1 0,-14.2,0z M7.1,12a4.9,4.9 0,1 0,9.8,0a4.9,4.9 0,1 0,-9.8,0z M8,12a4,4 0,1 0,8,0a4,4 0,1 0,-8,0z M10.6,12a1.4,1.4 0,1 0,2.8,0a1.4,1.4 0,1 0,-2.8,0z" />
+</vector>

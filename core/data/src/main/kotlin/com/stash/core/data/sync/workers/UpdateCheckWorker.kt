@@ -19,12 +19,15 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.stash.core.data.R
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.data.update.AppUpdater
 import com.stash.core.data.update.AppUpdates
+import com.stash.core.data.update.ReleaseNotes
 import java.io.File
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -235,9 +238,9 @@ class UpdateCheckWorker(
                 responseBody ?: return giveUpOrRetry(manual)
             }
             val root = json.parseToJsonElement(body).jsonObject
-            val tagName = root["tag_name"]?.jsonPrimitive?.content
+            // Trimmed as the stored release's tag is (AppUpdates.parseRelease), so Skip and "already notified" compare alike.
+            val tagName = root["tag_name"]?.jsonPrimitive?.content?.trim()?.takeIf { it.isNotEmpty() }
                 ?: return giveUpOrRetry(manual)
-            val releaseName = root["name"]?.jsonPrimitive?.content ?: tagName
 
             val outcome = outcomeFor(isNewerVersion(tagName, installedVersion))
             val outcomeData = workDataOf(KEY_OUTCOME to outcome, KEY_LATEST_TAG to tagName)
@@ -252,6 +255,12 @@ class UpdateCheckWorker(
             val update = AppUpdates.parseRelease(body, allowFile = testRelease != null)
             AppUpdater.store(applicationContext, update)
 
+            // "Skip this version": no notification for it (Settings › Check for updates still finds it).
+            if (AppUpdater.isSkipped(applicationContext, tagName)) {
+                Log.d(TAG, "$tagName was skipped, no notification")
+                return Result.success(outcomeData)
+            }
+
             // Check if we already notified for this exact version.
             val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val lastNotified = prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
@@ -263,7 +272,8 @@ class UpdateCheckWorker(
                 return Result.success(outcomeData)
             }
 
-            val notified = showUpdateNotification(tagName, releaseName, inApp = update != null)
+            val headline = ReleaseNotes.parse(root["body"]?.jsonPrimitive?.contentOrNull.orEmpty()).headline
+            val notified = showUpdateNotification(tagName, headline, inApp = update != null)
 
             // Only persist if the notification actually surfaced. If the OS
             // suppressed it (permission denied, channel muted, app in
@@ -316,19 +326,22 @@ class UpdateCheckWorker(
     }
 
     /**
-     * Posts a notification informing the user that a newer release is available.
-     * Tapping the notification opens the GitHub releases page in the browser.
+     * Posts a notification informing the user that a newer release is available: "Stash 0.9.123 is ready" over the
+     * release's first line ([headline]). Tapping it opens the update sheet ([inApp]: the release has an APK), or else
+     * the GitHub releases page in the browser.
      *
      * @return `true` if the notification was accepted by the OS, `false` if
      *   it was suppressed (notifications disabled globally, channel muted,
      *   or POST_NOTIFICATIONS permission denied on Android 13+).
      */
-    private fun showUpdateNotification(tag: String, releaseName: String, inApp: Boolean): Boolean {
+    private fun showUpdateNotification(tag: String, headline: String, inApp: Boolean): Boolean {
         val managerCompat = NotificationManagerCompat.from(applicationContext)
         if (!managerCompat.areNotificationsEnabled()) {
             Log.w(TAG, "Notifications disabled by user; skipping")
             return false
         }
+        // The version from the tag, never the release's name: that is "Stash v0.9.123", which read "Version Stash v0.9.123".
+        val title = applicationContext.getString(R.string.update_notification_title, tag.removePrefix("v").removePrefix("V"))
         if (inApp) {
             // The update sheet, in the app: one tap to update from there.
             val open = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
@@ -341,7 +354,7 @@ class UpdateCheckWorker(
                     open,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
-                return post(managerCompat, "Version $releaseName is ready. Tap to update.", pending)
+                return post(managerCompat, title, headline, applicationContext.getString(R.string.update_notification_tap_to_see), pending)
             }
         }
 
@@ -394,17 +407,28 @@ class UpdateCheckWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        return post(managerCompat, "Version $releaseName is ready. Tap to download.", pendingIntent)
+        return post(managerCompat, title, headline, applicationContext.getString(R.string.update_notification_tap_to_download), pendingIntent)
     }
 
-    private fun post(managerCompat: NotificationManagerCompat, text: String, pendingIntent: PendingIntent): Boolean {
+    /**
+     * The notification: [title], then the release's first line ([headline]) and what a tap does ([tap]). Collapsed it shows
+     * the headline (or the tap line when there is none); expanded, both in full.
+     */
+    private fun post(
+        managerCompat: NotificationManagerCompat,
+        title: String,
+        headline: String,
+        tap: String,
+        pendingIntent: PendingIntent,
+    ): Boolean {
         val notification = NotificationCompat.Builder(
             applicationContext,
             SyncNotificationManager.CHANNEL_UPDATE,
         )
-            .setContentTitle("Stash Update Available")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(title)
+            .setContentText(headline.ifEmpty { tap })
+            .setStyle(NotificationCompat.BigTextStyle().bigText(if (headline.isEmpty()) tap else "$headline\n$tap"))
+            .setSmallIcon(R.drawable.ic_stat_stash)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
