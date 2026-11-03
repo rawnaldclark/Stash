@@ -53,6 +53,14 @@ internal class QueueWindow private constructor(
     var count: Int = count
         private set
 
+    /**
+     * Goes up with every change to the order or the window. The repository reads positions, leaves
+     * the main thread to load their songs, and comes back: a change meanwhile, such as a deletion
+     * ([removeIds]) made in place on this same object, moved the positions it read.
+     */
+    var version: Int = 0
+        private set
+
     /** Songs in the whole queue. */
     val total: Int get() = logical.size
 
@@ -106,12 +114,14 @@ internal class QueueWindow private constructor(
     /** The [n] songs after the window joined it (appended to the timeline). */
     fun extendForward(n: Int) {
         require(n in 0..(total - count)) { "extendForward($n) with ${total - count} outside" }
+        version++
         count += n
     }
 
     /** The [n] songs before the window joined it (inserted at the timeline's start). */
     fun extendBackward(n: Int) {
         require(n in 0..(total - count)) { "extendBackward($n) with ${total - count} outside" }
+        version++
         if (total == 0) return
         start = Math.floorMod(start - n, total)
         count += n
@@ -153,6 +163,7 @@ internal class QueueWindow private constructor(
     /** The window's first [n] slots left the timeline. */
     fun dropFront(n: Int) {
         require(n in 0..count) { "dropFront($n) of $count" }
+        version++
         count -= n
         start = if (total == 0) 0 else (start + n) % total
     }
@@ -160,6 +171,7 @@ internal class QueueWindow private constructor(
     /** The window's last [n] slots left the timeline. */
     fun dropBack(n: Int) {
         require(n in 0..count) { "dropBack($n) of $count" }
+        version++
         count -= n
     }
 
@@ -193,6 +205,7 @@ internal class QueueWindow private constructor(
     }
 
     private fun removePositionInternal(p: Int) {
+        version++
         val l = perm?.get(p) ?: p
         logical = LongArray(logical.size - 1) { i -> logical[if (i < l) i else i + 1] }
         perm = perm?.let { pm ->
@@ -227,6 +240,7 @@ internal class QueueWindow private constructor(
     }
 
     private fun insertPositionInternal(p: Int, id: Long, logicalAtEnd: Boolean) {
+        version++
         val pm = perm
         val n = logical.size
         val l = when {
@@ -271,6 +285,7 @@ internal class QueueWindow private constructor(
         require(intoWindow in 0..ids.size) { "appendIds intoWindow=$intoWindow of ${ids.size}" }
         require(intoWindow == 0 || endsAtOrderEnd) { "appendIds into a window that doesn't end the order" }
         require(!wrapped) { "appendIds into a wrapped window: unwrap it first" }
+        version++
         val n = logical.size
         logical = logical.copyOf(n + ids.size).also { ids.copyInto(it, n) }
         perm = perm?.let { pm -> IntArray(pm.size + ids.size) { i -> if (i < pm.size) pm[i] else n + (i - pm.size) } }
@@ -301,6 +316,7 @@ internal class QueueWindow private constructor(
      * one pass: the order, the shuffle permutation, the window's start and its count all follow.
      */
     private fun compact(keepPos: BooleanArray) {
+        version++
         val n = total
         var keptBeforeStart = 0
         for (p in 0 until start) if (keepPos[p]) keptBeforeStart++

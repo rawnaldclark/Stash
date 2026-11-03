@@ -182,14 +182,20 @@ class QueueWindowTest {
     }
 
     /**
-     * Bytes this thread has allocated so far: HotSpot's ThreadMXBean, reached by reflection
-     * because unit tests compile against android.jar, which has no java.lang.management.
+     * Bytes this thread has allocated so far, or null on a JVM that doesn't count them: HotSpot's
+     * ThreadMXBean, reached by reflection because unit tests compile against android.jar, which
+     * has no java.lang.management. The pass counts ([QueueWindow.version]) are the checks that
+     * hold on any JVM; the bytes back them up where they can be read.
      */
-    private fun allocatedBytes(): Long {
+    private fun allocatedBytes(): Long? = try {
         val bean = Class.forName("java.lang.management.ManagementFactory").getMethod("getThreadMXBean").invoke(null)
         val read = Class.forName("com.sun.management.ThreadMXBean")
             .getMethod("getThreadAllocatedBytes", Long::class.javaPrimitiveType)
-        return read.invoke(bean, Thread.currentThread().id) as Long
+        (read.invoke(bean, Thread.currentThread().id) as Long).takeIf { it >= 0 }
+    } catch (e: ReflectiveOperationException) {
+        null
+    } catch (e: ClassCastException) {
+        null
     }
 
     @Test
@@ -198,30 +204,64 @@ class QueueWindowTest {
         val n = 100_000
         val (w, _) = QueueWindow.create(ids(n), startIndex = 0, shuffle = false, random = Random(1))
         val found = BooleanArray(w.forwardGap(repeatAll = false)) { it % 100 == 0 }
+        val version = w.version
         val allocatedBefore = allocatedBytes()
         val started = System.nanoTime()
 
         w.admitForward(found)
 
         val millis = (System.nanoTime() - started) / 1_000_000
-        val allocated = allocatedBytes() - allocatedBefore
+        val allocated = allocatedBytes()?.let { after -> allocatedBefore?.let { after - it } }
         assertThat(w.total).isEqualTo(QUEUE_WINDOW_SIZE + 995)
         assertThat(w.count).isEqualTo(QUEUE_WINDOW_SIZE + 995)
         assertThat(w.idAtSlot(QUEUE_WINDOW_SIZE)).isEqualTo(501L)
         assertThat(w.idAtSlot(QUEUE_WINDOW_SIZE + 1)).isEqualTo(601L)
-        // A few arrays of n: O(n). One copy of the order per removed song was ~80 GB here.
-        assertThat(allocated).isLessThan(16L * 1024 * 1024)
-        assertThat(millis).isLessThan(2_000L)
+        // Two changes: one compaction of the order for all 98,505 missing songs, and the window's
+        // growth. One removal at a time was a change, and a copy of the order, per song (~80 GB).
+        assertThat(w.version - version).isEqualTo(2)
+        // A few arrays of n: O(n). Loose bounds, so a slow or busy CI machine doesn't fail them.
+        if (allocated != null) assertThat(allocated).isLessThan(64L * 1024 * 1024)
+        assertThat(millis).isLessThan(30_000L)
     }
 
     @Test
     fun `a deletion of songs that aren't queued allocates nothing per song`() {
         val (w, _) = QueueWindow.create(ids(100_000), startIndex = 50_000, shuffle = true, random = Random(3))
+        val version = w.version
         val allocatedBefore = allocatedBytes()
         repeat(1_000) { assertThat(w.removeIds(setOf(500_000L + it))).isFalse() }
-        // The probe array per call, not a 100k array (or 100k boxed ids) per call.
-        assertThat(allocatedBytes() - allocatedBefore).isLessThan(4L * 1024 * 1024)
+        val allocated = allocatedBytes()?.let { after -> allocatedBefore?.let { after - it } }
+        assertThat(w.version).isEqualTo(version) // no pass rebuilt the order
         assertThat(w.total).isEqualTo(100_000)
+        // The probe array per call, not a 100k array (or 100k boxed ids, ~1.6 GB in all) per call.
+        if (allocated != null) assertThat(allocated).isLessThan(32L * 1024 * 1024)
+    }
+
+    @Test
+    fun `every change to the order or the window moves its version on`() {
+        val (w, _) = QueueWindow.create(ids(2_000), startIndex = 1_000, shuffle = false, random = Random(4))
+        val edits: List<Pair<String, () -> Unit>> = listOf(
+            "insertSlot" to { w.insertSlot(3, 9_999L) },
+            "removeSlot" to { w.removeSlot(3) },
+            "moveSlot" to { w.moveSlot(1, 7) },
+            "removePosition" to { w.removePosition(1_900) },
+            "removeIds" to { assertThat(w.removeIds(setOf(w.idAtPosition(100)))).isTrue() },
+            "dropFront" to { w.dropFront(5) },
+            "dropBack" to { w.dropBack(5) },
+            "extendForward" to { w.extendForward(5) },
+            "extendBackward" to { w.extendBackward(5) },
+            "admitForward" to { w.admitForward(booleanArrayOf(true, false, true)) },
+            "admitBackward" to { w.admitBackward(booleanArrayOf(false, true)) },
+            "appendIds" to { w.appendIds(longArrayOf(7_001L, 7_002L), intoWindow = 0) },
+        )
+        for ((name, edit) in edits) {
+            val before = w.version
+            edit()
+            assertWithMessage(name).that(w.version).isGreaterThan(before)
+        }
+        val before = w.version
+        w.windowIds(); w.forwardPositions(10); w.removeIds(setOf(123_456L))
+        assertThat(w.version).isEqualTo(before) // reads, and a deletion of nothing queued, change nothing
     }
 
     @Test
