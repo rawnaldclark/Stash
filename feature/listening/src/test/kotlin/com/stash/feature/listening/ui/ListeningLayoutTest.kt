@@ -4,7 +4,7 @@ import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
-/** When Home's doors stack and how many columns the stats tiles take ([ListeningLayout]). */
+/** When Home's doors stack, where the week card's bars go and how many columns the stats tiles take ([ListeningLayout]). */
 class ListeningLayoutTest {
     /** The doors' row on a phone [screen] dp wide: Home's 20 dp gutter each side. */
     private fun row(screen: Float) = (screen - 2 * 20).dp
@@ -43,6 +43,41 @@ class ListeningLayoutTest {
         // (604 - 12) / 2 - 24 = 272 = 136 × 2
         assertThat(ListeningLayout.doorsStacked(604.dp, fontScale = 2f)).isFalse()
         assertThat(ListeningLayout.doorsStacked(602.dp, fontScale = 2f)).isTrue()
+    }
+
+    /** Inside the week card on a phone [screen] dp wide: Home's 20 dp gutter and the card's 16 dp padding each side. */
+    private fun weekInner(screen: Float) = (screen - 2 * 20 - 2 * 16).dp
+
+    @Test fun `a Pixel 5 keeps the week's bars beside the words up to Large and drops them at 1_3x`() {
+        // 393 dp: 321 inside the card, 185 for the words beside 120 dp of bars and a 16 dp gap
+        assertThat(weekInner(393f)).isEqualTo(321.dp)
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 0.85f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 1f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 1.15f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 1.3f)).isTrue()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 2f)).isTrue()
+    }
+
+    @Test fun `a Pixel 6 keeps the week's bars beside the words up to about 1_35x`() {
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(411f), fontScale = 1.3f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(411f), fontScale = 1.4f)).isTrue()
+    }
+
+    @Test fun `a 360 dp phone keeps them beside at the default font, and a narrow one drops them`() {
+        // 288 inside: 152 dp for the words
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(360f), fontScale = 1f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(360f), fontScale = 1.15f)).isTrue()
+        // A large Display size on a small phone
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(320f), fontScale = 1f)).isTrue()
+    }
+
+    @Test fun `the week's bars drop when the words would get under 150 dp times the font scale`() {
+        // 286 - 120 - 16 = 150
+        assertThat(ListeningLayout.weekBarsBelow(286.dp, fontScale = 1f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(285.dp, fontScale = 1f)).isTrue()
+        // 436 - 136 = 300 = 150 × 2
+        assertThat(ListeningLayout.weekBarsBelow(436.dp, fontScale = 2f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(435.dp, fontScale = 2f)).isTrue()
     }
 
     @Test fun `the stats tiles are a 2x2 grid on a Pixel 6 up to about 1_7x`() {

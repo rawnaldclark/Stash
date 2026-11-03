@@ -37,6 +37,28 @@ internal object ListeningLayout {
      */
     fun doorsStacked(row: Dp, fontScale: Float): Boolean = doorInner(row) < MinDoorInner * fontScale
 
+    /** The week card's bars beside its words ([weekBarsBelow]): seven bars with their initials. */
+    val WeekChartWidth: Dp = 120.dp
+
+    /** Between the week card's words and its bars. */
+    val WeekChartGap: Dp = 16.dp
+
+    /**
+     * The least room for the week card's words beside its bars at the default font: the time at
+     * 28 sp ("about 12 h 38 min") on one line. A larger font needs as much more ([weekBarsBelow]).
+     */
+    val MinWeekWords: Dp = 150.dp
+
+    /**
+     * Whether the week card's bars go under its words (the full width) instead of beside them (owner
+     * 2026-11-02: the card had grown to 235 dp, "way too big"): when beside them the words would get
+     * less than [MinWeekWords] scaled by the font ([fontScale]), so the bars drop rather than squeeze
+     * the time. [inner] is the card's width inside its padding. A Pixel 5 (321 dp) keeps them beside
+     * up to the 1.15× Large font and drops them at 1.3×; a Pixel 6 (339 dp) keeps them up to 1.35×.
+     */
+    fun weekBarsBelow(inner: Dp, fontScale: Float): Boolean =
+        inner - WeekChartWidth - WeekChartGap < MinWeekWords * fontScale
+
     /** Inside a stats tile, all round. */
     val TilePadding: Dp = 16.dp
 

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,6 +52,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -73,13 +73,13 @@ import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.motion.pressScale
+import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.listening.recap.RecapDoorCard
 import com.stash.feature.listening.ui.ArtImage
 import com.stash.feature.listening.ui.CompactCount
 import com.stash.feature.listening.ui.ListenTimeText
 import com.stash.feature.listening.ui.ListeningLayout
-import com.stash.feature.listening.ui.NumberOverLabel
 import com.stash.feature.listening.ui.SquareArt
 import com.stash.feature.listening.ui.charts.ListeningBars
 import com.stash.feature.listening.ui.weekBarColor
@@ -96,11 +96,12 @@ import com.stash.feature.listening.ui.weekBarDays
  *
  * The look (owner 2026-11-01, "make the stats look like the rest of Home"): the week card stays
  * glass, so Discover and Your record remain Home's only cover-lit heroes, but its numbers are set
- * like the record's: a 36 sp time, plays · songs · streak each a number over its word, and the
- * week's bars across the whole card with each day's initial, in the album colour while a song
- * plays. Nothing in the section cuts a word: labels sit on their own lines and wrap, numbers are
- * kept short, and the doors go one under the other when a large font or a narrow screen would
- * squeeze them ([ListeningLayout.doorsStacked]).
+ * like the record's: the time in Space Grotesk, plays · songs · streak with their numbers in it,
+ * and the week's bars with each day's initial, in the album colour while a song plays. It is one
+ * row about as tall as the Discover hero (owner 2026-11-02: at 235 dp it was "way too big"), its
+ * bars dropping under the words at a large font ([ListeningLayout.weekBarsBelow]). Nothing in the
+ * section cuts a word: labels wrap, numbers are kept short, and the doors go one under the other
+ * when a large font or a narrow screen would squeeze them ([ListeningLayout.doorsStacked]).
  */
 @Composable
 fun YourListeningSection(
@@ -213,7 +214,7 @@ private fun SectionTitle(title: String, onClickLabel: String, onClick: () -> Uni
     }
 }
 
-/** One number on the week card: what shows ("142" over "plays") and what TalkBack says ("142 plays"). */
+/** One number on the week card: what shows ("142" and "plays") and what TalkBack says ("142 plays"). */
 private data class WeekStat(val value: String, val label: String, val spoken: String)
 
 /**
@@ -237,11 +238,12 @@ private fun weekStats(week: WeekSummary): List<WeekStat> {
 }
 
 /**
- * The last 7 days at a glance, on the design system's glass: "Last 7 days", the time listened set
- * big (36 sp, [ListenTimeText]), then plays · songs · streak each as a number over its word (a
- * FlowRow: at a very large font the last one goes to the next line whole), then the week's bars
- * across the card with each day's initial under its bar ([WeekChart]). Opens Your listening on 7
- * days. TalkBack reads it as one sentence; nothing inside is read on its own.
+ * The last 7 days at a glance, on the design system's glass, in one row about as tall as the
+ * Discover hero: "Last 7 days", the time listened (28 sp, [ListenTimeText]) and plays · songs ·
+ * streak on the left ([WeekWords]), the week's bars with each day's initial on the right
+ * ([WeekChart]). When a large font would squeeze the words, the bars go under them, the full width
+ * ([ListeningLayout.weekBarsBelow]). Opens Your listening on 7 days. TalkBack reads it as one
+ * sentence; nothing inside is read on its own.
  */
 @Composable
 private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -263,68 +265,96 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
         color = colors.glassBackground,
         border = BorderStroke(1.dp, colors.glassBorder),
     ) {
-        Column(Modifier.padding(16.dp).clearAndSetSemantics { }) {
-            Text(
-                text = stringResource(R.string.listening_week_eyebrow),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            ListenTimeText(time = time, about = about, numberSize = WeekTimeSize)
-            Spacer(Modifier.height(10.dp))
-            if (week.plays == 0) {
-                Text(
-                    text = nothing,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        BoxWithConstraints(Modifier.padding(16.dp).clearAndSetSemantics { }) {
+            val empty = nothing.takeIf { week.plays == 0 }
+            if (ListeningLayout.weekBarsBelow(maxWidth, LocalDensity.current.fontScale)) {
+                Column {
+                    WeekWords(time = time, about = about, stats = stats, nothing = empty)
+                    Spacer(Modifier.height(12.dp))
+                    WeekChart(week = week, barsHeight = WeekBarsBelowHeight, modifier = Modifier.fillMaxWidth())
+                }
             } else {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    stats.forEach { stat ->
-                        NumberOverLabel(
-                            value = stat.value,
-                            label = stat.label,
-                            numberStyle = MaterialTheme.typography.titleLarge,
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WeekWords(time = time, about = about, stats = stats, nothing = empty, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(ListeningLayout.WeekChartGap))
+                    WeekChart(week = week, barsHeight = WeekBarsHeight, modifier = Modifier.width(ListeningLayout.WeekChartWidth))
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            WeekChart(week = week)
         }
     }
 }
 
 /**
- * The week's bars across the whole card (56 dp), today's in the full colour and the other days a
- * step softer, each day's initial under its bar (today's in the strong ink). The colour is the
- * album's ([LocalAlbumChrome]'s accent, the one the mini player wears) while a song plays, and
- * the neutral ink otherwise ([weekBarColor] by `AlbumChrome.tint`: the app-wide fade the wordmark
- * and the tab bar follow, so the bars turn with them on every visit). The colour is read where
- * the bars are drawn, so a fade or a song change only redraws them. A time axis reads oldest to
- * newest left to right in every language, so the chart stays left-to-right.
+ * The week card's words: "Last 7 days", the time, and one line of plays · songs · streak with each
+ * number in Space Grotesk in the strong ink and its word in the secondary one ("**142** plays ·
+ * **38** songs · **5** days streak"), or [nothing] when there were no plays. Each number keeps its
+ * word, and the line wraps only after a dot, never cut.
  */
 @Composable
-private fun WeekChart(week: WeekSummary) {
+private fun WeekWords(
+    time: String,
+    about: Boolean,
+    stats: List<WeekStat>,
+    nothing: String?,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val number = SpanStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, color = scheme.onSurface)
+    Column(modifier) {
+        Text(
+            text = stringResource(R.string.listening_week_eyebrow),
+            style = MaterialTheme.typography.labelMedium,
+            color = scheme.onSurfaceVariant,
+        )
+        ListenTimeText(time = time, about = about, numberSize = WeekTimeSize)
+        Text(
+            text = if (nothing != null) {
+                AnnotatedString(nothing)
+            } else {
+                buildAnnotatedString {
+                    stats.forEachIndexed { i, stat ->
+                        // The dot stays on the line before, so a line never starts with one.
+                        if (i > 0) append("\u00A0· ")
+                        withStyle(number) { append(stat.value) }
+                        append('\u00A0')
+                        append(stat.label.keepTogether())
+                    }
+                }
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The week's bars ([barsHeight] tall), today's in the full colour and the other days a step
+ * softer, each day's initial under its bar (today's in the strong ink). The colour is the album's
+ * ([LocalAlbumChrome]'s accent, the one the mini player wears) while a song plays, and the neutral
+ * ink otherwise ([weekBarColor] by `AlbumChrome.tint`: the app-wide fade the wordmark and the tab
+ * bar follow, so the bars turn with them on every visit). The colour is read where the bars are
+ * drawn, so a fade or a song change only redraws them. A time axis reads oldest to newest left to
+ * right in every language, so the chart stays left-to-right.
+ */
+@Composable
+private fun WeekChart(week: WeekSummary, barsHeight: Dp, modifier: Modifier = Modifier) {
     val locale = LocalConfiguration.current.locales[0]
     val days = remember(week.bars, week.today, locale) { weekBarDays(week.bars, week.today, locale) }
     val chrome = LocalAlbumChrome.current
     val neutral = MaterialTheme.colorScheme.onSurface
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Column(Modifier.fillMaxWidth()) {
+        Column(modifier) {
             ListeningBars(
                 values = days.map { it.listenedMs },
                 summary = "",
                 highlight = days.indexOfFirst { it.isToday }.takeIf { it >= 0 },
-                height = WeekBarsHeight,
+                height = barsHeight,
                 barColorAt = { weekBarColor(neutral, chrome.accent, chrome.tint) },
                 gapFraction = 0.32f,
                 maxBarWidth = 28.dp,
                 minBarHeight = 10.dp,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Row(Modifier.fillMaxWidth()) {
                 days.forEach { day ->
                     Text(
@@ -554,11 +584,12 @@ private fun RecentSongCard(track: Track, onClick: () -> Unit) {
 
 private val SidePadding = 20.dp
 
-/** The week card's time: the record card's hours are 32 sp; this is the section's one big number. */
-private val WeekTimeSize = 36.sp
+/** The week card's time: the stats screen's tile numbers' size (the record card's hours are 32 sp). */
+private val WeekTimeSize = 28.sp
 
-/** The week card's bars, across the card. */
-private val WeekBarsHeight = 56.dp
+/** The week card's bars beside its words, and under them at a large font (the full width). */
+private val WeekBarsHeight = 48.dp
+private val WeekBarsBelowHeight = 40.dp
 
 /** A door's cover side by side (beside the title) and stacked (beside label and title). */
 private val TileCoverSize = 40.dp
