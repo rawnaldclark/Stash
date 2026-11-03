@@ -440,6 +440,31 @@ class WebLibraryExporterTest {
         assertEquals(listOf(EXPORT_URI), deleted())
     }
 
+    @Test fun `a saved album is not a playlist on the web, from any service, and the mirror never offers one`() = runTest {
+        val song = db.trackDao().insert(track("Ivy", "Frank Ocean", added = 10, youtubeId = "AE005nZeF-A"))
+        val playlists = db.playlistDao()
+        val mine = playlists.insert(playlist("Night drive", PlaylistType.CUSTOM, "custom_1", added = 1, syncEnabled = false))
+        member(mine, song, 0, added = 100)
+        val stampBefore = db.webLibraryExportDao().libraryStampNow()
+        val digestBefore = db.mirrorDao().playlistSetDigest()
+        // Synced from Spotify's saved albums, saved on an album page in Stash, synced from YouTube Music:
+        // all switched on and holding a song you can play, as a playlist would need to be to go.
+        listOf(
+            playlist("Blonde", PlaylistType.CUSTOM, "album:spotify:3mH6qwIy9crq0I9YQbOuDf", added = 2),
+            playlist("Blonde", PlaylistType.CUSTOM, "album:qobuz:0886446224536", added = 3).copy(source = MusicSource.BOTH),
+            playlist("Blonde", PlaylistType.CUSTOM, "MPREb_blonde", added = 4).copy(source = MusicSource.YOUTUBE),
+        ).forEach { member(playlists.insert(it), song, 0, added = 100) }
+
+        assertEquals(listOf("Night drive"), exporter.collect(T, null).playlists.map { it.name })
+        assertEquals(listOf("Night drive"), exporter.catalog().playlists.map { it.name })
+        assertEquals(listOf("Night drive"), db.mirrorDao().playlists().map { it.name })
+        assertEquals("an album's songs don't move the playlists' change stamp", stampBefore, db.webLibraryExportDao().libraryStampNow())
+        assertEquals("a new album is not a new playlist for \"Mirror new playlists too\"", digestBefore, db.mirrorDao().playlistSetDigest())
+        // A saved Qobuz PLAYLIST shares the album: key and is still a playlist.
+        playlists.insert(playlist("Qobuz picks", PlaylistType.CUSTOM, "album:qobuz_playlist:42", added = 5).copy(source = MusicSource.BOTH))
+        assertEquals(listOf("Night drive", "Qobuz picks"), db.mirrorDao().playlists().map { it.name })
+    }
+
     /** The exact bytes for the fixed library; the web player imports the same file in its tests. */
     @Test fun `golden file`() = runTest {
         val bytes = golden()
