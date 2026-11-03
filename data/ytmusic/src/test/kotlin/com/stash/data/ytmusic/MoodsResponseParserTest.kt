@@ -1,5 +1,6 @@
 package com.stash.data.ytmusic
 
+import com.stash.data.ytmusic.model.AlbumSource
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -27,7 +28,9 @@ import org.mockito.kotlin.whenever
  * and trimmed (menus and tracking params dropped):
  * - `moods_and_genres.json`: `browse FEmusic_moods_and_genres`, both grids whole (13 moods, 27 genres);
  * - `mood_chill.json`: the Chill tile's page (`FEmusic_moods_and_genres_category`), its first 4 rows of 3 playlists;
- * - `playlist_mood.json`: one of those playlists (`VLRDCLAK5uy_nBE4…`, "Coffee Shop Blend"), its first 5 songs.
+ * - `playlist_mood.json`: one of those playlists (`VLRDCLAK5uy_nBE4…`, "Coffee Shop Blend"), its first 5 songs;
+ * - `genre_rock.json` (fetched 2026-11-03): the Rock tile's page, its five rows (Songs, Featured playlists, Community
+ *   playlists, Music videos, Albums) cut to their first few items.
  * The page cap is read against sync's `playlist_long_page1.json` / `playlist_long_page2.json`.
  */
 class MoodsResponseParserTest {
@@ -106,20 +109,104 @@ class MoodsResponseParserTest {
     }
 
     @Test
-    fun `the client reads the tiles and a mood's page with one browse each`() = runTest {
+    fun `the client reads both grids with one browse, and a tile's page with one more`() = runTest {
         val inner = mock<InnerTubeClient>()
         runBlocking {
             whenever(inner.browse(eq("FEmusic_moods_and_genres"), anyOrNull())).thenReturn(fixture("moods_and_genres.json"))
             whenever(inner.browse(eq("FEmusic_moods_and_genres_category"), eq("ggMPOg1uX1JOQWZFeDByc2Jm"))).thenReturn(fixture("mood_chill.json"))
         }
         val client = YTMusicApiClient(inner)
-        val tiles = client.getMoodTiles()!!
-        val page = client.getMoodPage(tiles.first().params, tiles.first().title)!!
+        val grids = client.getMoodGrids()!!
+        assertEquals(13, grids.moods.size)
+        assertEquals(27, grids.genres.size)
+        val page = client.getMoodPage(grids.moods.first().params, grids.moods.first().title)!!
         assertEquals("Chill", page.title)
         verifyBlocking(inner, times(2)) { browse(any(), anyOrNull()) }
-        // No answer is null (keep what's saved), never an empty list (an answer without the grid)
-        assertNull(YTMusicApiClient(mock()).getMoodTiles())
+        // No answer is null (keep what's saved), never empty grids (an answer without them)
+        assertNull(YTMusicApiClient(mock()).getMoodGrids())
         assertNull(YTMusicApiClient(mock()).getMoodPage("p", "t"))
+    }
+
+    // ── Genres ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `the genres grid is kept - YouTube's order and colours, not one mood among them`() {
+        val grids = MoodsResponseParser.grids(fixture("moods_and_genres.json"))
+        assertEquals(27, grids.genres.size)
+        assertEquals(listOf("African", "Arabic", "Blues", "Bollywood & Indian", "Brazilian"), grids.genres.take(5).map { it.title })
+        assertEquals("Soundtracks & musicals", grids.genres.last().title)
+        val rock = grids.genres.single { it.title == "Rock" }
+        assertEquals("ggMPOg1uXzJKTm5jUEZ5Uzlu", rock.params)
+        assertEquals(4291559424L, rock.color)
+        assertTrue(grids.genres.none { it.title in setOf("Chill", "Commute", "Focus", "Workout") })
+        // The moods are what tiles() reads, unchanged
+        assertEquals(MoodsResponseParser.tiles(fixture("moods_and_genres.json")), grids.moods)
+        assertEquals(grids.genres, MoodsResponseParser.genres(fixture("moods_and_genres.json")))
+    }
+
+    @Test
+    fun `genres are found by their header, never by position, and a reworded header hides them rather than guess`() {
+        val response = fixture("moods_and_genres.json")
+        val swapped = withSections(response) { it.reversed() }
+        assertEquals(MoodsResponseParser.grids(response), MoodsResponseParser.grids(swapped))
+        // Signed in, a For you grid comes first: it isn't taken for genres
+        val signedIn = withSections(response) { sections ->
+            listOf(retitled(sections.first { headerOf(it) == "Moods & moments" }, "For you")) + sections
+        }
+        assertEquals(27, MoodsResponseParser.grids(signedIn).genres.size)
+        assertEquals("African", MoodsResponseParser.grids(signedIn).genres.first().title)
+        // Genres reworded: no genres, and the moods are still the moods
+        val reworded = withSections(response) { sections ->
+            sections.map { s -> if (headerOf(s) == "Genres") retitled(s, "Styles") else s }
+        }
+        assertTrue(MoodsResponseParser.grids(reworded).genres.isEmpty())
+        assertEquals(13, MoodsResponseParser.grids(reworded).moods.size)
+        // Moods missing: the genres stand alone
+        val genresOnly = withSections(response) { sections -> sections.filter { headerOf(it) == "Genres" } }
+        assertTrue(MoodsResponseParser.grids(genresOnly).moods.isEmpty())
+        assertEquals(27, MoodsResponseParser.grids(genresOnly).genres.size)
+        assertTrue(MoodsResponseParser.grids(JsonObject(emptyMap())).isEmpty())
+    }
+
+    @Test
+    fun `a genre's page keeps its Songs and Albums rows with the playlists, and leaves the music videos out`() {
+        val page = MoodsResponseParser.page(fixture("genre_rock.json"), fallbackTitle = "Tile")
+        assertEquals("Rock", page.title)
+        assertEquals(listOf("Songs", "Featured playlists", "Community playlists", "Albums"), page.shelves.map { it.title })
+
+        val songs = page.shelves[0]
+        assertEquals(listOf("mM3Vmn4pdog", "-eGM0IJc70Y", "BLZWkjBXfN8", "Xwy-3aI435o", "lhg9bYNLvOg"), songs.songs.map { it.videoId })
+        assertEquals("Don't Stop Believin' (2022 Remaster)", songs.songs.first().title)
+        assertEquals("Journey", songs.songs.first().artist)
+        assertEquals("Escape (2022 Remaster)", songs.songs.first().album)
+        assertEquals("ATV", songs.songs.first().musicVideoType)
+        assertTrue(songs.songs.all { it.thumbnailUrl!!.startsWith("https://") })
+        assertTrue(songs.playlists.isEmpty() && songs.albums.isEmpty())
+
+        assertEquals(listOf(3, 3), page.shelves.subList(1, 3).map { it.playlists.size })
+        assertTrue(page.shelves.subList(1, 3).all { shelf -> shelf.playlists.all { it.id.startsWith("VL") } && shelf.songs.isEmpty() })
+        assertEquals("relaxing oldies", page.shelves[2].playlists.first().title)
+
+        val albums = page.shelves[3].albums
+        assertEquals(listOf("MPREb_qMlbe7gLeuH", "MPREb_1SbgcDGdrT4", "MPREb_7o4jrr5Ossj", "MPREb_zU3TA0orkvV"), albums.map { it.id })
+        assertEquals("Meteora", albums.first().title)
+        assertEquals("Linkin Park", albums.first().artist)
+        assertEquals("Album", albums.first().releaseType)
+        assertTrue(albums.all { it.source == AlbumSource.YOUTUBE && it.thumbnailUrl!!.startsWith("https://") })
+        assertTrue(page.shelves[3].playlists.isEmpty())
+    }
+
+    @Test
+    fun `a tile's covers are its page's first two different pictures - a genre's first songs, a mood's first playlists`() {
+        val rock = MoodsResponseParser.page(fixture("genre_rock.json"), fallbackTitle = "Rock")
+        assertEquals(rock.shelves[0].songs.take(2).map { it.thumbnailUrl }, rock.coverUrls(2))
+        val chill = MoodsResponseParser.page(fixture("mood_chill.json"), fallbackTitle = "Chill")
+        assertEquals(chill.shelves[0].playlists.take(2).map { it.thumbnailUrl }, chill.coverUrls(2))
+        // The same picture twice counts once, and a page without pictures has no covers
+        val first = rock.shelves[0].songs[0]
+        val twice = rock.copy(shelves = listOf(rock.shelves[0].copy(songs = listOf(first, first))) + rock.shelves.drop(1))
+        assertEquals(listOf(first.thumbnailUrl, rock.shelves[1].playlists[0].thumbnailUrl), twice.coverUrls(2))
+        assertTrue(MoodsResponseParser.page(JsonObject(emptyMap()), "Rock").coverUrls(2).isEmpty())
     }
 
     @Test

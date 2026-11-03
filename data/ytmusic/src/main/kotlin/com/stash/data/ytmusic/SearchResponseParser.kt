@@ -285,52 +285,52 @@ internal fun parseArtistsShelf(shelfRenderer: JsonObject): List<ArtistSummary> {
  */
 internal fun parseAlbumsShelf(shelfRenderer: JsonObject): List<AlbumSummary> {
     val items = shelfRenderer["contents"]?.asArray() ?: return emptyList()
-    val result = mutableListOf<AlbumSummary>()
-    for (item in items) {
-        val renderer = item.asObject()
-            ?.get("musicTwoRowItemRenderer")?.asObject()
-            ?: continue
-
-        val id = renderer.navigatePath(
-            "navigationEndpoint", "browseEndpoint", "browseId",
-        )?.asString() ?: continue
-
-        val title = renderer.navigatePath("title", "runs")?.firstArray()
-            ?.firstOrNull()?.asObject()?.get("text")?.asString()
-            ?: continue
-
-        val subtitleTexts = renderer.navigatePath("subtitle", "runs")?.asArray()
-            ?.mapNotNull { it.asObject()?.get("text")?.asString() }
-            ?.filterNot { it == " • " || it == " & " || it == ", " || it == " x " }
-            ?: emptyList()
-        // Drop the type label ("Album"/"EP"/"Single") if present.
-        val dataTokens = if (
-            subtitleTexts.firstOrNull()?.let { ALBUM_TYPE_LABELS.contains(it) } == true
-        ) subtitleTexts.drop(1) else subtitleTexts
-        val year = dataTokens.firstOrNull { it.matches(YEAR_REGEX) }
-        // Use the regex directly — comparing against the nullable `year` value
-        // mis-picks when only a year token exists and when no token matches.
-        val artist = dataTokens.firstOrNull { !it.matches(YEAR_REGEX) } ?: ""
-
-        val thumbnails = renderer.navigatePath(
-            "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails",
-        )?.firstArray()
-        val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-            thumbnails?.maxByOrNull {
-                it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
-            }?.asObject()?.get("url")?.asString()
-        )
-
-        result.add(
-            AlbumSummary(
-                id = id,
-                title = title,
-                artist = artist,
-                thumbnailUrl = thumbnailUrl,
-                year = year,
-                releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
-            ),
-        )
+    return items.mapNotNull { item ->
+        item.asObject()?.get("musicTwoRowItemRenderer")?.asObject()?.let(::parseAlbumShelfCard)
     }
-    return result
+}
+
+/**
+ * One card of an "Albums" shelf ([parseAlbumsShelf]); also a genre page's Albums row
+ * (`MoodsResponseParser.page`), whose cards are the same. Null without a browse id or a title.
+ */
+internal fun parseAlbumShelfCard(renderer: JsonObject): AlbumSummary? {
+    val id = renderer.navigatePath(
+        "navigationEndpoint", "browseEndpoint", "browseId",
+    )?.asString() ?: return null
+
+    val title = renderer.navigatePath("title", "runs")?.firstArray()
+        ?.firstOrNull()?.asObject()?.get("text")?.asString()
+        ?: return null
+
+    val subtitleTexts = renderer.navigatePath("subtitle", "runs")?.asArray()
+        ?.mapNotNull { it.asObject()?.get("text")?.asString() }
+        ?.filterNot { it == " • " || it == " & " || it == ", " || it == " x " }
+        ?: emptyList()
+    // Drop the type label ("Album"/"EP"/"Single") if present.
+    val dataTokens = if (
+        subtitleTexts.firstOrNull()?.let { ALBUM_TYPE_LABELS.contains(it) } == true
+    ) subtitleTexts.drop(1) else subtitleTexts
+    val year = dataTokens.firstOrNull { it.matches(YEAR_REGEX) }
+    // Use the regex directly — comparing against the nullable `year` value
+    // mis-picks when only a year token exists and when no token matches.
+    val artist = dataTokens.firstOrNull { !it.matches(YEAR_REGEX) } ?: ""
+
+    val thumbnails = renderer.navigatePath(
+        "thumbnailRenderer", "musicThumbnailRenderer", "thumbnail", "thumbnails",
+    )?.firstArray()
+    val thumbnailUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
+        thumbnails?.maxByOrNull {
+            it.asObject()?.get("width")?.asString()?.toIntOrNull() ?: 0
+        }?.asObject()?.get("url")?.asString()
+    )
+
+    return AlbumSummary(
+        id = id,
+        title = title,
+        artist = artist,
+        thumbnailUrl = thumbnailUrl,
+        year = year,
+        releaseType = subtitleTexts.firstOrNull()?.takeIf { it in ALBUM_TYPE_LABELS },
+    )
 }
