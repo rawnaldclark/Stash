@@ -583,8 +583,33 @@ class StashPlaybackService : MediaLibraryService() {
         }
     }
 
-    /** See [COMMAND_KEEP_TIMELINE_ORDER]. Main thread. */
-    private var keepTimelineOrderOn = false
+    /** See [COMMAND_KEEP_TIMELINE_ORDER]. Main thread; internal for tests. */
+    internal var keepTimelineOrderOn = false
+        private set
+
+    /** The controller that asked for [keepTimelineOrderOn]: the app's, which looks after the order. */
+    private var keepTimelineOrderOwner: MediaSession.ControllerInfo? = null
+
+    /** [COMMAND_KEEP_TIMELINE_ORDER] from [controller]. Main thread; internal for tests. */
+    internal fun onKeepTimelineOrder(controller: MediaSession.ControllerInfo, on: Boolean) {
+        keepTimelineOrderOn = on
+        keepTimelineOrderOwner = controller.takeIf { on }
+        keepTimelineOrder()
+    }
+
+    /**
+     * A controller left. When it is the one that asked to keep the timeline order (the app's: it
+     * releases its controller when this service idle-stops, and its next connection asks again
+     * if the player still holds its big queue), nobody looks after the order any more: Media3's
+     * shuffle is its own again. Exactly then, rather than at the idle stop: a play that lands
+     * mid-stop keeps this instance and the app's controller, and then nothing would ask again.
+     * Main thread; internal for tests.
+     */
+    internal fun onControllerDisconnected(controller: MediaSession.ControllerInfo) {
+        if (controller != keepTimelineOrderOwner) return
+        keepTimelineOrderOn = false
+        keepTimelineOrderOwner = null
+    }
 
     /**
      * While [keepTimelineOrderOn] and shuffle is on: the master player's shuffle walk back to the
@@ -1497,10 +1522,9 @@ class StashPlaybackService : MediaLibraryService() {
             "StashPlayback",
             "idle-stop: no playback for ${IDLE_STOP_TIMEOUT_MS}ms — stopping service",
         )
-        // A client still bound (Android Auto) keeps this instance alive through stopSelf(): the
-        // app's big queue asks again on its next connection if the player still holds it (see
-        // PlayerRepositoryImpl.confirmWindow); until then nothing here keeps a queue unshuffled.
-        keepTimelineOrderOn = false
+        // keepTimelineOrderOn is not cleared here: a play queued on the main looper can undo this
+        // stop before the app's controller hears of it, and the app then never asks again. It goes
+        // when the app's controller disconnects ([onControllerDisconnected]).
         playbackSessionBus.onServiceStopping()
         // The widget keeps the song, paused; its buttons now start the service again.
         widgetFeed?.stopped()
@@ -2124,7 +2148,10 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadePreparedId = null
             // A queue set by another controller (the car, a media button) is not the app's big queue:
             // its shuffle is Media3's own again. The app asks for it again with each big queue it sets.
-            if (controller.packageName != packageName) keepTimelineOrderOn = false
+            if (controller.packageName != packageName) {
+                keepTimelineOrderOn = false
+                keepTimelineOrderOwner = null
+            }
             return serviceScope.future {
                 if (mediaItems.size == 1 && mediaItems[0].mediaId.startsWith(SHUFFLE_PLAY_PREFIX)) {
                     val tracks = shuffleSourceTracks(mediaItems[0].mediaId)
@@ -2552,6 +2579,10 @@ class StashPlaybackService : MediaLibraryService() {
             if (playerCommands.contains(Player.COMMAND_PLAY_PAUSE)) crossfadeEngine?.onPlayPauseRequested()
         }
 
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            onControllerDisconnected(controller)
+        }
+
         @OptIn(UnstableApi::class)
         override fun onConnect(
             session: MediaSession,
@@ -2668,10 +2699,7 @@ class StashPlaybackService : MediaLibraryService() {
                     }
                 }
                 COMMAND_PLAY_NEXT_SHUFFLED -> return Futures.immediateFuture(playNextShuffled(session, controller, args))
-                COMMAND_KEEP_TIMELINE_ORDER -> {
-                    keepTimelineOrderOn = args.getBoolean(EXTRA_KEEP_TIMELINE_ORDER, false)
-                    keepTimelineOrder()
-                }
+                COMMAND_KEEP_TIMELINE_ORDER -> onKeepTimelineOrder(controller, args.getBoolean(EXTRA_KEEP_TIMELINE_ORDER, false))
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled
