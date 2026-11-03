@@ -49,12 +49,12 @@ class WebSongsTest {
         assertThat(WebSongs.playsOnWeb(t)).isFalse()
     }
 
-    @Test fun `a local file without an ISRC, Spotify or YouTube id stays on the phone; with one it plays on the web`() {
+    @Test fun `a local file without an ISRC, Spotify or YouTube id stays on the phone, and with one it plays on the web`() {
         assertThat(WebSongs.playsOnWeb(track(MusicSource.LOCAL))).isFalse()
         assertThat(WebSongs.playsOnWeb(track(MusicSource.LOCAL, isrc = "USUM71607009"))).isTrue()
     }
 
-    @Test fun `a download with ids plays on the web (it streams there, the file never leaves); one without stays`() {
+    @Test fun `a download with ids plays on the web (it streams there, the file never leaves) and one without stays`() {
         val withIds = track(spotifyUri = "spotify:track:$spotifyId", youtubeId = youtubeId, downloaded = true)
         val s = WebSongs.songOf(withIds)!!
         assertThat(s.phoneOnly).isFalse()

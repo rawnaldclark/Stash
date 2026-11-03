@@ -309,7 +309,10 @@ fun NowPlayingScreen(
     // Google Cast (spec 2026-10-06 §5). Hidden on phones without Play Services.
     val castViewModel: com.stash.feature.nowplaying.cast.CastViewModel = hiltViewModel()
     val castConnection by castViewModel.connection.collectAsStateWithLifecycle()
-    val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected
+    // Where the music plays: this phone, a speaker or a linked browser (Remote v2 §6).
+    val playOn by castViewModel.playOn.collectAsStateWithLifecycle()
+    // The receiver decodes (a speaker or a browser): speed is no longer the phone's.
+    val casting = castConnection is com.stash.core.media.cast.CastConnection.Connected || playOn.onBrowser
     var showCastSheet by remember { mutableStateOf(false) }
     // Streaming quality (#716): Settings' streaming switches in a sheet, offered while songs stream.
     val qualityViewModel: StreamingQualityViewModel = hiltViewModel()
@@ -587,20 +590,24 @@ fun NowPlayingScreen(
     // this screen leaves the row alone. --
     val postToCommunity = com.stash.core.ui.components.LocalPostToCommunity.current
     val isDownloaded = track?.isDownloaded == true
-    // Cast shows (pinned or as a ⋮ row) exactly where its button did: a phone with Play
-    // Services, outside a Listen Together room (the two exclude each other, cast spec §3).
+    // Cast ("Play on") shows (pinned or as a ⋮ row) exactly where its button does: a phone with Play
+    // Services or a linked browser, outside a Listen Together room (they exclude each other, cast spec §3).
     val castSupported = castConnection != com.stash.core.media.cast.CastConnection.Unavailable
+    val hasBrowser = playOn.hasBrowser || playOn.onBrowser
+    val onBrowser = playOn.onBrowser
     val isScannedSong = track?.isScannedSong == true
     val isCloudSong = track?.source == com.stash.core.model.MusicSource.CLOUD
     val isSoundCloudSong = track?.soundCloudId != null || track?.source == com.stash.core.model.MusicSource.SOUNDCLOUD
     val isPreview = track?.soundCloudPreview == true && !isDownloaded
-    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
+    val actionCtx = remember(room != null, casting, postToCommunity != null, isDownloaded, castSupported, hasBrowser, onBrowser, isScannedSong, isCloudSong, isSoundCloudSong, isPreview, streams) {
         ActionContext(
             inRoom = room != null,
             casting = casting,
             communityAvailable = postToCommunity != null,
             isDownloaded = isDownloaded,
             castSupported = castSupported,
+            hasBrowser = hasBrowser,
+            onBrowser = onBrowser,
             isScannedSong = isScannedSong,
             isCloudSong = isCloudSong,
             isSoundCloudSong = isSoundCloudSong,
@@ -608,8 +615,8 @@ fun NowPlayingScreen(
             streams = streams,
         )
     }
-    val castConnectingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connecting)?.deviceName
-    val castingTo = (castConnection as? com.stash.core.media.cast.CastConnection.Connected)?.deviceName
+    val castConnectingTo = playOn.startingOn
+    val castingTo = playOn.playingOn
     // The Signal glyph breathes only while a station plays AND Now Playing is on screen: parked under
     // the mini player (composed for KEEP_WARM_MS after it closes) it holds still and asks for no frames.
     val radioPlaying = (uiState.playWhenReady || uiState.isPlaying) &&
@@ -1053,6 +1060,13 @@ fun NowPlayingScreen(
                                     ink = npInk(),
                                     onRejoin = together::rejoin,
                                 )
+                            } else if (playOn.elsewhere) {
+                                // "Playing on Chrome on Windows" (Remote v2 §6), or how a browser session stands; opens Play on.
+                                com.stash.feature.nowplaying.cast.PlayingOnLine(
+                                    state = playOn,
+                                    accent = chrome.accent,
+                                    onClick = { showCastSheet = true },
+                                )
                             }
                         },
                     )
@@ -1108,7 +1122,7 @@ fun NowPlayingScreen(
                             dismissModifier = Modifier.focusRequester(dismissFocus),
                             castButton = {
                                 com.stash.feature.nowplaying.cast.CastButton(
-                                    connection = castConnection,
+                                    state = playOn,
                                     tint = npInk(),
                                     accentColor = topChrome.accent,
                                     onClick = { showCastSheet = true },

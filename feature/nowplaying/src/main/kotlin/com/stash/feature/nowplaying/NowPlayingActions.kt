@@ -20,6 +20,10 @@ internal data class ActionContext(
     val isDownloaded: Boolean = false,
     /** This phone can Cast (Play Services present: the connection is anything but Unavailable). */
     val castSupported: Boolean = false,
+    /** The space has a linked browser to play on (Remote v2): "Play on" shows without Cast too. */
+    val hasBrowser: Boolean = false,
+    /** A linked browser plays the queue: it streams for itself, so this phone's stream quality changes nothing. */
+    val onBrowser: Boolean = false,
     /**
      * The current track is an All Songs file: played where it is, never saved to the library,
      * downloaded, flagged, shared or sent to a room (see [SCANNED_HIDDEN]).
@@ -67,11 +71,11 @@ internal fun isActionAvailable(action: NowPlayingAction, ctx: ActionContext): Bo
 }
 
 private fun isActionAvailableForAnySong(action: NowPlayingAction, ctx: ActionContext): Boolean = when (action) {
-    NowPlayingAction.CAST -> ctx.castSupported && !ctx.inRoom
+    NowPlayingAction.CAST -> (ctx.castSupported || ctx.hasBrowser) && !ctx.inRoom
     NowPlayingAction.RADIO, NowPlayingAction.QUEUE -> !ctx.inRoom
     NowPlayingAction.PLAYBACK_SPEED -> !ctx.inRoom && !ctx.casting
     NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
-    NowPlayingAction.STREAM_QUALITY -> ctx.streams
+    NowPlayingAction.STREAM_QUALITY -> ctx.streams && !ctx.onBrowser
     else -> true
 }
 
@@ -174,7 +178,7 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
     NowPlayingAction.entries.filter {
         it in pins || when (it) {
             NowPlayingAction.POST_TO_COMMUNITY -> ctx.communityAvailable
-            NowPlayingAction.CAST -> ctx.castSupported
+            NowPlayingAction.CAST -> ctx.castSupported || ctx.hasBrowser
             else -> true
         }
     }
@@ -182,7 +186,8 @@ internal fun editableActions(pins: Set<NowPlayingAction>, ctx: ActionContext): L
 /** Why a pinned action is missing from the row right now, or null when it shows. */
 internal fun hiddenReason(action: NowPlayingAction, ctx: ActionContext): String? = when {
     isActionAvailable(action, ctx) -> null
-    // Its only rule, so first: a room or a cast doesn't hide it.
+    // A browser playing the queue hides it (it streams for itself); otherwise only Download mode does.
+    ctx.onBrowser && action == NowPlayingAction.STREAM_QUALITY -> "Hidden while casting"
     action == NowPlayingAction.STREAM_QUALITY -> "Nothing streams in Download mode"
     ctx.isPreview && action == NowPlayingAction.DOWNLOAD -> "Previews cannot be downloaded"
     ctx.isSoundCloudSong && action == NowPlayingAction.FLAG_WRONG_MATCH -> "This plays the exact SoundCloud upload"

@@ -1,0 +1,300 @@
+package com.stash.core.media.cast
+
+import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.weblink.handoff.WireSong
+import com.stash.core.data.weblink.remote.BrowserState
+import com.stash.core.data.weblink.remote.RemoteCards
+import com.stash.core.data.weblink.remote.RemoteCommand
+import com.stash.core.data.weblink.remote.RemoteItem
+import com.stash.core.data.weblink.remote.RemotePhase
+import com.stash.core.data.weblink.remote.RemoteState
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
+
+/**
+ * A linked browser as a cast receiver (Remote v2, spec 2026-11-03 §2.2): its states as [CastStatus], the commands the cast
+ * wrapper's calls become, and when a session ends by itself (the 15 s grace for a browser gone, the 60 s one for this phone's
+ * connection, someone at the browser taking over, a first song never answered).
+ */
+class WebCastRemoteTest {
+    private val sent = mutableListOf<RemoteCommand>()
+    private val ends = mutableListOf<WebCastRemote.End>()
+    private var heard = 0
+
+    private val song = WireSong("Pink + White", "Frank Ocean", album = "Blonde", isrc = "USUM71607009")
+    private val nights = WireSong("Nights", "Frank Ocean")
+
+    private fun media(contentId: String, s: WireSong = song) =
+        CastMedia(contentId, "", "", s.title, s.artist, null, null, 0L, song = s, from = "Blonde")
+
+    private fun TestScope.remote() = WebCastRemote(
+        device = CHROME,
+        name = "Chrome on Windows",
+        me = ME,
+        send = { sent += it },
+        scope = backgroundScope,
+        clock = { testScheduler.currentTime },
+        onEnd = { ends += it },
+    ).also { it.addListener { heard++ } }
+
+    private fun TestScope.state(
+        iid: String? = null,
+        next: String? = null,
+        phase: RemotePhase? = RemotePhase.PLAYING,
+        playing: Boolean = true,
+        positionMs: Long = 10_000,
+        driver: String? = ME,
+        sid: String = SID,
+        volume: Double? = 0.8,
+        pendingPlay: Boolean = false,
+        needsGesture: Boolean = false,
+        lostAt: Long? = null,
+    ) = BrowserState(
+        CHROME,
+        "Chrome on Windows",
+        RemoteState(
+            sid, needsGesture, playing, positionMs, 200_000, 1.0, volume, true, "Pink + White", "Frank Ocean", null,
+            caps = listOf("drive"), driver = driver, iid = iid, next = next, phase = phase, pendingPlay = pendingPlay,
+        ),
+        receivedAt = testScheduler.currentTime,
+        lostAt = lostAt,
+    )
+
+    // ── State → CastStatus ─────────────────────────────────────────────
+
+    @Test fun `a driven browser's state is the receiver's status, its iid the content id`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 30_000, autoplay = true)
+        r.onState(state(iid = "42#1", phase = RemotePhase.LOADING))
+        assertThat(r.status.contentId).isEqualTo("42#1")
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.BUFFERING)
+        r.onState(state(iid = "42#1", phase = RemotePhase.PLAYING, positionMs = 31_000))
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.PLAYING)
+        assertThat(r.status.durationMs).isEqualTo(200_000)
+        assertThat(r.status.volume).isWithin(1e-6f).of(0.8f)
+        assertThat(r.status.canSetVolume).isTrue()
+        // The position moves on while it plays, as the card's does.
+        advanceTimeBy(4_000)
+        assertThat(r.status.positionMs).isEqualTo(35_000)
+        r.onState(state(iid = "42#1", phase = RemotePhase.PAUSED, playing = false, positionMs = 36_000))
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.PAUSED)
+        advanceTimeBy(4_000)
+        assertThat(r.status.positionMs).isEqualTo(36_000)
+        assertThat(heard).isAtLeast(3)
+    }
+
+    @Test fun `a play waiting for a click is buffering, ended is finished, failed is an error the queue skips`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", phase = RemotePhase.PAUSED, playing = false, pendingPlay = true, needsGesture = true))
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.BUFFERING)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.NEEDS_CLICK)
+        r.onState(state(iid = "42#1", phase = RemotePhase.ENDED, playing = false))
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.IDLE)
+        assertThat(r.status.idleReason).isEqualTo(CastStatus.IdleReason.FINISHED)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        r.onState(state(iid = "42#1", phase = RemotePhase.FAILED, playing = false))
+        assertThat(r.status.idleReason).isEqualTo(CastStatus.IdleReason.ERROR)
+    }
+
+    @Test fun `what isn't this phone's song is nothing of ours, and a browser with no volume can't be set`() = runTest {
+        val r = remote()
+        r.onState(state(iid = null, driver = null, volume = null)) // its own music, before our load landed
+        assertThat(r.status.contentId).isNull()
+        assertThat(r.status.canSetVolume).isFalse()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "99#7")) // an id this phone never handed it
+        assertThat(r.status.contentId).isNull()
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.IDLE)
+        assertThat(r.status.canSetVolume).isTrue()
+    }
+
+    // ── The wrapper's calls → commands ─────────────────────────────────
+
+    @Test fun `load hands the browser the song by its id, with Playing from`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 30_000, autoplay = true)
+        assertThat(sent).containsExactly(RemoteCommand.Load(RemoteItem("42#1", song), 30_000, true, "Blonde"))
+    }
+
+    @Test fun `queue edits within 300 ms go as one upNext, and a load drops one still waiting`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        sent.clear()
+        r.setNext(null)
+        r.setNext(media("43#n1", nights))
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS - 1)
+        runCurrent()
+        assertThat(sent).isEmpty()
+        advanceTimeBy(2)
+        runCurrent()
+        assertThat(sent).containsExactly(RemoteCommand.UpNext(listOf(RemoteItem("43#n1", nights))))
+        sent.clear()
+        r.setNext(media("44#n2", nights))
+        r.load(media("50#2"), 0, autoplay = true)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(sent.filterIsInstance<RemoteCommand.UpNext>()).isEmpty()
+        // Cleared: an empty upNext.
+        r.setNext(null)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(sent.last()).isEqualTo(RemoteCommand.UpNext(emptyList()))
+    }
+
+    @Test fun `next jumps when the browser holds the queued song, else the wrapper loads it`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.setNext(media("43#n1", nights))
+        assertThat(r.playNext()).isFalse() // the upNext hasn't even gone out
+        advanceTimeBy(WebCastRemote.UP_NEXT_COALESCE_MS + 1)
+        runCurrent()
+        assertThat(r.playNext()).isFalse() // gone out, but the browser hasn't said it holds it
+        r.onState(state(iid = "42#1", next = "43#n1"))
+        sent.clear()
+        assertThat(r.playNext()).isTrue()
+        assertThat(sent).containsExactly(RemoteCommand.Jump("43#n1"))
+        r.onState(state(iid = "43#n1"))
+        assertThat(r.status.contentId).isEqualTo("43#n1")
+    }
+
+    @Test fun `play, pause, seek and volume are v1 commands, shown at once, never v1 next or prev`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        sent.clear()
+        r.pause()
+        assertThat(r.status.playerState).isEqualTo(CastStatus.PlayerState.PAUSED)
+        r.seekTo(90_000)
+        assertThat(r.status.positionMs).isEqualTo(90_000)
+        r.play()
+        r.setVolume(0.25f)
+        assertThat(r.status.volume).isWithin(1e-6f).of(0.25f)
+        r.setMuted(true)
+        r.setMuted(false)
+        r.stop()
+        assertThat(sent).containsExactly(
+            RemoteCommand.Pause, RemoteCommand.Seek(90_000), RemoteCommand.Play, RemoteCommand.Volume(0.25),
+            RemoteCommand.Volume(0.0), RemoteCommand.Volume(0.25), RemoteCommand.Stop,
+        ).inOrder()
+        assertThat(sent.none { it == RemoteCommand.Next || it == RemoteCommand.Prev }).isTrue()
+    }
+
+    // ── When it ends by itself ─────────────────────────────────────────
+
+    @Test fun `a browser gone gets 15 s as Reconnecting, and carries on if it comes back`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.onState(null) // its socket closed (peer off, offline, not in ready)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.RECONNECTING)
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS - 1_000)
+        runCurrent()
+        r.onState(state(iid = "42#1"))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS * 2)
+        runCurrent()
+        assertThat(ends).isEmpty()
+        r.onState(null)
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS + 1)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `a tab silent for a minute counts as gone, then the grace`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        advanceTimeBy(RemoteCards.STALE_MS + 1)
+        runCurrent()
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.RECONNECTING)
+        assertThat(ends).isEmpty()
+        advanceTimeBy(WebCastRemote.CLOSED_GRACE_MS + 1)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.CLOSED)
+    }
+
+    @Test fun `this phone's connection down gets 60 s from the drop, and the browser plays on meanwhile`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1", positionMs = 10_000))
+        val dropAt = testScheduler.currentTime
+        r.onState(state(iid = "42#1", positionMs = 10_000, lostAt = dropAt))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.RECONNECTING)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertThat(r.status.positionMs).isEqualTo(40_000) // still moving: it holds the song and plays on
+        advanceTimeBy(WebCastRemote.LOST_GRACE_MS - 30_000 - 1_000)
+        runCurrent()
+        assertThat(ends).isEmpty()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.LOST)
+    }
+
+    @Test fun `someone at the browser picking their own music ends the session, so does a reload`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(iid = "42#1"))
+        r.onState(state(driver = null, iid = null)) // the page picked its own song: driver dropped
+        assertThat(ends).containsExactly(WebCastRemote.End.TOOK_OVER)
+        sent.clear()
+        r.play() // ended: nothing more goes out
+        assertThat(sent).isEmpty()
+
+        ends.clear()
+        val again = remote()
+        again.load(media("42#2"), 0, autoplay = true)
+        again.onState(state(iid = "42#2"))
+        again.onState(state(driver = null, iid = null, sid = "ReloadedTab01"))
+        assertThat(ends).containsExactly(WebCastRemote.End.TOOK_OVER)
+    }
+
+    @Test fun `states before the first load landed are not a take-over`() = runTest {
+        val r = remote()
+        r.onState(state(driver = null, iid = null)) // still its own music when picked
+        r.load(media("42#1"), 0, autoplay = true)
+        r.onState(state(driver = null, iid = null))
+        assertThat(ends).isEmpty()
+        r.onState(state(iid = "42#1"))
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.READY)
+    }
+
+    @Test fun `the first song unanswered for 10 s ends it as no answer, answered, it never does`() = runTest {
+        val r = remote()
+        r.load(media("42#1"), 0, autoplay = true)
+        assertThat(r.link.value).isEqualTo(WebCastRemote.Link.STARTING)
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS + 1)
+        runCurrent()
+        assertThat(ends).containsExactly(WebCastRemote.End.NO_ANSWER)
+
+        ends.clear()
+        val answered = remote()
+        answered.load(media("42#2"), 0, autoplay = true)
+        advanceTimeBy(3_000)
+        answered.onState(state(iid = "42#2", phase = RemotePhase.LOADING))
+        assertThat(answered.link.value).isEqualTo(WebCastRemote.Link.READY)
+        advanceTimeBy(WebCastRemote.NO_ANSWER_MS)
+        runCurrent()
+        assertThat(ends).isEmpty()
+    }
+
+    @Test fun `a content id that isn't a wire id is made one, and still read back`() = runTest {
+        val r = remote()
+        r.load(media("radio item/7#1"), 0, autoplay = true)
+        val id = (sent.single() as RemoteCommand.Load).item.id
+        assertThat(id).matches("^[A-Za-z0-9_.:#-]{1,64}$")
+        r.onState(state(iid = id))
+        assertThat(r.status.contentId).isEqualTo("radio item/7#1")
+    }
+
+    private companion object {
+        const val CHROME = "d_ChromeWindows01"
+        const val ME = "d_P1xel5Ph0ne0001"
+        const val SID = "Zk3mQ9xL2pRt"
+    }
+}

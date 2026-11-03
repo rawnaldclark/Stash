@@ -56,6 +56,14 @@ class CastViewModelTest {
         override fun disconnect() { calls += "disconnect" }
     }
 
+    /** No linked browser (Remote v2 has its own tests: BrowserOutputsTest). */
+    private val noBrowsers: com.stash.core.media.cast.BrowserOutputs = io.mockk.mockk(relaxed = true) {
+        io.mockk.every { session } returns MutableStateFlow(null)
+        io.mockk.every { hasBrowser } returns MutableStateFlow(false)
+        io.mockk.every { remote } returns MutableStateFlow(null)
+        io.mockk.every { browsers } returns MutableStateFlow(emptyList())
+    }
+
     private val dispatcher = UnconfinedTestDispatcher()
 
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
@@ -63,7 +71,7 @@ class CastViewModelTest {
 
     @Test fun `volume follows the connected speaker and is null without one`() = runTest(dispatcher) {
         val devices = FakeDevices()
-        val viewModel = CastViewModel(devices)
+        val viewModel = CastViewModel(devices, noBrowsers)
         backgroundScope.launch { viewModel.volume.collect {} }
         assertNull(viewModel.volume.value)
 
@@ -84,7 +92,7 @@ class CastViewModelTest {
         val remote = FakeRemote()
         devices.remote.value = remote
 
-        CastViewModel(devices).setVolume(0.25f)
+        CastViewModel(devices, noBrowsers).setVolume(0.25f)
 
         assertEquals(listOf(0.25f), remote.volumes)
     }
@@ -92,7 +100,7 @@ class CastViewModelTest {
     @Test fun `picking a speaker connects to it`() {
         val devices = FakeDevices()
 
-        CastViewModel(devices).connect(devices.devices.value.single())
+        CastViewModel(devices, noBrowsers).connect(devices.devices.value.single())
 
         assertEquals(listOf("connect:id-1"), devices.calls)
     }

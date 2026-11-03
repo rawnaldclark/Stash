@@ -13,4 +13,48 @@
     <string name="np_quality_prefer_tidal_aac_title">Prefer Tidal AAC while streaming</string>
     <string name="np_quality_prefer_tidal_aac_subtitle">Smaller streams when Tidal has the song</string>
     <string name="np_quality_allowance_note">FLAC and Tidal AAC both count toward today\'s Tidal &amp; Qobuz allowance. Lossless off saves it.</string>
+
+    <!-- Play on (Remote v2, spec 2026-11-03 §3, §6): the cast button's sheet lists this phone, the linked browsers and the
+         Cast speakers. A browser is named as it was linked: "Chrome on Windows"; its app alone is "Chrome". -->
+    <string name="play_on_title">Play on</string>
+    <string name="play_on_button">Play on another device</string>
+    <!-- The button's description while the music plays elsewhere. %1$s: the device. -->
+    <string name="play_on_button_playing">Playing on %1$s</string>
+    <string name="play_on_this_phone">This phone</string>
+    <string name="play_on_browsers">Browsers</string>
+    <string name="play_on_speakers">Speakers</string>
+    <!-- A browser row's line. -->
+    <string name="play_on_browser_ready">Ready</string>
+    <!-- %1$s: the song the browser plays now (picking it plays this phone's music instead). -->
+    <string name="play_on_browser_playing">Playing %1$s</string>
+    <string name="play_on_browser_needs_click">Click the Stash tab once first</string>
+    <string name="play_on_browser_reload">Reload the Stash tab to play there</string>
+    <string name="play_on_browser_not_open">Open play.stashfm.app to play there</string>
+    <!-- The browser playing this phone's music, in the sheet and on Now Playing. %1$s: the browser. -->
+    <string name="play_on_playing_on">Playing on %1$s</string>
+    <string name="play_on_starting_on">Starting on %1$s…</string>
+    <!-- A Cast speaker on its way. %1$s: the speaker. -->
+    <string name="play_on_connecting_to">Connecting to %1$s…</string>
+    <!-- %1$s: the browser's app ("Chrome"). -->
+    <string name="play_on_reconnecting">Reconnecting to %1$s…</string>
+    <string name="play_on_click_tab">Click the Stash tab once in %1$s</string>
+    <string name="play_on_browser_volume">Browser volume</string>
+    <string name="play_on_browser_note">The browser plays with its own sound settings: its equalizer and crossfade apply, not this phone\'s.</string>
+    <string name="play_on_browser_unavailable">That browser\'s tab closed. Open it again to play there.</string>
+
+    <!-- What happened to a browser session, as a snackbar. %1$s: the browser ("Chrome on Windows"). -->
+    <string name="play_on_notice_closed">%1$s closed. Your music is back on this phone.</string>
+    <string name="play_on_notice_lost">Lost the connection to %1$s. Your music is back on this phone.</string>
+    <string name="play_on_notice_own_music">%1$s is playing its own music now.</string>
+    <string name="play_on_notice_no_answer">%1$s didn\'t answer. Your music stayed on this phone.</string>
+    <!-- Songs only this phone has, stepped over on a browser (once a session). -->
+    <plurals name="play_on_notice_skipped">
+        <item quantity="one">Skipped %1$d song that\'s only on this phone</item>
+        <item quantity="other">Skipped %1$d songs that are only on this phone</item>
+    </plurals>
+    <string name="play_on_notice_play">Play</string>
+
+    <!-- The queue while a browser plays it. -->
+    <string name="play_on_queue_phone_only">Only on this phone</string>
+    <string name="play_on_queue_phone_only_tap">Only on this phone: the browser can\'t play it</string>
 </resources>

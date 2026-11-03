@@ -83,7 +83,7 @@ class WebRemote internal constructor(
     private val clock: () -> Long,
     private val wallClock: () -> Long,
     private val tickMs: Long,
-) {
+) : BrowserLink {
     @Inject constructor(store: WebLinkStore, repo: WebLinkRepository, config: WebLinkConfig, connector: LiveConnector) :
         this(store, repo, config, connector, CoroutineScope(SupervisorJob() + Dispatchers.IO), { SystemClock.elapsedRealtime() }, System::currentTimeMillis, TICK_MS)
 
@@ -124,13 +124,13 @@ class WebRemote internal constructor(
     val card: StateFlow<RemoteCard?> = _card.asStateFlow()
 
     /** Every browser whose socket is open and that has said what it plays, by device id (Remote v2: the "Play on" sheet). */
-    val live: StateFlow<Map<String, BrowserState>> = browsers.asStateFlow()
+    override val live: StateFlow<Map<String, BrowserState>> = browsers.asStateFlow()
 
     /** The space's verified browsers, id → name, open tab or not (read while the socket is wanted). */
-    val linked: StateFlow<Map<String, String>> = names.asStateFlow()
+    override val linked: StateFlow<Map<String, String>> = names.asStateFlow()
 
     /** This phone's device id in the space, or null before the socket first opened. */
-    val deviceId: String? get() = me.takeIf { it.isNotEmpty() }
+    override val deviceId: String? get() = me.takeIf { it.isNotEmpty() }
 
     init {
         scope.launch {
@@ -151,14 +151,14 @@ class WebRemote internal constructor(
      * [device] plays this phone's queue (Remote v2): the socket stays open until [unpin], in the background too, and a drop
      * keeps that browser's last state for the driver's grace.
      */
-    fun pin(device: String) {
+    override fun pin(device: String) {
         if (!config.enabled) return
         released.remove(browsers.value[device]?.state?.sid)
         pinned.value = device
     }
 
     /** The browser no longer plays this phone's queue: the socket follows the foreground again. */
-    fun unpin() {
+    override fun unpin() {
         pinned.value = null
         scope.launch {
             sendLock.withLock { parked.clear() }
@@ -172,7 +172,7 @@ class WebRemote internal constructor(
      * Tells [device] to let go of this phone's queue (`release`), pausing unless [pause] is false. Its states that still name this
      * phone as driver are then in flight, not a reason to tell it again.
      */
-    fun release(device: String, pause: Boolean) {
+    override fun release(device: String, pause: Boolean) {
         browsers.value[device]?.state?.sid?.let(released::add)
         sendTo(device, RemoteCommand.Release(pause))
     }
@@ -278,7 +278,7 @@ class WebRemote internal constructor(
      * command. One for the pinned browser that can't go out now (this phone's socket is down) waits until that browser is heard
      * from again.
      */
-    fun sendTo(device: String, command: RemoteCommand) {
+    override fun sendTo(device: String, command: RemoteCommand) {
         outbox.trySend(Outgoing(device, command))
     }
 
@@ -307,8 +307,12 @@ class WebRemote internal constructor(
             put("env", SyncJson.encodeToJsonElement(SyncEnvelope.serializer(), env))
         }.toString()
         if (!c.send(frame)) return park(forPinned, command)
-        browsers.update { all -> all[target]?.let { all + (target to RemoteCards.optimistic(it, command, clock())) } ?: all }
-        publish()
+        // The card moves at once. A command to a named browser doesn't touch [live]: that is what the browser said (its driver
+        // shows its own commands at once, and judges whether the browser is still there by its states alone).
+        if (to == null) {
+            browsers.update { all -> all[target]?.let { all + (target to RemoteCards.optimistic(it, command, clock())) } ?: all }
+            publish()
+        }
         return true
     }
 

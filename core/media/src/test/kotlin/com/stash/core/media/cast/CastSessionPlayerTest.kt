@@ -637,6 +637,104 @@ class CastSessionPlayerTest {
         assertThat(player.isAttached).isFalse()
     }
 
+    // ── A linked browser (Remote v2): songs only the phone has are stepped over ──
+
+    /** Every run of stepped-over songs the wrapper reported, in order. */
+    private val skippedRuns = mutableListOf<Int>()
+
+    /** A browser's feed: songs whose id starts with "p" are only on the phone (it can't take them). */
+    private fun browserFeed() = CastFeed(
+        mediaFor = { item, contentId -> if (item.mediaId.startsWith("p")) null else media(item, contentId) },
+        skipsUnsendable = true,
+        onSkipped = { skippedRuns += it },
+    )
+
+    private fun castToBrowser(local: QueuePlayer, remote: FakeRemote) =
+        CastSessionPlayer(local, mediaFor = { item, contentId -> media(item, contentId) }, clock = { now })
+            .apply { attach(local, remote, 0L, true, browserFeed()) }
+
+    @Test fun `a song only the phone has is stepped over on a browser, with no player error`() {
+        val local = QueuePlayer(listOf("p1", "b"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        assertThat(remote.loads.single().first).startsWith("b#")
+        assertThat(local.index).isEqualTo(1)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(1)
+    }
+
+    @Test fun `a run of them is stepped over in one go and said once`() {
+        val local = QueuePlayer(listOf("a", "p1", "p2", "c"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+        assertThat(remote.nexts).isEmpty() // p1 isn't queued on the browser
+
+        player.seekToNextMediaItem()
+
+        assertThat(remote.loads.map { it.first.substringBefore('#') }).containsExactly("a", "c").inOrder()
+        assertThat(local.index).isEqualTo(3)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(2)
+    }
+
+    @Test fun `when the browser finishes a song before phone-only ones, the queue steps over them`() {
+        val local = QueuePlayer(listOf("a", "p1", "c"))
+        val remote = FakeRemote()
+        castToBrowser(local, remote)
+        remote.report(CastStatus.PlayerState.PLAYING)
+
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.FINISHED)
+
+        assertThat(remote.lastContentId).startsWith("c#")
+        assertThat(local.index).isEqualTo(2)
+        assertThat(skippedRuns).containsExactly(1)
+    }
+
+    @Test fun `a queue with nothing more a browser can take ends there, once, without an error`() {
+        val local = QueuePlayer(listOf("p1", "p2"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        assertThat(remote.loads).isEmpty()
+        assertThat(remote.calls).contains("stop")
+        assertThat(player.playbackState).isEqualTo(Player.STATE_ENDED)
+        assertThat(player.playerError).isNull()
+        assertThat(skippedRuns).containsExactly(2)
+    }
+
+    @Test fun `a browser's error is still the player error the queue skips through its guard`() {
+        val local = QueuePlayer(listOf("a", "b"))
+        val remote = FakeRemote()
+        val player = castToBrowser(local, remote)
+
+        remote.report(CastStatus.PlayerState.IDLE, CastStatus.IdleReason.ERROR) // it retried once and stopped on it
+
+        assertThat(player.playerError?.errorCode).isEqualTo(PlaybackException.ERROR_CODE_REMOTE_ERROR)
+        assertThat(skippedRuns).isEmpty()
+    }
+
+    @Test fun `re-pointed at a speaker, a song it can't serve is an error again, not a step over`() {
+        val local = QueuePlayer(listOf("b", "p1"))
+        val browser = FakeRemote()
+        val speakerFeed: (MediaItem, String) -> CastMedia? = { item, contentId ->
+            if (item.mediaId.startsWith("p")) null else media(item, contentId)
+        }
+        val player = CastSessionPlayer(local, mediaFor = speakerFeed, clock = { now })
+            .apply { attach(local, browser, 0L, true, browserFeed()) }
+        browser.report(CastStatus.PlayerState.PLAYING)
+
+        val speaker = FakeRemote()
+        player.attach(local, speaker, player.currentPosition, true) // the speaker's own (default) feed
+        speaker.report(CastStatus.PlayerState.PLAYING)
+        player.seekToNextMediaItem()
+
+        assertThat(speaker.loads.map { it.first.substringBefore('#') }).containsExactly("b")
+        assertThat(player.playerError?.errorCode).isEqualTo(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
+        assertThat(skippedRuns).isEmpty()
+    }
+
     private companion object {
         fun item(id: String) = MediaItem.Builder().setMediaId(id).setUri("file:///music/$id.flac").build()
         fun media(item: MediaItem, contentId: String) = CastMedia(
