@@ -120,7 +120,7 @@ internal fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
 /**
  * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own
  * post). Until the post is heard ([listenFirst]: 30 s played from it) an arrow that would cast a vote is [upDimmed] or
- * [downDimmed], and a "Listen first" hint shows; your current vote stays lit and can still be taken back.
+ * [downDimmed] (no words by the pill; a tap says why); your current vote stays lit and can still be taken back.
  */
 internal data class VotePillUi(
     val score: Int,

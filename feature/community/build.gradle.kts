@@ -26,4 +26,9 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.8") // same version core/data uses
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // CommunityVotePillTest composes the real pill on Robolectric. The Compose BOM is only on the main classpath (the
+    // compose convention plugin), so re-apply it here to version the test artifacts.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
 }
