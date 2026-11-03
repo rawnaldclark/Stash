@@ -44,21 +44,14 @@ internal object ListeningLayout {
     val WeekDayLetter: Dp = 12.dp
 
     /**
-     * The week card's bars beside its words at the default font: seven days of about 13.7 dp, each
-     * with room for its initial ([WeekDayLetter]). Narrow enough that "123 plays · 102 songs ·
-     * 4‑day streak" fits on one line beside it on a Pixel 5.
+     * The week card's bars beside its words: seven days of about 17 dp. (96 dp was tried, to fit
+     * "124 plays · 103 songs · 5‑day streak" on one line on a Pixel 5: that needs about 215 dp of
+     * words and 96 dp left 213, so the line wrapped anyway.)
      */
-    val WeekChartWidth: Dp = 96.dp
+    val WeekChartWidth: Dp = 120.dp
 
     /** Between the week card's words and its bars. */
-    val WeekChartGap: Dp = 12.dp
-
-    /**
-     * The bars' width beside the words at [fontScale]: it grows with the font, as their day initials
-     * do, so an initial is never cut at a large font on a wide screen (a fixed width cut "W" from
-     * about 1.7× on a 460 dp phone).
-     */
-    fun weekChartWidth(fontScale: Float): Dp = WeekChartWidth * fontScale
+    val WeekChartGap: Dp = 16.dp
 
     /**
      * The least room for the week card's words beside its bars at the default font: the time at
@@ -71,10 +64,14 @@ internal object ListeningLayout {
      * 2026-11-02: the card had grown to 235 dp, "way too big"): when beside them the words would get
      * less than [MinWeekWords] scaled by the font ([fontScale]), so the bars drop rather than squeeze
      * the time. [inner] is the card's width inside its padding. A Pixel 5 (321 dp) keeps them beside
-     * up to the 1.15× Large font and drops them at 1.3×; a Pixel 6 (339 dp) keeps them up to about 1.33×.
+     * up to the 1.15× Large font and drops them at 1.3×; a Pixel 6 (339 dp) keeps them up to 1.35×.
+     * They also drop when a day's slot (a seventh of [WeekChartWidth]) can't hold its initial
+     * ([WeekDayLetter] scaled by the font): from about 1.43×, which only a wide screen reaches beside
+     * the words (a 480 dp phone at 1.7× cut its "W" before).
      */
     fun weekBarsBelow(inner: Dp, fontScale: Float): Boolean =
-        inner - weekChartWidth(fontScale) - WeekChartGap < MinWeekWords * fontScale
+        inner - WeekChartWidth - WeekChartGap < MinWeekWords * fontScale ||
+            WeekChartWidth / 7 < WeekDayLetter * fontScale
 
     /**
      * The week card's plays · songs · streak as lines: which stats share each line, by index, given

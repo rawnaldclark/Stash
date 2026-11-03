@@ -49,7 +49,7 @@ class ListeningLayoutTest {
     private fun weekInner(screen: Float) = (screen - 2 * 20 - 2 * 16).dp
 
     @Test fun `a Pixel 5 keeps the week's bars beside the words up to Large and drops them at 1_3x`() {
-        // 393 dp: 321 inside the card, 213 for the words beside 96 dp of bars and a 12 dp gap
+        // 393 dp: 321 inside the card, 185 for the words beside 120 dp of bars and a 16 dp gap
         assertThat(weekInner(393f)).isEqualTo(321.dp)
         assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 0.85f)).isFalse()
         assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 1f)).isFalse()
@@ -58,13 +58,13 @@ class ListeningLayoutTest {
         assertThat(ListeningLayout.weekBarsBelow(weekInner(393f), fontScale = 2f)).isTrue()
     }
 
-    @Test fun `a Pixel 6 keeps the week's bars beside the words up to about 1_33x`() {
+    @Test fun `a Pixel 6 keeps the week's bars beside the words up to about 1_35x`() {
         assertThat(ListeningLayout.weekBarsBelow(weekInner(411f), fontScale = 1.3f)).isFalse()
-        assertThat(ListeningLayout.weekBarsBelow(weekInner(411f), fontScale = 1.35f)).isTrue()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(411f), fontScale = 1.4f)).isTrue()
     }
 
     @Test fun `a 360 dp phone keeps them beside at the default font, and a narrow one drops them`() {
-        // 288 inside: 180 dp for the words
+        // 288 inside: 152 dp for the words
         assertThat(ListeningLayout.weekBarsBelow(weekInner(360f), fontScale = 1f)).isFalse()
         assertThat(ListeningLayout.weekBarsBelow(weekInner(360f), fontScale = 1.15f)).isTrue()
         // A large Display size on a small phone
@@ -72,22 +72,27 @@ class ListeningLayoutTest {
     }
 
     @Test fun `the week's bars drop when the words would get under 150 dp times the font scale`() {
-        // 258 - 96 - 12 = 150
-        assertThat(ListeningLayout.weekBarsBelow(258.dp, fontScale = 1f)).isFalse()
-        assertThat(ListeningLayout.weekBarsBelow(257.dp, fontScale = 1f)).isTrue()
-        // At 2x the bars are 192 dp: 504 - 192 - 12 = 300 = 150 × 2
-        assertThat(ListeningLayout.weekBarsBelow(504.dp, fontScale = 2f)).isFalse()
-        assertThat(ListeningLayout.weekBarsBelow(503.dp, fontScale = 2f)).isTrue()
+        // 286 - 120 - 16 = 150
+        assertThat(ListeningLayout.weekBarsBelow(286.dp, fontScale = 1f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(285.dp, fontScale = 1f)).isTrue()
+        // 436 - 136 = 300: room for the words up to 2x, and at 1.4x a day's 17 dp still holds its initial
+        assertThat(ListeningLayout.weekBarsBelow(436.dp, fontScale = 1.4f)).isFalse()
     }
 
-    @Test fun `the bars widen with the font, so a day's initial is never cut`() {
-        // A fixed 120 dp cut "W" from about 1.7x on a 460 dp phone; the width now follows the font.
-        listOf(0.85f, 1f, 1.15f, 1.3f, 1.7f, 2f).forEach { scale ->
-            assertThat(ListeningLayout.weekChartWidth(scale) / 7).isAtLeast(ListeningLayout.WeekDayLetter * scale)
+    @Test fun `on a wide screen at a large font the bars drop rather than cut a day's initial`() {
+        // 480 dp at 1.7x: the words have room (272 >= 255), but a day's 17 dp can't hold a 20 dp "W"
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(480f), fontScale = 1.7f)).isTrue()
+        // A tablet keeps them beside up to about 1.43x, then drops them
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(800f), fontScale = 1.4f)).isFalse()
+        assertThat(ListeningLayout.weekBarsBelow(weekInner(800f), fontScale = 1.5f)).isTrue()
+        // Whenever they stay beside, each day's slot holds its initial
+        listOf(360f, 393f, 411f, 480f, 600f, 800f).forEach { screen ->
+            listOf(0.85f, 1f, 1.15f, 1.3f, 1.5f, 1.7f, 2f).forEach { scale ->
+                if (!ListeningLayout.weekBarsBelow(weekInner(screen), scale)) {
+                    assertThat(ListeningLayout.WeekChartWidth / 7).isAtLeast(ListeningLayout.WeekDayLetter * scale)
+                }
+            }
         }
-        assertThat(ListeningLayout.weekChartWidth(1f)).isEqualTo(96.dp)
-        // A tablet at 2x keeps them beside the words, each day 27 dp wide
-        assertThat(ListeningLayout.weekBarsBelow(weekInner(800f), fontScale = 2f)).isFalse()
     }
 
     @Test fun `the week's stats share a line while they fit, and a wrap falls between two of them`() {

@@ -273,8 +273,7 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
     ) {
         BoxWithConstraints(Modifier.padding(16.dp).clearAndSetSemantics { }) {
             val empty = nothing.takeIf { week.plays == 0 }
-            val fontScale = LocalDensity.current.fontScale
-            if (ListeningLayout.weekBarsBelow(maxWidth, fontScale)) {
+            if (ListeningLayout.weekBarsBelow(maxWidth, LocalDensity.current.fontScale)) {
                 Column {
                     WeekWords(time = time, about = about, stats = stats, nothing = empty)
                     Spacer(Modifier.height(12.dp))
@@ -284,11 +283,7 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WeekWords(time = time, about = about, stats = stats, nothing = empty, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(ListeningLayout.WeekChartGap))
-                    WeekChart(
-                        week = week,
-                        barsHeight = WeekBarsHeight,
-                        modifier = Modifier.width(ListeningLayout.weekChartWidth(fontScale)),
-                    )
+                    WeekChart(week = week, barsHeight = WeekBarsHeight, modifier = Modifier.width(ListeningLayout.WeekChartWidth))
                 }
             }
         }
