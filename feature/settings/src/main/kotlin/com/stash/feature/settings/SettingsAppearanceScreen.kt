@@ -63,9 +63,11 @@ private val ThemeOptions = listOf(ThemeMode.DARK, ThemeMode.LIGHT, ThemeMode.SYS
 
 /**
  * Settings > Appearance, one screen: theme (Dark / Light / System, with Pure
- * black under it while a dark theme can show), display size, the Now Playing
- * backdrop, the tab Stash opens on, Home layout (its own page), and whether
- * Search shows its mood and genre tiles.
+ * black under it while a dark theme can show), Home layout (its own page) and
+ * whether Search shows its mood and genre tiles, display size, the Now Playing
+ * backdrop and full art, the tab Stash opens on, and the app's language. Home
+ * sits under the theme and the language last (owner 2026-11-03: Home layout was
+ * buried at the bottom).
  */
 @Composable
 fun SettingsAppearanceScreen(
@@ -139,8 +141,37 @@ fun SettingsAppearanceScreen(
         }
         SettingsGroupCard(rows = theme)
 
-        SettingsSectionLabel(stringResource(R.string.settings_language_section))
-        SettingsGroupCard(rows = listOf({ LanguageRow() }))
+        SettingsSectionLabel(stringResource(R.string.settings_home_section))
+        SettingsGroupCard(
+            rows = listOf(
+                {
+                    SettingsNavRow(
+                        title = stringResource(R.string.settings_home_layout_section),
+                        subtitle = stringResource(
+                            R.string.settings_home_layout_summary,
+                            uiState.homeSectionsShown(),
+                            uiState.homeSectionOrder.size,
+                        ),
+                        onClick = onOpenHomeLayout,
+                    )
+                },
+            ),
+        )
+
+        // Search's Moods & moments and Genres tiles (#823), which not everyone wants (owner 2026-11-03).
+        SettingsSectionLabel(stringResource(R.string.settings_search_section))
+        SettingsGroupCard(
+            rows = listOf(
+                {
+                    SettingsToggleRow(
+                        title = stringResource(R.string.settings_search_browse_title),
+                        subtitle = stringResource(R.string.settings_search_browse_subtitle),
+                        checked = searchBrowseOn,
+                        onCheckedChange = viewModel::onSearchBrowseChanged,
+                    )
+                },
+            ),
+        )
 
         SettingsSectionLabel(stringResource(R.string.settings_display_size_section))
         SettingsGroupCard(
@@ -306,37 +337,8 @@ fun SettingsAppearanceScreen(
             ),
         )
 
-        SettingsSectionLabel(stringResource(R.string.settings_home_section))
-        SettingsGroupCard(
-            rows = listOf(
-                {
-                    SettingsNavRow(
-                        title = stringResource(R.string.settings_home_layout_section),
-                        subtitle = stringResource(
-                            R.string.settings_home_layout_summary,
-                            uiState.homeSectionsShown(),
-                            uiState.homeSectionOrder.size,
-                        ),
-                        onClick = onOpenHomeLayout,
-                    )
-                },
-            ),
-        )
-
-        // Search's Moods & moments and Genres tiles (#823), which not everyone wants (owner 2026-11-03).
-        SettingsSectionLabel(stringResource(R.string.settings_search_section))
-        SettingsGroupCard(
-            rows = listOf(
-                {
-                    SettingsToggleRow(
-                        title = stringResource(R.string.settings_search_browse_title),
-                        subtitle = stringResource(R.string.settings_search_browse_subtitle),
-                        checked = searchBrowseOn,
-                        onCheckedChange = viewModel::onSearchBrowseChanged,
-                    )
-                },
-            ),
-        )
+        SettingsSectionLabel(stringResource(R.string.settings_language_section))
+        SettingsGroupCard(rows = listOf({ LanguageRow() }))
     }
 }
 
