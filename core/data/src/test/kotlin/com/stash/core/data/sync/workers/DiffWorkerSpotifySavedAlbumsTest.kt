@@ -11,6 +11,9 @@ import androidx.work.workDataOf
 import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.PlaylistEntity
+import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
+import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -84,7 +87,7 @@ class DiffWorkerSpotifySavedAlbumsTest {
         every { syncPreferencesManager.mixStackSeeded } returns flowOf(true)
         every { syncPreferencesManager.syncSpotifySavedAlbums } returns flowOf(true)
 
-        coEvery { spotify.getSavedAlbumsPage(any(), 0) } returns
+        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns
             SpotifySavedAlbumsPage(listOf(album), listOf(albumId), 1, 1, 0)
         coEvery { spotify.getAlbumTracks(albumId) } returns SpotifyAlbumTracklist(
             tracks = listOf("Intro", "Second Song", "Closer").mapIndexed { i, title ->
@@ -149,17 +152,60 @@ class DiffWorkerSpotifySavedAlbumsTest {
         sync()
         val row = db.playlistDao().findBySourceId(key)!!
 
-        coEvery { spotify.getSavedAlbumsPage(any(), 0) } returns SpotifySavedAlbumsPage(emptyList(), emptyList(), 0, 0, 0)
+        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(emptyList(), emptyList(), 0, 0, 0)
         sync()
         assertFalse(db.playlistDao().getById(row.id)!!.isActive)
 
-        coEvery { spotify.getSavedAlbumsPage(any(), 0) } returns SpotifySavedAlbumsPage(
+        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(
             listOf(album.copy(addedAt = "2026-11-02T08:00:00Z")), listOf(albumId), 1, 1, 0,
         )
         sync()
         val back = db.playlistDao().getById(row.id)!!
         assertTrue(back.isActive)
         assertEquals(3, db.playlistDao().getTracksForPlaylist(row.id).size)
+    }
+
+    @Test fun `a pasted album the listener removed stays removed through a sync, though Spotify still has it saved`() = runBlocking {
+        // #815's Remove used to delete a pasted copy, freeing its key: the sync then made a new row.
+        val pasted = db.playlistDao().insert(
+            PlaylistEntity(name = "Album 1", source = MusicSource.BOTH, sourceId = key, type = PlaylistType.CUSTOM),
+        )
+        db.playlistDao().setUserHidden(pasted, true)
+
+        sync()
+
+        val row = db.playlistDao().findBySourceId(key)!!
+        assertEquals(pasted, row.id)
+        assertTrue(row.userHidden)
+        assertFalse(row.isActive)
+        assertTrue("not in Library › Albums", db.playlistDao().observeSavedAlbums().first().isEmpty())
+        coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
+    }
+
+    @Test fun `a switched-off YouTube Music album keeps Download mode's skip: it carries no stamp`() = runBlocking {
+        val syncId = db.syncHistoryDao().insert(SyncHistoryEntity())
+        val youTube = db.playlistDao().insert(
+            PlaylistEntity(name = "Other Album", source = MusicSource.YOUTUBE, sourceId = "MPREb_fake", type = PlaylistType.CUSTOM),
+        )
+        val snapshot = db.remoteSnapshotDao().insertPlaylistSnapshot(
+            RemotePlaylistSnapshotEntity(
+                syncId = syncId, source = MusicSource.YOUTUBE, sourcePlaylistId = "MPREb_fake",
+                playlistName = "Other Album", trackCount = 1,
+            ),
+        )
+        db.remoteSnapshotDao().insertTrackSnapshots(
+            listOf(
+                RemoteTrackSnapshotEntity(
+                    syncId = syncId, snapshotPlaylistId = snapshot, title = "Song", artist = "Artist",
+                    durationMs = 200_000, youtubeId = "vid00000001", position = 0,
+                ),
+            ),
+        )
+
+        val result = buildWorker(syncId).doWork()
+
+        assertTrue("diff must succeed: $result", result is ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getTracksForPlaylist(youTube).isEmpty())
     }
 
     private fun buildWorker(syncId: Long): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
