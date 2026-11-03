@@ -221,9 +221,13 @@ class AutoBrowseTest {
     @Test
     fun `the car's Albums stop at the cap, newest saved first`() {
         // Rows come newest saved first (observeSavedAlbums); each a different album, all on the phone.
-        val rows = (1L..5L).map { albumRow(it, "album:spotify:Alb$it", tracks = 1, downloaded = 1).copy(name = "Album $it") }
+        // Their names sort another way, so neither a sort by name nor one by id passes.
+        val names = listOf("Mango", "Zebra", "Apple", "Kiwi", "Banana")
+        val rows = listOf(3L, 1L, 5L, 2L, 4L).mapIndexed { i, id ->
+            albumRow(id, "album:spotify:Alb$id", tracks = 1, downloaded = 1).copy(name = names[i])
+        }
 
-        assertThat(albumsForAuto(rows, limit = 3).map { it.playlistId }).containsExactly(1L, 2L, 3L).inOrder()
+        assertThat(albumsForAuto(rows, limit = 3).map { it.playlistId }).containsExactly(3L, 1L, 5L).inOrder()
         assertThat(MAX_AUTO_ALBUMS).isAtMost(1000)
     }
 
