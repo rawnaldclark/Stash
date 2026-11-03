@@ -13,7 +13,8 @@ import dagger.hilt.components.SingletonComponent
 /**
  * The installer's answer to [AppUpdater]'s session: "the listener must confirm" goes to [AppUpdater.onConfirmNeeded], which
  * opens Android's confirm screen, or holds it while Stash is in the background; anything else goes to
- * [AppUpdater.onInstallResult]. Not exported: only this app's own PendingIntent reaches it.
+ * [AppUpdater.onInstallResult]. Each answer carries its session's id: one for a session staged earlier (abandoned when the
+ * APK was staged again) is dropped there. Not exported: only this app's own PendingIntent reaches it.
  */
 class UpdateInstallReceiver : BroadcastReceiver() {
 
@@ -25,11 +26,12 @@ class UpdateInstallReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
         val updater = EntryPointAccessors.fromApplication(context.applicationContext, UpdaterEntryPoint::class.java).appUpdater()
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            updater.onConfirmNeeded(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java))
+            updater.onConfirmNeeded(sessionId, IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java))
         } else {
-            updater.onInstallResult(status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+            updater.onInstallResult(sessionId, status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
         }
     }
 }
