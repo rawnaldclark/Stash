@@ -2,6 +2,7 @@ package com.stash.core.data.weblink.store
 
 import java.nio.ByteBuffer
 import java.security.PrivateKey
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The link state couldn't be read just now (a Keystore or provider error, not a missing key). Callers keep the link and show
@@ -119,6 +120,14 @@ interface WebLinkStore {
     suspend fun roster(): List<RosterEntry>
 
     suspend fun saveRoster(entries: List<RosterEntry>)
+
+    /**
+     * Goes up each time the roster may have changed: saved ([saveRoster]), or gone with the rest ([wipe], [createIdentity]).
+     * A reader that follows the roster (the remote, which needs a socket only while a browser is linked) re-reads [roster] on
+     * each value. Every roster write goes through those three, so this is every change: a browser linked, renamed or removed,
+     * a refresh or rotation that rewrote it, an unlink.
+     */
+    val rosterVersion: StateFlow<Long>
 
     /** Unlinked: forgets the space, the roster, the identity and the device key. The library is never touched. */
     suspend fun wipe()

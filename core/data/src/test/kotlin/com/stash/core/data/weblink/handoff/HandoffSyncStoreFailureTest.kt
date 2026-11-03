@@ -29,6 +29,7 @@ class HandoffSyncStoreFailureTest {
         override suspend fun roster(): List<RosterEntry> = fail()
         override suspend fun saveRoster(entries: List<RosterEntry>) = fail()
         override suspend fun wipe() = fail()
+        override val rosterVersion = kotlinx.coroutines.flow.MutableStateFlow(0L)
     }
 
     private val store = BrokenStore()
