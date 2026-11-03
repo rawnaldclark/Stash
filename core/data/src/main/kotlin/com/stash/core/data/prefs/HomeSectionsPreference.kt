@@ -201,12 +201,23 @@ fun effectiveHomeSectionOrder(savedKeys: List<String>, promoted: Boolean): List<
  * is RECORD_MIXES, which goes wherever the card goes.
  */
 fun movedHomeSectionOrder(order: List<HomeSection>, section: HomeSection, up: Boolean): List<HomeSection>? {
+    val idx = order.filter { it != HomeSection.RECORD_MIXES }.indexOf(section)
+    if (idx < 0) return null
+    return movedHomeSectionOrder(order, section, to = if (up) idx - 1 else idx + 1)
+}
+
+/**
+ * [order] with [section] taken to [to], counted among the sections that have a place of their own (the Home layout
+ * editor's rows), the others closing up behind it: a drag's drop. The record's mixes go under the card again, so dropping
+ * "Your record" drops its mixes with it. Null when nothing moves: [section] is already at [to], [to] is off the list,
+ * [section] isn't in [order], or it's RECORD_MIXES, which goes wherever the card goes.
+ */
+fun movedHomeSectionOrder(order: List<HomeSection>, section: HomeSection, to: Int): List<HomeSection>? {
     if (section == HomeSection.RECORD_MIXES) return null
     val movable = order.filter { it != HomeSection.RECORD_MIXES }.toMutableList()
-    val idx = movable.indexOf(section)
-    val target = if (up) idx - 1 else idx + 1
-    if (idx < 0 || target !in movable.indices) return null
-    movable[idx] = movable[target].also { movable[target] = movable[idx] }
+    val from = movable.indexOf(section)
+    if (from < 0 || to !in movable.indices || to == from) return null
+    movable.add(to, movable.removeAt(from))
     return withRecordMixesUnderRecord(movable)
 }
 
@@ -319,10 +330,23 @@ class HomeSectionsPreference @Inject constructor(
      * Swap [section] one slot up or down ([movedHomeSectionOrder]): "Your record" moves with its mixes, and the
      * mixes alone don't move (nothing is written).
      */
-    suspend fun move(section: HomeSection, up: Boolean) {
+    suspend fun move(section: HomeSection, up: Boolean) = saveMove(section) { current ->
+        movedHomeSectionOrder(current, section, up)
+    }
+
+    /**
+     * Take [section] to [to] among the sections that have a place of their own ([movedHomeSectionOrder]): a drag's drop in
+     * Settings › Home layout, saved once, at the drop. "Your record" goes with its mixes; the mixes alone don't move.
+     */
+    suspend fun move(section: HomeSection, to: Int) = saveMove(section) { current ->
+        movedHomeSectionOrder(current, section, to)
+    }
+
+    /** Saves the order [move] makes of the current one, whole, as every reorder always has; nothing when it's null. */
+    private suspend fun saveMove(section: HomeSection, move: (List<HomeSection>) -> List<HomeSection>?) {
         context.homeSectionsDataStore.edit { prefs ->
             val current = effectiveHomeSectionOrder(prefs[orderKey].toKeys(), prefs[listeningPromotedKey] ?: false)
-            val moved = movedHomeSectionOrder(current, section, up) ?: return@edit
+            val moved = move(current) ?: return@edit
             prefs[orderKey] = moved.joinToString(",") { it.key }
             prefs[listeningPromotedKey] = true
             // Placed by hand before it was ever on: keep that spot when it's turned on.

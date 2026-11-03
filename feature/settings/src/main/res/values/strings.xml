@@ -355,7 +355,7 @@
     <string name="settings_start_tab_library">Library</string>
     <string name="settings_start_tab_search">Search</string>
     <string name="settings_home_layout_section">Home layout</string>
-    <string name="settings_home_layout_desc">Arrange Home\'s sections or hide the ones you don\'t use. The Discover hero stays on top.</string>
+    <string name="settings_home_layout_desc">Drag Home\'s sections into the order you like, or hide the ones you don\'t use.</string>
     <string name="settings_home_section_community_desc">Playlists and songs other Stash listeners are into. Your posts show your name.</string>
     <string name="settings_home_section_listening_desc">Recently played and your History. Appears after your first listen.</string>
     <string name="settings_home_section_record_desc">Every year you’ve listened, pressed into a record.</string>

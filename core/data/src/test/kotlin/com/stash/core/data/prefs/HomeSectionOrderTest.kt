@@ -425,6 +425,65 @@ class HomeSectionOrderTest {
         val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
         assertNull(movedHomeSectionOrder(order, HomeSection.RECORD_MIXES, up = true))
         assertNull(movedHomeSectionOrder(order, HomeSection.RECORD_MIXES, up = false))
+        assertNull(movedHomeSectionOrder(order, HomeSection.RECORD_MIXES, to = 0))
+    }
+
+    // -- A drag's drop: to an index among the sections with a place of their own ---------------------------------------
+
+    /** The order as the Home layout editor's rows: every section but the mixes, which ride under the card. */
+    private fun rows(order: List<HomeSection>) = order.filter { it != HomeSection.RECORD_MIXES }
+
+    @Test
+    fun `a drop takes the section to that row and the rows between close up behind it`() {
+        val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
+        val before = rows(order)
+        // Radios dragged to the top
+        val up = movedHomeSectionOrder(order, HomeSection.RADIOS, to = 0)!!
+        assertEquals(listOf(HomeSection.RADIOS) + (before - HomeSection.RADIOS), rows(up))
+        // Discover dragged to the end
+        val down = movedHomeSectionOrder(order, HomeSection.DISCOVER, to = before.lastIndex)!!
+        assertEquals((before - HomeSection.DISCOVER) + HomeSection.DISCOVER, rows(down))
+        // Every section still there once
+        assertEquals(HomeSection.entries.toSet(), up.toSet())
+        assertEquals(HomeSection.entries.size, up.size)
+    }
+
+    @Test
+    fun `a drop of your record lands its mixes with it, and a drop onto the pair goes over it, not between`() {
+        val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
+        // Discover, Your record (+ mixes), Your playlists, Because you like, …: the card dropped at row 3
+        val card = movedHomeSectionOrder(order, HomeSection.YOUR_RECORD, to = 3)!!
+        assertEquals(
+            listOf(
+                HomeSection.DISCOVER, HomeSection.YOUR_PLAYLISTS, HomeSection.BECAUSE_YOU_LIKE,
+                HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.NEW_FROM_ARTISTS,
+            ),
+            card.take(6),
+        )
+        // Because you like dropped at row 1, where the card is: above the pair
+        assertEquals(
+            listOf(HomeSection.DISCOVER, HomeSection.BECAUSE_YOU_LIKE, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES),
+            movedHomeSectionOrder(order, HomeSection.BECAUSE_YOU_LIKE, to = 1)!!.take(4),
+        )
+    }
+
+    @Test
+    fun `a drop one row away is the arrows' move`() {
+        val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
+        for ((i, section) in rows(order).withIndex()) {
+            assertEquals(movedHomeSectionOrder(order, section, up = true), movedHomeSectionOrder(order, section, to = i - 1))
+            assertEquals(movedHomeSectionOrder(order, section, up = false), movedHomeSectionOrder(order, section, to = i + 1))
+        }
+    }
+
+    @Test
+    fun `a drop where it started, off the rows, or of a section not in the order moves nothing`() {
+        val order = effectiveHomeSectionOrder(emptyList(), promoted = true)
+        val at = rows(order).indexOf(HomeSection.RADIOS)
+        assertNull(movedHomeSectionOrder(order, HomeSection.RADIOS, to = at))
+        assertNull(movedHomeSectionOrder(order, HomeSection.RADIOS, to = -1))
+        assertNull(movedHomeSectionOrder(order, HomeSection.RADIOS, to = rows(order).size))
+        assertNull(movedHomeSectionOrder(order - HomeSection.RADIOS, HomeSection.RADIOS, to = 0))
     }
 
     @Test

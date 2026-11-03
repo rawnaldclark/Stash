@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,12 +28,15 @@ import com.stash.feature.settings.R
  * Shared frame for Settings sub-screens: a back-chevron top bar with a title,
  * above a vertically scrolling content column. The [content] slot is laid out
  * in a [ColumnScope] with [SettingsGroupGap] spacing between children.
+ * [scrollState] scrolls the content; pass one to scroll it from the screen
+ * (Home layout's drag scrolls the page when a row is held near an edge).
  */
 @Composable
 fun SettingsScaffold(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    scrollState: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -58,7 +62,7 @@ fun SettingsScaffold(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
                 // Edge to edge under the glass mini player + tab bar.
                 .padding(bottom = bottomChromePadding()),
