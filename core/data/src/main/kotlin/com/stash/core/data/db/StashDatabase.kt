@@ -128,7 +128,7 @@ import kotlinx.serialization.json.Json
         com.stash.core.data.db.entity.TrackMergeLogEntity::class,
         com.stash.core.data.db.entity.DuplicateDismissalEntity::class,
     ],
-    version = 76,
+    version = 77,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1976,9 +1976,17 @@ abstract class StashDatabase : RoomDatabase() {
                         "FOREIGN KEY(`track_b`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_duplicate_dismissals_track_b` ON `duplicate_dismissals` (`track_b`)")
-                // tracks_fts is derived from `tracks`. Migration 66 -> 67 clears `album` on guessed
-                // rows and leaves the inverted index holding the old album terms, which fails
-                // integrity_check and blocks backup export. Rebuild it from the table.
+            }
+        }
+
+        /**
+         * v76 -> v77, data only: rebuilds the `tracks_fts` index from `tracks`. The index is derived
+         * data, and a library that went through 66 -> 67 (which clears `album` on guessed rows) can
+         * hold stale album terms in it. That fails `PRAGMA integrity_check` ("malformed inverted
+         * index") and makes backup export refuse to run. A rebuild is a no-op on a healthy index.
+         */
+        val MIGRATION_76_77 = object : Migration(76, 77) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')")
             }
         }
@@ -2136,6 +2144,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_73_74,
                 MIGRATION_74_75,
                 MIGRATION_75_76,
+                MIGRATION_76_77,
             )
         }
     }
