@@ -1,0 +1,817 @@
+{
+  "data": {
+    "albumUnion": {
+      "__typename": "Album",
+      "copyright": {
+        "items": [
+          {
+            "text": "Text 1",
+            "type": "C"
+          },
+          {
+            "text": "Text 1",
+            "type": "P"
+          }
+        ],
+        "totalCount": 2
+      },
+      "courtesyLine": "",
+      "date": {
+        "isoString": "2001-02-26T12:00:00Z",
+        "precision": "DAY"
+      },
+      "isPreRelease": false,
+      "label": "Text 2",
+      "name": "Album 1",
+      "playability": {
+        "playable": true,
+        "reason": "PLAYABLE"
+      },
+      "preReleaseEndDateTime": null,
+      "saved": true,
+      "sharingInfo": {
+        "shareId": "Text 3",
+        "shareUrl": "https://open.spotify.com/fake/url85"
+      },
+      "tracksV2": {
+        "items": [
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 181000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 1",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 1,
+              "uri": "spotify:track:FakeTra1xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 4"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 182000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 2",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 2,
+              "uri": "spotify:track:FakeTra2xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 5"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 183000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 3",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 3,
+              "uri": "spotify:track:FakeTra3xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 6"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 184000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 4",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 4,
+              "uri": "spotify:track:FakeTra4xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 7"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 185000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 5",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 5,
+              "uri": "spotify:track:FakeTra5xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 8"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 186000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 6",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 6,
+              "uri": "spotify:track:FakeTra6xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 9"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 187000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 7",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 7,
+              "uri": "spotify:track:FakeTra7xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 10"
+          },
+          {
+            "track": {
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Artist 1"
+                    },
+                    "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx"
+                  }
+                ]
+              },
+              "associationsV3": {
+                "audioAssociations": {
+                  "totalCount": 0
+                },
+                "videoAssociations": {
+                  "totalCount": 0
+                }
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 188000
+              },
+              "mediaType": "AUDIO",
+              "name": "Track 8",
+              "playability": {
+                "playable": true
+              },
+              "playcount": "1000",
+              "relinkingInformation": null,
+              "saved": true,
+              "trackNumber": 8,
+              "uri": "spotify:track:FakeTra8xxxxxxxxxxxxxx"
+            },
+            "uid": "Text 11"
+          }
+        ],
+        "totalCount": 8
+      },
+      "type": "ALBUM",
+      "uri": "spotify:album:FakeAlb1xxxxxxxxxxxxxx",
+      "visualIdentity": {
+        "squareCoverImage": {
+          "__typename": "VisualIdentityImage",
+          "extractedColorSet": {
+            "encoreBaseSetTextColor": {
+              "alpha": 255,
+              "blue": 83,
+              "green": 83,
+              "red": 83
+            },
+            "highContrast": {
+              "backgroundBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "backgroundTintedBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBrightAccent": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textSubdued": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              }
+            },
+            "higherContrast": {
+              "backgroundBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "backgroundTintedBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBrightAccent": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textSubdued": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              }
+            },
+            "minContrast": {
+              "backgroundBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "backgroundTintedBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBase": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textBrightAccent": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              },
+              "textSubdued": {
+                "alpha": 255,
+                "blue": 83,
+                "green": 83,
+                "red": 83
+              }
+            }
+          }
+        }
+      },
+      "watchFeedEntrypoint": {
+        "entrypointUri": "Text 12",
+        "thumbnailImage": {
+          "data": {
+            "__typename": "ImageV2",
+            "imageId": "https://i.scdn.co/fake/url2",
+            "imageIdType": "IMAGE_URL",
+            "sources": [
+              {
+                "imageFormat": "WEBP",
+                "maxHeight": 640,
+                "maxWidth": 640,
+                "url": "https://image-cdn-ak.spotifycdn.com/fake/url86"
+              },
+              {
+                "imageFormat": "WEBP",
+                "maxHeight": 64,
+                "maxWidth": 64,
+                "url": "https://image-cdn-ak.spotifycdn.com/fake/url87"
+              },
+              {
+                "imageFormat": "WEBP",
+                "maxHeight": 300,
+                "maxWidth": 300,
+                "url": "https://image-cdn-ak.spotifycdn.com/fake/url88"
+              }
+            ]
+          }
+        },
+        "video": null
+      },
+      "artists": {
+        "items": [
+          {
+            "id": "Text 13",
+            "profile": {
+              "name": "Artist 1"
+            },
+            "sharingInfo": {
+              "shareUrl": "https://open.spotify.com/fake/url89"
+            },
+            "uri": "spotify:artist:FakeArt1xxxxxxxxxxxxxx",
+            "visuals": {
+              "avatarImage": {
+                "sources": [
+                  {
+                    "height": 640,
+                    "url": "https://i.scdn.co/fake/url90",
+                    "width": 640
+                  },
+                  {
+                    "height": 160,
+                    "url": "https://i.scdn.co/fake/url91",
+                    "width": 160
+                  },
+                  {
+                    "height": 320,
+                    "url": "https://i.scdn.co/fake/url92",
+                    "width": 320
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "totalCount": 1
+      },
+      "coverArt": {
+        "extractedColors": {
+          "colorDark": {
+            "hex": "#535353"
+          },
+          "colorLight": {
+            "hex": "#535353"
+          },
+          "colorRaw": {
+            "hex": "#535353"
+          }
+        },
+        "sources": [
+          {
+            "height": 300,
+            "url": "https://i.scdn.co/fake/url1",
+            "width": 300
+          },
+          {
+            "height": 64,
+            "url": "https://i.scdn.co/fake/url2",
+            "width": 64
+          },
+          {
+            "height": 640,
+            "url": "https://i.scdn.co/fake/url3",
+            "width": 640
+          }
+        ]
+      },
+      "discs": {
+        "items": [
+          {
+            "number": 1,
+            "tracks": {
+              "totalCount": 8
+            }
+          }
+        ],
+        "totalCount": 1
+      },
+      "releases": {
+        "items": [],
+        "totalCount": 0
+      },
+      "moreAlbumsByArtist": {
+        "items": [
+          {
+            "discography": {
+              "popularReleasesAlbums": {
+                "items": [
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url93",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url94",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url95",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 14",
+                    "name": "Album 29",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 15",
+                      "shareUrl": "https://open.spotify.com/fake/url96"
+                    },
+                    "type": "ALBUM",
+                    "uri": "spotify:album:FakeAlb29xxxxxxxxxxxxx"
+                  },
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url1",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url2",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url3",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 16",
+                    "name": "Album 1",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 17",
+                      "shareUrl": "https://open.spotify.com/fake/url97"
+                    },
+                    "type": "ALBUM",
+                    "uri": "spotify:album:FakeAlb1xxxxxxxxxxxxxx"
+                  },
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url98",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url99",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url100",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 18",
+                    "name": "Album 30",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 19",
+                      "shareUrl": "https://open.spotify.com/fake/url101"
+                    },
+                    "type": "ALBUM",
+                    "uri": "spotify:album:FakeAlb30xxxxxxxxxxxxx"
+                  },
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url102",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url103",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url104",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 20",
+                    "name": "Album 31",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 21",
+                      "shareUrl": "https://open.spotify.com/fake/url105"
+                    },
+                    "type": "ALBUM",
+                    "uri": "spotify:album:FakeAlb31xxxxxxxxxxxxx"
+                  },
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url106",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url107",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url108",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 22",
+                    "name": "Album 32",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 23",
+                      "shareUrl": "https://open.spotify.com/fake/url109"
+                    },
+                    "type": "SINGLE",
+                    "uri": "spotify:album:FakeAlb32xxxxxxxxxxxxx"
+                  },
+                  {
+                    "coverArt": {
+                      "sources": [
+                        {
+                          "height": 300,
+                          "url": "https://i.scdn.co/fake/url110",
+                          "width": 300
+                        },
+                        {
+                          "height": 64,
+                          "url": "https://i.scdn.co/fake/url111",
+                          "width": 64
+                        },
+                        {
+                          "height": 640,
+                          "url": "https://i.scdn.co/fake/url112",
+                          "width": 640
+                        }
+                      ]
+                    },
+                    "date": {
+                      "year": 2001
+                    },
+                    "id": "Text 24",
+                    "name": "Album 33",
+                    "playability": {
+                      "playable": true,
+                      "reason": "PLAYABLE"
+                    },
+                    "sharingInfo": {
+                      "shareId": "Text 25",
+                      "shareUrl": "https://open.spotify.com/fake/url113"
+                    },
+                    "type": "SINGLE",
+                    "uri": "spotify:album:FakeAlb33xxxxxxxxxxxxx"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "meV2": {
+      "ianaTimezoneId": "UTC"
+    }
+  }
+}

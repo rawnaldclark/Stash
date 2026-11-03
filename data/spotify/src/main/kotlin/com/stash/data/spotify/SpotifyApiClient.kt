@@ -89,6 +89,12 @@ class SpotifyApiClient @Inject constructor(
         private const val TAG = "StashSync"
         private const val DEFAULT_LIMIT = 50
 
+        /** Songs per `getAlbum` page: the web player's own size. */
+        private const val ALBUM_TRACK_PAGE = 50
+
+        /** Safety cap on one album's pages (50 × 20 = 1,000 songs); a longer one reads as partial. */
+        private const val ALBUM_TRACK_PAGE_CAP = 20
+
         /** Base URL for the Spotify Web API v1 (used with client_credentials tokens). */
         private const val WEB_API_BASE = "https://api.spotify.com/v1"
 
@@ -437,6 +443,80 @@ class SpotifyApiClient @Inject constructor(
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "getUserPlaylists: GraphQL libraryV3 failed", e)
             SpotifyLibraryPage.EMPTY
+        }
+    }
+
+    /**
+     * One page of the listener's saved albums: the same libraryV3 query as [getUserPlaylists], with
+     * the "Albums" filter (singles and EPs included: Spotify files them there too). Read-only.
+     * [SpotifySavedAlbumsPage.EMPTY] (by identity) when the request or the response failed.
+     */
+    suspend fun getSavedAlbumsPage(limit: Int = DEFAULT_LIMIT, offset: Int = 0): SpotifySavedAlbumsPage =
+        withContext(Dispatchers.IO) {
+            try {
+                val variables = buildJsonObject {
+                    putJsonArray("filters") { add("Albums") }
+                    put("order", JsonNull)
+                    put("textFilter", "")
+                    putJsonArray("features") { add("LIKED_SONGS"); add("YOUR_EPISODES") }
+                    put("limit", limit)
+                    put("offset", offset)
+                }.toString()
+                val response = executeGraphQL(
+                    operationName = "libraryV3",
+                    variables = variables,
+                    seedHash = SpotifyAuthConfig.HASH_LIBRARY_V3,
+                ) ?: return@withContext SpotifySavedAlbumsPage.EMPTY
+                parseSavedAlbumsPage(response).also {
+                    Log.d(TAG, "getSavedAlbumsPage: offset=$offset -> ${it.albums.size} albums of ${it.rawItemCount} rows, total=${it.totalCount}")
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.e(TAG, "getSavedAlbumsPage: libraryV3 failed", e)
+                SpotifySavedAlbumsPage.EMPTY
+            }
+        }
+
+    /**
+     * Every song of album [albumId] in the album's order, through the web player's album query
+     * (`getAlbum`, 50 a page). Read-only. Null when no page could be read; a walk that stopped short
+     * of Spotify's own count comes back with [SpotifyAlbumTracklist.complete] false.
+     */
+    suspend fun getAlbumTracks(albumId: String): SpotifyAlbumTracklist? = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<SpotifyAlbumTrack>()
+        var offset = 0
+        var total: Int? = null
+        var complete = true
+        try {
+            for (pageIndex in 0 until ALBUM_TRACK_PAGE_CAP) {
+                val variables = buildJsonObject {
+                    put("uri", "spotify:album:$albumId")
+                    put("locale", "")
+                    put("offset", offset)
+                    put("limit", ALBUM_TRACK_PAGE)
+                }.toString()
+                val page = executeGraphQL(
+                    operationName = "getAlbum",
+                    variables = variables,
+                    seedHash = SpotifyAuthConfig.HASH_GET_ALBUM,
+                )?.let(::parseAlbumTracksPage)
+                if (page == null) {
+                    if (pageIndex == 0) return@withContext null
+                    complete = false
+                    break
+                }
+                if (!page.isComplete) complete = false
+                if (total == null) total = page.totalCount
+                tracks += page.tracks
+                offset += page.rawItemCount
+                if (page.rawItemCount == 0 || offset >= (total ?: 0)) break
+            }
+            if (total == null || offset < total) complete = false
+            SpotifyAlbumTracklist(tracks = tracks, totalCount = total, complete = complete)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.e(TAG, "getAlbumTracks: getAlbum failed", e)
+            if (tracks.isEmpty()) null else SpotifyAlbumTracklist(tracks, total, complete = false)
         }
     }
 

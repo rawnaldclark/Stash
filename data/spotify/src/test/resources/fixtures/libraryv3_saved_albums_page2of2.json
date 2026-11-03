@@ -1,0 +1,554 @@
+{
+  "data": {
+    "me": {
+      "libraryV3": {
+        "__typename": "LibraryPage",
+        "availableFilters": [],
+        "availableSortOrders": [
+          {
+            "id": "Recents",
+            "name": "Recents"
+          },
+          {
+            "id": "Recently Added",
+            "name": "Recently Added"
+          },
+          {
+            "id": "Alphabetical",
+            "name": "Alphabetical"
+          },
+          {
+            "id": "Creator",
+            "name": "Creator"
+          },
+          {
+            "id": "Release Date",
+            "name": "Release Date"
+          }
+        ],
+        "breadcrumbs": [],
+        "items": [
+          {
+            "addedAt": {
+              "isoString": "2001-02-01T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb21xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 20"
+                      },
+                      "uri": "spotify:artist:FakeArt20xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url61",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url62",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url63",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-28T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 21",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb21xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-27T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb22xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 21"
+                      },
+                      "uri": "spotify:artist:FakeArt21xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url64",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url65",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url66",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-22T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 22",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb22xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-26T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb23xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 22"
+                      },
+                      "uri": "spotify:artist:FakeArt22xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url67",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url68",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url69",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-12T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 23",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb23xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-25T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb24xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 23"
+                      },
+                      "uri": "spotify:artist:FakeArt23xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url70",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url71",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url72",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-04T12:00:00Z",
+                  "precision": "MONTH"
+                },
+                "name": "Album 24",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb24xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-24T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb25xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 22"
+                      },
+                      "uri": "spotify:artist:FakeArt22xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url73",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url74",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url75",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-14T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 25",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb25xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-23T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb26xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 24"
+                      },
+                      "uri": "spotify:artist:FakeArt24xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url76",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url77",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url78",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-19T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 26",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb26xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-21T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb27xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 25"
+                      },
+                      "uri": "spotify:artist:FakeArt25xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": false
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url79",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url80",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url81",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-09T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 27",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb27xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          },
+          {
+            "addedAt": {
+              "isoString": "2001-01-20T12:00:00Z"
+            },
+            "depth": 0,
+            "item": {
+              "__typename": "AlbumResponseWrapper",
+              "_uri": "spotify:album:FakeAlb28xxxxxxxxxxxxx",
+              "data": {
+                "__typename": "Album",
+                "artists": {
+                  "items": [
+                    {
+                      "profile": {
+                        "name": "Artist 26"
+                      },
+                      "uri": "spotify:artist:FakeArt26xxxxxxxxxxxxx"
+                    }
+                  ]
+                },
+                "coverArt": {
+                  "extractedColors": {
+                    "colorDark": {
+                      "hex": "#535353",
+                      "isFallback": true
+                    }
+                  },
+                  "sources": [
+                    {
+                      "height": 300,
+                      "url": "https://i.scdn.co/fake/url82",
+                      "width": 300
+                    },
+                    {
+                      "height": 64,
+                      "url": "https://i.scdn.co/fake/url83",
+                      "width": 64
+                    },
+                    {
+                      "height": 640,
+                      "url": "https://i.scdn.co/fake/url84",
+                      "width": 640
+                    }
+                  ]
+                },
+                "date": {
+                  "isoString": "2001-01-18T12:00:00Z",
+                  "precision": "DAY"
+                },
+                "name": "Album 28",
+                "playability": {
+                  "playable": true,
+                  "reason": "PLAYABLE"
+                },
+                "preReleaseEndDateTime": null,
+                "type": "ALBUM",
+                "uri": "spotify:album:FakeAlb28xxxxxxxxxxxxx"
+              }
+            },
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null
+          }
+        ],
+        "pagingInfo": {
+          "limit": 20,
+          "offset": 20
+        },
+        "selectedFilters": [
+          {
+            "id": "Albums",
+            "name": "Albums"
+          }
+        ],
+        "selectedSortOrder": {
+          "id": "Recents",
+          "name": "Recents"
+        },
+        "totalCount": 28
+      }
+    }
+  }
+}
