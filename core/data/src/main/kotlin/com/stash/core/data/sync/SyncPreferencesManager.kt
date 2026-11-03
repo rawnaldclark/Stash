@@ -106,6 +106,7 @@ class SyncPreferencesManager @Inject constructor(
         val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
         val SYNC_DAYS = intPreferencesKey("sync_days")
         val DISCOVER_AUTO_MIXES = booleanPreferencesKey("discover_auto_mixes")
+        val SYNC_SPOTIFY_SAVED_ALBUMS = booleanPreferencesKey("sync_spotify_saved_albums")
         val AUTO_SYNC_PAUSED_AFTER_UNDO = booleanPreferencesKey("auto_sync_paused_after_undo")
         val ARRIVAL_CHOSEN = booleanPreferencesKey("first_sync_arrival_chosen")
         val PIN_NEW_PLAYLISTS = booleanPreferencesKey("pin_new_playlists_to_home")
@@ -168,6 +169,18 @@ class SyncPreferencesManager @Inject constructor(
      */
     val discoverAutoMixes: Flow<Boolean> =
         context.syncPrefsDataStore.data.map { it[Keys.DISCOVER_AUTO_MIXES] ?: true }
+
+    /**
+     * Whether sync reads the Spotify account's saved albums into Library › Albums (item 5,
+     * 2026-11-02). Read once per sync run by
+     * [com.stash.core.data.sync.SpotifySavedAlbumsFetcher].
+     *
+     * **Defaults to TRUE** (owner's call): albums the listener saved on purpose. Nothing downloads
+     * by itself (a synced album starts with its Download switch off). Turning this off stops reading
+     * them; albums already here stay until removed, as mixes do when their discovery is off.
+     */
+    val syncSpotifySavedAlbums: Flow<Boolean> =
+        context.syncPrefsDataStore.data.map { it[Keys.SYNC_SPOTIFY_SAVED_ALBUMS] ?: true }
 
     /**
      * Reactive stream of the days-of-week bitmask. Read via .first() inside
@@ -309,6 +322,11 @@ class SyncPreferencesManager @Inject constructor(
     /** Persist whether sync discovers the service's own algorithmic mixes. */
     suspend fun setDiscoverAutoMixes(enabled: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.DISCOVER_AUTO_MIXES] = enabled }
+    }
+
+    /** Persist whether sync reads Spotify's saved albums ([syncSpotifySavedAlbums]). */
+    suspend fun setSyncSpotifySavedAlbums(enabled: Boolean) {
+        context.syncPrefsDataStore.edit { it[Keys.SYNC_SPOTIFY_SAVED_ALBUMS] = enabled }
     }
 
     /** Record the first-sync sheet's answer: [pinNewPlaylists] for "Stream everything". */

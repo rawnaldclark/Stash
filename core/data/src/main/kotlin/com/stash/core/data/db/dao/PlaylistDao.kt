@@ -1075,6 +1075,27 @@ interface PlaylistDao {
         return deactivateByIdsChunked(missing)
     }
 
+    /**
+     * Active saved albums synced from the Spotify account: source SPOTIFY, keyed `album:spotify:<id>`
+     * ([com.stash.core.data.album.SavedAlbums.sourceId]). Never an album saved in Stash under the same
+     * key (a pasted link, source BOTH), nor any other service's.
+     */
+    @Query(
+        """
+        SELECT id, source_id AS sourceId FROM playlists
+        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1 AND source_id LIKE 'album:spotify:%'
+        """
+    )
+    suspend fun activeSyncedSpotifyAlbums(): List<SyncedAlbumKey>
+
+    /**
+     * The synced Spotify albums ([activeSyncedSpotifyAlbums]) whose key isn't in [listedSourceIds]: the
+     * ones a whole saved-albums listing no longer holds. Worked out in memory, so a library of any size
+     * binds nothing; [deactivateByIdsChunked] hides them.
+     */
+    suspend fun spotifySavedAlbumIdsMissingFrom(listedSourceIds: Set<String>): List<Long> =
+        activeSyncedSpotifyAlbums().filter { it.sourceId !in listedSourceIds }.map { it.id }
+
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
      *  returns tomorrow re-surfaces on the Home screen instead of

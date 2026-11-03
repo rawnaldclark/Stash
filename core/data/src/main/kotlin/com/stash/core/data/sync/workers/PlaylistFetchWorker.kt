@@ -202,6 +202,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
     private val soundCloudLikes: com.stash.core.data.sync.SoundCloudLikesFetcher? = null,
     private val soundCloudPlaylists: com.stash.core.data.sync.SoundCloudPlaylistsFetcher? = null,
+    private val spotifySavedAlbums: com.stash.core.data.sync.SpotifySavedAlbumsFetcher? = null,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -1141,7 +1142,29 @@ class PlaylistFetchWorker @AssistedInject constructor(
             )
         }
 
+        fetchSpotifySavedAlbums(syncId, diagnostics)
+
         Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
+    }
+
+    /**
+     * The saved-albums step (item 5): Library › Albums from the account's saved albums. Its own
+     * listing and its own "still saved" check, in the account's sync mode (the one the playlist walk
+     * read, else read now). A failure here costs this step only, never the playlists already fetched.
+     */
+    private suspend fun fetchSpotifySavedAlbums(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+        val fetcher = spotifySavedAlbums ?: return
+        try {
+            val mode = spotifySyncModeThisRun ?: runCatching { syncPreferencesManager.spotifySyncMode.first() }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            diagnostics.add(fetcher.fetch(syncId, mode, onAlbumRead = ::reportPlaylistFetched))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchSpotifySavedAlbums: failed", e)
+            diagnostics.add(SyncStepResult("SPOTIFY", "getSavedAlbums", StepStatus.ERROR, errorMessage = e.message))
+        }
     }
 
     /**

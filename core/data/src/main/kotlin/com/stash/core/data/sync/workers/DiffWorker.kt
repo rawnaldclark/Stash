@@ -346,10 +346,14 @@ class DiffWorker @AssistedInject constructor(
                 // in Online mode everything links. Offline mode keeps the skip for
                 // switched-off playlists, except one kept on the phone (#474): its
                 // Download switch needs what the playlist gained linked here, or the
-                // sweep below has nothing new to queue.
+                // sweep below has nothing new to queue. A saved album always links too
+                // (item 5): its songs were read only because it is new or changed, and
+                // a mirror left unlinked is never stamped, so a switched-off album would
+                // be read again every sync. Linking never downloads.
                 if (!localPlaylist.syncEnabled &&
                     !localPlaylist.keepOffline &&
                     localPlaylist.type != PlaylistType.DAILY_MIX &&
+                    !com.stash.core.data.album.SavedAlbums.isSavedAlbum(localPlaylist.type, localPlaylist.source, localPlaylist.sourceId) &&
                     !streamingMode
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
@@ -644,7 +648,11 @@ class DiffWorker @AssistedInject constructor(
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most
         // interesting thing a sync can report, and previously invisible.
-        val kind = if (snapshot.playlistType == PlaylistType.DAILY_MIX) "mix" else "playlist"
+        val kind = when {
+            snapshot.playlistType == PlaylistType.DAILY_MIX -> "mix"
+            com.stash.core.data.album.SavedAlbums.isSavedAlbum(snapshot.playlistType, snapshot.source, snapshot.sourcePlaylistId) -> "album"
+            else -> "playlist"
+        }
         syncLog.success("New $kind: ${snapshot.playlistName}")
         return newPlaylist.copy(id = id)
     }
