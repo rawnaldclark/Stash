@@ -113,7 +113,7 @@ abstract class LyricsModule {
         ): SpicyLyricsSource = SpicyLyricsSource(
             client = okHttpClient,
             appVersionName = versionName(context),
-            // Later: baseUrl = your Cloudflare worker URL, apiKey left blank (the worker adds the key).
+            baseUrl = "https://proxy.paraliyzed.net/spicy",
         )
 
         /** title/artist -> ISRC for the lrc.red/Binimum sources; same DNS, User-Agent and breaker as they use. */
