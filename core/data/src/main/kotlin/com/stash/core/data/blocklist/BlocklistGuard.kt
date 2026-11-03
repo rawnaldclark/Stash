@@ -112,7 +112,9 @@ class BlocklistGuard @Inject constructor(
             // (another upload or version) that only another playlist holds; that
             // playlist's own rows didn't move, so a skip would keep the twin
             // (see SpotifyMirrorStamp). Blocks are rare; one full read is cheap.
-            playlistDao.forgetSpotifyMirrorStamps()
+            // Not the saved albums: one that held the song lost the row (its stamp
+            // stops matching), and the album lists hide a blocked twin by its key.
+            playlistDao.forgetSpotifyPlaylistStamps()
             heldBy
         }
         // The Library cards show a stored count; every playlist that held the song loses one.
@@ -137,7 +139,9 @@ class BlocklistGuard @Inject constructor(
     suspend fun unblock(canonicalKey: String) {
         database.withTransaction {
             blocklistDao.deleteByKey(canonicalKey)
-            playlistDao.forgetSpotifyMirrorStamps()
+            playlistDao.forgetSpotifyPlaylistStamps()
+            // The saved albums the song may be on, not every one (a big library has thousands).
+            playlistDao.forgetSpotifyAlbumStampsForUnblock(canonicalKey.substringBefore('|'))
         }
         canonicalRecompute.rearm()
     }
