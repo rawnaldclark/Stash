@@ -134,10 +134,20 @@ internal class QueueWindow private constructor(
         extendBackward(found.count { it })
     }
 
-    /** Takes the positions not [found] out of the order, highest first so the rest keep their place. */
+    /**
+     * Takes the positions not [found] out of the order in one pass. One removal at a time copied
+     * the whole order each time: in Download mode a 72k streamed queue could lose ~450 songs per
+     * slide pass, ~450 copies of a 72k array on the main thread.
+     */
     private fun removeMissing(positions: IntArray, found: BooleanArray) {
-        val missing = positions.indices.filter { !found[it] }.map { positions[it] }.sortedDescending()
-        for (p in missing) removePosition(p)
+        val n = total
+        var keep: BooleanArray? = null
+        for (i in positions.indices) {
+            if (found[i]) continue
+            val k = keep ?: BooleanArray(n) { true }.also { keep = it }
+            k[positions[i]] = false
+        }
+        keep?.let(::compact)
     }
 
     /** The window's first [n] slots left the timeline. */
@@ -277,8 +287,21 @@ internal class QueueWindow private constructor(
     fun removeIds(ids: Set<Long>): Boolean {
         val n = total
         if (n == 0 || ids.isEmpty()) return false
-        val keepPos = BooleanArray(n) { idAtPosition(it) !in ids }
-        if (keepPos.all { it }) return false
+        // Sorted and searched as primitives: a Set<Long> lookup boxes every one of 72k ids. Most
+        // deletions are of songs that aren't queued, and those end here without another allocation.
+        val probe = ids.toLongArray().also { it.sort() }
+        fun gone(id: Long) = java.util.Arrays.binarySearch(probe, id) >= 0
+        if (logical.none(::gone)) return false
+        compact(BooleanArray(n) { !gone(idAtPosition(it)) })
+        return true
+    }
+
+    /**
+     * Keeps the positions marked in [keepPos] (indexed by play position) and drops the rest, in
+     * one pass: the order, the shuffle permutation, the window's start and its count all follow.
+     */
+    private fun compact(keepPos: BooleanArray) {
+        val n = total
         var keptBeforeStart = 0
         for (p in 0 until start) if (keepPos[p]) keptBeforeStart++
         var keptInWindow = 0
@@ -300,7 +323,6 @@ internal class QueueWindow private constructor(
         start = keptBeforeStart
         count = keptInWindow
         normalizeStart()
-        return true
     }
 
     /**

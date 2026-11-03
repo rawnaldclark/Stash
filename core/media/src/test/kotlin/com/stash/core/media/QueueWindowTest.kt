@@ -181,6 +181,49 @@ class QueueWindowTest {
         assertThat(w.start).isEqualTo(947)
     }
 
+    /**
+     * Bytes this thread has allocated so far: HotSpot's ThreadMXBean, reached by reflection
+     * because unit tests compile against android.jar, which has no java.lang.management.
+     */
+    private fun allocatedBytes(): Long {
+        val bean = Class.forName("java.lang.management.ManagementFactory").getMethod("getThreadMXBean").invoke(null)
+        val read = Class.forName("com.sun.management.ThreadMXBean")
+            .getMethod("getThreadAllocatedBytes", Long::class.javaPrimitiveType)
+        return read.invoke(bean, Thread.currentThread().id) as Long
+    }
+
+    @Test
+    fun `songs that can't play leave the order in one pass, not one copy of it each`() {
+        // Download mode mid-queue over a streamed library: nearly every song ahead is gone.
+        val n = 100_000
+        val (w, _) = QueueWindow.create(ids(n), startIndex = 0, shuffle = false, random = Random(1))
+        val found = BooleanArray(w.forwardGap(repeatAll = false)) { it % 100 == 0 }
+        val allocatedBefore = allocatedBytes()
+        val started = System.nanoTime()
+
+        w.admitForward(found)
+
+        val millis = (System.nanoTime() - started) / 1_000_000
+        val allocated = allocatedBytes() - allocatedBefore
+        assertThat(w.total).isEqualTo(QUEUE_WINDOW_SIZE + 995)
+        assertThat(w.count).isEqualTo(QUEUE_WINDOW_SIZE + 995)
+        assertThat(w.idAtSlot(QUEUE_WINDOW_SIZE)).isEqualTo(501L)
+        assertThat(w.idAtSlot(QUEUE_WINDOW_SIZE + 1)).isEqualTo(601L)
+        // A few arrays of n: O(n). One copy of the order per removed song was ~80 GB here.
+        assertThat(allocated).isLessThan(16L * 1024 * 1024)
+        assertThat(millis).isLessThan(2_000L)
+    }
+
+    @Test
+    fun `a deletion of songs that aren't queued allocates nothing per song`() {
+        val (w, _) = QueueWindow.create(ids(100_000), startIndex = 50_000, shuffle = true, random = Random(3))
+        val allocatedBefore = allocatedBytes()
+        repeat(1_000) { assertThat(w.removeIds(setOf(500_000L + it))).isFalse() }
+        // The probe array per call, not a 100k array (or 100k boxed ids) per call.
+        assertThat(allocatedBytes() - allocatedBefore).isLessThan(4L * 1024 * 1024)
+        assertThat(w.total).isEqualTo(100_000)
+    }
+
     @Test
     fun `isTimelineOrder accepts only 0, 1, 2, and so on`() {
         assertThat(isTimelineOrder(3, 0) { it + 1 }).isTrue()
