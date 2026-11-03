@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -146,6 +147,8 @@ fun ManagePlaylistsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     // Taken-out playlists fold under one row at the bottom, closed until asked for.
     var showOut by rememberSaveable { mutableStateOf(false) }
+    // Albums' Save all, waiting for its confirm: the ids it will save.
+    var confirmSaveAll by remember { mutableStateOf<List<Long>?>(null) }
     val q = query.trim()
     // The query reaches every tab, so search never looks broken behind a tab (#310).
     fun matches(row: SyncPlaylistRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
@@ -207,11 +210,16 @@ fun ManagePlaylistsScreen(
                             )
                         }
                         // Saves what's in the library; one taken out stays out. Playlists and albums
-                        // alike (an album's Save is its page's Download, as a playlist's is).
+                        // alike (an album's Save is its page's Download, as a playlist's is), all
+                        // queued for one download run. Albums ask first: a library can hold hundreds.
                         val unsaved = shown.filter { !it.userHidden && !it.saved(streamOnly) }
                         if ((tab == ManageTab.PLAYLISTS || tab == ManageTab.ALBUMS) && unsaved.isNotEmpty()) {
                             TextButton(onClick = {
-                                unsaved.forEach { viewModel.onSavePlaylist(it.id, true) }
+                                if (tab == ManageTab.ALBUMS) {
+                                    confirmSaveAll = unsaved.map { it.id }
+                                } else {
+                                    viewModel.onSaveAll(unsaved.map { it.id })
+                                }
                             }) { Text(stringResource(R.string.sync_manage_save_all)) }
                         }
                     }
@@ -362,6 +370,24 @@ fun ManagePlaylistsScreen(
                 }
             }
         }
+    }
+
+    // Saving every album can mean hundreds of downloads, so it says how many first.
+    confirmSaveAll?.let { ids ->
+        AlertDialog(
+            onDismissRequest = { confirmSaveAll = null },
+            title = { Text(pluralStringResource(R.plurals.sync_manage_save_all_albums_title, ids.size, ids.size)) },
+            text = { Text(stringResource(R.string.sync_manage_save_all_albums_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSaveAll = null
+                    viewModel.onSaveAll(ids)
+                }) { Text(stringResource(R.string.sync_manage_save_all)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSaveAll = null }) { Text(stringResource(R.string.sync_cancel)) }
+            },
+        )
     }
 }
 

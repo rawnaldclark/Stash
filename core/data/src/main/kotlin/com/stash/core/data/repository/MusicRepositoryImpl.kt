@@ -1084,6 +1084,15 @@ class MusicRepositoryImpl @Inject constructor(
         if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
     }
 
+    override suspend fun keepPlaylistsOffline(playlistIds: List<Long>) {
+        if (playlistIds.isEmpty()) return
+        playlistIds.forEach { playlistDao.setKeepOffline(it, true) }
+        // Every playlist's rows first, then one drain, started like a tap: a drain per playlist
+        // would restart it each time and cancel the song in progress (as queueKeptPlaylists says).
+        val queued = playlistIds.sumOf { insertKeptPlaylist(it) }
+        if (queued > 0) startDiscoveryDrain(background = false)
+    }
+
     override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
         // The switch itself is written first, outside the lock, so a flip lands
         // at once, even while an earlier one is still queueing: that one reads

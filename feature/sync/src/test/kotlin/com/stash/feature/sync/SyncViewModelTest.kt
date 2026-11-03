@@ -521,6 +521,22 @@ class SyncViewModelTest {
         coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), any(), any()) }
     }
 
+    @Test
+    fun `Save all saves every playlist as one download queue`() = runTest {
+        for (streamOnly in listOf(true, false)) {
+            coEvery { streamingPreference.current() } returns streamOnly
+            val vm = newVm()
+
+            vm.onSaveAll(listOf(1L, 2L, 3L))
+            advanceUntilIdle()
+        }
+
+        coVerify(exactly = 2) { musicRepository.keepPlaylistsOffline(listOf(1L, 2L, 3L)) }
+        coVerify(exactly = 0) { musicRepository.setPlaylistDownload(any(), any()) }
+        // Download mode only, as Save does.
+        for (id in listOf(1L, 2L, 3L)) coVerify(exactly = 1) { playlistDao.setSyncEnabledAndPin(id, true, any()) }
+    }
+
     /** Save in Download mode also switches the playlist on for sync, as the old switch did. */
     @Test
     fun `Save in Download mode also switches the playlist on for sync`() = runTest {

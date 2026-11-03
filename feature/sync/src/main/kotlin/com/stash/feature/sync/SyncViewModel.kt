@@ -646,6 +646,23 @@ class SyncViewModel @Inject constructor(
      * never pinned by this: on a mix the pin is its Favorite (see
      * [com.stash.core.data.db.dao.PlaylistDao.setSyncEnabledAndPin]).
      */
+    /**
+     * The account page's Save all: every one of [playlistIds] saved as its own Save would, but their
+     * songs queued together for one download run ([com.stash.core.data.repository.MusicRepository.keepPlaylistsOffline]),
+     * never a run started per playlist. The rows offered are in the library already (taken-out
+     * ones aren't offered).
+     */
+    fun onSaveAll(playlistIds: List<Long>) {
+        if (playlistIds.isEmpty()) return
+        viewModelScope.launch {
+            if (!streamingPreference.current()) {
+                val now = System.currentTimeMillis()
+                playlistIds.forEach { playlistDao.setSyncEnabledAndPin(it, true, now) }
+            }
+            musicRepository.keepPlaylistsOffline(playlistIds)
+        }
+    }
+
     fun onSavePlaylist(playlistId: Long, save: Boolean) {
         viewModelScope.launch {
             // Saving one that's out of the library brings it back: saved is in.
