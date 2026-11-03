@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -214,8 +215,11 @@ private fun SectionTitle(title: String, onClickLabel: String, onClick: () -> Uni
     }
 }
 
-/** One number on the week card: what shows ("142" and "plays") and what TalkBack says ("142 plays"). */
-private data class WeekStat(val value: String, val label: String, val spoken: String)
+/**
+ * One number on the week card: what shows ([text], "142 plays", "4‑day streak"), the [number] in
+ * it set in Space Grotesk, and what TalkBack says ([spoken], "142 plays").
+ */
+private data class WeekStat(val text: String, val number: String, val spoken: String)
 
 /**
  * The week card's numbers: plays and songs, and the streak once it's two days or more (a 1-day
@@ -227,13 +231,15 @@ private fun weekStats(week: WeekSummary): List<WeekStat> {
     val locale = LocalConfiguration.current.locales[0]
     val plays = pluralStringResource(R.plurals.listening_stat_plays, week.plays)
     val songs = pluralStringResource(R.plurals.listening_stat_songs, week.songs)
-    val streak = pluralStringResource(R.plurals.listening_stat_streak, week.streak)
+    val playsCount = CompactCount.format(week.plays.toLong(), locale)
+    val songsCount = CompactCount.format(week.songs.toLong(), locale)
+    val streakCount = CompactCount.format(week.streak.toLong(), locale)
+    // "4‑day streak" in a sentence; the stats screen's tile keeps "4" over "days streak".
+    val streak = pluralStringResource(R.plurals.listening_week_streak, week.streak, streakCount)
     return buildList {
-        add(WeekStat(CompactCount.format(week.plays.toLong(), locale), plays, "${CompactCount.full(week.plays.toLong(), locale)} $plays"))
-        add(WeekStat(CompactCount.format(week.songs.toLong(), locale), songs, "${CompactCount.full(week.songs.toLong(), locale)} $songs"))
-        if (week.streak >= 2) {
-            add(WeekStat(CompactCount.format(week.streak.toLong(), locale), streak, ListeningLabels.streak(week.streak)))
-        }
+        add(WeekStat("$playsCount $plays", playsCount, "${CompactCount.full(week.plays.toLong(), locale)} $plays"))
+        add(WeekStat("$songsCount $songs", songsCount, "${CompactCount.full(week.songs.toLong(), locale)} $songs"))
+        if (week.streak >= 2) add(WeekStat(streak, streakCount, ListeningLabels.streak(week.streak)))
     }
 }
 
@@ -267,7 +273,8 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
     ) {
         BoxWithConstraints(Modifier.padding(16.dp).clearAndSetSemantics { }) {
             val empty = nothing.takeIf { week.plays == 0 }
-            if (ListeningLayout.weekBarsBelow(maxWidth, LocalDensity.current.fontScale)) {
+            val fontScale = LocalDensity.current.fontScale
+            if (ListeningLayout.weekBarsBelow(maxWidth, fontScale)) {
                 Column {
                     WeekWords(time = time, about = about, stats = stats, nothing = empty)
                     Spacer(Modifier.height(12.dp))
@@ -277,7 +284,11 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     WeekWords(time = time, about = about, stats = stats, nothing = empty, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(ListeningLayout.WeekChartGap))
-                    WeekChart(week = week, barsHeight = WeekBarsHeight, modifier = Modifier.width(ListeningLayout.WeekChartWidth))
+                    WeekChart(
+                        week = week,
+                        barsHeight = WeekBarsHeight,
+                        modifier = Modifier.width(ListeningLayout.weekChartWidth(fontScale)),
+                    )
                 }
             }
         }
@@ -285,10 +296,9 @@ private fun WeekCard(week: WeekSummary, onClick: () -> Unit, modifier: Modifier 
 }
 
 /**
- * The week card's words: "Last 7 days", the time, and one line of plays · songs · streak with each
- * number in Space Grotesk in the strong ink and its word in the secondary one ("**142** plays ·
- * **38** songs · **5** days streak"), or [nothing] when there were no plays. Each number keeps its
- * word, and the line wraps only after a dot, never cut.
+ * The week card's words: "Last 7 days", the time, and plays · songs · streak with each number in
+ * Space Grotesk in the strong ink and its word in the secondary one ("**142** plays · **38** songs ·
+ * **5**‑day streak", [WeekStatsLine]), or [nothing] when there were no plays.
  */
 @Composable
 private fun WeekWords(
@@ -299,7 +309,6 @@ private fun WeekWords(
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val number = SpanStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, color = scheme.onSurface)
     Column(modifier) {
         Text(
             text = stringResource(R.string.listening_week_eyebrow),
@@ -307,25 +316,75 @@ private fun WeekWords(
             color = scheme.onSurfaceVariant,
         )
         ListenTimeText(time = time, about = about, numberSize = WeekTimeSize)
-        Text(
-            text = if (nothing != null) {
-                AnnotatedString(nothing)
-            } else {
-                buildAnnotatedString {
-                    stats.forEachIndexed { i, stat ->
-                        // The dot stays on the line before, so a line never starts with one.
-                        if (i > 0) append("\u00A0· ")
-                        withStyle(number) { append(stat.value) }
-                        append('\u00A0')
-                        append(stat.label.keepTogether())
-                    }
-                }
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-        )
+        if (nothing != null) {
+            Text(text = nothing, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        } else {
+            WeekStatsLine(stats)
+        }
     }
 }
+
+/**
+ * plays · songs · streak on as few lines as they fit: each stat is its own Text, kept whole, and a
+ * " · " goes only between two stats on the same line ([ListeningLayout.weekStatLines]), so a wrap
+ * leaves no dot at a line's end or start ("123 plays · 102 songs" / "4‑day streak"). Placed
+ * relative to the layout direction, so a right-to-left language runs from the right. A stat wider
+ * than the whole line (never at the card's sizes) wraps inside itself rather than being cut.
+ */
+@Composable
+private fun WeekStatsLine(stats: List<WeekStat>, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val style = MaterialTheme.typography.bodySmall
+    val numberStyle = SpanStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, color = scheme.onSurface)
+    Layout(
+        modifier = modifier,
+        content = {
+            stats.forEach { stat ->
+                Text(text = stat.styled(numberStyle), style = style, color = scheme.onSurfaceVariant)
+            }
+            repeat(stats.size - 1) {
+                Text(text = WeekStatSeparator, style = style, color = scheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+            }
+        },
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val items = measurables.take(stats.size).map { it.measure(loose) }
+        // dots[k - 1] sits between stat k - 1 and stat k when the two share a line.
+        val dots = measurables.drop(stats.size).map { it.measure(loose) }
+        val dotWidth = dots.firstOrNull()?.width ?: 0
+        val maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth else Int.MAX_VALUE
+        val lines = ListeningLayout.weekStatLines(items.map { it.width }, dotWidth, maxWidth)
+        val lineWidths = lines.map { line -> line.sumOf { items[it].width } + (line.size - 1) * dotWidth }
+        val lineHeights = lines.map { line -> line.maxOf { items[it].height } }
+        val width = (lineWidths.maxOrNull() ?: 0).coerceIn(constraints.minWidth, constraints.maxWidth)
+        val height = lineHeights.sum().coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            var y = 0
+            lines.forEachIndexed { row, line ->
+                var x = 0
+                line.forEachIndexed { pos, i ->
+                    if (pos > 0) {
+                        dots[i - 1].placeRelative(x, y)
+                        x += dotWidth
+                    }
+                    items[i].placeRelative(x, y)
+                    x += items[i].width
+                }
+                y += lineHeights[row]
+            }
+        }
+    }
+}
+
+/** [WeekStat.text] with its number in [numberStyle], found in the text, so a translation may put it anywhere. */
+private fun WeekStat.styled(numberStyle: SpanStyle): AnnotatedString = buildAnnotatedString {
+    append(text)
+    val at = text.indexOf(number)
+    if (number.isNotEmpty() && at >= 0) addStyle(numberStyle, at, at + number.length)
+}
+
+/** Between two stats on one line. Its spaces don't break, so it is measured whole. */
+private const val WeekStatSeparator = "\u00A0·\u00A0"
 
 /**
  * The week's bars ([barsHeight] tall), today's in the full colour and the other days a step

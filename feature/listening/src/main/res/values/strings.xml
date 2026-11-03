@@ -30,6 +30,11 @@
         <item quantity="one">day streak</item>
         <item quantity="other">days streak</item>
     </plurals>
+    <!-- The week card's streak, after plays and songs: "4‑day streak". %1$s is the number. The hyphen is U+2011 (non-breaking), so "4‑" never ends a line. -->
+    <plurals name="listening_week_streak">
+        <item quantity="one">%1$s‑day streak</item>
+        <item quantity="other">%1$s‑day streak</item>
+    </plurals>
 
     <!-- The doors under the week card. -->
     <string name="listening_door_top">Top songs</string>

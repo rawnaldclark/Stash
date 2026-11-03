@@ -50,6 +50,9 @@ fun playlistSourceMarks(source: MusicSource, sourceId: String, tracks: List<Trac
         listOfNotNull(playlistSourceMark(source, sourceId))
     }
 
+// Copies of core:data's keys, which core:ui can't see. core:data's PlaylistKeyPrefixesTest pins the
+// originals to these strings and PlaylistSourceMarksTest pins these: change them together.
+
 /** A playlist from a pasted link or a playlist file (core:data's `LinkImporter.PLAYLIST_PREFIX`). */
 private const val LINK_IMPORT_PREFIX = "custom_link_"
 

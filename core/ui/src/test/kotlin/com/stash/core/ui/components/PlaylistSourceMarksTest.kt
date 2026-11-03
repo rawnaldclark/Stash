@@ -26,8 +26,10 @@ class PlaylistSourceMarksTest {
             "custom_8f14e45f-ceea-4f5c-b5a1-2c0b0f0f0f0f", // a playlist made in the app
             "share:abc123", // a Community follow
             "stash_downloads_mix", // Your Downloads
-            "custom_web_xyz", // a web or Your record import
+            "custom_web_xyz", // a web library file or send
+            "custom_spotify_0123456789abcdef01234567", // a Your record Spotify export's playlist
             "custom_sync_9", // a playlist mirrored from Stash on the web
+            "stash_liked_songs", // Stash's own Liked Songs
         ).forEach { id ->
             assertThat(playlistSourceMark(BOTH, id)).isNull()
             assertThat(playlistSourceMarks(BOTH, id, listOf(song(YOUTUBE), song(SPOTIFY)))).isEmpty()
