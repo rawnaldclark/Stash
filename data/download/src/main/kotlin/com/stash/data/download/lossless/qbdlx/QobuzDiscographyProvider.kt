@@ -1,5 +1,6 @@
 package com.stash.data.download.lossless.qbdlx
 
+import android.util.Log
 import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.MergedDiscography
 import com.stash.core.data.discography.newReleaseYears
@@ -131,7 +132,8 @@ class QobuzDiscographyProvider @Inject constructor(
     ): List<DatedRelease> {
         val years = newReleaseYears(today())
         val youTubeHasOne = youTube.any { yearOf(it.year) in years }
-        val newest = if (listFull && youTubeHasOne && elapsedMs() - startedAtMs < NEWEST_BUDGET_MS) {
+        val askNewest = listFull && youTubeHasOne && elapsedMs() - startedAtMs < NEWEST_BUDGET_MS
+        val newest = if (askNewest) {
             try {
                 apiClient.getNewestArtistAlbums(artistId, NEWEST_LIMIT).filter { isOwn(it, nBest) }
             } catch (e: CancellationException) {
@@ -142,11 +144,13 @@ class QobuzDiscographyProvider @Inject constructor(
         } else {
             emptyList()
         }
-        return (ownReleases + newest).mapNotNull { item ->
+        val dated = (ownReleases + newest).mapNotNull { item ->
             val date = item.release_date_original?.takeIf { ISO_DATE.matches(it) } ?: return@mapNotNull null
             if (yearOf(date) !in years) return@mapNotNull null
             DatedRelease(title = item.title, date = date, trackCount = item.tracks_count.takeIf { it > 0 })
         }.distinct()
+        Log.d(TAG, "release dates: ${dated.size} from $years (listed ${ownReleases.size} own, newest call: $askNewest)")
+        return dated
     }
 
     /** The year in "2026" or "2026-10-30"; null when there is none. */
@@ -166,6 +170,7 @@ class QobuzDiscographyProvider @Inject constructor(
         // superset/canonical name match, so 0.6 comfortably admits real matches while
         // rejecting partial-token noise. Bump only if a real false-graft slips through.
         const val ARTIST_MATCH_THRESHOLD = 0.6f
+        const val TAG = "QobuzDiscography"
         // Minimum track count for a Qobuz release to count as an album (not a
         // single/EP). Singles are 1-3 tracks; real albums ~8-24. 5 clears the
         // junk singles while keeping short albums. Tune here if a real album is
