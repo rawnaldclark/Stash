@@ -470,16 +470,19 @@ class SpotifyApiClient @Inject constructor(
     ): SpotifySavedAlbumsPage = withContext(Dispatchers.IO) {
         try {
             val response = savedAlbumsResponse(limit, offset, order)
-                ?: return@withContext SpotifySavedAlbumsPage.EMPTY
-            val refused = order != null && libraryErrorTypename(response) != null
-            val page = if (refused) {
-                Log.w(TAG, "getSavedAlbumsPage: order '$order' refused (${libraryErrorTypename(response)}), asking in the default order")
+            val asked = response?.let(::parseSavedAlbumsPage) ?: SpotifySavedAlbumsPage.EMPTY
+            // Any answer that isn't a page (a typed error, an HTTP 400, a 200 holding only errors):
+            // asked again without an order, so a variable Spotify stopped taking can't stop the sync.
+            val page = if (order != null && asked === SpotifySavedAlbumsPage.EMPTY) {
+                val why = response?.let(::libraryErrorTypename) ?: if (response == null) "no answer" else "no page"
+                Log.w(TAG, "getSavedAlbumsPage: no page in order '$order' ($why), asking in the default order")
                 savedAlbumsResponse(limit, offset, null)?.let(::parseSavedAlbumsPage) ?: SpotifySavedAlbumsPage.EMPTY
             } else {
-                parseSavedAlbumsPage(response)
+                asked
             }
             page.also {
-                Log.d(TAG, "getSavedAlbumsPage: offset=$offset order=${it.sortOrder} -> ${it.albums.size} albums of ${it.rawItemCount} rows, total=${it.totalCount}")
+                // The order Spotify used, as it says (selectedSortOrder): a device sync's logcat shows it.
+                Log.i(TAG, "getSavedAlbumsPage: offset=$offset asked=$order order=${it.sortOrder} -> ${it.albums.size} albums of ${it.rawItemCount} rows, total=${it.totalCount}")
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -515,6 +518,7 @@ class SpotifyApiClient @Inject constructor(
         var total: Int? = null
         var complete = true
         var stoppedShort = false
+        var pagesRead = 0
         try {
             for (pageIndex in 0 until ALBUM_TRACK_PAGE_CAP) {
                 val variables = buildJsonObject {
@@ -533,6 +537,7 @@ class SpotifyApiClient @Inject constructor(
                     stoppedShort = true
                     break
                 }
+                pagesRead++
                 if (!page.isComplete) complete = false
                 if (total == null) total = page.totalCount
                 tracks += page.tracks
@@ -541,11 +546,15 @@ class SpotifyApiClient @Inject constructor(
             }
             val walkedAll = !stoppedShort && total != null && offset >= total
             if (!walkedAll) complete = false
-            SpotifyAlbumTracklist(tracks = tracks, totalCount = total, complete = complete, walkedAll = walkedAll)
+            val capHit = !walkedAll && !stoppedShort && pagesRead >= ALBUM_TRACK_PAGE_CAP
+            SpotifyAlbumTracklist(
+                tracks = tracks, totalCount = total, complete = complete, walkedAll = walkedAll,
+                pageFailed = stoppedShort, pageCapHit = capHit,
+            )
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.e(TAG, "getAlbumTracks: getAlbum failed", e)
-            if (tracks.isEmpty()) null else SpotifyAlbumTracklist(tracks, total, complete = false, walkedAll = false)
+            if (tracks.isEmpty()) null else SpotifyAlbumTracklist(tracks, total, complete = false, walkedAll = false, pageFailed = true)
         }
     }
 

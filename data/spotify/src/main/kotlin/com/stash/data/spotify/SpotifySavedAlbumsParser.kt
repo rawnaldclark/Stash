@@ -88,14 +88,19 @@ data class SpotifyAlbumTracksPage(
  * @property complete Every song Spotify counts was read ([SpotifyAlbumTracksPage.totalCount] met), so
  *                    the sync may mirror the album exactly; otherwise the snapshot is partial.
  * @property walkedAll Every page was read up to Spotify's own count, though a song on them may have
- *                     been unreadable. False is a short read (a page failed): never written over the
- *                     album, whose last whole tracklist stands.
+ *                     been unreadable. False is a short read, for one of three reasons: [pageFailed],
+ *                     [pageCapHit], or neither (Spotify listed fewer songs than it counts).
+ * @property pageFailed A page after the first failed: worth reading again.
+ * @property pageCapHit The album is longer than the walk reads (over 1,000 songs): every read stops
+ *                      at the same place, so what was read is all there will be.
  */
 data class SpotifyAlbumTracklist(
     val tracks: List<SpotifyAlbumTrack>,
     val totalCount: Int?,
     val complete: Boolean,
     val walkedAll: Boolean = complete,
+    val pageFailed: Boolean = false,
+    val pageCapHit: Boolean = false,
 )
 
 private const val TAG = "StashSync"

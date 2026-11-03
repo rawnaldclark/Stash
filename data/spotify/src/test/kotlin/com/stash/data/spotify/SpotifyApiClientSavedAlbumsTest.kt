@@ -75,6 +75,16 @@ class SpotifyApiClientSavedAlbumsTest {
         return JsonObject(root + ("data" to JsonObject(data + ("albumUnion" to JsonObject(album + ("tracksV2" to cut)))))).toString()
     }
 
+    /** The captured album page, all 8 songs, Spotify counting [total]. */
+    private fun albumPageCounting(total: Int): String {
+        val root = Json.parseToJsonElement(fixture("getalbum.json")).jsonObject
+        val data = root["data"]!!.jsonObject
+        val album = data["albumUnion"]!!.jsonObject
+        val tracks = album["tracksV2"]!!.jsonObject
+        val counted = JsonObject(tracks + ("totalCount" to JsonPrimitive(total)))
+        return JsonObject(root + ("data" to JsonObject(data + ("albumUnion" to JsonObject(album + ("tracksV2" to counted)))))).toString()
+    }
+
     @Test fun `the library listing asks for albums and reads the page`() = runBlocking {
         pages["libraryV3" to 0] = 200 to fixture("libraryv3_saved_albums.json")
 
@@ -106,6 +116,32 @@ class SpotifyApiClientSavedAlbumsTest {
         assertTrue(requests[1].second.contains(""""order":null"""))
     }
 
+    @Test fun `an order answered with no page at all, typed error or not, is asked again in the default order`() = runBlocking {
+        val refusals = listOf(
+            400 to """{"errors":[{"message":"Variable 'order' has an invalid value"}]}""",
+            200 to """{"errors":[{"message":"invalid order"}],"data":null}""",
+            200 to """{"data":{"me":{"libraryV3":null}}}""",
+        )
+        for (refusal in refusals) {
+            requests.clear()
+            respond = { operation, variables ->
+                when {
+                    operation != "libraryV3" -> null
+                    variables.contains(""""order":null""") -> 200 to fixture("libraryv3_saved_albums.json")
+                    else -> refusal
+                }
+            }
+
+            val page = client.getSavedAlbumsPage(limit = 50, offset = 0)
+
+            assertEquals("after $refusal", 28, page.albums.size)
+            // A 400 is first retried as it was, with a fresh client token (executeGraphQL).
+            assertTrue(requests.first().second.contains(""""order":"Recently Added""""))
+            assertTrue(requests.last().second.contains(""""order":null"""))
+            assertEquals(1, requests.count { it.second.contains(""""order":null""") })
+        }
+    }
+
     @Test fun `a failed listing is the failure sentinel, never an empty library`() = runBlocking {
         assertSame(SpotifySavedAlbumsPage.EMPTY, client.getSavedAlbumsPage(limit = 50, offset = 0))
     }
@@ -128,10 +164,27 @@ class SpotifyApiClientSavedAlbumsTest {
         val partial = client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx")!!
         assertFalse(partial.complete)
         assertFalse("the sync keeps the album's last whole tracklist over this", partial.walkedAll)
+        assertTrue(partial.pageFailed)
+        assertFalse(partial.pageCapHit)
         assertEquals(5, partial.tracks.size)
 
         pages.clear()
         assertNull(client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx"))
+    }
+
+    @Test fun `an album longer than the walk stops at the page cap, told apart from a failed page`() = runBlocking {
+        // Every page answers (the captured 8 songs), and Spotify counts more than 20 pages hold.
+        respond = { operation, _ -> if (operation == "getAlbum") 200 to albumPageCounting(5_000) else null }
+
+        val list = client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx")!!
+
+        assertEquals(20, requests.size)
+        assertTrue(list.pageCapHit)
+        assertFalse(list.pageFailed)
+        assertFalse(list.walkedAll)
+        assertFalse(list.complete)
+        assertEquals(5_000, list.totalCount)
+        assertEquals(20 * 8, list.tracks.size)
     }
 
     @Test fun `the whole album in one page is complete`() = runBlocking {
