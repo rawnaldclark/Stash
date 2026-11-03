@@ -196,4 +196,69 @@ class MoodBrowseViewModelTest {
         verifyBlocking(moods, never()) { cached() }
         verifyBlocking(moods, never()) { grids() }
     }
+
+    @Test
+    fun `once the grid has left, a return to Search asks for no covers - only the grid's next report does`() = runTest(dispatcher) {
+        whenever(moods.covers(eq("p1"), any(), any())).doReturn(null)
+        val vm = viewModel()
+        runCurrent()
+        vm.onTilesVisible(listOf(chill))
+        runCurrent()
+        verifyBlocking(moods, times(1)) { covers(eq("p1"), any(), any()) }
+        // The field tapped: the grid reports it's gone, and the app goes to the background and back
+        vm.onTilesVisible(emptyList())
+        vm.onResume()
+        runCurrent()
+        verifyBlocking(moods, times(1)) { covers(eq("p1"), any(), any()) }
+        // The grid back on screen
+        vm.onTilesVisible(listOf(chill))
+        runCurrent()
+        verifyBlocking(moods, times(2)) { covers(eq("p1"), any(), any()) }
+    }
+
+    @Test
+    fun `saved tiles mean a grid at once, before today's read answers - and Offline means none`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<MoodGrids>()
+        whenever(moods.grids()).doSuspendableAnswer { gate.await() }
+        val vm = viewModel()
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isTrue()
+        online.value = false
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isFalse()
+    }
+
+    @Test
+    fun `with nothing saved, Search waits for today's read to know whether it has a grid`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<MoodGrids>()
+        whenever(moods.cached()).doReturn(MoodGrids.None)
+        whenever(moods.grids()).doSuspendableAnswer { gate.await() }
+        val vm = viewModel()
+        runCurrent()
+        // A fresh install with network: neither the grid nor "no grid" (which would raise the keyboard) yet
+        assertThat(vm.state.value.showsGrid).isNull()
+        gate.complete(today)
+        runCurrent()
+        assertThat(vm.state.value.showsGrid).isTrue()
+    }
+
+    @Test
+    fun `with nothing saved and no tiles to be had, Search knows it has no grid`() = runTest(dispatcher) {
+        whenever(moods.cached()).doReturn(MoodGrids.None)
+        // YouTube answering without them
+        whenever(moods.grids()).doReturn(MoodGrids.None)
+        val unanswered = viewModel()
+        runCurrent()
+        assertThat(unanswered.state.value.showsGrid).isFalse()
+        // The read failing outright
+        whenever(moods.grids()).doSuspendableAnswer { throw IllegalStateException("down") }
+        val failed = viewModel()
+        runCurrent()
+        assertThat(failed.state.value.showsGrid).isFalse()
+        // No network to try
+        whenever(connectivity.isConnected()).doReturn(false)
+        val unconnected = viewModel()
+        runCurrent()
+        assertThat(unconnected.state.value.showsGrid).isFalse()
+    }
 }

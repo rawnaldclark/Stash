@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -40,13 +43,16 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -93,12 +99,17 @@ internal fun MoodBrowseGrid(
             genres.chunked(2).withIndex().associate { (i, row) -> rowKey(GENRES, i) to row }
     }
     val report by rememberUpdatedState(onTilesVisible)
+    // Composed afresh each time the grid comes back (the field let go, Back from a tile's page), so it reports the
+    // tiles on screen again then
     LaunchedEffect(listState, rows) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.flatMap { (it.key as? String)?.let(rows::get).orEmpty() } }
             .debounce(VISIBLE_SETTLE_MS)
             .distinctUntilChanged()
             .collect { report(it) }
     }
+    // Gone (the field tapped, a search typed, a tile opened): no tile is on screen, so the cover reads still waiting
+    // their turn aren't made while the user searches
+    DisposableEffect(Unit) { onDispose { report(emptyList()) } }
     val moodsTitle = stringResource(R.string.search_moods)
     val genresTitle = stringResource(R.string.search_genres)
     LazyColumn(
@@ -159,7 +170,9 @@ private fun LazyListScope.tileSection(
  * Mochy keeps the title clear of the covers (70 dp from the right), which on a 393 dp phone is too narrow for some
  * words: "Songwriters" came out "Songwriter / s", and at the largest font "Christma / s" and "Indie & / alterna…". A
  * title that would cut a word, or lose its end, runs on over the covers instead (14 dp from the right, like its
- * left), and they fade under it. It's measured before it's drawn, so a tile scrolling in never shows the cut first.
+ * left), and they fade under it; a word too wide even for that (at Android's largest font, 2.0) takes a smaller
+ * size, just enough. It's measured before it's drawn, so a tile scrolling in never shows the cut first. In a
+ * right-to-left language all of it mirrors: title on the right, covers on the left.
  */
 @Composable
 internal fun MoodTileCard(
@@ -169,9 +182,13 @@ internal fun MoodTileCard(
     modifier: Modifier = Modifier,
 ) {
     val surface = StashTheme.extendedColors.elevatedSurface
-    val wash = remember(tile.color, surface) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val wash = remember(tile.color, surface, rtl) {
         val tint = moodTint(tile.color)
-        Brush.linearGradient(listOf(blendOver(tint, 0.55f, surface), blendOver(tint, 0.16f, surface)))
+        val colors = listOf(blendOver(tint, 0.55f, surface), blendOver(tint, 0.16f, surface))
+        // Strongest under the title: from the top left, or the top right in a right-to-left language
+        if (rtl) Brush.linearGradient(colors, start = Offset(Float.POSITIVE_INFINITY, 0f), end = Offset(0f, Float.POSITIVE_INFINITY))
+        else Brush.linearGradient(colors)
     }
     val interaction = remember { MutableInteractionSource() }
     val style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp)
@@ -187,26 +204,34 @@ internal fun MoodTileCard(
         val density = LocalDensity.current
         val tileWidth = constraints.maxWidth
         val fit = remember(tile.title, style, tileWidth, density) {
-            fun layout(endPadding: Dp) = measurer.measure(
+            fun room(endPadding: Dp) = (tileWidth - with(density) { TitleStart.roundToPx() + endPadding.roundToPx() }).coerceAtLeast(0)
+            fun layout(style: TextStyle, endPadding: Dp) = measurer.measure(
                 text = tile.title,
                 style = style,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 2,
-                constraints = Constraints(maxWidth = (tileWidth - with(density) { TitleStart.roundToPx() + endPadding.roundToPx() }).coerceAtLeast(0)),
+                constraints = Constraints(maxWidth = room(endPadding)),
             )
-            val clear = layout(TitleEndClear)
+            val clear = layout(style, TitleEndClear)
             val cut = splitsAWord(tile.title, (0 until clear.lineCount - 1).map { clear.getLineEnd(it) }) ||
                 clear.isLineEllipsized(clear.lineCount - 1)
-            if (cut) TitleFit(runsOn = true, wraps = layout(TitleStart).lineCount > 1) else TitleFit(runsOn = false, wraps = clear.lineCount > 1)
+            if (!cut) return@remember TitleFit(style, runsOn = false, wraps = clear.lineCount > 1)
+            // Over the covers. A word wider than even that ("Songwriters" at Android's largest font, 2.0) takes a
+            // smaller size, just enough for it, never below the title's size at the default font
+            val widest = tile.title.split(' ').filter { it.isNotEmpty() }
+                .maxOfOrNull { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width } ?: 0
+            val fitted = fitWidest(style, widest, room(TitleStart), density.fontScale)
+            TitleFit(fitted, runsOn = true, wraps = layout(fitted, TitleStart).lineCount > 1)
         }
         FannedCovers(
             covers = covers,
-            fadeLeft = fit.wraps || fit.runsOn,
+            fadeTowardTitle = fit.wraps || fit.runsOn,
+            rtl = rtl,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 2.dp).size(width = CoversWidth, height = TileHeight),
         )
         Text(
             text = tile.title,
-            style = style,
+            style = fit.style,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -221,8 +246,22 @@ internal fun MoodTileCard(
 private val TitleStart = 14.dp
 private val TitleEndClear = 70.dp
 
-/** How a tile's title sits: [runsOn] over the covers so no word is cut, and whether it [wraps] to a second line. */
-private data class TitleFit(val runsOn: Boolean, val wraps: Boolean)
+/**
+ * How a tile's title sits: in [style] (smaller than the tile's own only when a word wouldn't fit otherwise), [runsOn]
+ * over the covers so no word is cut, and whether it [wraps] to a second line.
+ */
+private data class TitleFit(val style: TextStyle, val runsOn: Boolean, val wraps: Boolean)
+
+/**
+ * [style] made just small enough for a word [widest] px wide to fit [room] px, never below its size at the default
+ * font ([fontScale] 1); as it is when the word fits already.
+ */
+internal fun fitWidest(style: TextStyle, widest: Int, room: Int, fontScale: Float): TextStyle {
+    if (widest <= room || widest <= 0) return style
+    // Width follows size; a hair under, so rounding never tips the word back over
+    val scale = (room.toFloat() / widest * 0.98f).coerceIn(minOf(1f, 1f / fontScale), 1f)
+    return style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale)
+}
 
 /**
  * Whether a title laid out in lines ending at [lineEnds] (each line's end but the last, as offsets into [title]) cuts
@@ -233,43 +272,47 @@ internal fun splitsAWord(title: String, lineEnds: List<Int>): Boolean =
 
 /**
  * Mochy Music's two layered covers: the second tilted back -24° behind, the first -6° in front, lower and further
- * right. Each shows only once its picture's address is known.
+ * toward the tile's edge. Each shows only once its picture's address is known. In a right-to-left language the fan
+ * is mirrored whole: the covers at the tile's left edge, shifted and tilted the other way, the fade clear on their
+ * right, where the title is.
  */
 @Composable
-private fun FannedCovers(covers: List<String>, fadeLeft: Boolean, modifier: Modifier) {
+private fun FannedCovers(covers: List<String>, fadeTowardTitle: Boolean, rtl: Boolean, modifier: Modifier) {
     if (covers.isEmpty()) return
     Box(
         modifier = modifier
             // The fade needs its own layer to cut the covers' pixels, not the tile's under them
-            .then(if (fadeLeft) Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } else Modifier)
+            .then(if (fadeTowardTitle) Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } else Modifier)
             .drawWithCache {
-                val fade = Brush.horizontalGradient(
+                // Clear on the title's side, solid at the tile's edge
+                val stops = arrayOf(
                     0.00f to Color.Transparent,
                     0.42f to Color.Black.copy(alpha = 0.55f),
                     0.70f to Color.Black,
                 )
+                val fade = if (rtl) Brush.horizontalGradient(*stops, startX = size.width, endX = 0f)
+                else Brush.horizontalGradient(*stops, startX = 0f, endX = size.width)
                 onDrawWithContent {
                     drawContent()
-                    if (fadeLeft) drawRect(brush = fade, blendMode = BlendMode.DstIn)
+                    if (fadeTowardTitle) drawRect(brush = fade, blendMode = BlendMode.DstIn)
                 }
             },
     ) {
-        covers.getOrNull(1)?.let { LayeredCover(it, rotation = -24f, offsetX = (-2).dp, offsetY = 2.dp, size = 44.dp) }
-        LayeredCover(covers[0], rotation = -6f, offsetX = 28.dp, offsetY = 13.dp, size = 48.dp)
+        covers.getOrNull(1)?.let { LayeredCover(it, rotation = -24f, offsetX = (-2).dp, offsetY = 2.dp, size = 44.dp, rtl = rtl) }
+        LayeredCover(covers[0], rotation = -6f, offsetX = 28.dp, offsetY = 13.dp, size = 48.dp, rtl = rtl)
     }
 }
 
 @Composable
-private fun BoxScope.LayeredCover(url: String, rotation: Float, offsetX: Dp, offsetY: Dp, size: Dp) {
-    val density = LocalDensity.current
+private fun BoxScope.LayeredCover(url: String, rotation: Float, offsetX: Dp, offsetY: Dp, size: Dp, rtl: Boolean) {
     Box(
         modifier = Modifier
             .align(Alignment.CenterStart)
+            // offset, not the layer's translation: it follows the layout direction, toward the tile's edge either way
+            .offset(x = offsetX, y = offsetY)
             .size(size)
             .graphicsLayer {
-                rotationZ = rotation
-                translationX = with(density) { offsetX.toPx() }
-                translationY = with(density) { offsetY.toPx() }
+                rotationZ = if (rtl) -rotation else rotation
                 shape = CoverShape
                 clip = true
             }

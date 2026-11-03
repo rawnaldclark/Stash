@@ -21,8 +21,9 @@ import javax.inject.Inject
 /**
  * What Search shows before anything is typed: YouTube Music's [moods] and [genres] tiles, each with the [covers]
  * saved or read for it (by params). [online] is null until the Online/Offline switch is read; Offline there are no
- * tiles. [loaded] turns true once the saved tiles were read, so Search draws neither the grid nor the recents in its
- * place before it knows which one it has.
+ * tiles. [loaded] turns true once Search knows whether it has tiles: at once when some were saved, else when today's
+ * read is over (answered, failed, or no network to try), so a fresh install waits for its first tiles rather than
+ * deciding there are none.
  */
 data class MoodBrowseState(
     val online: Boolean? = null,
@@ -33,6 +34,17 @@ data class MoodBrowseState(
 ) {
     /** The grid has something to show: Online, with tiles in either section. */
     val hasTiles: Boolean get() = online == true && (moods.isNotEmpty() || genres.isNotEmpty())
+
+    /**
+     * Whether Search shows the grid before anything is typed: true with tiles, false Offline or once it's known
+     * there are none (a fresh install without network, YouTube not answering), null while that isn't known yet.
+     */
+    val showsGrid: Boolean? get() = when {
+        online == false -> false
+        hasTiles -> true
+        online == true && loaded -> false
+        else -> null
+    }
 }
 
 /**
@@ -127,14 +139,20 @@ class MoodBrowseViewModel @Inject constructor(
         loading = viewModelScope.launch {
             try {
                 if (!_state.value.loaded) {
-                    // Yesterday's tiles and every saved cover paint at once; today's replace them when read
+                    // Yesterday's tiles and every saved cover paint at once; today's replace them when read. With
+                    // none saved, Search doesn't know yet whether it has a grid: today's read tells it.
                     val saved = moods.cached()
                     val covers = moods.savedCovers()
-                    _state.update { it.copy(loaded = true, moods = saved.moods, genres = saved.genres, covers = covers) }
+                    _state.update {
+                        it.copy(loaded = !saved.isEmpty(), moods = saved.moods, genres = saved.genres, covers = covers)
+                    }
                 }
-                if (!connectivity.isConnected()) return@launch
+                if (!connectivity.isConnected()) {
+                    _state.update { it.copy(loaded = true) }
+                    return@launch
+                }
                 val grids = moods.grids()
-                _state.update { it.copy(moods = grids.moods, genres = grids.genres) }
+                _state.update { it.copy(loaded = true, moods = grids.moods, genres = grids.genres) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 // The grid is a nicety: whatever went wrong, Search keeps what it shows

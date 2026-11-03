@@ -152,14 +152,14 @@ fun SearchScreen(
     // Here, not in the grid: the grid leaves while the field is tapped, and comes back where it was
     val browseListState = rememberLazyListState()
 
-    // The first open takes the field's focus (and raises the keyboard) only where there is no grid for the
-    // keyboard to cover: Offline, as the tab always did. Decided once the Online/Offline switch is read. Saveable
-    // so it survives the back stack: focusing on every return (Back from an artist, switching back to the tab)
-    // popped the keyboard over the very results the user came back to.
+    // The first open takes the field's focus (and raises the keyboard) only where no grid shows for the keyboard to
+    // cover: Offline, as the tab always did, or Online with no tiles (a fresh install without network, YouTube not
+    // answering). Decided once that's known. Saveable so it survives the back stack: focusing on every return (Back
+    // from an artist, switching back to the tab) popped the keyboard over the very results the user came back to.
     var autoFocused by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(browse.online) {
-        val online = browse.online ?: return@LaunchedEffect
-        if (!autoFocused && !online && state.query.isEmpty()) focusRequester.requestFocus()
+    LaunchedEffect(browse.showsGrid) {
+        val showsGrid = browse.showsGrid ?: return@LaunchedEffect
+        if (!autoFocused && !showsGrid && state.query.isEmpty()) focusRequester.requestFocus()
         autoFocused = true
     }
     // Recents (the field tapped) back to the grid, as Back leaves a search on Mochy, Spotify and YouTube Music
@@ -199,8 +199,8 @@ fun SearchScreen(
                 return@Column
             }
 
-            // Before anything is typed, the field not tapped: the grid. Online with the saved tiles not read
-            // yet, a blank for that moment rather than recents the grid would then replace.
+            // Before anything is typed, the field not tapped: the grid. While it isn't known yet whether there is
+            // one, a blank for that moment rather than recents the grid would then replace.
             val browsing = state.status == SearchStatus.Idle && state.query.isEmpty() && !fieldFocused
             if (browsing && browse.hasTiles) {
                 MoodBrowseGrid(
@@ -213,7 +213,7 @@ fun SearchScreen(
                 )
                 return@Column
             }
-            if (browsing && browse.online != false && !browse.loaded) return@Column
+            if (browsing && browse.showsGrid == null) return@Column
 
             when (val status = state.status) {
                 SearchStatus.Idle -> RecentSearches(
