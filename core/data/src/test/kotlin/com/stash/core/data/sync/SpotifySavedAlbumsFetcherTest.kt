@@ -77,7 +77,7 @@ class SpotifySavedAlbumsFetcherTest {
     private fun listing(
         vararg pages: List<SpotifySavedAlbum>,
         total: Int = pages.sumOf { it.size },
-        order: String = SpotifyApiClient.SAVED_ALBUMS_ORDER,
+        order: String? = SpotifyApiClient.SAVED_ALBUMS_ORDER,
     ) {
         var offset = 0
         for (page in pages) {
@@ -94,6 +94,9 @@ class SpotifySavedAlbumsFetcherTest {
         explicitAt: Int = -1,
         complete: Boolean = true,
         walkedAll: Boolean = complete,
+        pageFailed: Boolean = false,
+        pageCapHit: Boolean = false,
+        totalCount: Int = titles.size,
     ) = SpotifyAlbumTracklist(
         tracks = titles.mapIndexed { i, title ->
             SpotifyAlbumTrack(
@@ -101,9 +104,11 @@ class SpotifySavedAlbumsFetcherTest {
                 durationMs = 200_000L + i, explicit = i == explicitAt, discNumber = 1, trackNumber = i + 1,
             )
         },
-        totalCount = titles.size,
+        totalCount = totalCount,
         complete = complete,
         walkedAll = walkedAll,
+        pageFailed = pageFailed,
+        pageCapHit = pageCapHit,
     )
 
     private suspend fun snapshots(syncId: Long = 1L) = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId)
@@ -219,25 +224,70 @@ class SpotifySavedAlbumsFetcherTest {
         assertNull(snapshot.snapshotId)
     }
 
-    @Test fun `a read cut short writes nothing, and a new album waits for a whole read`() = runTest {
+    @Test fun `a new album cut short by a failed page is written in part, unstamped, and is no error`() = runTest {
         listing(listOf(album(1)))
-        coEvery { spotify.getAlbumTracks(any()) } returns songs("One", complete = false, walkedAll = false)
+        coEvery { spotify.getAlbumTracks(any()) } returns
+            songs("One", totalCount = 2, complete = false, walkedAll = false, pageFailed = true)
 
         val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
 
-        assertTrue(snapshots().isEmpty())
-        assertEquals(1, step.unreadPlaylistCount)
+        val snapshot = snapshots().single()
+        assertTrue("the diff only adds", snapshot.partial)
+        assertNull("never vouched for, so read again next sync", snapshot.snapshotId)
+        assertEquals(0, step.unreadPlaylistCount)
+        assertEquals(StepStatus.SUCCESS, step.status)
+        assertTrue(step.note!!, step.note!!.contains("1 read in part"))
     }
 
-    @Test fun `a read cut short keeps a mirrored album's last whole tracklist`() = runTest {
+    @Test fun `a page failing over an album already here keeps its last tracklist, and never stops the reading`() = runTest {
         mirroredAlbum(1, addedAt = "2026-10-11T10:00:00Z")
-        // Saved again, so read again: the read fails part way.
-        listing(listOf(album(1, addedAt = "2026-11-01T09:00:00Z")))
-        coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", complete = false, walkedAll = false)
+        mirroredAlbum(2, addedAt = "2026-10-12T10:00:00Z")
+        mirroredAlbum(3, addedAt = "2026-10-13T10:00:00Z")
+        // All three saved again, so read again: each read fails part way. Then a new album.
+        listing(
+            listOf(
+                album(1, addedAt = "2026-11-01T09:00:00Z"), album(2, addedAt = "2026-11-01T09:00:00Z"),
+                album(3, addedAt = "2026-11-01T09:00:00Z"), album(4),
+            ),
+        )
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A", complete = false, walkedAll = false, pageFailed = true)
+        coEvery { spotify.getAlbumTracks(album(4).id) } returns songs("One")
 
-        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
 
-        assertTrue("nothing for the diff to write over it", snapshots().isEmpty())
+        assertEquals("nothing for the diff to write over the three", listOf(key(4)), snapshots().map { it.sourcePlaylistId })
+        assertEquals(3, step.unreadPlaylistCount)
+        coVerify(exactly = 1) { spotify.getAlbumTracks(album(4).id) }
+    }
+
+    @Test fun `albums longer than the walk are written in part every sync, never an error, and never stop the reading`() = runTest {
+        // Saved again since its mirror, so read: it stops at the cap too.
+        mirroredAlbum(5, addedAt = "2026-10-01T10:00:00Z")
+        listing((1..5).map { album(it) })
+        coEvery { spotify.getAlbumTracks(any()) } returns songs(
+            "One", "Two", totalCount = 1_200, complete = false, walkedAll = false, pageCapHit = true,
+        )
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+        coVerify(exactly = 5) { spotify.getAlbumTracks(any()) }
+        val written = snapshots()
+        assertEquals((1..5).map { key(it) }.toSet(), written.map { it.sourcePlaylistId }.toSet())
+        assertTrue(written.all { it.partial && it.snapshotId == null })
+        assertEquals(StepStatus.SUCCESS, step.status)
+        assertEquals(0, step.unreadPlaylistCount)
+        assertTrue(step.note!!, step.note!!.contains("5 read in part"))
+    }
+
+    @Test fun `Spotify listing fewer songs than it counts over an album already here is written in part`() = runTest {
+        mirroredAlbum(1, addedAt = "2026-10-01T10:00:00Z")
+        listing(listOf(album(1)))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", totalCount = 2, complete = false, walkedAll = false)
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+        assertTrue(snapshots().single().partial)
+        assertEquals(StepStatus.SUCCESS, step.status)
     }
 
     @Test fun `at most 200 albums are read a sync, the rest wait in the library's order`() = runTest {
@@ -269,6 +319,36 @@ class SpotifySavedAlbumsFetcherTest {
         assertTrue(step.note!!, step.note!!.contains("1 unchanged"))
     }
 
+    @Test fun `an album no longer listed never holds a re-read place`() = runTest {
+        // Un-saved on Spotify in Accumulate: still here, stamped and read longest ago, never listed.
+        repeat(SpotifySavedAlbumsFetcher.REFRESHES_PER_SYNC) {
+            mirroredAlbum(100 + it, addedAt = "2026-01-01T10:00:00Z", ageMs = 400 * day)
+        }
+        mirroredAlbum(1, addedAt = "2026-10-11T10:00:00Z", ageMs = 100 * day)
+        listing(listOf(album(1)))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A1", "B1")
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.ACCUMULATE)
+
+        coVerify(exactly = 1) { spotify.getAlbumTracks(album(1).id) }
+        assertTrue(step.note!!, step.note!!.contains("1 re-read after 90 days"))
+    }
+
+    @Test fun `at most 100 albums are re-read a sync for their age, in the listing's order`() = runTest {
+        val n = SpotifySavedAlbumsFetcher.REFRESHES_PER_SYNC + 2
+        for (i in 1..n) mirroredAlbum(i, addedAt = "2026-10-01T10:00:00Z", ageMs = 100 * day)
+        val albums = (1..n).map { album(it, addedAt = "2026-10-01T10:00:00Z") }
+        listing(*albums.chunked(SpotifySavedAlbumsFetcher.PAGE_SIZE).toTypedArray())
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("A", "B")
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+        coVerify(exactly = SpotifySavedAlbumsFetcher.REFRESHES_PER_SYNC) { spotify.getAlbumTracks(any()) }
+        coVerify(exactly = 0) { spotify.getAlbumTracks(album(n).id) }
+        assertTrue(step.note!!, step.note!!.contains("${SpotifySavedAlbumsFetcher.REFRESHES_PER_SYNC} re-read after 90 days"))
+        assertTrue(step.note!!, step.note!!.contains("2 unchanged"))
+    }
+
     @Test fun `the listing is asked newest save first, and the walk keeps the order Spotify gave`() = runTest {
         // Spotify refused ours and answered in its default order: the next page is asked in that one.
         listing(listOf(album(1)), listOf(album(2)), order = "Recents")
@@ -291,6 +371,21 @@ class SpotifySavedAlbumsFetcherTest {
         fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
 
         assertTrue(db.playlistDao().getById(gone)!!.isActive)
+    }
+
+    @Test fun `a whole walk not by date saved is no error, and hides nothing`() = runTest {
+        val gone = row(key(9))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
+        // Recents moves an album up each time it's played: one can slip between two pages.
+        for (order in listOf("Recents", null)) {
+            listing(listOf(album(1)), order = order)
+
+            val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+            assertTrue("order $order", db.playlistDao().getById(gone)!!.isActive)
+            assertEquals(StepStatus.SUCCESS, step.status)
+            assertTrue(step.note!!, step.note!!.contains("not by date saved"))
+        }
     }
 
     @Test fun `three failed reads in a row stop reading for this sync, and the rest wait`() = runTest {
@@ -337,6 +432,49 @@ class SpotifySavedAlbumsFetcherTest {
         assertTrue(after.userHidden)
         assertFalse(after.isActive)
         assertEquals(MusicSource.BOTH, after.source)
+    }
+
+    @Test fun `a pasted album removed, then saved on Spotify after that, is the sync's again`() = runTest {
+        val removed = row(key(1), source = MusicSource.BOTH, name = "Album 1")
+        db.playlistDao().setUserHidden(removed, true)
+        db.playlistDao().markPastedSpotifyAlbumRemoved(removed, addedAtMs("2026-10-20T10:00:00Z")!!)
+        listing(listOf(album(1, addedAt = "2026-11-01T09:00:00Z")))
+        coEvery { spotify.getAlbumTracks(any()) } returns songs("One", "Two")
+
+        val step = fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+        val back = db.playlistDao().getById(removed)!!
+        assertEquals(MusicSource.SPOTIFY, back.source)
+        assertFalse(back.userHidden)
+        assertNull("the removal note goes", back.snapshotId)
+        assertEquals("read, for the diff to bring back", listOf(key(1)), snapshots().map { it.sourcePlaylistId })
+        assertTrue(step.note!!, step.note!!.contains("1 you'd removed, saved on Spotify again"))
+    }
+
+    @Test fun `a pasted album removed after its Spotify save stays out`() = runTest {
+        val removed = row(key(1), source = MusicSource.BOTH, name = "Album 1")
+        db.playlistDao().setUserHidden(removed, true)
+        val removedAt = addedAtMs("2026-10-20T10:00:00Z")!!
+        db.playlistDao().markPastedSpotifyAlbumRemoved(removed, removedAt)
+        listing(listOf(album(1, addedAt = "2026-10-11T10:00:00Z")))
+
+        fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
+
+        coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
+        val after = db.playlistDao().getById(removed)!!
+        assertEquals(MusicSource.BOTH, after.source)
+        assertTrue(after.userHidden)
+        assertEquals("removed:$removedAt", after.snapshotId)
+    }
+
+    @Test fun `the removal note and Spotify's save time read back, and nothing else passes for them`() {
+        assertEquals(1234L, removedAtOf("removed:1234"))
+        assertNull(removedAtOf(null))
+        assertNull(removedAtOf("v2|added:x|REFRESH|1|1|abc"))
+        assertNull(removedAtOf("removed:"))
+        assertEquals(1_704_164_645_000L, addedAtMs("2024-01-02T03:04:05Z"))
+        assertNull(addedAtMs("yesterday"))
+        assertNull(addedAtMs(null))
     }
 
     @Test fun `an album taken out of the library isn't read, and stays out`() = runTest {
@@ -396,7 +534,7 @@ class SpotifySavedAlbumsFetcherTest {
     @Test fun `a listing that failed part way hides nothing`() = runTest {
         val gone = row(key(9))
         coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id), 1, 2, 0)
+            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id), 1, 2, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getSavedAlbumsPage(any(), 1, any()) } returns SpotifySavedAlbumsPage.EMPTY
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
@@ -420,11 +558,11 @@ class SpotifySavedAlbumsFetcherTest {
     @Test fun `a library that changed during the walk hides nothing`() = runTest {
         val gone = row(key(9))
         coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id), 1, 2, 0)
+            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id), 1, 2, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getSavedAlbumsPage(any(), 1, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album(2)), listOf(album(2).id), 1, 3, 1)
+            SpotifySavedAlbumsPage(listOf(album(2)), listOf(album(2).id), 1, 3, 1, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getSavedAlbumsPage(any(), 2, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album(3)), listOf(album(3).id), 1, 3, 2)
+            SpotifySavedAlbumsPage(listOf(album(3)), listOf(album(3).id), 1, 3, 2, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
         fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)
@@ -435,7 +573,7 @@ class SpotifySavedAlbumsFetcherTest {
     @Test fun `an album listed but not readable (a pre-release) still counts as saved`() = runTest {
         val preRelease = row(key(2))
         coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id, album(2).id), 2, 2, 0)
+            SpotifySavedAlbumsPage(listOf(album(1)), listOf(album(1).id, album(2).id), 2, 2, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getAlbumTracks(any()) } returns songs("One")
 
         fetcher.fetch(syncId = 1L, syncMode = SyncMode.REFRESH)

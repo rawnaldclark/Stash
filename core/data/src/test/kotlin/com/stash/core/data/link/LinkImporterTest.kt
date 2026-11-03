@@ -197,6 +197,7 @@ class LinkImporterTest {
             PlaylistEntity(name = "Repeater", source = MusicSource.BOTH, sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx", type = PlaylistType.CUSTOM),
         )
         db.playlistDao().setUserHidden(removed, true)
+        db.playlistDao().markPastedSpotifyAlbumRemoved(removed, 1_000L)
         assertEquals("taken out: offered to add again", null, links.existing(spotifyAlbum()))
 
         val added = links.add(spotifyAlbum(), download = false) { _, _ -> }
@@ -206,6 +207,7 @@ class LinkImporterTest {
         assertTrue(row.isActive)
         assertTrue(!row.userHidden)
         assertEquals(MusicSource.BOTH, row.source)
+        assertEquals("saved here again: the removal note goes", null, row.snapshotId)
         assertEquals(2, members(removed).size)
         assertEquals(1, playlistCount())
     }

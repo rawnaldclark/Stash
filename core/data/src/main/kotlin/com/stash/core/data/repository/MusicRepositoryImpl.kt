@@ -515,6 +515,8 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun hidePlaylist(playlistId: Long) {
         playlistDao.setUserHidden(playlistId, true)
+        // A pasted Spotify album notes when: saved on Spotify after this, the sync brings it back.
+        playlistDao.markPastedSpotifyAlbumRemoved(playlistId, System.currentTimeMillis())
     }
 
     override fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> =

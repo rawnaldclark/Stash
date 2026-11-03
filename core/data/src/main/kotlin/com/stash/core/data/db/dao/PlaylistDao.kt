@@ -1159,21 +1159,31 @@ interface PlaylistDao {
     suspend fun findBySourceIds(sourceIds: List<String>): List<PlaylistEntity>
 
     /**
-     * The synced Spotify albums whose songs haven't been read since [readBeforeMs] (`last_synced`,
-     * which only a full read moves), oldest first, at most [limit]: the saved-albums step reads them
-     * again, so a tracklist Spotify corrected comes through in time.
+     * Notes when a pasted Spotify album (source BOTH, `album:spotify:` key) was taken out, in its
+     * otherwise unused `snapshot_id` (the sync stamps only its own rows): `removed:<epoch ms>`. Saved
+     * on Spotify after that moment, the album comes back with the sync
+     * ([com.stash.core.data.sync.removedAtOf]); saved before it, it stays out. Any other row: no-op.
      */
     @Query(
         """
-        SELECT source_id FROM playlists
-        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1 AND user_hidden = 0
-          AND source_id LIKE 'album:spotify:%' AND snapshot_id IS NOT NULL
-          AND (last_synced IS NULL OR last_synced < :readBeforeMs)
-        ORDER BY last_synced ASC, id ASC
-        LIMIT :limit
+        UPDATE playlists SET snapshot_id = 'removed:' || :nowMs
+        WHERE id = :playlistId AND source = 'BOTH' AND source_id LIKE 'album:spotify:%'
         """
     )
-    suspend fun spotifyAlbumsReadBefore(readBeforeMs: Long, limit: Int): List<String>
+    suspend fun markPastedSpotifyAlbumRemoved(playlistId: Long, nowMs: Long): Int
+
+    /**
+     * A removed pasted Spotify album the listener saved on Spotify since: the sync's own from now on
+     * (source SPOTIFY), no longer taken out, its removal note dropped. The diff shows it again when it
+     * mirrors the album's songs.
+     */
+    @Query(
+        """
+        UPDATE playlists SET source = 'SPOTIFY', user_hidden = 0, snapshot_id = NULL
+        WHERE id = :playlistId AND source = 'BOTH' AND source_id LIKE 'album:spotify:%'
+        """
+    )
+    suspend fun returnToSpotifySync(playlistId: Long): Int
 
     /**
      * Makes a synced Spotify album the listener's own save in Stash (source BOTH), as a pasted link

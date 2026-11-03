@@ -22,8 +22,8 @@ import org.robolectric.annotation.Config
 
 /**
  * The queries behind Spotify saved-album sync's review follow-ups (#817): a page's fingerprints in
- * three queries, the albums due for a re-read, what a block and an unblock forget, and a synced
- * album taken into Stash.
+ * three queries, a removed pasted album's note and its return to the sync, what a block and an
+ * unblock forget, and a synced album taken into Stash.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -89,18 +89,28 @@ class PlaylistDaoSpotifyAlbumsTest {
         assertEquals(setOf("album:spotify:A", "album:spotify:B"), found.map { it.sourceId }.toSet())
     }
 
-    @Test fun `the albums due for a re-read are the synced ones read longest ago, oldest first`() = runTest {
-        playlist("album:spotify:old", lastSyncedMs = 1_000)
-        playlist("album:spotify:older", lastSyncedMs = 500)
-        playlist("album:spotify:recent", lastSyncedMs = 9_000)
-        playlist("album:spotify:unstamped", stamp = null, lastSyncedMs = 100)
-        playlist("album:spotify:pasted", source = MusicSource.BOTH, lastSyncedMs = 100)
-        playlist("37iPlaylistNotAnAlbumx", lastSyncedMs = 100)
-        val hidden = playlist("album:spotify:hidden", lastSyncedMs = 100)
-        dao.setUserHidden(hidden, true)
+    @Test fun `a removed pasted Spotify album notes when, and only it goes back to the sync`() = runTest {
+        val pasted = playlist("album:spotify:A", source = MusicSource.BOTH, stamp = null)
+        val synced = playlist("album:spotify:B")
+        val qobuz = playlist("album:qobuz:C", source = MusicSource.BOTH, stamp = null)
+        val own = playlist("custom_1", source = MusicSource.BOTH, stamp = null)
 
-        assertEquals(listOf("album:spotify:older", "album:spotify:old"), dao.spotifyAlbumsReadBefore(5_000, limit = 10))
-        assertEquals(listOf("album:spotify:older"), dao.spotifyAlbumsReadBefore(5_000, limit = 1))
+        assertEquals(1, dao.markPastedSpotifyAlbumRemoved(pasted, 1_234L))
+        for (other in listOf(synced, qobuz, own)) assertEquals(0, dao.markPastedSpotifyAlbumRemoved(other, 1_234L))
+        assertEquals("removed:1234", dao.getSnapshotId(pasted))
+        assertEquals("the sync's stamp stays", "v2|added:x|REFRESH|1|1|abc", dao.getSnapshotId(synced))
+        assertNull(dao.getSnapshotId(qobuz))
+
+        dao.setUserHidden(pasted, true)
+        dao.setUserHidden(qobuz, true)
+        assertEquals(1, dao.returnToSpotifySync(pasted))
+        assertEquals(0, dao.returnToSpotifySync(qobuz))
+        assertEquals(0, dao.returnToSpotifySync(synced))
+        val back = dao.getById(pasted)!!
+        assertEquals(MusicSource.SPOTIFY, back.source)
+        assertEquals(false, back.userHidden)
+        assertNull(back.snapshotId)
+        assertEquals(true, dao.getById(qobuz)!!.userHidden)
     }
 
     @Test fun `a block forgets the playlists' stamps and keeps every album's`() = runTest {

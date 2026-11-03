@@ -88,7 +88,7 @@ class DiffWorkerSpotifySavedAlbumsTest {
         every { syncPreferencesManager.syncSpotifySavedAlbums } returns flowOf(true)
 
         coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns
-            SpotifySavedAlbumsPage(listOf(album), listOf(albumId), 1, 1, 0)
+            SpotifySavedAlbumsPage(listOf(album), listOf(albumId), 1, 1, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         coEvery { spotify.getAlbumTracks(albumId) } returns SpotifyAlbumTracklist(
             tracks = listOf("Intro", "Second Song", "Closer").mapIndexed { i, title ->
                 SpotifyAlbumTrack("FakeTra${i + 1}".padEnd(22, 'x'), title, listOf("Artist 1"), 180_000L + i, false, 1, i + 1)
@@ -152,12 +152,12 @@ class DiffWorkerSpotifySavedAlbumsTest {
         sync()
         val row = db.playlistDao().findBySourceId(key)!!
 
-        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(emptyList(), emptyList(), 0, 0, 0)
+        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(emptyList(), emptyList(), 0, 0, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER)
         sync()
         assertFalse(db.playlistDao().getById(row.id)!!.isActive)
 
         coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(
-            listOf(album.copy(addedAt = "2026-11-02T08:00:00Z")), listOf(albumId), 1, 1, 0,
+            listOf(album.copy(addedAt = "2026-11-02T08:00:00Z")), listOf(albumId), 1, 1, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER,
         )
         sync()
         val back = db.playlistDao().getById(row.id)!!
@@ -180,6 +180,48 @@ class DiffWorkerSpotifySavedAlbumsTest {
         assertFalse(row.isActive)
         assertTrue("not in Library › Albums", db.playlistDao().observeSavedAlbums().first().isEmpty())
         coVerify(exactly = 0) { spotify.getAlbumTracks(any()) }
+    }
+
+    @Test fun `an album read again after 90 days is taken in again, its last_synced moved, then passed on`() = runBlocking {
+        sync()
+        val row = db.playlistDao().findBySourceId(key)!!
+        db.playlistDao().updateLastSynced(row.id, System.currentTimeMillis() - 100L * 24 * 60 * 60 * 1000)
+        val before = System.currentTimeMillis()
+
+        sync()
+
+        coVerify(exactly = 2) { spotify.getAlbumTracks(albumId) }
+        val readAt = db.playlistDao().getById(row.id)!!.lastSynced!!.toEpochMilli()
+        assertTrue("the diff moved last_synced: $readAt", readAt >= before)
+        assertEquals(
+            "stamped again with the same save",
+            "added:2026-10-11T10:00:00Z",
+            SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(row.id))!!.revision,
+        )
+        assertEquals(listOf("Intro", "Second Song", "Closer"), db.playlistDao().getTracksForPlaylist(row.id).map { it.title })
+
+        sync()
+        coVerify(exactly = 2) { spotify.getAlbumTracks(albumId) }
+    }
+
+    @Test fun `a pasted album the listener removed comes back as the sync's when saved on Spotify after that`() = runBlocking {
+        val pasted = db.playlistDao().insert(
+            PlaylistEntity(name = "Album 1", source = MusicSource.BOTH, sourceId = key, type = PlaylistType.CUSTOM),
+        )
+        db.playlistDao().setUserHidden(pasted, true)
+        db.playlistDao().markPastedSpotifyAlbumRemoved(pasted, java.time.Instant.parse("2026-10-20T10:00:00Z").toEpochMilli())
+        coEvery { spotify.getSavedAlbumsPage(any(), 0, any()) } returns SpotifySavedAlbumsPage(
+            listOf(album.copy(addedAt = "2026-11-01T09:00:00Z")), listOf(albumId), 1, 1, 0, sortOrder = SpotifyApiClient.SAVED_ALBUMS_ORDER,
+        )
+
+        sync()
+
+        val row = db.playlistDao().getById(pasted)!!
+        assertEquals(MusicSource.SPOTIFY, row.source)
+        assertTrue(row.isActive)
+        assertFalse(row.userHidden)
+        assertEquals(listOf("Intro", "Second Song", "Closer"), db.playlistDao().getTracksForPlaylist(pasted).map { it.title })
+        assertEquals("in Library › Albums", listOf(pasted), db.playlistDao().observeSavedAlbums().first().map { it.id })
     }
 
     @Test fun `a switched-off YouTube Music album keeps Download mode's skip, as it carries no stamp`() = runBlocking {

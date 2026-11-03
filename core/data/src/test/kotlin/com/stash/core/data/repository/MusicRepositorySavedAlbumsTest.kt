@@ -83,6 +83,25 @@ class MusicRepositorySavedAlbumsTest {
         assertThat(stream.map { it.playlistId }).containsExactly(complete, half, downloading)
     }
 
+    @Test fun `removing a pasted Spotify album notes when, and no other album`() = runTest {
+        val pasted = db.playlistDao().insert(
+            PlaylistEntity(name = "Repeater", source = MusicSource.BOTH, sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx", type = PlaylistType.CUSTOM),
+        )
+        val qobuz = db.playlistDao().insert(
+            PlaylistEntity(name = "13 Songs", source = MusicSource.BOTH, sourceId = "album:qobuz:13", type = PlaylistType.CUSTOM),
+        )
+        val before = System.currentTimeMillis()
+
+        repo().hidePlaylist(pasted)
+        repo().hidePlaylist(qobuz)
+
+        val note = db.playlistDao().getSnapshotId(pasted)!!
+        assertThat(note).startsWith("removed:")
+        assertThat(note.removePrefix("removed:").toLong()).isAtLeast(before)
+        assertThat(db.playlistDao().getSnapshotId(qobuz)).isNull()
+        assertThat(db.playlistDao().getById(pasted)!!.userHidden).isTrue()
+    }
+
     @Test fun `a merged card carries both copies, and a hidden synced copy leaves the tab`() = runTest {
         val synced = album("13 Songs", MusicSource.YOUTUBE, "MPREb_13", fugazi, firstTrackId = 1)
         val saved = album("13 Songs", MusicSource.BOTH, "album:youtube:MPREb_13", fugazi, firstTrackId = 10, dateAdded = 99)

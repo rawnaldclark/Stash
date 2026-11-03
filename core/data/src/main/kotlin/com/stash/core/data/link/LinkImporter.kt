@@ -162,6 +162,8 @@ class LinkImporter @Inject constructor(
             playlists.findBySourceId(preview.sourceId)?.takeIf { !it.isActive }?.let { removed ->
                 playlists.setUserHidden(removed.id, false)
                 playlists.takeIntoStash(removed.id)
+                // Its removal note (or an old sync stamp) goes: it's saved here again.
+                playlists.forgetMirrorStamp(removed.id)
             }
         }
         // An album saved already another way is that album: never a second copy, or a second download.
