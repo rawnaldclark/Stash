@@ -336,8 +336,10 @@ class DatabaseBackupManager @Inject constructor(
         try {
             verifyDatabaseIntegrity(target)
         } catch (e: IllegalStateException) {
+            val detail = e.message?.substringAfter(" [", "")
+                ?.takeIf { it.isNotEmpty() }?.let { " [$it" } ?: ""
             throw IllegalStateException(
-                "Your library failed its integrity check, so no backup was written.", e,
+                "Your library failed its integrity check, so no backup was written.$detail", e,
             )
         }
     }
@@ -445,18 +447,32 @@ class DatabaseBackupManager @Inject constructor(
         val header = ByteArray(SQLITE_MAGIC.size)
         val read = file.inputStream().use { it.read(header) }
         if (read != header.size || !header.contentEquals(SQLITE_MAGIC)) {
-            throw IllegalStateException("The backup database is corrupt and was not restored.")
+            android.util.Log.e("BackupManager", "bad SQLite header on ${file.name} (read=$read)")
+            throw IllegalStateException("The backup database is corrupt and was not restored. [bad file header]")
         }
 
         val db = android.database.sqlite.SQLiteDatabase.openDatabase(
             file.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
         )
         db.use {
-            val ok = it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
-                cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
+            val problems = mutableListOf<String>()
+            var rows = 0
+            it.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                while (cursor.moveToNext() && rows < 20) {
+                    rows++
+                    val row = cursor.getString(0)
+                    if (!row.equals("ok", ignoreCase = true)) problems += row
+                }
             }
-            if (!ok) {
-                throw IllegalStateException("The backup database is corrupt and was not restored.")
+            if (rows == 0) problems += "integrity_check returned no rows"
+            if (problems.isNotEmpty()) {
+                android.util.Log.e(
+                    "BackupManager",
+                    "integrity_check failed on ${file.name}: ${problems.joinToString(" | ")}",
+                )
+                throw IllegalStateException(
+                    "The backup database is corrupt and was not restored. [${problems.first().take(120)}]",
+                )
             }
         }
     }
