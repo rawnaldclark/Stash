@@ -33,6 +33,7 @@ import com.stash.core.model.MusicSource
 import com.stash.core.ui.components.HomeRailCardSize
 import com.stash.core.ui.components.HomeRailCoverShape
 import com.stash.core.ui.components.SourceIndicator
+import com.stash.core.ui.components.playlistSourceMark
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.core.ui.theme.StashTheme
 
@@ -40,14 +41,19 @@ import com.stash.core.ui.theme.StashTheme
  * Premium-Crisp card for one algorithmic mix on a Home rail.
  *
  * A [HomeRailCardSize] column: a square cover under a hairline ring (so a pale
- * cover keeps its edge on the light theme), the source dot, the title, and —
- * for the user's own Stash mixes — a build-state line while their tracks populate.
+ * cover keeps its edge on the light theme), the service dot of a list that comes
+ * from a service, the title, and — for the user's own Stash mixes — a build-state
+ * line while their tracks populate.
  *
  * @param title      Mix name shown under the cover (up to two lines).
  * @param artUrl     Optional cover art; upgraded via [ArtUrlUpgrader]. When null,
  *                   a source-tinted gradient stands in.
- * @param source     Drives the [SourceIndicator] dot. Stash mixes pass a source
- *                   the indicator doesn't draw (no dot), which is intentional.
+ * @param source     The playlist's stored source: tints the artless cover and, with
+ *                   [sourceId], picks the [SourceIndicator] dot ([playlistSourceMark]).
+ *                   A list Stash makes (stored as BOTH: Stash mixes, the listener's
+ *                   playlists, Community follows) shows no dot.
+ * @param sourceId   The playlist's source id: tells a list from a service kept as
+ *                   BOTH (a saved `album:spotify:` album) from one Stash made.
  * @param buildState [MixBuildState.BUILDING]/[MixBuildState.EMPTY] show a status
  *                   line; [MixBuildState.READY] shows none. Streaming mixes are
  *                   always READY.
@@ -64,6 +70,7 @@ fun MixRailCard(
     title: String,
     artUrl: String?,
     source: MusicSource,
+    sourceId: String = "",
     buildState: MixBuildState = MixBuildState.READY,
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
@@ -99,11 +106,13 @@ fun MixRailCard(
             } else {
                 Box(coverModifier.background(sourceGradient(source)))
             }
-            SourceIndicator(
-                source = source,
-                size = 8.dp,
-                modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
-            )
+            playlistSourceMark(source, sourceId)?.let { mark ->
+                SourceIndicator(
+                    source = mark,
+                    size = 8.dp,
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                )
+            }
             if (favorite) {
                 Box(
                     contentAlignment = Alignment.Center,
