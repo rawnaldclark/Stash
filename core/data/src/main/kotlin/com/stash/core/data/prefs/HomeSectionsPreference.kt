@@ -258,7 +258,9 @@ internal val Context.homeSectionsDataStore: DataStore<Preferences> by preference
  * [HomeSection]; [hidden] removes sections from Home without forgetting
  * their position; [showLikedOnHome] adds the merged Liked Songs card to
  * the "Your playlists" section. Defaults preserve today's layout with
- * nothing hidden and no Liked card.
+ * nothing hidden and no Liked card. Also the two other browse choices in
+ * Settings > Appearance: the tab Stash opens on ([startTab]) and Search's
+ * mood and genre tiles ([searchBrowseOn]).
  */
 @Singleton
 class HomeSectionsPreference @Inject constructor(
@@ -268,6 +270,7 @@ class HomeSectionsPreference @Inject constructor(
     private val hiddenKey = stringPreferencesKey("home_sections_hidden")
     private val showLikedKey = booleanPreferencesKey("show_liked_on_home")
     private val communityOnKey = booleanPreferencesKey("community_on")
+    private val searchBrowseKey = booleanPreferencesKey("search_moods_genres")
     /** Set by any write of [orderKey]: a reorder ends the one-time Your listening promotion. */
     private val listeningPromotedKey = booleanPreferencesKey("your_listening_promoted_v1")
 
@@ -292,6 +295,15 @@ class HomeSectionsPreference @Inject constructor(
         prefs[communityOnKey] ?: false
     }.distinctUntilChanged().catch { emit(false) }
 
+    /**
+     * Settings > Appearance > Moods & genres in Search: the Moods & moments and Genres tiles Search shows before
+     * anything is typed (#823). On unless turned off (owner 2026-11-03: not everyone wants them); off, Search opens on
+     * the recent searches as it did before them, and nothing is read for them.
+     */
+    val searchBrowseOn: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
+        prefs[searchBrowseKey] ?: true
+    }.distinctUntilChanged().catch { emit(true) }
+
     // Open Stash on (#428) lives in SharedPreferences, not the DataStore: launch reads it
     // synchronously before the first frame. Waiting on a DataStore read there held the
     // splash ~0.4 s longer on every cold start (Pixel 5, debug).
@@ -309,7 +321,7 @@ class HomeSectionsPreference @Inject constructor(
     /**
      * What Home actually renders: [order] minus [hidden], and minus Community while its switch is off.
      *
-     * All five flows here are deduped (the store re-emits on every unrelated
+     * The DataStore flows here are all deduped (the store re-emits on every unrelated
      * write) and catch to the same default the `map` already uses: they feed
      * `HomeViewModel`'s and `SettingsViewModel`'s `combine` directly, and a
      * DataStore IOException that terminated the chain would leave those screens
@@ -376,6 +388,10 @@ class HomeSectionsPreference @Inject constructor(
             }
             prefs[communityOnKey] = on
         }
+    }
+
+    suspend fun setSearchBrowseOn(on: Boolean) {
+        context.homeSectionsDataStore.edit { prefs -> prefs[searchBrowseKey] = on }
     }
 
     suspend fun setStartTab(tab: StartTab) {
