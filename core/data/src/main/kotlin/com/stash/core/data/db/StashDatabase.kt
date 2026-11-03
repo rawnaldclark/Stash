@@ -1799,6 +1799,9 @@ abstract class StashDatabase : RoomDatabase() {
          */
         val MIGRATION_66_67 = object : Migration(66, 67) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                android.util.Log.i("FtsProbe", "entering 66->67: " + runCatching {
+                    db.query("PRAGMA integrity_check").use { c -> if (c.moveToFirst()) c.getString(0) else "no rows" }
+                }.getOrElse { "threw ${it.message}" })
                 val guessed = mutableListOf<Long>()
                 db.query(
                     "SELECT `id`, `artist`, `title`, `album`, `album_artist` FROM `tracks` " +
@@ -1929,6 +1932,9 @@ abstract class StashDatabase : RoomDatabase() {
         /** SoundCloud recording identity; old rows remain unlinked and keep their audio and ordering. */
         val MIGRATION_74_75 = object : Migration(74, 75) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                android.util.Log.i("FtsProbe", "entering 74->75: " + runCatching {
+                    db.query("PRAGMA integrity_check").use { c -> if (c.moveToFirst()) c.getString(0) else "no rows" }
+                }.getOrElse { "threw ${it.message}" })
                 for (table in listOf("tracks", "remote_track_snapshots")) {
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_id` TEXT")
                     db.execSQL("ALTER TABLE `$table` ADD COLUMN `soundcloud_permalink` TEXT")
@@ -1970,6 +1976,10 @@ abstract class StashDatabase : RoomDatabase() {
                         "FOREIGN KEY(`track_b`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_duplicate_dismissals_track_b` ON `duplicate_dismissals` (`track_b`)")
+                // tracks_fts is derived from `tracks`. Migration 66 -> 67 clears `album` on guessed
+                // rows and leaves the inverted index holding the old album terms, which fails
+                // integrity_check and blocks backup export. Rebuild it from the table.
+                db.execSQL("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild')")
             }
         }
 
