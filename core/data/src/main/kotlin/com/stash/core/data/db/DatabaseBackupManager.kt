@@ -659,7 +659,16 @@ class DatabaseBackupManager @Inject constructor(
                         throw IllegalStateException("The selected backup contains no database.")
                     }
                     verifyDatabaseIntegrity(stagedDb)
-                    if (scope.swapsDatabaseFile) rollStagedDatabaseForward(stagedDb)
+                    if (scope.swapsDatabaseFile) {
+                        rollStagedDatabaseForward(stagedDb)
+                        // TEMP diagnostic: is the index still healthy after the migration chain?
+                        try {
+                            verifyDatabaseIntegrity(stagedDb)
+                            android.util.Log.i("BackupManager", "post-migration integrity: ok")
+                        } catch (e: Exception) {
+                            android.util.Log.e("BackupManager", "post-migration integrity FAILED: ${e.message}")
+                        }
+                    }
                 } catch (e: Exception) {
                     cleanupStaging(stagedDb, stagedDatastore)
                     throw e

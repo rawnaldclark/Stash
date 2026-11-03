@@ -142,6 +142,16 @@ class DuplicateCleanup @Inject constructor(
             "done: ${total.scanned} stub(s) read, ${total.merged} merged, ${total.removed} unused removed, " +
                 "${total.leftForReview} left for Possible duplicates (two files), ${total.skipped} skipped",
         )
+        // TEMP diagnostic: is tracks_fts still consistent after the cleanup?
+        try {
+            database.openHelper.writableDatabase.query("PRAGMA integrity_check").use { c ->
+                val rows = mutableListOf<String>()
+                while (c.moveToNext() && rows.size < 5) rows += c.getString(0)
+                Log.i(TAG, "post-cleanup integrity: ${rows.joinToString(" | ")}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "post-cleanup integrity check failed to run", e)
+        }
         return total
     }
 
