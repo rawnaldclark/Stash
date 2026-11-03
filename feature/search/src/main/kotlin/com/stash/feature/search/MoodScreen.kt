@@ -1,4 +1,4 @@
-package com.stash.feature.home.shelves
+package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,6 +28,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,18 +40,20 @@ import com.stash.core.ui.components.bottomChromePadding
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.MoodPlaylist
-import com.stash.feature.home.R
+import com.stash.data.ytmusic.model.MoodShelf
 
 /**
- * A mood's page, opened from a tile of Home's "Moods & moments": YouTube Music's own rows of playlists for it
- * ("Coffee shop blends", "Unwind + explore"...), in YouTube's order. A playlist opens on the album page
- * ([onOpenPlaylist], as a [AlbumSource.YOUTUBE_PLAYLIST]), which plays and downloads it like an album.
+ * A mood's or a genre's page, opened from a tile of Search's "Moods & moments" or "Genres": YouTube Music's own rows
+ * for it, in YouTube's order. A mood's rows are playlists ("Coffee shop blends", "Unwind + explore"...); a genre's are
+ * Songs, Featured playlists, Community playlists and Albums. A song card plays the Songs row from that song, streamed;
+ * a playlist opens on the album page ([onOpenAlbum], as a [AlbumSource.YOUTUBE_PLAYLIST]), which plays and downloads
+ * it like an album; an album opens as itself.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoodScreen(
     onBack: () -> Unit,
-    onOpenPlaylist: (AlbumSummary) -> Unit,
+    onOpenAlbum: (AlbumSummary) -> Unit,
     viewModel: MoodViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -66,7 +71,7 @@ fun MoodScreen(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
-                // Every playlist here streams: Offline keeps the page closed and says how to open it
+                // Everything here streams: Offline keeps the page closed and says how to open it
                 state.offline -> Text(
                     text = stringResource(R.string.mood_offline),
                     style = MaterialTheme.typography.bodyMedium,
@@ -99,25 +104,60 @@ fun MoodScreen(
                     items(state.shelves) { shelf ->
                         Column {
                             SectionHeader(title = shelf.title)
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 20.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                items(shelf.playlists, key = { it.id }) { playlist ->
-                                    AlbumSquareCard(
-                                        title = playlist.title,
-                                        artist = playlist.subtitle,
-                                        thumbnailUrl = playlist.thumbnailUrl,
-                                        year = null,
-                                        onClick = { onOpenPlaylist(playlist.toAlbumNav()) },
-                                    )
-                                }
-                            }
+                            MoodShelfRow(
+                                shelf = shelf,
+                                onPlaySong = { index -> viewModel.playSongs(shelf.songs, index) },
+                                onOpenAlbum = onOpenAlbum,
+                            )
                             Spacer(Modifier.height(8.dp))
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** One row of the page as cards: its songs, its playlists or its albums, whichever it holds. */
+@Composable
+private fun MoodShelfRow(
+    shelf: MoodShelf,
+    onPlaySong: (index: Int) -> Unit,
+    onOpenAlbum: (AlbumSummary) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // A row holds one kind; the keys are prefixed all the same, so a video id can never meet a playlist id
+        itemsIndexed(shelf.songs, key = { _, song -> "song_${song.videoId}" }) { index, song ->
+            val description = stringResource(R.string.mood_song_card, song.title, song.artist)
+            AlbumSquareCard(
+                title = song.title,
+                artist = song.artist,
+                thumbnailUrl = song.thumbnailUrl,
+                year = null,
+                onClick = { onPlaySong(index) },
+                modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = description },
+            )
+        }
+        items(shelf.playlists, key = { "playlist_${it.id}" }) { playlist ->
+            AlbumSquareCard(
+                title = playlist.title,
+                artist = playlist.subtitle,
+                thumbnailUrl = playlist.thumbnailUrl,
+                year = null,
+                onClick = { onOpenAlbum(playlist.toAlbumNav()) },
+            )
+        }
+        items(shelf.albums, key = { "album_${it.id}" }) { album ->
+            AlbumSquareCard(
+                title = album.title,
+                artist = album.artist,
+                thumbnailUrl = album.thumbnailUrl,
+                year = album.year,
+                onClick = { onOpenAlbum(album) },
+            )
         }
     }
 }

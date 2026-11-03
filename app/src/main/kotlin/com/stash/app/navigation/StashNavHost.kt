@@ -40,7 +40,6 @@ import com.stash.feature.record.mixes.RecordMixesSection
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
-import com.stash.feature.home.shelves.MoodScreen
 import com.stash.feature.library.AlbumDetailScreen
 import com.stash.feature.library.ArtistDetailScreen
 import com.stash.feature.library.LibraryScreen
@@ -51,6 +50,7 @@ import com.stash.feature.nowplaying.sheet.LocalPlayerSheet
 import com.stash.feature.nowplaying.sheet.PlayerSheetAnchor
 import com.stash.feature.search.AlbumDiscoveryScreen
 import com.stash.feature.search.ArtistProfileScreen
+import com.stash.feature.search.MoodScreen
 import com.stash.feature.search.SearchScreen
 import com.stash.feature.settings.BlockedSongsScreen
 import com.stash.feature.settings.SettingsHubScreen
@@ -187,10 +187,6 @@ private fun StashNavGraph(
                 onSeeAllPlaylists = { genre ->
                     navController.navigate(PlaylistBrowseRoute(genre))
                 },
-                // Only from Home itself: two quick taps on two tiles open one page
-                onOpenMood = { tile ->
-                    if (navController.currentBackStackEntry === homeEntry) navController.navigate(MoodRoute(tile.title, tile.params))
-                },
                 onNavigateToMixBuilder = { recipeId ->
                     navController.navigate(MixBuilderRoute(recipeId))
                 },
@@ -251,16 +247,16 @@ private fun StashNavGraph(
         composable<MoodRoute> {
             MoodScreen(
                 onBack = { navController.popBackStack() },
-                // A YouTube Music playlist on the album page, which plays and downloads it like an album
-                onOpenPlaylist = { playlist ->
+                // A YouTube Music playlist on the album page, which plays and downloads it like an album; an album as itself
+                onOpenAlbum = { album ->
                     navController.navigate(
                         SearchAlbumRoute(
-                            browseId = playlist.id,
-                            title = playlist.title,
-                            artist = playlist.artist,
-                            thumbnailUrl = playlist.thumbnailUrl,
-                            year = null,
-                            source = playlist.source,
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                            source = album.source,
                         ),
                     )
                 },
@@ -315,9 +311,13 @@ private fun StashNavGraph(
                 },
             )
         }
-        composable<SearchRoute> {
+        composable<SearchRoute> { searchEntry ->
             SearchScreen(
                 onOpenLink = { navController.navigate(LinkImportRoute(it)) },
+                // Only from Search itself: two quick taps on two tiles open one page
+                onOpenMood = { tile ->
+                    if (navController.currentBackStackEntry === searchEntry) navController.navigate(MoodRoute(tile.title, tile.params))
+                },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },

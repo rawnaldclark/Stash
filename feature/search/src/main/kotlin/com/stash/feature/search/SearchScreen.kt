@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.Link
 import com.stash.core.data.link.MusicLinks
@@ -64,6 +65,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -75,6 +78,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -92,6 +96,7 @@ import com.stash.core.ui.components.ShimmerPlaceholder
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistSummary
+import com.stash.data.ytmusic.model.MoodTile
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
@@ -105,6 +110,13 @@ import com.stash.core.ui.components.bottomChromePadding
  * snackbar host listens for [SearchViewModel.userMessages] so search
  * failures surface as toasts without flipping the entire screen into an
  * error state.
+ *
+ * Before anything is typed (Mochy Music's Search tab): YouTube Music's
+ * "Moods & moments" and "Genres" grids ([MoodBrowseGrid]), a tile opening
+ * its page ([onOpenMood]). The recent searches show once the field is
+ * tapped, and Back from there returns to the grid. So the keyboard doesn't
+ * cover the grid, the field no longer takes focus on the first open while
+ * Online; Offline, where there is no grid, the tab is as it always was.
  */
 @Composable
 fun SearchScreen(
@@ -112,7 +124,10 @@ fun SearchScreen(
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     /** A Spotify / YouTube link typed or pasted into the field: its preview, to add it to the library. */
     onOpenLink: (String) -> Unit = {},
+    /** A tile of "Moods & moments" or "Genres": the app opens its page. */
+    onOpenMood: (MoodTile) -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel(),
+    browseViewModel: MoodBrowseViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val previewState by viewModel.delegate.previewState.collectAsStateWithLifecycle()
@@ -126,6 +141,29 @@ fun SearchScreen(
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val currentPlayingYoutubeId by viewModel.currentPlayingYoutubeId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val browse by browseViewModel.state.collectAsStateWithLifecycle()
+    LifecycleResumeEffect(browseViewModel) {
+        browseViewModel.onResume()
+        onPauseOrDispose {}
+    }
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var fieldFocused by remember { mutableStateOf(false) }
+    // Here, not in the grid: the grid leaves while the field is tapped, and comes back where it was
+    val browseListState = rememberLazyListState()
+
+    // The first open takes the field's focus (and raises the keyboard) only where no grid shows for the keyboard to
+    // cover: Offline, as the tab always did, or Online with no tiles (a fresh install without network, YouTube not
+    // answering). Decided once that's known. Saveable so it survives the back stack: focusing on every return (Back
+    // from an artist, switching back to the tab) popped the keyboard over the very results the user came back to.
+    var autoFocused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(browse.showsGrid) {
+        val showsGrid = browse.showsGrid ?: return@LaunchedEffect
+        if (!autoFocused && !showsGrid && state.query.isEmpty()) focusRequester.requestFocus()
+        autoFocused = true
+    }
+    // Recents (the field tapped) back to the grid, as Back leaves a search on Mochy, Spotify and YouTube Music
+    BackHandler(enabled = fieldFocused && state.query.isEmpty() && browse.hasTiles) { focusManager.clearFocus() }
 
     LaunchedEffect(viewModel) {
         merge(
@@ -150,6 +188,8 @@ fun SearchScreen(
                 onQueryChanged = viewModel::onQueryChanged,
                 onClear = { viewModel.onQueryChanged("") },
                 onSearch = viewModel::onSearchCommitted,
+                focusRequester = focusRequester,
+                onFocusChanged = { fieldFocused = it },
             )
 
             // A pasted link isn't a search: offer what it points to instead of results for its words.
@@ -158,6 +198,22 @@ fun SearchScreen(
                 OpenLinkCard(onClick = { onOpenLink(link) })
                 return@Column
             }
+
+            // Before anything is typed, the field not tapped: the grid. While it isn't known yet whether there is
+            // one, a blank for that moment rather than recents the grid would then replace.
+            val browsing = state.status == SearchStatus.Idle && state.query.isEmpty() && !fieldFocused
+            if (browsing && browse.hasTiles) {
+                MoodBrowseGrid(
+                    moods = browse.moods,
+                    genres = browse.genres,
+                    covers = browse.covers,
+                    onOpen = onOpenMood,
+                    onTilesVisible = browseViewModel::onTilesVisible,
+                    listState = browseListState,
+                )
+                return@Column
+            }
+            if (browsing && browse.showsGrid == null) return@Column
 
             when (val status = state.status) {
                 SearchStatus.Idle -> RecentSearches(
@@ -252,8 +308,9 @@ private fun SearchBar(
     onQueryChanged: (String) -> Unit,
     onClear: () -> Unit,
     onSearch: () -> Unit = {},
+    focusRequester: FocusRequester = remember { FocusRequester() },
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
-    val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     // Command-hero field: a soft neutral tonal pill (plum until D9), the magnifier in the theme's
@@ -267,7 +324,8 @@ private fun SearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
-            .focusRequester(focusRequester),
+            .focusRequester(focusRequester)
+            .onFocusChanged { onFocusChanged(it.isFocused) },
         placeholder = {
             Text(
                 text = "Songs, artists, albums…",
@@ -310,16 +368,6 @@ private fun SearchBar(
             onSearch = { keyboardController?.hide(); onSearch() },
         ),
     )
-
-    // Auto-focus the search field the first time the screen opens, with nothing
-    // typed yet. Saveable so it survives the back stack: focusing on every
-    // return (Back from an artist, switching back to the tab) popped the
-    // keyboard over the very results the user came back to.
-    var autoFocused by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!autoFocused && query.isEmpty()) focusRequester.requestFocus()
-        autoFocused = true
-    }
 }
 
 // ---------------------------------------------------------------------------

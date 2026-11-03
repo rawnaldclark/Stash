@@ -13,8 +13,8 @@ import com.stash.data.ytmusic.model.ArtistPhotoResolution
 import com.stash.data.ytmusic.model.ArtistProfile
 import com.stash.data.ytmusic.model.PagedAlbums
 import com.stash.data.ytmusic.model.ArtistSummary
+import com.stash.data.ytmusic.model.MoodGrids
 import com.stash.data.ytmusic.model.MoodPage
-import com.stash.data.ytmusic.model.MoodTile
 import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.PagedPlaylists
 import com.stash.data.ytmusic.model.PagedTracks
@@ -94,7 +94,7 @@ class YTMusicApiClient @Inject constructor(
         /** Pages of a playlist the album page reads ([getPlaylistAlbum]): about 300 songs, more than a mood's playlists hold. */
         internal const val PLAYLIST_PAGE_MAX_PAGES = 3
 
-        /** YouTube Music's Moods & genres page: the "Moods & moments" and "Genres" grids ([getMoodTiles]). */
+        /** YouTube Music's Moods & genres page: the "Moods & moments" and "Genres" grids ([getMoodGrids]). */
         private const val BROWSE_MOODS_AND_GENRES = "FEmusic_moods_and_genres"
 
         /** Backoff delays (ms) between retries on transient failures. */
@@ -1124,17 +1124,18 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /**
-     * YouTube Music's "Moods & moments" tiles ([MoodsResponseParser.tiles]): one browse of `FEmusic_moods_and_genres`.
-     * Works signed out. Null when YouTube didn't answer; empty when it answered without the grid.
+     * YouTube Music's "Moods & moments" and "Genres" tiles ([MoodsResponseParser.grids]): one browse of
+     * `FEmusic_moods_and_genres` holds both. Works signed out. Null when YouTube didn't answer; a grid is empty when
+     * it answered without it.
      */
-    suspend fun getMoodTiles(): List<MoodTile>? {
+    suspend fun getMoodGrids(): MoodGrids? {
         val response = innerTubeClient.browse(BROWSE_MOODS_AND_GENRES) ?: return null
-        return MoodsResponseParser.tiles(response)
+        return MoodsResponseParser.grids(response)
     }
 
     /**
-     * A mood's page of YouTube Music playlists ([MoodsResponseParser.page]): one browse of
-     * `FEmusic_moods_and_genres_category` with the tile's [params]. Null when YouTube didn't answer.
+     * A mood's or a genre's page ([MoodsResponseParser.page]): one browse of `FEmusic_moods_and_genres_category` with
+     * the tile's [params]. Null when YouTube didn't answer.
      */
     suspend fun getMoodPage(params: String, title: String): MoodPage? {
         val response = innerTubeClient.browse(MoodsResponseParser.CATEGORY_BROWSE_ID, params) ?: return null
