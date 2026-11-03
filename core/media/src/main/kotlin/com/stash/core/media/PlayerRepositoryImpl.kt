@@ -184,6 +184,15 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private var windowPinned: Map<Long, Track> = emptyMap()
 
+    /**
+     * The window outlived the controller that saw it ([onSessionAliveChanged] false, or a new
+     * connection) and nobody has checked the player behind the next one. That player can be the
+     * same one (a client still bound, such as Android Auto, kept the service through its idle stop;
+     * a play landed mid-stop), a new, empty one, or one holding another queue: [confirmWindow]
+     * decides. Until then the window neither slides nor reshuffles. Main thread.
+     */
+    private var windowUnconfirmed = false
+
     /** Shuffles a big queue's whole order. Internal: tests seed it. */
     internal var windowRandom: kotlin.random.Random = kotlin.random.Random.Default
 
@@ -233,9 +242,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // entry-point automatically informs the player; future delete methods
         // don't have to remember to call a helper in the ViewModel layer.
         //
-        // A sweep emits one id per deleted row: the ids already waiting are taken together, so a big
-        // queue's whole order ([queueWindow]) is rebuilt once per batch, not once per song (each a
-        // pass over 72k ids on the main thread).
+        // A sweep emits one id per deleted row: they are evicted in batches, so a big queue's whole
+        // order ([queueWindow]) is rebuilt once per batch, not once per song (each a pass over 72k
+        // ids on the main thread).
         val deletions = kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.UNLIMITED)
         scope.launch {
             musicRepository.trackDeletions.collect { deletions.send(it) }
@@ -243,8 +252,21 @@ class PlayerRepositoryImpl @Inject constructor(
         scope.launch {
             for (first in deletions) {
                 val batch = LinkedHashSet<Long>().apply { add(first) }
-                while (true) batch += deletions.tryReceive().getOrNull() ?: break
-                if (batch.size == 1) evictTrackFromQueue(first) else evictTracksFromQueue(batch)
+                // A big queue's eviction is a pass over its whole order, and a sweep emits its ids one
+                // at a time between file deletes: gather the sweep first (until it pauses for
+                // DELETION_BATCH_QUIET_MS, at most DELETION_BATCH_MAX_MS). An ordinary queue is
+                // small, so its evictions stay immediate.
+                if (queueWindow != null) {
+                    val since = android.os.SystemClock.uptimeMillis()
+                    do {
+                        delay(DELETION_BATCH_QUIET_MS)
+                        var more = false
+                        while (true) batch += deletions.tryReceive().getOrNull()?.also { more = true } ?: break
+                    } while (more && android.os.SystemClock.uptimeMillis() - since < DELETION_BATCH_MAX_MS)
+                } else {
+                    while (true) batch += deletions.tryReceive().getOrNull() ?: break
+                }
+                evictTracksFromQueue(batch)
             }
         }
 
@@ -294,6 +316,7 @@ class PlayerRepositoryImpl @Inject constructor(
                 // load the batch into the empty player as a new queue, saved over the user's.
                 if (listenTogetherOwnsQueue || ghostSession) return@collect
                 queueWindow?.let { window ->
+                    if (windowUnconfirmed) return@collect // confirmWindow decides first
                     // Another controller replaced the queue (Android Auto, a media button's resumption):
                     // window mode ends instead of showing "and 72,000 more" for a queue that isn't this one.
                     val controller = controllerDeferred
@@ -580,7 +603,7 @@ class PlayerRepositoryImpl @Inject constructor(
      *
      * Every queue mutation path must keep it in sync: [setQueue] (replace),
      * [shuffleLibrary] (replace), [growLibraryShuffle] (append), [addNext]
-     * (insert), [addToQueue] (append), [evictTrackFromQueue] (remove),
+     * (insert), [addToQueue] (append), [evictTracksFromQueue] (remove),
      * [playTrack]/[playFromStreamInner] (single/clear). A missed path
      * degrades gracefully: the display falls back to the timeline whenever
      * the playing track isn't in this list.
@@ -972,9 +995,14 @@ class PlayerRepositoryImpl @Inject constructor(
 
         if (!play && listenTogether?.active?.value == true) return // a session started while the items were built
         val hadWindow = queueWindow != null
+        // The service stopped under a big queue and this is its restore (the saved queue is the
+        // window, slot for slot): the window, and with it the whole order, comes back too.
+        val takenBack = queueWindow?.takeIf { windowUnconfirmed && built.window == null && holdsWindow(items, it) }
+        val window = built.window ?: takenBack
         currentQueueTracks = built.queueTracks
-        queueWindow = built.window
-        windowPinned = built.pinned
+        queueWindow = window
+        windowUnconfirmed = false
+        if (takenBack == null) windowPinned = built.pinned
         // A paused restore must not inherit the session's playWhenReady = true: a later prepare (the
         // defensive one in onMediaItemTransition, a media button) would then start the music.
         if (!play) controller.playWhenReady = false
@@ -983,7 +1011,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // is on): Media3 must walk it as it is. Asked before the items go, so it covers them.
         // Asked every time a window is made (the service may be a new one); "off" only when one
         // ends, so ordinary queues send nothing.
-        if (built.window != null || hadWindow) setKeepTimelineOrder(controller, built.window != null)
+        if (window != null || hadWindow) setKeepTimelineOrder(controller, window != null)
         controller.setMediaItems(items, built.startSlot, startPositionMs)
         // After Listen Together the user's queue comes back paused and unprepared, like the cold-start
         // ghost: nothing resolves until they press play (Media3 prepares an idle player on play).
@@ -992,11 +1020,11 @@ class PlayerRepositoryImpl @Inject constructor(
             controller.play()
         }
 
-        val window = built.window
         if (window == null) {
             Log.i(TAG, "setQueue: full timeline, ${items.size} items, start=${built.startSlot}")
         } else {
-            Log.i(TAG, "setQueue: window of ${items.size} of ${window.total} songs, start=${built.startSlot}, shuffled=${window.isShuffled}")
+            val how = if (takenBack != null) " (taken back after the service stopped)" else ""
+            Log.i(TAG, "setQueue: window of ${items.size} of ${window.total} songs$how, start=${built.startSlot}, shuffled=${window.isShuffled}")
             // Shuffle went on or off while the window was built (its rewindow stood aside for the
             // build): the window follows it now, once this build is no longer in flight.
             if (controller.shuffleModeEnabled != window.isShuffled) scope.launch { rewindowForShuffle() }
@@ -1671,7 +1699,7 @@ class PlayerRepositoryImpl @Inject constructor(
     /** One step of [slideWindow]; false when there is nothing (more) to do. */
     private suspend fun slideWindowOnce(): Boolean {
         val window = queueWindow ?: return false
-        if (listenTogetherOwnsQueue || ghostSession || queueBuildsInFlight.get() > 0) return false
+        if (listenTogetherOwnsQueue || ghostSession || windowUnconfirmed || queueBuildsInFlight.get() > 0) return false
         val controller = controllerDeferred ?: return false
         if (!windowInSync(controller, window)) {
             dropWindow("the player's queue changed under it")
@@ -1695,9 +1723,12 @@ class PlayerRepositoryImpl @Inject constructor(
             if (drop > 0) applyWindowDrop(controller, window, 0 until drop)
             val want = minOf(window.forwardGap(repeatAll), QUEUE_WINDOW_SIZE - window.count)
             if (want <= 0) return drop > 0
+            val version = window.version
             val loaded = loadWindowSongs(window, window.forwardPositions(want)) ?: return false
             // Revalidate after the IO hop: a new queue, an edit or another controller may have moved on.
-            if (queueWindow !== window || !windowInSync(controller, window)) return false
+            if (queueWindow !== window || windowUnconfirmed || !windowInSync(controller, window)) return false
+            // The same window, changed meanwhile (a deletion): the positions read are stale. Again.
+            if (window.version != version) return true
             val found = BooleanArray(loaded.size) { loaded[it] != null }
             val songs = loaded.filterNotNull()
             window.admitForward(found)
@@ -1712,8 +1743,10 @@ class PlayerRepositoryImpl @Inject constructor(
         if (cur < QUEUE_WINDOW_LOW_WATER_BEHIND && backwardGap > 0) {
             val want = minOf(backwardGap, QUEUE_WINDOW_BEHIND - cur)
             if (want <= 0) return false
+            val version = window.version
             val loaded = loadWindowSongs(window, window.backwardPositions(want)) ?: return false
-            if (queueWindow !== window || !windowInSync(controller, window)) return false
+            if (queueWindow !== window || windowUnconfirmed || !windowInSync(controller, window)) return false
+            if (window.version != version) return true // see the forward slide
             val found = BooleanArray(loaded.size) { loaded[it] != null }
             val songs = loaded.filterNotNull()
             window.admitBackward(found)
@@ -1732,7 +1765,7 @@ class PlayerRepositoryImpl @Inject constructor(
     /** The big queue's window when the player still holds it; else null (and window mode ends). */
     private fun activeWindow(controller: MediaController): QueueWindow? {
         val window = queueWindow ?: return null
-        if (listenTogetherOwnsQueue) return null
+        if (listenTogetherOwnsQueue || windowUnconfirmed) return null
         if (windowInSync(controller, window)) return window
         dropWindow("the player's queue changed under it")
         return null
@@ -1831,8 +1864,42 @@ class PlayerRepositoryImpl @Inject constructor(
         Log.i(TAG, "window: dropped, $reason")
         queueWindow = null
         windowPinned = emptyMap()
+        windowUnconfirmed = false
         return true
     }
+
+    /**
+     * Checks an unconfirmed window ([windowUnconfirmed]) against the player behind [controller]:
+     * - still the window (the service lived on): the service is asked again to keep the timeline
+     *   order (it was told to drop it when it stopped), and the window follows a shuffle the car
+     *   or a headset turned on or off meanwhile;
+     * - something else (a new service that another controller filled): window mode ends, telling
+     *   the service so;
+     * - empty (a new service): nothing yet. The ghost's restore loads the saved window, which takes
+     *   the whole order back ([setQueueBuilding]); anything else replaces it.
+     */
+    private fun confirmWindow(controller: MediaController) {
+        if (!windowUnconfirmed || listenTogetherOwnsQueue) return
+        val window = queueWindow ?: run { windowUnconfirmed = false; return }
+        if (controller.mediaItemCount == 0) return
+        windowUnconfirmed = false
+        if (!holdsWindow(controller, window)) {
+            dropWindow("a new connection found another queue")
+            return
+        }
+        Log.i(TAG, "window: the player still holds it after a new connection, $window")
+        setKeepTimelineOrder(controller, true)
+        if (controller.shuffleModeEnabled != window.isShuffled) scope.launch { rewindowForShuffle() }
+    }
+
+    /** [windowInSync], song by song: for taking a window back, where a near miss must not pass. */
+    private fun holdsWindow(controller: MediaController, window: QueueWindow): Boolean =
+        controller.mediaItemCount == window.count &&
+            (0 until window.count).all { controller.getMediaItemAt(it).mediaId == window.idAtSlot(it).toString() }
+
+    /** [holdsWindow] for items about to be set. */
+    private fun holdsWindow(items: List<MediaItem>, window: QueueWindow): Boolean =
+        items.size == window.count && items.indices.all { items[it].mediaId == window.idAtSlot(it).toString() }
 
     /**
      * A big queue's timeline is already in play order, shuffle or not: asks the service to keep
@@ -1897,7 +1964,7 @@ class PlayerRepositoryImpl @Inject constructor(
     /** One try of [rewindowForShuffle]; true when there is nothing (more) to do. */
     private suspend fun rewindowOnce(): Boolean {
         val window = queueWindow ?: return true
-        if (listenTogetherOwnsQueue || ghostSession || queueBuildsInFlight.get() > 0) return true
+        if (listenTogetherOwnsQueue || ghostSession || windowUnconfirmed || queueBuildsInFlight.get() > 0) return true
         val controller = controllerDeferred ?: return true
         val shuffle = controller.shuffleModeEnabled
         if (shuffle == window.isShuffled) return true
@@ -1907,6 +1974,7 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         val cur = controller.currentMediaItemIndex
         if (cur < 0) return true
+        val version = window.version
         val target = if (shuffle) window.shuffledFrom(cur, windowRandom) else window.unshuffledFrom(cur)
         val repeatAll = controller.repeatMode == Player.REPEAT_MODE_ALL
         // Shuffle on starts a new order at this song: nothing came before it.
@@ -1915,9 +1983,11 @@ class PlayerRepositoryImpl @Inject constructor(
             .coerceAtLeast(0)
         val ahead = loadWindowSongs(target, target.forwardPositions(aheadWant)) ?: return true
         val behind = loadWindowSongs(target, target.backwardPositions(behindWant)) ?: return true
-        if (queueWindow !== window || !windowInSync(controller, window) || controller.shuffleModeEnabled != shuffle) {
-            return queueWindow !== window
+        if (queueWindow !== window || windowUnconfirmed || !windowInSync(controller, window) || controller.shuffleModeEnabled != shuffle) {
+            return queueWindow !== window || windowUnconfirmed
         }
+        // The window changed during the read (a deletion): the new order was made from the old one. Again.
+        if (window.version != version) return false
         val curNow = controller.currentMediaItemIndex
         if (curNow != cur) return false // playback moved during the read: again, around the new song
         target.admitForward(BooleanArray(ahead.size) { ahead[it] != null })
@@ -2853,27 +2923,6 @@ class PlayerRepositoryImpl @Inject constructor(
      * No-op when the controller hasn't been initialised yet (user deleted
      * a track before ever hitting play this session).
      */
-    private fun evictTrackFromQueue(deletedTrackId: Long) {
-        evictFromGhost(setOf(deletedTrackId))
-        val controller = controllerDeferred ?: return
-        // A big queue: every copy leaves the whole order; the window's ones leave the player below.
-        queueWindow?.removeIds(setOf(deletedTrackId))
-        currentQueueTracks = currentQueueTracks.filterNot { it.id == deletedTrackId }
-        var removedFromTimeline = false
-        for (i in controller.mediaItemCount - 1 downTo 0) {
-            val item = controller.getMediaItemAt(i)
-            val queuedId = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)
-                ?: item.mediaId.toLongOrNull()
-            if (queuedId == deletedTrackId) {
-                controller.removeMediaItem(i)
-                removedFromTimeline = true
-            }
-        }
-        // A logical-only eviction fires no controller event — refresh the
-        // published queue ourselves so the sheet drops the deleted track.
-        if (!removedFromTimeline) updateState(controller)
-    }
-
     /** The ghost is state only: a deleted ghost track must not linger on screen. */
     private fun evictFromGhost(deletedIds: Set<Long>) {
         if (!ghostSession) return
@@ -2891,7 +2940,11 @@ class PlayerRepositoryImpl @Inject constructor(
         }
     }
 
-    /** [evictTrackFromQueue] for several deleted songs at once (a sweep's batch): one pass each. */
+    /**
+     * Songs deleted from the library leave the ghost and the queue: every copy, in the player or (a
+     * big queue) anywhere in the whole order. Without this ExoPlayer's open file handle kept a
+     * deleted song playing. A batch costs one pass over the order, however many songs it holds.
+     */
     private fun evictTracksFromQueue(deletedIds: Set<Long>) {
         evictFromGhost(deletedIds)
         evictFromQueue(deletedIds)
@@ -2900,7 +2953,7 @@ class PlayerRepositoryImpl @Inject constructor(
     override fun evictFromQueue(trackIds: Set<Long>) {
         if (trackIds.isEmpty()) return
         val controller = controllerDeferred ?: return
-        queueWindow?.removeIds(trackIds) // as in evictTrackFromQueue
+        queueWindow?.removeIds(trackIds) // a big queue: every copy leaves the whole order; the window's leave the player below
         currentQueueTracks = currentQueueTracks.filterNot { it.id in trackIds }
         fun hit(i: Int): Boolean {
             val item = controller.getMediaItemAt(i)
@@ -3324,17 +3377,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 // re-assert the session speed on connect.
                 if (_playbackSpeed.value != 1f) controller.setPlaybackSpeed(_playbackSpeed.value)
                 controllerDeferred = controller
-                // A new connection while a big queue is set (the session's death already ends it,
-                // see onSessionAliveChanged): a player still holding the window is asked to keep
-                // the timeline order again, as the service may be a new one; a player holding
-                // something else ends window mode.
-                queueWindow?.let { window ->
-                    if (windowInSync(controller, window)) {
-                        setKeepTimelineOrder(controller, true)
-                    } else {
-                        dropWindow("a new connection found another queue")
-                    }
-                }
+                // A new connection while a big queue is set: the service behind it may be a new one,
+                // so the first sync below checks the player before the window plays on (confirmWindow).
+                if (queueWindow != null) windowUnconfirmed = true
                 // Sync initial state
                 updateState(controller)
                 controller
@@ -3366,17 +3411,17 @@ class PlayerRepositoryImpl @Inject constructor(
         } else {
             controllerDeferred?.release()
             controllerDeferred = null
-            // A big queue's window dies with the service's player: the service that comes back is a
-            // new one, empty and keeping no order. The ghost comes back as the saved window, as
-            // after the app is killed.
-            val hadWindow = forgetWindow("the service stopped")
+            // A big queue's window is kept, unconfirmed: the service may live on (a client still
+            // bound, such as Android Auto, holds it through stopSelf) with the window in its player
+            // and its keep-order flag on, or come back new and empty. The next connection decides
+            // (confirmWindow); a restore into a new player takes the window back (setQueueBuilding).
+            if (queueWindow != null) windowUnconfirmed = true
             // #462: the kept snapshot becomes a paused ghost, or the reconnect's first
             // (empty) refresh wipes it and the app reopens to "Not Playing".
             if (_playerState.value.currentTrack != null) {
                 ghostSession = true
                 // No spinner either: a snapshot taken mid-load would keep play disabled.
                 _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false, playWhenReady = false)
-                    .let { if (hadWindow) it.copy(queueSongsBefore = 0, queueSongsAfter = 0, queuePosition = -1) else it }
             }
         }
     }
@@ -3988,6 +4033,7 @@ class PlayerRepositoryImpl @Inject constructor(
             if (controller.mediaItemCount == 0) return
             ghostSession = false
         }
+        confirmWindow(controller)
         // Artwork upgrade for the playing track: see [maybeStampCurrentItemQuality].
         // It is now id-guarded so it runs once per track — its extras write does
         // NOT survive the session round-trip, so it can never self-disarm on the
@@ -4206,6 +4252,12 @@ class PlayerRepositoryImpl @Inject constructor(
 
         /** Most steps one window slide or reshuffle takes before waiting for the next player event. */
         private const val MAX_SLIDE_PASSES = 20
+
+        /** See the deletion batcher in init: a sweep that pauses this long has ended. */
+        private const val DELETION_BATCH_QUIET_MS = 250L
+
+        /** ... and a long one is evicted in parts this long apart. */
+        private const val DELETION_BATCH_MAX_MS = 2_000L
 
         /** How many tracks each grow appends. Big enough to outpace a fast-skipping user. */
         private const val LIBRARY_SHUFFLE_GROW_BATCH = 50

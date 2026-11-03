@@ -331,12 +331,12 @@ class PlayerRepositoryBigQueueTest {
         assertThat(fake.keepsTimelineOrder).isTrue()
         assertThat(repo.playerState.value.queueSongsAfter).isGreaterThan(0)
 
-        // Paused past the idle stop: the service stops, and the window goes with its player.
+        // Paused past the idle stop: the service stops and a new one, empty, comes back.
         repo.onSessionAliveChanged(false)
-        assertThat(repo.queueWindow).isNull()
-        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(0) // the ghost is the saved window, no more
         fake.newService()
         repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller) // a fresh connection's first sync
 
         // Another tap in Songs, then shuffle on: the new service must keep the window's order too.
         repo.setQueue(library(2_000), startIndex = 700)
@@ -345,6 +345,117 @@ class PlayerRepositoryBigQueueTest {
         repo.rewindowForShuffle()
         assertThat(fake.walksTimelineOrder()).isTrue()
         assertThat(fake.ids()).isEqualTo(repo.queueWindow!!.windowIds().toList())
+    }
+
+    @Test
+    fun `a client still bound keeps the service through the idle stop, and the window plays on in order`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 0)
+        repo.updateState(controller)
+        val window = repo.queueWindow!!
+        assertThat(fake.keepsTimelineOrder).isTrue()
+
+        // performIdleStop: the service drops the request and stops itself, but Android Auto's
+        // binding keeps it, and its player with the window.
+        fake.keepsTimelineOrder = false
+        repo.onSessionAliveChanged(false)
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(repo.playerState.value.queueSongsAfter).isGreaterThan(0) // the paused ghost still counts the rest
+
+        // In the car: shuffle on, then play. The service announces itself again; the app reconnects.
+        fake.shuffle = true
+        repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller) // a fresh connection's first sync
+
+        assertThat(fake.keepsTimelineOrder).isTrue()
+        awaitMain { repo.queueWindow?.isShuffled == true } // shuffled over all 2,000, not 500
+        assertThat(repo.queueWindow!!.total).isEqualTo(2_000)
+        assertThat(fake.walksTimelineOrder()).isTrue()
+        assertThat(fake.ids()).isEqualTo(repo.queueWindow!!.windowIds().toList())
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queueSongsAfter).isGreaterThan(0)
+    }
+
+    @Test
+    fun `a new service that another controller filled ends window mode, and the next queue shuffles as Media3 does`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 0)
+        repo.updateState(controller)
+        repo.onSessionAliveChanged(false)
+        fake.newService()
+        repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller)
+        assertThat(repo.queueWindow).isNotNull() // an empty new player: the ghost's restore may still take it back
+
+        // A media button's resumption, or the car, fills the new player with another queue.
+        fake.items += (1L..300L).map { MediaItem.Builder().setMediaId("${90_000 + it}").build() }
+        repo.updateState(controller)
+
+        assertThat(repo.queueWindow).isNull()
+        val keep = fake.customCommands.last { it.first == StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER }
+        assertThat(keep.second.getBoolean(StashPlaybackService.EXTRA_KEEP_TIMELINE_ORDER)).isFalse()
+        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(0)
+
+        // An ordinary queue afterwards: Media3 shuffles it its own way.
+        fake.shuffle = true
+        repo.setQueue(library(300), startIndex = 0)
+        assertThat(fake.keepsTimelineOrder).isFalse()
+    }
+
+    @Test
+    fun `after the service idle-stops, playing the ghost takes the whole order back`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 700)
+        repo.updateState(controller)
+        val window = repo.queueWindow!!
+        // What the position saves left: the window, slot for slot.
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = fake.currentId(), positionMs = 0L, queueIndex = fake.cur, queueTrackIds = fake.ids(),
+            isShuffled = false, repeatMode = RepeatMode.OFF, source = com.stash.core.model.PlaybackSource.Library,
+        )
+
+        repo.onSessionAliveChanged(false)
+        fake.newService()
+        repo.controllerDeferred = controller
+        repo.onSessionAliveChanged(true)
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queueSongsAfter).isGreaterThan(0) // the ghost still counts the rest
+
+        assertThat(repo.loadRestoredQueue()).isTrue()
+
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(window.total).isEqualTo(2_000)
+        assertThat(fake.ids()).isEqualTo(window.windowIds().toList())
+        assertThat(fake.currentId()).isEqualTo(701L)
+        assertThat(fake.keepsTimelineOrder).isTrue() // asked of the new service
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queuePosition).isEqualTo(700)
+        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(2_000 - 1 - 700 - (fake.items.size - 1 - fake.cur))
+    }
+
+    @Test
+    fun `a song deleted while a slide reads its songs leaves the order, and the slide still lines up`() = runTest {
+        repo.setQueue(library(5_000), startIndex = 0)
+        val window = repo.queueWindow!!
+        var deletedDuringRead = false
+        coEvery { trackDao.getByIds(any()) } answers {
+            val ids = firstArg<List<Long>>()
+            // The orphan sweep's eviction lands while the slide is on IO: in place, on the same window.
+            if (!deletedDuringRead && 600L in ids) {
+                deletedDuringRead = true
+                window.removeIds(setOf(600L))
+            }
+            ids.reversed().map { TrackEntity(id = it, title = "T$it", artist = "A", isStreamable = true) }
+        }
+        fake.cur = 460 // near the window's end
+
+        repo.slideWindow()
+
+        assertThat(deletedDuringRead).isTrue()
+        assertThat(repo.queueWindow).isSameInstanceAs(window)
+        assertThat(window.total).isEqualTo(4_999)
+        assertThat(fake.ids()).doesNotContain(600L)
+        assertThat(fake.ids()).isEqualTo(window.windowIds().toList())
+        assertThat(fake.ids().last()).isGreaterThan(600L)
     }
 
     @Test
@@ -392,11 +503,19 @@ class PlayerRepositoryBigQueueTest {
         repo.setQueue(library(5_000), startIndex = 0)
         val gone = (3_001L..3_200L).toList() + listOf(10L)
         awaitMain { deletions.subscriptionCount.value > 0 } // the repository is listening
-
-        gone.forEach { assertThat(deletions.tryEmit(it)).isTrue() } // one per row, as the orphan sweep does
-
-        awaitMain { repo.queueWindow!!.total == 5_000 - gone.size }
         val w = repo.queueWindow!!
+        val version = w.version
+        val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+
+        // One id per row, a few ms apart, as the orphan sweep emits them between file deletes.
+        gone.forEach {
+            assertThat(deletions.tryEmit(it)).isTrue()
+            looper.idleFor(java.time.Duration.ofMillis(4))
+        }
+        looper.idleFor(java.time.Duration.ofSeconds(3))
+
+        assertThat(w.total).isEqualTo(5_000 - gone.size)
+        assertThat(w.version - version).isEqualTo(1) // one pass over the whole order for the whole sweep
         assertThat((0 until w.total).map { w.idAtPosition(it) }).containsNoneIn(gone)
         assertThat(fake.ids()).doesNotContain(10L)
         assertThat(fake.ids()).isEqualTo(w.windowIds().toList())

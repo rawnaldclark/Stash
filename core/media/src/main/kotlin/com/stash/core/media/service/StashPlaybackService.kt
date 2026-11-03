@@ -1497,6 +1497,10 @@ class StashPlaybackService : MediaLibraryService() {
             "StashPlayback",
             "idle-stop: no playback for ${IDLE_STOP_TIMEOUT_MS}ms — stopping service",
         )
+        // A client still bound (Android Auto) keeps this instance alive through stopSelf(): the
+        // app's big queue asks again on its next connection if the player still holds it (see
+        // PlayerRepositoryImpl.confirmWindow); until then nothing here keeps a queue unshuffled.
+        keepTimelineOrderOn = false
         playbackSessionBus.onServiceStopping()
         // The widget keeps the song, paused; its buttons now start the service again.
         widgetFeed?.stopped()
@@ -2839,15 +2843,6 @@ class StashPlaybackService : MediaLibraryService() {
 private val LOCAL_URI_SCHEMES = setOf("file", "content", "android.resource")
 
 /**
- * The custom session commands a connecting controller gets. Shuffle, repeat
- * and stopping the sleep timer are transport, like the player commands every
- * controller has. A like (a Room write that can mirror to the user's Spotify
- * or YouTube account), the shuffle order and leaving a Listen Together room
- * change Stash's own state, so only a [privileged] controller (see onConnect)
- * gets them. Play next under shuffle puts a MediaItem, URI and all, straight onto
- * the player, so only this app itself ([ownApp]) gets it.
- */
-/**
  * Under shuffle, sets [player]'s shuffle order back to the identity when its walk isn't the
  * timeline's own order (0, 1, 2, ...), as a big queue's window needs
  * ([StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER]). True when it set one. Main thread.
@@ -2869,6 +2864,15 @@ internal fun keepShuffleWalkInTimelineOrder(player: androidx.media3.exoplayer.Ex
     return true
 }
 
+/**
+ * The custom session commands a connecting controller gets. Shuffle, repeat
+ * and stopping the sleep timer are transport, like the player commands every
+ * controller has. A like (a Room write that can mirror to the user's Spotify
+ * or YouTube account), the shuffle order and leaving a Listen Together room
+ * change Stash's own state, so only a [privileged] controller (see onConnect)
+ * gets them. Play next under shuffle puts a MediaItem, URI and all, straight onto
+ * the player, so only this app itself ([ownApp]) gets it.
+ */
 internal fun grantedCustomActions(privileged: Boolean, ownApp: Boolean = false): List<String> = buildList {
     add(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE)
     add(StashPlaybackService.COMMAND_CYCLE_REPEAT)

@@ -48,8 +48,9 @@ data class PlayerState(
     /**
      * A queue too big for the player (a whole library) is held as a window of [queue]: these are
      * its songs before and after that window, in play order. Both 0 for every other queue, which
-     * [queue] holds whole. "12 of 72,593" is `queueSongsBefore + currentIndex + 1` of
-     * `queueSongsBefore + queue.size + queueSongsAfter`.
+     * [queue] holds whole. The whole queue is `queueSongsBefore + queue.size + queueSongsAfter`
+     * songs; the playing one's place in it is [queuePosition] (after a repeat-all wrap the window
+     * holds the order's end and its beginning, so `queueSongsBefore` is 0 and no longer counts it).
      */
     val queueSongsBefore: Int = 0,
     val queueSongsAfter: Int = 0,
