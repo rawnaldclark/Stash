@@ -22,4 +22,17 @@
     <string name="artist_release_mixtape">Mixtape</string>
     <!-- The kind of release, after its year on a card ("2021 • Compilation"): a collection of earlier songs. -->
     <string name="artist_release_compilation">Compilation</string>
+    <!-- Search tab, before anything is typed: YouTube Music's two grids of tiles, each tile opening a page of music for it. -->
+    <!-- The heading of the grid of moods and occasions (Chill, Commute, Workout...). -->
+    <string name="search_moods">Moods &amp; moments</string>
+    <!-- The heading of the grid of music genres (Pop, Rock, Hip-hop...). -->
+    <string name="search_genres">Genres</string>
+    <!-- A mood's or a genre's page (a tile opened): YouTube Music's songs, playlists and albums for it. -->
+    <string name="mood_back">Back</string>
+    <string name="mood_load_failed">Couldn’t load this page. Check your connection and try again.</string>
+    <string name="mood_retry">Try again</string>
+    <string name="mood_empty">Nothing to play here right now.</string>
+    <string name="mood_offline">Offline plays only your downloads. Switch to Online to browse moods and genres.</string>
+    <!-- TalkBack for a song card on a genre's page. %1$s is its title, %2$s its artist. -->
+    <string name="mood_song_card">%1$s by %2$s</string>
 </resources>

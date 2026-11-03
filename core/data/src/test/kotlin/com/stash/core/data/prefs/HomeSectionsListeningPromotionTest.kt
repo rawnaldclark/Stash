@@ -41,7 +41,7 @@ class HomeSectionsListeningPromotionTest {
         val pref = HomeSectionsPreference(context)
         val order = pref.order.first()
         // Discover stays on top; Your record, its mixes and Your listening go directly under it, Because you like,
-        // New from your artists and Moods & moments above the catalogs.
+        // New from your artists above the catalogs.
         assertEquals(
             listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING),
             order.take(4),
@@ -49,7 +49,7 @@ class HomeSectionsListeningPromotionTest {
         assertEquals(
             listOf(
                 HomeSection.MADE_FOR_YOU, HomeSection.RADIOS, HomeSection.YOUR_PLAYLISTS,
-                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.NEW_RELEASES,
                 HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS, HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
             ),
             order.drop(4),
@@ -140,9 +140,9 @@ class HomeSectionsListeningPromotionTest {
         assertEquals(
             listOf(
                 HomeSection.DISCOVER, HomeSection.RECORD_MIXES, HomeSection.YOUR_LISTENING, HomeSection.YOUR_PLAYLISTS,
-                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS, HomeSection.NEW_RELEASES,
+                HomeSection.BECAUSE_YOU_LIKE, HomeSection.NEW_FROM_ARTISTS, HomeSection.NEW_RELEASES,
             ),
-            pref.visibleSections.first().take(8),
+            pref.visibleSections.first().take(7),
         )
         // Hidden stays hidden: nothing is rewritten on read
         assertEquals(setOf(HomeSection.YOUR_RECORD), pref.hidden.first())
@@ -156,5 +156,24 @@ class HomeSectionsListeningPromotionTest {
         val visible = pref.visibleSections.first()
         assertEquals(listOf(HomeSection.DISCOVER, HomeSection.YOUR_RECORD, HomeSection.YOUR_LISTENING), visible.take(3))
         assertFalse(HomeSection.RECORD_MIXES in visible)
+    }
+
+    @Test fun `moods and moments, saved by a test build before it moved to Search, is read as gone and written out`() = runTest {
+        // A build with the Home shelf saved it in the order and hid it
+        context.homeSectionsDataStore.edit {
+            it[orderKey] = "discover,moods,your_record,radios"
+            it[hiddenKey] = "moods,radios"
+            it[promotedKey] = true
+        }
+        val pref = HomeSectionsPreference(context)
+        assertTrue(pref.order.first().none { it.key == "moods" })
+        assertEquals(setOf(HomeSection.RADIOS), pref.hidden.first())
+        assertTrue(pref.visibleSections.first().none { it.key == "moods" })
+        // The next writes of either leave it out: nothing keeps reading or carrying it
+        pref.move(HomeSection.RADIOS, up = true)
+        pref.setHidden(HomeSection.TOP_ALBUMS, hide = true)
+        val stored = context.homeSectionsDataStore.data.first()
+        assertFalse("moods" in stored[orderKey]!!.split(","))
+        assertEquals(setOf("radios", "top_albums"), stored[hiddenKey]!!.split(",").toSet())
     }
 }

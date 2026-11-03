@@ -70,17 +70,13 @@ enum class HomeSection(val key: String) {
     NEW_FROM_ARTISTS("new_from_artists"),
 
     /**
-     * "Moods & moments": YouTube Music's mood tiles, each opening a page of its playlists
-     * ([com.stash.core.data.home.MoodsRepository]). Works signed out and with no history, so a brand-new Home has music
-     * two taps away. Streaming content, hidden in Offline mode. Under New from your artists, above the catalogs.
-     */
-    MOODS("moods"),
-
-    /**
      * "Because you like ‹song›": two or three rows, each YouTube Music's related songs for a song you play a lot
      * lately or liked lately ([com.stash.core.data.home.BecauseYouLike]). Streaming content, hidden in Offline mode,
      * and nothing until there's listening to seed from. Home's most personal discovery after Daily Discover, so it
-     * leads the new shelves: above New from your artists and Moods & moments, above the catalogs.
+     * leads the new shelves: above New from your artists, above the catalogs.
+     *
+     * (Moods & moments, key "moods", was a Home section in unreleased builds; it moved to the Search tab before it
+     * shipped. A saved order or hidden set still naming it drops it through [fromKey], and the next write leaves it out.)
      */
     BECAUSE_YOU_LIKE("because_you_like");
 
@@ -131,11 +127,9 @@ fun resolveHomeSectionOrder(savedKeys: List<String>): List<HomeSection> {
 internal val ADDED_SECTION_ANCHORS: List<Pair<HomeSection, List<HomeSection>>> = listOf(
     // Your artists' new releases right above everyone's (Qobuz's New Releases, then the other catalogs)
     HomeSection.NEW_FROM_ARTISTS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
-    // The way into music without any history, above the catalogs (so under New from your artists when both are new)
-    HomeSection.MOODS to listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
     // Above the other new shelves wherever they are (a saved order may hold them already), else above the catalogs
     HomeSection.BECAUSE_YOU_LIKE to listOf(
-        HomeSection.NEW_FROM_ARTISTS, HomeSection.MOODS,
+        HomeSection.NEW_FROM_ARTISTS,
         HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
     ),
 )

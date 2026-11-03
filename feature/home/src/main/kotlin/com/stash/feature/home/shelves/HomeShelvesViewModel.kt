@@ -7,7 +7,6 @@ import com.stash.core.data.home.BecauseRow
 import com.stash.core.data.home.BecauseYouLike
 import com.stash.core.data.home.BecauseYouLikeRepository
 import com.stash.core.data.home.HomeShownSongs
-import com.stash.core.data.home.MoodsRepository
 import com.stash.core.data.home.NewFromArtistsRepository
 import com.stash.core.data.prefs.HomeSection
 import com.stash.core.data.prefs.HomeSectionsPreference
@@ -18,7 +17,6 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumSummary
-import com.stash.data.ytmusic.model.MoodTile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -39,15 +37,13 @@ import javax.inject.Inject
 data class HomeShelvesState(
     /** "New from your artists": album and single cards, newest first. */
     val newFromArtists: List<AlbumSummary> = emptyList(),
-    /** "Moods & moments": YouTube Music's mood tiles, each opening its page of playlists. */
-    val moods: List<MoodTile> = emptyList(),
     /** "Because you like ‹song›": each row's songs, none another Home shelf shows ([HomeShownSongs]). */
     val becauseYouLike: List<BecauseRow> = emptyList(),
 )
 
 /**
  * Home's own shelves, apart from [com.stash.feature.home.HomeViewModel] (which carries the Discover hero, the synced
- * mixes and the Qobuz rows): "New from your artists", "Moods & moments" and "Because you like". Each is built by its
+ * mixes and the Qobuz rows): "New from your artists" and "Because you like". Each is built by its
  * repository (at most once a day; "Because you like" also after enough listening) and saved to a file.
  *
  * A shelf loads only while it's wanted: Streaming on and its section shown in Settings > Home layout, the rule the
@@ -60,7 +56,6 @@ data class HomeShelvesState(
 @HiltViewModel
 class HomeShelvesViewModel @Inject constructor(
     newFromArtistsRepository: NewFromArtistsRepository,
-    moodsRepository: MoodsRepository,
     becauseYouLikeRepository: BecauseYouLikeRepository,
     shownSongs: HomeShownSongs,
     private val playerRepository: PlayerRepository,
@@ -70,9 +65,8 @@ class HomeShelvesViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val newFromArtists = Shelf(HomeSection.NEW_FROM_ARTISTS, newFromArtistsRepository::cached, newFromArtistsRepository::shelf)
-    private val moods = Shelf(HomeSection.MOODS, moodsRepository::cached, moodsRepository::tiles)
     private val because = Shelf(HomeSection.BECAUSE_YOU_LIKE, becauseYouLikeRepository::cached, becauseYouLikeRepository::shelf)
-    private val shelves = listOf(newFromArtists, moods, because)
+    private val shelves = listOf(newFromArtists, because)
 
     /** The shelf sections Home shows now: none in Offline mode, else the visible ones. */
     private val wanted: StateFlow<Set<HomeSection>> =
@@ -83,13 +77,11 @@ class HomeShelvesViewModel @Inject constructor(
     val state: StateFlow<HomeShelvesState> = combine(
         wanted,
         newFromArtists.items,
-        moods.items,
         because.items,
         shownSongs.keys,
-    ) { shown, releases, tiles, rows, elsewhere ->
+    ) { shown, releases, rows, elsewhere ->
         HomeShelvesState(
             newFromArtists = if (HomeSection.NEW_FROM_ARTISTS in shown) releases else emptyList(),
-            moods = if (HomeSection.MOODS in shown) tiles else emptyList(),
             // The record's mixes are made apart from these rows: their songs leave the rows while they show
             becauseYouLike = if (HomeSection.BECAUSE_YOU_LIKE in shown) {
                 BecauseYouLike.without(rows, elsewhere.values.flatten().toSet())

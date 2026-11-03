@@ -1,0 +1,160 @@
+package com.stash.feature.search
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.stash.core.data.home.MoodsRepository
+import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.media.streaming.ConnectivityMonitor
+import com.stash.data.ytmusic.model.MoodTile
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * What Search shows before anything is typed: YouTube Music's [moods] and [genres] tiles, each with the [covers]
+ * saved or read for it (by params). [online] is null until the Online/Offline switch is read; Offline there are no
+ * tiles. [loaded] turns true once the saved tiles were read, so Search draws neither the grid nor the recents in its
+ * place before it knows which one it has.
+ */
+data class MoodBrowseState(
+    val online: Boolean? = null,
+    val loaded: Boolean = false,
+    val moods: List<MoodTile> = emptyList(),
+    val genres: List<MoodTile> = emptyList(),
+    val covers: Map<String, List<String>> = emptyMap(),
+) {
+    /** The grid has something to show: Online, with tiles in either section. */
+    val hasTiles: Boolean get() = online == true && (moods.isNotEmpty() || genres.isNotEmpty())
+}
+
+/**
+ * Search's "Moods & moments" and "Genres" ([MoodsRepository]): the saved tiles painted at once, then today's (a new
+ * read once a day), and each tile's two covers. Covers are asked for only for the tiles on screen ([onTilesVisible],
+ * Mochy Music's per-tile request), and only once a visit: a tile whose read failed or was held by Data saver is asked
+ * again on the next return to Search ([onResume]), never in a loop. The repository keeps them a week, reads two pages
+ * at a time and leaves a metered network alone while Data saver is on.
+ *
+ * Follows the Online/Offline switch like Home's shelves: Offline there are no tiles, nothing is read, and what was
+ * being read stops at once. With no network the saved tiles show and no read is tried.
+ */
+@HiltViewModel
+class MoodBrowseViewModel @Inject constructor(
+    private val moods: MoodsRepository,
+    streamingPreference: StreamingPreference,
+    private val connectivity: ConnectivityMonitor,
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(MoodBrowseState())
+    val state: StateFlow<MoodBrowseState> = _state.asStateFlow()
+
+    private var loading: Job? = null
+    private val coverReads = HashMap<String, Job>()
+
+    /** Tiles answered this visit, and tiles whose read failed or was held: neither is asked again until [onResume]. */
+    private val answered = HashSet<String>()
+    private val held = HashSet<String>()
+
+    /** The tiles on screen now, by params: a read whose turn comes after its tile left the screen isn't made. */
+    @Volatile private var onScreen: Set<String> = emptySet()
+    private var lastVisible: List<MoodTile> = emptyList()
+
+    init {
+        viewModelScope.launch {
+            streamingPreference.enabled.distinctUntilChanged().collect { online ->
+                if (online) {
+                    _state.update { it.copy(online = true) }
+                    refresh()
+                    onTilesVisible(lastVisible)
+                } else {
+                    stop()
+                    _state.value = MoodBrowseState(online = false)
+                }
+            }
+        }
+    }
+
+    /**
+     * Search is back in view: today's tiles if a read is due, and the tiles on screen asked for their covers again
+     * (the saved ones answer without a request until they're a week old).
+     */
+    fun onResume() {
+        if (_state.value.online != true) return
+        answered.clear()
+        held.clear()
+        refresh()
+        onTilesVisible(lastVisible)
+    }
+
+    /** The tiles on screen changed (Search's grid reports them once a scroll settles): read the covers they lack. */
+    fun onTilesVisible(tiles: List<MoodTile>) {
+        lastVisible = tiles
+        onScreen = tiles.mapTo(HashSet()) { it.params }
+        if (_state.value.online != true) return
+        for (tile in tiles) {
+            val params = tile.params
+            if (params in answered || params in held || coverReads[params]?.isActive == true) continue
+            coverReads[params] = viewModelScope.launch {
+                val urls = try {
+                    // No network: nothing is spent, and the tile is asked again on the next visit
+                    if (connectivity.isConnected()) moods.covers(params, tile.title) { params in onScreen } else null
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "covers of '${tile.title}' failed: ${e.message}")
+                    null
+                }
+                when {
+                    urls != null -> {
+                        answered += params
+                        if (_state.value.covers[params] != urls) _state.update { it.copy(covers = it.covers + (params to urls)) }
+                    }
+                    // Still on screen, so it wasn't scrolled away: no answer, or Data saver. Next visit.
+                    params in onScreen -> held += params
+                }
+            }
+        }
+    }
+
+    private fun refresh() {
+        if (loading?.isActive == true) return
+        loading = viewModelScope.launch {
+            try {
+                if (!_state.value.loaded) {
+                    // Yesterday's tiles and every saved cover paint at once; today's replace them when read
+                    val saved = moods.cached()
+                    val covers = moods.savedCovers()
+                    _state.update { it.copy(loaded = true, moods = saved.moods, genres = saved.genres, covers = covers) }
+                }
+                if (!connectivity.isConnected()) return@launch
+                val grids = moods.grids()
+                _state.update { it.copy(moods = grids.moods, genres = grids.genres) }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                // The grid is a nicety: whatever went wrong, Search keeps what it shows
+                Log.w(TAG, "moods and genres failed: ${e.message}")
+                _state.update { it.copy(loaded = true) }
+            }
+        }
+    }
+
+    /** Offline: everything being read stops, and the next Online starts the visit afresh. */
+    private fun stop() {
+        loading?.cancel()
+        loading = null
+        coverReads.values.forEach { it.cancel() }
+        coverReads.clear()
+        answered.clear()
+        held.clear()
+    }
+
+    private companion object {
+        const val TAG = "MoodBrowse"
+    }
+}

@@ -5,7 +5,6 @@ import com.stash.core.data.home.BecauseRow
 import com.stash.core.data.home.BecauseSeed
 import com.stash.core.data.home.BecauseYouLikeRepository
 import com.stash.core.data.home.HomeShownSongs
-import com.stash.core.data.home.MoodsRepository
 import com.stash.core.data.home.NewFromArtistsRepository
 import com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS
 import com.stash.core.data.prefs.HomeSection
@@ -17,7 +16,6 @@ import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import com.stash.data.ytmusic.model.AlbumSummary
-import com.stash.data.ytmusic.model.MoodTile
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -63,11 +61,6 @@ class HomeShelvesViewModelTest {
         onBlocking { cached() } doReturn saved
         onBlocking { shelf() } doReturn releases
     }
-    private val tiles = listOf(MoodTile("Chill", "ggMPOg1uX1JOQWZFeDByc2Jm", 4288988671L))
-    private val moods = mock<MoodsRepository> {
-        onBlocking { cached() } doReturn emptyList()
-        onBlocking { tiles() } doReturn tiles
-    }
     private fun song(n: Int) = TrackSummary("v$n", "Song $n", "Artist $n", "Album $n", 200.0, "https://art/$n", musicVideoType = "ATV")
     private val row = BecauseRow(BecauseSeed("seed", "Africa", "Toto", null), (1..6).map(::song))
     private val because = mock<BecauseYouLikeRepository> {
@@ -80,7 +73,7 @@ class HomeShelvesViewModelTest {
     private val sections = mock<HomeSectionsPreference> { on { visibleSections } doReturn visible }
     private val connectivity = mock<ConnectivityMonitor> { on { isConnected() } doReturn true }
 
-    private fun viewModel() = HomeShelvesViewModel(newFromArtists, moods, because, shown, player, streaming, sections, connectivity)
+    private fun viewModel() = HomeShelvesViewModel(newFromArtists, because, shown, player, streaming, sections, connectivity)
 
     @Test
     fun `shown and online, the row is built and shown`() = runTest(dispatcher) {
@@ -147,17 +140,17 @@ class HomeShelvesViewModelTest {
     }
 
     @Test
-    fun `each shelf follows its own section - moods hidden costs nothing while your artists' row loads`() = runTest(dispatcher) {
-        visible.value = DEFAULT_HOME_SECTIONS - HomeSection.MOODS
+    fun `each shelf follows its own section - because you like hidden costs nothing while your artists' row loads`() = runTest(dispatcher) {
+        visible.value = DEFAULT_HOME_SECTIONS - HomeSection.BECAUSE_YOU_LIKE
         val vm = viewModel()
         backgroundScope.launch { vm.state.collect {} }
         runCurrent()
         assertThat(vm.state.value.newFromArtists).isEqualTo(releases)
-        assertThat(vm.state.value.moods).isEmpty()
-        verifyBlocking(moods, never()) { tiles() }
+        assertThat(vm.state.value.becauseYouLike).isEmpty()
+        verifyBlocking(because, never()) { shelf() }
         visible.value = DEFAULT_HOME_SECTIONS
         runCurrent()
-        assertThat(vm.state.value.moods).isEqualTo(tiles)
+        assertThat(vm.state.value.becauseYouLike).containsExactly(row)
         // Only the shelf that was turned on loads again
         verifyBlocking(newFromArtists, times(1)) { shelf() }
     }
