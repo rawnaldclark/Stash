@@ -13,9 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -69,8 +67,6 @@ internal data class VotePillColors(
     val litIcon: Color,
     val litText: Color,
     val inertIcon: Color,
-    /** The "Listen first" hint. */
-    val hint: Color,
 )
 
 internal object VotePillDefaults {
@@ -93,7 +89,6 @@ internal object VotePillDefaults {
             litIcon = chrome.accent,
             litText = chrome.ink,
             inertIcon = ext.textTertiary.copy(alpha = 0.38f),
-            hint = ext.textTertiary,
         )
     }
 
@@ -108,7 +103,6 @@ internal object VotePillDefaults {
         litIcon = Color.White,
         litText = Color.White,
         inertIcon = Color.White.copy(alpha = 0.3f),
-        hint = Color.White.copy(alpha = HERO_POSTER_ALPHA),
     )
 }
 
@@ -120,9 +114,11 @@ internal object VotePillDefaults {
  * Taps on the pill never reach the row or card under it: a near miss on an arrow shouldn't open the post. Your own
  * post's pill takes no taps at all, so a tap on it opens the post as before.
  *
- * Until the post is heard (30 s played from it, contract 2026-11-03) the arrows that would vote are dimmed and a small
- * "Listen first" shows under the pill, or beside it ([hintBeside]). A dimmed arrow still takes the tap and hands it to
- * [onVote], whose view model shows why instead of voting; your current vote stays lit and can be taken back.
+ * Until the post is heard (30 s played from it, contract 2026-11-03) the arrows that would vote are dimmed, and that's
+ * all the pill shows: no words by it, so a heard post's pill and a waiting one's are the same size and nothing moves when
+ * it wakes. A dimmed arrow still takes the tap and hands it to [onVote], whose view model says why instead of voting
+ * ("Play it for 30 seconds to vote."); TalkBack hears "Listen first" on the arrow itself. Your current vote stays lit
+ * and can be taken back. (Owner, 2026-11-03: a "Listen first" under every post's pill said what the tap already does.)
  *
  * @param compact the smaller pill of list rows and rail cards (32 dp high instead of 36, narrower arrows), so the
  *   title beside it keeps its room.
@@ -134,35 +130,8 @@ internal fun VotePill(
     modifier: Modifier = Modifier,
     colors: VotePillColors = VotePillDefaults.onPage(),
     compact: Boolean = false,
-    hintBeside: Boolean = false,
 ) {
-    val ui = post.votePill()
-    if (!ui.listenFirst) {
-        Pill(ui, onVote, modifier, colors, compact)
-        return
-    }
-    val hint: @Composable () -> Unit = {
-        Text(
-            stringResource(R.string.community_listen_first),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.hint,
-            maxLines = 1,
-            softWrap = false,
-            // The dimmed arrows say it to TalkBack.
-            modifier = Modifier.clearAndSetSemantics { },
-        )
-    }
-    if (hintBeside) {
-        Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill(ui, onVote, Modifier, colors, compact)
-            hint()
-        }
-    } else {
-        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Pill(ui, onVote, Modifier, colors, compact)
-            hint()
-        }
-    }
+    Pill(post.votePill(), onVote, modifier, colors, compact)
 }
 
 /** The capsule itself: ▲ score ▼. */
@@ -182,6 +151,7 @@ private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colo
             .then(if (ui.enabled) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // What a dimmed arrow says to TalkBack, after its name (the screen shows no words for it).
         val waiting = stringResource(R.string.community_listen_first)
         PillArrow(
             icon = Icons.Rounded.KeyboardArrowUp,
