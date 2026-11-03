@@ -148,6 +148,7 @@ internal fun settingsSearchIndex(s: (Int) -> String): List<SettingsSearchEntry> 
         SettingsSearchEntry(s(R.string.settings_ui_scale_title), SettingsPage.APPEARANCE, listOf("display size", "text size", "font", "zoom", "bigger", "smaller")),
         SettingsSearchEntry(s(R.string.settings_ambient_motion_title), SettingsPage.APPEARANCE, listOf("now playing", "animation", "background", "battery", "ambient style")),
         SettingsSearchEntry(s(R.string.settings_open_stash_on_section), SettingsPage.APPEARANCE, listOf("start tab", "launch", "startup")),
+        SettingsSearchEntry(s(R.string.settings_language_title), SettingsPage.APPEARANCE, listOf("locale", "translation", "translate")),
         // About & Help
         SettingsSearchEntry(s(R.string.settings_check_updates), SettingsPage.ABOUT, listOf("update", "version", "new version")),
         SettingsSearchEntry(s(R.string.settings_share_diagnostics_bundle), SettingsPage.ABOUT, listOf("logs", "bug", "report", "problem")),
