@@ -152,7 +152,7 @@ internal fun CommunityPost.heardFrom(heardHere: Set<String>): CommunityPost = if
 internal fun CommunityPost.needsListen(tapped: Int): Boolean = !heard && nextVote(tapped) != 0
 
 /** A line about a vote, instead of the usual message: why it didn't go. */
-internal enum class VoteNote {
+enum class VoteNote {
     /** "Play it for 30 seconds to vote": a dimmed arrow was tapped, or the Worker has no listen on record. */
     LISTEN_FIRST,
 
