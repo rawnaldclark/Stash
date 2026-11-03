@@ -11,7 +11,7 @@ import javax.inject.Singleton
 
 /**
  * Where Home's own shelves keep what they last built: one small JSON file each under `filesDir/home_shelves/`
- * ("New from your artists", "Moods & moments", "Because you like"). Files, not the main database: a shelf is
+ * ("New from your artists", "Because you like", and Search's "Moods & moments" and "Genres" with their covers). Files, not the main database: a shelf is
  * written whole and read whole, nothing is queried by column, and the Room version must not change for a cache.
  *
  * Writes go to a temp file renamed over the old one, so a crash mid-write leaves the previous version. An

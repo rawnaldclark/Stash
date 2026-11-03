@@ -8,6 +8,7 @@ import com.stash.data.ytmusic.model.MoodPlaylist
 import com.stash.data.ytmusic.model.MoodShelf
 import com.stash.data.ytmusic.model.MoodTile
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -109,7 +110,7 @@ internal object MoodsResponseParser {
      * One row of a page as the kind it holds most of: a genre's "Songs" row is all song rows, every other row all
      * cards. A row with no song, playlist or album on it is null.
      */
-    private fun shelf(title: String, items: JsonArray): MoodShelf? {
+    private fun shelf(title: String, items: List<JsonElement>): MoodShelf? {
         val songIds = HashSet<String>()
         val songs = items.mapNotNull { item ->
             item.asObject()?.get("musicResponsiveListItemRenderer")?.asObject()?.let { parseTrackSummaryFromListItem(it) }
