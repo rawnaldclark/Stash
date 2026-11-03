@@ -627,6 +627,51 @@ interface PlaylistDao {
         return mirrorDigestOf(trackCount, mirrorRows(playlistId), mirrorCopies(playlistId))
     }
 
+    /**
+     * [mirrorDigest] for several playlists in three queries, whatever their number (the saved-albums
+     * step asks for a listing page's at once). The same fingerprint, playlist by playlist; one that
+     * doesn't exist has none. Keep [playlistIds] to a page (SQLite binds at most 999).
+     */
+    @Transaction
+    suspend fun mirrorDigests(playlistIds: List<Long>): Map<Long, String> {
+        if (playlistIds.isEmpty()) return emptyMap()
+        val rows = mirrorRowsOf(playlistIds).groupBy { it.playlistId }
+        val copies = mirrorCopiesOf(playlistIds).groupBy({ it.playlistId }, { it.toMirrorCopy() })
+        return trackCountsOf(playlistIds).associate { p ->
+            p.id to mirrorDigestOf(p.trackCount, rows[p.id].orEmpty(), copies[p.id].orEmpty())
+        }
+    }
+
+    @Query("SELECT id, track_count AS trackCount FROM playlists WHERE id IN (:playlistIds)")
+    suspend fun trackCountsOf(playlistIds: List<Long>): List<PlaylistTrackCount>
+
+    /** [mirrorRows] for several playlists. */
+    @Query(
+        """
+        SELECT pt.playlist_id AS playlistId, pt.track_id AS trackId, pt.position AS position,
+               (pt.removed_at IS NOT NULL) AS removed, pt.locally_added AS locallyAdded,
+               EXISTS(SELECT 1 FROM download_queue dq WHERE dq.track_id = pt.track_id AND dq.status = 'FAILED') AS failed
+        FROM playlist_tracks pt WHERE pt.playlist_id IN (:playlistIds)
+        """
+    )
+    suspend fun mirrorRowsOf(playlistIds: List<Long>): List<MirrorRow>
+
+    /** [mirrorCopies] for several playlists, each copy with the playlist it was found for. */
+    @Query(
+        """
+        SELECT DISTINCT pt.playlist_id AS playlistId,
+               c.id AS id, c.is_downloaded AS downloaded, (c.file_path IS NOT NULL) AS hasFile,
+               c.match_dismissed AS matchDismissed, c.title AS title,
+               c.spotify_uri AS spotifyUri, c.youtube_id AS youtubeId
+        FROM playlist_tracks pt
+        INNER JOIN tracks m ON m.id = pt.track_id
+        INNER JOIN tracks c ON c.canonical_title = m.canonical_title AND c.canonical_artist = m.canonical_artist
+        WHERE pt.playlist_id IN (:playlistIds)
+          AND TRIM(m.canonical_title) != '' AND TRIM(m.canonical_artist) != ''
+        """
+    )
+    suspend fun mirrorCopiesOf(playlistIds: List<Long>): List<PlaylistMirrorCopy>
+
     /** Every Spotify playlist that carries a mirror stamp: the fetch step's skip candidates. */
     @Query(
         """
@@ -697,6 +742,40 @@ interface PlaylistDao {
      */
     @Query("UPDATE playlists SET snapshot_id = NULL WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL")
     suspend fun forgetSpotifyMirrorStamps(): Int
+
+    /**
+     * [forgetSpotifyMirrorStamps] for the Spotify playlists only, never a synced saved album: what a
+     * block needs. A saved album that held the blocked song loses that row, so its own stamp stops
+     * matching anyway; a twin of the song in another album is hidden by the album queries, which
+     * leave blocked songs out. Thousands of albums aren't read again for one block.
+     */
+    @Query("UPDATE playlists SET snapshot_id = NULL WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL AND source_id NOT LIKE 'album:%'")
+    suspend fun forgetSpotifyPlaylistStamps(): Int
+
+    /**
+     * After an unblock: forgets the stamps of the synced Spotify albums the song may belong to, so
+     * the next sync reads them and gives the song back. Its rows were deleted with the block, so the
+     * album is found by what's left: one holding a song by the same act ([canonicalArtist]), or one
+     * holding fewer songs than Spotify gave it. Any other album keeps its stamp.
+     */
+    @Query(
+        """
+        UPDATE playlists SET snapshot_id = NULL
+        WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL AND source_id LIKE 'album:spotify:%'
+          AND (
+              id IN (
+                  SELECT pt.playlist_id FROM playlist_tracks pt
+                  INNER JOIN tracks t ON t.id = pt.track_id
+                  WHERE t.canonical_artist = :canonicalArtist
+              )
+              OR track_count > (
+                  SELECT COUNT(*) FROM playlist_tracks pt
+                  WHERE pt.playlist_id = playlists.id AND pt.removed_at IS NULL
+              )
+          )
+        """
+    )
+    suspend fun forgetSpotifyAlbumStampsForUnblock(canonicalArtist: String): Int
 
     /** All active playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 ORDER BY name ASC")
@@ -1074,6 +1153,35 @@ interface PlaylistDao {
             .map { it.id }
         return deactivateByIdsChunked(missing)
     }
+
+    /** Every row keyed one of [sourceIds] (at most one each: the key is unique). Keep it to a page. */
+    @Query("SELECT * FROM playlists WHERE source_id IN (:sourceIds)")
+    suspend fun findBySourceIds(sourceIds: List<String>): List<PlaylistEntity>
+
+    /**
+     * The synced Spotify albums whose songs haven't been read since [readBeforeMs] (`last_synced`,
+     * which only a full read moves), oldest first, at most [limit]: the saved-albums step reads them
+     * again, so a tracklist Spotify corrected comes through in time.
+     */
+    @Query(
+        """
+        SELECT source_id FROM playlists
+        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1 AND user_hidden = 0
+          AND source_id LIKE 'album:spotify:%' AND snapshot_id IS NOT NULL
+          AND (last_synced IS NULL OR last_synced < :readBeforeMs)
+        ORDER BY last_synced ASC, id ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun spotifyAlbumsReadBefore(readBeforeMs: Long, limit: Int): List<String>
+
+    /**
+     * Makes a synced Spotify album the listener's own save in Stash (source BOTH), as a pasted link
+     * makes one: the sync then never reads, rewrites or hides it. For a link pasted for an album the
+     * listener had taken out, or that the sync had hidden.
+     */
+    @Query("UPDATE playlists SET source = 'BOTH' WHERE id = :playlistId AND source = 'SPOTIFY'")
+    suspend fun takeIntoStash(playlistId: Long): Int
 
     /**
      * Active saved albums synced from the Spotify account: source SPOTIFY, keyed `album:spotify:<id>`
