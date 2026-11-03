@@ -379,7 +379,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.latest.isNotEmpty()) {
-        item(key = "latest_header") { SectionHeader(title = stringResource(R.string.artist_latest_releases)) }
+        // One new release is "Latest release", more "Latest releases".
+        val latestTitle = if (state.latest.size == 1) R.string.artist_latest_release else R.string.artist_latest_releases
+        item(key = "latest_header") { SectionHeader(title = stringResource(latestTitle)) }
         item(key = "latest") { LatestReleasesRow(releases = state.latest, onClick = onNavigateToAlbum) }
     }
     if (state.albums.isNotEmpty()) {

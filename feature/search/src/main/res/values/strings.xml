@@ -10,8 +10,10 @@
         <item quantity="one">%1$s monthly listener</item>
         <item quantity="other">%1$s monthly listeners</item>
     </plurals>
-    <!-- Artist page: the heading of the row of the artist's newest releases (albums, singles and EPs together, newest first), under Popular. -->
+    <!-- Artist page: the heading of the row of the artist's new releases (albums, singles and EPs out in the last two months, newest first), under Popular. Shown only when there are two or more; one has artist_latest_release. -->
     <string name="artist_latest_releases">Latest releases</string>
+    <!-- Artist page: the same heading when the artist has one new release (out in the last two months). -->
+    <string name="artist_latest_release">Latest release</string>
     <!-- Artist page, Latest releases row: the kind of release, after its year on a card ("2021 • Album"). -->
     <string name="artist_release_album">Album</string>
     <!-- The kind of release, after its year on a card ("2021 • Single"): a single, one or two songs. -->

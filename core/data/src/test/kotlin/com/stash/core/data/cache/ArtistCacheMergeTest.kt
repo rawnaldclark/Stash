@@ -7,9 +7,11 @@ import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistProfile
+import com.stash.data.ytmusic.model.DatedRelease
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.eq
@@ -87,6 +89,28 @@ class ArtistCacheMergeTest {
             )
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `the merge's release dates reach the Fresh profile, and are cached with it`() = runTest {
+        val dao = InMemoryDao()
+        val api = mock<YTMusicApiClient>()
+        whenever(api.getArtist(eq("UC1"))).thenReturn(mkProfile("UC1", "QOTSA"))
+        val dates = listOf(DatedRelease("Perfecth", "2026-10-30", 9))
+        val cache = ArtistCache(
+            dao, api, now = { 1_000L },
+            supplement = FakeSupplement { a, s -> MergedDiscography(a, s, releaseDates = dates) },
+        )
+
+        cache.get("UC1").test {
+            // The YouTube profile paints first, without dates: the row waits for the merge.
+            assertEquals(emptyList<DatedRelease>(), awaitItem().profile.releaseDates)
+            assertEquals(dates, awaitItem().profile.releaseDates)
+            cancelAndIgnoreRemainingEvents()
+        }
+        // A cache hit (a fresh ArtistCache: the disk row alone) still has them.
+        val reread = ArtistCache(dao, api, now = { 2_000L })
+        assertEquals(dates, reread.get("UC1").first().profile.releaseDates)
     }
 
     @Test

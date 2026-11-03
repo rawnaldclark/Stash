@@ -1,8 +1,17 @@
 package com.stash.core.data.discography
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.DatedRelease
 
-/** Result of merging Qobuz albums into a YT discography. */
-data class MergedDiscography(val albums: List<AlbumSummary>, val singles: List<AlbumSummary>)
+/**
+ * Result of merging Qobuz albums into a YT discography. [releaseDates] are the artist's releases
+ * that can still be new ([newReleaseYears]), dated to the day, for the artist page's Latest
+ * releases row; empty when the supplement found nothing (or wasn't sure of the artist).
+ */
+data class MergedDiscography(
+    val albums: List<AlbumSummary>,
+    val singles: List<AlbumSummary>,
+    val releaseDates: List<DatedRelease> = emptyList(),
+)
 
 /**
  * Supplements a YT-sourced discography with Qobuz albums. The impl (in

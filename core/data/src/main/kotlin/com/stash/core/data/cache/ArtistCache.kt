@@ -267,6 +267,7 @@ class ArtistCache(
         yt.copy(
             albums = merged.albums,
             singles = merged.singles,
+            releaseDates = merged.releaseDates,
             about = about,
             avatarUrl = yt.avatarUrl ?: about?.headerUrl,
         )

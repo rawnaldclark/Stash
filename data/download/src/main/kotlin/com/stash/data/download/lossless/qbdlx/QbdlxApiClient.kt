@@ -96,14 +96,30 @@ class QbdlxApiClient @Inject constructor(
             runCatching { json.decodeFromString<QbdlxFeaturedPlaylistsResponse>(body).playlists.items }.getOrDefault(emptyList())
         }
 
-    /** Fetch an artist's albums (read-only discography metadata). */
-    suspend fun getArtistAlbums(artistId: Long, limit: Int = 100): List<QbdlxAlbumItem> =
+    /**
+     * Fetch an artist's albums (read-only discography metadata). Qobuz lists them most popular
+     * first, singles and releases the artist only features on included, at most [limit].
+     */
+    suspend fun getArtistAlbums(artistId: Long, limit: Int = ARTIST_ALBUMS_LIMIT): List<QbdlxAlbumItem> =
+        artistAlbums(artistId, limit, newestFirst = false)
+
+    /**
+     * The same list as [getArtistAlbums], newest release first (`sort=release_desc`, live
+     * 2026-11-03), so an artist's new releases are in it however many they have: the popular-first
+     * list stops at [ARTIST_ALBUMS_LIMIT] (Bob Dylan has 1,971 releases, and his newest wasn't in
+     * the first 100).
+     */
+    suspend fun getNewestArtistAlbums(artistId: Long, limit: Int): List<QbdlxAlbumItem> =
+        artistAlbums(artistId, limit, newestFirst = true)
+
+    private suspend fun artistAlbums(artistId: Long, limit: Int, newestFirst: Boolean): List<QbdlxAlbumItem> =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api.json/0.2/artist/get".toHttpUrl().newBuilder()
                 .addQueryParameter("artist_id", artistId.toString())
                 .addQueryParameter("extra", "albums")
                 .addQueryParameter("limit", limit.toString())
                 .addQueryParameter("offset", "0")
+                .apply { if (newestFirst) addQueryParameter("sort", "release_desc") }
                 .build()
             val body = catalogGet(url.toString())
             runCatching { json.decodeFromString<QbdlxArtistAlbumsResponse>(body).albums.items }.getOrDefault(emptyList())
@@ -318,5 +334,7 @@ class QbdlxApiClient @Inject constructor(
         const val WEB_APP_ID = "712109809"
         /** Floor between catalog app_id scrapes. A rotation is a deploy, not a burst. */
         private const val HEAL_MIN_INTERVAL_MS = 60_000L
+        /** The most releases [getArtistAlbums] asks for: a full answer may mean the artist has more. */
+        const val ARTIST_ALBUMS_LIMIT = 100
     }
 }

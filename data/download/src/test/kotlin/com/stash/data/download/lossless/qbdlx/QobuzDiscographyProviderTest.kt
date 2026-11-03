@@ -3,11 +3,13 @@ package com.stash.data.download.lossless.qbdlx
 import com.google.common.truth.Truth.assertThat
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.DatedRelease
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import java.time.LocalDate
 
 /**
  * Unit tests for [QobuzDiscographyProvider]. Its only collaborator
@@ -212,5 +214,151 @@ class QobuzDiscographyProviderTest {
         assertThat(out.albums.map { it.title }).containsExactly("Loveless")
         assertThat(out.albums.single().source).isEqualTo(AlbumSource.QOBUZ)
         coVerify { apiClient.getArtistAlbums(1, any()) }
+    }
+
+    // (h) release dates for the artist page's Latest releases row ───────────
+
+    private val nov3 = LocalDate.of(2026, 11, 3)
+
+    /** A provider whose today is 2026-11-03 and whose calls take no time. */
+    private fun datingProvider(elapsed: () -> Long = { 0L }) = QobuzDiscographyProvider(apiClient).apply {
+        today = { nov3 }
+        elapsedMs = elapsed
+    }
+
+    private fun qotsaYouTube() = listOf(
+        AlbumSummary("yt_perfecth", "Perfecth", "", null, "2026"),
+        AlbumSummary("yt_clockwork", "...Like Clockwork", "", null, "2013"),
+    )
+
+    private fun qotsa(title: String, date: String, tracksCount: Int = 10) =
+        qAlbum(title, date, artist = "Queens Of The Stone Age", tracksCount = tracksCount)
+
+    @Test
+    fun `the artist's own releases from this year come dated to the day, singles included`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Queens Of The Stone Age"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
+            qotsa("...Like Clockwork", "2013-06-03"),
+            qotsa("Perfecth", "2026-10-30", tracksCount = 9),
+            qotsa("Run Away From the Mob", "2026-10-28", tracksCount = 1),
+            qAlbum("No One Knows", "2026-08-14", artist = "Soundwall", tracksCount = 1), // a cover: not theirs
+            qotsa("Alive in the Catacombs", "2025-06-13", tracksCount = 5), // last year
+            qotsa("Undated", "2026", tracksCount = 1), // no day
+        )
+
+        val out = datingProvider().mergeInto("Queens Of The Stone Age", qotsaYouTube(), emptyList())
+
+        assertThat(out.releaseDates).containsExactly(
+            DatedRelease("Perfecth", "2026-10-30", 9),
+            DatedRelease("Run Away From the Mob", "2026-10-28", 1),
+        )
+        // The first answer is enough: no call of their own.
+        coVerify(exactly = 0) { apiClient.getNewestArtistAlbums(any(), any()) }
+    }
+
+    @Test
+    fun `early in the year last year's releases can still be new`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
+            qAlbum("Loveless", "1991-11-04"),
+            qAlbum("December", "2025-12-12"),
+            qAlbum("June", "2025-06-01"),
+        )
+        val p = datingProvider().apply { today = { LocalDate.of(2026, 1, 20) } }
+
+        val out = p.mergeInto("My Bloody Valentine", listOf(ytAlbum("Loveless")), emptyList())
+
+        // 2025 is still among the window's years in January, so both 2025 releases come along;
+        // the artist page then keeps only what's within the window.
+        assertThat(out.releaseDates.map { it.title }).containsExactly("December", "June")
+    }
+
+    @Test
+    fun `a full popular list asks for the newest releases when YouTube shows one from this year`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Queens Of The Stone Age"))
+        // A hundred releases, the most the first call asks for: the artist may have more.
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            listOf(qotsa("...Like Clockwork", "2013-06-03")) + List(99) { qotsa("Live $it", "2010-01-01") }
+        coEvery { apiClient.getNewestArtistAlbums(7, any()) } returns listOf(
+            qotsa("Perfecth", "2026-10-30", tracksCount = 9),
+            qAlbum("Fades Away (2026 Remix)", "2026-10-23", artist = "Someone Else", tracksCount = 1),
+        )
+
+        val out = datingProvider().mergeInto("Queens Of The Stone Age", qotsaYouTube(), emptyList())
+
+        assertThat(out.releaseDates).containsExactly(DatedRelease("Perfecth", "2026-10-30", 9))
+        coVerify(exactly = 1) { apiClient.getNewestArtistAlbums(7, QobuzDiscographyProvider.NEWEST_LIMIT) }
+        // The gap-fill still reads the popular list alone: the newest list adds no album.
+        assertThat(out.albums.filter { it.source == AlbumSource.QOBUZ }.map { it.title }).doesNotContain("Perfecth")
+    }
+
+    @Test
+    fun `no newest call when YouTube shows nothing from this year`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Radiohead"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            listOf(qAlbum("In Rainbows", "2007-10-10", artist = "Radiohead")) +
+                List(99) { qAlbum("Live $it", "2010-01-01", artist = "Radiohead") }
+        val youTube = listOf(
+            AlbumSummary("yt_ir", "In Rainbows", "", null, "2007"),
+            AlbumSummary("yt_hail", "Hail to the Thief (Live Recordings 2003-2009)", "", null, "2025"),
+        )
+
+        val out = datingProvider().mergeInto("Radiohead", youTube, emptyList())
+
+        assertThat(out.releaseDates).isEmpty()
+        coVerify(exactly = 0) { apiClient.getNewestArtistAlbums(any(), any()) }
+    }
+
+    @Test
+    fun `no newest call when the popular list isn't full`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Queens Of The Stone Age"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            List(QbdlxApiClient.ARTIST_ALBUMS_LIMIT - 1) { qotsa("...Like Clockwork", "2013-06-03") }
+
+        datingProvider().mergeInto("Queens Of The Stone Age", qotsaYouTube(), emptyList())
+
+        coVerify(exactly = 0) { apiClient.getNewestArtistAlbums(any(), any()) }
+    }
+
+    @Test
+    fun `a failed newest call keeps the merge and the first answer's dates`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Queens Of The Stone Age"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(
+            qotsa("...Like Clockwork", "2013-06-03"),
+            qotsa("Rated R", "2000-06-06"),
+            qotsa("Easy Street", "2026-07-14", tracksCount = 1),
+        ) + List(97) { qotsa("Live $it", "2010-01-01") }
+        coEvery { apiClient.getNewestArtistAlbums(any(), any()) } throws QbdlxApiException(503, "busy")
+
+        val out = datingProvider().mergeInto("Queens Of The Stone Age", qotsaYouTube(), emptyList())
+
+        assertThat(out.releaseDates).containsExactly(DatedRelease("Easy Street", "2026-07-14", 1))
+        assertThat(out.albums.map { it.title }).contains("Rated R") // the gap-fill stands
+    }
+
+    @Test
+    fun `slow first calls skip the newest call so the merge stays in ArtistCache's bound`() = runTest {
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(7, "Queens Of The Stone Age"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns
+            List(QbdlxApiClient.ARTIST_ALBUMS_LIMIT) { qotsa("...Like Clockwork", "2013-06-03") }
+        // Each look at the clock is 2.5 s on: the search and the first list took that long.
+        var now = 0L
+        val p = datingProvider(elapsed = { now.also { now += 2_500L } })
+
+        val out = p.mergeInto("Queens Of The Stone Age", qotsaYouTube(), emptyList())
+
+        coVerify(exactly = 0) { apiClient.getNewestArtistAlbums(any(), any()) }
+        assertThat(out.albums.map { it.title }).contains("...Like Clockwork")
+    }
+
+    @Test
+    fun `no dates when the artist match isn't corroborated`() = runTest {
+        // A homonym: none of its albums is one YouTube lists, so nothing of it is taken, its dates neither.
+        coEvery { apiClient.searchArtists(any(), any()) } returns listOf(QbdlxArtistItem(1, "My Bloody Valentine"))
+        coEvery { apiClient.getArtistAlbums(any(), any()) } returns listOf(qAlbum("Somebody Else's", "2026-10-30"))
+
+        val out = datingProvider().mergeInto("My Bloody Valentine", listOf(ytAlbum("Loveless", "2026")), emptyList())
+
+        assertThat(out.releaseDates).isEmpty()
     }
 }
