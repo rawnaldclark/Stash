@@ -431,6 +431,7 @@ fun NowPlayingScreen(
             currentIndex = uiState.currentIndex,
             songsBefore = uiState.queueSongsBefore,
             songsAfter = uiState.queueSongsAfter,
+            orderPosition = uiState.queuePosition,
             accentColor = chrome.ink,
             source = uiState.source,
             isShuffleEnabled = uiState.shuffleEnabled,

@@ -1006,6 +1006,7 @@ class NowPlayingViewModel @Inject constructor(
                     queue = state.queue,
                     queueSongsBefore = state.queueSongsBefore,
                     queueSongsAfter = state.queueSongsAfter,
+                    queuePosition = state.queuePosition,
                     isStreaming = state.isStreaming,
                     isBuffering = state.isBuffering,
                     playWhenReady = state.playWhenReady,

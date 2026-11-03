@@ -96,10 +96,12 @@ fun QueueBottomSheet(
     /**
      * A queue too big for the player: its songs before and after the [queue] window (see
      * [com.stash.core.model.PlayerState.queueSongsBefore]). The header counts the whole queue, and
-     * the list ends with how many more follow.
+     * the list ends with how many more follow. [orderPosition] is the playing song's place in it
+     * ([com.stash.core.model.PlayerState.queuePosition]), -1 for a queue held whole.
      */
     songsBefore: Int = 0,
     songsAfter: Int = 0,
+    orderPosition: Int = -1,
     source: PlaybackSource = PlaybackSource.Unknown,
     /** #468: with shuffle on the rows are in play order and cannot be dragged (see below). */
     isShuffleEnabled: Boolean = false,
@@ -177,7 +179,8 @@ fun QueueBottomSheet(
         ) {
             QueueHeader(
                 trackCount = songsBefore + queue.size + songsAfter,
-                currentIndex = songsBefore + currentIndex,
+                // A big queue's own count: after a repeat-all wrap no song is "before" the window.
+                currentIndex = if (orderPosition >= 0) orderPosition else songsBefore + currentIndex,
                 sourceLabel = source.displayLabel,
                 showDragHint = !isShuffleEnabled,
                 onClose = onDismiss,

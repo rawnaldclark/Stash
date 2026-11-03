@@ -43,6 +43,8 @@ data class NowPlayingUiState(
      */
     val queueSongsBefore: Int = 0,
     val queueSongsAfter: Int = 0,
+    /** [com.stash.core.model.PlayerState.queuePosition]: the playing song's place in a big queue, -1 otherwise. */
+    val queuePosition: Int = -1,
     /** User-created playlists available for the "Save to Playlist" sheet. */
     val userPlaylists: List<PlaylistInfo> = emptyList(),
     /**
