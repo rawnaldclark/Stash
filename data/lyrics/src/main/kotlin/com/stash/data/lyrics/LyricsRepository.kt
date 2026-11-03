@@ -190,7 +190,7 @@ class LyricsRepository @Inject constructor(
         query: LyricsQuery,
         fresh: Boolean = false,
         skipIfStamped: Boolean = false,
-        onDemandFollowUp: Boolean = false,
+        onDemandFollowUp: Boolean = true,
     ): LyricsEntity? {
         if (skipIfStamped && isStamped(query.trackId)) return lyricsDao.get(query.trackId)
         val outcome = sharedWalk(query, fresh)
@@ -267,7 +267,8 @@ class LyricsRepository @Inject constructor(
         // sources weren't asked (an earlier source answered), so they get one follow-up try.
         val wantsOnDemandUpgrade = query.onDemand && query.trackId > 0L && ttmlActive &&
             entity.ttml == null && !entity.instrumental && previousRow?.ttmlCheckedAt == null &&
-            sources.any { it.onDemandOnly }
+            // Only when an on-demand source sits after the answering one in the chain, i.e. it was never asked.
+            sources.drop(sources.indexOfFirst { it.id == result.sourceId } + 1).any { it.onDemandOnly }
         return Written(entity, wantsOnDemandUpgrade)
     }
 
