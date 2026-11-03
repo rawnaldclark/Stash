@@ -44,8 +44,10 @@ export function cleanPost(input) {
 }
 
 /**
- * A `posts` row (with `my_vote` from the voter join) → the public PostSummary. [me] is the caller's poster
- * id, or null without a key. `myVote` and `mine` appear only when [me] is set. The poster id itself never leaves.
+ * A `posts` row (with `my_vote` and `heard` from the voter joins) → the public PostSummary. [me] is the caller's poster
+ * id, or null without a key. `myVote`, `mine` and `heard` appear only when [me] is set. The poster id itself never leaves.
+ * `heard` (contract 2026-11-03): the caller has a heard mark on the post, so it may vote once HEARD_REQUIRED is on. Always
+ * true on your own post (it's yours: /mine has no heard join), though no client shows a vote control there.
  */
 export function summaryOf(row, me) {
     const s = JSON.parse(row.summary);
@@ -56,6 +58,6 @@ export function summaryOf(row, me) {
         ...(s.art ? { art: s.art } : {}),
         ...(s.artist ? { artist: s.artist } : {}),
         createdAt: row.created_at, up: row.up, down: row.down,
-        ...(me ? { myVote: row.my_vote ?? 0, mine: row.poster === me } : {}),
+        ...(me ? { myVote: row.my_vote ?? 0, mine: row.poster === me, heard: row.poster === me || Boolean(row.heard) } : {}),
     };
 }

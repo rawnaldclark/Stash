@@ -59,17 +59,21 @@ test("a mix is a playlist-shaped post with kind mix", () => {
     assert.equal(cleanPost({ ...playlist(), kind: "mix" }).kind, "mix");
 });
 
-test("summaryOf exposes the public fields only, and myVote/mine only when asked by a key", () => {
+test("summaryOf exposes the public fields only, and myVote/mine/heard only when asked by a key", () => {
     const r = {
         id: "AAAAAAAA", kind: "song", title: "garden", poster_name: "Sam", poster: "p".repeat(64),
         summary: JSON.stringify({ art: "https://i.ytimg.com/x", artist: "Death Plus" }), track_count: 1,
-        created_at: 5, up: 3, down: 1, my_vote: 1,
+        created_at: 5, up: 3, down: 1, my_vote: 1, heard: 0,
     };
     assert.deepEqual(summaryOf(r, null), {
         id: "AAAAAAAA", kind: "song", title: "garden", name: "Sam", count: 1,
         art: "https://i.ytimg.com/x", artist: "Death Plus", createdAt: 5, up: 3, down: 1,
     });
-    assert.deepEqual(summaryOf(r, "p".repeat(64)), { ...summaryOf(r, null), myVote: 1, mine: true });
+    // Your own post counts as heard, with or without a mark.
+    assert.deepEqual(summaryOf(r, "p".repeat(64)), { ...summaryOf(r, null), myVote: 1, mine: true, heard: true });
     assert.equal(summaryOf({ ...r, my_vote: null }, "q".repeat(64)).myVote, 0);
     assert.equal(summaryOf({ ...r, my_vote: null }, "q".repeat(64)).mine, false);
+    assert.equal(summaryOf(r, "q".repeat(64)).heard, false);
+    assert.equal(summaryOf({ ...r, heard: 1 }, "q".repeat(64)).heard, true);
+    assert.equal(summaryOf({ ...r, heard: undefined }, "q".repeat(64)).heard, false); // a read without the heard join
 });

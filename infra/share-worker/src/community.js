@@ -1,6 +1,6 @@
 /**
  * Stash Community routes (spec docs/superpowers/specs/2026-09-26-stash-community-design.md §2).
- * D1 tables: posts, votes, blocked (migrations/). A phone is sha256(its key);
+ * D1 tables: posts, votes, blocked, heard (migrations/). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
 import { ip, json, readCapped } from "./http.js";
@@ -30,13 +30,18 @@ export const MAX_REQUEST_BYTES = 256 * 1024;
  */
 export const MS_PER_VOTE = 12_960_000;
 
-const POST_API = /^\/v1\/community\/posts\/([A-Za-z0-9]{8})(\/vote)?$/;
+const POST_API = /^\/v1\/community\/posts\/([A-Za-z0-9]{8})(\/vote|\/heard)?$/;
 const KEY_HEADER = "X-Stash-Community-Key";
 const rateLimited = () => json({ error: "rate_limited" }, 429, { "Retry-After": "60" });
 const notAllowed = () => json({ error: "method_not_allowed" }, 405);
 const gone = () => json({ error: "gone" }, 404);
 /** A post that's missing, taken down or removed, or expired. Hidden is checked separately: its poster still sees it. */
 const isGone = (post, now) => !post || post.removed_at !== null || post.expires_at <= now;
+/**
+ * HEARD_REQUIRED = "1" (a [vars] entry in wrangler.toml): a +1 or -1 vote needs the voter's heard mark on the post
+ * (contract 2026-11-03). Off by default, so app versions that never send heard can still vote until the owner turns it on.
+ */
+const heardRequired = (env) => env.HEARD_REQUIRED === "1";
 /** At or below HIDE_AT, unless the owner vouched for it (`restore`): votes never hide a vouched post. The feed's WHERE is the same rule in SQL. */
 export const hiddenByVotes = (p) => p.up - p.down <= HIDE_AT && !p.vouched;
 
@@ -50,7 +55,8 @@ export async function communityRoute(request, env, path, method) {
     if (path === "/v1/community/posts") return method === "POST" ? createPost(request, env, now) : notAllowed();
     const m = POST_API.exec(path);
     if (m) {
-        if (m[2]) return method === "PUT" ? vote(request, env, m[1], now) : notAllowed();
+        if (m[2] === "/vote") return method === "PUT" ? vote(request, env, m[1], now) : notAllowed();
+        if (m[2] === "/heard") return method === "PUT" ? heard(request, env, m[1], now) : notAllowed();
         if (method === "GET") return getPost(request, env, m[1], now);
         if (method === "DELETE") return takeDown(request, env, m[1], now);
         return notAllowed();
@@ -147,8 +153,9 @@ async function feed(request, env, now) {
     const limit = Math.min(Math.max(Number.isNaN(asked) ? 5 : asked, 1), 100);
     const order = query.get("sort") === "new" ? FEED_ORDER.new : FEED_ORDER.top; // a fixed string: nothing from the query reaches the SQL
     const { results } = await env.COMMUNITY_DB.prepare(
-        `SELECT ${LIST_COLUMNS}, v.value AS my_vote FROM posts p
+        `SELECT ${LIST_COLUMNS}, v.value AS my_vote, h.voter IS NOT NULL AS heard FROM posts p
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?1
+         LEFT JOIN heard h ON h.post_id = p.id AND h.voter = ?1
          WHERE p.removed_at IS NULL AND p.expires_at > ?2 AND ((p.up - p.down) > ${HIDE_AT} OR p.vouched = 1)
          ORDER BY ${order}
          LIMIT ?3`,
@@ -184,8 +191,9 @@ async function getPost(request, env, id, now) {
     const who = await identity(request);
     if (who.bad) return json({ error: "bad_key" }, 401);
     const r = await env.COMMUNITY_DB.prepare(
-        `SELECT ${LIST_COLUMNS}, p.vouched, p.body, p.removed_at, p.expires_at, v.value AS my_vote FROM posts p
+        `SELECT ${LIST_COLUMNS}, p.vouched, p.body, p.removed_at, p.expires_at, v.value AS my_vote, h.voter IS NOT NULL AS heard FROM posts p
          LEFT JOIN votes v ON v.post_id = p.id AND v.voter = ?2
+         LEFT JOIN heard h ON h.post_id = p.id AND h.voter = ?2
          WHERE p.id = ?1`,
     ).bind(id, who.id ?? "").first();
     if (isGone(r, now)) return gone();
@@ -212,11 +220,15 @@ async function vote(request, env, id, now) {
     const value = body?.value;
     if (tooBig || ![-1, 0, 1].includes(value)) return json({ error: "bad_request" }, 400);
     const post = await env.COMMUNITY_DB.prepare(
-        "SELECT poster, up, down, vouched, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked FROM posts WHERE id = ?1",
+        `SELECT poster, up, down, vouched, removed_at, expires_at, EXISTS (SELECT 1 FROM blocked WHERE poster = ?2) AS blocked,
+         EXISTS (SELECT 1 FROM heard WHERE post_id = ?1 AND voter = ?2) AS heard FROM posts WHERE id = ?1`,
     ).bind(id, who.id).first();
     if (isGone(post, now) || hiddenByVotes(post)) return gone();
     if (post.poster === who.id) return json({ error: "own_post" }, 403);
     if (post.blocked) return json({ error: "blocked" }, 403);
+    // Checked before the write, not inside it: a heard mark is only ever deleted together with its post, and then the
+    // INSERT below (SELECT … FROM posts) stores nothing either. Taking a vote back (0) never needs a listen.
+    if (value !== 0 && heardRequired(env) && !post.heard) return json({ error: "listen_first" }, 403);
     const net = await networkHash(request, env);
     // SELECT … FROM posts, not VALUES: if the daily cleanup deleted the post since the check above, no vote row
     // is left behind, and the recount returns no row. A new voter is stored only while its network holds fewer than
@@ -236,6 +248,25 @@ async function vote(request, env, id, now) {
     return json({ up, down, myVote: value });
 }
 
+/**
+ * PUT /posts/{id}/heard (contract 2026-11-03): the caller's app or web player played a song from this post for 30 s.
+ * Stores (post, voter, when) once; sending it again changes nothing and still answers 204. No body is read. Counted
+ * with the votes (COMMUNITY_VOTE_RL): a client sends it once per post, just before it can vote.
+ */
+async function heard(request, env, id, now) {
+    if (!(await env.COMMUNITY_VOTE_RL.limit({ key: network(request, env) })).success) return rateLimited();
+    const who = await identity(request);
+    if (!who.id) return json({ error: "bad_key" }, 401);
+    const post = await env.COMMUNITY_DB.prepare("SELECT poster, up, down, vouched, removed_at, expires_at FROM posts WHERE id = ?1").bind(id).first();
+    if (isGone(post, now) || hiddenByVotes(post)) return gone();
+    if (post.poster === who.id) return json({ error: "own_post" }, 403);
+    // SELECT … FROM posts, as the vote does: if the daily cleanup deleted the post since the check, no mark is left behind.
+    await env.COMMUNITY_DB.prepare(
+        "INSERT INTO heard (post_id, voter, at) SELECT ?1, ?2, ?3 FROM posts WHERE id = ?1 ON CONFLICT (post_id, voter) DO NOTHING",
+    ).bind(id, who.id, now).run();
+    return new Response(null, { status: 204 });
+}
+
 async function takeDown(request, env, id, now) {
     if (!(await env.COMMUNITY_WRITE_RL.limit({ key: network(request, env) })).success) return rateLimited();
     const who = await identity(request);
@@ -251,7 +282,7 @@ async function takeDown(request, env, id, now) {
 
 /**
  * The daily cron (spec §2 Cleanup): expired posts, and posts removed more than a day ago that were also
- * created more than a day ago, with their votes. An owner's removal stays restorable for a day (a poster's
+ * created more than a day ago, with their votes and heard marks. An owner's removal stays restorable for a day (a poster's
  * take-down stays too, but restore won't undo it), and every post of the last 24 hours stays for the daily limit.
  */
 export async function cleanup(env, now) {
@@ -260,6 +291,7 @@ export async function cleanup(env, now) {
     const doomed = "SELECT id FROM posts WHERE expires_at <= ?1 OR (removed_at IS NOT NULL AND removed_at < ?2 AND created_at < ?2)";
     await env.COMMUNITY_DB.batch([
         env.COMMUNITY_DB.prepare(`DELETE FROM votes WHERE post_id IN (${doomed})`).bind(now, now - DAY),
+        env.COMMUNITY_DB.prepare(`DELETE FROM heard WHERE post_id IN (${doomed})`).bind(now, now - DAY),
         env.COMMUNITY_DB.prepare(`DELETE FROM posts WHERE id IN (${doomed})`).bind(now, now - DAY),
     ]);
 }

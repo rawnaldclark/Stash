@@ -7,6 +7,8 @@
  *                                                 vouches for it: votes can't hide it again)
  *   npm run community -- block <postId>           block that post's phone and remove all its live posts
  *   npm run community -- unblock <posterIdPrefix> undo a block (list shows the first 8 characters)
+ *   npm run community -- drop-unheard-downvotes   once, when HEARD_REQUIRED goes on: delete every downvote whose voter
+ *                                                 has no heard mark on that post, and recount every post (upvotes stay)
  *
  * Every command prints what it hit: an empty result means it matched nothing. For `block` and `restore`, read the
  * last result: the blocked row, or the post's votes, `removed` and `vouched`. Block's INSERT and restore's first
@@ -21,12 +23,12 @@
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { HIDE_AT, RECOUNT_SQL } from "../src/community.js";
+import { HIDE_AT, RECOUNT_SQL, VOTES_PER_NETWORK } from "../src/community.js";
 
 const POST_ID = /^[A-Za-z0-9]{8}$/;
 const PREFIX = /^[0-9a-f]{8,64}$/;
 const COUNT = /^\d{1,3}$/;
-const USAGE = "usage: npm run community -- list [n] | remove <postId> | restore <postId> | block <postId> | unblock <posterIdPrefix>";
+const USAGE = "usage: npm run community -- list [n] | remove <postId> | restore <postId> | block <postId> | unblock <posterIdPrefix> | drop-unheard-downvotes";
 
 function postId(arg) {
     if (!POST_ID.test(arg ?? "")) throw new Error("expected a post id: 8 letters or digits");
@@ -73,6 +75,17 @@ export function commandSql(command, arg, now = Date.now()) {
             if (!PREFIX.test(arg ?? "")) throw new Error("unblock takes the start of a poster id: 8 to 64 hex characters");
             // substr, not LIKE: D1 caps LIKE patterns at 50 bytes.
             return `DELETE FROM blocked WHERE substr(poster, 1, ${arg.length}) = '${arg}' RETURNING substr(poster, 1, 8) AS poster, note`;
+        }
+        case "drop-unheard-downvotes": {
+            if (arg !== undefined) throw new Error("drop-unheard-downvotes takes no arguments");
+            // Then every post is recounted by RECOUNT_SQL's rule (per network, at most VOTES_PER_NETWORK each way), so up
+            // stays as it was and down is what's left. The first result counts what goes; the last shows what's left.
+            const unheard = "value = -1 AND NOT EXISTS (SELECT 1 FROM heard h WHERE h.post_id = votes.post_id AND h.voter = votes.voter)";
+            const counted = (value) => `(SELECT COALESCE(SUM(MIN(n, ${VOTES_PER_NETWORK})), 0) FROM (SELECT post_id, COUNT(*) AS n FROM votes WHERE value = ${value} GROUP BY post_id, ip_hash) c WHERE c.post_id = posts.id)`;
+            return [`SELECT COUNT(*) AS dropping, COUNT(DISTINCT voter) AS voters, COUNT(DISTINCT post_id) AS posts FROM votes WHERE ${unheard}`,
+                `DELETE FROM votes WHERE ${unheard}`,
+                `UPDATE posts SET up = ${counted(1)}, down = ${counted(-1)}`,
+                `SELECT COUNT(*) AS downvotes_left, (SELECT COUNT(*) FROM posts WHERE removed_at IS NULL AND (up - down) <= 0) AS posts_at_or_below_0 FROM votes WHERE value = -1`].join(";\n");
         }
         default:
             throw new Error(USAGE);
