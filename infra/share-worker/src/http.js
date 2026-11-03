@@ -47,29 +47,59 @@ export function validIp(s) {
 
 /** Proxy keys this isolate refused: the warning's only content, so a key value never reaches the logs. */
 let wrongProxyKeys = 0;
+/** Calls this isolate couldn't place (no usable address at all): counted together as one caller, "?". */
+let unplaced = 0;
+/** Whether this isolate has said once that CF-Connecting-IP is missing and X-Real-IP stood in. */
+let saidRealIp = false;
 
 /**
- * The caller's address: CF-Connecting-IP, unless a trusted proxy vouches for another. The web player's Worker reaches
- * this Worker with its own address there, so it also sends the listener's (X-Stash-Client-IP) with X-Stash-Proxy-Key.
+ * The address Cloudflare saw connect to it. Normally CF-Connecting-IP. A zone rule can remove that header before any
+ * Worker runs ("Remove visitor IP headers", or a Request Header Transform Rule; it's the one `cf-` header a rule may
+ * remove), and from 2026-10-07 stashfm.app did: every call on stashfm.app/* arrived without it, so every app user was the
+ * one caller "?" (one network for the per-network vote cap, one bucket for every per-minute limit).
+ *
+ * X-Real-IP then stands in. Cloudflare's edge writes it for every call that reaches a Worker, replacing whatever the
+ * client sent, and no zone rule may change it. A Worker's own fetch() can set it, though, so it's trusted only on a call
+ * without CF-Worker, the header Cloudflare adds to every Worker subrequest (the web player's calls come with the proxy key
+ * instead, below). With neither, the caller is "?", logged as a count.
+ */
+function connectingAddress(request) {
+    const own = request.headers.get("CF-Connecting-IP");
+    if (own) return own;
+    const real = request.headers.get("X-Real-IP");
+    if (real !== null && request.headers.get("CF-Worker") === null && validIp(real)) {
+        if (!saidRealIp) {
+            saidRealIp = true;
+            console.warn("share: CF-Connecting-IP is missing (a zone rule removing it?); counting callers by X-Real-IP");
+        }
+        return real;
+    }
+    // Logged at the 1st, 10th, 100th… such call: enough to show in `wrangler tail` without a line per request.
+    if (/^10*$/.test(String(++unplaced))) console.warn(`share: a call with no usable client address counts as "?" (${unplaced} in this isolate)`);
+    return "?";
+}
+
+/**
+ * The caller's address: the connecting address above, unless a trusted proxy vouches for another. The web player's Worker
+ * reaches this Worker with its own address there, so it also sends the listener's (X-Stash-Client-IP) with X-Stash-Proxy-Key.
  * That address is used only when this Worker has a usable SHARE_PROXY_KEY secret, the key header equals it (compared in
  * constant time) and the address is well formed. Anything else (no secret here, no key, a wrong one, a malformed
- * address) falls back to CF-Connecting-IP: a browser or script sending the headers itself is still counted by its own.
+ * address) falls back to the connecting address: a browser or script sending the headers itself is still counted by its own.
  * A key that doesn't match (or arrives while this Worker has no usable secret) logs a count-only warning, so a rotation
  * that reached one Worker but not the other shows in `wrangler tail`.
  */
 export function clientAddress(request, env) {
-    const own = request.headers.get("CF-Connecting-IP") || "?";
     const key = request.headers.get(PROXY_KEY_HEADER);
-    if (key === null) return own;
+    if (key === null) return connectingAddress(request);
     const secret = env?.SHARE_PROXY_KEY?.trim();
     // sameHex compares any two strings' characters in constant time; only a length mismatch returns early.
     if (!secret || !PROXY_KEY_FORMAT.test(secret) || !sameHex(key, secret)) {
         wrongProxyKeys++;
         console.warn(`share proxy: ${PROXY_KEY_HEADER} doesn't match SHARE_PROXY_KEY here; counted by CF-Connecting-IP (${wrongProxyKeys} in this isolate)`);
-        return own;
+        return connectingAddress(request);
     }
     const forwarded = request.headers.get(CLIENT_IP_HEADER);
-    return forwarded !== null && validIp(forwarded) ? forwarded : own;
+    return forwarded !== null && validIp(forwarded) ? forwarded : connectingAddress(request);
 }
 
 /**
