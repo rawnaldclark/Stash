@@ -594,19 +594,7 @@ class StashPlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private fun keepTimelineOrder() {
         if (!keepTimelineOrderOn) return
-        val master = crossfadeEngine?.masterPlayer ?: return
-        val n = master.mediaItemCount
-        if (!master.shuffleModeEnabled || n == 0) return
-        val timeline = master.currentTimeline
-        if (timeline.windowCount != n || com.stash.core.media.isTimelineOrder(n, timeline.getFirstWindowIndex(true)) {
-                timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
-            }
-        ) {
-            return
-        }
-        master.setShuffleOrder(
-            androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(IntArray(n) { it }, android.os.SystemClock.elapsedRealtime()),
-        )
+        crossfadeEngine?.masterPlayer?.let(::keepShuffleWalkInTimelineOrder)
     }
 
     @OptIn(UnstableApi::class)
@@ -2859,6 +2847,28 @@ private val LOCAL_URI_SCHEMES = setOf("file", "content", "android.resource")
  * gets them. Play next under shuffle puts a MediaItem, URI and all, straight onto
  * the player, so only this app itself ([ownApp]) gets it.
  */
+/**
+ * Under shuffle, sets [player]'s shuffle order back to the identity when its walk isn't the
+ * timeline's own order (0, 1, 2, ...), as a big queue's window needs
+ * ([StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER]). True when it set one. Main thread.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+internal fun keepShuffleWalkInTimelineOrder(player: androidx.media3.exoplayer.ExoPlayer): Boolean {
+    val n = player.mediaItemCount
+    if (!player.shuffleModeEnabled || n == 0) return false
+    val timeline = player.currentTimeline
+    if (timeline.windowCount != n || com.stash.core.media.isTimelineOrder(n, timeline.getFirstWindowIndex(true)) {
+            timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
+        }
+    ) {
+        return false
+    }
+    player.setShuffleOrder(
+        androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(IntArray(n) { it }, android.os.SystemClock.elapsedRealtime()),
+    )
+    return true
+}
+
 internal fun grantedCustomActions(privileged: Boolean, ownApp: Boolean = false): List<String> = buildList {
     add(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE)
     add(StashPlaybackService.COMMAND_CYCLE_REPEAT)

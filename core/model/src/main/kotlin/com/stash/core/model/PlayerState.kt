@@ -53,6 +53,12 @@ data class PlayerState(
      */
     val queueSongsBefore: Int = 0,
     val queueSongsAfter: Int = 0,
+    /**
+     * The playing song's place in such a queue's whole order (0-based), or -1 for every other queue.
+     * Equal to `queueSongsBefore + currentIndex` except after a repeat-all wrap, where the window
+     * holds the end of the order and its beginning and no song is "before" it.
+     */
+    val queuePosition: Int = -1,
 )
 
 enum class RepeatMode {

@@ -45,8 +45,9 @@ import kotlin.random.Random
 class PlayerRepositoryBigQueueTest {
 
     private val playbackStateStore: PlaybackStateStore = mockk(relaxed = true)
+    private val deletions = MutableSharedFlow<Long>(extraBufferCapacity = 256)
     private val musicRepository: MusicRepository = mockk(relaxed = true) {
-        every { trackDeletions } returns MutableSharedFlow()
+        every { trackDeletions } returns deletions
     }
     private val streamingPreference: StreamingPreference = mockk(relaxed = true) { coEvery { current() } returns true }
     private val streamResolver: StreamSourceRegistry = mockk(relaxed = true)
@@ -73,6 +74,22 @@ class PlayerRepositoryBigQueueTest {
         var repeat = Player.REPEAT_MODE_OFF
         var setMediaItemsCalls = 0
         val customCommands = mutableListOf<Pair<String, Bundle>>()
+
+        /** The service's COMMAND_KEEP_TIMELINE_ORDER flag: a new service instance starts without it. */
+        var keepsTimelineOrder = false
+
+        /**
+         * Whether the player walks its timeline as it is. Under shuffle only while the service keeps
+         * the timeline order: otherwise Media3 walks its own random order over the window.
+         */
+        fun walksTimelineOrder() = !shuffle || keepsTimelineOrder
+
+        /** The service idle-stopped and a new one came back: an empty player, no flag. */
+        fun newService() {
+            items.clear()
+            cur = 0
+            keepsTimelineOrder = false
+        }
 
         fun ids() = items.map { it.mediaId.toLong() }
         fun currentId() = items[cur].mediaId.toLong()
@@ -155,7 +172,11 @@ class PlayerRepositoryBigQueueTest {
                 }
             }
             every { controller.sendCustomCommand(any(), any()) } answers {
-                customCommands += firstArg<SessionCommand>().customAction to secondArg<Bundle>()
+                val action = firstArg<SessionCommand>().customAction
+                customCommands += action to secondArg<Bundle>()
+                if (action == StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER) {
+                    keepsTimelineOrder = secondArg<Bundle>().getBoolean(StashPlaybackService.EXTRA_KEEP_TIMELINE_ORDER)
+                }
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
         }
@@ -288,8 +309,110 @@ class PlayerRepositoryBigQueueTest {
         assertThat(fake.ids().toSet()).hasSize(QUEUE_WINDOW_SIZE)
         assertThat(fake.ids().count { it > 9_000 }).isGreaterThan(10)
         assertThat(fake.ids().count { it < 1_000 }).isGreaterThan(10)
-        val keep = fake.customCommands.last { it.first == StashPlaybackService.COMMAND_KEEP_TIMELINE_ORDER }
-        assertThat(keep.second.getBoolean(StashPlaybackService.EXTRA_KEEP_TIMELINE_ORDER)).isTrue()
+        assertThat(fake.walksTimelineOrder()).isTrue()
+    }
+
+    /** Runs the main looper until [done] (the repository's own coroutines run there, IO hops come back to it). */
+    private fun awaitMain(done: () -> Boolean) {
+        val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        repeat(500) {
+            looper.idle()
+            if (done()) return
+            Thread.sleep(10)
+        }
+        assertThat(done()).isTrue()
+    }
+
+    @Test
+    fun `after the service idle-stops, a new big queue asks the new service to keep the timeline order`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 0)
+        repo.updateState(controller)
+        assertThat(fake.keepsTimelineOrder).isTrue()
+        assertThat(repo.playerState.value.queueSongsAfter).isGreaterThan(0)
+
+        // Paused past the idle stop: the service stops, and the window goes with its player.
+        repo.onSessionAliveChanged(false)
+        assertThat(repo.queueWindow).isNull()
+        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(0) // the ghost is the saved window, no more
+        fake.newService()
+        repo.controllerDeferred = controller
+
+        // Another tap in Songs, then shuffle on: the new service must keep the window's order too.
+        repo.setQueue(library(2_000), startIndex = 700)
+        assertThat(fake.keepsTimelineOrder).isTrue()
+        fake.shuffle = true
+        repo.rewindowForShuffle()
+        assertThat(fake.walksTimelineOrder()).isTrue()
+        assertThat(fake.ids()).isEqualTo(repo.queueWindow!!.windowIds().toList())
+    }
+
+    @Test
+    fun `a reshuffle asks again to keep the timeline order`() = runTest {
+        repo.setQueue(library(3_000), startIndex = 10)
+        fake.keepsTimelineOrder = false // the service lost it (another controller set a queue meanwhile)
+
+        fake.shuffle = true
+        repo.rewindowForShuffle()
+
+        assertThat(fake.walksTimelineOrder()).isTrue()
+    }
+
+    @Test
+    fun `Android Auto handing over exactly 500 other songs ends window mode`() = runTest {
+        repo.setQueue(library(2_000), startIndex = 0)
+        fake.items.clear()
+        fake.items += (1L..QUEUE_WINDOW_SIZE.toLong()).map { MediaItem.Builder().setMediaId("${90_000 + it}").build() }
+        fake.cur = 0
+
+        repo.updateState(controller)
+        // Not "and 1,500 more" for the car's list.
+        assertThat(repo.playerState.value.queueSongsAfter).isEqualTo(0)
+        assertThat(repo.playerState.value.queuePosition).isEqualTo(-1)
+        awaitMain { repo.queueWindow == null }
+    }
+
+    @Test
+    fun `shuffle turned on while the window was being built is applied once it is built`() = runTest {
+        val tracks = library(5_000).toMutableList()
+        tracks[100] = tracks[100].copy(isDownloaded = true, filePath = "/music/101.opus")
+        // The tapped download's disk check runs during the build: the user turns shuffle on then.
+        repo.filePathExistsOnDisk = { fake.shuffle = true; true }
+
+        repo.setQueue(tracks, startIndex = 100)
+        assertThat(repo.queueWindow!!.isShuffled).isFalse() // built before the toggle was seen
+
+        awaitMain { repo.queueWindow?.isShuffled == true }
+        assertThat(fake.currentId()).isEqualTo(101L)
+        assertThat(fake.walksTimelineOrder()).isTrue()
+    }
+
+    @Test
+    fun `a burst of library deletions leaves the whole order in one batch`() = runTest {
+        repo.setQueue(library(5_000), startIndex = 0)
+        val gone = (3_001L..3_200L).toList() + listOf(10L)
+
+        gone.forEach { assertThat(deletions.tryEmit(it)).isTrue() }
+
+        awaitMain { repo.queueWindow!!.total == 5_000 - gone.size }
+        val w = repo.queueWindow!!
+        assertThat((0 until w.total).map { w.idAtPosition(it) }).containsNoneIn(gone)
+        assertThat(fake.ids()).doesNotContain(10L)
+        assertThat(fake.ids()).isEqualTo(w.windowIds().toList())
+    }
+
+    @Test
+    fun `after a repeat-all wrap the count is the playing song's place in the whole order`() = runTest {
+        fake.repeat = Player.REPEAT_MODE_ALL
+        repo.setQueue(library(1_000), startIndex = 999)
+        repo.slideWindow() // the next lap's first songs join after song 1,000
+        assertThat(repo.queueWindow!!.wrapped).isTrue()
+
+        repo.updateState(controller)
+        assertThat(repo.playerState.value.queuePosition).isEqualTo(999)
+        repo.skipNext() // song 1, the whole list's first
+        repo.updateState(controller)
+        assertThat(fake.currentId()).isEqualTo(1L)
+        assertThat(repo.playerState.value.queuePosition).isEqualTo(0)
     }
 
     @Test
