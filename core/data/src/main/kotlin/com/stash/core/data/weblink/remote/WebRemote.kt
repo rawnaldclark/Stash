@@ -153,7 +153,7 @@ class WebRemote internal constructor(
      */
     override fun pin(device: String) {
         if (!config.enabled) return
-        released.remove(browsers.value[device]?.state?.sid)
+        browsers.value[device]?.state?.sid?.let(released::remove)
         pinned.value = device
     }
 

@@ -23,10 +23,14 @@ import kotlinx.coroutines.launch
 class HandoffViewModel @Inject constructor(
     private val offers: HandoffOffers,
     player: PlayerRepository,
+    browsers: com.stash.core.media.cast.BrowserOutputs,
 ) : ViewModel() {
     private val playing = player.playerState.map { it.isPlaying }.distinctUntilChanged()
 
-    val offer: StateFlow<HandoffOffer?> = combine(offers.offer, playing) { o, p -> o.takeUnless { p } }
+    /** No card for the browser this phone's queue plays on (Remote v2 §6): the mini player is its remote. */
+    private val driven = browsers.session.map { it?.device }.distinctUntilChanged()
+
+    val offer: StateFlow<HandoffOffer?> = combine(offers.offer, playing, driven) { o, p, d -> o.takeUnless { p || it.device == d } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val note: StateFlow<String?> = offers.note

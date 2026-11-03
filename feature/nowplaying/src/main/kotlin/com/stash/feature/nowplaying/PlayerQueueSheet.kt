@@ -37,8 +37,10 @@ fun PlayerQueueSheet(
     onDismiss: () -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     listen: ListenTogetherViewModel = hiltViewModel(),
+    cast: com.stash.feature.nowplaying.cast.CastViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playOn by cast.playOn.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val inRoom = together is ListenTogetherState.InRoom
     val hasTrack = uiState.hasTrack
@@ -79,6 +81,9 @@ fun PlayerQueueSheet(
             onShare = { track -> shareRequested = viewModel.onShareTrack(track) },
             onToggleDownload = viewModel::toggleDownload,
             onRestoreTrack = viewModel::onRestoreToQueue,
+            // A browser plays the queue (Remote v2 §6): its name in the header, songs only here dimmed.
+            playingOn = playOn.browser?.name,
+            phoneOnly = if (playOn.onBrowser) com.stash.feature.nowplaying.cast.PHONE_ONLY else null,
         )
     }
 

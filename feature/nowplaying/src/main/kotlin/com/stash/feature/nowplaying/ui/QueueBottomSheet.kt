@@ -64,7 +64,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.nowplaying.R
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -91,6 +94,9 @@ import java.util.Collections
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
+
+/** A row only on this phone while a browser plays the queue (Remote v2 §6): readable, clearly not playing there. */
+private const val DIMMED_ALPHA = 0.45f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +132,13 @@ fun QueueBottomSheet(
      * Undo on the "Removed <title>" snackbar each removal shows. Null = no snackbar.
      */
     onRestoreTrack: ((index: Int, track: Track) -> Unit)? = null,
+    /** A linked browser plays the queue (Remote v2 §6): the header says "Playing on Chrome on Windows". */
+    playingOn: String? = null,
+    /**
+     * While a browser plays the queue: whether a song is only on this phone (the browser can't play it, it is stepped over).
+     * Its row is dimmed, and a tap says so instead of playing it. Null: everything plays here.
+     */
+    phoneOnly: ((Track) -> Boolean)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // The sheet is its own window, so its snackbar lives in it (see the host at the bottom).
@@ -189,6 +202,7 @@ fun QueueBottomSheet(
                 sourceLabel = source.displayLabel,
                 showDragHint = !isShuffleEnabled,
                 onClose = onDismiss,
+                playingOn = playingOn,
             )
 
             if (currentIndex in queue.indices) {
@@ -204,6 +218,8 @@ fun QueueBottomSheet(
                 )
             }
 
+            val phoneOnlyLabel = stringResource(R.string.play_on_queue_phone_only)
+            val phoneOnlyNote = stringResource(R.string.play_on_queue_phone_only_tap)
             var dragOffsetY by remember { mutableFloatStateOf(0f) }
             var itemHeight by remember { mutableIntStateOf(0) }
 
@@ -302,6 +318,7 @@ fun QueueBottomSheet(
                 ) { idx, entry ->
                     val track = entry.track
                     val isDragging = idx == draggedIdx
+                    val dimmed = phoneOnly != null && remember(track, phoneOnly) { phoneOnly(track) }
                     val queueIndex = currentIndex + 1 + idx
                     // The item's index shifts under an active drag as rows swap;
                     // pointerInput's coroutine captures values at launch, so it
@@ -385,7 +402,14 @@ fun QueueBottomSheet(
                                     else MaterialTheme.colorScheme.surface,
                                 )
                                 .clickable {
-                                    onTrackClick(queueIndex)
+                                    if (dimmed) {
+                                        scope.launch {
+                                            snackbarHostState.currentSnackbarData?.dismiss()
+                                            snackbarHostState.showSnackbar(phoneOnlyNote)
+                                        }
+                                    } else {
+                                        onTrackClick(queueIndex)
+                                    }
                                 }
                                 .semantics {
                                     customActions = buildList {
@@ -397,7 +421,9 @@ fun QueueBottomSheet(
                                         }
                                     }
                                 }
-                                .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                                .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)
+                                // Only on this phone, while a browser plays: dimmed, still movable and removable.
+                                .alpha(if (dimmed) DIMMED_ALPHA else 1f),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             QueueTrackArt(track)
@@ -424,7 +450,11 @@ fun QueueBottomSheet(
                                     )
                                 }
                                 Text(
-                                    text = remember(track.artist) { track.artist.primaryArtist() },
+                                    text = if (dimmed) {
+                                        phoneOnlyLabel
+                                    } else {
+                                        remember(track.artist) { track.artist.primaryArtist() }
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -617,6 +647,7 @@ private fun QueueHeader(
     sourceLabel: String,
     showDragHint: Boolean,
     onClose: () -> Unit,
+    playingOn: String? = null,
 ) {
     Row(
         modifier = Modifier
@@ -631,6 +662,15 @@ private fun QueueHeader(
                     "Playing from $sourceLabel",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (playingOn != null) {
+                Text(
+                    stringResource(R.string.play_on_playing_on, playingOn),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

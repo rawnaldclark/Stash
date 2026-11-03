@@ -1014,6 +1014,14 @@ class StashPlaybackService : MediaLibraryService() {
                 playbackDiagnosticsLog.recordCast("receiver changed: $kind")
                 wrapper.attach(master, remote, wrapper.currentPosition, wrapper.playWhenReady, castFeed(kind))
                 castKind = kind
+                // The speaker's look-ahead (it serves the next song over the LAN) is no browser's business, and a speaker
+                // taking over from a browser starts its own while it plays.
+                prefetchPollJob?.cancel()
+                prefetchPollJob = null
+                if (kind == CastKind.SPEAKER) {
+                    updateCastLocks(isPlayerIdle(wrapper.playWhenReady, wrapper.playbackState))
+                    if (wrapper.isPlaying) startPrefetchPoll(wrapper)
+                }
                 updateCustomLayout()
                 triggerNotificationUpdate()
             }

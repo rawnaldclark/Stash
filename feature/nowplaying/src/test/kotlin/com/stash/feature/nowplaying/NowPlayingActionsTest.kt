@@ -117,6 +117,25 @@ class NowPlayingActionsTest {
         assertTrue(STREAM_QUALITY in topRowActions(setOf(STREAM_QUALITY), streaming).leading)
     }
 
+    // ── Play on (Remote v2) ──────────────────────────────────────────────────────────────────
+
+    @Test fun `Play on shows with a linked browser on a phone without Cast, never in a room`() {
+        assertFalse(isActionAvailable(CAST, solo))
+        val browser = ActionContext(hasBrowser = true)
+        assertTrue(isActionAvailable(CAST, browser))
+        assertTrue(CAST in editableActions(emptySet(), browser))
+        assertFalse(isActionAvailable(CAST, browser.copy(inRoom = true)))
+    }
+
+    @Test fun `a browser playing the queue hides Speed and Streaming quality, saying why`() {
+        val onBrowser = ActionContext(streams = true, hasBrowser = true, onBrowser = true, casting = true)
+        assertFalse(isActionAvailable(PLAYBACK_SPEED, onBrowser))
+        assertFalse(isActionAvailable(STREAM_QUALITY, onBrowser))
+        assertEquals("Hidden while casting", hiddenReason(STREAM_QUALITY, onBrowser))
+        assertTrue(isActionAvailable(RADIO, onBrowser))
+        assertTrue(isActionAvailable(QUEUE, onBrowser))
+    }
+
     // ── the editor ───────────────────────────────────────────────────────────────────────────
 
     @Test fun `the editor lists room-hidden actions so they stay editable, with a reason`() {

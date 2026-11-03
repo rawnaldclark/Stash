@@ -145,17 +145,20 @@ internal fun CastSheet(
             if (browsers.isNotEmpty() || session != null) {
                 SectionLabel(stringResource(R.string.play_on_browsers))
                 browsers.forEach { browser ->
-                    val driven = session?.device == browser.device
+                    // The one this phone's queue plays on: how its session stands, instead of what picking it would do.
+                    val playing = session?.takeIf { it.device == browser.device }
+                    val driven = playing != null
+                    val link = playing?.link
                     OutputRow(
-                        icon = if (driven && session?.link == WebCastRemote.Link.NEEDS_CLICK || !driven && browser.kind == BrowserOutput.Kind.NEEDS_CLICK) {
+                        icon = if (link == WebCastRemote.Link.NEEDS_CLICK || !driven && browser.kind == BrowserOutput.Kind.NEEDS_CLICK) {
                             Icons.Default.TouchApp
                         } else {
                             Icons.Default.Computer
                         },
                         name = browser.name,
-                        status = if (driven) sessionLine(session!!) else browserLine(browser),
+                        status = if (playing != null) sessionLine(playing) else browserLine(browser),
                         current = driven,
-                        busy = driven && session?.link == WebCastRemote.Link.STARTING || driven && session?.link == WebCastRemote.Link.RECONNECTING,
+                        busy = link == WebCastRemote.Link.STARTING || link == WebCastRemote.Link.RECONNECTING,
                         enabled = driven || browser.canPick,
                         onClick = {
                             if (!driven && !viewModel.connectBrowser(browser)) {

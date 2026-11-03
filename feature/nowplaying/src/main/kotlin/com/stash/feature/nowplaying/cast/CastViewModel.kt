@@ -65,6 +65,9 @@ class CastViewModel @Inject constructor(
 
     val speakers: StateFlow<List<CastDevice>> = devices.devices
 
+    /** What happened to a browser session, once each ([PlayOnNotices] shows them). */
+    val notices: kotlinx.coroutines.flow.SharedFlow<com.stash.core.media.cast.BrowserNotice> = browsers.notices
+
     /** Every linked browser with what picking it would do, kept fresh while the sheet shows. */
     val browserList: StateFlow<List<BrowserOutput>> = browsers.browsers
 
@@ -130,3 +133,9 @@ class CastViewModel @Inject constructor(
         if (scanning) devices.stopScan()
     }
 }
+
+/**
+ * A queue song only this phone has, while a browser plays the queue (Remote v2 §5, the one rule in [WebSongs]): the browser
+ * can't find it, so it is stepped over there and its row is dimmed.
+ */
+internal val PHONE_ONLY: (com.stash.core.model.Track) -> Boolean = { !com.stash.core.data.weblink.WebSongs.playsOnWeb(it) }
