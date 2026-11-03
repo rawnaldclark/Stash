@@ -197,7 +197,8 @@ class PlayerRepositoryBigQueueTest {
             playbackResumer = PlaybackResumer(playbackStateStore, trackDao),
             radioGenerator = mockk(relaxed = true),
             trackIdentityEvents = trackIdentityEvents,
-            playbackSessionBus = PlaybackSessionBus(),
+            // The service is up, as it always is while a window exists (the bus starts at false: no service).
+            playbackSessionBus = PlaybackSessionBus().apply { onServiceCreated() },
         )
         fake.install()
         repo.controllerDeferred = controller
@@ -390,8 +391,9 @@ class PlayerRepositoryBigQueueTest {
     fun `a burst of library deletions leaves the whole order in one batch`() = runTest {
         repo.setQueue(library(5_000), startIndex = 0)
         val gone = (3_001L..3_200L).toList() + listOf(10L)
+        awaitMain { deletions.subscriptionCount.value > 0 } // the repository is listening
 
-        gone.forEach { assertThat(deletions.tryEmit(it)).isTrue() }
+        gone.forEach { assertThat(deletions.tryEmit(it)).isTrue() } // one per row, as the orphan sweep does
 
         awaitMain { repo.queueWindow!!.total == 5_000 - gone.size }
         val w = repo.queueWindow!!
