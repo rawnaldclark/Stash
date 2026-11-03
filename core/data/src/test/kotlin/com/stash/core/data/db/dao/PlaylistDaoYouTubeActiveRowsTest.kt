@@ -2,12 +2,14 @@ package com.stash.core.data.db.dao
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.data.album.SavedAlbums
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -68,6 +70,21 @@ class PlaylistDaoYouTubeActiveRowsTest {
         insert("spotify:playlist:x", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
         insert("RDmix", MusicSource.YOUTUBE, PlaylistType.DAILY_MIX)
 
+        assertFalse(dao.hasActiveYouTubeRows(PlaylistType.CUSTOM, savedAlbums = false))
+    }
+
+    @Test fun `the album split is the one saved-album rule, and other services' albums never count`() = runTest {
+        // Albums saved elsewhere are no evidence about the YouTube listings.
+        insert("album:spotify:4aawyAB9vmqN3uQ7FjRGTy", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
+        insert("album:youtube:MPREb_saved", MusicSource.BOTH, PlaylistType.CUSTOM)
+        assertFalse(dao.hasActiveYouTubeRows(PlaylistType.CUSTOM, savedAlbums = true))
+        assertFalse(dao.hasActiveYouTubeRows(PlaylistType.CUSTOM, savedAlbums = false))
+
+        for ((sourceId, album) in listOf("MPREb_synced" to true, "PLlibrary" to false)) {
+            assertEquals(album, SavedAlbums.isSavedAlbum(PlaylistType.CUSTOM, MusicSource.YOUTUBE, sourceId))
+        }
+        insert("MPREb_synced", MusicSource.YOUTUBE, PlaylistType.CUSTOM)
+        assertTrue(dao.hasActiveYouTubeRows(PlaylistType.CUSTOM, savedAlbums = true))
         assertFalse(dao.hasActiveYouTubeRows(PlaylistType.CUSTOM, savedAlbums = false))
     }
 
