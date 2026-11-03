@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -212,15 +213,22 @@ internal fun MoodTileCard(
                 maxLines = 2,
                 constraints = Constraints(maxWidth = room(endPadding)),
             )
+            fun splits(layout: TextLayoutResult) = splitsAWord(tile.title, (0 until layout.lineCount - 1).map { layout.getLineEnd(it) })
             val clear = layout(style, TitleEndClear)
-            val cut = splitsAWord(tile.title, (0 until clear.lineCount - 1).map { clear.getLineEnd(it) }) ||
-                clear.isLineEllipsized(clear.lineCount - 1)
-            if (!cut) return@remember TitleFit(style, runsOn = false, wraps = clear.lineCount > 1)
+            if (!splits(clear) && !clear.isLineEllipsized(clear.lineCount - 1)) {
+                return@remember TitleFit(style, runsOn = false, wraps = clear.lineCount > 1)
+            }
             // Over the covers. A word wider than even that ("Songwriters" at Android's largest font, 2.0) takes a
-            // smaller size, just enough for it, never below the title's size at the default font
+            // smaller size, just enough for it, never below the title's size at the default font: first as measured
+            // alone, then a step smaller while the laid-out title still cuts it (alone it can sit a hair under the
+            // room and still be cut in its line)
             val widest = tile.title.split(' ').filter { it.isNotEmpty() }
                 .maxOfOrNull { measurer.measure(it, style, maxLines = 1, softWrap = false).size.width } ?: 0
-            val fitted = fitWidest(style, widest, room(TitleStart), density.fontScale)
+            val fitted = shrinkWhileCut(
+                base = style,
+                from = fitWidest(style, widest, room(TitleStart), density.fontScale),
+                fontScale = density.fontScale,
+            ) { splits(layout(it, TitleStart)) }
             TitleFit(fitted, runsOn = true, wraps = layout(fitted, TitleStart).lineCount > 1)
         }
         FannedCovers(
@@ -262,6 +270,21 @@ internal fun fitWidest(style: TextStyle, widest: Int, room: Int, fontScale: Floa
     val scale = (room.toFloat() / widest * 0.98f).coerceIn(minOf(1f, 1f / fontScale), 1f)
     return style.copy(fontSize = style.fontSize * scale, lineHeight = style.lineHeight * scale)
 }
+
+/**
+ * [from] made 5 % smaller at a time while [cuts] says the title laid out in it still cuts a word, never below [base]'s
+ * size at the default font ([fontScale] 1), so at the default font it never shrinks at all.
+ */
+internal fun shrinkWhileCut(base: TextStyle, from: TextStyle, fontScale: Float, cuts: (TextStyle) -> Boolean): TextStyle {
+    val floor = base.fontSize.value * minOf(1f, 1f / fontScale)
+    var style = from
+    while (cuts(style) && style.fontSize.value * SHRINK_STEP >= floor) {
+        style = style.copy(fontSize = style.fontSize * SHRINK_STEP, lineHeight = style.lineHeight * SHRINK_STEP)
+    }
+    return style
+}
+
+private const val SHRINK_STEP = 0.95f
 
 /**
  * Whether a title laid out in lines ending at [lineEnds] (each line's end but the last, as offsets into [title]) cuts

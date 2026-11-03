@@ -67,4 +67,18 @@ class MoodTileTitleTest {
         assertEquals(title, fitWidest(title, widest = 500, room = 393, fontScale = 1f))
         assertEquals(title, fitWidest(title, widest = 500, room = 393, fontScale = 0.85f))
     }
+
+    @Test
+    fun `while the laid-out title still cuts a word, a step smaller - and never below the default font's size`() {
+        // Cut until the size comes under 12 sp: the first step under is kept
+        val fitted = shrinkWhileCut(title, title, fontScale = 2f) { it.fontSize.value >= 12f }
+        assertTrue(fitted.fontSize.value < 12f && fitted.fontSize.value > 12f * 0.95f)
+        assertEquals(fitted.fontSize.value / 15f, fitted.lineHeight.value / 17f, 0.001f)
+        // Cut at any size: down to half at font 2.0 (the default font's size), no further
+        assertTrue(shrinkWhileCut(title, title, fontScale = 2f) { true }.fontSize.value >= 7.5f)
+        // At the default font it never shrinks, cut or not
+        assertEquals(title, shrinkWhileCut(title, title, fontScale = 1f) { true })
+        // Not cut: as it came
+        assertEquals(title, shrinkWhileCut(title, title, fontScale = 2f) { false })
+    }
 }
