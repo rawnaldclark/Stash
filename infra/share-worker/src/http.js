@@ -95,7 +95,7 @@ export function clientAddress(request, env) {
     // sameHex compares any two strings' characters in constant time; only a length mismatch returns early.
     if (!secret || !PROXY_KEY_FORMAT.test(secret) || !sameHex(key, secret)) {
         wrongProxyKeys++;
-        console.warn(`share proxy: ${PROXY_KEY_HEADER} doesn't match SHARE_PROXY_KEY here; counted by CF-Connecting-IP (${wrongProxyKeys} in this isolate)`);
+        console.warn(`share proxy: ${PROXY_KEY_HEADER} doesn't match SHARE_PROXY_KEY here; counted by its connecting address (${wrongProxyKeys} in this isolate)`);
         return connectingAddress(request);
     }
     const forwarded = request.headers.get(CLIENT_IP_HEADER);

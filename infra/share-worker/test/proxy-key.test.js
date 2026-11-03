@@ -96,7 +96,7 @@ test("a refused key warns with a count only, never the key; the right key or no 
     assert.equal(warn.mock.callCount(), 2);
     for (const { arguments: args } of warn.mock.calls) {
         const line = args.join(" ");
-        assert.match(line, /X-Stash-Proxy-Key doesn't match SHARE_PROXY_KEY here; counted by CF-Connecting-IP \(\d+ in this isolate\)$/);
+        assert.match(line, /X-Stash-Proxy-Key doesn't match SHARE_PROXY_KEY here; counted by its connecting address \(\d+ in this isolate\)$/);
         assert.ok(!line.includes(wrong) && !line.includes(SECRET) && !line.includes(LISTENER), line);
     }
     warn.mock.resetCalls();
