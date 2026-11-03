@@ -11,7 +11,6 @@ import com.stash.data.download.lossless.relay.RelayEntry
 import com.stash.data.download.lossless.relay.TidalRelay
 import com.stash.feature.settings.components.GoalLine
 import com.stash.feature.settings.components.SupportCardState
-import com.stash.feature.settings.components.SupportPerk
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -63,13 +62,13 @@ class SupportCardViewModelTest {
         coEvery { goals.refreshIfDue() } throws IllegalStateException("boom")
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
-        assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null, perk = SupportPerk.Offer))
+        assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null))
     }
 
     @Test fun `the card follows the goal and the relays' word`() = runTest {
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
-        assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null, perk = SupportPerk.Offer))
+        assertThat(vm.state.value).isEqualTo(SupportCardState(goal = null, supporter = false))
 
         goal.value = DonationGoal(16_800, 20_000, "2026-11")
         assertThat(vm.state.value.goal).isEqualTo(GoalLine("$168", "$200", 0.84f))
@@ -77,14 +76,14 @@ class SupportCardViewModelTest {
         // The code is claimed: the relays say unlimited, and the card thanks them.
         token.value = "tok.en"
         allowance.value = LosslessAllowance(3, null, reset)
-        assertThat(vm.state.value.perk).isEqualTo(SupportPerk.Supporter)
+        assertThat(vm.state.value.supporter).isTrue()
         assertThat(vm.state.value.goal).isNotNull()
     }
 
-    @Test fun `without an owner relay the card makes no promise`() = runTest {
+    @Test fun `without an owner relay nobody is thanked as a supporter`() = runTest {
         relays.value = emptyList()
         val vm = vm()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
-        assertThat(vm.state.value.perk).isEqualTo(SupportPerk.None)
+        assertThat(vm.state.value.supporter).isFalse()
     }
 }

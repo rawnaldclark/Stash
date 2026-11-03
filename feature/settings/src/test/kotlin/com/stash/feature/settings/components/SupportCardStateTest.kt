@@ -9,27 +9,28 @@ import org.junit.Test
 class SupportCardStateTest {
     private val november = DonationGoal(raisedCents = 16_800, goalCents = 20_000, month = "2026-11")
 
-    @Test fun `someone who could claim the perk sees the ask, the perk and the goal`() {
+    @Test fun `someone who could claim the perk sees the ask and the goal`() {
         assertThat(supportCardState(SupporterRow.Offer(hasToken = false), november))
-            .isEqualTo(SupportCardState(GoalLine("$168", "$200", 0.84f), SupportPerk.Offer))
+            .isEqualTo(SupportCardState(GoalLine("$168", "$200", 0.84f), supporter = false))
         // A stored code the relays no longer honour is still an offer, not a supporter.
-        assertThat(supportCardState(SupporterRow.Offer(hasToken = true), november).perk).isEqualTo(SupportPerk.Offer)
+        assertThat(supportCardState(SupporterRow.Offer(hasToken = true), november).supporter).isFalse()
     }
 
     @Test fun `a supporter is thanked instead of asked, and still sees the month's goal`() {
         val card = supportCardState(SupporterRow.Supporter(hasToken = true), november)
-        assertThat(card.perk).isEqualTo(SupportPerk.Supporter)
+        assertThat(card.supporter).isTrue()
         assertThat(card.goal).isEqualTo(GoalLine("$168", "$200", 0.84f))
         // Supporter by the relays' word, the code kept on another phone: the same thanks.
-        assertThat(supportCardState(SupporterRow.Supporter(hasToken = false), null).perk).isEqualTo(SupportPerk.Supporter)
+        assertThat(supportCardState(SupporterRow.Supporter(hasToken = false), null).supporter).isTrue()
     }
 
-    @Test fun `a build without an owner relay promises no perk`() {
-        assertThat(supportCardState(SupporterRow.Hidden, november).perk).isEqualTo(SupportPerk.None)
+    @Test fun `a build without an owner relay sees the same ask`() {
+        assertThat(supportCardState(SupporterRow.Hidden, november))
+            .isEqualTo(supportCardState(SupporterRow.Offer(hasToken = false), november))
     }
 
     @Test fun `no goal from the site, no goal line`() {
-        assertThat(supportCardState(SupporterRow.Offer(false), null)).isEqualTo(SupportCardState(goal = null, perk = SupportPerk.Offer))
+        assertThat(supportCardState(SupporterRow.Offer(false), null)).isEqualTo(SupportCardState())
         assertThat(supportCardState(SupporterRow.Hidden, null)).isEqualTo(SupportCardState())
     }
 

@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,9 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -65,17 +62,16 @@ import com.stash.feature.settings.R
  *
  * Top to bottom: the two people who make Stash (their pictures, overlapping) beside "Support Stash" and one line;
  * this month's goal, "$168 of $200 this month" over a thin bar, when the site gave a number ([SupportCardState.goal]);
- * the perk in one line, opening the Ko-fi claim ([SupportPerk.Offer]); and one Donate button, which opens the
- * [DonateSheet]. A supporter ([SupportPerk.Supporter]) gets thanks and their status instead of the ask, and a quieter
- * "Donate again". "Star on GitHub" lives in Settings › About now.
+ * and one Donate button, which opens the [DonateSheet]. A supporter ([SupportCardState.supporter]) gets thanks and
+ * their status instead of the ask, and a quieter "Donate again". "Star on GitHub" lives in Settings › About now, and
+ * the supporter claim in Lossless sources (owner 2026-11-03: a perk line here only repeated it).
  *
- * Every link the sheet shows goes through [onOpenUrl]; [onOpenPerk] opens Lossless sources, where the claim is.
+ * Every link the sheet shows goes through [onOpenUrl].
  */
 @Composable
 fun SupportBanner(
     state: SupportCardState,
     onOpenUrl: (String) -> Unit,
-    onOpenPerk: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showDonateSheet by rememberSaveable { mutableStateOf(false) }
@@ -91,7 +87,6 @@ fun SupportBanner(
     val accent = lerp(scheme.onSurface, chrome.accent, tint)
     val onAccent = lerp(scheme.surface, chrome.onAccent, tint)
     val ink = lerp(scheme.onSurfaceVariant, chrome.ink, tint)
-    val supporter = state.perk == SupportPerk.Supporter
     val shape = MaterialTheme.shapes.large
 
     Column(
@@ -114,20 +109,19 @@ fun SupportBanner(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(if (supporter) R.string.settings_support_thanks_title else R.string.settings_support_title),
+                    text = stringResource(if (state.supporter) R.string.settings_support_thanks_title else R.string.settings_support_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = scheme.onSurface,
                 )
                 Text(
-                    text = stringResource(if (supporter) R.string.settings_support_thanks_line else R.string.settings_support_tagline),
+                    text = stringResource(if (state.supporter) R.string.settings_support_thanks_line else R.string.settings_support_tagline),
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                 )
             }
         }
         state.goal?.let { GoalMeter(it, fill = accent) }
-        if (state.perk == SupportPerk.Offer) PerkLine(ink = ink, onClick = onOpenPerk)
-        if (supporter) {
+        if (state.supporter) {
             OutlinedButton(
                 onClick = { showDonateSheet = true },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
@@ -218,36 +212,6 @@ private fun GoalMeter(goal: GoalLine, fill: Color) {
                 )
             }
         }
-    }
-}
-
-/** The perk, one line with the lossless glyph in the album's ink, tapping through to the Ko-fi claim. */
-@Composable
-private fun PerkLine(ink: Color, onClick: () -> Unit) {
-    val label = stringResource(R.string.settings_support_perk_open)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clip(MaterialTheme.shapes.small)
-            .clickable(onClickLabel = label, onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = ink, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = stringResource(R.string.settings_support_perk),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        Icon(
-            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = StashTheme.extendedColors.textTertiary,
-            modifier = Modifier.size(18.dp),
-        )
     }
 }
 
