@@ -48,6 +48,8 @@ data class SpotifySavedAlbumsPage(
     val totalCount: Int?,
     val offset: Int?,
     val isComplete: Boolean = true,
+    /** The sort order Spotify listed the page in (`selectedSortOrder.id`), e.g. "Recently Added". */
+    val sortOrder: String? = null,
 ) {
     companion object {
         /** The failure sentinel: the request or the response failed. Compared by identity. */
@@ -85,11 +87,15 @@ data class SpotifyAlbumTracksPage(
  *
  * @property complete Every song Spotify counts was read ([SpotifyAlbumTracksPage.totalCount] met), so
  *                    the sync may mirror the album exactly; otherwise the snapshot is partial.
+ * @property walkedAll Every page was read up to Spotify's own count, though a song on them may have
+ *                     been unreadable. False is a short read (a page failed): never written over the
+ *                     album, whose last whole tracklist stands.
  */
 data class SpotifyAlbumTracklist(
     val tracks: List<SpotifyAlbumTrack>,
     val totalCount: Int?,
     val complete: Boolean,
+    val walkedAll: Boolean = complete,
 )
 
 private const val TAG = "StashSync"
@@ -150,12 +156,20 @@ fun parseSavedAlbumsPage(responseJson: JsonObject, nowMs: Long = System.currentT
             totalCount = library.int("totalCount"),
             offset = paging?.int("offset"),
             isComplete = isComplete,
+            sortOrder = library.obj("selectedSortOrder")?.str("id"),
         )
     } catch (e: Exception) {
         Log.e(TAG, "parseSavedAlbumsPage: failed to parse response", e)
         SpotifySavedAlbumsPage.EMPTY
     }
 }
+
+/**
+ * The `libraryV3` typename when the library answered with an error object instead of a page (e.g.
+ * `LibraryInvalidSortOrderIdError`); null for a page, or a response without the library at all.
+ */
+internal fun libraryErrorTypename(responseJson: JsonObject): String? =
+    responseJson.obj("data")?.obj("me")?.obj("libraryV3")?.str("__typename")?.takeIf { it != "LibraryPage" }
 
 /**
  * Parses one `getAlbum` page (shape pinned by the fixture `getalbum.json`, captured 2026-11-02 and

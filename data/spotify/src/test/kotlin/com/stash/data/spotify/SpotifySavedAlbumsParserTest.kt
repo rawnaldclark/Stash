@@ -39,6 +39,7 @@ class SpotifySavedAlbumsParserTest {
         assertEquals(28, page.totalCount)
         assertEquals(0, page.offset)
         assertTrue(page.isComplete)
+        assertEquals("the order the page came in (selectedSortOrder)", "Recents", page.sortOrder)
         assertEquals("every listed album is read", page.listedIds, page.albums.map { it.id })
         assertEquals(28, page.listedIds.toSet().size)
 
@@ -110,6 +111,7 @@ class SpotifySavedAlbumsParserTest {
     }
 
     @Test fun `a response without the library is the failure sentinel`() {
+        assertNull("a page is no error", libraryErrorTypename(fixture("libraryv3_saved_albums.json")))
         assertSame(SpotifySavedAlbumsPage.EMPTY, parseSavedAlbumsPage(buildJsonObject { put("data", buildJsonObject { }) }))
         val invalidSort = buildJsonObject {
             put("data", buildJsonObject {
@@ -119,6 +121,7 @@ class SpotifySavedAlbumsParserTest {
             })
         }
         assertSame(SpotifySavedAlbumsPage.EMPTY, parseSavedAlbumsPage(invalidSort))
+        assertEquals("what the client retries in the default order on", "LibraryInvalidSortOrderIdError", libraryErrorTypename(invalidSort))
     }
 
     // ── An album's songs ─────────────────────────────────────────────────

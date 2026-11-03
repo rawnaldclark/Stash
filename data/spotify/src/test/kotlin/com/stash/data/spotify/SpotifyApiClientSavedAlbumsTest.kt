@@ -34,6 +34,9 @@ class SpotifyApiClientSavedAlbumsTest {
     private val pages = mutableMapOf<Pair<String, Int>, Pair<Int, String>>()
     private val requests = mutableListOf<Pair<String, String>>()
 
+    /** Answers before [pages] when it returns non-null: (operation, variables) to a response. */
+    private var respond: ((String, String) -> Pair<Int, String>?)? = null
+
     private val tokenManager = mockk<TokenManager> {
         coEvery { getSpotifyAccessToken() } returns "access-token"
         coEvery { getSpotifyClientId() } returns "client-id"
@@ -52,7 +55,7 @@ class SpotifyApiClientSavedAlbumsTest {
         val variables = url.queryParameter("variables").orEmpty()
         requests += operation to variables
         val offset = Regex(""""offset":(\d+)""").find(variables)!!.groupValues[1].toInt()
-        val (code, body) = pages[operation to offset] ?: (500 to """{"error":"boom"}""")
+        val (code, body) = respond?.invoke(operation, variables) ?: pages[operation to offset] ?: (500 to """{"error":"boom"}""")
         Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(code).message("")
             .body(body.toResponseBody("application/json".toMediaType())).build()
     }.build()
@@ -81,6 +84,26 @@ class SpotifyApiClientSavedAlbumsTest {
         val (operation, variables) = requests.single()
         assertEquals("libraryV3", operation)
         assertTrue(variables, variables.contains(""""filters":["Albums"]"""))
+        // Newest save first: an order that holds while the listener plays ("Recents" doesn't).
+        assertTrue(variables, variables.contains(""""order":"Recently Added""""))
+        assertEquals("the order the captured page came in", "Recents", page.sortOrder)
+    }
+
+    @Test fun `an order Spotify refuses is asked again in its default order`() = runBlocking {
+        respond = { operation, variables ->
+            when {
+                operation != "libraryV3" -> null
+                variables.contains(""""order":null""") -> 200 to fixture("libraryv3_saved_albums.json")
+                else -> 200 to """{"data":{"me":{"libraryV3":{"__typename":"LibraryInvalidSortOrderIdError","message":"no"}}}}"""
+            }
+        }
+
+        val page = client.getSavedAlbumsPage(limit = 50, offset = 0)
+
+        assertEquals(28, page.albums.size)
+        assertEquals("Recents", page.sortOrder)
+        assertEquals(2, requests.size)
+        assertTrue(requests[1].second.contains(""""order":null"""))
     }
 
     @Test fun `a failed listing is the failure sentinel, never an empty library`() = runBlocking {
@@ -99,11 +122,12 @@ class SpotifyApiClientSavedAlbumsTest {
         assertTrue(requests.first().second.contains(""""uri":"spotify:album:FakeAlb1xxxxxxxxxxxxxx""""))
     }
 
-    @Test fun `a later page failing leaves the album partial, the first failing reads nothing`() = runBlocking {
+    @Test fun `a later page failing is a short read, the first failing reads nothing`() = runBlocking {
         pages["getAlbum" to 0] = 200 to albumPage(0, 5)
 
         val partial = client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx")!!
         assertFalse(partial.complete)
+        assertFalse("the sync keeps the album's last whole tracklist over this", partial.walkedAll)
         assertEquals(5, partial.tracks.size)
 
         pages.clear()
@@ -116,8 +140,28 @@ class SpotifyApiClientSavedAlbumsTest {
         val list = client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx")!!
 
         assertTrue(list.complete)
+        assertTrue(list.walkedAll)
         assertEquals(8, list.tracks.size)
         assertEquals("one request", 1, requests.size)
+    }
+
+    @Test fun `an unreadable song on a walked album is incomplete, not a short read`() = runBlocking {
+        // The captured page with its first song's uri gone.
+        val root = Json.parseToJsonElement(fixture("getalbum.json")).jsonObject
+        val data = root["data"]!!.jsonObject
+        val album = data["albumUnion"]!!.jsonObject
+        val tracks = album["tracksV2"]!!.jsonObject
+        val items = tracks["items"] as JsonArray
+        val first = items[0].jsonObject
+        val broken = JsonObject(first + ("track" to JsonObject(first["track"]!!.jsonObject - "uri")))
+        val cut = JsonObject(tracks + ("items" to JsonArray(listOf(broken) + items.drop(1))))
+        pages["getAlbum" to 0] = 200 to JsonObject(root + ("data" to JsonObject(data + ("albumUnion" to JsonObject(album + ("tracksV2" to cut)))))).toString()
+
+        val list = client.getAlbumTracks("FakeAlb1xxxxxxxxxxxxxx")!!
+
+        assertFalse(list.complete)
+        assertTrue(list.walkedAll)
+        assertEquals(7, list.tracks.size)
     }
 
     @Test fun `only reads go to Spotify`() = runBlocking {
