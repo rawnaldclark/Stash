@@ -133,7 +133,7 @@ class CommunityApiClientTest {
         assertThat(posts.map { it.heard }).containsExactly(false, true).inOrder()
     }
 
-    @Test fun `heard is a PUT under the key; gone and 403 drop it, anything else is tried again`() = runBlocking {
+    @Test fun `heard is a PUT under the key, gone and 403 drop it, anything else is tried again`() = runBlocking {
         fun answer(code: Int, body: String = "") = server.enqueue(MockResponse().setResponseCode(code).setBody(body))
         answer(204)
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.SENT)

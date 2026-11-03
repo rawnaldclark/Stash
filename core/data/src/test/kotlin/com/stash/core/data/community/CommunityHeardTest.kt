@@ -50,7 +50,7 @@ class CommunityHeardTest {
 
     private fun answer(code: Int, body: String = "") = server.enqueue(MockResponse().setResponseCode(code).setBody(body))
 
-    @Test fun `a mark is kept at once, then sent once under the key`() = runBlocking {
+    @Test fun `a mark is kept at once, then sent once under the key`() = runBlocking<Unit> {
         answer(204)
         heard.mark(A); settle()
         assertThat(heard.ids.first()).containsExactly(A)
@@ -62,7 +62,7 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(1)
     }
 
-    @Test fun `a Worker without the route yet (404 not_found) keeps it, and the next read sends it again`() = runBlocking {
+    @Test fun `a Worker without the route yet (404 not_found) keeps it, and the next read sends it again`() = runBlocking<Unit> {
         answer(404, """{"error":"not_found"}""")
         heard.mark(A); settle()
         assertThat(server.requestCount).isEqualTo(1)
@@ -73,7 +73,7 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(2)
     }
 
-    @Test fun `offline, a 5xx or rate limited keeps it`() = runBlocking {
+    @Test fun `offline, a 5xx or rate limited keeps it`() = runBlocking<Unit> {
         answer(503, """{"error":"unavailable"}""")
         heard.mark(A); settle()
         answer(429)
@@ -89,7 +89,7 @@ class CommunityHeardTest {
         assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/$A/heard")
     }
 
-    @Test fun `a gone post or a 403 drops it for good, and the local mark stays`() = runBlocking {
+    @Test fun `a gone post or a 403 drops it for good, and the local mark stays`() = runBlocking<Unit> {
         answer(404, """{"error":"gone"}""")
         heard.mark(A); settle()
         answer(403, """{"error":"own_post"}""")
@@ -99,7 +99,7 @@ class CommunityHeardTest {
         assertThat(heard.ids.first()).containsExactly(A, B)
     }
 
-    @Test fun `one failure stops the round: a missing route costs one request per read`() = runBlocking {
+    @Test fun `one failure stops the round, so a missing route costs one request per read`() = runBlocking<Unit> {
         existingKey = null
         heard.mark(A); heard.mark(B); settle()
         existingKey = key
@@ -111,7 +111,7 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(3)
     }
 
-    @Test fun `nothing goes without a key, or while Community is off; a vote sends its post's mark first`() = runBlocking {
+    @Test fun `nothing goes without a key or while Community is off, and a vote sends its post's mark first`() = runBlocking<Unit> {
         existingKey = null
         heard.mark(A); settle()
         assertThat(heard.ids.first()).containsExactly(A)
@@ -128,7 +128,7 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(1)
     }
 
-    @Test fun `a vote answered listen_first forgets the mark, and a new listen sends it again`() = runBlocking {
+    @Test fun `a vote answered listen_first forgets the mark, and a new listen sends it again`() = runBlocking<Unit> {
         answer(204)
         heard.mark(A); settle()
         heard.forget(A)
@@ -138,7 +138,7 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(2)
     }
 
-    @Test fun `marks are forgotten once their post can't be live any more`() = runBlocking {
+    @Test fun `marks are forgotten once their post can't be live any more`() = runBlocking<Unit> {
         existingKey = null
         heard.mark(A)
         now += CommunityHeard.KEEP_MS

@@ -63,7 +63,7 @@ class CommunityListenTrackerTest {
         assertThat(heard).containsExactly(POST)
     }
 
-    @Test fun `a seek to the end adds nothing: it's playing time that counts`() = runTest {
+    @Test fun `a seek to the end adds nothing, it's playing time that counts`() = runTest {
         tracker().begin(POST, listOf(1L)); runCurrent()
         show(1)
         play(5_000)
@@ -74,7 +74,7 @@ class CommunityListenTrackerTest {
         assertThat(heard).containsExactly(POST)
     }
 
-    @Test fun `a skip to another of the post's songs keeps counting; a song that isn't the post's doesn't count`() = runTest {
+    @Test fun `a skip to another of the post's songs keeps counting, a song that isn't the post's doesn't count`() = runTest {
         tracker().begin(POST, listOf(1L, 2L)); runCurrent()
         show(1)
         play(10_000)
