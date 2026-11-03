@@ -15,6 +15,7 @@ import com.stash.data.ytmusic.model.AlbumDetail
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistProfile
+import com.stash.data.ytmusic.model.DatedRelease
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.time.LocalDate
 
 /**
  * Unit tests for [ArtistProfileViewModel].
@@ -212,21 +214,47 @@ class ArtistProfileViewModelTest {
     }
 
     @Test
-    fun `the Latest releases row is built from the profile's albums and singles`() = runTest {
-        val album = AlbumSummary("MPREa", "Album", "", null, "2020", releaseType = "Album")
-        val single = AlbumSummary("MPREs", "Single", "", null, "2023", releaseType = "Single")
+    fun `the Latest releases row holds only the releases the profile dates as new`() = runTest {
+        // The VM reads today's date, so the releases are dated from it.
+        val today = LocalDate.now()
+        val newDay = today.minusDays(3)
+        val oldDay = today.minusDays(200)
+        val newSingle = AlbumSummary("MPREs", "New Single", "", null, "${newDay.year}", releaseType = "Single")
+        val oldAlbum = AlbumSummary("MPREa", "Old Album", "", null, "${oldDay.year}", releaseType = "Album")
         val profile = ArtistProfile(
             id = "UC1", name = "A", avatarUrl = null, subscribersText = null,
-            popular = emptyList(), albums = listOf(album), singles = listOf(single), related = emptyList(),
+            popular = emptyList(), albums = listOf(oldAlbum), singles = listOf(newSingle), related = emptyList(),
+            releaseDates = listOf(
+                DatedRelease("New Single", newDay.toString(), 1),
+                DatedRelease("Old Album", oldDay.toString(), 11),
+            ),
         )
         val cache = mock<ArtistCache>()
         whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
         val vm = vmWith(cache)
         advanceUntilIdle()
-        assertEquals(listOf(single, album), vm.uiState.value.latest.map { it.album })
+        assertEquals(listOf(newSingle), vm.uiState.value.latest.map { it.album })
+        assertEquals(listOf(newDay), vm.uiState.value.latest.map { it.released })
         // The shelves themselves are untouched by it.
+        assertEquals(listOf(oldAlbum), vm.uiState.value.albums)
+        assertEquals(listOf(newSingle), vm.uiState.value.singles)
+    }
+
+    @Test
+    fun `no Latest releases row without a dated new release`() = runTest {
+        // A cold miss's first paint, or a profile cached before the dates were kept: years alone.
+        val album = AlbumSummary("MPREa", "Album", "", null, "${LocalDate.now().year}", releaseType = "Album")
+        val single = AlbumSummary("MPREs", "Single", "", null, "${LocalDate.now().year}", releaseType = "Single")
+        val profile = ArtistProfile(
+            id = "UC1", name = "A", avatarUrl = null, subscribersText = null,
+            popular = emptyList(), albums = listOf(album), singles = listOf(single), related = emptyList(),
+        )
+        val cache = mock<ArtistCache>()
+        whenever(cache.get(eq("UC1"), eq(false))).thenReturn(flowOf(CachedProfile.Partial(profile)))
+        val vm = vmWith(cache)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.latest.isEmpty())
         assertEquals(listOf(album), vm.uiState.value.albums)
-        assertEquals(listOf(single), vm.uiState.value.singles)
     }
 
     @Test

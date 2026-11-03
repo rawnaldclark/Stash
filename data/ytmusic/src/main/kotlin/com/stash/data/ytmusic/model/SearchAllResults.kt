@@ -157,4 +157,24 @@ data class ArtistProfile(
      * Null when YouTube sends none, and in profiles cached before this field existed.
      */
     val monthlyAudience: Long? = null,
+    /**
+     * The artist's recent releases dated to the day, from the Qobuz discography merge (YouTube's
+     * cards give the year alone). The artist page's Latest releases row tells a release from the
+     * last weeks from an older one of the same year by them. Empty when Qobuz doesn't have the
+     * artist, before the merge has answered (a cold miss's first paint), and in profiles cached
+     * before this field existed.
+     */
+    val releaseDates: List<DatedRelease> = emptyList(),
+)
+
+/**
+ * One of an artist's releases with the day it came out, as a catalog that dates releases to the
+ * day lists it (Qobuz's `release_date_original`). [date] is ISO, "2026-10-30". [trackCount] tells
+ * a single from an album of the same name; null when unknown.
+ */
+@Serializable
+data class DatedRelease(
+    val title: String,
+    val date: String,
+    val trackCount: Int? = null,
 )

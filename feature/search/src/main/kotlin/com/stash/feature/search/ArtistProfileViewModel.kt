@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import javax.inject.Inject
 
 /**
@@ -417,7 +418,9 @@ class ArtistProfileViewModel @Inject constructor(
                 monthlyListeners = listeners ?: currentHero.monthlyListeners,
             ),
             popular = profile.popular,
-            latest = latestReleases(profile.albums, profile.singles),
+            // Dated by the Qobuz merge: a cold miss's first paint (YouTube alone) has no row, and
+            // the enriched profile adds it a moment later when the artist has something new.
+            latest = latestReleases(profile.albums, profile.singles, profile.releaseDates, LocalDate.now()),
             albums = profile.albums,
             singles = profile.singles,
             related = profile.related,

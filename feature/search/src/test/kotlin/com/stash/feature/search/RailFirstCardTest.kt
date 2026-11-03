@@ -39,6 +39,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.LocalDate
 
 /**
  * The artist page's rails when the enriched profile follows the YouTube one with a newer release
@@ -76,7 +77,8 @@ class RailFirstCardTest {
         ),
     ) + youTube
 
-    private fun latest(albums: List<AlbumSummary>) = albums.map { LatestRelease(it, it.year!!.take(4).toInt(), ReleaseKind.ALBUM) }
+    private fun latest(albums: List<AlbumSummary>) =
+        albums.map { LatestRelease(it, LocalDate.of(it.year!!.take(4).toInt(), 1, 1), ReleaseKind.ALBUM) }
 
     /** The rail's first card on screen is [title]: at the rail's 12dp start padding. */
     private fun assertFirstCard(title: String) {

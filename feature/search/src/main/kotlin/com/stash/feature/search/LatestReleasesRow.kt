@@ -15,14 +15,14 @@ import com.stash.data.ytmusic.model.AlbumSummary
 
 /**
  * Horizontal rail of [AlbumSquareCard]s for the Artist Profile "Latest releases" row:
- * the artist's newest albums, singles and EPs together, newest first ([latestReleases]).
+ * the artist's new albums, singles and EPs together, newest first ([latestReleases]).
  *
  * The same rail as [AlbumsRow] (12dp edges, 8dp between cards), so the rows line up
  * card for card. A tap hands back the release exactly as its shelf holds it, so it
  * opens the album page the way those rows do.
  *
  * Opens on its newest card even when that one arrives a moment late ([ShowNewFirstCard]):
- * the enriched profile's Qobuz albums often put a newer release in front.
+ * a refreshed profile can put a newer release in front.
  */
 @Composable
 fun LatestReleasesRow(

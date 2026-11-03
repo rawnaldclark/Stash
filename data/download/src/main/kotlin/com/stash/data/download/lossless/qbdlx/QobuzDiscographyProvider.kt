@@ -2,11 +2,15 @@ package com.stash.data.download.lossless.qbdlx
 
 import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.MergedDiscography
+import com.stash.core.data.discography.newReleaseYears
 import com.stash.data.download.lossless.qobuz.QobuzCandidateMatcher
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.DatedRelease
+import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 /**
  * [DiscographySupplement] backed by the direct-Qobuz (qbdlx) catalog. Given a YT
@@ -18,17 +22,27 @@ import javax.inject.Singleton
  * name, no candidate over threshold, ambiguous homonym, or any thrown exception)
  * it returns the YT lists UNCHANGED. The outer
  * `runCatching { … }.getOrElse { unchanged }` guarantees nothing throws out.
+ *
+ * Alongside the merge it passes on the artist's recent releases dated to the day
+ * ([MergedDiscography.releaseDates]), for the artist page's Latest releases row.
  */
 @Singleton
 class QobuzDiscographyProvider @Inject constructor(
     private val apiClient: QbdlxApiClient,
 ) : DiscographySupplement {
 
+    /** Test seam: today, for which releases can still be new ([newReleaseYears]). */
+    internal var today: () -> LocalDate = { LocalDate.now() }
+
+    /** Test seam: a monotonic clock in ms, for [NEWEST_BUDGET_MS]. */
+    internal var elapsedMs: () -> Long = { System.nanoTime() / 1_000_000 }
+
     override suspend fun mergeInto(
         artistName: String,
         ytAlbums: List<AlbumSummary>,
         ytSingles: List<AlbumSummary>,
     ): MergedDiscography = runCatching {
+        val startedAtMs = elapsedMs()
         val nName = QobuzCandidateMatcher.normalize(artistName)
         if (nName.isBlank() || nName in VARIOUS_ARTISTS) return unchanged(ytAlbums, ytSingles)
 
@@ -58,10 +72,9 @@ class QobuzDiscographyProvider @Inject constructor(
         //   2. album-length — enough tracks to be an album, not a single/EP.
         //      release_type is null from this endpoint, so track count is the
         //      only reliable signal (real albums ~8-24 tracks; singles 1-3).
-        val ownAlbums = apiClient.getArtistAlbums(best.id).filter {
-            QobuzCandidateMatcher.normalize(it.artist?.name.orEmpty()) == nBest &&
-                it.tracks_count >= ALBUM_MIN_TRACKS
-        }
+        val listed = apiClient.getArtistAlbums(best.id)
+        val ownReleases = listed.filter { isOwn(it, nBest) }
+        val ownAlbums = ownReleases.filter { it.tracks_count >= ALBUM_MIN_TRACKS }
         if (ytAlbums.isNotEmpty()) {
             // A confident single match still needs corroboration: at least one Qobuz
             // release title must overlap a YT one, else we may have matched a homonym.
@@ -78,10 +91,66 @@ class QobuzDiscographyProvider @Inject constructor(
         MergedDiscography(
             albums = DiscographyMerger.gapFill(ytAlbums, ownAlbums.map { it.toAlbumSummary(best.name) }),
             singles = ytSingles,
+            releaseDates = recentReleaseDates(
+                artistId = best.id,
+                nBest = nBest,
+                ownReleases = ownReleases,
+                listFull = listed.size >= QbdlxApiClient.ARTIST_ALBUMS_LIMIT,
+                youTube = ytAlbums + ytSingles,
+                startedAtMs = startedAtMs,
+            ),
         )
     }.getOrElse { unchanged(ytAlbums, ytSingles) }
 
     private fun unchanged(a: List<AlbumSummary>, s: List<AlbumSummary>) = MergedDiscography(a, s)
+
+    /** The matched artist's OWN release: the primary artist is exactly the match (a feature or a cover isn't). */
+    private fun isOwn(item: QbdlxAlbumItem, nBest: String): Boolean =
+        QobuzCandidateMatcher.normalize(item.artist?.name.orEmpty()) == nBest
+
+    /**
+     * The artist's own releases, any length, that can still be new ([newReleaseYears]), dated to
+     * the day: the artist page's Latest releases row tells a release from the last weeks by them,
+     * where YouTube's cards give the year alone. From the answer the gap-fill already read, so
+     * usually no request of their own.
+     *
+     * That answer is most popular first and at most [QbdlxApiClient.ARTIST_ALBUMS_LIMIT] long, so
+     * when it is full ([listFull]: the artist has more) a new release can be past the cut. Then,
+     * and only if YouTube shows a release from those years, one more call asks for the newest
+     * [NEWEST_LIMIT], unless the calls so far took [NEWEST_BUDGET_MS] or more: ArtistCache drops
+     * the whole merge, gap-fill included, past its bound. Best effort: a failure leaves the dates
+     * the first answer gave.
+     */
+    private suspend fun recentReleaseDates(
+        artistId: Long,
+        nBest: String,
+        ownReleases: List<QbdlxAlbumItem>,
+        listFull: Boolean,
+        youTube: List<AlbumSummary>,
+        startedAtMs: Long,
+    ): List<DatedRelease> {
+        val years = newReleaseYears(today())
+        val youTubeHasOne = youTube.any { yearOf(it.year) in years }
+        val newest = if (listFull && youTubeHasOne && elapsedMs() - startedAtMs < NEWEST_BUDGET_MS) {
+            try {
+                apiClient.getNewestArtistAlbums(artistId, NEWEST_LIMIT).filter { isOwn(it, nBest) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+        return (ownReleases + newest).mapNotNull { item ->
+            val date = item.release_date_original?.takeIf { ISO_DATE.matches(it) } ?: return@mapNotNull null
+            if (yearOf(date) !in years) return@mapNotNull null
+            DatedRelease(title = item.title, date = date, trackCount = item.tracks_count.takeIf { it > 0 })
+        }.distinct()
+    }
+
+    /** The year in "2026" or "2026-10-30"; null when there is none. */
+    private fun yearOf(s: String?): Int? = s?.let { YEAR.find(it) }?.value?.toIntOrNull()
 
     /** A candidate whose normalized name strictly contains the query PLUS extra
      *  tokens (e.g. "my bloody valentine tribute") is a pseudo-artist — drop it so
@@ -92,7 +161,7 @@ class QobuzDiscographyProvider @Inject constructor(
         return c != q && c.containsAll(q) && (c - q).isNotEmpty()
     }
 
-    private companion object {
+    internal companion object {
         // ponytail: subset-coverage in artistSimilarity already returns ~1.0 for a
         // superset/canonical name match, so 0.6 comfortably admits real matches while
         // rejecting partial-token noise. Bump only if a real false-graft slips through.
@@ -102,6 +171,16 @@ class QobuzDiscographyProvider @Inject constructor(
         // junk singles while keeping short albums. Tune here if a real album is
         // ever excluded.
         const val ALBUM_MIN_TRACKS = 5
+        // The newest-first call ([recentReleaseDates]): enough for a few months of an
+        // artist's releases, several editions of a single each included (Taylor Swift
+        // listed six of "I Knew It, I Knew You" on 2026-11-03).
+        const val NEWEST_LIMIT = 30
+        // The search and the first list take ~0.4-0.8 s each, the extra call as long, and
+        // ArtistCache bounds the whole merge at 4 s: past 2 s the network is slow, and the
+        // dates aren't worth losing the gap-fill for.
+        const val NEWEST_BUDGET_MS = 2_000L
+        val ISO_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+        val YEAR = Regex("""\d{4}""")
         val VARIOUS_ARTISTS = setOf(
             "various artists", "various", "verschiedene interpreten", "multi artistes", "va",
         )

@@ -49,7 +49,7 @@ sealed interface ArtistProfileStatus {
 data class ArtistProfileUiState(
     val hero: HeroState,
     val popular: List<TrackSummary> = emptyList(),
-    /** The Latest releases row, from [albums] and [singles] ([latestReleases]); empty hides it. */
+    /** The Latest releases row: the artist's releases out in the last weeks ([latestReleases]); empty hides it. */
     val latest: List<LatestRelease> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val singles: List<AlbumSummary> = emptyList(),
