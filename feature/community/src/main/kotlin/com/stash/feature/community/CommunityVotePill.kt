@@ -13,7 +13,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -45,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -54,7 +57,7 @@ import com.stash.core.ui.ambient.AccentRoles
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.theme.StashTheme
 
-/** The pill's paints: idle, lit (this phone's vote) and inert (your own post). */
+/** The pill's paints: idle, lit (this phone's vote) and inert (your own post, or an arrow waiting for a listen). */
 @Immutable
 internal data class VotePillColors(
     val fill: Color,
@@ -66,6 +69,8 @@ internal data class VotePillColors(
     val litIcon: Color,
     val litText: Color,
     val inertIcon: Color,
+    /** The "Listen first" hint. */
+    val hint: Color,
 )
 
 internal object VotePillDefaults {
@@ -88,6 +93,7 @@ internal object VotePillDefaults {
             litIcon = chrome.accent,
             litText = chrome.ink,
             inertIcon = ext.textTertiary.copy(alpha = 0.38f),
+            hint = ext.textTertiary,
         )
     }
 
@@ -102,6 +108,7 @@ internal object VotePillDefaults {
         litIcon = Color.White,
         litText = Color.White,
         inertIcon = Color.White.copy(alpha = 0.3f),
+        hint = Color.White.copy(alpha = HERO_POSTER_ALPHA),
     )
 }
 
@@ -113,6 +120,10 @@ internal object VotePillDefaults {
  * Taps on the pill never reach the row or card under it: a near miss on an arrow shouldn't open the post. Your own
  * post's pill takes no taps at all, so a tap on it opens the post as before.
  *
+ * Until the post is heard (30 s played from it, contract 2026-11-03) the arrows that would vote are dimmed and a small
+ * "Listen first" shows under the pill, or beside it ([hintBeside]). A dimmed arrow still takes the tap and hands it to
+ * [onVote], whose view model shows why instead of voting; your current vote stays lit and can be taken back.
+ *
  * @param compact the smaller pill of list rows and rail cards (32 dp high instead of 36, narrower arrows), so the
  *   title beside it keeps its room.
  */
@@ -123,8 +134,40 @@ internal fun VotePill(
     modifier: Modifier = Modifier,
     colors: VotePillColors = VotePillDefaults.onPage(),
     compact: Boolean = false,
+    hintBeside: Boolean = false,
 ) {
     val ui = post.votePill()
+    if (!ui.listenFirst) {
+        Pill(ui, onVote, modifier, colors, compact)
+        return
+    }
+    val hint: @Composable () -> Unit = {
+        Text(
+            stringResource(R.string.community_listen_first),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.hint,
+            maxLines = 1,
+            softWrap = false,
+            // The dimmed arrows say it to TalkBack.
+            modifier = Modifier.clearAndSetSemantics { },
+        )
+    }
+    if (hintBeside) {
+        Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill(ui, onVote, Modifier, colors, compact)
+            hint()
+        }
+    } else {
+        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Pill(ui, onVote, Modifier, colors, compact)
+            hint()
+        }
+    }
+}
+
+/** The capsule itself: ▲ score ▼. */
+@Composable
+private fun Pill(ui: VotePillUi, onVote: (Int) -> Unit, modifier: Modifier, colors: VotePillColors, compact: Boolean) {
     val lit = ui.upLit || ui.downLit
     val fill by animateColorAsState(if (lit) colors.litFill else colors.fill, tween(PILL_FADE_MS), label = "pillFill")
     val border by animateColorAsState(if (lit) colors.litBorder else colors.border, tween(PILL_FADE_MS), label = "pillBorder")
@@ -139,11 +182,13 @@ internal fun VotePill(
             .then(if (ui.enabled) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val waiting = stringResource(R.string.community_listen_first)
         PillArrow(
             icon = Icons.Rounded.KeyboardArrowUp,
             label = stringResource(R.string.community_vote_up),
             lit = ui.upLit,
             enabled = ui.enabled,
+            dimmed = if (ui.upDimmed) waiting else null,
             colors = colors,
             width = arrowWidth,
             height = height,
@@ -179,6 +224,7 @@ internal fun VotePill(
             label = stringResource(R.string.community_vote_down),
             lit = ui.downLit,
             enabled = ui.enabled,
+            dimmed = if (ui.downDimmed) waiting else null,
             colors = colors,
             width = arrowWidth,
             height = height,
@@ -191,7 +237,8 @@ internal fun VotePill(
  * One arrow: [width] × [height] of the pill, with a 48 dp tap area. The tap area is bigger than the arrow's part of
  * the pill and reaches outward from it ([inner] is the side facing the score, where it stops), past the pill's ends
  * and above and below it, without taking any room in the layout. The ripple stays on the arrow's own part.
- * Disabled (your own post), it's dimmed, silent to TalkBack and lets taps through.
+ * Disabled (your own post), it's dimmed, silent to TalkBack and lets taps through. [dimmed] (waiting for a listen),
+ * it's dimmed too but still takes taps, and TalkBack hears [dimmed] after its label.
  */
 @Composable
 private fun PillArrow(
@@ -199,6 +246,7 @@ private fun PillArrow(
     label: String,
     lit: Boolean,
     enabled: Boolean,
+    dimmed: String?,
     colors: VotePillColors,
     width: Dp,
     height: Dp,
@@ -207,7 +255,7 @@ private fun PillArrow(
 ) {
     val tint by animateColorAsState(
         when {
-            !enabled -> colors.inertIcon
+            !enabled || dimmed != null -> colors.inertIcon
             lit -> colors.litIcon
             else -> colors.icon
         },
@@ -224,7 +272,9 @@ private fun PillArrow(
             // Not selectable(enabled = false): a disabled one still swallows the tap, which should open the post.
             .then(
                 if (enabled) {
-                    Modifier.selectable(selected = lit, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+                    Modifier
+                        .selectable(selected = lit, interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+                        .then(if (dimmed != null) Modifier.semantics { stateDescription = dimmed } else Modifier)
                 } else {
                     Modifier.clearAndSetSemantics {}
                 },

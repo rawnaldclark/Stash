@@ -115,10 +115,39 @@ internal fun heroTextContrast(backdrop: Color, textAlpha: Float): Double {
     return contrastRatio(Color.White.copy(alpha = textAlpha).compositeOver(ground), ground)
 }
 
-/** The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own post). */
-internal data class VotePillUi(val score: Int, val upLit: Boolean, val downLit: Boolean, val enabled: Boolean)
+/**
+ * The vote pill as drawn: the score, which arrow is lit (this phone's vote), and whether it takes taps (not on your own
+ * post). Until the post is heard ([listenFirst]: 30 s played from it) an arrow that would cast a vote is [upDimmed] or
+ * [downDimmed], and a "Listen first" hint shows; your current vote stays lit and can still be taken back.
+ */
+internal data class VotePillUi(
+    val score: Int,
+    val upLit: Boolean,
+    val downLit: Boolean,
+    val enabled: Boolean,
+    val listenFirst: Boolean = false,
+    val upDimmed: Boolean = false,
+    val downDimmed: Boolean = false,
+)
 
-internal fun CommunityPost.votePill() = VotePillUi(score = up - down, upLit = myVote == 1, downLit = myVote == -1, enabled = !mine)
+internal fun CommunityPost.votePill(): VotePillUi {
+    val listenFirst = !mine && !heard
+    return VotePillUi(
+        score = up - down,
+        upLit = myVote == 1,
+        downLit = myVote == -1,
+        enabled = !mine,
+        listenFirst = listenFirst,
+        upDimmed = listenFirst && myVote != 1,
+        downDimmed = listenFirst && myVote != -1,
+    )
+}
+
+/** [this] as heard when this phone's own marks ([heardHere], by post id) say so; the server's `heard` counts too. */
+internal fun CommunityPost.heardFrom(heardHere: Set<String>): CommunityPost = if (!heard && id in heardHere) copy(heard = true) else this
+
+/** A tap of ▲ (1) or ▼ (-1) waits for a listen: it would cast a vote (not take one back) on a post not heard yet. */
+internal fun CommunityPost.needsListen(tapped: Int): Boolean = !heard && nextVote(tapped) != 0
 
 /** How long ago a post went up, in the unit a list shows it in. */
 internal sealed interface Age {

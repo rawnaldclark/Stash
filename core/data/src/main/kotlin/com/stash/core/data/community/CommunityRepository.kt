@@ -18,6 +18,7 @@ import com.stash.core.model.share.toSharedTrackWithArt
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +49,7 @@ class CommunityRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val sharePreference: SharePreference,
     private val homeSections: HomeSectionsPreference,
+    private val heard: CommunityHeard,
 ) {
     /** Home's last loaded list, shown at once on the next Home open while it reloads. */
     @Volatile var lastHome: List<CommunityPost>? = null
@@ -61,8 +63,17 @@ class CommunityRepository @Inject constructor(
     @Volatile var lastVoteAt: Long = 0L
         private set
 
-    /** The ranked list. It carries the key only once this phone has one: reading never makes one. */
-    suspend fun feed(limit: Int): CommunityResult<List<CommunityPost>> = whileOn { api.feed(limit, keys.existingKey()) }
+    /** The posts this phone has heard (played 30 s from the post), by id: its own marks, set before the server knows. */
+    val heardIds: Flow<Set<String>> get() = heard.ids
+
+    /**
+     * The ranked list. It carries the key only once this phone has one: reading never makes one. Heard marks still
+     * waiting go again meanwhile ([CommunityHeard.retry]).
+     */
+    suspend fun feed(limit: Int): CommunityResult<List<CommunityPost>> = whileOn {
+        heard.retry()
+        api.feed(limit, keys.existingKey())
+    }
 
     /** Your live posts, hidden ones included; none, without asking, before this phone has a key. */
     suspend fun mine(): CommunityResult<List<CommunityPost>> = whileOn {
@@ -78,12 +89,21 @@ class CommunityRepository @Inject constructor(
         keys.existingKey()?.let { api.me(it) } ?: CommunityResult.Ok(CommunityMe(DAILY_POSTS, LIVE_POSTS, blocked = false))
     }
 
-    suspend fun open(id: String): CommunityResult<CommunityPost> = whileOn { api.open(id, keys.existingKey()) }
+    suspend fun open(id: String): CommunityResult<CommunityPost> = whileOn {
+        heard.retry()
+        api.open(id, keys.existingKey())
+    }
 
+    /**
+     * A ±1 sends the post's heard mark first if it's still waiting (a Worker that wants a listen before a vote must
+     * have it). A `listen_first` answer means the Worker has no mark: the post isn't heard here either.
+     */
     suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> = whileOn {
         // Before sending: a screen closed mid-vote cancels this call, maybe after the vote has landed.
         lastVoteAt = System.currentTimeMillis()
-        api.vote(id, value, keys.key())
+        val key = keys.key()
+        if (value != 0) heard.beforeVote(id)
+        api.vote(id, value, key).also { if (it is CommunityResult.Rejected && it.code == LISTEN_FIRST) heard.forget(id) }
     }
 
     /** A post that's already gone counts as taken down: it's what the person wanted (e.g. a retry after a lost 204). */
@@ -145,6 +165,8 @@ class CommunityRepository @Inject constructor(
         if (homeSections.communityOn.first()) call() else CommunityResult.Rejected("off")
 
     companion object {
+        /** A vote's answer when the Worker wants a listen first (contract 2026-11-03, `HEARD_REQUIRED`). */
+        const val LISTEN_FIRST = "listen_first"
         const val HOME_SIZE = 5
         const val ALL_SIZE = 100
         private const val MAX_POST_TRACKS = 500

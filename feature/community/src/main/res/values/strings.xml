@@ -64,6 +64,10 @@
         <item quantity="one">%d vote</item>
         <item quantity="other">%d votes</item>
     </plurals>
+    <!-- Under a dimmed vote pill: you can vote on a post once you've played it for 30 seconds -->
+    <string name="community_listen_first">Listen first</string>
+    <!-- Shown when a dimmed vote arrow is tapped -->
+    <string name="community_listen_first_note">Play it for 30 seconds to vote.</string>
 
     <!-- See all: a taste of the chart -->
     <string name="community_play_all">Play all</string>

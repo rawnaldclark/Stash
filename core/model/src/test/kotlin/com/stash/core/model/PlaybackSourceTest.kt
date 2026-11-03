@@ -18,6 +18,7 @@ class PlaybackSourceTest {
             PlaybackSource.AllSongs,
             PlaybackSource.Handoff("Late night"),
             PlaybackSource.Listening("History · Sat, Oct 11"),
+            PlaybackSource.Community("AAAAAAAA", "sad boy hours"),
             PlaybackSource.Unknown,
         )
         for (source in sources) {
@@ -37,5 +38,11 @@ class PlaybackSourceTest {
 
     @Test fun `a bare LISTENING reads as an empty label, not Unknown`() {
         assertEquals(PlaybackSource.Listening(""), PlaybackSource.deserialize("LISTENING"))
+    }
+
+    @Test fun `a community post shows its title as Playing from, and keeps a pipe in it`() {
+        val source = PlaybackSource.Community("AAAAAAAA", "late | night")
+        assertEquals("late | night", source.displayLabel)
+        assertEquals(source, PlaybackSource.deserialize(source.serialize()))
     }
 }

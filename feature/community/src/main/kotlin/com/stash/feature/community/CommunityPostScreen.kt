@@ -101,6 +101,7 @@ fun CommunityPostScreen(
     // Saveable, so the dialog survives rotation.
     var confirmTakeDown by rememberSaveable { mutableStateOf(false) }
     CommunitySnackbar(loaded?.message, viewModel::messageShown)
+    CommunitySnackbar(listenFirstNote(loaded?.listenFirst == true), viewModel::listenFirstShown)
     when (val s = state) {
         is UiState.Loaded -> PostBody(
             s = s,

@@ -77,6 +77,7 @@ fun CommunityScreen(
     // Back from the background, the ages catch up.
     LifecycleResumeEffect(Unit) { now = System.currentTimeMillis(); onPauseOrDispose {} }
     CommunitySnackbar(state.message, viewModel::messageShown)
+    CommunitySnackbar(listenFirstNote(state.listenFirst), viewModel::listenFirstShown)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val ui = listUi(state, segment, now)

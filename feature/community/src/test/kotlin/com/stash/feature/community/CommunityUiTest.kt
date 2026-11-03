@@ -15,6 +15,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -34,10 +35,12 @@ class CommunityUiTest {
     private val day = 24 * hour
     private val now = 40 * day
 
-    private fun post(id: String, age: Long = day, up: Int = 3, down: Int = 1, myVote: Int = 0, mine: Boolean = false) = CommunityPost(
-        id = id, kind = "playlist", title = "t$id", name = "Maya", count = 4, createdAt = now - age,
-        up = up, down = down, myVote = myVote, mine = mine,
-    )
+    /** Heard unless a test says otherwise: the pill as it was before the listen rule. */
+    private fun post(id: String, age: Long = day, up: Int = 3, down: Int = 1, myVote: Int = 0, mine: Boolean = false, heard: Boolean = true) =
+        CommunityPost(
+            id = id, kind = "playlist", title = "t$id", name = "Maya", count = 4, createdAt = now - age,
+            up = up, down = down, myVote = myVote, mine = mine, heard = heard,
+        )
 
     // The list in the Worker's "hot" order (votes plus age, 3.6 h a vote), which is neither a top nor a newest:
     // the phone orders it. Scores: a 2, b 2 (newer than a), c 5 but 10 days old, d -1, e 0, f 0 (newer than e).
@@ -274,4 +277,73 @@ class CommunityUiTest {
     }
 
     private fun pill(vm: CommunityViewModel) = vm.state.value.posts!!.single().votePill()
+
+    // -- Listen first (contract 2026-11-03) ---------------------------------------------------------------------
+
+    @Test fun `until the post is heard its pill is dimmed with the hint, and an earlier vote stays lit to take back`() {
+        val waiting = VotePillUi(2, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true)
+        assertThat(post("AAAAAAAA", heard = false).votePill()).isEqualTo(waiting)
+        // A vote from before the rule: lit, and it can be taken back; the other arrow waits.
+        assertThat(post("AAAAAAAA", up = 4, myVote = 1, heard = false).votePill())
+            .isEqualTo(VotePillUi(3, upLit = true, downLit = false, enabled = true, listenFirst = true, upDimmed = false, downDimmed = true))
+        assertThat(post("AAAAAAAA", down = 2, myVote = -1, heard = false).votePill())
+            .isEqualTo(VotePillUi(1, upLit = false, downLit = true, enabled = true, listenFirst = true, upDimmed = true, downDimmed = false))
+        // Your own post: no hint, inert as before.
+        assertThat(post("AAAAAAAA", mine = true, heard = false).votePill()).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = false))
+    }
+
+    @Test fun `this phone's mark or the server's flag makes a post heard`() {
+        val waiting = post("AAAAAAAA", heard = false)
+        assertThat(waiting.heardFrom(setOf("AAAAAAAA")).votePill()).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true))
+        assertThat(waiting.heardFrom(setOf("BBBBBBBB")).votePill().listenFirst).isTrue()
+        // An older Worker sends no flag: the post reads as not heard (the field's default), the mark still counts.
+        assertThat(post("AAAAAAAA").heardFrom(emptySet()).votePill().listenFirst).isFalse()
+        assertThat(waiting.needsListen(1)).isTrue()
+        assertThat(waiting.copy(myVote = 1).needsListen(1)).isFalse() // taking it back
+        assertThat(waiting.copy(myVote = 1).needsListen(-1)).isTrue()
+    }
+
+    @Test fun `a dimmed arrow sends no vote and shows the note, while taking a vote back still goes`() = runTest(dispatcher) {
+        val earlier = a.copy(up = 4, myVote = 1, heard = false)
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(earlier))
+        coEvery { repo.vote(a.id, 0) } returns CommunityResult.Ok(VoteCounts(up = 3, down = 1, myVote = 0))
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(earlier, -1); advanceUntilIdle()
+        assertThat(vm.state.value.listenFirst).isTrue()
+        assertThat(pill(vm)).isEqualTo(earlier.votePill())
+        coVerify(exactly = 0) { repo.vote(any(), -1) }
+        vm.listenFirstShown()
+        assertThat(vm.state.value.listenFirst).isFalse()
+        vm.vote(earlier, 1); advanceUntilIdle()
+        coVerify { repo.vote(a.id, 0) }
+        assertThat(pill(vm)).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true))
+        assertThat(vm.state.value.listenFirst).isFalse()
+    }
+
+    @Test fun `the pill wakes when the post is heard while it's on screen, and stays awake on a reload`() = runTest(dispatcher) {
+        val heard = MutableStateFlow(emptySet<String>())
+        every { repo.heardIds } returns heard
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(a.copy(heard = false)))
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        assertThat(pill(vm).listenFirst).isTrue()
+        heard.value = setOf(a.id); advanceUntilIdle()
+        assertThat(pill(vm)).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true))
+        // The Worker doesn't know yet (or isn't deployed yet): this phone's mark still counts.
+        vm.show(Tab.HOME); advanceUntilIdle()
+        assertThat(pill(vm).listenFirst).isFalse()
+    }
+
+    @Test fun `a vote answered listen_first dims the pill again and shows the note`() = runTest(dispatcher) {
+        every { repo.heardIds } returns emptyFlow()
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(a))
+        coEvery { repo.vote(a.id, 1) } returns CommunityResult.Rejected(CommunityRepository.LISTEN_FIRST)
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(a, 1); advanceUntilIdle()
+        assertThat(pill(vm)).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true))
+        assertThat(vm.state.value.listenFirst).isTrue()
+        assertThat(vm.state.value.message).isNull()
+    }
 }

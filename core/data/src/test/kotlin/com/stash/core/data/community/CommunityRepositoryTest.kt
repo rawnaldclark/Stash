@@ -43,6 +43,7 @@ class CommunityRepositoryTest {
     private lateinit var repo: CommunityRepository
     private val prefs = mockk<SharePreference>(relaxed = true)
     private val key = "k".repeat(43)
+    private val heard = mockk<CommunityHeard>(relaxed = true)
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
@@ -66,7 +67,7 @@ class CommunityRepositoryTest {
     private fun repository(keys: CommunityKeyStore, on: Boolean = true): CommunityRepository {
         val api = CommunityApiClient(OkHttpClient()).apply { baseUrls = listOf(server.url("/").toString().removeSuffix("/")) }
         val homeSections = mockk<HomeSectionsPreference> { every { communityOn } returns flowOf(on) }
-        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections)
+        return CommunityRepository(api, keys, shared, db.playlistDao(), db.trackDao(), prefs, homeSections, heard)
     }
 
     private suspend fun playlist(type: PlaylistType, songs: Int): Long {

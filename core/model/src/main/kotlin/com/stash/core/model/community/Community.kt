@@ -14,6 +14,10 @@ sealed interface PostTarget {
  * A Community post as the Worker sends it (spec §2 Routes). Lists leave [tracks] and [track] empty; an
  * opened post fills [tracks] (a playlist or mix) or [track] (a song). [myVote] and [mine] are only set when
  * the request carried this phone's key; [hidden] and [expiresAt] only in Mine.
+ *
+ * [heard]: this phone's key has played the post for 30 s, so it may vote on it (the server says so only when the
+ * request carried the key; an older Worker never does). The Community screens also set it from this phone's own
+ * mark (CommunityHeard), which comes first: it's set at once, before the server hears of it.
  */
 @Serializable
 data class CommunityPost(
@@ -31,6 +35,7 @@ data class CommunityPost(
     val up: Int,
     val down: Int,
     val myVote: Int = 0,
+    val heard: Boolean = false,
     val mine: Boolean = false,
     val hidden: Boolean = false,
     val expiresAt: Long? = null,

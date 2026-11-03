@@ -45,6 +45,8 @@ class CommunityViewModel @Inject constructor(
         val startingChart: Boolean = false,
         /** A pull-to-refresh is loading; cleared when the list it asked for answers, either way. */
         val refreshing: Boolean = false,
+        /** Show "Play it for 30 seconds to vote": a dimmed arrow was tapped, or a vote was answered `listen_first`. */
+        val listenFirst: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState(posts = repository.lastHome))
@@ -56,12 +58,22 @@ class CommunityViewModel @Inject constructor(
     /** Post id → the vote last asked for, while a request for that post is out (main thread only). */
     private val voting = mutableMapOf<String, Int>()
 
+    /** The posts heard on this phone ([CommunityRepository.heardIds]), laid over each list as it loads. */
+    private var heardHere: Set<String> = emptySet()
+
     /** Test seam for the reload clock. */
     internal var clock: () -> Long = { System.currentTimeMillis() }
 
     init {
         // A post or a take-down (the posting sheet, a post screen) reloads whatever is on screen.
         viewModelScope.launch { repository.revision.drop(1).collect { show(_state.value.tab) } }
+        // A post heard while its list is on screen (the 30 s ran out) wakes its pill there and then.
+        viewModelScope.launch {
+            repository.heardIds.collect { ids ->
+                heardHere = ids
+                patchAll { it.heardFrom(ids) }
+            }
+        }
     }
 
     /**
@@ -90,7 +102,7 @@ class CommunityViewModel @Inject constructor(
                 Tab.MINE -> repository.mine()
             }
             // A vote still on its way stays on its row, so its highlight doesn't flicker off and back on.
-            val posts = (result as? CommunityResult.Ok)?.value?.map { p -> voting[p.id]?.let { p.withVote(it) } ?: p }
+            val posts = (result as? CommunityResult.Ok)?.value?.map { p -> (voting[p.id]?.let { p.withVote(it) } ?: p).heardFrom(heardHere) }
             if (posts != null) {
                 loadedAt = asked
                 if (tab == Tab.HOME) repository.lastHome = posts
@@ -113,9 +125,16 @@ class CommunityViewModel @Inject constructor(
         show(_state.value.tab)
     }
 
-    /** Your own posts can't be voted on; one request per post is out at a time, and a tap meanwhile is sent after it. */
+    /**
+     * Your own posts can't be voted on; one request per post is out at a time, and a tap meanwhile is sent after it.
+     * A post not heard yet takes no vote, only the note saying why (taking a vote back is always allowed).
+     */
     fun vote(post: CommunityPost, tapped: Int) {
         if (post.mine) return
+        if (post.needsListen(tapped)) {
+            _state.update { it.copy(listenFirst = true) }
+            return
+        }
         val value = post.nextVote(tapped)
         patch(post.id) { it.withVote(value) }
         if (voting.put(post.id, value) != null) return // the request that's out sends this when it's back
@@ -126,8 +145,10 @@ class CommunityViewModel @Inject constructor(
                     val sent = voting.getValue(post.id)
                     val r = repository.vote(post.id, sent)
                     if (r !is CommunityResult.Ok) {
-                        patch(post.id) { it.withVote(confirmed) }
-                        _state.update { it.copy(message = communityMessage(r)) }
+                        // The Worker has no listen on record: the pill dims again, and the note says why.
+                        val listenFirst = r is CommunityResult.Rejected && r.code == CommunityRepository.LISTEN_FIRST
+                        patch(post.id) { p -> p.withVote(confirmed).let { if (listenFirst) it.copy(heard = false) else it } }
+                        _state.update { if (listenFirst) it.copy(listenFirst = true) else it.copy(message = communityMessage(r)) }
                         if (r is CommunityResult.Rejected && r.code == "gone") show(_state.value.tab)
                         return@launch
                     }
@@ -164,8 +185,13 @@ class CommunityViewModel @Inject constructor(
 
     fun messageShown() = _state.update { it.copy(message = null) }
 
-    private fun patch(id: String, change: (CommunityPost) -> CommunityPost) {
-        val s = _state.updateAndGet { it.copy(posts = it.posts?.map { p -> if (p.id == id) change(p) else p }) }
+    fun listenFirstShown() = _state.update { it.copy(listenFirst = false) }
+
+    private fun patch(id: String, change: (CommunityPost) -> CommunityPost) = patchAll { p -> if (p.id == id) change(p) else p }
+
+    private fun patchAll(change: (CommunityPost) -> CommunityPost) {
+        if (_state.value.posts == null) return
+        val s = _state.updateAndGet { it.copy(posts = it.posts?.map(change)) }
         if (s.tab == Tab.HOME) repository.lastHome = s.posts
     }
 }

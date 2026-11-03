@@ -11,6 +11,7 @@ import com.stash.core.data.share.SharedMixDocument
 import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
+import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.SharedTrack
@@ -23,6 +24,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -42,26 +44,29 @@ class CommunityPostViewModelTest {
     private val music = mockk<MusicRepository>(relaxed = true)
     private val player = mockk<PlayerRepository>(relaxed = true)
     private val likes = mockk<LikeCoordinator>(relaxed = true)
+    private val tracker = mockk<CommunityListenTracker>(relaxed = true)
+    private val heardHere = MutableStateFlow(emptySet<String>())
 
     private val tracks = listOf(SharedTrack("T1", "A", durationMs = 3_600_000), SharedTrack("T2", "B", durationMs = 300_000))
     private fun playlistPost(kind: String = "playlist") = CommunityPost(
         id = "AAAAAAAA", kind = kind, title = "sad boy hours", name = "Maya", count = 2,
-        covers = listOf("https://i.scdn.co/image/a"), createdAt = 1, up = 3, down = 0, tracks = tracks,
+        covers = listOf("https://i.scdn.co/image/a"), createdAt = 1, up = 3, down = 0, tracks = tracks, heard = true,
     )
     private val songPost = CommunityPost(
         id = "AAAAAAAA", kind = "song", title = "garden", name = "Sam", count = 1, artist = "Death Plus",
-        createdAt = 1, up = 1, down = 0, track = SharedTrack("garden", "Death Plus", youtubeId = "9Vz"),
+        createdAt = 1, up = 1, down = 0, track = SharedTrack("garden", "Death Plus", youtubeId = "9Vz"), heard = true,
     )
 
     @Before fun setUp() {
         Dispatchers.setMain(dispatcher)
         // Not in this phone's library unless a test says so.
         every { music.observeTrackByYoutubeId(any()) } returns flowOf(null)
+        every { repo.heardIds } returns heardHere
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes, mockk(relaxed = true))
+    private fun vm() = CommunityPostViewModel(SavedStateHandle(mapOf("postId" to "AAAAAAAA")), repo, sharedMix, music, player, likes, mockk(relaxed = true), tracker)
 
     @Test fun `a gone post says so, and a failed load can be retried`() = runTest(dispatcher) {
         coEvery { repo.open("AAAAAAAA") } returnsMany listOf(
@@ -204,5 +209,72 @@ class CommunityPostViewModelTest {
         vm.takeDown { left = true }; advanceUntilIdle()
         assertThat(left).isFalse()
         assertThat((vm.state.value as UiState.Loaded).message).isEqualTo(communityMessage(refused))
+    }
+
+    // -- Listen first (contract 2026-11-03) ---------------------------------------------------------------------
+
+    @Test fun `Play on a post not heard yet counts toward a listen, under the post as Playing from`() = runTest(dispatcher) {
+        val post = playlistPost().copy(heard = false)
+        val queued = listOf(Track(id = 11, title = "T1", artist = "A"), Track(id = 12, title = "T2", artist = "B"))
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(post)
+        coEvery { sharedMix.tracksFor(any()) } returns queued
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        coVerifyOrder {
+            tracker.begin("AAAAAAAA", listOf(11L, 12L))
+            player.setQueue(queued, 0, PlaybackSource.Community("AAAAAAAA", "sad boy hours"))
+        }
+    }
+
+    @Test fun `a song post counts its song, and its radio grows after`() = runTest(dispatcher) {
+        val row = Track(id = 7, title = "garden", artist = "Death Plus", youtubeId = "9Vz")
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false))
+        coEvery { music.ensureTrackPersisted(any()) } returns 7L
+        every { music.observeTrackById(7L) } returns flowOf(row)
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        coVerifyOrder {
+            tracker.begin("AAAAAAAA", listOf(7L))
+            player.setQueue(listOf(row), 0, PlaybackSource.Community("AAAAAAAA", "garden"))
+            player.startRadio(any(), keepCurrent = true)
+        }
+    }
+
+    @Test fun `your own post, or one heard already, isn't counted`() = runTest(dispatcher) {
+        coEvery { sharedMix.tracksFor(any()) } returns listOf(Track(id = 11, title = "T1", artist = "A"))
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(playlistPost().copy(heard = false, mine = true))
+        vm().also { advanceUntilIdle() }.shuffle(); advanceUntilIdle()
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(playlistPost())
+        vm().also { advanceUntilIdle() }.play(); advanceUntilIdle()
+        coVerify(exactly = 2) { player.setQueue(any(), 0, any()) }
+        coVerify(exactly = 0) { tracker.begin(any(), any()) }
+    }
+
+    @Test fun `a dimmed arrow shows the note and sends nothing, until the post is heard`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false))
+        coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 2, down = 0, myVote = 1))
+        val vm = vm(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).listenFirst).isTrue()
+        coVerify(exactly = 0) { repo.vote(any(), any()) }
+        vm.listenFirstShown()
+        // 30 s played: the pill wakes on the page, and the vote goes.
+        heardHere.value = setOf("AAAAAAAA"); advanceUntilIdle()
+        assertThat((vm.state.value as UiState.Loaded).post.votePill().listenFirst).isFalse()
+        vm.vote(1); advanceUntilIdle()
+        coVerify { repo.vote("AAAAAAAA", 1) }
+        assertThat((vm.state.value as UiState.Loaded).post.myVote).isEqualTo(1)
+        assertThat((vm.state.value as UiState.Loaded).listenFirst).isFalse()
+    }
+
+    @Test fun `a vote answered listen_first dims the pill again and says why`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
+        coEvery { repo.vote("AAAAAAAA", -1) } returns CommunityResult.Rejected(CommunityRepository.LISTEN_FIRST)
+        val vm = vm(); advanceUntilIdle()
+        vm.vote(-1); advanceUntilIdle()
+        val s = vm.state.value as UiState.Loaded
+        assertThat(s.post).isEqualTo(songPost.copy(heard = false))
+        assertThat(s.listenFirst).isTrue()
+        assertThat(s.message).isNull()
     }
 }

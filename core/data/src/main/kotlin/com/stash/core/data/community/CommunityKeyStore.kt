@@ -19,7 +19,8 @@ import kotlinx.coroutines.flow.first
 
 private const val TAG = "CommunityKey"
 
-private val Context.communityDataStore: DataStore<Preferences> by preferencesDataStore(
+/** The key's file, never backed up (DatabaseBackupManager); this phone's heard marks live in it too ([CommunityHeard]). */
+internal val Context.communityDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "community_preference",
     corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
