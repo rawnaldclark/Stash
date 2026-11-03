@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -48,6 +52,14 @@ class ReorderableColumnTest {
     private val moves = mutableListOf<Pair<String, Int>>()
     private lateinit var scroll: ScrollState
 
+    /** Every haptic the drag asks for. */
+    private val ticks = mutableListOf<HapticFeedbackType>()
+    private val haptics = object : HapticFeedback {
+        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+            ticks += hapticFeedbackType
+        }
+    }
+
     /**
      * The rows in a page [pageHeight] tall, with [below] more of the page after them (a Settings page's other cards); each
      * drop is saved the way a screen would, and comes back as the order.
@@ -55,26 +67,28 @@ class ReorderableColumnTest {
     private fun start(pageHeight: Dp = 400.dp, below: Dp = 0.dp) {
         rule.setContent {
             scroll = rememberScrollState()
-            Column(Modifier.size(width = 200.dp, height = pageHeight).verticalScroll(scroll)) {
-                val state = rememberReorderableColumnState(
-                    keys = order,
-                    scrollState = scroll,
-                    onMove = { key, to ->
-                        moves += key to to
-                        order = order.toMutableList().apply { add(to, removeAt(indexOf(key))) }
-                    },
-                    bottomInset = 0.dp,
-                )
-                Column(Modifier.fillMaxWidth().reorderableColumn(state)) {
-                    state.rows.forEach { k ->
-                        key(k) {
-                            Row(Modifier.fillMaxWidth().reorderableRow(state, k).height(heights.getValue(k)).testTag("row-$k")) {
-                                Box(Modifier.size(40.dp).reorderHandle(state, k).testTag("handle-$k"))
+            CompositionLocalProvider(LocalHapticFeedback provides haptics) {
+                Column(Modifier.size(width = 200.dp, height = pageHeight).verticalScroll(scroll)) {
+                    val state = rememberReorderableColumnState(
+                        keys = order,
+                        scrollState = scroll,
+                        onMove = { key, to ->
+                            moves += key to to
+                            order = order.toMutableList().apply { add(to, removeAt(indexOf(key))) }
+                        },
+                        bottomInset = 0.dp,
+                    )
+                    Column(Modifier.fillMaxWidth().reorderableColumn(state)) {
+                        state.rows.forEach { k ->
+                            key(k) {
+                                Row(Modifier.fillMaxWidth().reorderableRow(state, k).height(heights.getValue(k)).testTag("row-$k")) {
+                                    Box(Modifier.size(40.dp).reorderHandle(state, k).testTag("handle-$k"))
+                                }
                             }
                         }
                     }
+                    Spacer(Modifier.height(below))
                 }
-                Spacer(Modifier.height(below))
             }
         }
         rule.waitForIdle()
@@ -107,6 +121,8 @@ class ReorderableColumnTest {
         drag("a", 110.dp)
         assertEquals(listOf("a" to 2), moves)
         assertEquals(listOf("b", "c", "a", "d", "e"), order)
+        // One light tick as it was picked up, none for the two swaps
+        assertEquals(listOf(DragPickUpHaptic), ticks)
         rule.mainClock.advanceTimeBy(1_000)
         assertTop("b", 0.dp)
         assertTop("c", 60.dp)

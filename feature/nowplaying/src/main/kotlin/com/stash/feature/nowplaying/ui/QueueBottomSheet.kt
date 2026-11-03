@@ -55,6 +55,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -81,6 +82,7 @@ import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DragAutoScrollEdge
 import com.stash.core.ui.components.DragAutoScrollMaxStep
+import com.stash.core.ui.components.DragPickUpHaptic
 import com.stash.core.ui.components.autoScrollStep
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -210,6 +212,8 @@ fun QueueBottomSheet(
             // can carry a track from deep in the queue to the top.
             val scope = rememberCoroutineScope()
             val density = LocalDensity.current
+            // The light tick as a row is picked up, as in every reorderable list (DragPickUpHaptic).
+            val haptics = LocalHapticFeedback.current
             val edgePx = with(density) { DragAutoScrollEdge.toPx() }
             val maxStepPx = with(density) { DragAutoScrollMaxStep.toPx() }
             var autoScrollJob by remember { mutableStateOf<Job?>(null) }
@@ -462,6 +466,7 @@ fun QueueBottomSheet(
                                                 dragStartIdx = currentIdx
                                                 dragStartCurrent = liveCurrentIndex
                                                 dragOffsetY = 0f
+                                                haptics.performHapticFeedback(DragPickUpHaptic)
                                                 // Measure item height
                                                 val info = listState.layoutInfo.visibleItemsInfo
                                                     .firstOrNull { it.index == currentIdx }

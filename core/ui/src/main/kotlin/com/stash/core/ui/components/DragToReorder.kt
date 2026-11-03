@@ -24,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
@@ -32,6 +34,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,13 @@ val DragAutoScrollEdge: Dp = 64.dp
 
 /** The fastest that edge scroll goes, per frame, with the row all the way into the edge zone. */
 val DragAutoScrollMaxStep: Dp = 6.dp
+
+/**
+ * The tick as a dragged row is picked up, the same in every reorderable list (Home layout, the queue, Up next): one light
+ * tick (SEGMENT_TICK), on pick-up only, not on each swap. LongPress is a heavier buzz; SegmentFrequentTick is made for a
+ * run of ticks while scrubbing, too faint for a single one.
+ */
+val DragPickUpHaptic: HapticFeedbackType = HapticFeedbackType.SegmentTick
 
 /**
  * Auto-scroll velocity for a drag near the viewport edges (issue #319):
@@ -146,6 +156,9 @@ class ReorderableColumnState<K : Any> internal constructor(
     /** How much of the screen's bottom the floating chrome covers: the edge scroll's bottom edge is above it. */
     internal var bottomInsetPx: Float = 0f
 
+    /** Ticks as a row is picked up ([DragPickUpHaptic]). */
+    internal var haptics: HapticFeedback? = null
+
     /** The rows as shown. Filled at once, so the screen never opens on an empty list. */
     val rows = mutableStateListOf<K>().apply { addAll(keys) }
 
@@ -198,6 +211,7 @@ class ReorderableColumnState<K : Any> internal constructor(
         draggedIdx = i
         startIdx = i
         startRows = rows.toList()
+        haptics?.performHapticFeedback(DragPickUpHaptic)
         // Still sliding from an earlier swap: pick it up where it's drawn, not where its slot is.
         slideJobs.remove(key)?.cancel()
         offsetY = slides.remove(key) ?: 0f
@@ -321,6 +335,7 @@ fun <K : Any> rememberReorderableColumnState(
 ): ReorderableColumnState<K> {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
     val state = remember(scrollState) {
         with(density) {
             ReorderableColumnState(keys, scope, scrollState, DragAutoScrollEdge.toPx(), DragAutoScrollMaxStep.toPx())
@@ -330,6 +345,7 @@ fun <K : Any> rememberReorderableColumnState(
         state.keys = keys
         state.onMove = onMove
         state.bottomInsetPx = with(density) { bottomInset.toPx() }
+        state.haptics = haptics
     }
     LaunchedEffect(state, keys) { state.sync() }
     return state

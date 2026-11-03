@@ -37,7 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -48,6 +50,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.ui.components.DragAutoScrollEdge
 import com.stash.core.ui.components.DragAutoScrollMaxStep
+import com.stash.core.ui.components.DragPickUpHaptic
 import com.stash.core.ui.components.autoScrollStep
 import com.stash.core.ui.theme.StashTheme
 import java.util.Collections
@@ -89,6 +92,8 @@ internal class UpNextState(
     private val scope: CoroutineScope,
     private val edgePx: Float,
     private val maxStepPx: Float,
+    /** Ticks as a row is picked up ([DragPickUpHaptic]), as in every reorderable list. */
+    private val haptics: HapticFeedback?,
     /** The room's whole queue as of the last composition. */
     var queue: List<SharedTrack>,
 ) {
@@ -135,6 +140,7 @@ internal class UpNextState(
         draggedIdx = i
         startIdx = i
         startQueue = queue
+        haptics?.performHapticFeedback(DragPickUpHaptic)
         offsetY = 0f
         listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == uid }?.let { itemHeight = it.size }
         // Holding the row near the sheet's top or bottom scrolls the list under it, so one drag can go anywhere.
@@ -209,7 +215,10 @@ internal class UpNextState(
 internal fun rememberUpNextState(listState: LazyListState, queue: List<SharedTrack>, onEdit: (List<SharedTrack>) -> Unit): UpNextState {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val state = remember { UpNextState(listState, scope, with(density) { DragAutoScrollEdge.toPx() }, with(density) { DragAutoScrollMaxStep.toPx() }, queue) }
+    val haptics = LocalHapticFeedback.current
+    val state = remember {
+        UpNextState(listState, scope, with(density) { DragAutoScrollEdge.toPx() }, with(density) { DragAutoScrollMaxStep.toPx() }, haptics, queue)
+    }
     SideEffect {
         state.queue = queue
         state.onEdit = onEdit
