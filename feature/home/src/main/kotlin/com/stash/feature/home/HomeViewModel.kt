@@ -365,7 +365,7 @@ class HomeViewModel @Inject constructor(
 
     private fun Playlist.toHomeMix(buildState: MixBuildState = MixBuildState.READY) =
         HomeMix(
-            id = id, title = name, artUrl = artUrl, source = source,
+            id = id, title = name, artUrl = artUrl, source = source, sourceId = sourceId,
             buildState = buildState, trackCount = trackCount, pinnedToHomeAt = pinnedToHomeAt,
         )
 

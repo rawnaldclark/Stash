@@ -81,6 +81,7 @@ fun MixBrowseScreen(
                         title = m.title,
                         artUrl = m.artUrl,
                         source = m.source,
+                        sourceId = m.sourceId,
                         buildState = m.buildState,
                         onClick = { onOpenMix(m.id) },
                         size = MixGridCardSize,

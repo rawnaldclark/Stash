@@ -110,6 +110,7 @@ import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
+import com.stash.core.ui.components.playlistSourceMarks
 import com.stash.core.ui.components.TrackOptionsSheet
 import com.stash.core.ui.selection.RemoveDownloadsConfirmDialog
 import com.stash.core.ui.selection.SelectionAction
@@ -1050,25 +1051,19 @@ private fun PlaylistHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Link imports are locally owned (BOTH); describe their songs' actual services.
+                // A list Stash makes names no service ("38 tracks \u2022 1 hr 34 min"); a link import
+                // names its songs' services, a synced list its own.
                 val sources = remember(playlist.sourceId, playlist.source, state.tracks) {
-                    if (playlist.sourceId.startsWith("custom_link_")) {
-                        state.tracks.flatMap { track ->
-                            when {
-                                track.soundCloudId != null -> listOf(MusicSource.SOUNDCLOUD)
-                                track.source == MusicSource.BOTH -> listOf(MusicSource.SPOTIFY, MusicSource.YOUTUBE)
-                                else -> listOf(track.source)
-                            }
-                        }.distinct()
-                    } else listOf(playlist.source)
+                    playlistSourceMarks(playlist.source, playlist.sourceId, state.tracks)
                 }
-                sources.forEach { SourceIndicator(source = it, size = 8.dp, showLabel = true) }
-
-                Text(
-                    text = "\u2022",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (sources.isNotEmpty()) {
+                    sources.forEach { SourceIndicator(source = it, size = 8.dp, showLabel = true) }
+                    Text(
+                        text = "\u2022",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 val trackCount = state.tracks.size
                 Text(

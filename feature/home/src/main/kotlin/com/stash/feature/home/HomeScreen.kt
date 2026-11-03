@@ -631,7 +631,7 @@ fun HomeScreen(
                                 }
                                 items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
                                     MixRailCard(
-                                        title = p.title, artUrl = p.artUrl, source = p.source,
+                                        title = p.title, artUrl = p.artUrl, source = p.source, sourceId = p.sourceId,
                                         onClick = { onNavigateToPlaylist(p.id) },
                                         onLongPress = { pinnedSheetPlaylistId = p.id },
                                     )
@@ -681,7 +681,7 @@ fun HomeScreen(
                         ) {
                             items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    title = m.title, artUrl = m.artUrl, source = m.source, sourceId = m.sourceId,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
                                     favorite = m.pinnedToHomeAt != null,
@@ -699,7 +699,7 @@ fun HomeScreen(
                         ) {
                             items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    title = m.title, artUrl = m.artUrl, source = m.source, sourceId = m.sourceId,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
                                     favorite = m.pinnedToHomeAt != null,
@@ -717,7 +717,7 @@ fun HomeScreen(
                         ) {
                             items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
                                 MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    title = m.title, artUrl = m.artUrl, source = m.source, sourceId = m.sourceId,
                                     buildState = m.buildState, onClick = { openMix(m.id) },
                                     onLongPress = { actionSheetMixId = m.id },
                                     favorite = m.pinnedToHomeAt != null,
