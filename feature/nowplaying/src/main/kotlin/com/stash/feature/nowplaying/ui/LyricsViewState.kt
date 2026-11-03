@@ -10,6 +10,9 @@ import com.stash.data.lyrics.source.LyricsResult
 import com.stash.data.lyrics.source.LyricsCredits
 import com.stash.data.lyrics.source.SpicyLyricsSource
 
+/** Who a lyrics body is credited to, shown as a footer. Null where the source needs no credit. */
+data class LyricsAttribution(val provider: String, val credits: LyricsCredits?)
+
 /**
  * v0.9.36 Task 12 — Now Playing lyrics view state.
  *
@@ -38,9 +41,6 @@ import com.stash.data.lyrics.source.SpicyLyricsSource
  *                   flaky connection reads "Couldn't load" + Retry, not the
  *                   false-permanent "No lyrics found".
  */
-
- /** Who a lyrics body is credited to, shown as a footer. Null where the source needs no credit. */
-data class LyricsAttribution(val provider: String, val credits: LyricsCredits?)
 
 sealed interface LyricsViewState {
     object Loading : LyricsViewState
@@ -121,4 +121,3 @@ private fun attributionFor(sourceId: String?, credits: LyricsCredits?): LyricsAt
 private fun LyricsEntity.credits(): LyricsCredits? =
     if (creditUploaderName == null && creditMakerName == null) null
     else LyricsCredits(creditUploaderName, creditUploaderUrl, creditMakerName, creditMakerUrl)
-}
