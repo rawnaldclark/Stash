@@ -81,6 +81,13 @@ database_name = "stash-community"
 database_id = "dfbf6783-001d-40ce-9412-1e56c9ab2d84"
 migrations_dir = "migrations"
 
+# "1": a Community +1 or -1 vote needs the voter's heard mark on the post (PUT /v1/community/posts/{id}/heard, sent by the
+# app and web player after 30 s of playing a song from it); without one it's 403 listen_first. Anything else: votes as
+# before. Turn it on only once the app release and the web player that send heard are out: older apps can't vote after.
+# The deploy that sets [vars] replaces every plain-text var on the Worker, so set it here, not in the dashboard.
+[vars]
+HEARD_REQUIRED = "0"
+
 [[ratelimits]]
 name = "COMMUNITY_WRITE_RL"
 namespace_id = "2005"
