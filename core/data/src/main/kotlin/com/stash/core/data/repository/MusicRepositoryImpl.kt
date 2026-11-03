@@ -515,6 +515,8 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun hidePlaylist(playlistId: Long) {
         playlistDao.setUserHidden(playlistId, true)
+        // A pasted Spotify album notes when: saved on Spotify after this, the sync brings it back.
+        playlistDao.markPastedSpotifyAlbumRemoved(playlistId, System.currentTimeMillis())
     }
 
     override fun getShownTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
@@ -1080,6 +1082,15 @@ class MusicRepositoryImpl @Inject constructor(
     /** A kept playlist's missing songs, queued and started like a tap. */
     internal suspend fun queueKeptPlaylist(playlistId: Long) {
         if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
+    }
+
+    override suspend fun keepPlaylistsOffline(playlistIds: List<Long>) {
+        if (playlistIds.isEmpty()) return
+        playlistIds.forEach { playlistDao.setKeepOffline(it, true) }
+        // Every playlist's rows first, then one drain, started like a tap: a drain per playlist
+        // would restart it each time and cancel the song in progress (as queueKeptPlaylists says).
+        val queued = playlistIds.sumOf { insertKeptPlaylist(it) }
+        if (queued > 0) startDiscoveryDrain(background = false)
     }
 
     override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {

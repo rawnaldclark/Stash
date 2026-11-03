@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,7 +71,27 @@ import com.stash.feature.sync.components.SaveCircle
 import com.stash.feature.sync.components.SyncAmbientBackdrop
 
 /** Which of an account's lists is showing. */
-private enum class ManageTab { PLAYLISTS, MIXES, LIKED }
+private enum class ManageTab { PLAYLISTS, ALBUMS, MIXES, LIKED }
+
+/**
+ * One account's rows, split the way its page shows them. A saved album
+ * ([com.stash.core.data.album.SavedAlbums]: Spotify's synced saved albums, YouTube Music's) is a
+ * release, not a playlist: it goes under Albums, never among the playlists (item 5, 2026-11-02),
+ * and keeps its Save circle and its place in "taken out" there.
+ */
+internal data class ManageLists(
+    val playlists: List<SyncPlaylistRow>,
+    val albums: List<SyncPlaylistRow>,
+    val mixes: List<SyncPlaylistRow>,
+    val liked: List<SyncPlaylistRow>,
+)
+
+internal fun manageLists(rows: List<SyncPlaylistRow>): ManageLists = ManageLists(
+    playlists = rows.filter { it.isOwnPlaylist() },
+    albums = rows.filter { it.album },
+    mixes = rows.filter { !it.album && it.type == PlaylistType.DAILY_MIX },
+    liked = rows.filter { !it.album && it.type == PlaylistType.LIKED_SONGS },
+)
 
 /**
  * One account's playlists, mixes and liked songs, every one with its cover and
@@ -116,9 +137,9 @@ fun ManagePlaylistsScreen(
     }
 
     val rows = uiState.playlistRows().filter { it.source == source }
-    val liked = rows.filter { it.type == PlaylistType.LIKED_SONGS }
-    val mixes = rows.filter { it.type == PlaylistType.DAILY_MIX }
-    val playlists = rows.filter { it.type != PlaylistType.DAILY_MIX && it.type != PlaylistType.LIKED_SONGS }
+    val (playlists, albums, mixes, liked) = manageLists(rows)
+    // Spotify's tab is always there: its switch decides whether saved albums sync at all.
+    val showAlbumsTab = source == SyncSource.SPOTIFY || albums.isNotEmpty()
     val name = when (source) { SyncSource.SPOTIFY -> "Spotify"; SyncSource.SOUNDCLOUD -> "SoundCloud"; else -> "YouTube Music" }
     val brand = if (source == SyncSource.SOUNDCLOUD) androidx.compose.ui.graphics.Color(0xFFFF5500) else if (source == SyncSource.SPOTIFY) StashTheme.extendedColors.spotifyGreen else StashTheme.extendedColors.youtubeRed
 
@@ -126,11 +147,14 @@ fun ManagePlaylistsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     // Taken-out playlists fold under one row at the bottom, closed until asked for.
     var showOut by rememberSaveable { mutableStateOf(false) }
+    // Albums' Save all, waiting for its confirm: the ids it will save.
+    var confirmSaveAll by remember { mutableStateOf<List<Long>?>(null) }
     val q = query.trim()
     // The query reaches every tab, so search never looks broken behind a tab (#310).
     fun matches(row: SyncPlaylistRow) = q.isBlank() || row.name.contains(q, ignoreCase = true)
     val shown = when (tab) {
         ManageTab.PLAYLISTS -> playlists
+        ManageTab.ALBUMS -> albums
         ManageTab.MIXES -> mixes
         ManageTab.LIKED -> liked
     }.filter(::matches)
@@ -185,11 +209,17 @@ fun ManagePlaylistsScreen(
                                 color = MaterialTheme.colorScheme.onBackground,
                             )
                         }
-                        // Saves what's in the library; one taken out stays out.
+                        // Saves what's in the library; one taken out stays out. Playlists and albums
+                        // alike (an album's Save is its page's Download, as a playlist's is), all
+                        // queued for one download run. Albums ask first: a library can hold hundreds.
                         val unsaved = shown.filter { !it.userHidden && !it.saved(streamOnly) }
-                        if (tab == ManageTab.PLAYLISTS && unsaved.isNotEmpty()) {
+                        if ((tab == ManageTab.PLAYLISTS || tab == ManageTab.ALBUMS) && unsaved.isNotEmpty()) {
                             TextButton(onClick = {
-                                unsaved.forEach { viewModel.onSavePlaylist(it.id, true) }
+                                if (tab == ManageTab.ALBUMS) {
+                                    confirmSaveAll = unsaved.map { it.id }
+                                } else {
+                                    viewModel.onSaveAll(unsaved.map { it.id })
+                                }
                             }) { Text(stringResource(R.string.sync_manage_save_all)) }
                         }
                     }
@@ -214,6 +244,13 @@ fun ManagePlaylistsScreen(
                         selected = tab == ManageTab.PLAYLISTS,
                         onClick = { tab = ManageTab.PLAYLISTS },
                     )
+                    if (showAlbumsTab) {
+                        TabPill(
+                            label = stringResource(R.string.sync_manage_tab_albums, albums.size),
+                            selected = tab == ManageTab.ALBUMS,
+                            onClick = { tab = ManageTab.ALBUMS },
+                        )
+                    }
                     TabPill(
                         label = stringResource(R.string.sync_manage_tab_mixes, mixes.size),
                         selected = tab == ManageTab.MIXES,
@@ -279,6 +316,15 @@ fun ManagePlaylistsScreen(
                     }
                 }
             }
+            // Shown before the first album arrives, so saved albums can be kept out from the start.
+            if (tab == ManageTab.ALBUMS && source == SyncSource.SPOTIFY) {
+                item(key = "albums-sync") {
+                    SyncSavedAlbumsRow(
+                        enabled = uiState.syncSpotifySavedAlbums,
+                        onChange = viewModel::onSyncSpotifySavedAlbumsChanged,
+                    )
+                }
+            }
             if (tab == ManageTab.LIKED && source == SyncSource.YOUTUBE) {
                 item(key = "liked-studio") {
                     StudioOnlyToggleRow(
@@ -324,6 +370,24 @@ fun ManagePlaylistsScreen(
                 }
             }
         }
+    }
+
+    // Saving every album can mean hundreds of downloads, so it says how many first.
+    confirmSaveAll?.let { ids ->
+        AlertDialog(
+            onDismissRequest = { confirmSaveAll = null },
+            title = { Text(pluralStringResource(R.plurals.sync_manage_save_all_albums_title, ids.size, ids.size)) },
+            text = { Text(stringResource(R.string.sync_manage_save_all_albums_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSaveAll = null
+                    viewModel.onSaveAll(ids)
+                }) { Text(stringResource(R.string.sync_manage_save_all)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSaveAll = null }) { Text(stringResource(R.string.sync_cancel)) }
+            },
+        )
     }
 }
 
@@ -542,6 +606,38 @@ private fun DiscoverMixesRow(
                 } else {
                     "Off — no new mixes are added, and syncs run shorter"
                 },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        com.stash.core.ui.components.StashSwitch(
+            checked = enabled,
+            onCheckedChange = onChange,
+        )
+    }
+}
+
+/** Spotify's saved albums on or off for sync; on by default (SyncPreferencesManager.syncSpotifySavedAlbums). */
+@Composable
+private fun SyncSavedAlbumsRow(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChange(!enabled) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.sync_saved_albums_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = stringResource(if (enabled) R.string.sync_saved_albums_on else R.string.sync_saved_albums_off),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -191,17 +191,20 @@ class BlocklistGuardTest {
     }
 
     @Test
-    fun `unblock forgets every Spotify playlist's stamp inside the unblock's transaction`() = runTest {
+    fun `unblock forgets the Spotify playlists' stamps and the albums the song may be on, inside the unblock's transaction`() = runTest {
         val body = captureTransaction()
 
         guard.unblock("arctic monkeys|505")
-        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyPlaylistStamps() }
 
         body.captured.invoke()
         coVerifyOrder {
             blocklistDao.deleteByKey("arctic monkeys|505")
-            playlistDao.forgetSpotifyMirrorStamps()
+            playlistDao.forgetSpotifyPlaylistStamps()
+            playlistDao.forgetSpotifyAlbumStampsForUnblock("arctic monkeys")
         }
+        // Never every saved album's: a big library has thousands.
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
     }
 
     /**
@@ -210,7 +213,7 @@ class BlocklistGuardTest {
      * stamp would still match and a skip would keep the twin.
      */
     @Test
-    fun `block forgets every Spotify playlist's stamp inside the block's transaction`() = runTest {
+    fun `block forgets every Spotify playlist's stamp, never the saved albums', inside the block's transaction`() = runTest {
         val track = TrackEntity(
             id = 7, title = "505", artist = "Arctic Monkeys",
             source = MusicSource.SPOTIFY, spotifyUri = "spotify:track:single",
@@ -220,9 +223,10 @@ class BlocklistGuardTest {
         coEvery { database.withTransaction(capture(body)) } coAnswers { emptyList<Long>() }
 
         guard.block(track, BlockSource.CONTEXT_MENU)
-        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyPlaylistStamps() }
 
         body.captured.invoke()
-        coVerify(exactly = 1) { playlistDao.forgetSpotifyMirrorStamps() }
+        coVerify(exactly = 1) { playlistDao.forgetSpotifyPlaylistStamps() }
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
     }
 }

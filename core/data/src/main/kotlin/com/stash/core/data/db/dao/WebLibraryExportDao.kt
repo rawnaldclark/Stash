@@ -107,13 +107,15 @@ interface WebLibraryExportDao {
      * Your own playlists ([com.stash.core.model.PlaylistType.CUSTOM]) as Library shows them (online, see
      * [PlaylistDao.getAllVisible]): active, and synced, pinned, made in Stash, a followed shared mix, or holding a
      * song you can play. Daily Mixes, Stash Mixes, Liked Songs and the Downloads list are other types and never
-     * come here. Oldest first.
+     * come here, nor do saved albums ([SAVED_ALBUM]): Library lists them under Albums, and the web's library file has no
+     * albums yet, so one would arrive there as a playlist. Oldest first.
      */
     @Query(
         """
         SELECT p.* FROM playlists p
         WHERE p.type = 'CUSTOM'
           AND p.is_active = 1
+          AND NOT """ + SAVED_ALBUM + """
           AND (
               p.sync_enabled = 1
               OR p.pinned_to_home_at IS NOT NULL
@@ -465,16 +467,16 @@ interface WebLibraryExportDao {
     companion object {
         /**
          * [LibraryStamp]'s query: the playlists [likes] and [playlists] read (Liked Songs lists, and your own CUSTOM ones while
-         * active), with the songs liked here.
+         * active, saved albums left out as [playlists] leaves them), with the songs liked here.
          */
         const val LIBRARY_STAMP = """
             SELECT
                 (SELECT COUNT(*) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked,
                 (SELECT COALESCE(SUM(id), 0) FROM tracks WHERE stash_liked_at IS NOT NULL) AS liked_ids,
                 (SELECT COUNT(*) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
-                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed,
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1 AND NOT """ + SAVED_ALBUM + """) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed,
                 (SELECT COALESCE(SUM(pt.track_id), 0) FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
-                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed_ids
+                    WHERE pt.removed_at IS NULL AND ((p.type = 'CUSTOM' AND p.is_active = 1 AND NOT """ + SAVED_ALBUM + """) OR p.type IN ('LIKED_SONGS', 'STASH_LIKED'))) AS listed_ids
         """
 
         /** A play's length when its song's is unknown: about three and a half minutes (the web's `LASTFM_GUESS_MS`). */

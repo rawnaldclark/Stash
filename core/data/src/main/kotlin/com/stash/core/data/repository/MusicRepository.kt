@@ -353,6 +353,15 @@ interface MusicRepository {
     suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
 
     /**
+     * [setPlaylistDownload] on for every one of [playlistIds] (the account page's Save all): each
+     * kept on the phone, their songs queued together and downloaded by one run, never a run per
+     * playlist.
+     */
+    suspend fun keepPlaylistsOffline(playlistIds: List<Long>) {
+        playlistIds.forEach { setPlaylistDownload(it, true) }
+    }
+
+    /**
      * Bulk removeDownload for every downloaded track in [playlistId].
      * Returns the number of tracks whose downloads were removed.
      */

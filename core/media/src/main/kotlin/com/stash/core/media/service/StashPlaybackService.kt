@@ -303,6 +303,8 @@ class StashPlaybackService : MediaLibraryService() {
 
         private const val ROOT_ID = "ROOT"
         private const val PLAYLISTS_ID = "PLAYLISTS"
+        /** Saved albums (item 5, 2026-11-02): listed apart from the playlists, as Library lists them. */
+        private const val ALBUMS_ID = "ALBUMS"
         private const val RECENTLY_ADDED_ID = "RECENTLY_ADDED"
         private const val PLAYLIST_PREFIX = "PLAYLIST_"
         private const val SHUFFLE_PLAY_PREFIX = "SHUFFLE_PLAY_"
@@ -2209,7 +2211,7 @@ class StashPlaybackService : MediaLibraryService() {
             when {
                 parentId.startsWith(PLAYLIST_PREFIX) ->
                     parentId.removePrefix(PLAYLIST_PREFIX).toLongOrNull()
-                        ?.let { playlistDao.getTracksForPlaylist(it) }
+                        ?.let { autoTracksOf(it) }
                         // Same predicate as onGetChildren so the queue built
                         // from a tap matches the rows the car listed.
                         ?.filter { it.isPlayableInAuto() }
@@ -2239,8 +2241,30 @@ class StashPlaybackService : MediaLibraryService() {
             val playlistId = key.toLongOrNull() ?: return null
             // isPlayableInAuto, NOT the bare is_streamable flag:
             // never-checked synced rows must play (see AutoBrowse.kt).
-            return playlistDao.getTracksForPlaylist(playlistId).filter { it.isPlayableInAuto() }
+            return autoTracksOf(playlistId).filter { it.isPlayableInAuto() }
         }
+
+        /**
+         * A playlist's rows for the car, in order; a saved album's one per song
+         * ([oneRowPerSongForAuto]), as its page lists them. Every surface that lists or
+         * queues a playlist reads this, so a tap queues exactly the rows the car showed.
+         */
+        private suspend fun autoTracksOf(playlistId: Long): List<TrackEntity> =
+            oneRowPerSongForAuto(
+                playlistDao.getTracksForPlaylist(playlistId),
+                playlistDao.observeSavedAlbumSlots(playlistId).first(),
+            )
+
+        private fun albumsRootItem(): MediaItem = MediaItem.Builder()
+            .setMediaId(ALBUMS_ID)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Albums")
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .build(),
+            )
+            .build()
 
         private fun shuffleItem(mediaId: String): MediaItem = MediaItem.Builder()
             .setMediaId(mediaId)
@@ -2316,6 +2340,7 @@ class StashPlaybackService : MediaLibraryService() {
                         .build()
                     Futures.immediateFuture(LibraryResult.ofItem(playlistsItem, null))
                 }
+                ALBUMS_ID -> Futures.immediateFuture(LibraryResult.ofItem(albumsRootItem(), null))
                 else -> {
                     // Try to resolve track or playlist
                     serviceScope.future {
@@ -2429,6 +2454,7 @@ class StashPlaybackService : MediaLibraryService() {
                                         .build(),
                                 )
                                 .build(),
+                            albumsRootItem(),
                             MediaItem.Builder()
                                 .setMediaId(RECENTLY_ADDED_ID)
                                 .setMediaMetadata(
@@ -2448,6 +2474,8 @@ class StashPlaybackService : MediaLibraryService() {
                         // when streaming-aware Auto support lands.
                         val all = playlistDao.getAllVisible(includeStreamable = false).first()
                         val visible = all
+                            // A saved album is listed under Albums, never among the playlists.
+                            .filterNot { it.isSavedAlbumForAuto() }
                             // getAllVisible always shows the user's own playlists (Library); here one
                             // with downloads off still needs a downloaded track, as before. An
                             // EXISTS per playlist, not its whole track list (N+1 on every open).
@@ -2489,6 +2517,27 @@ class StashPlaybackService : MediaLibraryService() {
                                 .build()
                         }
                     }
+                    ALBUMS_ID -> {
+                        // Library > Albums in Download mode: one entry per album, once every song
+                        // is on the phone (the car plays what's downloaded, as its Playlists do).
+                        // Merging copies over a big library is real work: off the main thread,
+                        // as Library does it.
+                        val rows = playlistDao.observeSavedAlbums().first()
+                        kotlinx.coroutines.withContext(Dispatchers.Default) { albumsForAuto(rows) }.map { album ->
+                            MediaItem.Builder()
+                                .setMediaId("$PLAYLIST_PREFIX${album.playlistId}")
+                                .setMediaMetadata(
+                                    MediaMetadata.Builder()
+                                        .setTitle(album.title)
+                                        .setSubtitle(album.artist.ifBlank { pluralize(album.trackCount, "track") })
+                                        .setArtworkUri(autoTileArtUri(album.artUrl))
+                                        .setIsBrowsable(true)
+                                        .setIsPlayable(false)
+                                        .build(),
+                                )
+                                .build()
+                        }
+                    }
                     LIKED_ID -> {
                         listOf(shuffleItem(SHUFFLE_PLAY_PREFIX + LIKED_ID)) + likedTracksForAuto().map { track ->
                             track.toAutoMediaItem(
@@ -2517,7 +2566,7 @@ class StashPlaybackService : MediaLibraryService() {
                                 // them: the "playlist opens empty in the car" bug.
                                 // mediaId carries the parent playlist (AUTOQ_…) so a tap
                                 // can queue the WHOLE playlist, not a single item — #154/#173.
-                                val tracks = playlistDao.getTracksForPlaylist(playlistId)
+                                val tracks = autoTracksOf(playlistId)
                                     .filter { it.isPlayableInAuto() }
                                     .map { track ->
                                         track.toAutoMediaItem(

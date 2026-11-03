@@ -17,6 +17,23 @@ data class StampedSpotifyPlaylist(
     val trackCount: Int,
 )
 
+/** A playlist's stored song count, for [PlaylistDao.mirrorDigests]. */
+data class PlaylistTrackCount(val id: Long, val trackCount: Int)
+
+/** A [MirrorCopy] with the playlist it was found for ([PlaylistDao.mirrorCopiesOf]). */
+data class PlaylistMirrorCopy(
+    val playlistId: Long,
+    val id: Long,
+    val downloaded: Boolean,
+    val hasFile: Boolean,
+    val matchDismissed: Boolean,
+    val title: String,
+    val spotifyUri: String?,
+    val youtubeId: String?,
+) {
+    fun toMirrorCopy(): MirrorCopy = MirrorCopy(id, downloaded, hasFile, matchDismissed, title, spotifyUri, youtubeId)
+}
+
 /** One `playlist_tracks` row as the mirror digest sees it. See [PlaylistDao.mirrorRows]. */
 data class MirrorRow(
     val playlistId: Long,

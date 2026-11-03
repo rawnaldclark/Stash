@@ -95,6 +95,8 @@ data class SpotifySyncPlaylist(
     /** A mix that can stack ([com.stash.core.data.sync.MixStacking]), and whether it does. */
     val stackable: Boolean = false,
     val stackSongs: Boolean = false,
+    /** A saved album ([com.stash.core.data.album.SavedAlbums]): its account page lists it under Albums, never Playlists. */
+    val album: Boolean = false,
 )
 
 /**
@@ -121,6 +123,8 @@ data class YouTubeSyncPlaylist(
     /** A mix that can stack ([com.stash.core.data.sync.MixStacking]), and whether it does. */
     val stackable: Boolean = false,
     val stackSongs: Boolean = false,
+    /** A saved album ([com.stash.core.data.album.SavedAlbums]): its account page lists it under Albums, never Playlists. */
+    val album: Boolean = false,
 )
 
 data class SyncUiState(
@@ -161,6 +165,8 @@ data class SyncUiState(
      * (opt-out) — see SyncPreferencesManager.discoverAutoMixes.
      */
     val discoverAutoMixes: Boolean = true,
+    /** Whether sync reads Spotify's saved albums. Default true: SyncPreferencesManager.syncSpotifySavedAlbums. */
+    val syncSpotifySavedAlbums: Boolean = true,
     /**
      * Days-of-week bitmask for the auto-sync schedule. Bit 0 = Mon … bit 6 = Sun.
      * Default 127 = every day.
@@ -640,6 +646,23 @@ class SyncViewModel @Inject constructor(
      * never pinned by this: on a mix the pin is its Favorite (see
      * [com.stash.core.data.db.dao.PlaylistDao.setSyncEnabledAndPin]).
      */
+    /**
+     * The account page's Save all: every one of [playlistIds] saved as its own Save would, but their
+     * songs queued together for one download run ([com.stash.core.data.repository.MusicRepository.keepPlaylistsOffline]),
+     * never a run started per playlist. The rows offered are in the library already (taken-out
+     * ones aren't offered).
+     */
+    fun onSaveAll(playlistIds: List<Long>) {
+        if (playlistIds.isEmpty()) return
+        viewModelScope.launch {
+            if (!streamingPreference.current()) {
+                val now = System.currentTimeMillis()
+                playlistIds.forEach { playlistDao.setSyncEnabledAndPin(it, true, now) }
+            }
+            musicRepository.keepPlaylistsOffline(playlistIds)
+        }
+    }
+
     fun onSavePlaylist(playlistId: Long, save: Boolean) {
         viewModelScope.launch {
             // Saving one that's out of the library brings it back: saved is in.
@@ -820,6 +843,16 @@ class SyncViewModel @Inject constructor(
     }
 
     /**
+     * Turn the sync of Spotify's saved albums on or off (item 5, 2026-11-02). Off, sync reads no
+     * saved albums; the ones already here stay, as mixes do when discovery is switched off.
+     */
+    fun onSyncSpotifySavedAlbumsChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            syncPreferencesManager.setSyncSpotifySavedAlbums(enabled)
+        }
+    }
+
+    /**
      * Persists the days-of-week selection and reschedules, so the first run
      * lands on the next chosen day and a schedule that had no days (so no
      * trigger) starts again. UI passes the new bitmask.
@@ -882,6 +915,11 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             syncPreferencesManager.discoverAutoMixes.collect { enabled ->
                 _uiState.update { it.copy(discoverAutoMixes = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            syncPreferencesManager.syncSpotifySavedAlbums.collect { enabled ->
+                _uiState.update { it.copy(syncSpotifySavedAlbums = enabled) }
             }
         }
         viewModelScope.launch {
@@ -988,6 +1026,7 @@ class SyncViewModel @Inject constructor(
                                 dateAdded = e.dateAdded.toEpochMilli(),
                                 stackable = com.stash.core.data.sync.MixStacking.showsSwitch(e.source, e.type, e.name, e.stackSongs),
                                 stackSongs = e.stackSongs,
+                                album = com.stash.core.data.album.SavedAlbums.isSavedAlbum(e.type, e.source, e.sourceId),
                             )
                         }
                     )
@@ -1031,6 +1070,7 @@ class SyncViewModel @Inject constructor(
                                 dateAdded = e.dateAdded.toEpochMilli(),
                                 stackable = com.stash.core.data.sync.MixStacking.showsSwitch(e.source, e.type, e.name, e.stackSongs),
                                 stackSongs = e.stackSongs,
+                                album = com.stash.core.data.album.SavedAlbums.isSavedAlbum(e.type, e.source, e.sourceId),
                             )
                         }
                     )

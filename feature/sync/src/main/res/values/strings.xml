@@ -105,6 +105,9 @@
         <item quantity="one">%d track</item>
         <item quantity="other">%d tracks</item>
     </plurals>
+    <string name="sync_saved_albums_title">Sync your saved albums</string>
+    <string name="sync_saved_albums_on">Albums you save on Spotify arrive in Library › Albums, in their own order. Nothing downloads until you tap Save.</string>
+    <string name="sync_saved_albums_off">Off: no saved albums are read. Albums already here stay until you remove them.</string>
     <string name="sync_studio_only_title">Studio recordings only</string>
     <string name="sync_studio_only_desc">Excludes covers, live recordings, and UGC uploads from your Liked Songs. Other YouTube playlists are unaffected.</string>
     <!-- Sync tab overhaul (2026-10-29): first-sync sheet -->
@@ -203,8 +206,14 @@
     <string name="sync_manage_all_in_library">All in your library</string>
     <string name="sync_manage_pick_to_save">Pick what to keep on this phone</string>
     <string name="sync_manage_save_all">Save all</string>
+    <plurals name="sync_manage_save_all_albums_title">
+        <item quantity="one">Save %d album?</item>
+        <item quantity="other">Save %d albums?</item>
+    </plurals>
+    <string name="sync_manage_save_all_albums_body">Their songs download to this phone, one after another.</string>
     <string name="sync_manage_search">Search playlists and mixes</string>
     <string name="sync_manage_tab_playlists">Playlists %1$d</string>
+    <string name="sync_manage_tab_albums">Albums %1$d</string>
     <string name="sync_manage_tab_mixes">Mixes %1$d</string>
     <string name="sync_manage_tab_liked">Liked</string>
     <string name="sync_manage_on_phone">%1$s · on this phone</string>

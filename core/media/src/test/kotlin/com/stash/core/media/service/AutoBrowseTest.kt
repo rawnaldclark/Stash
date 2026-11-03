@@ -180,4 +180,71 @@ class AutoBrowseTest {
     fun `nothing searchable left is no query`() {
         assertThat(autoSearchMatchQuery(" \"() ")).isNull()
     }
+
+    // ---- Saved albums (item 5, 2026-11-02): under Albums, never among the Playlists ----
+
+    private fun row(source: MusicSource, sourceId: String) = PlaylistEntity(
+        name = "X", source = source, sourceId = sourceId, type = PlaylistType.CUSTOM,
+    )
+
+    @Test
+    fun `a saved album from any service is no playlist in the car, a playlist is`() {
+        assertThat(row(MusicSource.SPOTIFY, "album:spotify:FakeAlb1xxxxxxxxxxxxxx").isSavedAlbumForAuto()).isTrue()
+        assertThat(row(MusicSource.BOTH, "album:qobuz:0886446224536").isSavedAlbumForAuto()).isTrue()
+        assertThat(row(MusicSource.YOUTUBE, "MPREb_fake").isSavedAlbumForAuto()).isTrue()
+        assertThat(row(MusicSource.SPOTIFY, "37i9dQZF1DXcBWIGoYBM5M").isSavedAlbumForAuto()).isFalse()
+        assertThat(row(MusicSource.BOTH, "album:qobuz_playlist:123").isSavedAlbumForAuto()).isFalse()
+    }
+
+    private fun albumRow(id: Long, sourceId: String, tracks: Int, downloaded: Int, source: MusicSource = MusicSource.SPOTIFY) =
+        com.stash.core.data.db.dao.SavedAlbumRow(
+            id = id, name = "Album", source = source, sourceId = sourceId, artUrl = null, dateAdded = id,
+            trackCount = tracks, downloadedCount = downloaded, explicitCount = 0,
+            artists = "Artist", titles = (1..tracks).joinToString(com.stash.core.data.db.dao.SAVED_ALBUM_LIST_SEPARATOR.toString()) { "Song $it" },
+        )
+
+    @Test
+    fun `the car's Albums are the downloaded ones, an album saved twice listed once`() {
+        val albums = albumsForAuto(
+            listOf(
+                albumRow(1, "album:spotify:FakeAlb1xxxxxxxxxxxxxx", tracks = 3, downloaded = 3),
+                // The same album saved from YouTube Music too: one entry.
+                albumRow(2, "MPREb_fake", tracks = 3, downloaded = 0, source = MusicSource.YOUTUBE),
+                // Not on the phone yet: the car can't play it.
+                albumRow(3, "album:spotify:FakeAlb2xxxxxxxxxxxxxx", tracks = 2, downloaded = 1).copy(name = "Other"),
+            ),
+        )
+
+        assertThat(albums.map { it.playlistId }).containsExactly(1L)
+    }
+
+    @Test
+    fun `the car's Albums stop at the cap, newest saved first`() {
+        // Rows come newest saved first (observeSavedAlbums); each a different album, all on the phone.
+        // Their names sort another way, so neither a sort by name nor one by id passes.
+        val names = listOf("Mango", "Zebra", "Apple", "Kiwi", "Banana")
+        val rows = listOf(3L, 1L, 5L, 2L, 4L).mapIndexed { i, id ->
+            albumRow(id, "album:spotify:Alb$id", tracks = 1, downloaded = 1).copy(name = names[i])
+        }
+
+        assertThat(albumsForAuto(rows, limit = 3).map { it.playlistId }).containsExactly(3L, 1L, 5L).inOrder()
+        assertThat(MAX_AUTO_ALBUMS).isAtMost(1000)
+    }
+
+    @Test
+    fun `an album's song and the copy linked beside it are one row in the car, in album order`() {
+        val own = track(id = 10).copy(title = "One")
+        val copy = track(id = 11, downloaded = true, filePath = "/m/one.flac").copy(title = "One")
+        val two = track(id = 12).copy(title = "Two")
+        val slots = listOf(
+            com.stash.core.data.db.dao.SavedAlbumSlot(10, 0, "one", "artist"),
+            com.stash.core.data.db.dao.SavedAlbumSlot(11, 0, "one", "artist"),
+            com.stash.core.data.db.dao.SavedAlbumSlot(12, 1, "two", "artist"),
+        )
+
+        val rows = oneRowPerSongForAuto(listOf(own, copy, two), slots)
+
+        assertThat(rows.map { it.id }).containsExactly(11L, 12L).inOrder()
+        assertThat(oneRowPerSongForAuto(listOf(own, copy, two), emptyList())).hasSize(3)
+    }
 }

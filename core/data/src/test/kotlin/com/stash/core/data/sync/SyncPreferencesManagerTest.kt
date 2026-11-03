@@ -54,6 +54,14 @@ class SyncPreferencesManagerTest {
         assertEquals(SyncMode.ACCUMULATE, mgr.youtubeSyncMode.first())
     }
 
+    @Test fun `Spotify saved albums sync by default, and the switch turns them off and on`() = runTest {
+        assertTrue("on by default (owner, 2026-11-02)", mgr.syncSpotifySavedAlbums.first())
+        mgr.setSyncSpotifySavedAlbums(false)
+        assertFalse(mgr.syncSpotifySavedAlbums.first())
+        mgr.setSyncSpotifySavedAlbums(true)
+        assertTrue(mgr.syncSpotifySavedAlbums.first())
+    }
+
     @Test fun `explicit REFRESH choice is preserved`() = runTest {
         mgr.setSpotifySyncMode(SyncMode.REFRESH)
         assertEquals(SyncMode.REFRESH, mgr.spotifySyncMode.first())

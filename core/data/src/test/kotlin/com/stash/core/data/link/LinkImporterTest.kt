@@ -183,4 +183,46 @@ class LinkImporterTest {
         assertEquals(40, members(retried.playlistId).toSet().size)
         assertEquals(1, playlistCount())
     }
+
+    // ── A Spotify album taken out, then saved again (review of #817) ─────
+
+    private fun spotifyAlbum() = LinkPreview(
+        kind = LinkKind.ALBUM, name = "Repeater", byline = "Fugazi", coverUrl = null, service = "Spotify",
+        songs = listOf(song(1), song(2)), sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx",
+    )
+
+    @Test fun `a pasted Spotify album the listener removed comes back when its link is saved again`() = runTest {
+        // Remove hides a pasted Spotify album (the Spotify sync files the album under the same key).
+        val removed = db.playlistDao().insert(
+            PlaylistEntity(name = "Repeater", source = MusicSource.BOTH, sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx", type = PlaylistType.CUSTOM),
+        )
+        db.playlistDao().setUserHidden(removed, true)
+        db.playlistDao().markPastedSpotifyAlbumRemoved(removed, 1_000L)
+        assertEquals("taken out: offered to add again", null, links.existing(spotifyAlbum()))
+
+        val added = links.add(spotifyAlbum(), download = false) { _, _ -> }
+
+        assertEquals(removed, added.playlistId)
+        val row = db.playlistDao().getById(removed)!!
+        assertTrue(row.isActive)
+        assertTrue(!row.userHidden)
+        assertEquals(MusicSource.BOTH, row.source)
+        assertEquals("saved here again: the removal note goes", null, row.snapshotId)
+        assertEquals(2, members(removed).size)
+        assertEquals(1, playlistCount())
+    }
+
+    @Test fun `a synced Spotify album taken out comes back as the listener's own save when its link is pasted`() = runTest {
+        val synced = db.playlistDao().insert(
+            PlaylistEntity(name = "Repeater", source = MusicSource.SPOTIFY, sourceId = "album:spotify:FakeAlb1xxxxxxxxxxxxxx", type = PlaylistType.CUSTOM),
+        )
+        db.playlistDao().setUserHidden(synced, true)
+
+        val added = links.add(spotifyAlbum(), download = false) { _, _ -> }
+
+        assertEquals(synced, added.playlistId)
+        val row = db.playlistDao().getById(synced)!!
+        assertTrue(row.isActive && !row.userHidden)
+        assertEquals("the sync never hides it again", MusicSource.BOTH, row.source)
+    }
 }

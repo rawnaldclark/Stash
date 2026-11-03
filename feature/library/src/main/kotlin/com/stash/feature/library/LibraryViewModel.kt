@@ -1193,13 +1193,19 @@ class LibraryViewModel @Inject constructor(
      * Takes [album] out of the library, every saved copy of it ([AlbumInfo.copyIds]), or the card
      * would come straight back as the next copy. Its songs stay (in Songs, and on the phone if
      * downloaded). A copy saved in Stash goes, as Remove does for a playlist; one synced from a
-     * service is hidden, so the next sync leaves it out instead of bringing it back.
+     * service is hidden, so the next sync leaves it out instead of bringing it back, and so is a
+     * pasted Spotify link's copy, whose key the Spotify sync files the same album under
+     * ([SavedAlbums.removeHides]).
      */
     fun removeAlbum(album: AlbumInfo) {
         viewModelScope.launch {
             album.copyIds.forEach { id ->
                 val playlist = musicRepository.observePlaylist(id).first() ?: return@forEach
-                if (playlist.source == MusicSource.BOTH) removePlaylistNow(playlist) else musicRepository.hidePlaylist(id)
+                if (SavedAlbums.removeHides(playlist.source, playlist.sourceId)) {
+                    musicRepository.hidePlaylist(id)
+                } else {
+                    removePlaylistNow(playlist)
+                }
             }
         }
     }

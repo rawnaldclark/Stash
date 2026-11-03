@@ -108,13 +108,16 @@ interface MirrorDao {
 
     /**
      * The playlists one can choose to mirror: your own and the ones synced from Spotify or YouTube Music, as Library shows them
-     * ([WebLibraryExportDao.playlists]), oldest first.
+     * ([WebLibraryExportDao.playlists]), oldest first. A saved album ([SAVED_ALBUM]) is not a playlist (Library lists it under
+     * Albums), and the web has no albums yet, so it is never offered, nor sent by "Mirror new playlists too": a Spotify sync
+     * of 300 saved albums would otherwise land on the web as 300 playlists. One mirrored before stays mirrored (by its id).
      */
     @Query(
         """
         SELECT p.* FROM playlists p
         WHERE p.type = 'CUSTOM'
           AND p.is_active = 1
+          AND NOT """ + SAVED_ALBUM + """
           AND (
               p.sync_enabled = 1
               OR p.pinned_to_home_at IS NOT NULL
@@ -194,8 +197,8 @@ interface MirrorDao {
     )
     suspend fun playlistsDigest(ids: List<Long>): String
 
-    /** How many playlists exist at all (a new one matters to "Mirror new playlists too"). */
-    @Query("SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) FROM playlists WHERE type = 'CUSTOM' AND is_active = 1")
+    /** How many playlists exist at all (a new one matters to "Mirror new playlists too"); saved albums aren't playlists ([playlists]). */
+    @Query("SELECT COUNT(*) || ':' || COALESCE(MAX(p.id), 0) FROM playlists p WHERE p.type = 'CUSTOM' AND p.is_active = 1 AND NOT " + SAVED_ALBUM)
     suspend fun playlistSetDigest(): String
 
     companion object {

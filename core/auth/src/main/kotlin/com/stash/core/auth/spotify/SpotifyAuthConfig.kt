@@ -94,6 +94,13 @@ object SpotifyAuthConfig {
     const val HASH_ARTIST_OVERVIEW = "9f8134ef565e78621f1e1793555bd6633c5ac144ae0f89604ed3ae3f80b3c8e6"
 
     /**
+     * Persisted-query hash for `getAlbum` (the web player's album page), read for a saved album's
+     * tracklist in its own order. Variables: `uri`, `locale`, `offset`, `limit` (50 a page). From
+     * web-player.c263f3db.js (2026-11-02); a rotated hash is re-scraped by executeGraphQL.
+     */
+    const val HASH_GET_ALBUM = "0b6ce3511e1b02e4a40fa95440f992acbe85080eb308af9194322d708fc1914f"
+
+    /**
      * Persisted query hash for the `addToLibrary` / `removeFromLibrary`
      * mutations — the heart button in the Spotify web player. One
      * multi-operation persisted document backs both (also pinLibraryItem /

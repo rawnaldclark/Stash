@@ -141,6 +141,22 @@ class MusicRepositoryQueuePlaylistTest {
         assertEquals(listOf(NetworkType.UNMETERED), drains().map { it.constraints.requiredNetworkType })
     }
 
+    @Test fun `Save all keeps every playlist on the phone, queues their songs, and starts one drain`() = runTest {
+        val ids = listOf("Album A", "Album B", "Album C").map { name ->
+            playlist(name).also { member(it, 0, track(name.removePrefix("Album "))) }
+        }
+        val repo = spyk(repo())
+
+        repo.keepPlaylistsOffline(ids)
+
+        assertEquals(listOf(true, true, true), ids.map { db.playlistDao().getById(it)!!.keepOffline })
+        val waiting = db.downloadQueueDao().pendingDiscoveryDownloads().map { db.trackDao().getById(it.trackId)!!.title }
+        assertEquals(setOf("A", "B", "C"), waiting.toSet())
+        // One start, like a tap: a start per playlist restarts the run and cancels the song in progress.
+        coVerify(exactly = 1) { repo.startDiscoveryDrain(any(), any()) }
+        coVerify(exactly = 1) { repo.startDiscoveryDrain(background = false, anyNetwork = any()) }
+    }
+
     /**
      * Background downloads follow the Sync tab's "Wi-Fi only", the setting a sync's
      * own downloads use. "Run recommendations when" (DownloadNetworkMode) sits at its

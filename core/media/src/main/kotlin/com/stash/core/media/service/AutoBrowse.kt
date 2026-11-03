@@ -5,6 +5,11 @@ import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.stash.core.common.ArtUrlSizer
+import com.stash.core.data.album.SavedAlbum
+import com.stash.core.data.album.SavedAlbums
+import com.stash.core.data.album.toSavedAlbum
+import com.stash.core.data.db.dao.SavedAlbumRow
+import com.stash.core.data.db.dao.SavedAlbumSlot
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.mapper.toDomain
@@ -46,6 +51,35 @@ import com.stash.core.model.PlaylistType
  */
 internal fun PlaylistEntity.isLikedPlaylist(): Boolean =
     type == PlaylistType.STASH_LIKED || type == PlaylistType.LIKED_SONGS
+
+/**
+ * A saved album (Spotify's or YouTube Music's synced ones, one saved in Stash): the car lists it
+ * under Albums ([albumsForAuto]), never among the Playlists, as Library does (item 5, 2026-11-02).
+ */
+internal fun PlaylistEntity.isSavedAlbumForAuto(): Boolean = SavedAlbums.isSavedAlbum(type, source, sourceId)
+
+/**
+ * The car's Albums: Library > Albums as Download mode lists it, one entry per album (copies saved on
+ * two services merged), and only an album with every song on the phone, since the car plays what's
+ * downloaded ([SavedAlbums.forLibrary]). Newest saved first, at most [limit]: a car list of
+ * thousands is no use to a driver, and every entry is a row the head unit has to take.
+ */
+internal fun albumsForAuto(rows: List<SavedAlbumRow>, limit: Int = MAX_AUTO_ALBUMS): List<SavedAlbum> =
+    SavedAlbums.forLibrary(rows.map { it.toSavedAlbum() }, streamOnly = false).take(limit)
+
+/** The most albums the car's Albums lists ([albumsForAuto]). */
+internal const val MAX_AUTO_ALBUMS = 500
+
+/**
+ * A playlist's rows ([tracks], in order) for the car: a saved album's one per song, a song's own
+ * row and a downloaded copy linked beside it being one song ([SavedAlbums.oneRowPerSong]); any
+ * other playlist's ([slots] empty) as they are.
+ */
+internal fun oneRowPerSongForAuto(tracks: List<TrackEntity>, slots: List<SavedAlbumSlot>): List<TrackEntity> {
+    if (slots.isEmpty()) return tracks
+    val byId = tracks.associateBy { it.id }
+    return SavedAlbums.oneRowPerSong(tracks.map { it.toDomain() }, slots).mapNotNull { byId[it.id] }
+}
 
 /**
  * Every like source merged into one list: each track once, newest like

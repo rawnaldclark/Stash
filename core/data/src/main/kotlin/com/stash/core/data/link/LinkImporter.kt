@@ -155,6 +155,17 @@ class LinkImporter @Inject constructor(
      */
     suspend fun add(preview: LinkPreview, download: Boolean, progress: (done: Int, total: Int) -> Unit): LinkAdded {
         if (preview.soundCloudSongs != null) return requireNotNull(soundCloud).add(preview, download, progress)
+        // An album taken out under this key (Remove hides a pasted Spotify album, so the Spotify sync
+        // can't bring it back), or one the sync hid: saving it again brings that row back, as the
+        // listener's own save, which the sync never reads, rewrites or hides.
+        if (preview.kind == LinkKind.ALBUM) {
+            playlists.findBySourceId(preview.sourceId)?.takeIf { !it.isActive }?.let { removed ->
+                playlists.setUserHidden(removed.id, false)
+                playlists.takeIntoStash(removed.id)
+                // Its removal note (or an old sync stamp) goes: it's saved here again.
+                playlists.forgetMirrorStamp(removed.id)
+            }
+        }
         // An album saved already another way is that album: never a second copy, or a second download.
         if (preview.kind == LinkKind.ALBUM && playlists.findBySourceId(preview.sourceId)?.isActive != true) {
             savedCopyOf(preview)?.let { saved ->
