@@ -62,7 +62,7 @@ class LibraryViewModelLikedOrderTest {
     private val plum = Track(id = 4L, title = "Plum", artist = "D", dateAdded = 6_000L)
 
     @Test fun recent_means_recently_liked_across_sources() = runTest {
-        val vm = buildVm().apply { selectTab(LibraryTab.LIKED) } // liked songs are read on the Liked tab
+        val vm = buildVm()
 
         val ids = vm.likedTracks.first { it.size == 4 }.map { it.id }
 
@@ -84,7 +84,7 @@ class LibraryViewModelLikedOrderTest {
     }
 
     @Test fun the_sort_control_applies_to_the_liked_tab() = runTest {
-        val vm = buildVm().apply { selectTab(LibraryTab.LIKED) } // liked songs are read on the Liked tab
+        val vm = buildVm()
         vm.likedTracks.first { it.size == 4 }
 
         vm.setSortOrder(SortOrder.ALPHABETICAL)

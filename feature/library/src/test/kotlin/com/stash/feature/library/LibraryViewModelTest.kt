@@ -62,7 +62,7 @@ class LibraryViewModelTest {
         val tokens = tokenManagerMock().stub {
             on { soundCloudSession } doReturn flowOf(com.stash.core.auth.soundcloud.SoundCloudSession("7", "Current", connectionId = "current"))
         }
-        val vm = buildVm(musicRepository = repo, tokenManager = tokens).apply { selectTab(LibraryTab.LIKED) }
+        val vm = buildVm(musicRepository = repo, tokenManager = tokens)
         val likes = kotlinx.coroutines.withContext(Dispatchers.Default) {
             kotlinx.coroutines.withTimeout(5000) { vm.likedTracks.first { it.isNotEmpty() } }
         }

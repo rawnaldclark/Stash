@@ -186,7 +186,15 @@ fun LibraryScreen(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val importState by viewModel.localImportState.collectAsStateWithLifecycle()
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle(initialValue = emptyList())
-    val likedTracks by viewModel.likedTracks.collectAsStateWithLifecycle()
+    // Collected while the Liked tab is open only: every write to the liked lists re-read, merged
+    // and sorted every liked song (12k in one report) for a tab nobody was looking at. Only the
+    // Liked tab reads it (its list, its batch actions, Shuffle liked). The flow keeps its last list,
+    // so going back to the tab shows it at once while the fresh one loads.
+    val likedTracks = if (state.activeTab == LibraryTab.LIKED) {
+        viewModel.likedTracks.collectAsStateWithLifecycle().value
+    } else {
+        emptyList()
+    }
     val likedFilter by viewModel.likedFilter.collectAsStateWithLifecycle()
     val likedSources by viewModel.likedSources.collectAsStateWithLifecycle()
 

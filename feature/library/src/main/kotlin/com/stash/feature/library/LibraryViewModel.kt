@@ -590,7 +590,7 @@ class LibraryViewModel @Inject constructor(
      * (issue #293: searching on Liked kept showing the full list).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val likedTracksSource: Flow<List<Track>> =
+    val likedTracks: StateFlow<List<Track>> =
         combine(stashLikedFlow, externalLikedFlow, _likedFilter) { stash, external, filter ->
             when (filter) {
                 LikedFilter.ALL -> stash + external
@@ -616,17 +616,6 @@ class LibraryViewModel @Inject constructor(
                 // liked today sat in the middle. Sort here, where the list is complete.
                 sortLikedTracks(narrowed, controls.sortOrder)
             }
-        }
-
-    /** [likedTracksSource] while the Liked tab is open (see below). */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val likedTracks: StateFlow<List<Track>> =
-        // Read while the Liked tab is open only: Library collects this on every tab, and each write
-        // to the liked lists re-read, merged and sorted every liked song (12k in one library) for a
-        // tab nobody was looking at. Off it nothing is emitted, so the last list stays until the
-        // tab opens again and the fresh one replaces it (no empty flash).
-        _controls.map { it.activeTab == LibraryTab.LIKED }.distinctUntilChanged().flatMapLatest { onLiked ->
-            if (!onLiked) kotlinx.coroutines.flow.emptyFlow() else likedTracksSource
         }
             // Same rationale as uiState: dedupe + search filtering is pure
             // list work — keep it off Main.
