@@ -56,6 +56,10 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
+    abstract fun bindHeadphonePreference(impl: com.stash.core.data.prefs.HeadphonePreferencesManager): com.stash.core.data.prefs.HeadphonePreference
+
+    @Binds
+    @Singleton
     abstract fun bindRecordInMixesPreference(impl: com.stash.core.data.prefs.RecordInMixesPreferencesManager): com.stash.core.data.prefs.RecordInMixesPreference
 
     @Binds

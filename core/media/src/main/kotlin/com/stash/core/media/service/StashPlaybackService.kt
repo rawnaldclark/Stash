@@ -169,6 +169,10 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var castDevices: com.stash.core.media.cast.CastDevices
     @Inject lateinit var playbackDiagnosticsLog: com.stash.core.media.diagnostics.PlaybackDiagnosticsLog
     @Inject lateinit var handoffPublisher: com.stash.core.media.handoff.HandoffPublisher
+    @Inject lateinit var headphonePreference: com.stash.core.data.prefs.HeadphonePreference
+
+    private var headphoneConnectionObserver: HeadphoneConnectionObserver? = null
+    private val headphoneResumeGate = HeadphoneResumeGate()
 
     /** The home screen widget (bound in the app module, where the Glance widget lives). */
     @Inject lateinit var widgetSink: com.stash.core.media.widget.NowPlayingWidgetSink
@@ -541,6 +545,7 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            headphoneResumeGate.onPlayWhenReadyChanged(playWhenReady, reason)
             refreshPlayerIdle()
         }
 
@@ -831,6 +836,13 @@ class StashPlaybackService : MediaLibraryService() {
         // Link Stash on the web: publish what plays for the linked browsers, on events only, for as long as this service
         // lives (spec §8.1). A no-op unless the feature is built in, linked and switched on.
         handoffPublisher.start(serviceScope)
+
+        headphoneConnectionObserver = HeadphoneConnectionObserver(
+            context = this,
+            scope = serviceScope,
+            headphonePreference = headphonePreference,
+            onHeadphonesConnected = ::onHeadphonesConnected,
+        ).apply { start() }
 
         serviceScope.launch {
             streamingPreference.enabled.collect { allowed ->
@@ -1906,6 +1918,8 @@ class StashPlaybackService : MediaLibraryService() {
         widgetFeed = null
         likeObserverJob?.cancel()
         if (::handoffPublisher.isInitialized) handoffPublisher.stop()
+        headphoneConnectionObserver?.release()
+        headphoneConnectionObserver = null
         prefetchPollJob?.cancel()
         crossfadePollJob?.cancel()
         sleepTimerNotificationJob?.cancel()
@@ -2086,6 +2100,36 @@ class StashPlaybackService : MediaLibraryService() {
         override val positionMs: Long get() = master.currentPosition
         override val durationMs: Long? get() = master.duration.takeIf { it != C.TIME_UNSET && it > 0 }
         override val ended: Boolean get() = master.playbackState == Player.STATE_ENDED
+    }
+
+    private fun onHeadphonesConnected() {
+        val session = mediaSession ?: return
+        val player = session.player
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
+        val inCall = audioManager?.mode != android.media.AudioManager.MODE_NORMAL
+        val inTogether = ::listenTogetherController.isInitialized && listenTogetherController.active.value
+
+        serviceScope.launch {
+            val enabled = headphonePreference.resumeOnReconnect.first()
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                val shouldResume = headphoneResumeGate.shouldResume(
+                    resumeOnReconnectEnabled = enabled,
+                    hasActiveCall = inCall,
+                    isInListenTogether = inTogether,
+                    isCasting = isCasting,
+                    hasMediaItems = player.mediaItemCount > 0,
+                    isPlaying = player.playWhenReady,
+                )
+                if (shouldResume) {
+                    headphoneResumeGate.onResumeTriggered()
+                    if (player.playbackState == Player.STATE_IDLE) {
+                        player.prepare()
+                    }
+                    player.play()
+                    crossfadeEngine?.onPlayPauseRequested()
+                }
+            }
+        }
     }
 
     // ---- MediaLibrarySession.Callback ----

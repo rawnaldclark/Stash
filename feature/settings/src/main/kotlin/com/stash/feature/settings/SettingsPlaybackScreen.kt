@@ -66,6 +66,7 @@ fun SettingsPlaybackScreen(
     val autoplayRadioEnabled by viewModel.autoplayRadioEnabled.collectAsStateWithLifecycle()
     val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
     val crossfadeDurationMs by viewModel.crossfadeDurationMs.collectAsStateWithLifecycle()
+    val headphoneResumeOnReconnect by viewModel.headphoneResumeOnReconnect.collectAsStateWithLifecycle()
 
     SettingsScaffold(title = stringResource(R.string.settings_playback_title), onBack = onBack, modifier = modifier) {
         if (StashConstants.STREAMING_ENGINE_ENABLED) {
@@ -165,6 +166,18 @@ fun SettingsPlaybackScreen(
                         )
                     }
                 }
+            },
+        )
+
+        SettingsSectionLabel(stringResource(R.string.settings_headphones_section))
+        SettingsGroupCard(
+            rows = listOf {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_headphone_resume_on_reconnect_title),
+                    subtitle = stringResource(R.string.settings_headphone_resume_on_reconnect_desc),
+                    checked = headphoneResumeOnReconnect,
+                    onCheckedChange = viewModel::onHeadphoneResumeOnReconnectToggle,
+                )
             },
         )
 

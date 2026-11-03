@@ -131,6 +131,7 @@ class SettingsViewModel @Inject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val crossfadePreference: com.stash.core.data.prefs.CrossfadePreference,
     private val autoplayRadioPreference: com.stash.core.data.prefs.AutoplayRadioPreference,
+    private val headphonePreference: com.stash.core.data.prefs.HeadphonePreference,
     private val databaseBackupManager: DatabaseBackupManager,
     private val listenBrainzPreference: com.stash.core.data.listenbrainz.ListenBrainzPreference,
     private val listenBrainzApiClient: com.stash.core.data.listenbrainz.ListenBrainzApiClient,
@@ -428,6 +429,17 @@ class SettingsViewModel @Inject constructor(
             kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
             false,
         )
+
+    val headphoneResumeOnReconnect: kotlinx.coroutines.flow.StateFlow<Boolean> =
+        headphonePreference.resumeOnReconnect.stateIn(
+            viewModelScope,
+            kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000),
+            false,
+        )
+
+    fun onHeadphoneResumeOnReconnectToggle(enabled: Boolean) {
+        viewModelScope.launch { headphonePreference.setResumeOnReconnect(enabled) }
+    }
 
     fun onAutoplayRadioToggle(enabled: Boolean) {
         viewModelScope.launch { autoplayRadioPreference.setEnabled(enabled) }
