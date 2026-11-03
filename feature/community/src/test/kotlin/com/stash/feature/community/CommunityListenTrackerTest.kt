@@ -105,10 +105,12 @@ class CommunityListenTrackerTest {
     }
 
     @Test fun `a song post's radio doesn't count, but going back to the song does`() = runTest {
-        tracker().begin(POST, listOf(1L)); runCurrent()
+        val tracker = tracker()
+        tracker.begin(POST, listOf(1L)); runCurrent()
         show(1)
         play(10_000)
         // Play on a song post grows a radio around the song, which keeps playing.
+        tracker.expectRadio(POST)
         val radio = PlaybackSource.Radio("garden")
         show(1, source = radio)
         play(10_000)
@@ -118,6 +120,45 @@ class CommunityListenTrackerTest {
         show(1, source = radio) // back to the song
         play(10_000)
         assertThat(heard).containsExactly(POST)
+    }
+
+    @Test fun `a radio the post's Play didn't start never counts, even on its song`() = runTest {
+        val tracker = tracker()
+        tracker.begin(POST, listOf(1L)); runCurrent()
+        show(1)
+        play(10_000)
+        // From Library: Start radio on the same song. Playback from elsewhere: the count ends.
+        show(1, source = PlaybackSource.Radio("garden"))
+        play(60_000)
+        assertThat(heard).isEmpty()
+        // A playlist post's Play arms nothing, so its songs' radio is elsewhere too.
+        tracker.begin(OTHER, listOf(2L)); runCurrent()
+        show(2, source = PlaybackSource.Community(OTHER, "late night"))
+        play(10_000)
+        show(2, source = PlaybackSource.Radio("late"))
+        play(60_000)
+        assertThat(heard).isEmpty()
+    }
+
+    @Test fun `the post's radio that didn't start leaves nothing armed, and only the first radio after its queue is its own`() = runTest {
+        val tracker = tracker()
+        tracker.begin(POST, listOf(1L)); runCurrent()
+        show(1)
+        tracker.expectRadio(POST)
+        tracker.noRadio(POST) // offline: no station
+        play(10_000)
+        show(1, source = PlaybackSource.Radio("garden")) // started later from Now Playing
+        play(60_000)
+        assertThat(heard).isEmpty()
+        // Armed again by Play: the first radio is the post's; a second one, started after, is elsewhere.
+        tracker.begin(POST, listOf(1L)); runCurrent()
+        show(1)
+        tracker.expectRadio(POST)
+        show(1, source = PlaybackSource.Radio("garden"))
+        play(5_000)
+        show(1, source = PlaybackSource.Radio("garden, again"))
+        play(60_000)
+        assertThat(heard).isEmpty()
     }
 
     @Test fun `a song shown paused never counts`() = runTest {

@@ -310,15 +310,15 @@ class CommunityUiTest {
         val vm = CommunityViewModel(repo, mockk(relaxed = true))
         vm.show(Tab.HOME); advanceUntilIdle()
         vm.vote(earlier, -1); advanceUntilIdle()
-        assertThat(vm.state.value.listenFirst).isTrue()
+        assertThat(vm.state.value.voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
         assertThat(pill(vm)).isEqualTo(earlier.votePill())
         coVerify(exactly = 0) { repo.vote(any(), -1) }
-        vm.listenFirstShown()
-        assertThat(vm.state.value.listenFirst).isFalse()
+        vm.voteNoteShown()
+        assertThat(vm.state.value.voteNote).isNull()
         vm.vote(earlier, 1); advanceUntilIdle()
         coVerify { repo.vote(a.id, 0) }
         assertThat(pill(vm)).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true))
-        assertThat(vm.state.value.listenFirst).isFalse()
+        assertThat(vm.state.value.voteNote).isNull()
     }
 
     @Test fun `the pill wakes when the post is heard while it's on screen, and stays awake on a reload`() = runTest(dispatcher) {
@@ -343,7 +343,29 @@ class CommunityUiTest {
         vm.show(Tab.HOME); advanceUntilIdle()
         vm.vote(a, 1); advanceUntilIdle()
         assertThat(pill(vm)).isEqualTo(VotePillUi(2, upLit = false, downLit = false, enabled = true, listenFirst = true, upDimmed = true, downDimmed = true))
-        assertThat(vm.state.value.listenFirst).isTrue()
+        assertThat(vm.state.value.voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
         assertThat(vm.state.value.message).isNull()
+    }
+
+    @Test fun `a vote that couldn't go yet keeps the pill awake and says try again`() = runTest(dispatcher) {
+        every { repo.heardIds } returns emptyFlow()
+        coEvery { repo.feed(100) } returns CommunityResult.Ok(listOf(a))
+        coEvery { repo.vote(a.id, 1) } returns CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW)
+        val vm = CommunityViewModel(repo, mockk(relaxed = true))
+        vm.show(Tab.HOME); advanceUntilIdle()
+        vm.vote(a, 1); advanceUntilIdle()
+        assertThat(pill(vm)).isEqualTo(a.votePill())
+        assertThat(pill(vm).listenFirst).isFalse()
+        assertThat(vm.state.value.voteNote).isEqualTo(VoteNote.TRY_AGAIN)
+        assertThat(vm.state.value.message).isNull()
+        vm.voteNoteShown()
+        assertThat(vm.state.value.voteNote).isNull()
+    }
+
+    @Test fun `a failed vote's note`() {
+        assertThat(voteNoteFor(CommunityResult.Rejected(CommunityRepository.LISTEN_FIRST))).isEqualTo(VoteNote.LISTEN_FIRST)
+        assertThat(voteNoteFor(CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW))).isEqualTo(VoteNote.TRY_AGAIN)
+        assertThat(voteNoteFor(CommunityResult.Rejected("gone"))).isNull()
+        assertThat(voteNoteFor(CommunityResult.Failed("HTTP 503"))).isNull()
     }
 }

@@ -12,6 +12,7 @@ import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlaybackSource
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.SharedTrack
@@ -226,17 +227,35 @@ class CommunityPostViewModelTest {
         }
     }
 
-    @Test fun `a song post counts its song, and its radio grows after`() = runTest(dispatcher) {
+    @Test fun `a song post counts its song, and its own radio, armed just before it starts`() = runTest(dispatcher) {
         val row = Track(id = 7, title = "garden", artist = "Death Plus", youtubeId = "9Vz")
         coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false))
         coEvery { music.ensureTrackPersisted(any()) } returns 7L
         every { music.observeTrackById(7L) } returns flowOf(row)
+        coEvery { player.startRadio(any(), any()) } returns RadioStartResult.Started
         val vm = vm(); advanceUntilIdle()
         vm.play(); advanceUntilIdle()
         coVerifyOrder {
             tracker.begin("AAAAAAAA", listOf(7L))
             player.setQueue(listOf(row), 0, PlaybackSource.Community("AAAAAAAA", "garden"))
+            tracker.expectRadio("AAAAAAAA")
             player.startRadio(any(), keepCurrent = true)
+        }
+        coVerify(exactly = 0) { tracker.noRadio(any()) }
+    }
+
+    @Test fun `a song post whose radio didn't start leaves no radio to count`() = runTest(dispatcher) {
+        val row = Track(id = 7, title = "garden", artist = "Death Plus", youtubeId = "9Vz")
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost.copy(heard = false))
+        coEvery { music.ensureTrackPersisted(any()) } returns 7L
+        every { music.observeTrackById(7L) } returns flowOf(row)
+        coEvery { player.startRadio(any(), any()) } returns RadioStartResult.NoStation
+        val vm = vm(); advanceUntilIdle()
+        vm.play(); advanceUntilIdle()
+        coVerifyOrder {
+            tracker.expectRadio("AAAAAAAA")
+            player.startRadio(any(), keepCurrent = true)
+            tracker.noRadio("AAAAAAAA")
         }
     }
 
@@ -255,16 +274,16 @@ class CommunityPostViewModelTest {
         coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Ok(VoteCounts(up = 2, down = 0, myVote = 1))
         val vm = vm(); advanceUntilIdle()
         vm.vote(1); advanceUntilIdle()
-        assertThat((vm.state.value as UiState.Loaded).listenFirst).isTrue()
+        assertThat((vm.state.value as UiState.Loaded).voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
         coVerify(exactly = 0) { repo.vote(any(), any()) }
-        vm.listenFirstShown()
+        vm.voteNoteShown()
         // 30 s played: the pill wakes on the page, and the vote goes.
         heardHere.value = setOf("AAAAAAAA"); advanceUntilIdle()
         assertThat((vm.state.value as UiState.Loaded).post.votePill().listenFirst).isFalse()
         vm.vote(1); advanceUntilIdle()
         coVerify { repo.vote("AAAAAAAA", 1) }
         assertThat((vm.state.value as UiState.Loaded).post.myVote).isEqualTo(1)
-        assertThat((vm.state.value as UiState.Loaded).listenFirst).isFalse()
+        assertThat((vm.state.value as UiState.Loaded).voteNote).isNull()
     }
 
     @Test fun `a vote answered listen_first dims the pill again and says why`() = runTest(dispatcher) {
@@ -274,7 +293,18 @@ class CommunityPostViewModelTest {
         vm.vote(-1); advanceUntilIdle()
         val s = vm.state.value as UiState.Loaded
         assertThat(s.post).isEqualTo(songPost.copy(heard = false))
-        assertThat(s.listenFirst).isTrue()
+        assertThat(s.voteNote).isEqualTo(VoteNote.LISTEN_FIRST)
+        assertThat(s.message).isNull()
+    }
+
+    @Test fun `a vote that couldn't go yet keeps the post heard and says try again`() = runTest(dispatcher) {
+        coEvery { repo.open(any()) } returns CommunityResult.Ok(songPost)
+        coEvery { repo.vote("AAAAAAAA", 1) } returns CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW)
+        val vm = vm(); advanceUntilIdle()
+        vm.vote(1); advanceUntilIdle()
+        val s = vm.state.value as UiState.Loaded
+        assertThat(s.post).isEqualTo(songPost)
+        assertThat(s.voteNote).isEqualTo(VoteNote.TRY_AGAIN)
         assertThat(s.message).isNull()
     }
 }

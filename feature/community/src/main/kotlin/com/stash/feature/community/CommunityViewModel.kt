@@ -45,8 +45,8 @@ class CommunityViewModel @Inject constructor(
         val startingChart: Boolean = false,
         /** A pull-to-refresh is loading; cleared when the list it asked for answers, either way. */
         val refreshing: Boolean = false,
-        /** Show "Play it for 30 seconds to vote": a dimmed arrow was tapped, or a vote was answered `listen_first`. */
-        val listenFirst: Boolean = false,
+        /** Why a vote didn't go: a dimmed arrow was tapped, the Worker wants a listen, or the listen couldn't reach it yet. */
+        val voteNote: VoteNote? = null,
     )
 
     private val _state = MutableStateFlow(UiState(posts = repository.lastHome))
@@ -132,7 +132,7 @@ class CommunityViewModel @Inject constructor(
     fun vote(post: CommunityPost, tapped: Int) {
         if (post.mine) return
         if (post.needsListen(tapped)) {
-            _state.update { it.copy(listenFirst = true) }
+            _state.update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
             return
         }
         val value = post.nextVote(tapped)
@@ -145,10 +145,11 @@ class CommunityViewModel @Inject constructor(
                     val sent = voting.getValue(post.id)
                     val r = repository.vote(post.id, sent)
                     if (r !is CommunityResult.Ok) {
-                        // The Worker has no listen on record: the pill dims again, and the note says why.
-                        val listenFirst = r is CommunityResult.Rejected && r.code == CommunityRepository.LISTEN_FIRST
-                        patch(post.id) { p -> p.withVote(confirmed).let { if (listenFirst) it.copy(heard = false) else it } }
-                        _state.update { if (listenFirst) it.copy(listenFirst = true) else it.copy(message = communityMessage(r)) }
+                        // The Worker has no listen on record: the pill dims again, and the note says why. Or the listen
+                        // couldn't reach it yet: the vote wasn't sent, the pill stays awake, and the note says try again.
+                        val note = voteNoteFor(r)
+                        patch(post.id) { p -> p.withVote(confirmed).let { if (note == VoteNote.LISTEN_FIRST) it.copy(heard = false) else it } }
+                        _state.update { if (note != null) it.copy(voteNote = note) else it.copy(message = communityMessage(r)) }
                         if (r is CommunityResult.Rejected && r.code == "gone") show(_state.value.tab)
                         return@launch
                     }
@@ -185,7 +186,7 @@ class CommunityViewModel @Inject constructor(
 
     fun messageShown() = _state.update { it.copy(message = null) }
 
-    fun listenFirstShown() = _state.update { it.copy(listenFirst = false) }
+    fun voteNoteShown() = _state.update { it.copy(voteNote = null) }
 
     private fun patch(id: String, change: (CommunityPost) -> CommunityPost) = patchAll { p -> if (p.id == id) change(p) else p }
 

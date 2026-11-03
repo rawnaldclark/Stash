@@ -43,7 +43,10 @@ class CommunityRepositoryTest {
     private lateinit var repo: CommunityRepository
     private val prefs = mockk<SharePreference>(relaxed = true)
     private val key = "k".repeat(43)
-    private val heard = mockk<CommunityHeard>(relaxed = true)
+    private val heard = mockk<CommunityHeard>(relaxed = true) {
+        coEvery { beforeVote(any()) } returns true
+        coEvery { forget(any()) } returns true
+    }
 
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
@@ -167,6 +170,25 @@ class CommunityRepositoryTest {
         // Set before sending, so a refused vote counts too.
         assertThat(refusing.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Rejected("gone"))
         assertThat(refusing.lastVoteAt).isAtLeast(start)
+    }
+
+    @Test fun `a vote whose listen can't reach the Worker yet isn't sent, and says try again`() = runBlocking<Unit> {
+        coEvery { heard.beforeVote("AAAAAAAA") } returns false
+        assertThat(repo.vote("AAAAAAAA", 1)).isEqualTo(CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW))
+        assertThat(server.requestCount).isEqualTo(0)
+        // Taking a vote back needs no listen.
+        server.enqueue(MockResponse().setBody("""{"up":0,"down":0,"myVote":0}"""))
+        assertThat(repo.vote("AAAAAAAA", 0)).isEqualTo(CommunityResult.Ok(VoteCounts(up = 0, down = 0, myVote = 0)))
+        coVerify(exactly = 1) { heard.beforeVote("AAAAAAAA") }
+    }
+
+    @Test fun `listen_first forgets a mark the Worker had, and keeps one it hadn't (try again)`() = runBlocking<Unit> {
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"listen_first"}"""))
+        assertThat(repo.vote("AAAAAAAA", -1)).isEqualTo(CommunityResult.Rejected(CommunityRepository.LISTEN_FIRST))
+        coVerify { heard.forget("AAAAAAAA") }
+        coEvery { heard.forget("BBBBBBBB") } returns false
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"listen_first"}"""))
+        assertThat(repo.vote("BBBBBBBB", 1)).isEqualTo(CommunityResult.Rejected(CommunityRepository.VOTE_NOT_NOW))
     }
 
     @Test fun `Mine and the limits ask nothing before this phone has a key, and make none`() = runBlocking {

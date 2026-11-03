@@ -3,6 +3,8 @@ package com.stash.feature.community
 import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import com.stash.core.data.community.CommunityRepository
+import com.stash.core.data.community.CommunityResult
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.ui.ambient.contrastRatio
 import com.stash.feature.community.CommunityViewModel.Tab
@@ -148,6 +150,22 @@ internal fun CommunityPost.heardFrom(heardHere: Set<String>): CommunityPost = if
 
 /** A tap of ▲ (1) or ▼ (-1) waits for a listen: it would cast a vote (not take one back) on a post not heard yet. */
 internal fun CommunityPost.needsListen(tapped: Int): Boolean = !heard && nextVote(tapped) != 0
+
+/** A line about a vote, instead of the usual message: why it didn't go. */
+internal enum class VoteNote {
+    /** "Play it for 30 seconds to vote": a dimmed arrow was tapped, or the Worker has no listen on record. */
+    LISTEN_FIRST,
+
+    /** "Couldn't vote right now": the post's listen couldn't reach the Worker yet, so the vote wasn't sent. */
+    TRY_AGAIN,
+}
+
+/** The [VoteNote] a failed vote shows instead of its message, or null for the usual message. */
+internal fun voteNoteFor(result: CommunityResult<*>): VoteNote? = when ((result as? CommunityResult.Rejected)?.code) {
+    CommunityRepository.LISTEN_FIRST -> VoteNote.LISTEN_FIRST
+    CommunityRepository.VOTE_NOT_NOW -> VoteNote.TRY_AGAIN
+    else -> null
+}
 
 /** How long ago a post went up, in the unit a list shows it in. */
 internal sealed interface Age {

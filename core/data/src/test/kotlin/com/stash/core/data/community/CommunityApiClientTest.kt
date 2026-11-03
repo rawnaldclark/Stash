@@ -146,6 +146,11 @@ class CommunityApiClientTest {
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.DROPPED)
         answer(403, """{"error":"own_post"}""")
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.DROPPED)
+        // A 403 that isn't the Worker's (Cloudflare's challenge page, a bare 403): the edge, so later.
+        answer(403, "<!DOCTYPE html><title>Just a moment...</title>")
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
+        answer(403)
+        assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)
         // A Worker without the route yet answers not_found for any path it doesn't know: it comes later.
         answer(404, """{"error":"not_found"}""")
         assertThat(client.heard("AAAAAAAA", key)).isEqualTo(HeardSend.RETRY)

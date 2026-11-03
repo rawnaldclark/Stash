@@ -96,14 +96,17 @@ class CommunityRepository @Inject constructor(
 
     /**
      * A ±1 sends the post's heard mark first if it's still waiting (a Worker that wants a listen before a vote must
-     * have it). A `listen_first` answer means the Worker has no mark: the post isn't heard here either.
+     * have it). When it can't go (offline, busy, a Worker without the route yet), the vote isn't sent either:
+     * [VOTE_NOT_NOW], and the mark keeps waiting, since the listen is real. A `listen_first` answer forgets a mark the
+     * Worker had taken (it really has no record); one it hadn't is kept, and that's [VOTE_NOT_NOW] too.
      */
     suspend fun vote(id: String, value: Int): CommunityResult<VoteCounts> = whileOn {
         // Before sending: a screen closed mid-vote cancels this call, maybe after the vote has landed.
         lastVoteAt = System.currentTimeMillis()
         val key = keys.key()
-        if (value != 0) heard.beforeVote(id)
-        api.vote(id, value, key).also { if (it is CommunityResult.Rejected && it.code == LISTEN_FIRST) heard.forget(id) }
+        if (value != 0 && !heard.beforeVote(id)) return@whileOn CommunityResult.Rejected(VOTE_NOT_NOW)
+        val r = api.vote(id, value, key)
+        if (r is CommunityResult.Rejected && r.code == LISTEN_FIRST && !heard.forget(id)) CommunityResult.Rejected(VOTE_NOT_NOW) else r
     }
 
     /** A post that's already gone counts as taken down: it's what the person wanted (e.g. a retry after a lost 204). */
@@ -167,6 +170,9 @@ class CommunityRepository @Inject constructor(
     companion object {
         /** A vote's answer when the Worker wants a listen first (contract 2026-11-03, `HEARD_REQUIRED`). */
         const val LISTEN_FIRST = "listen_first"
+
+        /** Not from the Worker: the vote couldn't go right now, its post's listen kept for the next try ([vote]). */
+        const val VOTE_NOT_NOW = "vote_not_now"
         const val HOME_SIZE = 5
         const val ALL_SIZE = 100
         private const val MAX_POST_TRACKS = 500

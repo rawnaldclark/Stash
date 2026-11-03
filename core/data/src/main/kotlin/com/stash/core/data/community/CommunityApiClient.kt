@@ -95,13 +95,17 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
             ShareJson.decodeFromString(VoteCounts.serializer(), it)
         }
 
-    /** `PUT /v1/community/posts/{id}/heard`: this key played the post for 30 s (contract 2026-11-03). Never throws. */
+    /**
+     * `PUT /v1/community/posts/{id}/heard`: this key played the post for 30 s (contract 2026-11-03). Never throws.
+     * Dropped only on the Worker's own refusal: 404 `gone`, or a 403 with its JSON code (`own_post`). A 403 without one
+     * (a Cloudflare challenge page) is the edge, not the Worker: tried again later.
+     */
     suspend fun heard(id: String, key: String): HeardSend =
         try {
             http.exchange(baseUrls, "/v1/community/posts/$id/heard", { header(KEY_HEADER, key); put(EMPTY_BODY) }) { code, text ->
                 when {
                     code in 200..299 -> HeardSend.SENT
-                    code == 403 -> HeardSend.DROPPED
+                    code == 403 && workerCode(text) != null -> HeardSend.DROPPED
                     code == 404 && errorCode(code, text) == "gone" -> HeardSend.DROPPED
                     else -> HeardSend.RETRY
                 }
@@ -138,8 +142,11 @@ class CommunityApiClient @Inject constructor(okHttpClient: OkHttpClient) {
 
     /** The Worker's `error`. A 429 without one is Cloudflare's own rate-limit page. */
     private fun errorCode(status: Int, text: String): String =
-        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()
-            ?: if (status == 429) "rate_limited" else "unknown"
+        workerCode(text) ?: if (status == 429) "rate_limited" else "unknown"
+
+    /** The Worker's JSON error code, or null for any other body (an HTML page from the edge, nothing). */
+    private fun workerCode(text: String): String? =
+        runCatching { ShareJson.decodeFromString(ErrorBody.serializer(), text).error }.getOrNull()?.takeIf { it.isNotBlank() }
 
     companion object {
         const val KEY_HEADER = "X-Stash-Community-Key"

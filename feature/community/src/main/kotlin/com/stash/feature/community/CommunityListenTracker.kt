@@ -21,8 +21,9 @@ import kotlinx.coroutines.launch
  * ([CommunityHeard.mark]) after [HEARD_AFTER_MS] of it: then you may vote on it (contract 2026-11-03).
  *
  * - Started from the post: its Play or Shuffle ([begin], then the queue under [PlaybackSource.Community] for the
- *   post). Any of its songs counts; a song post's radio (it grows around the song, under [PlaybackSource.Radio])
- *   doesn't, though going back to the song does.
+ *   post). Any of its songs counts. A song post's Play grows a radio around the song ([expectRadio]): the song counts
+ *   on there, the radio's other songs don't. Only that radio: one started anywhere else, even on the same song, is
+ *   playback from elsewhere.
  * - Playing time only: a pause or buffering stops the count, play resumes it, and it adds up over every stretch
  *   (the same post started again carries on from where it was). A seek or a skip adds nothing; the count is the
  *   time the songs actually played, not where they got to.
@@ -46,10 +47,13 @@ class CommunityListenTracker internal constructor(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     )
 
-    /** The post whose songs were last started from it. [radio] is a radio grown from one of its songs. */
+    /** The post whose songs were last started from it. [radio] is the radio its own Play grew around its song. */
     private class Session(val postId: String, val songs: Set<Long>) {
         /** The player has had the post's queue: anything else from now on is playback started elsewhere. */
         var reached = false
+
+        /** The post's Play is starting a radio ([expectRadio]): the first radio to follow its queue is that one. */
+        var radioDue = false
         var radio: PlaybackSource.Radio? = null
     }
 
@@ -89,6 +93,19 @@ class CommunityListenTracker internal constructor(
         }
     }
 
+    /**
+     * The post's own Play is about to start a radio around its song (on the main thread, right before
+     * `PlayerRepository.startRadio`): the first radio to follow the post's queue is that one, and counts as the post's.
+     */
+    fun expectRadio(postId: String) {
+        session?.takeIf { it.postId == postId && it.radio == null }?.radioDue = true
+    }
+
+    /** That radio didn't start: no radio counts for the post. */
+    fun noRadio(postId: String) {
+        session?.takeIf { it.postId == postId }?.radioDue = false
+    }
+
     private fun onState(state: PlayerState) {
         bank()
         val s = session ?: return
@@ -96,8 +113,8 @@ class CommunityListenTracker internal constructor(
         val source = state.source
         val onPostQueue = when (source) {
             is PlaybackSource.Community -> source.postId == s.postId
-            // A radio started from one of the post's songs while it played (a song post's Play does this at once).
-            is PlaybackSource.Radio -> source == s.radio || (song in s.songs).also { if (it) s.radio = source }
+            // The radio the post's own Play started around its song (expectRadio), and no other.
+            is PlaybackSource.Radio -> source == s.radio || s.radioDue.also { if (it) { s.radio = source; s.radioDue = false } }
             else -> false
         }
         if (!onPostQueue) {

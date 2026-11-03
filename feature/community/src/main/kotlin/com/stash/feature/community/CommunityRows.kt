@@ -227,9 +227,13 @@ internal fun YouTag(color: Color = MaterialTheme.colorScheme.primary) {
     )
 }
 
-/** "Play it for 30 seconds to vote." while [show], for [CommunitySnackbar]. */
+/** [note]'s line, for [CommunitySnackbar]. */
 @Composable
-internal fun listenFirstNote(show: Boolean): String? = if (show) stringResource(R.string.community_listen_first_note) else null
+internal fun voteNoteText(note: VoteNote?): String? = when (note) {
+    VoteNote.LISTEN_FIRST -> stringResource(R.string.community_listen_first_note)
+    VoteNote.TRY_AGAIN -> stringResource(R.string.community_vote_try_again)
+    null -> null
+}
 
 /**
  * Shows [message] once on the app's snackbar (above the bottom chrome), then clears it. Outside the scaffold

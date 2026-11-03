@@ -13,6 +13,7 @@ import com.stash.core.data.share.SharedMixRepository
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlaybackSource
+import com.stash.core.model.RadioStartResult
 import com.stash.core.model.Track
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.toTrack
@@ -48,13 +49,13 @@ class CommunityPostViewModel @Inject constructor(
         data object Gone : UiState
         /** [message] says why: offline, rate limited (spec §4). */
         data class Failed(val message: String) : UiState
-        /** [listenFirst]: show "Play it for 30 seconds to vote" (a dimmed arrow was tapped, or a vote answered `listen_first`). */
+        /** [voteNote]: why a vote didn't go (a dimmed arrow was tapped, the Worker wants a listen, or it couldn't go yet). */
         data class Loaded(
             val post: CommunityPost,
             val busy: Boolean = false,
             val liked: Boolean = false,
             val message: String? = null,
-            val listenFirst: Boolean = false,
+            val voteNote: VoteNote? = null,
         ) : UiState
     }
 
@@ -107,11 +108,19 @@ class CommunityPostViewModel @Inject constructor(
                 // As SharedTrackViewModel.play: the row says whether the song is liked here.
                 update { it.copy(liked = row.stashLikedAt != null) }
                 queue(post, listOf(row))
-                // Best effort: offline or with streaming off, the song still plays on its own.
-                playerRepository.startRadio(
-                    com.stash.core.data.radio.RadioSeed.Song(title = row.title, artist = row.artist, ytVideoId = row.youtubeId),
-                    keepCurrent = true,
-                )
+                // The radio about to grow around the song is the post's own: the song counts on there, and on no other
+                // radio (one started from Library on the same song is playback from elsewhere).
+                listenTracker.expectRadio(post.id)
+                var started = false
+                try {
+                    // Best effort: offline or with streaming off, the song still plays on its own.
+                    started = playerRepository.startRadio(
+                        com.stash.core.data.radio.RadioSeed.Song(title = row.title, artist = row.artist, ytVideoId = row.youtubeId),
+                        keepCurrent = true,
+                    ) == RadioStartResult.Started
+                } finally {
+                    if (!started) listenTracker.noRadio(post.id)
+                }
             }
         } else {
             val tracks = sharedMixRepository.tracksFor(post.toDocument())
@@ -184,7 +193,7 @@ class CommunityPostViewModel @Inject constructor(
         val s = _state.value as? UiState.Loaded ?: return
         if (s.post.mine) return
         if (s.post.needsListen(tapped)) {
-            update { it.copy(listenFirst = true) }
+            update { it.copy(voteNote = VoteNote.LISTEN_FIRST) }
             return
         }
         val value = s.post.nextVote(tapped)
@@ -199,11 +208,13 @@ class CommunityPostViewModel @Inject constructor(
                     val sent = pending ?: return@launch
                     val r = repository.vote(postId, sent)
                     if (r !is CommunityResult.Ok) {
-                        // The Worker has no listen on record: the pill dims again, and the note says why.
-                        if (r is CommunityResult.Rejected && r.code == CommunityRepository.LISTEN_FIRST) {
-                            update { it.copy(post = it.post.withVote(confirmed).copy(heard = false), listenFirst = true) }
-                        } else {
-                            update { it.copy(post = it.post.withVote(confirmed), message = communityMessage(r)) }
+                        // The Worker has no listen on record: the pill dims again, and the note says why. Or the listen
+                        // couldn't reach it yet: the vote wasn't sent, the pill stays awake, and the note says try again.
+                        when (val note = voteNoteFor(r)) {
+                            VoteNote.LISTEN_FIRST ->
+                                update { it.copy(post = it.post.withVote(confirmed).copy(heard = false), voteNote = note) }
+                            VoteNote.TRY_AGAIN -> update { it.copy(post = it.post.withVote(confirmed), voteNote = note) }
+                            null -> update { it.copy(post = it.post.withVote(confirmed), message = communityMessage(r)) }
                         }
                         return@launch
                     }
@@ -228,7 +239,7 @@ class CommunityPostViewModel @Inject constructor(
 
     fun messageShown() = update { it.copy(message = null) }
 
-    fun listenFirstShown() = update { it.copy(listenFirst = false) }
+    fun voteNoteShown() = update { it.copy(voteNote = null) }
 
     /** Is the posted song already liked here: a read-only lookup, so opening a post never adds a row. */
     private suspend fun likedAlready(post: CommunityPost): Boolean {

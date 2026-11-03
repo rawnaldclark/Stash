@@ -14,8 +14,10 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 private const val TAG = "CommunityHeard"
 
@@ -35,9 +38,11 @@ private const val TAG = "CommunityHeard"
  *
  * Sending:
  *  - Only once this phone has a key. Listening never makes one (the README: "the first time you post or vote"); the
- *    first vote does, and [beforeVote] sends that post's mark ahead of it.
+ *    first vote does, and [beforeVote] sends that post's mark ahead of it. A vote whose mark can't go yet isn't sent.
  *  - Offline, a 5xx, rate limited, or a Worker without the route yet (404 `not_found`): the mark waits, and goes again
- *    on the next Community read ([retry]). Gone or refused (404 `gone`, any 403): it's dropped.
+ *    on the next Community read ([retry]). Gone or refused (404 `gone`, the Worker's own 403): it's dropped.
+ *  - One request per post at a time, shared by a vote and a background round: a mark never goes out twice, and a
+ *    vote never waits behind a round's other posts.
  *  - Never while Community is off.
  *
  * Kept in the key's own file, which a backup never carries: a new phone is a new Community identity, with nothing
@@ -66,8 +71,12 @@ class CommunityHeard internal constructor(
     /** The marks the Worker hasn't taken yet, the same way. */
     private val waitingPref = stringSetPreferencesKey("community_heard_waiting")
 
-    /** One send at a time, so a mark never goes out twice at once. */
-    private val sending = Mutex()
+    /** One background round ([retry]) at a time. */
+    private val rounds = Mutex()
+
+    /** The request out for each post's mark, which a vote and a round share; guarded by [flightsLock]. */
+    private val flights = HashMap<String, CompletableDeferred<HeardSend>>()
+    private val flightsLock = Mutex()
 
     /** The posts heard on this phone, by id. */
     val ids: Flow<Set<String>> = store.data
@@ -90,34 +99,50 @@ class CommunityHeard internal constructor(
 
     /** Sends every mark still waiting, in the background. */
     fun retry() {
-        scope.launch { send(only = null) }
+        scope.launch { round() }
     }
 
-    /** Before a ±1 vote on [id], once the vote has made the key: its mark goes now if it's still waiting. */
-    suspend fun beforeVote(id: String) = send(only = id)
+    /**
+     * Before a ±1 vote on [id], once the vote has made the key: its mark goes now if it's still waiting, on its own
+     * (never behind a background round's other posts). False when it couldn't go (offline, busy, a Worker without the
+     * route yet): then the vote isn't sent, since a Worker that wants a listen would refuse it although the listen is
+     * real. The mark keeps waiting. True otherwise: sent now or before, refused (the vote gets the real answer), or no
+     * mark here at all (the Worker's own `heard: true`).
+     */
+    suspend fun beforeVote(id: String): Boolean =
+        try {
+            val key = keys.existingKey()
+            if (key == null || !communityOn.first() || !isWaiting(id)) true else sendOne(id, key) != HeardSend.RETRY
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "heard mark before a vote not sent: ${e.javaClass.simpleName}")
+            false
+        }
 
-    /** A vote was answered `listen_first`: the Worker has no mark for [id], so it isn't heard here either. */
-    suspend fun forget(id: String) = edit { prefs, now ->
-        prefs[heardPref] = live(prefs[heardPref], now).filterNot { it.substringBefore(':') == id }.toSet()
-        prefs[waitingPref] = live(prefs[waitingPref], now).filterNot { it.substringBefore(':') == id }.toSet()
+    /**
+     * A vote was answered `listen_first`. When [id]'s mark had reached the Worker (it isn't waiting), the Worker really
+     * has no record of it, so it isn't heard here either: forgotten, true. A mark still waiting is kept, false: the
+     * Worker never refused it, it just hasn't had it yet.
+     */
+    suspend fun forget(id: String): Boolean {
+        var forgot = false
+        edit { prefs, now ->
+            if (live(prefs[waitingPref], now).any { it.substringBefore(':') == id }) return@edit
+            prefs[heardPref] = live(prefs[heardPref], now).filterNot { it.substringBefore(':') == id }.toSet()
+            forgot = true
+        }
+        return forgot
     }
 
-    /** Sends the waiting marks ([only] that post's, when given) under this phone's key; see the class comment. */
-    private suspend fun send(only: String?) = sending.withLock {
+    /** Sends the waiting marks under this phone's key, one post after another; see the class comment. */
+    private suspend fun round() = rounds.withLock {
         try {
             if (!communityOn.first()) return@withLock
             val key = keys.existingKey() ?: return@withLock
-            val waiting = store.data.first()[waitingPref].orEmpty()
-                .map { it.substringBefore(':') }
-                .filter { only == null || it == only }
-            for (id in waiting) {
-                when (api.heard(id, key)) {
-                    HeardSend.SENT, HeardSend.DROPPED -> edit { prefs, now ->
-                        prefs[waitingPref] = live(prefs[waitingPref], now).filterNot { it.substringBefore(':') == id }.toSet()
-                    }
-                    // Offline, or a Worker without the route yet: the rest would fail alike.
-                    HeardSend.RETRY -> return@withLock
-                }
+            for (id in waitingIds()) {
+                // Offline, or a Worker without the route yet: the rest would fail alike.
+                if (sendOne(id, key) == HeardSend.RETRY) return@withLock
             }
         } catch (e: CancellationException) {
             throw e
@@ -125,6 +150,43 @@ class CommunityHeard internal constructor(
             Log.w(TAG, "heard marks not sent: ${e.javaClass.simpleName}")
         }
     }
+
+    /**
+     * [id]'s mark, sent, or the request already out for it awaited: one per post at a time, and none once the mark has
+     * left the waiting list. Sent or refused, it leaves the list; otherwise it stays for the next round. The request
+     * runs in [scope], so a vote's screen closing doesn't cut it short for anyone sharing it.
+     */
+    private suspend fun sendOne(id: String, key: String): HeardSend {
+        var started: CompletableDeferred<HeardSend>? = null
+        val flight = flightsLock.withLock {
+            flights[id] ?: run {
+                if (!isWaiting(id)) return HeardSend.SENT
+                CompletableDeferred<HeardSend>().also { flights[id] = it; started = it }
+            }
+        }
+        started?.let { mine ->
+            scope.launch {
+                var outcome = HeardSend.RETRY
+                try {
+                    outcome = api.heard(id, key)
+                    if (outcome != HeardSend.RETRY) edit { prefs, now ->
+                        prefs[waitingPref] = live(prefs[waitingPref], now).filterNot { it.substringBefore(':') == id }.toSet()
+                    }
+                } finally {
+                    withContext(NonCancellable) { flightsLock.withLock { flights.remove(id) } }
+                    mine.complete(outcome)
+                }
+            }
+        }
+        return flight.await()
+    }
+
+    private suspend fun prefs(): Preferences =
+        store.data.catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }.first()
+
+    private suspend fun waitingIds(): List<String> = live(prefs()[waitingPref], clock()).map { it.substringBefore(':') }
+
+    private suspend fun isWaiting(id: String): Boolean = id in waitingIds()
 
     /** One edit of the marks; a file that can't be written leaves them as they were. */
     private suspend fun edit(change: (prefs: MutablePreferences, now: Long) -> Unit) {

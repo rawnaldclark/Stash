@@ -13,9 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -78,6 +81,8 @@ class CommunityHeardTest {
         heard.mark(A); settle()
         answer(429)
         heard.retry(); settle()
+        answer(403, "<!DOCTYPE html><title>Just a moment...</title>") // Cloudflare's challenge, not the Worker
+        heard.retry(); settle()
         server.shutdown() // offline
         heard.retry(); settle()
         assertThat(heard.ids.first()).containsExactly(A)
@@ -122,19 +127,91 @@ class CommunityHeardTest {
         assertThat(server.requestCount).isEqualTo(0)
         on.value = true
         answer(204)
-        heard.beforeVote(A)
+        assertThat(heard.beforeVote(A)).isTrue()
         assertThat(server.takeRequest().path).isEqualTo("/v1/community/posts/$A/heard")
-        heard.beforeVote(A) // sent already: nothing more
+        assertThat(heard.beforeVote(A)).isTrue() // sent already: nothing more
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    @Test fun `a vote whose mark can't go yet doesn't go either, and the mark keeps waiting`() = runBlocking<Unit> {
+        existingKey = null
+        heard.mark(A); settle()
+        existingKey = key
+        answer(404, """{"error":"not_found"}""")
+        assertThat(heard.beforeVote(A)).isFalse()
+        answer(503)
+        assertThat(heard.beforeVote(A)).isFalse()
+        assertThat(heard.ids.first()).containsExactly(A)
+        answer(204)
+        heard.retry(); settle()
+        assertThat(server.requestCount).isEqualTo(3)
+        // Refused for good (the post is gone): the vote goes, and gets the Worker's own answer.
+        existingKey = null
+        heard.mark(B); settle()
+        existingKey = key
+        answer(404, """{"error":"gone"}""")
+        assertThat(heard.beforeVote(B)).isTrue()
+        // No mark here at all (the Worker's own heard: true): nothing to send.
+        assertThat(heard.beforeVote("CCCCCCCC")).isTrue()
+        assertThat(server.requestCount).isEqualTo(4)
+    }
+
+    @Test fun `a vote doesn't wait behind a round stuck on another post`() = runBlocking<Unit> {
+        existingKey = null
+        heard.mark(B); settle()
+        existingKey = key
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path!!.contains(B)) MockResponse().setResponseCode(204).setHeadersDelay(3, TimeUnit.SECONDS)
+                else MockResponse().setResponseCode(204)
+        }
+        heard.retry()
+        assertThat(server.takeRequest().path).contains(B) // the round is out, waiting on B
+        existingKey = null
+        heard.mark(A)
+        existingKey = key
+        val start = System.nanoTime()
+        assertThat(heard.beforeVote(A)).isTrue()
+        assertThat((System.nanoTime() - start) / 1_000_000).isLessThan(2_000)
+        settle()
+        // Each mark went once: the next round found nothing waiting.
+        heard.retry(); settle()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `a vote while a round is sending the same post shares that request`() = runBlocking<Unit> {
+        existingKey = null
+        heard.mark(A); settle()
+        existingKey = key
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                MockResponse().setResponseCode(204).setHeadersDelay(500, TimeUnit.MILLISECONDS)
+        }
+        heard.retry()
+        assertThat(server.takeRequest().path).contains(A)
+        assertThat(heard.beforeVote(A)).isTrue()
+        settle()
         assertThat(server.requestCount).isEqualTo(1)
     }
 
     @Test fun `a vote answered listen_first forgets the mark, and a new listen sends it again`() = runBlocking<Unit> {
         answer(204)
         heard.mark(A); settle()
-        heard.forget(A)
+        assertThat(heard.forget(A)).isTrue()
         assertThat(heard.ids.first()).isEmpty()
         answer(204)
         heard.mark(A); settle()
+        assertThat(server.requestCount).isEqualTo(2)
+    }
+
+    @Test fun `listen_first never erases a listen the Worker hasn't had yet`() = runBlocking<Unit> {
+        answer(404, """{"error":"not_found"}""")
+        heard.mark(A); settle()
+        assertThat(heard.forget(A)).isFalse()
+        assertThat(heard.ids.first()).containsExactly(A)
+        // Still waiting: the next read sends it.
+        answer(204)
+        heard.retry(); settle()
         assertThat(server.requestCount).isEqualTo(2)
     }
 
