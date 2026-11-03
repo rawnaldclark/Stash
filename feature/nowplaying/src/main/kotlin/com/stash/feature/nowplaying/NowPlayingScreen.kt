@@ -197,7 +197,8 @@ fun NowPlayingScreen(
     val titleAlign by viewModel.titleAlign.collectAsStateWithLifecycle()
     val titleButton by viewModel.titleButton.collectAsStateWithLifecycle()
     // The text block's numbers (production values; a debug build's tuner overrides them live) and
-    // its one alignment: title, artist, quality and Up next lines all follow it.
+    // its one alignment: title, artist and quality lines all follow it. Up next stays centred, as
+    // View lyrics does.
     val spacing = com.stash.feature.nowplaying.ui.LocalNpSpacing.current
     val alignStart = spacing.align.alignStart(settingStart = titleAlign == com.stash.core.data.prefs.NpTitleAlign.START)
     val fullArt = com.stash.feature.nowplaying.ui.rememberFullArtState()
@@ -1346,7 +1347,6 @@ fun NowPlayingScreen(
                                         },
                                         inRoom = room != null,
                                         onOpen = { if (room != null) showSession = true else showQueue = true },
-                                        alignStart = alignStart,
                                     )
                                     },
                                 )

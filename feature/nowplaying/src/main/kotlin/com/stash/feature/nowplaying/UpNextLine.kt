@@ -32,6 +32,9 @@ import com.stash.feature.nowplaying.ui.npInk
  * but still holding its height, when nothing is coming ([peek] null); see [upNextPeek] and
  * [roomUpNextPeek] for what counts as next under shuffle, repeat, radio and a room.
  *
+ * Centred whatever the title's alignment, as the View lyrics bar is: it belongs to the controls
+ * above it, not to the title block.
+ *
  * One TalkBack node: "Up next: Title by Artist. Opens the queue.", a button.
  */
 @Composable
@@ -40,7 +43,6 @@ internal fun UpNextLine(
     inRoom: Boolean,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
-    alignStart: Boolean = false,
 ) {
     // The line's height (NpSpacing.upNextHeight, 40 dp), taken whether or not it shows: the queue
     // running out on its last song must not grow the art under the listener's eyes. 40 dp: a
@@ -51,8 +53,6 @@ internal fun UpNextLine(
         Box(modifier = modifier.fillMaxWidth().height(height))
         return
     }
-    // Start-aligned (as the title is): the text starts at the title's edge, so no padding before it.
-    val sidePadding = spacing.upNextSidePadding.dp
     val description = upNextDescription(peek, inRoom)
     Box(
         modifier = modifier
@@ -61,8 +61,8 @@ internal fun UpNextLine(
             .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button, onClick = onOpen)
             .semantics { contentDescription = description }
-            .padding(start = if (alignStart) 0.dp else sidePadding, end = sidePadding),
-        contentAlignment = if (alignStart) Alignment.CenterStart else Alignment.Center,
+            .padding(horizontal = spacing.upNextSidePadding.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = buildAnnotatedString {
@@ -74,7 +74,7 @@ internal fun UpNextLine(
             color = npInk().copy(alpha = 0.6f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = if (alignStart) TextAlign.Start else TextAlign.Center,
+            textAlign = TextAlign.Center,
             // The row's description says it all, and where a tap goes.
             modifier = Modifier.clearAndSetSemantics { },
         )

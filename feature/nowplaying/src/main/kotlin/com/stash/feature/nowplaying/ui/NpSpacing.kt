@@ -40,9 +40,9 @@ import kotlin.math.roundToInt
  * - Up next: the line's height (taken whether or not it shows) and its side padding.
  * - Sides: the page's padding, a centred title's inset (room for the side button and the heart),
  *   and the gap before each of those 26 dp buttons beside a start-aligned title.
- * - Layout: [NpAlign.SETTING] has the title, artist, quality and Up next lines follow Settings ›
- *   Appearance together; [FullArtTextPosition.LAYOUT] keeps the text where the square-art layout
- *   puts it while full art is out.
+ * - Layout: [NpAlign.SETTING] has the title, artist and quality lines follow Settings › Appearance
+ *   together (Up next stays centred); [FullArtTextPosition.LAYOUT] keeps the text where the
+ *   square-art layout puts it while full art is out.
  */
 internal object NpSpacingDefaults {
     // Title
