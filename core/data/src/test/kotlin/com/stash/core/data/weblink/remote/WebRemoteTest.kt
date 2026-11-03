@@ -317,6 +317,121 @@ class WebRemoteTest {
         assertThat(r.card.value).isNull()
     }
 
+    // ------------------------------------------------------------------ following the roster in the foreground (v0.9.123)
+
+    private fun browser(id: String, name: String) =
+        RosterEntry(id, "web", name, SyncCrypto.rawPublicKey(SyncCrypto.newKeyPair().public as ECPublicKey))
+
+    private val open get() = connector.opened.filter { !it.third.closed }
+
+    @Test fun `a browser linked while the app is in the foreground opens the socket then, with no trip to the background`() = runTest {
+        // Linked with no browser yet (the phone's side of the space), the app open: no socket
+        store.createIdentity("Pixel 5")
+        store.saveSpace(LinkedSpace(spaceId, 1, k))
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        assertThat(connector.opened).isEmpty()
+        // The in-app scanner links Chrome (PairingSession saves it to the roster): the socket opens, and its state is the card
+        store.saveRoster(listOf(browser(CHROME, "Chrome on Windows")))
+        runCurrent()
+        assertThat(connector.opened).hasSize(1)
+        conn.ch.send(stateFrame())
+        runCurrent()
+        assertThat(r.card.value!!.status).isEqualTo("Playing on Chrome on Windows")
+    }
+
+    @Test fun `a second browser linked while the socket is open is heard from at once, on the same socket`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        // Not verified yet: its state isn't taken
+        conn.ch.send(stateFrame(FIREFOX))
+        runCurrent()
+        assertThat(r.card.value).isNull()
+        store.saveRoster(store.roster() + browser(FIREFOX, "Firefox on Mac"))
+        runCurrent()
+        assertThat(connector.opened).hasSize(1) // the open socket kept, not dropped and reopened
+        assertThat(conn.closed).isFalse()
+        conn.ch.send(stateFrame(FIREFOX))
+        runCurrent()
+        assertThat(r.card.value!!.status).isEqualTo("Playing on Firefox on Mac")
+    }
+
+    @Test fun `a removed browser leaves the card, and removing the last one closes the socket`() = runTest {
+        linked(listOf(CHROME to "Chrome on Windows", FIREFOX to "Firefox on Mac"))
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        conn.ch.send(stateFrame(CHROME))
+        conn.ch.send(stateFrame(FIREFOX, doc = stateDoc(playing = false, title = "Roygbiv")))
+        runCurrent()
+        assertThat(r.card.value!!.device).isEqualTo(CHROME)
+        // Chrome removed (as WebLinkRepository.remove leaves the roster): Firefox is the card, on the same socket
+        store.saveRoster(store.roster().filter { it.deviceId != CHROME })
+        runCurrent()
+        assertThat(open).hasSize(1)
+        assertThat(r.card.value!!.device).isEqualTo(FIREFOX)
+        conn.ch.send(stateFrame(CHROME)) // no longer verified
+        runCurrent()
+        assertThat(r.card.value!!.device).isEqualTo(FIREFOX)
+        // The last one removed: no browser to control, no socket
+        store.saveRoster(emptyList())
+        runCurrent()
+        assertThat(open).isEmpty()
+        assertThat(r.card.value).isNull()
+    }
+
+    @Test fun `unlinking while the socket is open closes it`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        conn.ch.send(stateFrame())
+        runCurrent()
+        store.wipe()
+        runCurrent()
+        assertThat(open).isEmpty()
+        assertThat(r.card.value).isNull()
+    }
+
+    @Test fun `in the background a browser linked opens nothing, and the background still closes the socket`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        r.onBackground()
+        runCurrent()
+        assertThat(open).isEmpty()
+        store.saveRoster(store.roster() + browser(FIREFOX, "Firefox on Mac"))
+        runCurrent()
+        assertThat(connector.opened).hasSize(1)
+        assertThat(open).isEmpty()
+        // Back in the foreground: one socket, hearing both
+        r.onForeground()
+        runCurrent()
+        assertThat(open).hasSize(1)
+        conn.ch.send(stateFrame(FIREFOX))
+        runCurrent()
+        assertThat(r.card.value!!.device).isEqualTo(FIREFOX)
+    }
+
+    @Test fun `a store that can't be read just then leaves an open socket alone`() = runTest {
+        linked()
+        val r = remote()
+        r.onForeground()
+        runCurrent()
+        store.failReads = true
+        store.saveRoster(store.roster())
+        runCurrent()
+        assertThat(open).hasSize(1)
+        store.failReads = false
+        conn.ch.send(stateFrame())
+        runCurrent()
+        assertThat(r.card.value).isNotNull()
+    }
+
     private companion object {
         const val CHROME = "d_ChromeWindows01"
         const val FIREFOX = "d_FirefoxMac00001"

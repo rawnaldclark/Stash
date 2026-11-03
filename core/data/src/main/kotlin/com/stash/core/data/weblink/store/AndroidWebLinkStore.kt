@@ -19,6 +19,10 @@ import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -35,6 +39,9 @@ class AndroidWebLinkStore @Inject constructor(
 ) : WebLinkStore {
     private val dao get() = db.dao()
     private val lock = Mutex()
+    private val _rosterVersion = MutableStateFlow(0L)
+
+    override val rosterVersion: StateFlow<Long> = _rosterVersion.asStateFlow()
 
     override suspend fun identity(): LinkIdentity? = lock.withLock {
         val row = dao.space() ?: return null
@@ -72,6 +79,7 @@ class AndroidWebLinkStore @Inject constructor(
         val token = SyncCrypto.randomBytes(32)
         val (pub, priv, wrapped) = newDeviceKey()
         dao.wipe()
+        _rosterVersion.update { it + 1 }
         dao.putSpace(
             SyncSpaceEntity(
                 deviceId = deviceId,
@@ -117,10 +125,12 @@ class AndroidWebLinkStore @Inject constructor(
 
     override suspend fun saveRoster(entries: List<RosterEntry>): Unit = lock.withLock {
         dao.replaceRoster(entries.map { SyncRosterEntity(it.deviceId, it.type, it.labelName, it.pub, it.nickname) })
+        _rosterVersion.update { it + 1 }
     }
 
     override suspend fun wipe(): Unit = lock.withLock {
         dao.wipe()
+        _rosterVersion.update { it + 1 }
         try {
             KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }.deleteEntry(KEY_ALIAS)
         } catch (e: Exception) {

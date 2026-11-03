@@ -9,7 +9,9 @@ import com.stash.core.data.weblink.SyncJson
 import com.stash.core.data.weblink.WebLinkConfig
 import com.stash.core.data.weblink.WebLinkRepository
 import com.stash.core.data.weblink.handoff.HandoffWireException
+import com.stash.core.data.weblink.store.LinkIdentity
 import com.stash.core.data.weblink.store.LinkedSpace
+import com.stash.core.data.weblink.store.RosterEntry
 import com.stash.core.data.weblink.store.WebLinkStore
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -44,6 +47,9 @@ import kotlinx.serialization.json.put
  * - **When**: one socket on the space (`wss://sync.stashfm.app/v1/spaces/{sid}/ws`), only while the app is in the foreground
  *   ([onForeground] / [onBackground]) and only when the space has a browser at all. The socket is push: a browser that starts
  *   advertising shows up at once, and nothing polls. In the background there is no socket.
+ * - **Follows the roster** while in the foreground ([WebLinkStore.rosterVersion]): a browser linked from the in-app scanner
+ *   opens the socket then, not at the next foreground (v0.9.123: the card only showed after a restart); one linked while the
+ *   socket is open is heard from at once; removing the last one, or unlinking, closes it.
  * - **What it hears**: `ready`/`peer` (which browsers have their socket open), and each browser's `state`, opened under the data
  *   key at `remote:<browser>`, taken only from browsers whose label this phone verified (its roster). A browser that goes quiet for
  *   a minute is treated as gone ([RemoteCards.STALE_MS]).
@@ -75,15 +81,18 @@ class WebRemote internal constructor(
     /** Taps, in the order they happened (each [send] used to start its own coroutine, which could overtake another). */
     private val outbox = Channel<RemoteCommand>(Channel.UNLIMITED)
     /**
-     * Whether a socket should be open: set by [onForeground] / [onBackground], acted on by one collector, the latest value
-     * winning (a background right after a foreground can't leave a socket open behind a slower start). Null: neither yet.
+     * Whether a socket should be open: set by [onForeground] / [onBackground], acted on by one collector with the roster's
+     * changes, the latest winning (a background right after a foreground can't leave a socket open behind a slower start).
+     * Null: neither yet.
      */
     private val wanted = MutableStateFlow<Boolean?>(null)
     private var conn: LiveConnection? = null
+    /** The space and this phone the open socket said hello for: a different link needs a socket of its own. */
+    private var openFor: Pair<String, String>? = null
     private var jobs: List<Job> = emptyList()
     private var me = ""
-    /** Verified browsers of the space: id → name. */
-    private var names: Map<String, String> = emptyMap()
+    /** Verified browsers of the space: id → name. Read again on each roster change, so a browser linked later is heard. */
+    @Volatile private var names: Map<String, String> = emptyMap()
     private val browsers = MutableStateFlow<Map<String, BrowserState>>(emptyMap())
     /** The last command number per browser session. */
     private val sent = ConcurrentHashMap<String, Long>()
@@ -95,7 +104,8 @@ class WebRemote internal constructor(
 
     init {
         scope.launch {
-            wanted.collectLatest { w ->
+            // In the foreground, each roster change runs start() again: it opens, keeps or closes the socket to match.
+            combine(wanted, store.rosterVersion, ::Pair).collectLatest { (w, _) ->
                 when (w) {
                     true -> start()
                     false -> stop()
@@ -106,7 +116,10 @@ class WebRemote internal constructor(
         scope.launch { for (c in outbox) sendNow(c) }
     }
 
-    /** The app came to the foreground (ProcessLifecycleOwner ON_START). */
+    /**
+     * The app came to the foreground (ProcessLifecycleOwner ON_START). From here until [onBackground], the socket follows the
+     * roster.
+     */
     fun onForeground() {
         if (!config.enabled) return
         wanted.value = true
@@ -117,18 +130,35 @@ class WebRemote internal constructor(
         wanted.value = false
     }
 
+    /**
+     * Brings the socket in line with the link (in the foreground, on each roster change): none without a link or a browser in
+     * it, one open otherwise. An open socket stays open when only the browsers changed: their names are read again, and a
+     * browser no longer in the roster leaves the card. A store that can't be read just now leaves things as they are.
+     */
     internal suspend fun start() = lock.withLock {
-        if (conn != null) return@withLock
+        val link = try {
+            readLink()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "remote: ${e.javaClass.simpleName}")
+            return@withLock
+        }
+        val web = link?.web.orEmpty()
+        if (link == null || web.isEmpty()) return@withLock close() // unlinked, or no browser left: nothing to control, no socket
+        names = web.associate { it.deviceId to it.displayName }
+        if (browsers.value.keys.any { it !in names }) {
+            browsers.update { all -> all.filterKeys { it in names } }
+            publish()
+        }
+        val target = link.spaceId to link.deviceId
+        if (conn != null && openFor == target) return@withLock
+        if (conn != null) close() // linked again, to another space or as another device: that socket's hello is stale
         jobs.forEach { it.cancel() } // a socket that closed for good left its collector and tick behind
         jobs = emptyList()
-        val (id, sp, web) = guard(null) {
-            val id = store.identity() ?: return@guard null
-            val sp = store.space() ?: return@guard null
-            Triple(id, sp, store.roster().filter { it.type == "web" })
-        } ?: return@withLock
-        if (web.isEmpty()) return@withLock // no browser in this space: nothing to control, no socket
-        me = id.deviceId
-        names = web.associate { it.deviceId to it.displayName }
+        me = link.deviceId
+        val id = link.identity
+        val sp = link.space
         val hello = buildJsonObject {
             put("t", "hello")
             put("device", id.deviceId)
@@ -136,6 +166,7 @@ class WebRemote internal constructor(
         }.toString()
         val c = connector.connect("${config.baseUrl}/v1/spaces/${sp.spaceId}/ws", hello, scope)
         conn = c
+        openFor = target
         jobs = listOf(
             scope.launch { c.events.collect { onEvent(c, it) } },
             // A frozen tab sends nothing more: the card goes once its last state is a minute old.
@@ -148,14 +179,30 @@ class WebRemote internal constructor(
         )
     }
 
-    internal suspend fun stop() = lock.withLock {
+    internal suspend fun stop() = lock.withLock { close() }
+
+    /** Closes the socket (if any) and clears the card. Under [lock]. */
+    private fun close() {
         conn?.close()
         conn = null
+        openFor = null
         jobs.forEach { it.cancel() }
         jobs = emptyList()
         sent.clear()
         browsers.value = emptyMap()
         publish()
+    }
+
+    /** This phone's link and the space's verified browsers, or null when it isn't linked. Throws when the store can't be read now. */
+    private suspend fun readLink(): Link? {
+        val id = store.identity() ?: return null
+        val sp = store.space() ?: return null
+        return Link(id, sp, store.roster().filter { it.type == "web" })
+    }
+
+    private class Link(val identity: LinkIdentity, val space: LinkedSpace, val web: List<RosterEntry>) {
+        val deviceId: String get() = identity.deviceId
+        val spaceId: String get() = space.spaceId
     }
 
     /** Sends [command] to the browser on the card (if any) and moves the card at once. Taps go out in the order they happened. */
@@ -194,7 +241,12 @@ class WebRemote internal constructor(
             is LiveEvent.Frame -> onFrame(e.text)
             LiveEvent.Dropped -> forgetAll()
             is LiveEvent.Closed -> {
-                lock.withLock { if (conn === c) conn = null }
+                lock.withLock {
+                    if (conn === c) {
+                        conn = null
+                        openFor = null
+                    }
+                }
                 forgetAll()
                 if (e.code == 4401) guard(Unit) { repo.refresh() } // removed: the repository confirms it and forgets the link
             }

@@ -514,6 +514,9 @@ class InMemoryWebLinkStore : WebLinkStore {
     /** The device key is definitely gone: identity() is null while the token still reads. */
     var keyGone = false
 
+    /** Goes up on each saveRoster, wipe and createIdentity, as the real store's does. Setting [rosterList] directly doesn't. */
+    override val rosterVersion = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
     override suspend fun identity(): LinkIdentity? {
         if (failReads) throw com.stash.core.data.weblink.store.LinkStoreUnavailable(java.security.KeyStoreException("busy"))
         return if (keyGone) null else id
@@ -524,7 +527,7 @@ class InMemoryWebLinkStore : WebLinkStore {
     override suspend fun createIdentity(name: String): LinkIdentity {
         val pair = SyncCrypto.newKeyPair()
         return LinkIdentity(WebLinkIds.newDeviceId(), SyncCrypto.randomBytes(32), SyncCrypto.rawPublicKey(pair.public as ECPublicKey), pair.private, name)
-            .also { id = it; sp = null; rosterList = emptyList() }
+            .also { id = it; sp = null; rosterList = emptyList(); rosterVersion.value++ }
     }
 
     override suspend fun setName(name: String) {
@@ -544,6 +547,7 @@ class InMemoryWebLinkStore : WebLinkStore {
 
     override suspend fun saveRoster(entries: List<RosterEntry>) {
         rosterList = entries
+        rosterVersion.value++
     }
 
     override suspend fun wipe() {
@@ -552,5 +556,6 @@ class InMemoryWebLinkStore : WebLinkStore {
         id = null
         sp = null
         rosterList = emptyList()
+        rosterVersion.value++
     }
 }
