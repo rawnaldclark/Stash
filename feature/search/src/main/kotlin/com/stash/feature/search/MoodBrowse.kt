@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,10 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +43,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,6 +155,11 @@ private fun LazyListScope.tileSection(
  * theme too), the title on the left in up to two lines, and the tile's two covers fanned at its right edge. With no
  * covers yet (still reading, or Data saver on mobile data) the wash alone shows. A title that wraps fades the covers'
  * left side so the two never fight.
+ *
+ * Mochy keeps the title clear of the covers (70 dp from the right), which on a 393 dp phone is too narrow for some
+ * words: "Songwriters" came out "Songwriter / s", and at the largest font "Christma / s" and "Indie & / alterna…". A
+ * title that would cut a word, or lose its end, runs on over the covers instead (14 dp from the right, like its
+ * left), and they fade under it. It's measured before it's drawn, so a tile scrolling in never shows the cut first.
  */
 @Composable
 internal fun MoodTileCard(
@@ -168,8 +174,8 @@ internal fun MoodTileCard(
         Brush.linearGradient(listOf(blendOver(tint, 0.55f, surface), blendOver(tint, 0.16f, surface)))
     }
     val interaction = remember { MutableInteractionSource() }
-    var titleWraps by remember(tile.title) { mutableStateOf(false) }
-    Box(
+    val style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp)
+    BoxWithConstraints(
         modifier = modifier
             .height(TileHeight)
             .pressScale(interaction)
@@ -177,25 +183,53 @@ internal fun MoodTileCard(
             .background(wash)
             .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick),
     ) {
+        val measurer = rememberTextMeasurer(cacheSize = 4)
+        val density = LocalDensity.current
+        val tileWidth = constraints.maxWidth
+        val fit = remember(tile.title, style, tileWidth, density) {
+            fun layout(endPadding: Dp) = measurer.measure(
+                text = tile.title,
+                style = style,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
+                constraints = Constraints(maxWidth = (tileWidth - with(density) { TitleStart.roundToPx() + endPadding.roundToPx() }).coerceAtLeast(0)),
+            )
+            val clear = layout(TitleEndClear)
+            val cut = splitsAWord(tile.title, (0 until clear.lineCount - 1).map { clear.getLineEnd(it) }) ||
+                clear.isLineEllipsized(clear.lineCount - 1)
+            if (cut) TitleFit(runsOn = true, wraps = layout(TitleStart).lineCount > 1) else TitleFit(runsOn = false, wraps = clear.lineCount > 1)
+        }
         FannedCovers(
             covers = covers,
-            fadeLeft = titleWraps,
+            fadeLeft = fit.wraps || fit.runsOn,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 2.dp).size(width = CoversWidth, height = TileHeight),
         )
         Text(
             text = tile.title,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp),
+            style = style,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            onTextLayout = { result ->
-                val wraps = result.lineCount > 1
-                if (wraps != titleWraps) titleWraps = wraps
-            },
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 14.dp, end = 70.dp),
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = TitleStart, end = if (fit.runsOn) TitleStart else TitleEndClear),
         )
     }
 }
+
+/** The title's left padding, and its right one clear of the covers (Mochy's). */
+private val TitleStart = 14.dp
+private val TitleEndClear = 70.dp
+
+/** How a tile's title sits: [runsOn] over the covers so no word is cut, and whether it [wraps] to a second line. */
+private data class TitleFit(val runsOn: Boolean, val wraps: Boolean)
+
+/**
+ * Whether a title laid out in lines ending at [lineEnds] (each line's end but the last, as offsets into [title]) cuts
+ * a word in two: a line that ends between two letters. A break at a space, or after a hyphen ("Hip-|hop"), is not.
+ */
+internal fun splitsAWord(title: String, lineEnds: List<Int>): Boolean =
+    lineEnds.any { end -> end in 1 until title.length && title[end - 1].isLetterOrDigit() && title[end].isLetterOrDigit() }
 
 /**
  * Mochy Music's two layered covers: the second tilted back -24° behind, the first -6° in front, lower and further
