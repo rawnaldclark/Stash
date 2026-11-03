@@ -281,7 +281,7 @@ class ReleaseNotesTest {
 
     @Test
     fun `Unicode line breaks read as line breaks`() {
-        val n = ReleaseNotes.parse("Headline.  ## Bug fixes - One.\u0085- Two.\u000B- Three.")
+        val n = ReleaseNotes.parse("Headline.\u2028\u2028## Bug fixes\u2029- One.\u0085- Two.\u000B- Three.")
         assertThat(n.headline).isEqualTo("Headline.")
         assertThat(n.sections.single().notes.map { it.body }).containsExactly("One.", "Two.", "Three.").inOrder()
     }
@@ -290,11 +290,13 @@ class ReleaseNotesTest {
 
     /**
      * A body as long as GitHub allows (125k), made of what made the old patterns slow: long runs of blanks inside a
-     * heading, a PR number, "by @someone in" and a credit; a line of pictures; unclosed links, pictures, comments and
-     * code; marks repeated thousands of times. The old parser took seconds on 40k of such text (quadratic) and could
-     * try 2ⁿ ways through a line of pictures. Each line is a little over the line cap, so the first 32k (the body cap)
-     * holds every kind. Parsed by [ReleaseNotesParser] itself, so a stack overflow would fail the test instead of turning
-     * into EMPTY quietly.
+     * headline, a heading and a PR number; tabs around "in"; a "thanks" with 700 handles; runs of `!` and `.`; a long
+     * note cut by the line breaks `.` won't cross (U+2028, U+0085, U+2029, \v, \f); two lines of pictures; a line of
+     * images; unclosed images, links, `<picture`s and code; `**a`, dashes and `#`s repeated. The old parser took seconds
+     * on 40k of such text (quadratic) and could try 2ⁿ ways through a line of pictures. Its lines run up to 2.1k, around
+     * the 2k line cap, and one copy (about 28k) fits in the 32k body cap, so what is parsed holds every kind; copies of
+     * it fill the body to 120k, and an unclosed `<!-- app` repeated past that checks the body cap holds. Parsed by
+     * [ReleaseNotesParser] itself, so a stack overflow would fail the test instead of turning into EMPTY quietly.
      */
     @Test
     fun `a hostile 125k body parses in well under a second`() {
@@ -308,8 +310,8 @@ class ReleaseNotesTest {
             append("- (thanks ").append("@a ".repeat(700)).append("\n")
             append("Wow").append("!".repeat(600)).append(" Next").append(".".repeat(600)).append(" Then.\n")
             // Line breaks `.` won't cross (#814, second review): one in a long note made `(.*)$` rescan it.
-            append("- **").append("_".repeat(1_000)).append(' ').append("_".repeat(1_000)).append('\u0085')
-                .append("_".repeat(1_000)).append(" \u000B\u000C x\n")
+            append("- **").append("_".repeat(1_000)).append('\u2028').append("_".repeat(1_000)).append('\u0085')
+                .append("_".repeat(1_000)).append("\u2029\u000B\u000C x\n")
             repeat(65) { append("<picture><img src=a></picture> ") }
             append("\n")
             repeat(65) { append("<picture><img src=a></picture> ") }

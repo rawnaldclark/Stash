@@ -433,7 +433,7 @@ internal object ReleaseNotesParser {
     // (`(?<!\s)`). Checked against long runs of every mark these patterns read.
 
     /** A lone \r, \v, \f, U+0085, U+2028 or U+2029: each read as a line break. */
-    private val LINE_BREAKS = Regex("""[\r\u000B\u000C\u0085  ]""")
+    private val LINE_BREAKS = Regex("""[\r\u000B\u000C\u0085\u2028\u2029]""")
 
     /** The start of the hidden block, inside a comment: "stash-app" or "app", then a colon or a blank. */
     private val APP_BLOCK_START = Regex("""^\s*+(?:stash-app|app)(?:\s*+:|\s)""", RegexOption.IGNORE_CASE)
